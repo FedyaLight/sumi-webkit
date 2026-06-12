@@ -172,19 +172,6 @@ extension NSWindow {
         )
     }
 
-    /// MiniWindow intentionally remains on AppKit's native titlebar-button path.
-    /// Browser windows call `hideNativeStandardWindowButtonsForBrowserChrome()`
-    /// and render `BrowserWindowTrafficLights` instead.
-    func configureNativeStandardWindowButtonsForMiniWindowChrome(
-        buttonTypes: [NSWindow.ButtonType] = SumiBrowserChromeConfiguration.buttonTypes
-    ) {
-        applyNativeStandardWindowButtons(
-            buttonTypes: buttonTypes,
-            isVisible: true,
-            exposesAccessibilityIdentifiers: true
-        )
-    }
-
     private func applyNativeStandardWindowButtons(
         buttonTypes: [NSWindow.ButtonType],
         isVisible: Bool,

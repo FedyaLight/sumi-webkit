@@ -12,7 +12,6 @@ extension Tab {
         [
             SumiLinkInteractionUserScript(tab: self),
             SumiWebPageContextMenuUserScript(tab: self),
-            SumiIdentityUserScript(tab: self),
             SumiTabSuspensionUserScript(tab: self),
             SumiWebNotificationUserScript(tab: self),
         ]
@@ -115,72 +114,6 @@ extension Tab {
         guard let currentHost = self.url.host,
               let newHost = url.host else { return false }
         return currentHost != newHost
-    }
-
-    func handleOAuthRequest(url: URL, interactive: Bool, requestId: String) {
-        RuntimeDiagnostics.emit(
-            "🔐 [Tab] OAuth request received: id=\(requestId) url=\(url.absoluteString) interactive=\(interactive)"
-        )
-
-        guard let manager = browserManager else {
-            finishIdentityFlow(requestId: requestId, with: .failure(.unableToStart))
-            return
-        }
-
-        let identityRequest = AuthenticationManager.IdentityRequest(
-            requestId: requestId,
-            url: url,
-            interactive: interactive
-        )
-
-        manager.authenticationManager.beginIdentityFlow(identityRequest, from: self)
-    }
-
-    func finishIdentityFlow(
-        requestId: String,
-        with result: AuthenticationManager.IdentityFlowResult
-    ) {
-        guard let webView = existingWebView else {
-            RuntimeDiagnostics.emit("⚠️ [Tab] Unable to deliver identity result; webView missing")
-            return
-        }
-
-        var payload: [String: Any] = ["requestId": requestId]
-
-        switch result {
-        case .success(let url):
-            payload["status"] = "success"
-            payload["url"] = url.absoluteString
-        case .cancelled:
-            payload["status"] = "cancelled"
-            payload["code"] = "cancelled"
-            payload["message"] = "Authentication cancelled by user."
-        case .failure(let failure):
-            payload["status"] = "failure"
-            payload["code"] = failure.code
-            payload["message"] = failure.message
-        }
-
-        if let status = payload["status"] as? String {
-            let urlDescription = payload["url"] as? String ?? "nil"
-            RuntimeDiagnostics.emit(
-                "🔐 [Tab] Identity flow completed: id=\(requestId) status=\(status) url=\(urlDescription)"
-            )
-        }
-
-        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
-              let jsonString = String(data: data, encoding: .utf8) else {
-            RuntimeDiagnostics.emit("❌ [Tab] Failed to serialise identity payload for requestId=\(requestId)")
-            return
-        }
-
-        let script =
-            "window.__nookCompleteIdentityFlow && window.__nookCompleteIdentityFlow(\(jsonString));"
-        webView.evaluateJavaScript(script) { _, error in
-            if let error {
-                RuntimeDiagnostics.emit("❌ [Tab] Failed to deliver identity result: \(error.localizedDescription)")
-            }
-        }
     }
 }
 
@@ -445,72 +378,6 @@ private struct SumiTabSuspensionPayload {
 }
 
 @MainActor
-private final class SumiIdentityUserScript: NSObject, SumiUserScript, @MainActor SumiUserScriptMessaging, WKScriptMessageHandlerWithReply {
-    private let context: String
-    let broker: SumiUserScriptMessageBroker
-    let source: String
-    let injectionTime: WKUserScriptInjectionTime = .atDocumentStart
-    let forMainFrameOnly = true
-    let requiresRunInPageContentWorld = true
-    let messageNames: [String]
-
-    init(tab: Tab) {
-        self.context = "sumiIdentity_\(tab.id.uuidString)"
-        self.broker = SumiUserScriptMessageBroker(context: context)
-        self.messageNames = [context]
-        self.source = Self.makeSource(context: context)
-        super.init()
-        registerSubfeature(delegate: SumiIdentitySubfeature(tab: tab))
-    }
-
-    private static func makeSource(context: String) -> String {
-        """
-        (function() {
-            if (window.__sumiIdentityBrokerInstalled) { return; }
-            window.__sumiIdentityBrokerInstalled = true;
-            const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers["\(context)"];
-            if (!handler) { return; }
-
-            window.__sumiRequestIdentity = function(payload) {
-                payload = payload || {};
-                const requestId = payload.requestId || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
-                return handler.postMessage({
-                    context: "\(context)",
-                    featureName: "identity",
-                    method: "request",
-                    id: requestId,
-                    params: {
-                        url: payload.url,
-                        interactive: payload.interactive !== false,
-                        requestId: requestId
-                    }
-                });
-            };
-        })();
-        """
-    }
-
-    @MainActor
-    func userContentController(
-        _ userContentController: WKUserContentController,
-        didReceive message: WKScriptMessage
-    ) async -> (Any?, String?) {
-        let action = broker.messageHandlerFor(message)
-        do {
-            let json = try await executeTabScriptBrokerAction(action, original: message)
-            return (json, nil)
-        } catch {
-            return (nil, error.localizedDescription)
-        }
-    }
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        _ = userContentController
-        _ = message
-    }
-}
-
-@MainActor
 private func executeTabScriptBrokerAction(
     _ action: SumiUserScriptMessageBroker.Action,
     original: WKScriptMessage
@@ -560,9 +427,6 @@ private struct SumiTabScriptMessageParams: Sendable {
     let href: String?
     let hasHref: Bool
     let canBeSuspended: Bool?
-    let url: String?
-    let interactive: Bool?
-    let requestId: String?
 
     init(from params: Any) {
         if let params = params as? SumiTabScriptMessageParams {
@@ -576,9 +440,6 @@ private struct SumiTabScriptMessageParams: Sendable {
         self.href = hrefValue as? String
         self.hasHref = dictionary.keys.contains("href")
         self.canBeSuspended = dictionary["canBeSuspended"] as? Bool
-        self.url = dictionary["url"] as? String
-        self.interactive = dictionary["interactive"] as? Bool
-        self.requestId = dictionary["requestId"] as? String
     }
 }
 
@@ -631,69 +492,5 @@ private struct SumiTabScriptMessageErrorResponse: Encodable {
 
     private struct MessageError: Encodable {
         let message: String
-    }
-}
-
-@MainActor
-private final class SumiIdentitySubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
-    let featureName = "identity"
-    let messageOriginPolicy: SumiUserScriptMessageOriginPolicy = .all
-    weak var tab: Tab?
-
-    init(tab: Tab) {
-        self.tab = tab
-        super.init()
-    }
-
-    func handler(forMethodNamed methodName: String) -> SumiUserScriptSubfeature.Handler? {
-        guard methodName == "request" else { return nil }
-        return { [weak self] params, _ in
-            guard let payload = SumiIdentityRequestPayload.decode(from: params),
-                  let url = URL(string: payload.url)
-            else { return nil }
-
-            self?.tab?.handleOAuthRequest(
-                url: url,
-                interactive: payload.interactive,
-                requestId: payload.requestId
-            )
-            return SumiJSONValue.object(["accepted": .bool(true)])
-        }
-    }
-}
-
-private struct SumiIdentityRequestPayload {
-    let url: String
-    let interactive: Bool
-    let requestId: String
-
-    static func decode(from params: Any) -> SumiIdentityRequestPayload? {
-        if let params = params as? SumiTabScriptMessageParams {
-            guard let url = params.url else {
-                RuntimeDiagnostics.emit("❌ [Tab] Invalid OAuth request: missing or invalid URL")
-                return nil
-            }
-
-            let rawRequestId = params.requestId?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return SumiIdentityRequestPayload(
-                url: url,
-                interactive: params.interactive ?? true,
-                requestId: rawRequestId?.isEmpty == false ? rawRequestId! : UUID().uuidString
-            )
-        }
-
-        guard let dictionary = params as? [String: Any],
-              let url = dictionary["url"] as? String
-        else {
-            RuntimeDiagnostics.emit("❌ [Tab] Invalid OAuth request: missing or invalid URL")
-            return nil
-        }
-
-        let rawRequestId = (dictionary["requestId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return SumiIdentityRequestPayload(
-            url: url,
-            interactive: dictionary["interactive"] as? Bool ?? true,
-            requestId: rawRequestId?.isEmpty == false ? rawRequestId! : UUID().uuidString
-        )
     }
 }

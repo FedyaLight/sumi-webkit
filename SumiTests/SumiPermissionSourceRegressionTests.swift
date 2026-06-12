@@ -41,7 +41,6 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
         let webOpenPanelSources = try [
             "Sumi/Models/Tab/Tab+UIDelegate.swift",
             "Sumi/Permissions/SumiFilePickerPanelPresenter.swift",
-            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
         ].map(sourceFile).joined(separator: "\n")
 
         XCTAssertTrue(normalOpenPanel.contains("filePickerPermissionBridge.handleOpenPanel("))

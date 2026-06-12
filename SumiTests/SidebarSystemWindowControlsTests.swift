@@ -105,10 +105,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             BrowserWindowControlsAccessibilityIdentifiers.identifier(for: .zoomButton),
             BrowserWindowControlsAccessibilityIdentifiers.zoomButton
         )
-        XCTAssertEqual(
-            BrowserWindowControlsAccessibilityIdentifiers.miniBrowserWindow,
-            "mini-browser-window"
-        )
     }
 
     func testTrafficLightMetricsPreserveBrowserChromeClusterSize() {
@@ -268,31 +264,6 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             XCTAssertEqual(button?.alphaValue, 1, identifier)
             XCTAssertTrue(button?.isEnabled ?? false, identifier)
         }
-    }
-
-    func testNativeBrowserButtonsAreHiddenWhileMiniWindowNativePathIsIsolated() throws {
-        let windowSource = try Self.source(named: "Sumi/Components/Window/SumiBrowserWindow.swift")
-        let bridgeSource = try Self.source(named: "App/BrowserWindowBridge.swift")
-        let miniWindowToolbarSource = try Self.source(named: "Sumi/Components/MiniWindow/MiniWindowToolbar.swift")
-        let miniWindowViewSource = try Self.source(
-            named: "Sumi/Managers/ExternalMiniWindowManager/MiniBrowserWindowView.swift"
-        )
-        let miniWindowControllerSource = try Self.source(
-            named: "Sumi/Managers/ExternalMiniWindowManager/ExternalMiniWindowManager.swift"
-        )
-
-        XCTAssertTrue(windowSource.contains("func hideNativeStandardWindowButtonsForBrowserChrome("))
-        XCTAssertTrue(windowSource.contains("setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible"))
-        XCTAssertTrue(windowSource.contains("performCloseFromBrowserChrome"))
-        XCTAssertFalse(bridgeSource.contains("window.hideNativeStandardWindowButtonsForBrowserChrome()"))
-        XCTAssertFalse(bridgeSource.contains("setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible"))
-
-        XCTAssertTrue(miniWindowToolbarSource.contains("BrowserWindowNativeTrafficLightSpacer()"))
-        XCTAssertTrue(windowSource.contains("func configureNativeStandardWindowButtonsForMiniWindowChrome("))
-        XCTAssertTrue(miniWindowControllerSource.contains("configureNativeStandardWindowButtonsForMiniWindowChrome()"))
-        XCTAssertFalse(miniWindowToolbarSource.contains("BrowserWindowTrafficLights"))
-        XCTAssertFalse(miniWindowToolbarSource.contains("standardWindowButton"))
-        XCTAssertFalse(miniWindowViewSource.contains("window: window"))
     }
 
     func testCollapsedOverlayUsesSameSidebarHostedTrafficLightsAndWindowLocalGeometry() throws {

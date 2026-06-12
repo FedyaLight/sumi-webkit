@@ -282,16 +282,6 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
         switch context.surface {
         case .normalTab:
             return nil
-        case .miniWindow:
-            guard requiresNormalTabSurface(permissionType),
-                  !isAllowedInMiniWindow(permissionType) else { return nil }
-            return deny(
-                .hardDeny,
-                context: context,
-                permissionType: permissionType,
-                source: .defaultSetting,
-                reason: SumiPermissionPolicyReason.miniWindowSensitiveDenied
-            )
         case .glance:
             guard requiresNormalTabSurface(permissionType) else { return nil }
             return deny(
@@ -560,22 +550,6 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
              .popups,
              .externalScheme,
              .autoplay:
-            return false
-        }
-    }
-
-    private func isAllowedInMiniWindow(_ permissionType: SumiPermissionType) -> Bool {
-        switch permissionType {
-        case .camera, .microphone, .cameraAndMicrophone:
-            return true
-        case .geolocation,
-             .notifications,
-             .screenCapture,
-             .popups,
-             .externalScheme,
-             .autoplay,
-             .filePicker,
-             .storageAccess:
             return false
         }
     }

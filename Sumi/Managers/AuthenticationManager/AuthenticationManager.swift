@@ -10,94 +10,11 @@ import WebKit
 
 @MainActor
 final class AuthenticationManager: NSObject {
-    struct IdentityRequest {
-        let requestId: String
-        let url: URL
-        let interactive: Bool
-    }
-
-    enum IdentityFlowResult {
-        case success(URL)
-        case cancelled
-        case failure(IdentityFailure)
-    }
-
-    enum IdentityFailure: Equatable {
-        case interactionRequired
-        case missingCallbackHandler
-        case unableToStart
-        case fallbackUnavailable
-        case fallbackCancelled
-        case underlying(String)
-
-        var code: String {
-            switch self {
-            case .interactionRequired:
-                return "interaction_required"
-            case .missingCallbackHandler:
-                return "missing_callback_handler"
-            case .unableToStart:
-                return "unable_to_start"
-            case .fallbackUnavailable:
-                return "fallback_unavailable"
-            case .fallbackCancelled:
-                return "fallback_cancelled"
-            case .underlying:
-                return "error"
-            }
-        }
-
-        var message: String {
-            switch self {
-            case .interactionRequired:
-                return "User interaction is required to complete this authentication flow."
-            case .missingCallbackHandler:
-                return "Could not determine an appropriate callback handler for this authentication flow."
-            case .unableToStart:
-                return "The authentication session could not be started."
-            case .fallbackUnavailable:
-                return "Unable to present a fallback authentication window."
-            case .fallbackCancelled:
-                return "Authentication window was closed before completion."
-            case let .underlying(details):
-                return details
-            }
-        }
-    }
-
     private weak var browserManager: BrowserManager?
     private let credentialStore = BasicAuthCredentialStore()
-    private var activeIdentityRequest: IdentityRequest?
-    private weak var activeIdentityTab: Tab?
-    private var waitingForMiniWindow = false
+
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
-    }
-
-    func beginIdentityFlow(_ request: IdentityRequest, from tab: Tab) {
-        // Non-interactive flows cannot be satisfied without UI today.
-        if request.interactive == false {
-            tab.finishIdentityFlow(requestId: request.requestId, with: .failure(.interactionRequired))
-            return
-        }
-
-        cancelActiveIdentityFlow()
-
-        guard let manager = browserManager else {
-            tab.finishIdentityFlow(requestId: request.requestId, with: .failure(.fallbackUnavailable))
-            return
-        }
-
-        activeIdentityRequest = request
-        activeIdentityTab = tab
-        waitingForMiniWindow = true
-
-        manager.externalMiniWindowManager.present(url: request.url) { [weak self] success, finalURL in
-            guard let self else { return }
-            Task { @MainActor in
-                self.handleMiniWindowCompletion(success: success, finalURL: finalURL)
-            }
-        }
     }
 
     func handleAuthenticationChallenge(
@@ -142,41 +59,6 @@ final class AuthenticationManager: NSObject {
         default:
             return false
         }
-    }
-
-    private func handleMiniWindowCompletion(success: Bool, finalURL: URL?) {
-        guard let request = activeIdentityRequest, let tab = activeIdentityTab else {
-            clearActiveIdentityState()
-            return
-        }
-
-        waitingForMiniWindow = false
-        defer { clearActiveIdentityState() }
-
-        guard success, let url = finalURL else {
-            tab.finishIdentityFlow(requestId: request.requestId, with: .failure(.fallbackCancelled))
-            return
-        }
-
-        tab.finishIdentityFlow(requestId: request.requestId, with: .success(url))
-        if tab.protectionAttachmentRequiresNormalWebViewRebuild(for: tab.existingWebView?.url ?? tab.url) {
-            tab.refresh()
-        } else {
-            tab.ensureWebView()?.reload()
-        }
-    }
-
-    private func cancelActiveIdentityFlow() {
-        if let request = activeIdentityRequest, let tab = activeIdentityTab {
-            tab.finishIdentityFlow(requestId: request.requestId, with: .cancelled)
-        }
-        clearActiveIdentityState()
-    }
-
-    private func clearActiveIdentityState() {
-        activeIdentityRequest = nil
-        activeIdentityTab = nil
-        waitingForMiniWindow = false
     }
 
     private func presentBasicCredentialPrompt(

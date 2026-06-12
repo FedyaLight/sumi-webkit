@@ -118,7 +118,6 @@ final class AuxiliaryWindowRegressionGuardTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
         )
         XCTAssertTrue(uiSource.contains("Self.isExtensionExternalWebPopupURL(firstURL)"))
-        XCTAssertFalse(uiSource.contains("OAuthDetector.isLikelyOAuthPopupURL(firstURL)"))
         XCTAssertTrue(managerSource.contains("notifyAuxiliaryWindowOpened(session)"))
         XCTAssertTrue(managerSource.contains("notifyAuxiliaryWindowClosed(session)"))
         XCTAssertTrue(profilesSource.contains("extensionContext.didOpenWindow(adapter)"))
@@ -162,15 +161,12 @@ final class AuxiliaryWindowRegressionGuardTests: XCTestCase {
         )
     }
 
-    func testMiniWindowPresentationActivatesBeforeKeyingWindow() throws {
+    func testAuxiliaryPresentationActivatesBeforeKeyingWindow() throws {
         let compactWindowSource = try source(
             "Sumi/Components/Window/AuxiliaryCompactWindow.swift"
         )
         let bridgeSource = try source(
             "Sumi/Managers/ExtensionManager/ExtensionBridge.swift"
-        )
-        let externalMiniWindowSource = try source(
-            "Sumi/Managers/ExternalMiniWindowManager/ExternalMiniWindowManager.swift"
         )
 
         let presentStart = try XCTUnwrap(
@@ -189,15 +185,6 @@ final class AuxiliaryWindowRegressionGuardTests: XCTestCase {
         XCTAssertLessThan(
             try XCTUnwrap(miniFocusBody.range(of: "NSApp.activate")?.lowerBound),
             try XCTUnwrap(miniFocusBody.range(of: "makeKeyAndOrderFront")?.lowerBound)
-        )
-
-        let presentSessionStart = try XCTUnwrap(
-            externalMiniWindowSource.range(of: "sessions[session.id] = SessionEntry(controller: controller)")?.lowerBound
-        )
-        let presentSessionBody = String(externalMiniWindowSource[presentSessionStart...])
-        XCTAssertLessThan(
-            try XCTUnwrap(presentSessionBody.range(of: "NSApp.activate")?.lowerBound),
-            try XCTUnwrap(presentSessionBody.range(of: "controller.showWindow")?.lowerBound)
         )
     }
 

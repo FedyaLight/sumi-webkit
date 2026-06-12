@@ -259,7 +259,6 @@ extension BrowserManager {
             reason: "BrowserManager.cleanupAllTabs"
         )
         extensionsModule.closeAllOptionsWindowsIfLoaded()
-        externalMiniWindowManager.closeAll()
         auxiliaryWindowManager.closeAll(reason: .appQuit)
         glanceManager.dismissGlance(persistsWindowSession: false)
 

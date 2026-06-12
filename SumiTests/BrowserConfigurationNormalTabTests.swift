@@ -220,7 +220,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
-        XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
         XCTAssertFalse(sources.contains(UserScriptInjector.userScriptMarker))
         XCTAssertFalse(sources.contains("sumiGM_"))
@@ -262,7 +261,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
-        XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertEqual(probe.managerCount, 0)
@@ -733,7 +731,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let configurations = [
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
 
@@ -747,7 +744,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let configurations = [
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
 
@@ -781,10 +777,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             ),
             browserConfiguration.auxiliaryWebViewConfiguration(
                 for: profile,
-                surface: .miniWindow
-            ),
-            browserConfiguration.auxiliaryWebViewConfiguration(
-                for: profile,
                 surface: .extensionOptions
             ),
         ]
@@ -810,7 +802,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let configurations = [
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .miniWindow),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
 
@@ -823,7 +814,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             XCTAssertFalse(sources.contains("sumiGM_"))
             XCTAssertFalse(sources.contains("data-sumi-userscript"))
             XCTAssertFalse(sources.contains("sumiLinkInteraction_"))
-            XCTAssertFalse(sources.contains("sumiIdentity_"))
         }
     }
 
@@ -843,7 +833,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             UserScriptInjector.userScriptMarker,
             "sumiFavicons",
             "sumiGM_",
-            "sumiIdentity_",
             "sumiLinkInteraction_",
             "sumiTabSuspension_",
         ].map { marker in
@@ -877,7 +866,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             UserScriptInjector.userScriptMarker,
             "sumiFavicons",
             "sumiGM_",
-            "sumiIdentity_",
             "sumiLinkInteraction_",
             "sumiTabSuspension_",
         ] {
@@ -887,7 +875,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessTrackingRuntime() throws {
         for relativePath in [
-            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
         ] {
             let source = try Self.source(named: relativePath)
@@ -901,7 +888,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessUserscriptsRuntime() throws {
         for relativePath in [
-            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
         ] {
@@ -916,7 +902,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessExtensionsRuntime() throws {
         for relativePath in [
-            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
             "Sumi/Models/BrowserConfig/BrowserConfig.swift",
         ] {
@@ -942,7 +927,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
 
         for relativePath in [
-            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
         ] {
             let source = try Self.source(named: relativePath)
@@ -975,7 +959,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
-        XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("__sumiTabSuspension"))
 

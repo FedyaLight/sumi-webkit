@@ -22,10 +22,7 @@ is_allowed() {
     # GM compatibility: caller-provided GM_addElement innerHTML and request-body normalization.
     Sumi/Managers/SumiScripts/UserScriptGMBridge+JSShim.swift:*innerHTML*) return 0 ;;
     Sumi/Managers/SumiScripts/UserScriptGMBridge+JSShim.swift:*JSON.stringify*) return 0 ;;
-    # Identity completion and auxiliary surfaces are one-shot callbacks, not injection loops.
-    Sumi/Models/Tab/Tab+ScriptMessageHandler.swift:*evaluateJavaScript*) return 0 ;;
     Sumi/Models/Tab/Navigation/SumiNavigationHelpers.swift:*evaluateJavaScript*) return 0 ;;
-    Sumi/Components/MiniWindow/MiniWindowWebView.swift:*evaluateJavaScript*) return 0 ;;
   esac
   return 1
 }

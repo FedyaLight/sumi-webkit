@@ -247,7 +247,6 @@ class BrowserManager: ObservableObject {
     )
     let startupSessionCoordinator = SumiStartupSessionCoordinator()
 
-    var externalMiniWindowManager = ExternalMiniWindowManager()
     var auxiliaryWindowManager = AuxiliaryWindowManager()
     @Published var glanceManager = GlanceManager()
 
@@ -521,7 +520,6 @@ class BrowserManager: ObservableObject {
         self.extensionsModule.attach(browserManager: self)
         self.userscriptsModule.attach(browserManager: self)
         bindTabManagerStructuralUpdates()
-        self.externalMiniWindowManager.attach(browserManager: self)
         self.auxiliaryWindowManager.attach(browserManager: self)
         self.glanceManager.attach(browserManager: self)
         self.authenticationManager.attach(browserManager: self)

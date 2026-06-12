@@ -759,36 +759,6 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
     }
 
-    func testSuccessfulExternalAuthCompletionClosesMiniWindowWithoutCancel() throws {
-        let harness = makeHarness()
-        let mainWindow = harness.windowState.window!
-        mainWindow.makeKeyAndOrderFront(nil)
-        var completions: [(Bool, URL?)] = []
-        let callbackURL = URL(string: "https://callback.example/complete?code=abc")!
-
-        let session = harness.browserManager.externalMiniWindowManager.present(
-            url: URL(string: "https://auth.example/login")!
-        ) { success, finalURL in
-            completions.append((success, finalURL))
-        }
-
-        let unwrappedSession = try XCTUnwrap(session)
-        XCTAssertTrue(
-            harness.browserManager.externalMiniWindowManager.contains(session: unwrappedSession)
-        )
-
-        unwrappedSession.completeAuth(success: true, finalURL: callbackURL)
-
-        XCTAssertFalse(
-            harness.browserManager.externalMiniWindowManager.contains(session: unwrappedSession)
-        )
-        XCTAssertEqual(completions.count, 1)
-        XCTAssertEqual(completions.first?.0, true)
-        XCTAssertEqual(completions.first?.1, callbackURL)
-        XCTAssertTrue(unwrappedSession.isAuthComplete)
-        XCTAssertTrue(mainWindow.isVisible)
-    }
-
     func testMaxNestedDepthBlocksSizedPopupWithoutInPlaceLoad() {
         let harness = makeHarness()
         let manager = harness.browserManager.auxiliaryWindowManager

@@ -26,9 +26,6 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     private let smokeWindowSessionOverrideEnvironmentKey = "SUMI_WINDOW_SESSION_OVERRIDE_PATH"
     private let smokeShortcutDriftPinEnvironmentKey = "SUMI_SIDEBAR_DRIFT_SHORTCUT_PIN_ID"
     private let smokeShortcutDriftURLEnvironmentKey = "SUMI_SIDEBAR_DRIFT_URL"
-    private let smokeMiniWindowURLEnvironmentKey = "SUMI_UITEST_MINI_WINDOW_URL"
-    private let miniBrowserWindowIdentifier = "mini-browser-window"
-
     private struct PersonalSidebarFixture {
         let personalSpaceID: String
         let profileID: String
@@ -243,27 +240,6 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
 
         assertNativeTrafficLightsHittable(in: app, window: window)
-    }
-
-    func testMiniWindowRendersNativeTrafficLights() {
-        let app = launchApp(additionalEnvironment: [
-            smokeMiniWindowURLEnvironmentKey: "about:blank",
-        ])
-        let miniWindow = app.windows[miniBrowserWindowIdentifier]
-
-        XCTAssertTrue(miniWindow.waitForExistence(timeout: 5))
-        assertNativeTrafficLightsHittable(
-            in: app,
-            window: miniWindow,
-            searchRoot: miniWindow
-        )
-
-        let closeButton = element(
-            withIdentifier: BrowserWindowControlIdentifiers.closeButton,
-            inSearchRoot: miniWindow
-        )
-        closeButton.click()
-        XCTAssertTrue(waitForNonExistence(miniWindow, timeout: 3))
     }
 
     func testCollapsedHoverSidebarKeepsNativeTrafficLightsHittable() throws {

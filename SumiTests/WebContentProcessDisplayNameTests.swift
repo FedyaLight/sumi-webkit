@@ -15,10 +15,6 @@ final class WebContentProcessDisplayNameTests: XCTestCase {
             "Sumi Web Content (Peek)"
         )
         XCTAssertEqual(
-            BrowserConfigurationAuxiliarySurface.miniWindow.sumiWebContentProcessDisplayName,
-            "Sumi Web Content (Mini Window)"
-        )
-        XCTAssertEqual(
             BrowserConfigurationAuxiliarySurface.extensionOptions.sumiWebContentProcessDisplayName,
             "Sumi Web Content (Extension Options)"
         )

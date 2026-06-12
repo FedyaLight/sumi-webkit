@@ -243,16 +243,6 @@ final class BrowserWindowChromeTests: XCTestCase {
         assertNativeBrowserControlsHidden(window)
     }
 
-    func testBrowserChromeHideNativeControlsClearsAccessibilityAcrossModeChanges() {
-        let window = WindowChromeTestSupport.makeBrowserWindow()
-
-        window.configureNativeStandardWindowButtonsForMiniWindowChrome()
-        assertMiniWindowNativeControlsVisible(window)
-
-        window.setNativeStandardWindowButtonsForBrowserFullScreenChromeVisible(false)
-        assertNativeBrowserControlsHidden(window)
-    }
-
     func testBrowserChromePerformCloseWorksWhileNativeControlsAreHidden() {
         let window = WindowChromeTestSupport.makeBrowserWindow()
         let willClose = expectation(description: "Browser chrome close posts will-close notification.")
@@ -294,14 +284,6 @@ final class BrowserWindowChromeTests: XCTestCase {
         wait(for: [willClose], timeout: 0.1)
     }
 
-    func testMiniWindowNativeControlConfigurationRemainsVisibleAndIdentified() {
-        let window = WindowChromeTestSupport.makePlainWindow()
-
-        window.configureNativeStandardWindowButtonsForMiniWindowChrome()
-
-        assertMiniWindowNativeControlsVisible(window)
-    }
-
     func testMainWindowSceneUsesHiddenTitlebarStyle() throws {
         let appSource = try Self.source(named: "App/SumiApp.swift")
 
@@ -327,38 +309,6 @@ final class BrowserWindowChromeTests: XCTestCase {
             XCTAssertTrue(button.isAccessibilityHidden(), file: file, line: line)
             XCTAssertTrue(button.identifier?.rawValue.isEmpty ?? true, file: file, line: line)
             XCTAssertTrue(button.accessibilityIdentifier().isEmpty, file: file, line: line)
-        }
-    }
-
-    private func assertMiniWindowNativeControlsVisible(
-        _ window: NSWindow,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        for type in WindowChromeTestSupport.standardButtonTypes {
-            guard let button = window.standardWindowButton(type) else {
-                XCTFail("Expected standard window button for \(type).", file: file, line: line)
-                return
-            }
-
-            XCTAssertFalse(button.isHidden, file: file, line: line)
-            XCTAssertEqual(button.alphaValue, 1, file: file, line: line)
-            XCTAssertFalse(button.isTransparent, file: file, line: line)
-            XCTAssertTrue(button.isEnabled, file: file, line: line)
-            XCTAssertTrue(button.isAccessibilityElement(), file: file, line: line)
-            XCTAssertFalse(button.isAccessibilityHidden(), file: file, line: line)
-            XCTAssertEqual(
-                button.identifier?.rawValue,
-                BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type),
-                file: file,
-                line: line
-            )
-            XCTAssertEqual(
-                button.accessibilityIdentifier(),
-                BrowserWindowControlsAccessibilityIdentifiers.identifier(for: type),
-                file: file,
-                line: line
-            )
         }
     }
 

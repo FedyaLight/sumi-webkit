@@ -382,7 +382,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
 
         XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
-        XCTAssertTrue(sources.contains("sumiIdentity_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("__sumiTabSuspension"))
         assertNoOptionalModuleScriptsOrHandlers(in: webView.configuration.userContentController)
@@ -463,7 +462,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             "__sumiTabSuspension",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "sumiLinkInteraction_",
-            "sumiIdentity_",
             "SUMI_USER_SCRIPT_RUNTIME",
             "sumiGM_",
         ] {
@@ -489,7 +487,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
 
         for relativePath in [
-            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
         ] {
             let source = try Self.source(named: relativePath)

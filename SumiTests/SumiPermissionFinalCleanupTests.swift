@@ -61,7 +61,6 @@ final class SumiPermissionFinalCleanupTests: XCTestCase {
         let openPanelFiles = try filesContaining("NSOpenPanel", under: ["Sumi"], extensions: ["swift"])
         XCTAssertEqual(openPanelFiles, [
             "Sumi/Bookmarks/BrowserManager+Bookmarks.swift",
-            "Sumi/Components/MiniWindow/MiniWindowWebView.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
             "Sumi/Managers/SumiScripts/UI/SumiScriptsManagerView.swift",
             "Sumi/Permissions/SumiFilePickerPanelPresenter.swift",

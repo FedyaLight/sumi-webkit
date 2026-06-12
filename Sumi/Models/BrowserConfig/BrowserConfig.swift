@@ -12,7 +12,6 @@ import WebKit
 enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
     case faviconDownload
     case glance
-    case miniWindow
     case extensionOptions
 
     var sumiWebContentProcessDisplayName: String {
@@ -21,8 +20,6 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
             return "Sumi Web Content (Favicon)"
         case .glance:
             return "Sumi Web Content (Peek)"
-        case .miniWindow:
-            return "Sumi Web Content (Mini Window)"
         case .extensionOptions:
             return "Sumi Web Content (Extension Options)"
         }
@@ -32,7 +29,7 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
         switch self {
         case .faviconDownload:
             return false
-        case .glance, .miniWindow, .extensionOptions:
+        case .glance, .extensionOptions:
             return true
         }
     }
@@ -41,7 +38,7 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
         switch self {
         case .faviconDownload:
             return false
-        case .glance, .miniWindow, .extensionOptions:
+        case .glance, .extensionOptions:
             return true
         }
     }
@@ -62,7 +59,6 @@ class BrowserConfiguration {
         "data-sumi-userscript",
         "sumiFavicons",
         "sumiGM_",
-        "sumiIdentity_",
         "sumiLinkInteraction_",
         "sumiTabSuspension_",
         "sumiWebNotifications_",

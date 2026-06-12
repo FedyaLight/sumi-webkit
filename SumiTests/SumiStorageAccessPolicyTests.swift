@@ -71,10 +71,6 @@ final class SumiStorageAccessPolicyTests: XCTestCase {
     }
 
     func testStorageAccessRequiresNormalTabSurface() async {
-        let miniWindow = await evaluateStorageAccess(surface: .miniWindow)
-        XCTAssertFalse(miniWindow.isAllowedToProceed)
-        XCTAssertEqual(miniWindow.reason, SumiPermissionPolicyReason.miniWindowSensitiveDenied)
-
         let glance = await evaluateStorageAccess(surface: .glance)
         XCTAssertFalse(glance.isAllowedToProceed)
         XCTAssertEqual(glance.reason, SumiPermissionPolicyReason.glanceSensitiveDenied)
