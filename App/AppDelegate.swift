@@ -266,11 +266,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private func quitConfirmationIcon() -> NSImage {
-        if let assetIcon = NSImage(named: "sumi-logo-1024") {
-            return assetIcon
-        }
-
-        return NSApp.applicationIconImage
+        NSApp.applicationIconImage ?? NSImage()
     }
 
     private func presentQuitConfirmationSheet(for application: NSApplication, window: NSWindow) {

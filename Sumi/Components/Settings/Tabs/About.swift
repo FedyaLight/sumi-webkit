@@ -3,6 +3,7 @@
 //  Sumi
 //
 
+import AppKit
 import SwiftUI
 
 private enum SumiAppMetadata {
@@ -24,6 +25,10 @@ private enum SumiAppMetadata {
 }
 
 struct SettingsAboutTab: View {
+    private var appIconImage: Image {
+        Image(nsImage: NSApp.applicationIconImage ?? NSImage())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsSection(
@@ -31,7 +36,7 @@ struct SettingsAboutTab: View {
                 subtitle: "Version \(SumiAppMetadata.shortVersion) / Build \(SumiAppMetadata.buildNumber)"
             ) {
                 HStack(alignment: .center, spacing: 16) {
-                    Image("sumi-logo-1024")
+                    appIconImage
                         .resizable()
                         .scaledToFit()
                         .frame(width: 72, height: 72)
