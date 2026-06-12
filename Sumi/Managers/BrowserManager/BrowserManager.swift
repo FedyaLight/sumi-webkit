@@ -248,6 +248,7 @@ class BrowserManager: ObservableObject {
     let startupSessionCoordinator = SumiStartupSessionCoordinator()
 
     var externalMiniWindowManager = ExternalMiniWindowManager()
+    var auxiliaryWindowManager = AuxiliaryWindowManager()
     @Published var glanceManager = GlanceManager()
 
     /// Shared with app shell / `ContentView` via `.environment`; retained strongly so routing never sees a dangling coordinator.
@@ -521,6 +522,7 @@ class BrowserManager: ObservableObject {
         self.userscriptsModule.attach(browserManager: self)
         bindTabManagerStructuralUpdates()
         self.externalMiniWindowManager.attach(browserManager: self)
+        self.auxiliaryWindowManager.attach(browserManager: self)
         self.glanceManager.attach(browserManager: self)
         self.authenticationManager.attach(browserManager: self)
 
@@ -678,6 +680,8 @@ class BrowserManager: ObservableObject {
             let animateTransition = context.shouldAnimateTransition
 
             let performUpdates = {
+                self.auxiliaryWindowManager.closeAll(reason: .profileSwitch)
+
                 if animateTransition {
                     self.isTransitioningProfile = true
                 } else {

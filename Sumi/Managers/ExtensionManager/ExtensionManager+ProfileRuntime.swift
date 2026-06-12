@@ -494,6 +494,10 @@ extension ExtensionManager {
     }
 
     func resolvedLiveWebView(for tab: Tab) -> WKWebView? {
+        if let webView = tab.assignedWebView ?? tab.existingWebView {
+            return webView
+        }
+
         if let browserManager,
            let windowState = browserManager.windowState(containing: tab)
            ?? tab.primaryWindowId.flatMap({ browserManager.windowRegistry?.windows[$0] })
@@ -506,7 +510,7 @@ extension ExtensionManager {
             }
         }
 
-        return tab.assignedWebView ?? tab.existingWebView
+        return nil
     }
 
     @discardableResult
@@ -607,19 +611,17 @@ extension ExtensionManager {
         guard extensionsLoaded || allowWhenExtensionsNotLoaded else { return }
         guard resolvedProfileId(for: tab) != nil else { return }
 
-        var needsRebuild = tabNeedsExtensionContentScriptRebind(tab)
-        if needsRebuild == false {
-            for webView in liveWebViews(for: tab) {
-                let attached = attachExtensionControllerIfNeeded(to: webView, for: tab)
-                extensionRuntimeTrace(
-                    "ensureExtensionControllerAttachedForTab webView=\(extensionRuntimeWebViewDescription(webView)) attached=\(attached) \(extensionRuntimeTabDescription(tab))"
-                )
-                if attached == false,
-                   webViewNeedsExtensionRuntimeRebuild(webView, for: tab)
-                {
-                    needsRebuild = true
-                    break
-                }
+        var needsRebuild = false
+        for webView in liveWebViews(for: tab) {
+            let attached = attachExtensionControllerIfNeeded(to: webView, for: tab)
+            extensionRuntimeTrace(
+                "ensureExtensionControllerAttachedForTab webView=\(extensionRuntimeWebViewDescription(webView)) attached=\(attached) \(extensionRuntimeTabDescription(tab))"
+            )
+            if attached == false,
+               webViewNeedsExtensionRuntimeRebuild(webView, for: tab)
+            {
+                needsRebuild = true
+                break
             }
         }
 
@@ -627,7 +629,7 @@ extension ExtensionManager {
            let coordinator = browserManager?.webViewCoordinator
         {
             extensionRuntimeTrace(
-                "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) contentScriptRebind=\(tabNeedsExtensionContentScriptRebind(tab)) \(extensionRuntimeTabDescription(tab))"
+                "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) controllerMismatch=true contentScriptRebind=\(tabNeedsExtensionContentScriptRebind(tab)) \(extensionRuntimeTabDescription(tab))"
             )
             tab.resetExtensionRuntimeDocumentBindingForContentScriptRebind()
             coordinator.rebuildLiveWebViews(for: tab)

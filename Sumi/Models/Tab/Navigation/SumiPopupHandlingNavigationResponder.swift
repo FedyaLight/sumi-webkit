@@ -79,7 +79,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
               let browserManager = tab.browserManager
         else { return nil }
 
-        let sourceURL = navigationAction.sumiWebKitSourceURL
+        let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
         let requestURL = navigationAction.request.url
         let isExtensionOriginated = Tab.isExtensionOriginatedPopupNavigation(
             sourceURL: sourceURL,
@@ -110,6 +110,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                 from: webView,
                 with: configuration,
                 for: navigationAction,
+                windowFeatures: windowFeatures,
                 policy: policy,
                 isExtensionOriginated: isExtensionOriginated
             )
@@ -163,6 +164,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             from: webView,
             with: configuration,
             for: navigationAction,
+            windowFeatures: windowFeatures,
             policy: policy,
             isExtensionOriginated: isExtensionOriginated
         )
@@ -179,7 +181,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
               let browserManager = tab.browserManager
         else { return nil }
 
-        let sourceURL = navigationAction.sumiWebKitSourceURL
+        let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
         let requestURL = navigationAction.request.url
         let isExtensionOriginated = Tab.isExtensionOriginatedPopupNavigation(
             sourceURL: sourceURL,
@@ -210,6 +212,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                 from: webView,
                 with: configuration,
                 for: navigationAction,
+                windowFeatures: windowFeatures,
                 policy: policy,
                 isExtensionOriginated: isExtensionOriginated
             )
@@ -263,6 +266,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             from: webView,
             with: configuration,
             for: navigationAction,
+            windowFeatures: windowFeatures,
             policy: policy,
             isExtensionOriginated: isExtensionOriginated
         )
@@ -472,9 +476,10 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
     }
 
     private func createChildWebView(
-        from _: WKWebView,
+        from webView: WKWebView,
         with configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures,
         policy: SumiNewWindowPolicy,
         isExtensionOriginated: Bool
     ) -> WKWebView? {
@@ -489,6 +494,38 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
            let requestURL = navigationAction.request.url,
            isSumiInternalURL(requestURL) {
             return nil
+        }
+
+        let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
+        if let requestURL = navigationAction.request.url,
+           Tab.isExtensionOriginatedExternalPopupNavigation(
+               sourceURL: sourceURL,
+               requestURL: requestURL
+           )
+        {
+            let popupWebView = browserManager.auxiliaryWindowManager.presentExtensionExternalWebPopup(
+                configuration: configuration,
+                request: navigationAction.request,
+                windowFeatures: windowFeatures,
+                openerTab: tab,
+                shouldActivateApp: true,
+                extensionOwnedSourceURL: sourceURL
+            )
+            resetLinkGestureModifierState(for: tab)
+            return popupWebView
+        }
+
+        if policy.isPopup {
+            let popupWebView = browserManager.auxiliaryWindowManager.presentWebPopup(
+                configuration: configuration,
+                request: navigationAction.request,
+                windowFeatures: windowFeatures,
+                openerTab: tab,
+                isExtensionOriginated: isExtensionOriginated,
+                shouldActivateApp: true
+            )
+            resetLinkGestureModifierState(for: tab)
+            return popupWebView
         }
 
         if let profile = explicitPopupOpenerProfile(for: tab, browserManager: browserManager) {

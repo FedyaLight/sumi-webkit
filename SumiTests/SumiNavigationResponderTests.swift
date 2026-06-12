@@ -2086,6 +2086,66 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
     }
 
+    func testExtensionPopupExternalCreateWebViewOpensAuxiliaryMiniWindow() async throws {
+        let harness = makePopupFocusHarness()
+        let extensionPopupURL = URL(
+            string: "safari-web-extension://extension-id/popup.html"
+        )!
+        let targetURL = URL(string: "https://account.example/login")!
+        harness.sourceTab.url = extensionPopupURL
+
+        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let action = popupNavigationAction(
+            sourceURL: extensionPopupURL,
+            targetURL: targetURL,
+            webView: harness.sourceWebView
+        )
+
+        let childWebView = await responder.createWebViewAsync(
+            from: harness.sourceWebView,
+            with: WKWebViewConfiguration(),
+            for: action,
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNotNil(childWebView)
+        XCTAssertTrue(harness.browserManager.auxiliaryWindowManager.contains(webView: childWebView!))
+        let auxiliaryTab = harness.browserManager.tabManager.auxiliaryMiniWindowTabsByID.values.first
+        XCTAssertNotNil(auxiliaryTab)
+        XCTAssertTrue(auxiliaryTab?.isAuxiliaryMiniWindow == true)
+        XCTAssertFalse(auxiliaryTab?.isPopupHost == true)
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
+    func testExtensionPopupExternalCreateWebViewFallsBackToTabURLWhenSourceFrameMissing()
+        async throws
+    {
+        let harness = makePopupFocusHarness()
+        let extensionPopupURL = URL(
+            string: "safari-web-extension://extension-id/popup.html"
+        )!
+        let targetURL = URL(string: "https://account.example/login")!
+        harness.sourceTab.url = extensionPopupURL
+
+        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let action = popupNavigationAction(
+            sourceURL: nil,
+            targetURL: targetURL,
+            webView: harness.sourceWebView
+        )
+
+        let childWebView = await responder.createWebViewAsync(
+            from: harness.sourceWebView,
+            with: WKWebViewConfiguration(),
+            for: action,
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNotNil(childWebView)
+        XCTAssertTrue(harness.browserManager.auxiliaryWindowManager.contains(webView: childWebView!))
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
     func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() {
         let harness = makePopupFocusHarness()
         harness.sourceTab.recordWebViewInteraction(
@@ -2183,17 +2243,19 @@ final class SumiNavigationResponderTests: XCTestCase {
     }
 
     private func popupNavigationAction(
-        sourceURL: URL,
+        sourceURL: URL?,
         targetURL: URL,
         webView: WKWebView,
         modifierFlags: NSEvent.ModifierFlags = []
     ) -> WKNavigationAction {
-        let sourceFrame = SumiWKFrameInfoMock(
-            isMainFrame: true,
-            request: URLRequest(url: sourceURL),
-            securityOrigin: SumiWKSecurityOriginMock.new(url: sourceURL),
-            webView: webView
-        ).frameInfo
+        let sourceFrame = sourceURL.map {
+            SumiWKFrameInfoMock(
+                isMainFrame: true,
+                request: URLRequest(url: $0),
+                securityOrigin: SumiWKSecurityOriginMock.new(url: $0),
+                webView: webView
+            ).frameInfo
+        }
         let mock = SumiWKNavigationActionMock(
             sourceFrame: sourceFrame,
             targetFrame: nil,

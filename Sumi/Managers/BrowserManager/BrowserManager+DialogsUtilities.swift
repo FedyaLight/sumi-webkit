@@ -260,6 +260,7 @@ extension BrowserManager {
         )
         extensionsModule.closeAllOptionsWindowsIfLoaded()
         externalMiniWindowManager.closeAll()
+        auxiliaryWindowManager.closeAll(reason: .appQuit)
         glanceManager.dismissGlance(persistsWindowSession: false)
 
         var seenTabIDs = Set<UUID>()

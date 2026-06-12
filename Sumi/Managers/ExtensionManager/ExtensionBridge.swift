@@ -251,6 +251,185 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
 @available(macOS 15.5, *)
 @MainActor
+final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
+    let sessionId: UUID
+    let tabId: UUID
+
+    private weak var browserManager: BrowserManager?
+    private weak var extensionManager: ExtensionManager?
+    private weak var window: NSWindow?
+    private let isPrivateWindow: Bool
+    private let shouldActivateApp: Bool
+
+    init(
+        sessionId: UUID,
+        tabId: UUID,
+        window: NSWindow,
+        browserManager: BrowserManager,
+        extensionManager: ExtensionManager,
+        isPrivate: Bool,
+        shouldActivateApp: Bool
+    ) {
+        self.sessionId = sessionId
+        self.tabId = tabId
+        self.window = window
+        self.browserManager = browserManager
+        self.extensionManager = extensionManager
+        self.isPrivateWindow = isPrivate
+        self.shouldActivateApp = shouldActivateApp
+        super.init()
+    }
+
+    private var tab: Tab? {
+        browserManager?.tabManager.tab(for: tabId)
+    }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? ExtensionMiniWindowAdapter else { return false }
+        return other.sessionId == sessionId
+    }
+
+    override var hash: Int {
+        sessionId.hashValue
+    }
+
+    func tabs(for extensionContext: WKWebExtensionContext) -> [any WKWebExtensionTab] {
+        guard let extensionManager, let tab else { return [] }
+        guard extensionManager.isTabEligibleForCurrentExtensionRuntime(tab) else { return [] }
+        guard let adapter = extensionManager.stableAdapter(for: tab) else { return [] }
+        return [adapter]
+    }
+
+    func activeTab(for extensionContext: WKWebExtensionContext) -> (any WKWebExtensionTab)? {
+        tabs(for: extensionContext).first
+    }
+
+    func windowType(for extensionContext: WKWebExtensionContext) -> WKWebExtension.WindowType {
+        .popup
+    }
+
+    func windowState(for extensionContext: WKWebExtensionContext) -> WKWebExtension.WindowState {
+        guard let window else { return .normal }
+        if window.isMiniaturized { return .minimized }
+        if window.styleMask.contains(.fullScreen) { return .fullscreen }
+        return .normal
+    }
+
+    func isPrivate(for extensionContext: WKWebExtensionContext) -> Bool {
+        isPrivateWindow
+    }
+
+    func screenFrame(for extensionContext: WKWebExtensionContext) -> CGRect {
+        window?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+    }
+
+    func frame(for extensionContext: WKWebExtensionContext) -> CGRect {
+        window?.frame ?? .zero
+    }
+
+    func setWindowState(
+        _ windowState: WKWebExtension.WindowState,
+        for extensionContext: WKWebExtensionContext,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        guard let window else {
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .windowAdapterCompletion,
+                error: NSError(
+                    domain: "ExtensionMiniWindowAdapter",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Mini-window is no longer available"]
+                )
+            )
+            return
+        }
+
+        switch windowState {
+        case .minimized:
+            window.miniaturize(nil)
+        case .maximized:
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.zoom(nil)
+        case .fullscreen:
+            if !window.styleMask.contains(.fullScreen) {
+                window.toggleFullScreen(nil)
+            }
+        case .normal:
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            } else if window.styleMask.contains(.fullScreen) {
+                window.toggleFullScreen(nil)
+            }
+        @unknown default:
+            break
+        }
+
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
+    }
+
+    func setFrame(
+        _ frame: CGRect,
+        for extensionContext: WKWebExtensionContext,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        guard let window else {
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .windowAdapterCompletion,
+                error: NSError(
+                    domain: "ExtensionMiniWindowAdapter",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "Mini-window is no longer available"]
+                )
+            )
+            return
+        }
+
+        window.setFrame(frame, display: true)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
+    }
+
+    func focus(
+        for extensionContext: WKWebExtensionContext,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        if shouldActivateApp {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        window?.makeKeyAndOrderFront(nil)
+        browserManager?.auxiliaryWindowManager.focus(sessionID: sessionId)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
+    }
+
+    func close(
+        for extensionContext: WKWebExtensionContext,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        guard let browserManager,
+              let session = browserManager.auxiliaryWindowManager.session(for: sessionId)
+        else {
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .windowAdapterCompletion,
+                error: NSError(
+                    domain: "ExtensionMiniWindowAdapter",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Mini-window is no longer available"]
+                )
+            )
+            return
+        }
+
+        browserManager.auxiliaryWindowManager.teardown(for: session.webView, reason: .extensionRequestedClose)
+        ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
 final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     let tabId: UUID
 
@@ -475,6 +654,17 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             )
             return
         }
+
+        if let browserManager,
+           browserManager.tabManager.isAuxiliaryMiniWindowTab(tab),
+           let webView = tab.existingWebView,
+           browserManager.auxiliaryWindowManager.contains(webView: webView)
+        {
+            browserManager.auxiliaryWindowManager.teardown(for: webView, reason: .extensionRequestedClose)
+            ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
+            return
+        }
+
         tab.closeTab()
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
     }
@@ -583,7 +773,13 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     }
 
     func window(for extensionContext: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
-        guard eligibleTab() != nil else { return nil }
+        guard let tab = eligibleTab() else { return nil }
+        if browserManager?.tabManager.isAuxiliaryMiniWindowTab(tab) == true {
+            return extensionManager?.miniWindowAdapter(for: tab)
+        }
+        if let miniWindowAdapter = extensionManager?.miniWindowAdapter(for: tab) {
+            return miniWindowAdapter
+        }
         guard let windowId = resolvedWindowState()?.id else { return nil }
         return extensionManager?.windowAdapter(for: windowId)
     }

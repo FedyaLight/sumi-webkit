@@ -26,6 +26,33 @@ extension Tab {
     }
 
     @discardableResult
+    func createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
+        _ configuration: WKWebViewConfiguration,
+        currentURL: URL?,
+        isExtensionOriginated: Bool,
+        reason: String
+    ) -> WKWebView {
+        let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
+        _webView = webView
+
+        applyOwnedTabWebViewNavigationSetup(to: webView)
+        applyOwnedTabWebViewOwnershipBaseline(to: webView)
+        applyOwnedTabWebViewNavigationPreferences(to: webView)
+        SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
+        installRuntimeObservers(on: webView)
+
+        if isExtensionOriginated {
+            browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
+                webView,
+                currentURL: currentURL,
+                reason: reason
+            )
+        }
+
+        return webView
+    }
+
+    @discardableResult
     func createPopupWebViewFromWebKitConfiguration(
         _ configuration: WKWebViewConfiguration,
         currentURL: URL?,

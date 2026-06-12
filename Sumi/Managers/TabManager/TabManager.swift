@@ -59,6 +59,7 @@ class TabManager: ObservableObject {
     // Transient extension-owned tabs created for internal extension pages that
     // WebKit may close immediately during install/onboarding handshakes.
     var transientExtensionTabsByID: [UUID: Tab] = [:]
+    var auxiliaryMiniWindowTabsByID: [UUID: Tab] = [:]
     private var tabLookup: [UUID: Tab] = [:]
     private var transientTabLookupIDs: Set<UUID> = []
     private var attachedLiveTabIDs: Set<UUID> = []
@@ -372,6 +373,7 @@ class TabManager: ObservableObject {
             tabsBySpace.values.reduce(0) { $0 + $1.count }
                 + transientShortcutTabsByWindow.values.reduce(0) { $0 + $1.count }
                 + transientExtensionTabsByID.count
+                + auxiliaryMiniWindowTabsByID.count
         )
 
         for tabs in tabsBySpace.values {
@@ -386,6 +388,9 @@ class TabManager: ObservableObject {
             }
         }
         for tab in transientExtensionTabsByID.values {
+            updatedLookup[tab.id] = tab
+        }
+        for tab in auxiliaryMiniWindowTabsByID.values {
             updatedLookup[tab.id] = tab
         }
 
@@ -1132,6 +1137,56 @@ class TabManager: ObservableObject {
     }
 
     @discardableResult
+    func createAuxiliaryMiniWindowTab(
+        openerTab: Tab?,
+        profileId: UUID? = nil,
+        urlString: String? = nil,
+        webExtensionContextOverride: WKWebExtensionContext? = nil
+    ) -> Tab {
+        let blankURL = SumiSurface.emptyTabURL
+        let resolvedURL = urlString.flatMap { URL(string: $0) } ?? blankURL
+        let resolvedProfileId = profileId
+            ?? openerTab?.profileId
+            ?? openerTab?.resolveProfile()?.id
+            ?? browserManager?.currentProfile?.id
+
+        let tab = Tab(
+            url: resolvedURL,
+            name: "Popup",
+            favicon: "globe",
+            spaceId: openerTab?.spaceId,
+            index: -1,
+            browserManager: browserManager
+        )
+        tab.isAuxiliaryMiniWindow = true
+        tab.profileId = resolvedProfileId
+        tab.webExtensionContextOverride = webExtensionContextOverride
+        attach(tab)
+        auxiliaryMiniWindowTabsByID[tab.id] = tab
+        tabLookup[tab.id] = tab
+        return tab
+    }
+
+    func removeAuxiliaryMiniWindowTab(_ tab: Tab) {
+        auxiliaryMiniWindowTabsByID.removeValue(forKey: tab.id)
+        tabLookup.removeValue(forKey: tab.id)
+        browserManager?.compositorManager.unloadTab(tab)
+        browserManager?.webViewCoordinator?.removeAllWebViews(
+            for: tab,
+            closeActiveFullscreenMedia: true
+        )
+        detach(tab)
+        NotificationCenter.default.post(
+            name: .sumiTabLifecycleDidChange,
+            object: tab
+        )
+    }
+
+    func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool {
+        auxiliaryMiniWindowTabsByID[tab.id] != nil
+    }
+
+    @discardableResult
     func promoteTransientExtensionTab(
         _ tab: Tab,
         in space: Space? = nil,
@@ -1185,6 +1240,14 @@ class TabManager: ObservableObject {
                 transientTabLookupIDs.remove(id)
                 tabLookup.removeValue(forKey: id)
                 cleanupRemovedTransientExtensionTab(transientExtensionTab)
+                return
+            }
+
+            if auxiliaryMiniWindowTabsByID[id] != nil {
+                browserManager?.closeAuxiliaryMiniWindow(
+                    for: tab(for: id) ?? auxiliaryMiniWindowTabsByID[id]!,
+                    reason: .extensionRequestedClose
+                )
                 return
             }
 

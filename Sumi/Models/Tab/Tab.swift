@@ -115,6 +115,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var profileId: UUID?
     // If true, this tab is created to host a popup window; do not perform initial load.
     var isPopupHost: Bool = false
+    // If true, this tab hosts content in a compact auxiliary mini-window (not in sidebar).
+    var isAuxiliaryMiniWindow: Bool = false
 
     // Track the current click modifiers for native popup/link routing fallback.
     var clickModifierFlags: NSEvent.ModifierFlags = []
