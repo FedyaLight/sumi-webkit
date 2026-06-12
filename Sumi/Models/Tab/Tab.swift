@@ -294,6 +294,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.webViewConfigurationOverride }
         set { webViewRuntime.webViewConfigurationOverride = newValue }
     }
+    var webExtensionContextOverride: WKWebExtensionContext? {
+        get { webViewRuntime.webExtensionContextOverride }
+        set { webViewRuntime.webExtensionContextOverride = newValue }
+    }
 
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState? {
         get { webViewRuntime.protectionAppliedAttachmentState }

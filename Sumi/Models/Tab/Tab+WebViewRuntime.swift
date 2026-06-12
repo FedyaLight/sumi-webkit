@@ -214,20 +214,23 @@ extension Tab {
         beginSuspendedRestoreIfNeeded()
         let reusableExistingWebView = _existingWebView
         var didReuseExistingWebView = false
+        var didCreateAuxiliaryOverrideWebView = false
 
         guard let profile = resolveProfile() else {
             deferNormalTabWebViewCreationUntilProfileAvailable()
             return
         }
 
-        let auxiliaryOverrideConfiguration = webViewConfigurationOverride.map { override in
-            BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
-                from: override,
-                for: profile,
-                surface: .extensionOptions,
-                additionalUserScripts: override.userContentController.userScripts
-            )
-        }
+        let auxiliaryOverrideConfiguration =
+            webExtensionContextWebViewConfiguration(profile: profile)
+            ?? webViewConfigurationOverride.map { override in
+                BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
+                    from: override,
+                    for: profile,
+                    surface: .extensionOptions,
+                    additionalUserScripts: override.userContentController.userScripts
+                )
+            }
 
         if let existingWebView = reusableExistingWebView {
             if canReuseAsNormalTabWebView(existingWebView) {
@@ -255,6 +258,7 @@ extension Tab {
                 )
                 let newWebView = FocusableWKWebView(frame: .zero, configuration: auxiliaryOverrideConfiguration)
                 _webView = newWebView
+                didCreateAuxiliaryOverrideWebView = true
                 configureAuxiliaryOverrideWebView(newWebView, reason: "Tab.setupWebView")
             } else {
                 _webView = makeNormalTabWebView(reason: "Tab.setupWebView")
@@ -277,6 +281,15 @@ extension Tab {
         }
 
         registerNormalTabWithExtensionRuntimeIfNeeded(reason: "Tab.setupWebView")
+
+        if didCreateAuxiliaryOverrideWebView,
+           ExtensionUtils.isExtensionOwnedURL(url),
+           let webView = _webView
+        {
+            loadExtensionOwnedInitialURL(url, on: webView)
+            finishSuspendedRestoreIfNeeded()
+            return
+        }
 
         if !isPopupHost && _existingWebView == nil {
             if let controller = _webView?.configuration.userContentController.sumiNormalTabUserContentController {
@@ -329,6 +342,16 @@ extension Tab {
         finishSuspendedRestoreIfNeeded()
     }
 
+    private func loadExtensionOwnedInitialURL(_ targetURL: URL, on webView: WKWebView) {
+        var request = URLRequest(url: targetURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 30.0
+        performMainFrameNavigation(on: webView) { resolvedWebView in
+            resolvedWebView.load(request)
+        }
+        applyCachedFaviconOrPlaceholder(for: targetURL)
+    }
+
     func resolveProfile() -> Profile? {
         if let pid = profileId {
             if let windowState = browserManager?.windowRegistry?.windows.values.first(where: { window in
@@ -371,6 +394,21 @@ extension Tab {
             reason: "Tab.applyWebViewConfigurationOverride"
         )
         webViewConfigurationOverride = isolatedConfiguration
+    }
+
+    private func webExtensionContextWebViewConfiguration(
+        profile: Profile
+    ) -> WKWebViewConfiguration? {
+        guard let context = webExtensionContextOverride,
+              let configuration = context.webViewConfiguration
+        else { return nil }
+
+        browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            profileId: profile.id,
+            reason: "Tab.webExtensionContextWebViewConfiguration"
+        )
+        return configuration
     }
 
     private func normalTabWebViewConfiguration(reason: String) -> WKWebViewConfiguration? {

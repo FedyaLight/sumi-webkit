@@ -61,6 +61,13 @@ struct BrowserExtensionActionPopupRequestResult:
         diagnostics: []
     )
 
+    static let performedAction = BrowserExtensionActionPopupRequestResult(
+        opened: true,
+        blocker: nil,
+        message: "Extension action dispatched through WebKit.",
+        diagnostics: []
+    )
+
     static func blocked(
         _ blocker: BrowserExtensionActionPopupBlocker,
         message: String,

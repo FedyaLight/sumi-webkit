@@ -141,6 +141,7 @@ final class TabWebViewRuntime {
     var webView: WKWebView?
     var existingWebView: WKWebView?
     var webViewConfigurationOverride: WKWebViewConfiguration?
+    var webExtensionContextOverride: WKWebExtensionContext?
     var primaryWindowId: UUID?
     var isSuspended: Bool = false
     var lastSuspendedURL: URL?

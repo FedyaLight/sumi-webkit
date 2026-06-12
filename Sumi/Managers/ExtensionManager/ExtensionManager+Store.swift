@@ -324,6 +324,191 @@ extension ExtensionManager {
         return nil
     }
 
+    func storedExtensionPermissionDecision(
+        extensionId: String,
+        profileId: UUID,
+        targetKind: ExtensionPermissionTargetKind,
+        target: String
+    ) -> ExtensionStoredPermissionDecision? {
+        let key = extensionPermissionDecisionKey(
+            extensionId: extensionId,
+            profileId: profileId,
+            targetKind: targetKind,
+            target: target
+        )
+        var records = loadStoredExtensionPermissionDecisions()
+        guard let record = records[key] else { return nil }
+        if record.isExpired() {
+            records.removeValue(forKey: key)
+            saveStoredExtensionPermissionDecisions(records)
+            return nil
+        }
+        return record
+    }
+
+    func persistExtensionPermissionDecision(
+        extensionId: String,
+        profileId: UUID,
+        targetKind: ExtensionPermissionTargetKind,
+        target: String,
+        state: ExtensionStoredPermissionState,
+        expiresAt: Date?
+    ) {
+        let key = extensionPermissionDecisionKey(
+            extensionId: extensionId,
+            profileId: profileId,
+            targetKind: targetKind,
+            target: target
+        )
+        var records = loadStoredExtensionPermissionDecisions()
+        records[key] = ExtensionStoredPermissionDecision(
+            profileId: profileId.uuidString.lowercased(),
+            extensionId: extensionId,
+            targetKind: targetKind,
+            target: normalizedExtensionPermissionTarget(target, kind: targetKind),
+            state: state,
+            expiresAt: expiresAt,
+            updatedAt: Date()
+        )
+        saveStoredExtensionPermissionDecisions(records)
+    }
+
+    func applyStoredExtensionPermissionDecisions(
+        to extensionContext: WKWebExtensionContext,
+        extensionId: String,
+        profileId: UUID
+    ) {
+        var records = loadStoredExtensionPermissionDecisions()
+        var didDropExpired = false
+        let profileKey = profileId.uuidString.lowercased()
+
+        for (key, record) in records {
+            guard record.profileId == profileKey,
+                  record.extensionId == extensionId
+            else { continue }
+            if record.isExpired() {
+                records.removeValue(forKey: key)
+                didDropExpired = true
+                continue
+            }
+            applyStoredExtensionPermissionDecision(record, to: extensionContext)
+        }
+
+        if didDropExpired {
+            saveStoredExtensionPermissionDecisions(records)
+        }
+    }
+
+    func permissionPromptDedupeKey(
+        extensionContext: WKWebExtensionContext,
+        targets: [String]
+    ) -> String {
+        let profileKey = profileId(for: extensionContext)?.uuidString.lowercased()
+            ?? "unknown-profile"
+        let extensionKey = extensionID(for: extensionContext)
+            ?? extensionContext.uniqueIdentifier
+        let targetKey = targets
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { $0.isEmpty == false }
+            .sorted()
+            .joined(separator: ",")
+        return "\(profileKey)|\(extensionKey)|\(targetKey)"
+    }
+
+    func hostMatchPatternString(for url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = url.host?.lowercased(),
+              host.isEmpty == false
+        else {
+            return nil
+        }
+        return "\(scheme)://\(host)/*"
+    }
+
+    private func applyStoredExtensionPermissionDecision(
+        _ record: ExtensionStoredPermissionDecision,
+        to extensionContext: WKWebExtensionContext
+    ) {
+        let status: WKWebExtensionContext.PermissionStatus =
+            record.state == .allowed ? .grantedExplicitly : .deniedExplicitly
+
+        switch record.targetKind {
+        case .permission:
+            let permission = WKWebExtension.Permission(rawValue: record.target)
+            extensionContext.setPermissionStatus(
+                status,
+                for: permission,
+                expirationDate: record.expiresAt
+            )
+        case .matchPattern:
+            guard let matchPattern = try? WKWebExtension.MatchPattern(
+                string: record.target
+            ) else { return }
+            extensionContext.setPermissionStatus(
+                status,
+                for: matchPattern,
+                expirationDate: record.expiresAt
+            )
+        }
+    }
+
+    private func extensionPermissionDecisionKey(
+        extensionId: String,
+        profileId: UUID,
+        targetKind: ExtensionPermissionTargetKind,
+        target: String
+    ) -> String {
+        [
+            profileId.uuidString.lowercased(),
+            extensionId,
+            targetKind.rawValue,
+            normalizedExtensionPermissionTarget(target, kind: targetKind),
+        ].joined(separator: "|")
+    }
+
+    private func normalizedExtensionPermissionTarget(
+        _ target: String,
+        kind: ExtensionPermissionTargetKind
+    ) -> String {
+        let trimmed = target.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch kind {
+        case .permission:
+            return trimmed
+        case .matchPattern:
+            guard let matchPattern = try? WKWebExtension.MatchPattern(string: trimmed) else {
+                return trimmed
+            }
+            return matchPattern.string
+        }
+    }
+
+    private func loadStoredExtensionPermissionDecisions()
+        -> [String: ExtensionStoredPermissionDecision]
+    {
+        guard let data = UserDefaults.standard.data(
+            forKey: Self.extensionPermissionDecisionsStorageKey
+        ),
+              let decoded = try? JSONDecoder().decode(
+                  [String: ExtensionStoredPermissionDecision].self,
+                  from: data
+              )
+        else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private func saveStoredExtensionPermissionDecisions(
+        _ decisions: [String: ExtensionStoredPermissionDecision]
+    ) {
+        guard let data = try? JSONEncoder().encode(decisions) else { return }
+        UserDefaults.standard.set(
+            data,
+            forKey: Self.extensionPermissionDecisionsStorageKey
+        )
+    }
+
     func computeOptionsPageURL(
         for extensionContext: WKWebExtensionContext
     ) -> URL? {

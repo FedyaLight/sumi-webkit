@@ -27,6 +27,7 @@ final class BrowserWebViewRoutingService {
 
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
         guard let tab = tabLookup(tabId) else { return }
+        guard ExtensionUtils.isExtensionOwnedURL(tab.url) == false else { return }
         guard let coordinator = coordinatorLookup() else {
             preconditionFailure(
                 "[WebViewRoutingService] syncTabAcrossWindows: WebViewCoordinator is nil (tab \(tabId))."

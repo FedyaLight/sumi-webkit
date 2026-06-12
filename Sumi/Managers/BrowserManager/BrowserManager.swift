@@ -640,7 +640,10 @@ class BrowserManager: ObservableObject {
     }
 
     func canMaterializeNormalTabWebViewDuringStartup(_ tab: Tab) -> Bool {
-        !tab.requiresPrimaryWebView || !shouldDeferNormalTabMaterializationDuringStartup
+        if ExtensionUtils.isExtensionOwnedURL(tab.url) || tab.webExtensionContextOverride != nil {
+            return true
+        }
+        return !tab.requiresPrimaryWebView || !shouldDeferNormalTabMaterializationDuringStartup
     }
 
     enum ProfileSwitchContext {

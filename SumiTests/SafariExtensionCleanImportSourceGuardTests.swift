@@ -22,6 +22,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppResolver.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionURLSchemeCompatibility.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionsOriginsCompatibility.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -278,6 +279,10 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
     func testLazyRuntimeDoesNotEagerlyLoadAllExtensions() throws {
         let profilesSource = try source(named: extensionManagerPaths[5])
         let uiSource = try source(named: extensionManagerPaths[4])
+        let managerSource = try source(named: extensionManagerPaths[3])
+        let installationSource = try source(named: extensionManagerPaths[0])
+        let controllerDelegateSource = try source(named: extensionManagerPaths[7])
+        let storeSource = try source(named: extensionManagerPaths[17])
 
         XCTAssertTrue(profilesSource.contains("if forceReload {"))
         XCTAssertFalse(
@@ -287,6 +292,37 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         XCTAssertFalse(
             uiSource.contains("await ensureEnabledExtensionsLoaded(for: tabProfileId)"),
             "Action popup must not eagerly load every enabled extension"
+        )
+        XCTAssertFalse(
+            profilesSource.contains("scheduleExtensionBackgroundWakeForNavigationIfNeeded"),
+            "Ordinary navigation must not wake extension backgrounds just to inject content scripts"
+        )
+        XCTAssertFalse(
+            managerSource.contains("case reload"),
+            "Background wake reasons should be explicit lifecycle/API events, not ordinary reloads"
+        )
+        XCTAssertTrue(
+            installationSource.contains("postLoadBackgroundWakeReason"),
+            "Existing-extension context loads must make background wake opt-in"
+        )
+        XCTAssertTrue(
+            installationSource.contains("requiredMatchPatterns.union(webExtension.optionalPermissionMatchPatterns)")
+                && installationSource.contains(": requiredMatchPatterns"),
+            "Production context load should auto-grant required host/content-script match patterns while keeping optional host patterns prompt-controlled"
+        )
+        XCTAssertTrue(
+            controllerDelegateSource.contains("promptForExtensionPermissionDecision")
+                && controllerDelegateSource.contains("promptForPermissionToAccess")
+                && controllerDelegateSource.contains("promptForPermissionMatchPatterns")
+                && controllerDelegateSource.contains("extensionPermissionPromptQueue")
+                && controllerDelegateSource.contains("extensionPermissionPromptWaitersByKey"),
+            "Safari/WebExtension host access requests must go through a serialized, deduplicated user permission prompt"
+        )
+        XCTAssertTrue(
+            storeSource.contains("extensionPermissionDecisionsStorageKey")
+                && storeSource.contains("applyStoredExtensionPermissionDecisions")
+                && storeSource.contains("hostMatchPatternString"),
+            "Explicit WebExtension permission decisions must be persisted profile-scope and restored without storing full page URLs"
         )
     }
 
@@ -319,6 +355,82 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
                 "sumi_webkit_runtime_compat",
             ],
             context: "Raindrop import/rescan"
+        )
+    }
+
+    func testExtensionOwnedPagesAreRuntimeOwnedNotSessionRestored() throws {
+        let utilsSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionUtils.swift"
+        )
+        let persistenceSource = try source(
+            named: "Sumi/Managers/TabManager/TabManager+Persistence.swift"
+        )
+        let restoreSource = try source(
+            named: "Sumi/Managers/TabManager/TabRestoreLoader.swift"
+        )
+        let tabUIDelegateSource = try source(
+            named: "Sumi/Models/Tab/Tab+UIDelegate.swift"
+        )
+        let tabRuntimeSource = try source(
+            named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift"
+        )
+        let routingSource = try source(
+            named: "Sumi/Services/BrowserWebViewRoutingService.swift"
+        )
+        let uiSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
+        )
+        let browserManagerSource = try source(
+            named: "Sumi/Managers/BrowserManager/BrowserManager.swift"
+        )
+        let delegateSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
+        )
+        let profilesSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift"
+        )
+
+        XCTAssertTrue(utilsSource.contains("extensionOwnedURLSchemes"))
+        XCTAssertTrue(utilsSource.contains("\"webkit-extension\""))
+        XCTAssertTrue(utilsSource.contains("\"safari-web-extension\""))
+        XCTAssertTrue(
+            persistenceSource.contains("ExtensionUtils.isExtensionOwnedURL(tab.url) == false"),
+            "Regular tab persistence must exclude extension-owned pages generically"
+        )
+        XCTAssertTrue(
+            restoreSource.contains("removed extension-owned restored tab"),
+            "Startup restore must repair stale extension-owned regular tabs"
+        )
+        XCTAssertFalse(
+            tabUIDelegateSource.contains("let extensionSchemes"),
+            "Popup navigation should use the shared extension-owned URL predicate"
+        )
+        XCTAssertTrue(
+            tabRuntimeSource.contains("webExtensionContextOverride"),
+            "Extension-created pages must keep their WKWebExtensionContext until WebView creation"
+        )
+        XCTAssertTrue(
+            routingSource.contains("ExtensionUtils.isExtensionOwnedURL(tab.url) == false"),
+            "Runtime-owned extension pages must not enter ordinary cross-window tab sync"
+        )
+        XCTAssertTrue(
+            browserManagerSource.contains(
+                "ExtensionUtils.isExtensionOwnedURL(tab.url) || tab.webExtensionContextOverride != nil"
+            ),
+            "Startup materialization deferral must not discard runtime-owned extension pages"
+        )
+        XCTAssertTrue(
+            delegateSource.contains("materializeExtensionOwnedTabIfNeeded"),
+            "Background extension-created internal tabs must be materialized through the extension context"
+        )
+        XCTAssertFalse(
+            profilesSource.contains("extensionContext.webViewConfiguration"),
+            "Pre-load runtime context preparation must not consume or mutate WebKit's extension page configuration"
+        )
+        XCTAssertTrue(
+            uiSource.contains("sdkResolvedURL")
+                && uiSource.contains("extensionContext.webViewConfiguration"),
+            "Options pages should prefer WebKit/context URLs and context-bound WebView configuration"
         )
     }
 

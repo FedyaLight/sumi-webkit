@@ -22,6 +22,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         "\(SumiAppIdentity.bundleIdentifier).extensions.orphanedPackageCleanup.lastRunAt"
     nonisolated static let orphanedExtensionCleanupInterval: TimeInterval =
         24 * 60 * 60
+    nonisolated static let extensionPermissionDecisionsStorageKey =
+        "\(SumiAppIdentity.bundleIdentifier).extensions.permissionDecisions.v1"
     #if DEBUG
         nonisolated static let testControllerIdentifiersDefaultsKey =
             "\(SumiAppIdentity.bundleIdentifier).tests.WKWebExtensionController.Identifiers"
@@ -31,11 +33,6 @@ final class ExtensionManager: NSObject, ObservableObject {
             }
         }()
     #endif
-    nonisolated static let extensionSchemes: Set<String> = [
-        "webkit-extension",
-        "safari-web-extension",
-    ]
-
     @Published var installedExtensions: [InstalledExtension] = []
     @Published var actionStatesByExtensionID:
         [String: BrowserExtensionActionSurfaceState] = [:]
@@ -53,7 +50,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         case actionPopup
         case toolbarAction
         case nativeMessaging
-        case reload
     }
 
     enum BackgroundRuntimeState: String, Codable, CaseIterable {
@@ -90,6 +86,36 @@ final class ExtensionManager: NSObject, ObservableObject {
         case refresh
         case extensionAction
         case resetReload
+    }
+
+    enum ExtensionPermissionPromptDecision {
+        case allow(expirationDate: Date?)
+        case deny
+    }
+
+    enum ExtensionPermissionTargetKind: String, Codable {
+        case permission
+        case matchPattern
+    }
+
+    enum ExtensionStoredPermissionState: String, Codable {
+        case allowed
+        case denied
+    }
+
+    struct ExtensionStoredPermissionDecision: Codable, Equatable {
+        var profileId: String
+        var extensionId: String
+        var targetKind: ExtensionPermissionTargetKind
+        var target: String
+        var state: ExtensionStoredPermissionState
+        var expiresAt: Date?
+        var updatedAt: Date
+
+        func isExpired(now: Date = Date()) -> Bool {
+            guard let expiresAt else { return false }
+            return expiresAt <= now
+        }
     }
 
     let context: ModelContext
@@ -160,6 +186,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     var tabOpenNotificationGeneration: UInt64 = 1
     var extensionContextBindingGenerationByProfile: [UUID: UInt64] = [:]
     var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
+    var extensionPermissionPromptQueue: [@MainActor () -> Void] = []
+    var isPresentingExtensionPermissionPrompt = false
+    var extensionPermissionPromptWaitersByKey:
+        [String: [CheckedContinuation<ExtensionPermissionPromptDecision, Never>]] = [:]
     var permissionsOriginsCompatibilityInstallations:
         [ObjectIdentifier: Set<String>] = [:]
     var urlSchemeCompatibilityInstallations:
@@ -368,8 +398,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     nonisolated static func isExtensionOwnedURL(_ url: URL?) -> Bool {
-        guard let scheme = url?.scheme?.lowercased() else { return false }
-        return extensionSchemes.contains(scheme)
+        ExtensionUtils.isExtensionOwnedURL(url)
     }
 
     func extensionRuntimeTrace(

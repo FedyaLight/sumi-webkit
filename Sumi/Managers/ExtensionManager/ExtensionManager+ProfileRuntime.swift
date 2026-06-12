@@ -401,10 +401,12 @@ extension ExtensionManager {
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.contentScriptContextLoadTasksByProfile.removeValue(forKey: profileId) }
+            guard Task.isCancelled == false else { return }
 
             for entity in self.enabledPersistedExtensionEntities()
                 where entity.isEnabled && entity.hasContentScripts
             {
+                guard Task.isCancelled == false else { return }
                 _ = try? await self.ensureExtensionLoaded(
                     extensionId: entity.id,
                     profileId: profileId

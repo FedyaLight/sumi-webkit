@@ -142,6 +142,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             scratchDirectory: scratchDirectory
         )
         _ = try await manager.enableExtension(installed.id)
+        await manager.ensureContentScriptContextsLoaded(for: profile.id)
         manager.extensionsLoaded = true
 
         let tab = browserManager.tabManager.createNewTab(

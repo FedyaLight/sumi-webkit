@@ -484,6 +484,10 @@ actor TabRestoreLoader {
                 fallback: raw.urlString,
                 repairReasons: &repairReasons
             )
+            guard ExtensionUtils.isExtensionOwnedURL(url) == false else {
+                repairReasons.insert("removed extension-owned restored tab")
+                continue
+            }
             regularTabsBySpace[spaceId, default: []].append(
                 TabRestoreTabDTO(
                     id: raw.id,

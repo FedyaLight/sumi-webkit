@@ -33,6 +33,160 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertNil(try fetchTab(tab.id, in: context))
     }
 
+    func testFullReconcileDoesNotPersistExtensionOwnedRegularTabs() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Work", profileId: UUID())
+        let normalTab = tabManager.createNewTab(
+            url: "https://example.com/keep",
+            in: space,
+            activate: false
+        )
+        let extensionTab = tabManager.createNewTab(
+            url: "webkit-extension://extension-id/app/app.html#/page/welcome",
+            in: space,
+            activate: true
+        )
+
+        XCTAssertEqual(tabManager.currentTab?.id, extensionTab.id)
+
+        let didPersist = await tabManager.persistFullReconcileAwaitingResult(
+            reason: "extension-owned tabs are runtime-owned"
+        )
+
+        XCTAssertTrue(didPersist)
+        let context = ModelContext(container)
+        XCTAssertNotNil(try fetchTab(normalTab.id, in: context))
+        XCTAssertNil(try fetchTab(extensionTab.id, in: context))
+        let state = try XCTUnwrap(context.fetch(FetchDescriptor<TabsStateEntity>()).first)
+        XCTAssertNil(state.currentTabID)
+        XCTAssertEqual(state.currentSpaceID, space.id)
+    }
+
+    func testIncrementalPersistenceDeletesRegularTabThatBecomesExtensionOwned() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Work", profileId: UUID())
+        let tab = tabManager.createNewTab(
+            url: "https://example.com/start",
+            in: space,
+            activate: true
+        )
+
+        try await waitForStore(in: container) { context in
+            guard let storedTab = try fetchTab(tab.id, in: context),
+                  let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first
+            else {
+                return false
+            }
+            return storedTab.urlString == "https://example.com/start"
+                && state.currentTabID == tab.id
+                && state.currentSpaceID == space.id
+        }
+
+        tab.url = try XCTUnwrap(
+            URL(string: "webkit-extension://extension-id/app/app.html#/page/migration")
+        )
+        tab.name = "Migration"
+
+        tabManager.scheduleRuntimeStatePersistence(for: tab)
+        let flushedCount = await tabManager.flushRuntimeStatePersistenceAwaitingResult()
+
+        XCTAssertEqual(flushedCount, 0)
+        var context = ModelContext(container)
+        XCTAssertEqual(try fetchTab(tab.id, in: context)?.urlString, "https://example.com/start")
+
+        tabManager.markRegularTabsStructurallyDirty(for: space.id)
+        tabManager.scheduleStructuralPersistence()
+
+        try await waitForStore(in: container) { context in
+            let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first
+            return try fetchTab(tab.id, in: context) == nil
+                && state?.currentTabID == nil
+                && state?.currentSpaceID == space.id
+        }
+
+        context = ModelContext(container)
+        XCTAssertNil(try fetchTab(tab.id, in: context))
+        let state = try XCTUnwrap(context.fetch(FetchDescriptor<TabsStateEntity>()).first)
+        XCTAssertNil(state.currentTabID)
+        XCTAssertEqual(state.currentSpaceID, space.id)
+    }
+
+    func testStartupRestoreRemovesPersistedExtensionOwnedRegularTabs() async throws {
+        let container = try makeInMemoryContainer()
+        let profileId = UUID()
+        let spaceId = UUID()
+        let normalTabId = UUID()
+        let webKitExtensionTabId = UUID()
+        let safariExtensionTabId = UUID()
+
+        let mutationContext = ModelContext(container)
+        mutationContext.insert(
+            SpaceEntity(
+                id: spaceId,
+                name: "Work",
+                icon: "square.grid.2x2",
+                index: 0,
+                profileId: profileId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: webKitExtensionTabId,
+                urlString: "webkit-extension://extension-id/app/app.html#/page/migration",
+                name: "Migration",
+                isPinned: false,
+                index: 0,
+                spaceId: spaceId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: normalTabId,
+                urlString: "https://example.com/keep",
+                name: "Keep",
+                isPinned: false,
+                index: 1,
+                spaceId: spaceId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: safariExtensionTabId,
+                urlString: "safari-web-extension://extension-id/app/app.html#/page/welcome",
+                name: "Welcome",
+                isPinned: false,
+                index: 2,
+                spaceId: spaceId
+            )
+        )
+        mutationContext.insert(
+            TabsStateEntity(
+                currentTabID: safariExtensionTabId,
+                currentSpaceID: spaceId
+            )
+        )
+        try mutationContext.save()
+
+        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let didLoad = await tabManager.loadFromStoreAwaitingResult()
+
+        XCTAssertTrue(didLoad)
+        XCTAssertEqual(tabManager.tabsBySpace[spaceId]?.map(\.id), [normalTabId])
+        XCTAssertEqual(tabManager.currentSpace?.id, spaceId)
+        XCTAssertEqual(tabManager.currentTab?.id, normalTabId)
+
+        try await waitForStore(in: container) { context in
+            let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first
+            return try fetchTab(webKitExtensionTabId, in: context) == nil
+                && fetchTab(safariExtensionTabId, in: context) == nil
+                && fetchTab(normalTabId, in: context) != nil
+                && state?.currentTabID == normalTabId
+                && state?.currentSpaceID == spaceId
+        }
+    }
+
     func testIncrementalFolderRelationshipPersistence() async throws {
         let container = try makeInMemoryContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)

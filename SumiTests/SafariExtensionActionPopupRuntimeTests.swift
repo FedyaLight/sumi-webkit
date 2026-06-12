@@ -36,6 +36,17 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             "Action popup must lazily load only the selected extension context"
         )
         XCTAssertFalse(
+            uiSource.contains("guard installedExtension.defaultPopupPath != nil"),
+            "Action click dispatch must not require action.default_popup; extensions can handle the click in background"
+        )
+        XCTAssertTrue(
+            uiSource.contains("prepareActionClickPageAccess")
+                && uiSource.contains("promptForExtensionPermissionDecision")
+                && uiSource.contains("extensionContext.performAction(for: adapter)")
+                && uiSource.contains("action.presentsPopup ? .openedPopup : .performedAction"),
+            "Action clicks must prepare user-gesture page access, then dispatch WebKit's action whether it opens a popup or background event"
+        )
+        XCTAssertFalse(
             uiSource.contains("await ensureEnabledExtensionsLoaded(for: tabProfileId)"),
             "Action popup must not eagerly load every enabled extension for the profile"
         )

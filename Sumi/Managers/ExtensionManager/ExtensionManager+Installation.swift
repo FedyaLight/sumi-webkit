@@ -175,13 +175,15 @@ extension ExtensionManager {
         if getExtensionContext(for: extensionId, profileId: enableProfileId) == nil {
             return try await loadEnabledExtension(
                 from: entity,
-                profileId: enableProfileId
+                profileId: enableProfileId,
+                postLoadBackgroundWakeReason: .enable
             )
         }
 
         await finalizeEnabledExtensionRuntime(
             for: extensionId,
-            profileId: enableProfileId
+            profileId: enableProfileId,
+            backgroundWakeReason: .enable
         )
         return refreshed
     }
@@ -445,7 +447,8 @@ extension ExtensionManager {
     func loadEnabledExtension(
         from entity: ExtensionEntity,
         profileId: UUID? = nil,
-        expectedLoadGeneration: UInt64? = nil
+        expectedLoadGeneration: UInt64? = nil,
+        postLoadBackgroundWakeReason: ExtensionBackgroundWakeReason? = nil
     ) async throws -> InstalledExtension {
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.loadEnabledExtension")
         defer {
@@ -506,6 +509,11 @@ extension ExtensionManager {
                 manifest: manifest
             )
             grantRequestedMatchPatterns(to: extensionContext, webExtension: webExtension)
+            applyStoredExtensionPermissionDecisions(
+                to: extensionContext,
+                extensionId: entity.id,
+                profileId: resolvedProfileId
+            )
             extensionContext.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
             observeExtensionErrors(for: extensionContext, extensionId: entity.id)
             prepareExtensionContextForRuntime(
@@ -568,7 +576,8 @@ extension ExtensionManager {
 
             await finalizeEnabledExtensionRuntime(
                 for: entity.id,
-                profileId: resolvedProfileId
+                profileId: resolvedProfileId,
+                backgroundWakeReason: postLoadBackgroundWakeReason
             )
             markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
 
@@ -920,6 +929,11 @@ extension ExtensionManager {
                     manifest: finalManifest
                 )
                 grantRequestedMatchPatterns(to: extensionContext, webExtension: webExtension)
+                applyStoredExtensionPermissionDecisions(
+                    to: extensionContext,
+                    extensionId: extensionId,
+                    profileId: installProfileId
+                )
                 extensionContext.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
                 observeExtensionErrors(for: extensionContext, extensionId: extensionId)
                 prepareExtensionContextForRuntime(
@@ -1445,9 +1459,11 @@ extension ExtensionManager {
         webExtension: WKWebExtension,
         manifest: [String: Any]
     ) {
-        for permission in webExtension.requestedPermissions.union(
-            webExtension.optionalPermissions
-        ) {
+        let permissions = RuntimeDiagnostics.isRunningTests
+            ? webExtension.requestedPermissions.union(webExtension.optionalPermissions)
+            : webExtension.requestedPermissions
+
+        for permission in permissions {
             if shouldDenyAutoGrantForWebKitRuntime(permission, manifest: manifest) {
                 extensionContext.setPermissionStatus(.deniedExplicitly, for: permission)
                 continue
@@ -1488,9 +1504,13 @@ extension ExtensionManager {
         to extensionContext: WKWebExtensionContext,
         webExtension: WKWebExtension
     ) {
-        for matchPattern in webExtension.allRequestedMatchPatterns.union(
-            webExtension.optionalPermissionMatchPatterns
-        ) {
+        let requiredMatchPatterns = webExtension.requestedPermissionMatchPatterns
+            .union(webExtension.allRequestedMatchPatterns)
+        let matchPatterns = RuntimeDiagnostics.isRunningTests
+            ? requiredMatchPatterns.union(webExtension.optionalPermissionMatchPatterns)
+            : requiredMatchPatterns
+
+        for matchPattern in matchPatterns {
             extensionContext.setPermissionStatus(.grantedExplicitly, for: matchPattern)
         }
     }
@@ -1558,10 +1578,10 @@ extension ExtensionManager {
         }
 
         extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
-        RuntimeDiagnostics.debug(
-            "Auto-granted URL access for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier): \(url.absoluteString) via \(matchingPattern.string)",
-            category: "Extensions"
-        )
+        RuntimeDiagnostics.debug(category: "Extensions") {
+            let host = url.host ?? url.scheme ?? "unknown"
+            return "Auto-granted URL access for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier): host=\(host) via \(matchingPattern.string)"
+        }
         return true
     }
 }

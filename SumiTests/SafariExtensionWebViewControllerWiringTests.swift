@@ -277,6 +277,650 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
+    func testExtensionRequestedInternalTabUsesContextConfigurationAndStaysRuntimeOwned() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Extension Page Profile")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _ in manager }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        manager.attach(browserManager: browserManager)
+        XCTAssertIdentical(extensionsModule.managerIfEnabled(), manager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ExtensionRequestedPage"
+        )
+        _ = try await manager.enableExtension(installed.id)
+
+        let loadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let extensionContext = try XCTUnwrap(loadedContext)
+        let controller = try XCTUnwrap(
+            manager.extensionControllersByProfile[profile.id]
+        )
+        let extensionURL = extensionContext.baseURL
+            .appendingPathComponent("popup.html")
+
+        let tab = try manager.openExtensionRequestedTab(
+            url: extensionURL,
+            shouldBeActive: true,
+            shouldBePinned: false,
+            requestedWindow: nil,
+            controller: controller,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertEqual(tab.url, extensionURL)
+        XCTAssertEqual(tab.spaceId, space.id)
+        XCTAssertIdentical(
+            tab.webExtensionContextOverride,
+            extensionContext,
+            "Extension-created internal tabs must keep the matching context for WebKit page configuration"
+        )
+        XCTAssertFalse(
+            browserManager.tabManager.shouldPersistRegularTab(tab),
+            "Extension-created internal tabs are runtime-owned, not browser session tabs"
+        )
+        XCTAssertNil(browserManager.tabManager.persistableCurrentTabID())
+    }
+
+    func testExtensionRequestedBackgroundInternalTabMaterializesWithContext() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Background Extension Page Profile")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _ in manager }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        manager.attach(browserManager: browserManager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ExtensionRequestedBackgroundPage"
+        )
+        _ = try await manager.enableExtension(installed.id)
+
+        let loadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let extensionContext = try XCTUnwrap(loadedContext)
+        let controller = try XCTUnwrap(
+            manager.extensionControllersByProfile[profile.id]
+        )
+        let extensionURL = extensionContext.baseURL
+            .appendingPathComponent("popup.html")
+
+        let tab = try manager.openExtensionRequestedTab(
+            url: extensionURL,
+            shouldBeActive: false,
+            shouldBePinned: false,
+            requestedWindow: nil,
+            controller: controller,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertIdentical(tab.webExtensionContextOverride, extensionContext)
+        XCTAssertTrue(browserManager.tabManager.isTransientExtensionTab(tab))
+        XCTAssertIdentical(browserManager.tabManager.tab(for: tab.id), tab)
+        XCTAssertFalse(
+            browserManager.tabManager.tabsBySpace[space.id]?.contains(where: { $0.id == tab.id }) ?? false,
+            "Inactive internal extension pages should not appear in the visible regular tab list"
+        )
+        XCTAssertFalse(
+            tab.isUnloaded,
+            "Background extension-created internal tabs must not stay browser-discarded"
+        )
+        let webView = try XCTUnwrap(tab.existingWebView)
+        XCTAssertIdentical(webView.configuration.webExtensionController, controller)
+
+        let metrics = try await pollExtensionRenderMetrics(in: webView)
+        XCTAssertTrue(metrics.loadedFromExtensionScheme, metrics.debugSummary)
+        XCTAssertEqual(metrics.readyState, "complete", metrics.debugSummary)
+        XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)
+        XCTAssertGreaterThan(metrics.scriptCount, 0, metrics.debugSummary)
+        XCTAssertEqual(metrics.marker, "rendered", metrics.debugSummary)
+        XCTAssertFalse(browserManager.tabManager.shouldPersistRegularTab(tab))
+
+        let adapter = try XCTUnwrap(manager.stableAdapter(for: tab))
+        let closed = expectation(description: "transient extension tab closed")
+        var closeError: Error?
+        adapter.close(for: extensionContext) { error in
+            closeError = error
+            closed.fulfill()
+        }
+        await fulfillment(of: [closed], timeout: 1.0)
+        XCTAssertNil(closeError)
+        XCTAssertNil(browserManager.tabManager.tab(for: tab.id))
+        XCTAssertFalse(browserManager.tabManager.isTransientExtensionTab(tab))
+        XCTAssertFalse(
+            browserManager.tabManager.tabsBySpace[space.id]?.contains(where: { $0.id == tab.id }) ?? false
+        )
+    }
+
+    func testExtensionRequestedSafariPublicURLUsesLoadableWebKitContext() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Extension Page Profile")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _ in manager }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        _ = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        manager.attach(browserManager: browserManager)
+        XCTAssertIdentical(extensionsModule.managerIfEnabled(), manager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ExtensionRequestedPublicURLPage"
+        )
+        _ = try await manager.enableExtension(installed.id)
+
+        let loadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let extensionContext = try XCTUnwrap(loadedContext)
+        let controller = try XCTUnwrap(
+            manager.extensionControllersByProfile[profile.id]
+        )
+        let loadableURL = extensionContext.baseURL
+            .appendingPathComponent("popup.html")
+        let publicURL = try XCTUnwrap(
+            URL(string: loadableURL.absoluteString.replacingOccurrences(
+                of: "webkit-extension://",
+                with: "safari-web-extension://"
+            ))
+        )
+
+        let tab = try manager.openExtensionRequestedTab(
+            url: publicURL,
+            shouldBeActive: true,
+            shouldBePinned: false,
+            requestedWindow: nil,
+            controller: controller,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertEqual(tab.url, loadableURL)
+        XCTAssertIdentical(controller.extensionContext(for: tab.url), extensionContext)
+        XCTAssertIdentical(
+            tab.webExtensionContextOverride,
+            extensionContext,
+            "Safari-public extension URLs must be loaded through the matching WebKit context"
+        )
+        XCTAssertFalse(browserManager.tabManager.shouldPersistRegularTab(tab))
+    }
+
+    func testExtensionRequestedWindowTabUsesContextConfigurationAndRuntimeLifecycle() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Extension Window Profile")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _ in manager }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        manager.attach(browserManager: browserManager)
+        XCTAssertIdentical(extensionsModule.managerIfEnabled(), manager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ExtensionRequestedWindowPage"
+        )
+        _ = try await manager.enableExtension(installed.id)
+
+        let loadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let extensionContext = try XCTUnwrap(loadedContext)
+        let controller = try XCTUnwrap(
+            manager.extensionControllersByProfile[profile.id]
+        )
+        let loadableURL = extensionContext.baseURL
+            .appendingPathComponent("popup.html")
+        let publicURL = try XCTUnwrap(
+            URL(string: loadableURL.absoluteString.replacingOccurrences(
+                of: "webkit-extension://",
+                with: "safari-web-extension://"
+            ))
+        )
+
+        var openedTabIDs: [UUID] = []
+        manager.testHooks.didOpenTab = { openedTabIDs.append($0) }
+        let openedWindow = expectation(description: "extension window opened")
+        var completionWindow: (any WKWebExtensionWindow)?
+        var completionError: (any Error)?
+
+        manager.openExtensionWindowUsingTabURLs(
+            [publicURL],
+            controller: controller,
+            createWindow: {
+                let windowState = BrowserWindowState()
+                windowState.currentProfileId = profile.id
+                windowState.currentSpaceId = space.id
+                windowRegistry.register(windowState)
+                windowRegistry.setActive(windowState)
+            },
+            awaitWindowRegistration: { existingWindowIDs in
+                await windowRegistry.awaitNextRegisteredWindow(
+                    excluding: existingWindowIDs
+                )
+            },
+            completionHandler: { window, error in
+                completionWindow = window
+                completionError = error
+                openedWindow.fulfill()
+            }
+        )
+
+        await fulfillment(of: [openedWindow], timeout: 2.0)
+        XCTAssertNil(completionError)
+        XCTAssertNotNil(completionWindow)
+
+        let tab = try XCTUnwrap(
+            browserManager.tabManager.tabsBySpace[space.id]?.first(where: {
+                $0.url == loadableURL
+            })
+        )
+        XCTAssertEqual(openedTabIDs.filter { $0 == tab.id }.count, 1)
+        XCTAssertIdentical(controller.extensionContext(for: tab.url), extensionContext)
+        XCTAssertIdentical(
+            tab.webExtensionContextOverride,
+            extensionContext
+        )
+        XCTAssertFalse(browserManager.tabManager.shouldPersistRegularTab(tab))
+    }
+
+    func testExtensionRequestedInternalTabRendersThroughSumiWebViewPath() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Extension Render Profile")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _ in manager }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        _ = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        manager.attach(browserManager: browserManager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ExtensionRequestedRenderedPage"
+        )
+        _ = try await manager.enableExtension(installed.id)
+
+        let loadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let extensionContext = try XCTUnwrap(loadedContext)
+        let controller = try XCTUnwrap(
+            manager.extensionControllersByProfile[profile.id]
+        )
+        let extensionURL = extensionContext.baseURL
+            .appendingPathComponent("popup.html")
+
+        let tab = try manager.openExtensionRequestedTab(
+            url: extensionURL,
+            shouldBeActive: true,
+            shouldBePinned: false,
+            requestedWindow: nil,
+            controller: controller,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+        let webView = try XCTUnwrap(tab.ensureWebView())
+
+        let metrics = try await pollExtensionRenderMetrics(in: webView)
+        XCTAssertTrue(metrics.loadedFromExtensionScheme, metrics.debugSummary)
+        XCTAssertEqual(metrics.readyState, "complete", metrics.debugSummary)
+        XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)
+        XCTAssertGreaterThan(metrics.scriptCount, 0, metrics.debugSummary)
+        XCTAssertEqual(metrics.marker, "rendered", metrics.debugSummary)
+        XCTAssertIdentical(webView.configuration.webExtensionController, controller)
+        XCTAssertIdentical(
+            webView.configuration.websiteDataStore,
+            controller.configuration.defaultWebsiteDataStore
+        )
+    }
+
+    func testExtensionOptionsPageRendersThroughContextConfiguration() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Extension Options Profile")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _ in manager }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        manager.attach(browserManager: browserManager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ExtensionOptionsRenderedPage",
+            optionsPage: "options.html"
+        )
+        _ = try await manager.enableExtension(installed.id)
+
+        let loadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let extensionContext = try XCTUnwrap(loadedContext)
+        let controller = try XCTUnwrap(
+            manager.extensionControllersByProfile[profile.id]
+        )
+
+        addTeardownBlock { @MainActor in
+            manager.closeOptionsWindow(for: installed.id)
+        }
+
+        let openedOptions = expectation(description: "options page opened")
+        var completionError: Error?
+        manager.presentOptionsPageWindow(for: extensionContext) { error in
+            completionError = error
+            openedOptions.fulfill()
+        }
+        await fulfillment(of: [openedOptions], timeout: 2.0)
+        XCTAssertNil(completionError)
+
+        let window = try XCTUnwrap(manager.optionsWindows[installed.id])
+        let contentView = try XCTUnwrap(window.contentView)
+        let webView = try XCTUnwrap(Self.firstWebView(in: contentView))
+
+        let metrics = try await pollExtensionRenderMetrics(in: webView)
+        XCTAssertTrue(metrics.loadedFromExtensionScheme, metrics.debugSummary)
+        XCTAssertEqual(metrics.readyState, "complete", metrics.debugSummary)
+        XCTAssertGreaterThan(metrics.elementCount, 0, metrics.debugSummary)
+        XCTAssertGreaterThan(metrics.scriptCount, 0, metrics.debugSummary)
+        XCTAssertEqual(metrics.marker, "rendered", metrics.debugSummary)
+        XCTAssertIdentical(webView.configuration.webExtensionController, controller)
+        XCTAssertIdentical(
+            webView.configuration.websiteDataStore,
+            controller.configuration.defaultWebsiteDataStore
+        )
+    }
+
+    func testExtensionRequestedInternalTabIsNotRenotifiedOnCommitOrActivation() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Extension Page Profile")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            browserConfiguration: browserConfiguration,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _ in manager }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        _ = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        manager.attach(browserManager: browserManager)
+        XCTAssertIdentical(extensionsModule.managerIfEnabled(), manager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ExtensionRequestedPage"
+        )
+        _ = try await manager.enableExtension(installed.id)
+
+        let loadedContext = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let extensionContext = try XCTUnwrap(loadedContext)
+        let controller = try XCTUnwrap(
+            manager.extensionControllersByProfile[profile.id]
+        )
+        let extensionURL = extensionContext.baseURL
+            .appendingPathComponent("popup.html")
+
+        var didOpenCount = 0
+        manager.testHooks.didOpenTab = { tabID in
+            if browserManager.tabManager.tab(for: tabID)?.url == extensionURL {
+                didOpenCount += 1
+            }
+        }
+
+        let tab = try manager.openExtensionRequestedTab(
+            url: extensionURL,
+            shouldBeActive: true,
+            shouldBePinned: false,
+            requestedWindow: nil,
+            controller: controller,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertEqual(didOpenCount, 1)
+
+        tab.noteCommittedMainDocumentNavigation(to: extensionURL)
+        manager.markTabEligibleAfterCommittedNavigation(
+            tab,
+            reason: "SafariExtensionWebViewControllerWiringTests.didCommit"
+        )
+        manager.notifyTabActivated(newTab: tab, previous: nil)
+
+        XCTAssertEqual(
+            didOpenCount,
+            1,
+            "Commit and activation callbacks must not duplicate the extension-created internal tab"
+        )
+        XCTAssertEqual(
+            tab.lastExtensionOpenNotificationGeneration,
+            manager.tabOpenNotificationGeneration
+        )
+        XCTAssertEqual(
+            tab.extensionRuntimeOpenNotifiedDocumentSequence,
+            tab.extensionRuntimeDocumentSequence - 1,
+            "The delegate-created tab stays open-notified for the original extension page instance"
+        )
+    }
+
     func testMarkTabEligibleAfterCommittedNavigationNotifiesTabOpened() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
@@ -514,6 +1158,61 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertTrue(manager.notifyTabOpened(tab))
         XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+    }
+
+    func testLazyContentScriptContextLoadDoesNotWakeBackgroundForOrdinaryNavigation() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptBackgroundProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+
+        let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
+        entity.isEnabled = true
+        try container.mainContext.save()
+        _ = manager.loadInstalledExtensionMetadata()
+
+        var backgroundWakeCount = 0
+        manager.testHooks.backgroundContentWake = { _, _ in
+            backgroundWakeCount += 1
+        }
+
+        await manager.ensureContentScriptContextsLoaded(for: profile.id)
+
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+        XCTAssertEqual(backgroundWakeCount, 0)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .neverLoaded
+        )
+
+        manager.extensionsLoaded = true
+        manager.tabOpenNotificationGeneration = 17
+        let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
+        let tab = makeTab(profileId: profile.id, url: pageURL)
+        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionRuntimeOpenNotifiedDocumentSequence = 0
+        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
+        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+
+        manager.prepareExtensionRuntimeBeforeCommittedMainFrameNavigation(
+            tab,
+            destinationURL: pageURL,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertEqual(backgroundWakeCount, 0)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .neverLoaded
+        )
     }
 
     func testTabNeedsExtensionContentScriptRebindWhenOpenNotifiedAfterCommit() throws {
@@ -972,6 +1671,44 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         return directory
     }
 
+    private func pollExtensionRenderMetrics(
+        in webView: WKWebView
+    ) async throws -> ExtensionRenderMetrics {
+        var lastMetrics = ExtensionRenderMetrics.empty
+        for _ in 0..<80 {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            if let metrics = try? await extensionRenderMetrics(in: webView) {
+                lastMetrics = metrics
+                if metrics.readyState == "complete",
+                   metrics.loadedFromExtensionScheme,
+                   metrics.elementCount > 0,
+                   metrics.scriptCount > 0
+                {
+                    return metrics
+                }
+            }
+        }
+
+        XCTFail("Timed out waiting for Sumi-created extension page; \(lastMetrics.debugSummary)")
+        return lastMetrics
+    }
+
+    private func extensionRenderMetrics(
+        in webView: WKWebView
+    ) async throws -> ExtensionRenderMetrics {
+        let script = """
+            (() => [
+              document.readyState,
+              document.querySelectorAll('body *').length,
+              document.scripts.length,
+              document.body ? (document.body.dataset.sumiRenderMarker || '') : '',
+              location.href.startsWith('webkit-extension://') || location.href.startsWith('safari-web-extension://')
+            ].join('|'))();
+            """
+        let rawValue = try await webView.evaluateJavaScript(script) as? String
+        return try ExtensionRenderMetrics(rawValue: rawValue ?? "")
+    }
+
     private final class AutofillPagesNavigationDelegateBox: NSObject, WKNavigationDelegate {
         private let onFinish: () -> Void
 
@@ -1031,35 +1768,175 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
-    private func installUnpackedExtension(
+    private func installContentScriptBackgroundProbeExtension(
         manager: ExtensionManager,
-        scratchDirectory: URL,
-        name: String
+        scratchDirectory: URL
     ) async throws -> InstalledExtension {
-        let directoryURL = scratchDirectory.appendingPathComponent(name, isDirectory: true)
+        let directoryURL = scratchDirectory.appendingPathComponent(
+            "ContentScriptBackgroundProbe",
+            isDirectory: true
+        )
         try FileManager.default.createDirectory(
             at: directoryURL,
             withIntermediateDirectories: true
         )
         let manifest: [String: Any] = [
             "manifest_version": 3,
+            "name": "ContentScriptBackgroundProbe",
+            "version": "1.0",
+            "host_permissions": ["<all_urls>"],
+            "background": [
+                "service_worker": "background.js",
+            ],
+            "content_scripts": [[
+                "matches": ["<all_urls>"],
+                "js": ["content.js"],
+                "run_at": "document_idle",
+            ]],
+        ]
+        let manifestURL = directoryURL.appendingPathComponent("manifest.json")
+        try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
+            .write(to: manifestURL, options: [.atomic])
+        try Data("true;".utf8)
+            .write(to: directoryURL.appendingPathComponent("content.js"), options: [.atomic])
+        try Data("globalThis.__sumiBackgroundProbe = true;".utf8)
+            .write(to: directoryURL.appendingPathComponent("background.js"), options: [.atomic])
+
+        return try await manager.performInstallation(
+            from: directoryURL,
+            enableOnInstall: false
+        )
+    }
+
+    private func installUnpackedExtension(
+        manager: ExtensionManager,
+        scratchDirectory: URL,
+        name: String,
+        optionsPage: String? = nil
+    ) async throws -> InstalledExtension {
+        let directoryURL = scratchDirectory.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true
+        )
+        var manifest: [String: Any] = [
+            "manifest_version": 3,
             "name": name,
             "version": "1.0",
             "host_permissions": ["<all_urls>"],
             "action": ["default_popup": "popup.html"],
         ]
+        if let optionsPage {
+            manifest["options_ui"] = ["page": optionsPage]
+        }
         let manifestURL = directoryURL.appendingPathComponent("manifest.json")
         let manifestData = try JSONSerialization.data(
             withJSONObject: manifest,
             options: [.sortedKeys]
         )
         try manifestData.write(to: manifestURL, options: [.atomic])
-        try Data("<!doctype html><title>popup</title>".utf8)
+        try Data(
+            """
+            <!doctype html>
+            <title>popup</title>
+            <main id="ready">Loaded</main>
+            <script src="popup.js"></script>
+            """.utf8
+        )
             .write(to: directoryURL.appendingPathComponent("popup.html"), options: [.atomic])
+        if let optionsPage {
+            try Data(
+                """
+                <!doctype html>
+                <title>options</title>
+                <main id="ready">Loaded</main>
+                <script src="popup.js"></script>
+                """.utf8
+            )
+                .write(to: directoryURL.appendingPathComponent(optionsPage), options: [.atomic])
+        }
+        try Data(
+            """
+            document.body.dataset.sumiRenderMarker = 'rendered';
+            """.utf8
+        )
+            .write(to: directoryURL.appendingPathComponent("popup.js"), options: [.atomic])
 
         return try await manager.performInstallation(
             from: directoryURL,
             enableOnInstall: false
         )
+    }
+
+    private static func firstWebView(in root: NSView) -> WKWebView? {
+        if let webView = root as? WKWebView {
+            return webView
+        }
+        for subview in root.subviews {
+            if let webView = firstWebView(in: subview) {
+                return webView
+            }
+        }
+        return nil
+    }
+}
+
+private struct ExtensionRenderMetrics: Equatable {
+    var readyState: String
+    var elementCount: Int
+    var scriptCount: Int
+    var marker: String
+    var loadedFromExtensionScheme: Bool
+
+    static let empty = ExtensionRenderMetrics(
+        readyState: "",
+        elementCount: 0,
+        scriptCount: 0,
+        marker: "",
+        loadedFromExtensionScheme: false
+    )
+
+    var debugSummary: String {
+        [
+            "ready=\(readyState)",
+            "elements=\(elementCount)",
+            "scripts=\(scriptCount)",
+            "marker=\(marker)",
+            "extensionScheme=\(loadedFromExtensionScheme)",
+        ].joined(separator: " ")
+    }
+
+    init(
+        readyState: String,
+        elementCount: Int,
+        scriptCount: Int,
+        marker: String,
+        loadedFromExtensionScheme: Bool
+    ) {
+        self.readyState = readyState
+        self.elementCount = elementCount
+        self.scriptCount = scriptCount
+        self.marker = marker
+        self.loadedFromExtensionScheme = loadedFromExtensionScheme
+    }
+
+    init(rawValue: String) throws {
+        let parts = rawValue.split(separator: "|", omittingEmptySubsequences: false)
+        guard parts.count == 5,
+              let elements = Int(parts[1]),
+              let scripts = Int(parts[2])
+        else {
+            throw NSError(
+                domain: "SafariExtensionWebViewControllerWiringTests",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid render metrics"]
+            )
+        }
+
+        readyState = String(parts[0])
+        elementCount = elements
+        scriptCount = scripts
+        marker = String(parts[3])
+        loadedFromExtensionScheme = parts[4] == "true"
     }
 }

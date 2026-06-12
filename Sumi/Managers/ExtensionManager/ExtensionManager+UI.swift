@@ -140,10 +140,12 @@ extension ExtensionManager: NSPopoverDelegate {
         updateActionSurfaceState(for: action, extensionContext: extensionContext)
     }
 
-    /// After enable/load, wake background workers and seed action surface for URL-hub.
+    /// After context load, seed action state and optionally wake background for explicit
+    /// lifecycle events such as user-enabled extension activation.
     func finalizeEnabledExtensionRuntime(
         for extensionId: String,
-        profileId: UUID? = nil
+        profileId: UUID? = nil,
+        backgroundWakeReason: ExtensionBackgroundWakeReason? = nil
     ) async {
         let resolvedProfileId =
             profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
@@ -155,17 +157,19 @@ extension ExtensionManager: NSPopoverDelegate {
 
         publishActionSurfaceStateForLoadedContext(extensionContext)
 
-        let webExtension = extensionContext.webExtension
-        do {
-            _ = try await ensureBackgroundAvailableIfRequired(
-                for: webExtension,
-                context: extensionContext,
-                reason: .enable
-            )
-        } catch {
-            Self.logger.error(
-                "Failed to wake background after enable for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
+        if let backgroundWakeReason {
+            let webExtension = extensionContext.webExtension
+            do {
+                _ = try await ensureBackgroundAvailableIfRequired(
+                    for: webExtension,
+                    context: extensionContext,
+                    reason: backgroundWakeReason
+                )
+            } catch {
+                Self.logger.error(
+                    "Failed to wake background for \(extensionId, privacy: .public) after \(backgroundWakeReason.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
 
         reconcileOpenTabsAfterExtensionContextLoad(
@@ -200,12 +204,6 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "\(installedExtension.name) does not declare a Chrome action."
             )
         }
-        guard installedExtension.defaultPopupPath != nil else {
-            return .blocked(
-                .noActionPopup,
-                message: "\(installedExtension.name) does not declare action.default_popup; action-click dispatch is deferred."
-            )
-        }
         guard let currentTab else {
             return .blocked(
                 .noEligibleTab,
@@ -216,15 +214,6 @@ extension ExtensionManager: NSPopoverDelegate {
             return .blocked(
                 .noEligibleTab,
                 message: "Private tabs are not eligible for extension action popups."
-            )
-        }
-        guard hasActionCurrentPagePermission(
-            installedExtension,
-            currentURL: currentTab.url
-        ) else {
-            return .blocked(
-                .currentPagePermissionMissing,
-                message: "\(installedExtension.name) does not have host permission or activeTab for the current page."
             )
         }
         guard isModuleWorkerUnsupported(installedExtension) == false else {
@@ -345,6 +334,27 @@ extension ExtensionManager: NSPopoverDelegate {
         )
 
         let adapter = stableAdapter(for: currentTab)
+        grantRequestedPermissions(
+            to: extensionContext,
+            webExtension: extensionContext.webExtension,
+            manifest: installedExtension.manifest
+        )
+        grantRequestedMatchPatterns(
+            to: extensionContext,
+            webExtension: extensionContext.webExtension
+        )
+        let hasActionPageAccess = await prepareActionClickPageAccess(
+            for: extensionContext,
+            installedExtension: installedExtension,
+            tab: currentTab
+        )
+        guard hasActionPageAccess else {
+            return .blocked(
+                .currentPagePermissionMissing,
+                message: "\(installedExtension.name) was not granted access to the current page."
+            )
+        }
+
         guard let action = extensionContext.action(for: adapter) else {
             return .blocked(
                 .actionMissing,
@@ -363,27 +373,6 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "\(action.label) is disabled for the current page."
             )
         }
-        guard action.presentsPopup else {
-            return .blocked(
-                .noActionPopup,
-                message: "\(action.label) has no WebKit action popup for the current page."
-            )
-        }
-
-        grantActiveTabURLAccess(
-            for: extensionContext,
-            tab: currentTab,
-            manifest: installedExtension.manifest
-        )
-        grantRequestedPermissions(
-            to: extensionContext,
-            webExtension: extensionContext.webExtension,
-            manifest: installedExtension.manifest
-        )
-        grantRequestedMatchPatterns(
-            to: extensionContext,
-            webExtension: extensionContext.webExtension
-        )
 
         extensionRuntimeTrace(
             "urlHubAction performAction extensionId=\(extensionId) actionLabel=\(action.label) actionEnabled=\(action.isEnabled) presentsPopup=\(action.presentsPopup)"
@@ -393,7 +382,7 @@ extension ExtensionManager: NSPopoverDelegate {
             metrics.lastBackgroundWakeReason = .actionPopup
             metrics.backgroundWakeCount += 1
         }
-        return .openedPopup
+        return action.presentsPopup ? .openedPopup : .performedAction
     }
 
     private func loadActionPopupContextIfNeeded(
@@ -413,7 +402,7 @@ extension ExtensionManager: NSPopoverDelegate {
         guard let url, let scheme = url.scheme?.lowercased() else {
             return "nil"
         }
-        if Self.extensionSchemes.contains(scheme) {
+        if ExtensionUtils.isExtensionOwnedURL(url) {
             return "\(scheme)://<extension>/\(url.lastPathComponent.isEmpty ? "<resource>" : url.lastPathComponent)"
         }
         if scheme == "http" || scheme == "https" {
@@ -432,6 +421,124 @@ extension ExtensionManager: NSPopoverDelegate {
             return false
         }
         return type.caseInsensitiveCompare("module") == .orderedSame
+    }
+
+    private func prepareActionClickPageAccess(
+        for extensionContext: WKWebExtensionContext,
+        installedExtension: InstalledExtension,
+        tab: Tab
+    ) async -> Bool {
+        let currentURL = tab.url
+        guard ["http", "https"].contains(currentURL.scheme?.lowercased() ?? "") else {
+            return true
+        }
+
+        let manifest = installedExtension.manifest
+        let permissions = stringArray(from: manifest["permissions"])
+        let optionalPermissions = stringArray(from: manifest["optional_permissions"])
+        if (permissions + optionalPermissions).contains("activeTab") {
+            grantActiveTabURLAccess(
+                for: extensionContext,
+                tab: tab,
+                manifest: manifest
+            )
+            return true
+        }
+
+        if isGrantedPermissionStatus(extensionContext.permissionStatus(for: currentURL)) {
+            return true
+        }
+        if extensionContext.permissionStatus(for: currentURL) == .deniedExplicitly {
+            return false
+        }
+        if explicitlyGrantURLIfCoveredByGrantedMatchPattern(currentURL, in: extensionContext) {
+            return true
+        }
+
+        guard hasActionCurrentPagePermission(
+            installedExtension,
+            currentURL: currentURL
+        ) else {
+            return true
+        }
+
+        let host = currentURL.host ?? currentURL.scheme ?? "this site"
+        let patternString = hostMatchPatternString(for: currentURL)
+        let decisionProfileId = tab.profileId ?? resolvedProfileId(for: tab) ?? currentProfileId
+        let decision = await promptForExtensionPermissionDecision(
+            extensionContext: extensionContext,
+            targets: [host],
+            reason: "actionClickCurrentPageAccess",
+            dedupeKey: permissionPromptDedupeKey(
+                extensionContext: extensionContext,
+                targets: patternString.map { [$0] } ?? [host]
+            )
+        )
+
+        switch decision {
+        case .allow(let expirationDate):
+            if let patternString,
+               let matchPattern = try? WKWebExtension.MatchPattern(string: patternString)
+            {
+                extensionContext.setPermissionStatus(
+                    .grantedExplicitly,
+                    for: matchPattern,
+                    expirationDate: expirationDate
+                )
+                if let decisionProfileId {
+                    persistExtensionPermissionDecision(
+                        extensionId: installedExtension.id,
+                        profileId: decisionProfileId,
+                        targetKind: .matchPattern,
+                        target: patternString,
+                        state: .allowed,
+                        expiresAt: expirationDate
+                    )
+                }
+            }
+            extensionContext.setPermissionStatus(
+                .grantedExplicitly,
+                for: currentURL,
+                expirationDate: expirationDate
+            )
+            SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                granted: true,
+                extensionId: installedExtension.id,
+                reason: "actionClickPromptAllowed"
+            )
+            return true
+        case .deny:
+            if let patternString,
+               let matchPattern = try? WKWebExtension.MatchPattern(string: patternString)
+            {
+                extensionContext.setPermissionStatus(
+                    .deniedExplicitly,
+                    for: matchPattern,
+                    expirationDate: nil
+                )
+                if let decisionProfileId {
+                    persistExtensionPermissionDecision(
+                        extensionId: installedExtension.id,
+                        profileId: decisionProfileId,
+                        targetKind: .matchPattern,
+                        target: patternString,
+                        state: .denied,
+                        expiresAt: nil
+                    )
+                }
+            }
+            extensionContext.setPermissionStatus(
+                .deniedExplicitly,
+                for: currentURL,
+                expirationDate: nil
+            )
+            SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                granted: false,
+                extensionId: installedExtension.id,
+                reason: "actionClickPromptDenied"
+            )
+            return false
+        }
     }
 
     private func hasActionCurrentPagePermission(
@@ -671,22 +778,22 @@ extension ExtensionManager: NSPopoverDelegate {
                 browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
             } ?? browserManager.tabManager.currentSpace
 
+            let resolvedExtensionLoad = extensionLoadURL(
+                for: firstURL,
+                controller: controller
+            )
             let createdTab = browserManager.tabManager.createNewTab(
-                url: firstURL.absoluteString,
+                url: (resolvedExtensionLoad.url ?? firstURL).absoluteString,
                 in: targetSpace,
-                activate: false
+                activate: false,
+                webExtensionContextOverride: resolvedExtensionLoad.context
             )
 
-            if Self.isExtensionOwnedURL(firstURL),
-               let resolvedContext = controller.extensionContext(for: firstURL)
-            {
-                createdTab.applyWebViewConfigurationOverride(
-                    resolvedContext.webViewConfiguration
-                        ?? browserConfiguration.webViewConfiguration
-                )
-            }
-
             browserManager.selectTab(createdTab, in: activeWindow)
+            registerExtensionCreatedTabWithExtensionRuntime(
+                createdTab,
+                reason: "webExtensionController.openNewWindowUsing"
+            )
             completionHandler(windowAdapter(for: activeWindow.id), nil)
             return
         }
@@ -712,20 +819,16 @@ extension ExtensionManager: NSPopoverDelegate {
 
             let createdTab: Tab
             if let firstURL = tabURLs.first {
-                createdTab = browserManager.tabManager.createNewTab(
-                    url: firstURL.absoluteString,
-                    in: targetSpace,
-                    activate: false
+                let resolvedExtensionLoad = self.extensionLoadURL(
+                    for: firstURL,
+                    controller: controller
                 )
-
-                if Self.isExtensionOwnedURL(firstURL),
-                   let resolvedContext = controller.extensionContext(for: firstURL)
-                {
-                    createdTab.applyWebViewConfigurationOverride(
-                        resolvedContext.webViewConfiguration
-                            ?? browserConfiguration.webViewConfiguration
-                    )
-                }
+                createdTab = browserManager.tabManager.createNewTab(
+                    url: (resolvedExtensionLoad.url ?? firstURL).absoluteString,
+                    in: targetSpace,
+                    activate: false,
+                    webExtensionContextOverride: resolvedExtensionLoad.context
+                )
             } else {
                 createdTab = browserManager.tabManager.createNewTab(
                     in: targetSpace,
@@ -734,6 +837,10 @@ extension ExtensionManager: NSPopoverDelegate {
             }
 
             browserManager.selectTab(createdTab, in: windowState)
+            self.registerExtensionCreatedTabWithExtensionRuntime(
+                createdTab,
+                reason: "webExtensionController.openNewWindowUsing"
+            )
             completionHandler(self.windowAdapter(for: windowState.id), nil)
         }
     }
@@ -757,22 +864,29 @@ extension ExtensionManager: NSPopoverDelegate {
         ).resolvingSymlinksInPath().standardizedFileURL
         let manifest = loadedExtensionManifests[extensionId] ?? installedExtension.manifest
 
+        let sdkURL = extensionContext.optionsPageURL
+        let manifestURL = computeOptionsPageURL(for: extensionContext)
+            .map(ExtensionUtils.webKitLoadableExtensionURL)
+        let sdkResolvedURL = (try? ExtensionUtils.resolvedOptionsPageURL(
+            sdkURL: sdkURL,
+            persistedPath: nil,
+            manifest: manifest,
+            extensionRoot: extensionRoot
+        ))
+            .map(ExtensionUtils.webKitLoadableExtensionURL)
         let diskResolvedURL = try? ExtensionUtils.resolvedOptionsPageURL(
             sdkURL: nil,
             persistedPath: installedExtension.optionsPagePath,
             manifest: manifest,
             extensionRoot: extensionRoot
         )
-
-        let sdkURL = extensionContext.optionsPageURL
-        let manifestURL = computeOptionsPageURL(for: extensionContext)
         let optionsURL: URL?
-        if let diskResolvedURL {
-            optionsURL = diskResolvedURL
-        } else if let sdkURL {
-            optionsURL = sdkURL
+        if let sdkResolvedURL {
+            optionsURL = sdkResolvedURL
         } else if let manifestURL {
             optionsURL = manifestURL
+        } else if let diskResolvedURL {
+            optionsURL = diskResolvedURL
         } else {
             optionsURL = nil
         }
@@ -782,19 +896,23 @@ extension ExtensionManager: NSPopoverDelegate {
             return
         }
 
-        let baseConfiguration =
-            extensionContext.webViewConfiguration
-            ?? browserConfiguration.webViewConfiguration
-        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
-            from: baseConfiguration,
-            for: browserManager?.currentProfile,
-            surface: .extensionOptions,
-            additionalUserScripts: baseConfiguration.userContentController.userScripts
-        )
         let optionsProfileId =
             profileId(for: extensionContext)
             ?? currentProfileId
             ?? browserManager?.currentProfile?.id
+        let configuration: WKWebViewConfiguration
+        if let contextConfiguration = extensionContext.webViewConfiguration {
+            configuration = contextConfiguration
+        } else {
+            let baseConfiguration = browserConfiguration.webViewConfiguration
+            configuration = browserConfiguration.auxiliaryWebViewConfiguration(
+                from: baseConfiguration,
+                for: browserManager?.currentProfile,
+                surface: .extensionOptions,
+                additionalUserScripts: baseConfiguration.userContentController.userScripts
+            )
+        }
+        configuration.sumiIsNormalTabWebViewConfiguration = false
         prepareWebViewConfigurationForExtensionRuntime(
             configuration,
             profileId: optionsProfileId,

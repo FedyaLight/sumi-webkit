@@ -110,7 +110,7 @@ struct TabManagerSnapshotCache {
         }
 
         let state = TabSnapshotRepository.SnapshotState(
-            currentTabID: tabManager.currentTab?.id,
+            currentTabID: tabManager.persistableCurrentTabID(),
             currentSpaceID: tabManager.currentSpace?.id
         )
 
@@ -210,6 +210,7 @@ struct TabManagerSnapshotCache {
                 continue
             }
             let regularTabs = Array(tabManager.tabsBySpace[spaceId] ?? [])
+                .filter { tabManager.shouldPersistRegularTab($0) }
             regularTabsBySpace[spaceId] = regularTabs.map { tab in
                 SnapshotTab(
                     id: tab.id,
@@ -505,7 +506,7 @@ extension TabManager {
     /// Lightweight persistence for tab selection changes only.
     /// Avoids rebuilding the full snapshot graph when only currentTabID/currentSpaceID changed.
     func persistSelection() {
-        let tabID = currentTab?.id
+        let tabID = persistableCurrentTabID()
         let spaceID = currentSpace?.id
         Task { [persistence] in
             let signpostState = PerformanceTrace.beginInterval("TabManager.persistSelection")
@@ -539,9 +540,34 @@ extension TabManager {
     }
 
     private func shouldPersistRuntimeState(for tab: Tab) -> Bool {
+        shouldPersistRegularTab(tab)
+    }
+
+    func shouldPersistRegularTab(_ tab: Tab) -> Bool {
         guard tab.isShortcutLiveInstance == false else { return false }
         guard tab.isPinned == false, tab.isSpacePinned == false else { return false }
-        return tab.spaceId != nil
+        guard tab.spaceId != nil else { return false }
+        guard ExtensionUtils.isExtensionOwnedURL(tab.url) == false else { return false }
+        return true
+    }
+
+    func persistableCurrentTabID() -> UUID? {
+        guard let currentTab, shouldPersistRegularTab(currentTab) else {
+            return nil
+        }
+        return currentTab.id
+    }
+
+    private func nonPersistableRegularTabIDs(from ids: Set<UUID>) -> Set<UUID> {
+        guard ids.isEmpty == false else { return [] }
+
+        var deletedIds = Set<UUID>()
+        for tabs in tabsBySpace.values {
+            for tab in tabs where ids.contains(tab.id) && shouldPersistRegularTab(tab) == false {
+                deletedIds.insert(tab.id)
+            }
+        }
+        return deletedIds
     }
 
     func _buildSnapshot() -> TabSnapshotRepository.Snapshot {
@@ -559,10 +585,11 @@ extension TabManager {
             folders: makeDirtyFolderSnapshots(for: dirtySet.dirtyFolderIds),
             splitGroups: dirtySet.splitGroupsDirty ? SplitGroup.sanitized(splitGroups) : nil,
             deletedSpaceIds: dirtySet.deletedSpaceIds,
-            deletedTabIds: dirtySet.deletedTabIds,
+            deletedTabIds: dirtySet.deletedTabIds
+                .union(nonPersistableRegularTabIDs(from: dirtySet.dirtyTabIds)),
             deletedFolderIds: dirtySet.deletedFolderIds,
             state: TabSnapshotRepository.SnapshotState(
-                currentTabID: currentTab?.id,
+                currentTabID: persistableCurrentTabID(),
                 currentSpaceID: currentSpace?.id
             )
         )
@@ -635,7 +662,7 @@ extension TabManager {
             }
 
             let regularTabs = Array(tabsBySpace[space.id] ?? [])
-            for tab in regularTabs where ids.contains(tab.id) {
+            for tab in regularTabs where ids.contains(tab.id) && shouldPersistRegularTab(tab) {
                 snapshots.append(
                     TabSnapshotRepository.SnapshotTab(
                         id: tab.id,

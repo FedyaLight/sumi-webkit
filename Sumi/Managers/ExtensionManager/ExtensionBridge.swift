@@ -342,6 +342,25 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         }
     }
 
+    @discardableResult
+    private func promoteTransientExtensionTabIfNeeded(_ tab: Tab) -> Bool {
+        guard let browserManager,
+              browserManager.tabManager.isTransientExtensionTab(tab)
+        else {
+            return false
+        }
+
+        let targetSpace = tab.spaceId.flatMap { spaceId in
+            browserManager.tabManager.spaces.first(where: { $0.id == spaceId })
+        } ?? browserManager.tabManager.currentSpace
+
+        return browserManager.tabManager.promoteTransientExtensionTab(
+            tab,
+            in: targetSpace,
+            activate: false
+        )
+    }
+
     func url(for extensionContext: WKWebExtensionContext) -> URL? {
         return eligibleTab()?.url
     }
@@ -434,6 +453,8 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             return
         }
 
+        promoteTransientExtensionTabIfNeeded(tab)
+
         if let windowState = resolvedWindowState() {
             browserManager.selectTab(tab, in: windowState)
         } else {
@@ -507,6 +528,9 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
                 error: tabUnavailableUntilReloadError
             )
             return
+        }
+        if ExtensionUtils.isExtensionOwnedURL(url) == false {
+            promoteTransientExtensionTabIfNeeded(tab)
         }
         tab.loadURL(url)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)

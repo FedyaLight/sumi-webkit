@@ -33,6 +33,168 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         recentExtensionTabOpenRequests.record(key: key)
     }
 
+    private func extensionDisplayName(for extensionContext: WKWebExtensionContext) -> String {
+        extensionContext.webExtension.displayName
+            ?? extensionContext.webExtension.displayShortName
+            ?? "This extension"
+    }
+
+    private nonisolated static func extensionPermissionTarget(for url: URL) -> String {
+        if let host = url.host, host.isEmpty == false {
+            return host
+        }
+        if let scheme = url.scheme, scheme.isEmpty == false {
+            return "\(scheme):"
+        }
+        return "this site"
+    }
+
+    private static func extensionPermissionTarget(
+        for matchPattern: WKWebExtension.MatchPattern
+    ) -> String {
+        if matchPattern.matchesAllURLs || matchPattern.matchesAllHosts {
+            return "all websites"
+        }
+        if let host = matchPattern.host, host.isEmpty == false {
+            return host
+        }
+        return matchPattern.string
+    }
+
+    private nonisolated static func summarizedPermissionTargets(
+        _ targets: [String]
+    ) -> [String] {
+        let uniqueTargets = Array(Set(targets)).sorted()
+        guard uniqueTargets.count > 4 else { return uniqueTargets }
+        return Array(uniqueTargets.prefix(4)) + ["and \(uniqueTargets.count - 4) more"]
+    }
+
+    func promptForExtensionPermissionDecision(
+        extensionContext: WKWebExtensionContext,
+        targets: [String],
+        reason: String,
+        dedupeKey: String? = nil
+    ) async -> ExtensionPermissionPromptDecision {
+        if RuntimeDiagnostics.isRunningTests {
+            return .allow(expirationDate: nil)
+        }
+
+        return await enqueueExtensionPermissionPrompt(
+            key: dedupeKey ?? permissionPromptDedupeKey(
+                extensionContext: extensionContext,
+                targets: targets
+            )
+        ) {
+            self.presentExtensionPermissionPrompt(
+                extensionContext: extensionContext,
+                targets: targets,
+                reason: reason
+            )
+        }
+    }
+
+    private func enqueueExtensionPermissionPrompt(
+        key: String,
+        _ operation: @escaping @MainActor () -> ExtensionPermissionPromptDecision
+    ) async -> ExtensionPermissionPromptDecision {
+        await withCheckedContinuation { continuation in
+            if extensionPermissionPromptWaitersByKey[key] != nil {
+                extensionPermissionPromptWaitersByKey[key]?.append(continuation)
+                return
+            }
+            extensionPermissionPromptWaitersByKey[key] = [continuation]
+            extensionPermissionPromptQueue.append {
+                let decision = operation()
+                let waiters = self.extensionPermissionPromptWaitersByKey
+                    .removeValue(forKey: key) ?? []
+                for waiter in waiters {
+                    waiter.resume(returning: decision)
+                }
+            }
+            drainExtensionPermissionPromptQueueIfNeeded()
+        }
+    }
+
+    private func drainExtensionPermissionPromptQueueIfNeeded() {
+        guard isPresentingExtensionPermissionPrompt == false else { return }
+        guard extensionPermissionPromptQueue.isEmpty == false else { return }
+
+        isPresentingExtensionPermissionPrompt = true
+        let operation = extensionPermissionPromptQueue.removeFirst()
+        Task { @MainActor [weak self] in
+            operation()
+            guard let self else { return }
+            self.isPresentingExtensionPermissionPrompt = false
+            self.drainExtensionPermissionPromptQueueIfNeeded()
+        }
+    }
+
+    private func presentExtensionPermissionPrompt(
+        extensionContext: WKWebExtensionContext,
+        targets: [String],
+        reason: String
+    ) -> ExtensionPermissionPromptDecision {
+        let summarizedTargets = Self.summarizedPermissionTargets(targets)
+        let targetSummary = summarizedTargets.joined(separator: ", ")
+        let extensionName = extensionDisplayName(for: extensionContext)
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText =
+            "Extension \"\(extensionName)\" requests permission to access \(targetSummary)."
+        alert.informativeText =
+            "This extension can read and alter webpages on the requested site."
+        alert.addButton(withTitle: "Allow for 1 Day")
+        alert.addButton(withTitle: "Always Allow")
+        alert.addButton(withTitle: "Deny")
+
+        NSApp.activate(ignoringOtherApps: true)
+        let response = alert.runModal()
+        let decision: ExtensionPermissionPromptDecision
+        switch response {
+        case .alertFirstButtonReturn:
+            decision = .allow(expirationDate: Date(timeIntervalSinceNow: 24 * 60 * 60))
+        case .alertSecondButtonReturn:
+            decision = .allow(expirationDate: nil)
+        default:
+            decision = .deny
+        }
+
+        RuntimeDiagnostics.debug(category: "SafariExtensionPermissions") {
+            let granted: Bool
+            let expiration: String
+            switch decision {
+            case .allow(let expirationDate):
+                granted = true
+                expiration = expirationDate == nil ? "never" : "temporary"
+            case .deny:
+                granted = false
+                expiration = "nil"
+            }
+            return """
+            prompt result reason=\(reason) ext=\(self.extensionID(for: extensionContext) ?? "unknown") \
+            targetCount=\(targets.count) granted=\(granted) expiration=\(expiration)
+            """
+        }
+
+        return decision
+    }
+
+    func extensionLoadURL(
+        for requestedURL: URL?,
+        controller: WKWebExtensionController
+    ) -> (url: URL?, context: WKWebExtensionContext?) {
+        guard let requestedURL else {
+            return (nil, nil)
+        }
+
+        let loadURL = ExtensionUtils.webKitLoadableExtensionURL(for: requestedURL)
+        guard Self.isExtensionOwnedURL(loadURL) else {
+            return (loadURL, nil)
+        }
+        return (loadURL, controller.extensionContext(for: loadURL))
+    }
+
     @discardableResult
     func openExtensionRequestedTab(
         url: URL?,
@@ -57,32 +219,38 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
         } ?? browserManager.tabManager.currentSpace
 
-        let webViewConfigurationOverride: WKWebViewConfiguration?
-        if Self.isExtensionOwnedURL(url),
-           let url,
-           let resolvedContext = controller.extensionContext(for: url)
-        {
-            webViewConfigurationOverride =
-                resolvedContext.webViewConfiguration
-                ?? browserConfiguration.webViewConfiguration
-        } else {
-            webViewConfigurationOverride = nil
-        }
+        let resolvedExtensionLoad = extensionLoadURL(
+            for: url,
+            controller: controller
+        )
+        let webExtensionContextOverride = resolvedExtensionLoad.context
+        let shouldUseTransientInternalTab = shouldOpenAsTransientInternalExtensionTab(
+            loadURL: resolvedExtensionLoad.url,
+            shouldBeActive: shouldBeActive,
+            shouldBePinned: shouldBePinned,
+            webExtensionContextOverride: webExtensionContextOverride
+        )
 
         let newTab: Tab
-        if let url {
+        if shouldUseTransientInternalTab, let loadURL = resolvedExtensionLoad.url {
+            newTab = browserManager.tabManager.createTransientExtensionTab(
+                url: loadURL.absoluteString,
+                in: targetSpace,
+                webExtensionContextOverride: webExtensionContextOverride
+            )
+        } else if let loadURL = resolvedExtensionLoad.url {
             recordRecentlyOpenedExtensionTabRequest(for: url)
             newTab = browserManager.tabManager.createNewTab(
-                url: url.absoluteString,
+                url: loadURL.absoluteString,
                 in: targetSpace,
                 activate: shouldBeActive,
-                webViewConfigurationOverride: webViewConfigurationOverride
+                webExtensionContextOverride: webExtensionContextOverride
             )
         } else {
             newTab = browserManager.tabManager.createNewTab(
                 in: targetSpace,
                 activate: shouldBeActive,
-                webViewConfigurationOverride: webViewConfigurationOverride
+                webExtensionContextOverride: webExtensionContextOverride
             )
         }
 
@@ -99,7 +267,44 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
 
         registerExtensionCreatedTabWithExtensionRuntime(newTab, reason: reason)
+        materializeExtensionOwnedTabIfNeeded(
+            newTab,
+            isActive: shouldBeActive,
+            hasWindowSelection: targetWindow != nil
+        )
         return newTab
+    }
+
+    private func shouldOpenAsTransientInternalExtensionTab(
+        loadURL: URL?,
+        shouldBeActive: Bool,
+        shouldBePinned: Bool,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Bool {
+        guard shouldBeActive == false,
+              shouldBePinned == false,
+              webExtensionContextOverride != nil,
+              let loadURL
+        else {
+            return false
+        }
+        return Self.isExtensionOwnedURL(loadURL)
+    }
+
+    private func materializeExtensionOwnedTabIfNeeded(
+        _ tab: Tab,
+        isActive: Bool,
+        hasWindowSelection: Bool
+    ) {
+        guard tab.webExtensionContextOverride != nil else { return }
+        guard ExtensionUtils.isExtensionOwnedURL(tab.url) else { return }
+        guard tab.isUnloaded else { return }
+
+        if isActive && hasWindowSelection {
+            return
+        }
+
+        tab.loadWebViewIfNeeded()
     }
 
     func registerExtensionCreatedTabWithExtensionRuntime(
@@ -332,27 +537,110 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<WKWebExtension.Permission>, Date?) -> Void
     ) {
-        // Extension permissions remain outside the normal-tab website permission
-        // architecture. Bridging them into site UI is deferred.
         let manifest = extensionID(for: extensionContext)
             .flatMap { loadedExtensionManifests[$0] } ?? [:]
         let policyDeniedPermissions = permissions
-            .union(extensionContext.webExtension.optionalPermissions)
             .filter { shouldDenyAutoGrantForWebKitRuntime($0, manifest: manifest) }
         for permission in policyDeniedPermissions {
             extensionContext.setPermissionStatus(.deniedExplicitly, for: permission)
         }
 
-        let grantedPermissions = permissions.filter {
-            isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+        let unresolvedPermissions = permissions.subtracting(policyDeniedPermissions).filter {
+            isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0)) == false
         }
-        for permission in permissions.subtracting(grantedPermissions) {
-            if policyDeniedPermissions.contains(permission) == false {
-                extensionContext.setPermissionStatus(.deniedExplicitly, for: permission)
-            }
+        let extensionId = extensionID(for: extensionContext)
+        let profileId = profileId(for: extensionContext)
+        var storedResolvedPermissions = Set<WKWebExtension.Permission>()
+        for permission in unresolvedPermissions {
+            guard let extensionId, let profileId,
+                  let stored = storedExtensionPermissionDecision(
+                      extensionId: extensionId,
+                      profileId: profileId,
+                      targetKind: .permission,
+                      target: permission.rawValue
+                  )
+            else { continue }
+            let status: WKWebExtensionContext.PermissionStatus =
+                stored.state == .allowed ? .grantedExplicitly : .deniedExplicitly
+            extensionContext.setPermissionStatus(
+                status,
+                for: permission,
+                expirationDate: stored.expiresAt
+            )
+            storedResolvedPermissions.insert(permission)
         }
 
-        completionHandler(grantedPermissions, nil)
+        let promptPermissions = unresolvedPermissions.subtracting(storedResolvedPermissions)
+
+        guard promptPermissions.isEmpty == false else {
+            let grantedPermissions = permissions.filter {
+                isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+            }
+            completionHandler(grantedPermissions, nil)
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else {
+                completionHandler([], nil)
+                return
+            }
+            let decision = await self.promptForExtensionPermissionDecision(
+                extensionContext: extensionContext,
+                targets: promptPermissions.map(\.rawValue),
+                reason: "promptForPermissions",
+                dedupeKey: self.permissionPromptDedupeKey(
+                    extensionContext: extensionContext,
+                    targets: promptPermissions.map(\.rawValue)
+                )
+            )
+            switch decision {
+            case .allow(let expirationDate):
+                for permission in promptPermissions {
+                    extensionContext.setPermissionStatus(
+                        .grantedExplicitly,
+                        for: permission,
+                        expirationDate: expirationDate
+                    )
+                    if let extensionId, let profileId {
+                        self.persistExtensionPermissionDecision(
+                            extensionId: extensionId,
+                            profileId: profileId,
+                            targetKind: .permission,
+                            target: permission.rawValue,
+                            state: .allowed,
+                            expiresAt: expirationDate
+                        )
+                    }
+                }
+                let grantedPermissions = permissions.filter {
+                    self.isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                }
+                completionHandler(grantedPermissions, expirationDate)
+            case .deny:
+                for permission in promptPermissions {
+                    extensionContext.setPermissionStatus(
+                        .deniedExplicitly,
+                        for: permission,
+                        expirationDate: nil
+                    )
+                    if let extensionId, let profileId {
+                        self.persistExtensionPermissionDecision(
+                            extensionId: extensionId,
+                            profileId: profileId,
+                            targetKind: .permission,
+                            target: permission.rawValue,
+                            state: .denied,
+                            expiresAt: nil
+                        )
+                    }
+                }
+                let grantedPermissions = permissions.filter {
+                    self.isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                }
+                completionHandler(grantedPermissions, nil)
+            }
+        }
     }
 
     func webExtensionController(
@@ -362,16 +650,102 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<WKWebExtension.MatchPattern>, Date?) -> Void
     ) {
-        // Extension match-pattern prompts are handled by WebExtension policy only;
-        // they are not normal-tab website permission decisions.
-        let grantedMatches = matchPatterns.filter {
-            isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+        let unresolvedMatches = matchPatterns.filter {
+            isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0)) == false
         }
-        for matchPattern in matchPatterns.subtracting(grantedMatches) {
-            extensionContext.setPermissionStatus(.deniedExplicitly, for: matchPattern)
+        let extensionId = extensionID(for: extensionContext)
+        let profileId = profileId(for: extensionContext)
+        var storedResolvedMatches = Set<WKWebExtension.MatchPattern>()
+        for matchPattern in unresolvedMatches {
+            guard let extensionId, let profileId,
+                  let stored = storedExtensionPermissionDecision(
+                      extensionId: extensionId,
+                      profileId: profileId,
+                      targetKind: .matchPattern,
+                      target: matchPattern.string
+                  )
+            else { continue }
+            let status: WKWebExtensionContext.PermissionStatus =
+                stored.state == .allowed ? .grantedExplicitly : .deniedExplicitly
+            extensionContext.setPermissionStatus(
+                status,
+                for: matchPattern,
+                expirationDate: stored.expiresAt
+            )
+            storedResolvedMatches.insert(matchPattern)
         }
 
-        completionHandler(grantedMatches, nil)
+        let promptMatches = unresolvedMatches.subtracting(storedResolvedMatches)
+
+        guard promptMatches.isEmpty == false else {
+            let grantedMatches = matchPatterns.filter {
+                isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+            }
+            completionHandler(grantedMatches, nil)
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else {
+                completionHandler([], nil)
+                return
+            }
+            let decision = await self.promptForExtensionPermissionDecision(
+                extensionContext: extensionContext,
+                targets: promptMatches.map(Self.extensionPermissionTarget(for:)),
+                reason: "promptForPermissionMatchPatterns",
+                dedupeKey: self.permissionPromptDedupeKey(
+                    extensionContext: extensionContext,
+                    targets: promptMatches.map(\.string)
+                )
+            )
+            switch decision {
+            case .allow(let expirationDate):
+                for matchPattern in promptMatches {
+                    extensionContext.setPermissionStatus(
+                        .grantedExplicitly,
+                        for: matchPattern,
+                        expirationDate: expirationDate
+                    )
+                    if let extensionId, let profileId {
+                        self.persistExtensionPermissionDecision(
+                            extensionId: extensionId,
+                            profileId: profileId,
+                            targetKind: .matchPattern,
+                            target: matchPattern.string,
+                            state: .allowed,
+                            expiresAt: expirationDate
+                        )
+                    }
+                }
+                let grantedMatches = matchPatterns.filter {
+                    self.isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                }
+                completionHandler(grantedMatches, expirationDate)
+            case .deny:
+                for matchPattern in promptMatches {
+                    extensionContext.setPermissionStatus(
+                        .deniedExplicitly,
+                        for: matchPattern,
+                        expirationDate: nil
+                    )
+                    if let extensionId, let profileId {
+                        self.persistExtensionPermissionDecision(
+                            extensionId: extensionId,
+                            profileId: profileId,
+                            targetKind: .matchPattern,
+                            target: matchPattern.string,
+                            state: .denied,
+                            expiresAt: nil
+                        )
+                    }
+                }
+                let grantedMatches = matchPatterns.filter {
+                    self.isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                }
+                completionHandler(grantedMatches, nil)
+            }
+        }
     }
 
     func webExtensionController(
@@ -381,12 +755,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<URL>, Date?) -> Void
     ) {
-        // Extension URL access prompts are deliberately separate from normal-tab
-        // site permission storage and UI.
         var autoGranted = Set<URL>()
-        var denied = Set<URL>()
+        var unresolved = Set<URL>()
 
         let extensionId = extensionID(for: extensionContext)
+        let profileId = profileId(for: extensionContext)
         for url in urls {
             let status = extensionContext.permissionStatus(for: url)
             if isGrantedPermissionStatus(status) {
@@ -395,6 +768,12 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     granted: true,
                     extensionId: extensionId,
                     reason: "promptAlreadyGranted"
+                )
+            } else if status == .deniedExplicitly {
+                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                    granted: false,
+                    extensionId: extensionId,
+                    reason: "promptAlreadyDenied"
                 )
             } else if explicitlyGrantURLIfCoveredByGrantedMatchPattern(
                 url,
@@ -406,22 +785,147 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     extensionId: extensionId,
                     reason: "promptMatchPattern"
                 )
-            } else {
-                extensionContext.setPermissionStatus(.deniedExplicitly, for: url)
-                denied.insert(url)
-                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
-                    granted: false,
-                    extensionId: extensionId,
-                    reason: "promptDenied"
+            } else if let patternString = hostMatchPatternString(for: url),
+                      let extensionId,
+                      let profileId,
+                      let stored = storedExtensionPermissionDecision(
+                          extensionId: extensionId,
+                          profileId: profileId,
+                          targetKind: .matchPattern,
+                          target: patternString
+                      ),
+                      let matchPattern = try? WKWebExtension.MatchPattern(
+                          string: patternString
+                      )
+            {
+                let storedStatus: WKWebExtensionContext.PermissionStatus =
+                    stored.state == .allowed ? .grantedExplicitly : .deniedExplicitly
+                extensionContext.setPermissionStatus(
+                    storedStatus,
+                    for: matchPattern,
+                    expirationDate: stored.expiresAt
                 )
+                if stored.state == .allowed,
+                   explicitlyGrantURLIfCoveredByGrantedMatchPattern(
+                       url,
+                       in: extensionContext
+                   )
+                {
+                    autoGranted.insert(url)
+                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                        granted: true,
+                        extensionId: extensionId,
+                        reason: "promptStoredMatchPattern"
+                    )
+                } else {
+                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                        granted: false,
+                        extensionId: extensionId,
+                        reason: "promptStoredDeniedMatchPattern"
+                    )
+                }
+            } else {
+                unresolved.insert(url)
             }
         }
 
-        RuntimeDiagnostics.debug(
-            "Handled URL access request silently for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier): granted=\(autoGranted.count) denied=\(denied.count)",
-            category: "Extensions"
-        )
-        completionHandler(autoGranted, nil)
+        guard unresolved.isEmpty == false else {
+            completionHandler(autoGranted, nil)
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else {
+                completionHandler(autoGranted, nil)
+                return
+            }
+            let promptPatterns = unresolved.compactMap {
+                self.hostMatchPatternString(for: $0)
+            }
+            let decision = await self.promptForExtensionPermissionDecision(
+                extensionContext: extensionContext,
+                targets: unresolved.map(Self.extensionPermissionTarget(for:)),
+                reason: "promptForPermissionToAccess",
+                dedupeKey: self.permissionPromptDedupeKey(
+                    extensionContext: extensionContext,
+                    targets: promptPatterns.isEmpty
+                        ? unresolved.map(Self.extensionPermissionTarget(for:))
+                        : promptPatterns
+                )
+            )
+            switch decision {
+            case .allow(let expirationDate):
+                for url in unresolved {
+                    if let patternString = self.hostMatchPatternString(for: url),
+                       let matchPattern = try? WKWebExtension.MatchPattern(
+                           string: patternString
+                       )
+                    {
+                        extensionContext.setPermissionStatus(
+                            .grantedExplicitly,
+                            for: matchPattern,
+                            expirationDate: expirationDate
+                        )
+                        if let extensionId, let profileId {
+                            self.persistExtensionPermissionDecision(
+                                extensionId: extensionId,
+                                profileId: profileId,
+                                targetKind: .matchPattern,
+                                target: patternString,
+                                state: .allowed,
+                                expiresAt: expirationDate
+                            )
+                        }
+                    }
+                    extensionContext.setPermissionStatus(
+                        .grantedExplicitly,
+                        for: url,
+                        expirationDate: expirationDate
+                    )
+                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                        granted: true,
+                        extensionId: extensionId,
+                        reason: "promptAllowed"
+                    )
+                }
+                completionHandler(autoGranted.union(unresolved), expirationDate)
+            case .deny:
+                for url in unresolved {
+                    if let patternString = self.hostMatchPatternString(for: url),
+                       let matchPattern = try? WKWebExtension.MatchPattern(
+                           string: patternString
+                       )
+                    {
+                        extensionContext.setPermissionStatus(
+                            .deniedExplicitly,
+                            for: matchPattern,
+                            expirationDate: nil
+                        )
+                        if let extensionId, let profileId {
+                            self.persistExtensionPermissionDecision(
+                                extensionId: extensionId,
+                                profileId: profileId,
+                                targetKind: .matchPattern,
+                                target: patternString,
+                                state: .denied,
+                                expiresAt: nil
+                            )
+                        }
+                    }
+                    extensionContext.setPermissionStatus(
+                        .deniedExplicitly,
+                        for: url,
+                        expirationDate: nil
+                    )
+                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                        granted: false,
+                        extensionId: extensionId,
+                        reason: "promptDenied"
+                    )
+                }
+                completionHandler(autoGranted, nil)
+            }
+        }
     }
 
     func webExtensionController(

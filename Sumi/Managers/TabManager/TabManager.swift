@@ -56,6 +56,9 @@ class TabManager: ObservableObject {
     var pendingPinnedWithoutProfile: [ShortcutPin] = []
     // Transient shortcut-backed live tabs per window, keyed by shortcut pin id
     var transientShortcutTabsByWindow: [UUID: [UUID: Tab]] = [:]
+    // Transient extension-owned tabs created for internal extension pages that
+    // WebKit may close immediately during install/onboarding handshakes.
+    var transientExtensionTabsByID: [UUID: Tab] = [:]
     private var tabLookup: [UUID: Tab] = [:]
     private var transientTabLookupIDs: Set<UUID> = []
     private var attachedLiveTabIDs: Set<UUID> = []
@@ -265,6 +268,7 @@ class TabManager: ObservableObject {
             pinnedByProfile.removeAll()
             pendingPinnedWithoutProfile.removeAll()
             transientShortcutTabsByWindow.removeAll()
+            transientExtensionTabsByID.removeAll()
             tabLookup.removeAll()
             transientTabLookupIDs.removeAll()
             spaces.removeAll()
@@ -367,6 +371,7 @@ class TabManager: ObservableObject {
         updatedLookup.reserveCapacity(
             tabsBySpace.values.reduce(0) { $0 + $1.count }
                 + transientShortcutTabsByWindow.values.reduce(0) { $0 + $1.count }
+                + transientExtensionTabsByID.count
         )
 
         for tabs in tabsBySpace.values {
@@ -380,13 +385,19 @@ class TabManager: ObservableObject {
                 updatedLookup[tab.id] = tab
             }
         }
+        for tab in transientExtensionTabsByID.values {
+            updatedLookup[tab.id] = tab
+        }
 
-        tabLookup = updatedLookup
-        transientTabLookupIDs = Set(
+        var transientIDs = Set(
             transientShortcutTabsByWindow.values
                 .flatMap(\.values)
                 .map(\.id)
         )
+        transientIDs.formUnion(transientExtensionTabsByID.keys)
+
+        tabLookup = updatedLookup
+        transientTabLookupIDs = transientIDs
     }
 
     func rebuildTabLookupForRestore() {
@@ -494,11 +505,12 @@ class TabManager: ObservableObject {
         pendingTabLookupUpserts.removeAll(keepingCapacity: true)
         pendingTransientTabLookupRefresh = false
 
-        let liveTransientIDs = Set(
+        var liveTransientIDs = Set(
             transientShortcutTabsByWindow.values
                 .flatMap(\.values)
                 .map(\.id)
         )
+        liveTransientIDs.formUnion(transientExtensionTabsByID.keys)
 
         if shouldRefreshTransientLookup {
             refreshTransientTabLookup()
@@ -534,6 +546,10 @@ class TabManager: ObservableObject {
                 tabLookup[tab.id] = tab
                 updatedIDs.insert(tab.id)
             }
+        }
+        for tab in transientExtensionTabsByID.values {
+            tabLookup[tab.id] = tab
+            updatedIDs.insert(tab.id)
         }
 
         transientTabLookupIDs = updatedIDs
@@ -821,7 +837,9 @@ class TabManager: ObservableObject {
         }
 
         let normals = spaces.flatMap { tabsBySpace[$0.id] ?? [] }
-        return transientShortcutTabsByWindow.values.flatMap(\.values) + normals
+        return transientShortcutTabsByWindow.values.flatMap(\.values)
+            + Array(transientExtensionTabsByID.values)
+            + normals
     }
 
     /// Profile-filtered union of pinned, space-pinned and regular tabs.
@@ -1068,6 +1086,90 @@ class TabManager: ObservableObject {
         setTabs(arr, for: spaceId)
     }
 
+    func isTransientExtensionTab(_ tab: Tab) -> Bool {
+        transientExtensionTabsByID[tab.id] != nil
+    }
+
+    @discardableResult
+    func createTransientExtensionTab(
+        url: String,
+        in space: Space? = nil,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Tab {
+        let settings = sumiSettings ?? browserManager?.sumiSettings
+        let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
+        let normalizedUrl = normalizeURL(url, queryTemplate: template)
+        let validURL = URL(string: normalizedUrl) ?? SumiSurface.emptyTabURL
+
+        let targetSpace = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
+        if targetSpace.profileId == nil {
+            let defaultProfileId = browserManager?.currentProfile?.id
+                ?? browserManager?.profileManager.profiles.first?.id
+            if let defaultProfileId {
+                targetSpace.profileId = defaultProfileId
+                markAllSpacesStructurallyDirty()
+                scheduleStructuralPersistence()
+            }
+        }
+
+        let sid = targetSpace.id
+        let nextIndex = (tabsBySpace[sid]?.map(\.index).max() ?? -1) + 1
+        let tab = Tab(
+            url: validURL,
+            name: "New Tab",
+            favicon: "globe",
+            spaceId: sid,
+            index: nextIndex,
+            browserManager: browserManager
+        )
+        tab.profileId = targetSpace.profileId
+        tab.webExtensionContextOverride = webExtensionContextOverride
+        attach(tab)
+        transientExtensionTabsByID[tab.id] = tab
+        tabLookup[tab.id] = tab
+        transientTabLookupIDs.insert(tab.id)
+        return tab
+    }
+
+    @discardableResult
+    func promoteTransientExtensionTab(
+        _ tab: Tab,
+        in space: Space? = nil,
+        activate: Bool = false
+    ) -> Bool {
+        guard transientExtensionTabsByID.removeValue(forKey: tab.id) != nil else {
+            return false
+        }
+        transientTabLookupIDs.remove(tab.id)
+
+        let targetSpace = space
+            ?? tab.spaceId.flatMap { spaceId in
+                spaces.first(where: { $0.id == spaceId })
+            }
+            ?? currentSpace
+            ?? ensureDefaultSpaceIfNeeded()
+        insertRegularTab(tab, in: targetSpace.id, at: nil)
+        scheduleStructuralPersistence()
+        if activate {
+            setActiveTab(tab)
+        }
+        return true
+    }
+
+    private func cleanupRemovedTransientExtensionTab(_ tab: Tab) {
+        browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)
+        browserManager?.compositorManager.unloadTab(tab)
+        browserManager?.webViewCoordinator?.removeAllWebViews(
+            for: tab,
+            closeActiveFullscreenMedia: true
+        )
+        detach(tab)
+        NotificationCenter.default.post(
+            name: .sumiTabLifecycleDidChange,
+            object: tab
+        )
+    }
+
     func removeTab(_ id: UUID) {
         withStructuralUpdateTransaction {
             // Notify SplitViewManager about tab closure to prevent zombie state
@@ -1078,6 +1180,13 @@ class TabManager: ObservableObject {
             var removed: Tab?
             var removedSpaceId: UUID?
             var removedIndexInCurrentSpace: Int?
+
+            if let transientExtensionTab = transientExtensionTabsByID.removeValue(forKey: id) {
+                transientTabLookupIDs.remove(id)
+                tabLookup.removeValue(forKey: id)
+                cleanupRemovedTransientExtensionTab(transientExtensionTab)
+                return
+            }
 
             if removed == nil {
                 for space in spaces {
@@ -1263,6 +1372,7 @@ class TabManager: ObservableObject {
         in space: Space? = nil,
         activate: Bool = true,
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
+        webExtensionContextOverride: WKWebExtensionContext? = nil,
         regularInsertionIndex: Int? = nil
     ) -> Tab {
         return withStructuralUpdateTransaction {
@@ -1276,6 +1386,7 @@ class TabManager: ObservableObject {
                     in: space,
                     activate: activate,
                     webViewConfigurationOverride: webViewConfigurationOverride,
+                    webExtensionContextOverride: webExtensionContextOverride,
                     regularInsertionIndex: regularInsertionIndex
                 )
             }
@@ -1307,6 +1418,7 @@ class TabManager: ObservableObject {
                 browserManager: browserManager
             )
             newTab.profileId = targetSpace?.profileId
+            newTab.webExtensionContextOverride = webExtensionContextOverride
             if let webViewConfigurationOverride {
                 newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
             }

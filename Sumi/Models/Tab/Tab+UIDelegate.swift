@@ -8,29 +8,17 @@ extension Tab: WKUIDelegate {
         sourceURL: URL?,
         requestURL: URL?
     ) -> Bool {
-        let extensionSchemes: Set<String> = [
-            "webkit-extension",
-            "safari-web-extension",
-        ]
-
-        let sourceScheme = sourceURL?.scheme?.lowercased()
-        let requestScheme = requestURL?.scheme?.lowercased()
-        return extensionSchemes.contains(sourceScheme ?? "")
-            || extensionSchemes.contains(requestScheme ?? "")
+        ExtensionUtils.isExtensionOwnedURL(sourceURL)
+            || ExtensionUtils.isExtensionOwnedURL(requestURL)
     }
 
     nonisolated static func isExtensionOriginatedExternalPopupNavigation(
         sourceURL: URL?,
         requestURL: URL?
     ) -> Bool {
-        let extensionSchemes: Set<String> = [
-            "webkit-extension",
-            "safari-web-extension",
-        ]
-        let sourceScheme = sourceURL?.scheme?.lowercased()
         let requestScheme = requestURL?.scheme?.lowercased()
 
-        return extensionSchemes.contains(sourceScheme ?? "")
+        return ExtensionUtils.isExtensionOwnedURL(sourceURL)
             && (requestScheme == "http" || requestScheme == "https")
     }
 

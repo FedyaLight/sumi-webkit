@@ -370,8 +370,7 @@ extension ExtensionManager {
             manifest: resolvedManifest
         )
 
-        let profileStore = getExtensionDataStore(for: profileId)
-        let profileController = extensionControllersByProfile[profileId]
+        _ = extensionControllersByProfile[profileId]
             ?? ensureExtensionController(for: profileId)
         if let extensionPageUserContentController =
             extensionPageUserContentControllersByProfile[profileId]
@@ -384,22 +383,6 @@ extension ExtensionManager {
                 scopes: [.extensionPage]
             )
         }
-
-        guard let configuration = extensionContext.webViewConfiguration else {
-            let fallbackConfiguration = browserConfiguration.webViewConfiguration
-            if fallbackConfiguration.webExtensionController == nil {
-                fallbackConfiguration.webExtensionController = profileController
-            }
-            fallbackConfiguration.websiteDataStore = profileStore
-            fallbackConfiguration.defaultWebpagePreferences.allowsContentJavaScript = true
-            return
-        }
-
-        if configuration.webExtensionController == nil {
-            configuration.webExtensionController = profileController
-        }
-        configuration.websiteDataStore = profileStore
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
     }
 
     var hasEnabledInstalledExtensions: Bool {
@@ -734,6 +717,8 @@ extension ExtensionManager {
 
         runtimeInitializationTask?.cancel()
         runtimeInitializationTask = nil
+        contentScriptContextLoadTasksByProfile.values.forEach { $0.cancel() }
+        contentScriptContextLoadTasksByProfile.removeAll()
         backgroundWakeTasks.values.forEach { $0.cancel() }
 
         let uiStateIDs = removeUIState ? Array(actionAnchors.keys) : []
@@ -1077,8 +1062,6 @@ extension ExtensionManager {
             return
         }
 
-        scheduleExtensionBackgroundWakeForNavigationIfNeeded(tab, reason: reason)
-
         let shouldCycleTabLifecycle =
             tab.extensionRuntimeOpenNotifiedDocumentSequence != nil
             || tab.extensionRuntimeDocumentSequence > 0
@@ -1102,46 +1085,6 @@ extension ExtensionManager {
             tab,
             reason: reason
         )
-    }
-
-    func scheduleExtensionBackgroundWakeForNavigationIfNeeded(
-        _ tab: Tab,
-        reason: String
-    ) {
-        guard let profileId = resolvedProfileId(for: tab) else { return }
-
-        let tabId = tab.id
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let neededContextLoad = self.profileNeedsContentScriptContextLoad(profileId: profileId)
-            await self.ensureContentScriptContextsLoaded(for: profileId)
-
-            for entity in self.enabledPersistedExtensionEntities() where entity.isEnabled {
-                guard entity.hasContentScripts else { continue }
-                guard let context = self.getExtensionContext(
-                    for: entity.id,
-                    profileId: profileId
-                ) else {
-                    continue
-                }
-                _ = try? await self.ensureBackgroundAvailableIfRequired(
-                    for: context.webExtension,
-                    context: context,
-                    reason: .reload
-                )
-            }
-
-            guard neededContextLoad,
-                  let resolvedTab = self.browserManager?.tabManager.tab(for: tabId)
-            else {
-                return
-            }
-
-            self.reconcileTabAfterContentScriptContextsLoaded(
-                resolvedTab,
-                reason: "\(reason).afterContextLoad"
-            )
-        }
     }
 
     private func isExtensionInjectableCommittedURL(_ url: URL) -> Bool {

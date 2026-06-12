@@ -26,6 +26,11 @@ enum WebExtensionManifestValidationPolicy: Equatable, Sendable {
 }
 
 struct ExtensionUtils {
+    static let extensionOwnedURLSchemes: Set<String> = [
+        "webkit-extension",
+        "safari-web-extension",
+    ]
+
     static let commonOptionsPageRelativePaths = [
         "ui/options/index.html",
         "options/index.html",
@@ -58,6 +63,24 @@ struct ExtensionUtils {
 
     static var isExtensionSupportAvailable: Bool {
         true
+    }
+
+    static func isExtensionOwnedURL(_ url: URL?) -> Bool {
+        guard let scheme = url?.scheme?.lowercased() else { return false }
+        return extensionOwnedURLSchemes.contains(scheme)
+    }
+
+    static func webKitLoadableExtensionURL(for url: URL) -> URL {
+        guard url.scheme?.lowercased() == "safari-web-extension",
+              var components = URLComponents(
+                  url: url,
+                  resolvingAgainstBaseURL: false
+              )
+        else {
+            return url
+        }
+        components.scheme = "webkit-extension"
+        return components.url ?? url
     }
 
     static func applicationSupportRoot() -> URL {
