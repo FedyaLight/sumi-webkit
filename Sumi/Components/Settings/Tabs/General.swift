@@ -17,6 +17,8 @@ struct SettingsGeneralTab: View {
         @Bindable var settings = sumiSettings
 
         VStack(alignment: .leading, spacing: 16) {
+            DefaultBrowserSettingsSection()
+
             SettingsSection(
                 title: "Window",
                 subtitle: "Core browser-window behavior."

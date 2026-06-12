@@ -4,8 +4,6 @@
 //
 //
 
-import CoreServices
-
 enum ZoomPopoverSource {
     case toolbar
     case menu
@@ -97,10 +95,9 @@ extension BrowserManager {
     // MARK: - Default Browser
 
     func setAsDefaultBrowser() {
-        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return }
-
-        LSSetDefaultHandlerForURLScheme("http" as CFString, bundleIdentifier as CFString)
-        LSSetDefaultHandlerForURLScheme("https" as CFString, bundleIdentifier as CFString)
+        Task {
+            _ = await SumiDefaultBrowserService.shared.requestBecomeDefault()
+        }
     }
 
     func requestZoomPopover(for tab: Tab, in windowState: BrowserWindowState, source: ZoomPopoverSource) {
