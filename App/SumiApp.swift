@@ -99,6 +99,9 @@ struct SumiApp: App {
         SumiNativeNowPlayingController.shared.configure(browserManager: browserManager)
         browserManager.tabManager.sumiSettings = settingsManager
 
+        // Start Sparkle after the first browser window appears so launch stays focused on browsing.
+        SumiUpdaterService.shared.start()
+
         // Initialize keyboard shortcut manager
         keyboardShortcutManager.setBrowserManager(browserManager)
 

@@ -64,6 +64,7 @@ struct SumiCommands: Commands {
         }
 
         CommandGroup(after: .appInfo) {
+            SumiCheckForUpdatesCommand(updaterService: SumiUpdaterService.shared)
             Divider()
             Button("Make Sumi Default Browser") {
                 browserManager.setAsDefaultBrowser()
@@ -300,5 +301,16 @@ struct DynamicShortcutModifier: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+private struct SumiCheckForUpdatesCommand: View {
+    @ObservedObject var updaterService: SumiUpdaterService
+
+    var body: some View {
+        Button("Check for Updates…") {
+            updaterService.checkForUpdatesFromUserAction()
+        }
+        .disabled(!updaterService.state.canCheckForUpdates)
     }
 }

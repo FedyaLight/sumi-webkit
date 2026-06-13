@@ -1314,6 +1314,7 @@ struct SpacesSideBarView: View {
     @State private var transitionTask: Task<Void, Never>?
     @ObservedObject private var dragState = SidebarDragState.shared
     @ObservedObject private var nowPlayingController = SumiNativeNowPlayingController.shared
+    @ObservedObject private var updaterService = SumiUpdaterService.shared
 
     private var shouldMountMiniPlayer: Bool {
         guard sumiSettings.sidebarMiniPlayerEnabled else { return false }
@@ -1376,6 +1377,10 @@ struct SpacesSideBarView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 VStack(spacing: 8) {
+                    if let notice = updaterService.sidebarNotice {
+                        sidebarUpdateNotice(notice)
+                    }
+
                     if shouldMountMiniPlayer {
                         MediaControlsView()
                             .environmentObject(browserManager)
@@ -1413,6 +1418,28 @@ struct SpacesSideBarView: View {
         }
         .onChange(of: windowState.pendingSplitGroupFocusRequest) { _, request in
             handlePendingSplitGroupFocusRequest(request, spaces: spaces)
+        }
+    }
+
+    @ViewBuilder
+    private func sidebarUpdateNotice(_ notice: SumiUpdateSidebarNotice) -> some View {
+        if sidebarPresentationContext.inputMode == .collapsedOverlay {
+            HStack {
+                Spacer(minLength: 0)
+                SumiUpdateSidebarCompactIndicator(
+                    notice: notice,
+                    onUpdate: { updaterService.startUpdateFromSidebarNotice() }
+                )
+                .disabled(notice.primaryActionTitle == nil)
+            }
+            .padding(.horizontal, 8)
+        } else {
+            SumiUpdateSidebarNoticeView(
+                notice: notice,
+                onUpdate: { updaterService.startUpdateFromSidebarNotice() },
+                onDismiss: { updaterService.dismissSidebarNotice(notice) }
+            )
+            .padding(.horizontal, 8)
         }
     }
 

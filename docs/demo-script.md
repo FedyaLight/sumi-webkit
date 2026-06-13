@@ -1,6 +1,6 @@
 # Development Demo Script
 
-This is a draft 60-90 second demo outline for the first public preview.
+This is a draft 60-90 second demo outline for the Alpha.
 
 ## Flow
 
@@ -21,8 +21,8 @@ This is a draft 60-90 second demo outline for the first public preview.
 12. Show memory modes and inactive tab unloading settings.
 13. Show tracking/adblock modules as optional settings.
 14. If safe, show the extension UI and Safari compatibility report.
-15. End with the first-public-preview blockers: Safari password-manager support,
-    backup/restore, and update notification.
+15. End with the remaining Alpha hardening work: Safari password-manager
+    support and published update validation.
 
 ## Do Not Show
 

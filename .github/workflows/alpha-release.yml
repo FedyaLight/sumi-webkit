@@ -1,0 +1,52 @@
+name: Alpha Release Artifact
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach the alpha archive to"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-alpha:
+    name: Build alpha archive
+    runs-on: macos-26
+    env:
+      DERIVED_DATA_PATH: ${{ github.workspace }}/build/ReleaseAlpha
+      OUTPUT_DIR: ${{ github.workspace }}/release/artifacts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project Sumi.xcodeproj -scheme Sumi
+
+      - name: Build unsigned alpha archive
+        run: scripts/release/package_alpha_release.sh
+
+      - name: Upload archive to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          archive="$(find release/artifacts -name 'Sumi-*-alpha-macos.zip' -print -quit)"
+          if [[ -z "${archive}" ]]; then
+            echo "No alpha archive found." >&2
+            exit 1
+          fi
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" "${archive}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${archive}" \
+              --prerelease \
+              --title "${RELEASE_TAG}" \
+              --notes "Sumi Alpha release. Generate and publish the signed Sparkle appcast separately."
+          fi

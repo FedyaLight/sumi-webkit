@@ -41,7 +41,21 @@ Vendor/DDG/URLPredictor/Binary/
 .home/
 telemetry-id
 
+# Sparkle local keys and generated release artifacts
+/release/
+*.sparkle_private_key
+*sparkle_ed_private_key*
+*sparkle-private-key*
+*.ed25519
+*.edkey
+
 # Local / editor
+.codex/
+.cursor/
+.claude/
+.continue/
+.windsurf/
+.aider*
 .env
 .env.*
 !.env.example
@@ -59,6 +73,8 @@ telemetry-id
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/build-adblock-bundle.yml
+!.github/workflows/alpha-release.yml
+!.github/workflows/publish-appcast-pages.yml
 .vscode/
 
 # Local dev artifacts (not part of the Xcode app)
@@ -77,3 +93,7 @@ docs/*
 !docs/SafariExtensionNativeMessagingAdapterAcceptance.md
 !docs/demo-script.md
 !docs/adblock-native-rule-bundle-v1.md
+!docs/UPDATES.md
+!docs/RELEASES.md
+!docs/appcast-alpha.xml
+!docs/appcast.xml

@@ -12,6 +12,7 @@
 		A11DD020B11D000100000006 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000006 /* Persistence */; };
 		A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000007 /* PrivacyConfig */; };
 		A11DD020B11D000100000008 /* URLPredictor in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000008 /* URLPredictor */; };
+		3ABB06E087FC4AB7B21B2B6B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3E692AE1701C49119B0EB052 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -152,6 +153,7 @@
 				A11DD020B11D000100000006 /* Persistence in Frameworks */,
 				A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */,
 				A11DD020B11D000100000008 /* URLPredictor in Frameworks */,
+				3ABB06E087FC4AB7B21B2B6B /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -255,6 +257,7 @@
 				A11DD010B11D000100000006 /* Persistence */,
 				A11DD010B11D000100000007 /* PrivacyConfig */,
 				A11DD010B11D000100000008 /* URLPredictor */,
+				3E692AE1701C49119B0EB052 /* Sparkle */,
 			);
 			productName = Sumi;
 			productReference = 7F8340FC2E37F39400674A5D /* Sumi.app */;
@@ -295,6 +298,7 @@
 			packageReferences = (
 				A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */,
 				A11DD000B11D000100000002 /* XCLocalSwiftPackageReference "Vendor/DDG/URLPredictor" */,
+				9AD90DB4528040A5950C146D /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7F8340FD2E37F39400674A5D /* Products */;
@@ -739,7 +743,23 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		9AD90DB4528040A5950C146D /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.9.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
+		3E692AE1701C49119B0EB052 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9AD90DB4528040A5950C146D /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
 		A11DD010B11D000100000002 /* Bookmarks */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Bookmarks;

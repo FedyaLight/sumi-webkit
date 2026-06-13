@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for taking the time to report a bug.
 
-        Before filing, please search existing issues to avoid duplicates. Sumi is currently in developer preview, so some features are incomplete or changing.
+        Before filing, please search existing issues to avoid duplicates. Sumi is currently in Alpha, so some features are incomplete or changing.
 
         Do not include passwords, cookies, API keys, private tabs, password-manager vault contents, or other private data in screenshots, logs, or descriptions. If this is a security vulnerability, do not file a public issue; follow the security policy instead.
 
@@ -19,7 +19,7 @@ body:
       options:
         - label: I searched existing issues and did not find the same bug.
           required: true
-        - label: I understand Sumi is currently in developer preview.
+        - label: I understand Sumi is currently in Alpha.
           required: true
         - label: I removed or anonymized private data from screenshots/logs.
           required: true
@@ -121,8 +121,7 @@ body:
       label: Build type
       options:
         - Local developer build
-        - Developer preview build
-        - GitHub release build
+        - Alpha release build
         - Not sure
   - type: input
     id: version-or-commit
@@ -157,4 +156,3 @@ body:
       label: Logs or crash report
       description: Paste relevant logs or crash reports only if they are safe to share.
       render: shell
-

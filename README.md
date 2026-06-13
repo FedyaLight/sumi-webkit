@@ -20,18 +20,23 @@
 
 Sumi is in alpha. The browser shell builds and runs locally, but it is not recommended as a primary browser yet.
 
-The first public preview is planned after the remaining user-safety pieces are in place:
+Alpha hardening is focused on the remaining user-safety pieces:
 
 - Safari password-manager extension compatibility.
-- An update mechanism or update notification path.
 
 Completed user-safety pieces:
 
 - [x] Arc/Zen import and Sumi backup/restore through Settings > Data & Recovery.
+- [x] Sparkle-based Alpha update flow with GitHub Releases and static appcast infrastructure.
 
-See [docs/roadmap.md](docs/roadmap.md) for the current milestone, developer-preview status, public-preview blockers, and planned work.
+See [docs/roadmap.md](docs/roadmap.md) for the current Alpha status and planned work.
 
-A short developer-preview video is available on [YouTube](https://youtu.be/7Wl-LCqUWbQ).
+Alpha update and release documentation:
+
+- [Alpha install and update behavior](docs/UPDATES.md)
+- [Maintainer release process](docs/RELEASES.md)
+
+A short Alpha demo video is available on [YouTube](https://youtu.be/7Wl-LCqUWbQ).
 
 ![Sumi browser preview](assets/browser-preview.png)
 
@@ -49,7 +54,7 @@ The project focuses on:
 
 ## Working Browser Features
 
-Current developer-preview builds include:
+Current Alpha builds include:
 
 - Native macOS browser shell using WebKit and SwiftUI.
 - Tabs, sidebar, profiles, and spaces.
@@ -105,7 +110,6 @@ The high-level architecture notes live in [docs/architecture.md](docs/architectu
 Near-term work:
 
 - Safari password-manager extension compatibility.
-- Update mechanism or update notification.
 
 Later work under consideration:
 

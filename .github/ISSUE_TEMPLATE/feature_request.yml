@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for suggesting an improvement.
 
-        Please check the README and roadmap before filing. Sumi is currently in developer preview, and the first public preview is planned after Safari password-manager compatibility, backup/restore for user data, and an update path are in place.
+        Please check the README and roadmap before filing. Sumi is currently in Alpha; Safari password-manager compatibility and release validation are still changing.
 
         Requests are most useful when they describe a user problem and a concrete workflow. Please avoid requests that only ask to clone another product.
   - type: checkboxes
@@ -80,4 +80,3 @@ body:
     attributes:
       label: Additional context
       description: Add any other context, screenshots, or links that are safe to share.
-

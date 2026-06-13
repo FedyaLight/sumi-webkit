@@ -1,13 +1,13 @@
 # Security Policy
 
-Sumi Browser is currently in developer preview and does not have a stable public release yet. The current `main` branch represents an active developer-preview state, and Sumi is not recommended as a primary browser at this time.
+Sumi Browser is currently in Alpha and does not have a stable public release yet. The current `main` branch represents active Alpha development, and Sumi is not recommended as a primary browser at this time.
 
 ## Supported Versions
 
 | Version | Security support |
 | --- | --- |
-| Current `main` branch / latest developer-preview state | Reviewed as active development |
-| Future public previews | Supported when available |
+| Current `main` branch / latest Alpha state | Reviewed as active development |
+| Future public Alpha releases | Supported when available |
 | Older experimental builds or local snapshots | Best effort only |
 
 ## Reporting Vulnerabilities
@@ -27,5 +27,4 @@ Security-sensitive areas include:
 - Content script, MAIN world, and isolated world boundaries
 - Privacy and adblock modules
 - Backup and restore
-- Update mechanism or update notifications
-
+- Sparkle update mechanism and update notifications

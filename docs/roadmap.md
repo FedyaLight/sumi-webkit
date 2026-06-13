@@ -1,12 +1,12 @@
 # Roadmap
 
-Sumi Browser is a developer-preview project. This roadmap is a planning snapshot, not a release promise.
+Sumi Browser is an Alpha project. This roadmap is a planning snapshot, not a release promise.
 
 ## Current Status
 
 - Sumi builds and runs locally as a working native macOS browser shell.
 - It is not recommended as a primary browser yet.
-- The first public preview is planned after Safari password-manager compatibility and update mechanism/notification.
+- Alpha hardening is focused on Safari password-manager compatibility and update-path validation.
 
 ## Current Milestone
 
@@ -24,7 +24,7 @@ Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in S
 - Restore supports explicit Merge and Replace modes. Replace writes an automatic pre-restore backup and prunes old automatic pre-restore files so the feature does not accumulate unbounded app-support data.
 - Chrome, Safari, and Firefox are supported through the existing bookmarks importer; deeper browser organization import requires Arc/Zen data or a portable browser2zen/Sumi transfer file.
 
-## Done In Developer Preview
+## Done In Alpha
 
 - Working native macOS browser shell.
 - Tabs, sidebar, spaces, and profiles.
@@ -46,6 +46,7 @@ Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in S
 - Safari extension compatibility report UI.
 - Real password-manager package trials.
 - Data & Recovery import/export/backup/restore.
+- Sparkle Alpha updates through GitHub Releases and a static HTTPS appcast.
 
 ## Experimental Or In Validation
 
@@ -70,15 +71,15 @@ Additional details:
 - Offscreen, webRequest, and DNR product behavior.
 - Arbitrary `scripting.executeScript` and `insertCSS`.
 
-## Public Preview Blockers
+## Remaining Alpha Hardening
 
 - Safari password-manager compatibility.
-- Update mechanism or update notification.
+- End-to-end published update validation for each Alpha release.
 
 ## Near-Term
 
 - Safari password-manager support.
-- Update mechanism or update notification.
+- Alpha release validation and documentation hardening.
 
 ## Later
 
