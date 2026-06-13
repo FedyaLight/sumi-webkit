@@ -20,6 +20,26 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         return (manager, browserConfiguration)
     }
 
+    @discardableResult
+    private func attachUsableExtensionWebView(
+        to tab: Tab,
+        manager: ExtensionManager,
+        profile: Profile
+    ) -> WKWebView {
+        let configuration = manager.browserConfiguration.auxiliaryWebViewConfiguration(
+            surface: .extensionOptions
+        )
+        manager.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            profileId: profile.id,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        webView.owningTab = tab
+        tab._webView = webView
+        return webView
+    }
+
     func testAttachExtensionControllerIfNeededAssignsProfileController() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
@@ -1155,9 +1175,316 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertFalse(manager.notifyTabOpened(tab))
 
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
+        attachUsableExtensionWebView(
+            to: tab,
+            manager: manager,
+            profile: profile
+        )
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertTrue(manager.notifyTabOpened(tab))
         XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+    }
+
+    func testNotifyTabOpenedDefersUntilLiveWebViewExists() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        _ = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+
+        let browserManager = BrowserManager()
+        manager.attach(browserManager: browserManager)
+        browserManager.profileManager.profiles = [profile]
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+        _ = try await manager.enableExtension(installed.id)
+        await manager.ensureContentScriptContextsLoaded(for: profile.id)
+
+        let tab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "https://example.com/login")!
+        )
+        tab.browserManager = browserManager
+        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+        XCTAssertFalse(manager.notifyTabOpened(tab))
+        XCTAssertFalse(tab.didNotifyOpenToExtensions)
+
+        attachUsableExtensionWebView(
+            to: tab,
+            manager: manager,
+            profile: profile
+        )
+
+        XCTAssertTrue(manager.notifyTabOpened(tab))
+        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+    }
+
+    func testUserGestureReconcileDoesNotRebuildLivePageForMissedContentScriptBinding()
+        async throws
+    {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        _ = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        let windowState = BrowserWindowState()
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        manager.attach(browserManager: browserManager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+        _ = try await manager.enableExtension(installed.id)
+        await manager.ensureContentScriptContextsLoaded(for: profile.id)
+
+        let pageURL = URL(string: "https://example.com/login")!
+        let tab = browserManager.tabManager.createNewTab(
+            url: pageURL.absoluteString,
+            in: space,
+            activate: false
+        )
+        tab.profileId = profile.id
+        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        let webView = attachUsableExtensionWebView(
+            to: tab,
+            manager: manager,
+            profile: profile
+        )
+        tab.assignWebViewToWindow(webView, windowId: windowState.id)
+        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+
+        XCTAssertTrue(manager.tabNeedsExtensionContentScriptRebind(tab))
+        let webViewBeforeGesture = try XCTUnwrap(tab.existingWebView)
+
+        manager.reconcileExtensionRuntimeOnUserGestureIfNeeded(
+            tab,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertIdentical(tab.existingWebView, webViewBeforeGesture)
+    }
+
+    func testExtensionRequestedNormalTabPreloadsContentScriptContextsBeforeOpenNotification() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        let controller = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        let windowState = BrowserWindowState()
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        manager.attach(browserManager: browserManager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+        _ = try await manager.enableExtension(installed.id)
+        manager.unloadExtensionContextIfLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+
+        let pageURL = URL(string: "https://example.com/login")!
+        XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+
+        let preparedProfileId = try await manager.prepareExtensionRequestedTabForInitialLoad(
+            url: pageURL,
+            requestedWindow: nil,
+            controller: controller
+        )
+
+        XCTAssertEqual(preparedProfileId, profile.id)
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+
+        let tab = try manager.openExtensionRequestedTab(
+            url: pageURL,
+            shouldBeActive: true,
+            shouldBePinned: false,
+            requestedWindow: nil,
+            controller: controller,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertEqual(tab.url, pageURL)
+        XCTAssertEqual(tab.spaceId, space.id)
+        if tab.extensionRuntimeOpenNotifiedWithLoadedContexts != true {
+            attachUsableExtensionWebView(
+                to: tab,
+                manager: manager,
+                profile: profile
+            )
+            manager.registerExtensionCreatedTabWithExtensionRuntime(
+                tab,
+                reason: "SafariExtensionWebViewControllerWiringTests.lazyMaterialization"
+            )
+        }
+        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+        XCTAssertTrue(tab.didNotifyOpenToExtensions)
+    }
+
+    func testExtensionRequestedNormalWindowPreloadsContentScriptContextsBeforeOpenNotification() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        let controller = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        manager.attach(browserManager: browserManager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+        _ = try await manager.enableExtension(installed.id)
+        manager.unloadExtensionContextIfLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+
+        let pageURL = URL(string: "https://example.com/login")!
+        XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+
+        var openedTabIDs: [UUID] = []
+        manager.testHooks.didOpenTab = { openedTabIDs.append($0) }
+        let openedWindow = expectation(description: "extension normal window opened")
+        var completionWindow: (any WKWebExtensionWindow)?
+        var completionError: (any Error)?
+
+        manager.openExtensionWindowUsingTabURLs(
+            [pageURL],
+            controller: controller,
+            createWindow: {
+                let windowState = BrowserWindowState()
+                windowState.currentProfileId = profile.id
+                windowState.currentSpaceId = space.id
+                windowRegistry.register(windowState)
+                windowRegistry.setActive(windowState)
+            },
+            awaitWindowRegistration: { existingWindowIDs in
+                await windowRegistry.awaitNextRegisteredWindow(
+                    excluding: existingWindowIDs
+                )
+            },
+            completionHandler: { window, error in
+                completionWindow = window
+                completionError = error
+                openedWindow.fulfill()
+            }
+        )
+
+        await fulfillment(of: [openedWindow], timeout: 2.0)
+        XCTAssertNil(completionError)
+        XCTAssertNotNil(completionWindow)
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+
+        let tab = try XCTUnwrap(
+            browserManager.tabManager.allTabs().first { $0.url == pageURL }
+        )
+        if openedTabIDs.isEmpty {
+            attachUsableExtensionWebView(
+                to: tab,
+                manager: manager,
+                profile: profile
+            )
+            manager.registerExtensionCreatedTabWithExtensionRuntime(
+                tab,
+                reason: "SafariExtensionWebViewControllerWiringTests.lazyMaterialization"
+            )
+        }
+        XCTAssertEqual(openedTabIDs.count, 1)
+        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+        XCTAssertTrue(tab.didNotifyOpenToExtensions)
     }
 
     func testLazyContentScriptContextLoadDoesNotWakeBackgroundForOrdinaryNavigation() async throws {
@@ -1372,6 +1699,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
         tab.noteCommittedMainDocumentNavigation(to: pageURL)
         tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        attachUsableExtensionWebView(
+            to: tab,
+            manager: manager,
+            profile: profile
+        )
 
         let didCloseExpectation = expectation(description: "didCloseTab before reload commit")
         let didOpenExpectation = expectation(description: "didOpenTab before reload commit")

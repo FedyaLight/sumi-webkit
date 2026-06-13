@@ -43,6 +43,35 @@ extension ExtensionManager {
         try context.fetch(FetchDescriptor<ExtensionEntity>()).first(where: { $0.id == id })
     }
 
+    func extensionResourcesRoot(
+        sourceKind: WebExtensionSourceKind,
+        packagePath: String,
+        sourceBundlePath: String
+    ) throws -> URL {
+        if sourceKind == .safariAppExtension {
+            guard let appexURL = SafariAppExtensionResources.installedAppexBundleURL(
+                sourceKind: sourceKind,
+                sourceBundlePath: sourceBundlePath
+            ) else {
+                throw ExtensionError.installationFailed(
+                    "Installed Safari app extension bundle is unavailable"
+                )
+            }
+            return try SafariAppExtensionResources.resourcesRoot(in: appexURL)
+        }
+
+        return URL(fileURLWithPath: packagePath, isDirectory: true)
+    }
+
+    func extensionResourcesRoot(for entity: ExtensionEntity) throws -> URL {
+        let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
+        return try extensionResourcesRoot(
+            sourceKind: sourceKind,
+            packagePath: entity.packagePath,
+            sourceBundlePath: entity.sourceBundlePath
+        )
+    }
+
     func sortInstalledExtensions() {
         installedExtensions.sort {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -232,10 +261,15 @@ extension ExtensionManager {
         manifest: [String: Any]
     ) throws -> InstalledExtension {
         let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
+        let extensionRoot = try extensionResourcesRoot(
+            sourceKind: sourceKind,
+            packagePath: entity.packagePath,
+            sourceBundlePath: entity.sourceBundlePath
+        )
         return try makeInstalledRecord(
             extensionId: entity.id,
             manifest: manifest,
-            extensionRoot: URL(fileURLWithPath: entity.packagePath),
+            extensionRoot: extensionRoot,
             isEnabled: entity.isEnabled,
             sourceKind: sourceKind,
             sourceBundlePath: entity.sourceBundlePath,
@@ -324,6 +358,37 @@ extension ExtensionManager {
         return nil
     }
 
+    func ownerExtensionID(
+        extensionContext: WKWebExtensionContext? = nil,
+        openerTab: Tab? = nil,
+        extensionOwnedSourceURL: URL? = nil
+    ) -> String? {
+        if let extensionContext,
+           let extensionId = extensionID(for: extensionContext)
+        {
+            return extensionId
+        }
+
+        if let override = openerTab?.webExtensionContextOverride,
+           let extensionId = extensionID(for: override)
+        {
+            return extensionId
+        }
+
+        for candidate in [extensionOwnedSourceURL, openerTab?.url] {
+            guard let url = candidate,
+                  ExtensionUtils.isExtensionOwnedURL(url),
+                  let host = url.host,
+                  host.isEmpty == false
+            else {
+                continue
+            }
+            return host
+        }
+
+        return nil
+    }
+
     func storedExtensionPermissionDecision(
         extensionId: String,
         profileId: UUID,
@@ -389,6 +454,9 @@ extension ExtensionManager {
             if record.isExpired() {
                 records.removeValue(forKey: key)
                 didDropExpired = true
+                continue
+            }
+            guard record.targetKind != .matchPattern else {
                 continue
             }
             applyStoredExtensionPermissionDecision(record, to: extensionContext)
@@ -506,6 +574,509 @@ extension ExtensionManager {
         UserDefaults.standard.set(
             data,
             forKey: Self.extensionPermissionDecisionsStorageKey
+        )
+    }
+
+    func siteAccessPolicy(
+        extensionId: String,
+        profileId: UUID
+    ) -> SafariExtensionSiteAccessPolicy {
+        let key = extensionSiteAccessPolicyKey(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        var policies = loadStoredExtensionSiteAccessPolicies()
+        if let stored = policies[key] {
+            let normalized = stored.normalized()
+            if normalized != stored {
+                policies[key] = normalized
+                saveStoredExtensionSiteAccessPolicies(policies)
+            }
+            return normalized
+        }
+
+        let policy = SafariExtensionSiteAccessPolicy.defaultPolicy(
+            extensionId: extensionId,
+            profileId: profileId,
+            seededRules: migratedSiteAccessRules(
+                extensionId: extensionId,
+                profileId: profileId
+            )
+        )
+        policies[key] = policy
+        saveStoredExtensionSiteAccessPolicies(policies)
+        return policy
+    }
+
+    func setDefaultSiteAccess(
+        _ access: SafariExtensionSiteAccessLevel,
+        extensionId: String,
+        profileId: UUID
+    ) {
+        updateSiteAccessPolicy(
+            extensionId: extensionId,
+            profileId: profileId
+        ) { policy in
+            policy.defaultAccess = access
+            policy.updatedAt = Date()
+        }
+        applySiteAccessPolicyToLoadedContext(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    func setPrivateBrowsingAccess(
+        _ isAllowed: Bool,
+        extensionId: String,
+        profileId: UUID
+    ) {
+        updateSiteAccessPolicy(
+            extensionId: extensionId,
+            profileId: profileId
+        ) { policy in
+            policy.privateAccessAllowed = isAllowed
+            policy.updatedAt = Date()
+        }
+        applySiteAccessPolicyToLoadedContext(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    func setConfiguredSiteAccess(
+        _ access: SafariExtensionSiteAccessLevel,
+        extensionId: String,
+        profileId: UUID,
+        matchPatternString: String,
+        expiresAt: Date? = nil
+    ) {
+        let normalizedPattern =
+            SafariExtensionSiteAccessPolicy.normalizedMatchPatternString(
+                matchPatternString
+            )
+        guard normalizedPattern.isEmpty == false else { return }
+
+        updateSiteAccessPolicy(
+            extensionId: extensionId,
+            profileId: profileId
+        ) { policy in
+            policy.siteRules.removeAll { $0.matchPattern == normalizedPattern }
+            policy.siteRules.append(
+                SafariExtensionSiteAccessRule(
+                    matchPattern: normalizedPattern,
+                    access: access,
+                    expiresAt: expiresAt,
+                    updatedAt: Date()
+                )
+            )
+            policy.siteRules = SafariExtensionSiteAccessPolicy
+                .normalizedRules(policy.siteRules)
+            policy.updatedAt = Date()
+        }
+        applySiteAccessPolicyToLoadedContext(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    func setCurrentSiteAccess(
+        _ access: SafariExtensionSiteAccessLevel,
+        extensionId: String,
+        profileId: UUID,
+        url: URL
+    ) {
+        guard let patternString = hostMatchPatternString(for: url) else { return }
+        setConfiguredSiteAccess(
+            access,
+            extensionId: extensionId,
+            profileId: profileId,
+            matchPatternString: patternString
+        )
+    }
+
+    func configuredSiteAccessLevel(
+        for url: URL,
+        extensionId: String,
+        profileId: UUID
+    ) -> SafariExtensionSiteAccessLevel {
+        siteAccessPolicy(
+            extensionId: extensionId,
+            profileId: profileId
+        ).accessLevel(for: url)
+    }
+
+    func configuredSiteAccessLevel(
+        for matchPattern: WKWebExtension.MatchPattern,
+        extensionId: String,
+        profileId: UUID
+    ) -> SafariExtensionSiteAccessLevel {
+        siteAccessPolicy(
+            extensionId: extensionId,
+            profileId: profileId
+        ).accessLevel(for: matchPattern)
+    }
+
+    func applyConfiguredSiteAccessPolicy(
+        to extensionContext: WKWebExtensionContext,
+        extensionId: String,
+        profileId: UUID,
+        webExtension: WKWebExtension,
+        manifest: [String: Any]? = nil
+    ) {
+        let policy = siteAccessPolicy(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        SafariExtensionPermissionLifecycleDiagnostics.logContextApplication(
+            SafariExtensionContextApplicationSnapshot(
+                contextLoaded: extensionContext.isLoaded,
+                extensionBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(extensionId),
+                profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(profileId),
+                controllerBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
+                    extensionContext.webExtensionController.map { String(describing: ObjectIdentifier($0)) }
+                ),
+                appliedBeforeNavigation: nil,
+                permissionAPIPath: .global,
+                persistedPolicyDivergenceObserved: nil
+            )
+        )
+        let installedExtension = installedExtensions.first { $0.id == extensionId }
+        extensionContext.hasAccessToPrivateData =
+            policy.privateAccessAllowed
+            && (installedExtension?.incognitoMode.allowsPrivateAccess ?? true)
+        extensionContext.hasRequestedOptionalAccessToAllHosts =
+            policy.hasRequestedOptionalAccessToAllHosts
+
+        let declaredPatterns = declaredSiteAccessMatchPatterns(
+            for: webExtension,
+            manifest: manifest
+        )
+        if let manifest {
+            let surfaces = SafariExtensionManifestAccessSurfaces.from(manifest: manifest)
+            SafariExtensionPermissionLifecycleDiagnostics.logPolicySnapshot(
+                SafariExtensionPolicySnapshot(
+                    extensionEnabled: installedExtension?.isEnabled ?? true,
+                    extensionBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(extensionId),
+                    profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(profileId),
+                    tabBucket: nil,
+                    isPrivate: extensionContext.hasAccessToPrivateData,
+                    originHost: nil,
+                    decisionSource: policy.defaultAccess.diagnosticDecisionSource,
+                    declaredSurfaces: [
+                        surfaces.contentScriptHosts.isEmpty ? nil : .contentScripts,
+                        surfaces.hostPermissionHosts.isEmpty ? nil : .hostPermissions,
+                        surfaces.optionalPermissionHosts.isEmpty ? nil : .optionalPermissions,
+                        surfaces.externallyConnectableHosts.isEmpty ? nil : .externallyConnectable,
+                    ].compactMap { $0 },
+                    externallyConnectableReportedSeparately: true
+                )
+            )
+        }
+        let declaresAllHosts = declaredPatterns.contains {
+            $0 == WKWebExtension.MatchPattern.allHostsAndSchemes()
+                || $0 == WKWebExtension.MatchPattern.allURLs()
+        }
+        let policyAllowsAllHosts =
+            (policy.defaultAccess == .allow && declaresAllHosts)
+            || policy.siteRules.contains {
+                $0.access == .allow && Self.isAllHostsMatchPatternString($0.matchPattern)
+            }
+        if policyAllowsAllHosts {
+            extensionContext.hasRequestedOptionalAccessToAllHosts = true
+        }
+        for matchPattern in declaredPatterns {
+            extensionContext.setPermissionStatus(.unknown, for: matchPattern)
+        }
+
+        switch policy.defaultAccess {
+        case .allow:
+            for matchPattern in declaredPatterns {
+                extensionContext.setPermissionStatus(
+                    .grantedExplicitly,
+                    for: matchPattern
+                )
+            }
+        case .deny:
+            for matchPattern in declaredPatterns {
+                extensionContext.setPermissionStatus(
+                    .deniedExplicitly,
+                    for: matchPattern
+                )
+            }
+        case .ask:
+            break
+        }
+
+        for rule in policy.rulesByIncreasingSpecificity {
+            guard let matchPattern = try? WKWebExtension.MatchPattern(
+                string: rule.matchPattern
+            )
+            else {
+                continue
+            }
+            extensionContext.setPermissionStatus(
+                rule.access.status,
+                for: matchPattern,
+                expirationDate: rule.expiresAt
+            )
+        }
+    }
+
+    func declaredSiteAccessMatchPatterns(
+        for webExtension: WKWebExtension,
+        manifest: [String: Any]? = nil
+    ) -> Set<WKWebExtension.MatchPattern> {
+        var matchPatterns = webExtension.requestedPermissionMatchPatterns
+            .union(webExtension.allRequestedMatchPatterns)
+            .union(webExtension.optionalPermissionMatchPatterns)
+        if let manifest {
+            let rawSiteAccessPatterns = rawManifestSiteAccessMatchPatterns(
+                from: manifest
+            )
+            let externalMessagingOnlyPatterns = rawManifestExternalMessagingMatchPatterns(
+                from: manifest
+            ).subtracting(rawSiteAccessPatterns)
+            matchPatterns.formUnion(rawSiteAccessPatterns)
+            matchPatterns.subtract(externalMessagingOnlyPatterns)
+        }
+        return matchPatterns
+    }
+
+    private func rawManifestSiteAccessMatchPatterns(
+        from manifest: [String: Any]
+    ) -> Set<WKWebExtension.MatchPattern> {
+        let permissions = manifestStringArray(from: manifest["permissions"])
+        let optionalPermissions = manifestStringArray(from: manifest["optional_permissions"])
+        let contentScriptMatches =
+            (manifest["content_scripts"] as? [[String: Any]] ?? [])
+                .flatMap { manifestStringArray(from: $0["matches"]) }
+
+        let patternStrings =
+            manifestStringArray(from: manifest["host_permissions"])
+            + manifestStringArray(from: manifest["optional_host_permissions"])
+            + permissions.filter(Self.isManifestHostPermissionPattern)
+            + optionalPermissions.filter(Self.isManifestHostPermissionPattern)
+            + contentScriptMatches
+
+        return Set(
+            patternStrings.compactMap {
+                try? WKWebExtension.MatchPattern(string: $0)
+            }
+        )
+    }
+
+    private func rawManifestExternalMessagingMatchPatterns(
+        from manifest: [String: Any]
+    ) -> Set<WKWebExtension.MatchPattern> {
+        let patternStrings =
+            (manifest["externally_connectable"] as? [String: Any])
+                .map { manifestStringArray(from: $0["matches"]) } ?? []
+
+        return Set(
+            patternStrings.compactMap {
+                try? WKWebExtension.MatchPattern(string: $0)
+            }
+        )
+    }
+
+    private static func isManifestHostPermissionPattern(_ value: String) -> Bool {
+        value == "<all_urls>"
+            || value.hasPrefix("http://")
+            || value.hasPrefix("https://")
+            || value.hasPrefix("*://")
+    }
+
+    private static func isAllHostsMatchPatternString(_ value: String) -> Bool {
+        guard let matchPattern = try? WKWebExtension.MatchPattern(string: value) else {
+            return false
+        }
+        return matchPattern == WKWebExtension.MatchPattern.allHostsAndSchemes()
+            || matchPattern == WKWebExtension.MatchPattern.allURLs()
+    }
+
+    private func manifestStringArray(from value: Any?) -> [String] {
+        value as? [String] ?? []
+    }
+
+    func grantSiteAccess(
+        to url: URL,
+        in extensionContext: WKWebExtensionContext,
+        extensionId: String?,
+        profileId: UUID?,
+        expirationDate: Date? = nil,
+        persistPolicy: Bool = true
+    ) {
+        if let patternString = hostMatchPatternString(for: url),
+           let matchPattern = try? WKWebExtension.MatchPattern(
+               string: patternString
+           )
+        {
+            extensionContext.setPermissionStatus(
+                .grantedExplicitly,
+                for: matchPattern,
+                expirationDate: expirationDate
+            )
+            if persistPolicy, let extensionId, let profileId {
+                setConfiguredSiteAccess(
+                    .allow,
+                    extensionId: extensionId,
+                    profileId: profileId,
+                    matchPatternString: patternString,
+                    expiresAt: expirationDate
+                )
+            }
+        }
+        extensionContext.setPermissionStatus(
+            .grantedExplicitly,
+            for: url,
+            expirationDate: expirationDate
+        )
+    }
+
+    func denySiteAccess(
+        to url: URL,
+        in extensionContext: WKWebExtensionContext,
+        extensionId: String?,
+        profileId: UUID?,
+        persistPolicy: Bool = true
+    ) {
+        if let patternString = hostMatchPatternString(for: url),
+           let matchPattern = try? WKWebExtension.MatchPattern(
+               string: patternString
+           )
+        {
+            extensionContext.setPermissionStatus(
+                .deniedExplicitly,
+                for: matchPattern,
+                expirationDate: nil
+            )
+            if persistPolicy, let extensionId, let profileId {
+                setConfiguredSiteAccess(
+                    .deny,
+                    extensionId: extensionId,
+                    profileId: profileId,
+                    matchPatternString: patternString,
+                    expiresAt: nil
+                )
+            }
+        }
+        extensionContext.setPermissionStatus(
+            .deniedExplicitly,
+            for: url,
+            expirationDate: nil
+        )
+    }
+
+    private func updateSiteAccessPolicy(
+        extensionId: String,
+        profileId: UUID,
+        update: (inout SafariExtensionSiteAccessPolicy) -> Void
+    ) {
+        let key = extensionSiteAccessPolicyKey(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        var policies = loadStoredExtensionSiteAccessPolicies()
+        var policy = policies[key] ?? SafariExtensionSiteAccessPolicy.defaultPolicy(
+            extensionId: extensionId,
+            profileId: profileId,
+            seededRules: migratedSiteAccessRules(
+                extensionId: extensionId,
+                profileId: profileId
+            )
+        )
+        update(&policy)
+        policies[key] = policy.normalized()
+        saveStoredExtensionSiteAccessPolicies(policies)
+    }
+
+    private func applySiteAccessPolicyToLoadedContext(
+        extensionId: String,
+        profileId: UUID
+    ) {
+        guard let extensionContext = getExtensionContext(
+            for: extensionId,
+            profileId: profileId
+        ) else {
+            return
+        }
+        applyConfiguredSiteAccessPolicy(
+            to: extensionContext,
+            extensionId: extensionId,
+            profileId: profileId,
+            webExtension: extensionContext.webExtension,
+            manifest: loadedExtensionManifests[extensionId]
+                ?? installedExtensions.first { $0.id == extensionId }?.manifest
+        )
+        SafariExtensionPermissionLifecycleDiagnostics.logReloadRebuild(
+            SafariExtensionReloadRebuildSnapshot(
+                triggerReason: "ExtensionManager.siteAccessPolicyChanged",
+                profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(profileId),
+                tabBucket: nil,
+                host: nil,
+                userActionCaused: false,
+                action: .rebindOnly
+            )
+        )
+        reconcileOpenTabsAfterExtensionContextLoad(
+            reason: "ExtensionManager.siteAccessPolicyChanged",
+            profileId: profileId
+        )
+    }
+
+    private func migratedSiteAccessRules(
+        extensionId: String,
+        profileId: UUID
+    ) -> [SafariExtensionSiteAccessRule] {
+        let profileKey = profileId.uuidString.lowercased()
+        return loadStoredExtensionPermissionDecisions().values.compactMap { record in
+            guard record.profileId == profileKey,
+                  record.extensionId == extensionId,
+                  record.targetKind == .matchPattern,
+                  record.isExpired() == false
+            else {
+                return nil
+            }
+            return SafariExtensionSiteAccessRule(
+                matchPattern: record.target,
+                access: record.state == .allowed ? .allow : .deny,
+                expiresAt: record.expiresAt,
+                updatedAt: record.updatedAt
+            )
+        }
+    }
+
+    private func extensionSiteAccessPolicyKey(
+        extensionId: String,
+        profileId: UUID
+    ) -> String {
+        "\(profileId.uuidString.lowercased())|\(extensionId)"
+    }
+
+    private func loadStoredExtensionSiteAccessPolicies()
+        -> [String: SafariExtensionSiteAccessPolicy]
+    {
+        guard let data = UserDefaults.standard.data(
+            forKey: Self.extensionSiteAccessStorageKey
+        ),
+              let decoded = try? JSONDecoder().decode(
+                  [String: SafariExtensionSiteAccessPolicy].self,
+                  from: data
+              )
+        else {
+            return [:]
+        }
+        return decoded
+    }
+
+    private func saveStoredExtensionSiteAccessPolicies(
+        _ policies: [String: SafariExtensionSiteAccessPolicy]
+    ) {
+        guard let data = try? JSONEncoder().encode(policies) else { return }
+        UserDefaults.standard.set(
+            data,
+            forKey: Self.extensionSiteAccessStorageKey
         )
     }
 

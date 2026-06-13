@@ -280,44 +280,18 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
 
 enum BitwardenDesktopProxyFraming {
     /// Chrome native messaging frame cap (1 MiB). Oversized length prefixes are discarded.
-    static let maxFrameBytes = 1_048_576
+    static let maxFrameBytes = NativeMessagingStdioFraming.maxFrameBytes
 
     static func encode(_ object: [String: Any]) throws -> Data {
-        guard JSONSerialization.isValidJSONObject(object) else {
+        do {
+            return try NativeMessagingStdioFraming.encode(object)
+        } catch {
             throw BitwardenDesktopProxyTransportError.malformedReply
         }
-        let json = try JSONSerialization.data(withJSONObject: object)
-        var length = UInt32(json.count).littleEndian
-        var data = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
-        data.append(json)
-        return data
     }
 
     static func decodeNext(from buffer: inout Data) -> Any? {
-        guard buffer.count >= MemoryLayout<UInt32>.size else { return nil }
-        let length: UInt32 = buffer.withUnsafeBytes { raw in
-            raw.load(as: UInt32.self).littleEndian
-        }
-        let frameSize = Int(length)
-        guard frameSize >= 0 else {
-            buffer.removeAll(keepingCapacity: false)
-            return NSNull()
-        }
-        guard frameSize <= maxFrameBytes else {
-            buffer.removeAll(keepingCapacity: false)
-            return NSNull()
-        }
-        guard buffer.count >= MemoryLayout<UInt32>.size + frameSize else {
-            return nil
-        }
-        let jsonStart = MemoryLayout<UInt32>.size
-        let jsonEnd = jsonStart + frameSize
-        let json = buffer.subdata(in: jsonStart..<jsonEnd)
-        buffer.removeSubrange(0..<jsonEnd)
-        guard let object = try? JSONSerialization.jsonObject(with: json) else {
-            return NSNull()
-        }
-        return object
+        NativeMessagingStdioFraming.decodeNext(from: &buffer)
     }
 }
 

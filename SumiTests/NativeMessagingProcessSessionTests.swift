@@ -19,8 +19,12 @@ final class NativeMessagingProcessSessionTests: XCTestCase {
         XCTAssertTrue(relaySource.contains("SumiNativeMessagingConnection"))
         XCTAssertFalse(relaySource.contains("ChromeMV3NativeMessagingInternalRuntime"))
         XCTAssertTrue(portSource.contains("WKWebExtension.MessagePort"))
-        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
-        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
+        XCTAssertTrue(delegateSource.contains("sendMessage message: Any"))
+        XCTAssertTrue(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleSendMessage"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleConnect"))
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
 
         let processCallToken = "Process" + "("
         let uncheckedSendableToken = "@unchecked" + " Sendable"
@@ -38,6 +42,59 @@ final class NativeMessagingProcessSessionTests: XCTestCase {
                 uncheckedSendableToken,
             ],
             context: "Safari native messaging foundation"
+        )
+    }
+
+    func testCapabilityPolicyKeepsRealBackendDecisionPoint() {
+        XCTAssertEqual(
+            SumiNativeMessagingCapabilityPolicy.decide(
+                SumiNativeMessagingCapabilityPolicyInput(
+                    manifestRequestsNativeMessaging: true,
+                    nativeMessagingPermissionGranted: true,
+                    adapterAvailable: true
+                )
+            ),
+            .supportedByAdapter
+        )
+
+        XCTAssertEqual(
+            SumiNativeMessagingCapabilityPolicy.decide(
+                SumiNativeMessagingCapabilityPolicyInput(
+                    applicationIdentifier: "me.proton.pass.nm",
+                    sourceKind: .appExtensionBundle,
+                    manifestRequestsNativeMessaging: true,
+                    nativeMessagingPermissionGranted: true,
+                    fallbackObservedFailure: true,
+                    isMacCatalystBundle: true
+                )
+            ),
+            .fallbackObservedFailed
+        )
+
+        XCTAssertEqual(
+            SumiNativeMessagingCapabilityPolicy.decide(
+                SumiNativeMessagingCapabilityPolicyInput(
+                    applicationIdentifier: "me.proton.pass.nm",
+                    sourceKind: .appExtensionBundle,
+                    manifestRequestsNativeMessaging: true,
+                    nativeMessagingPermissionGranted: true,
+                    privateSPIBackendAvailable: true,
+                    fallbackObservedFailure: true,
+                    isMacCatalystBundle: true
+                )
+            ),
+            .supportedByPrivateSPIBackend
+        )
+
+        XCTAssertEqual(
+            SumiNativeMessagingCapabilityPolicy.decide(
+                SumiNativeMessagingCapabilityPolicyInput(
+                    applicationIdentifier: "unsupported.example",
+                    manifestRequestsNativeMessaging: true,
+                    nativeMessagingPermissionGranted: true
+                )
+            ),
+            .unsupportedNoBackend
         )
     }
 

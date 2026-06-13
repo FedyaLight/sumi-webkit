@@ -152,8 +152,13 @@ extension ExtensionManager {
         try context.save()
         let sourceKind =
             WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
+        let extensionRoot = try extensionResourcesRoot(
+            sourceKind: sourceKind,
+            packagePath: entity.packagePath,
+            sourceBundlePath: entity.sourceBundlePath
+        )
         let manifest = try ExtensionUtils.validateManifest(
-            at: URL(fileURLWithPath: entity.packagePath).appendingPathComponent("manifest.json"),
+            at: extensionRoot.appendingPathComponent("manifest.json"),
             policy: WebExtensionManifestValidationPolicy.forSourceKind(sourceKind)
         )
         let refreshed = try refreshedRecord(for: entity, manifest: manifest)
@@ -251,8 +256,11 @@ extension ExtensionManager {
         await removeStoredWebExtensionData(for: extensionId)
 
         if let entity = try extensionEntity(for: extensionId) {
-            let packageURL = URL(fileURLWithPath: entity.packagePath)
-            if FileManager.default.fileExists(atPath: packageURL.path) {
+            let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
+            let packageURL = URL(fileURLWithPath: entity.packagePath, isDirectory: true)
+            if sourceKind == .directory,
+               FileManager.default.fileExists(atPath: packageURL.path)
+            {
                 try FileManager.default.removeItem(at: packageURL)
             }
             context.delete(entity)
@@ -303,7 +311,22 @@ extension ExtensionManager {
         var didMutatePersistence = false
 
         for entity in entities {
-            let packageURL = URL(fileURLWithPath: entity.packagePath, isDirectory: true)
+            let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
+            let packageURL: URL
+            do {
+                packageURL = try extensionResourcesRoot(
+                    sourceKind: sourceKind,
+                    packagePath: entity.packagePath,
+                    sourceBundlePath: entity.sourceBundlePath
+                )
+            } catch {
+                context.delete(entity)
+                didMutatePersistence = true
+                Self.logger.error(
+                    "Dropped invalid persisted extension record for \(entity.name, privacy: .public)"
+                )
+                continue
+            }
             guard FileManager.default.fileExists(atPath: packageURL.path) else {
                 context.delete(entity)
                 didMutatePersistence = true
@@ -467,12 +490,16 @@ extension ExtensionManager {
             }
             let extensionController = ensureExtensionController(for: resolvedProfileId)
 
-            let extensionRoot = URL(fileURLWithPath: entity.packagePath)
-            let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
             let sourceKind =
                 WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
+            let extensionRoot = try extensionResourcesRoot(
+                sourceKind: sourceKind,
+                packagePath: entity.packagePath,
+                sourceBundlePath: entity.sourceBundlePath
+            )
+            let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
             extensionRuntimeTrace(
-                "loadEnabledExtension start extensionId=\(entity.id) profileId=\(resolvedProfileId.uuidString) expectedGeneration=\(expectedLoadGeneration.map(String.init) ?? "nil") currentGeneration=\(extensionLoadGeneration) packagePath=\(entity.packagePath)"
+                "loadEnabledExtension start extensionId=\(entity.id) profileId=\(resolvedProfileId.uuidString) expectedGeneration=\(expectedLoadGeneration.map(String.init) ?? "nil") currentGeneration=\(extensionLoadGeneration) packagePath=\(extensionRoot.path)"
             )
             let validationStart = CFAbsoluteTimeGetCurrent()
             let manifest = try ExtensionUtils.validateManifest(
@@ -490,7 +517,7 @@ extension ExtensionManager {
                 packageRoot: extensionRoot
             )
             extensionRuntimeTrace(
-                "loadEnabledExtension webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(entity.packagePath) sourceBundlePath=\(entity.sourceBundlePath)"
+                "loadEnabledExtension webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(extensionRoot.path) sourceBundlePath=\(entity.sourceBundlePath)"
             )
             recordRuntimeMetric(for: entity.id) {
                 $0.webExtensionCreationDuration =
@@ -508,7 +535,13 @@ extension ExtensionManager {
                 webExtension: webExtension,
                 manifest: manifest
             )
-            grantRequestedMatchPatterns(to: extensionContext, webExtension: webExtension)
+            applyConfiguredSiteAccessPolicy(
+                to: extensionContext,
+                extensionId: entity.id,
+                profileId: resolvedProfileId,
+                webExtension: webExtension,
+                manifest: manifest
+            )
             applyStoredExtensionPermissionDecisions(
                 to: extensionContext,
                 extensionId: entity.id,
@@ -611,8 +644,18 @@ extension ExtensionManager {
         sourceBundlePath: String,
         packageRoot: URL
     ) async throws -> (extension: WKWebExtension, loadSource: SafariAppExtensionRuntimeLoadSource) {
-        if let cached = cachedWebExtensionsByID[extensionId] {
-            return (cached, .copiedPackage)
+        let sourceKey = WebExtensionRuntimeSourceKey(
+            sourceKind: sourceKind,
+            sourceBundlePath: URL(fileURLWithPath: sourceBundlePath, isDirectory: true)
+                .standardizedFileURL.path,
+            packageRootPath: packageRoot.standardizedFileURL.path
+        )
+        if let cached = cachedWebExtensionsByID[extensionId],
+           cachedWebExtensionRuntimeSourceKeysByID[extensionId] == sourceKey
+        {
+            let loadSource: SafariAppExtensionRuntimeLoadSource =
+                sourceKind == .safariAppExtension ? .originalAppexBundle : .copiedPackage
+            return (cached, loadSource)
         }
 
         let created = try await SafariAppExtensionResources.makeWebExtension(
@@ -621,6 +664,7 @@ extension ExtensionManager {
             packageRoot: packageRoot
         )
         cachedWebExtensionsByID[extensionId] = created.extension
+        cachedWebExtensionRuntimeSourceKeysByID[extensionId] = sourceKey
         return created
     }
 
@@ -771,8 +815,15 @@ extension ExtensionManager {
             )
         }
 
-        let extensionsDirectory = ExtensionUtils.extensionsDirectory()
         let resolvedSource = try Self.resolveInstallSource(at: sourceURL)
+        if resolvedSource.sourceKind == .safariAppExtension {
+            return try await enableDiscoveredSafariAppExtension(
+                resolvedSource,
+                enableOnInstall: enableOnInstall
+            )
+        }
+
+        let extensionsDirectory = ExtensionUtils.extensionsDirectory()
         let temporaryDirectory = extensionsDirectory.appendingPathComponent(
             "temp_\(UUID().uuidString)",
             isDirectory: true
@@ -789,25 +840,10 @@ extension ExtensionManager {
         var shouldRestoreExistingRuntime = false
 
         do {
-            if resolvedSource.sourceKind == .safariAppExtension,
-               let appexBundleURL = resolvedSource.appexBundleURL
-            {
-                guard let bundle = Bundle(url: appexBundleURL) else {
-                    throw ExtensionError.installationFailed(
-                        "Safari app extension bundle could not be opened"
-                    )
-                }
-                _ = try await WKWebExtension(appExtensionBundle: bundle)
-                try SafariAppExtensionResources.copyResources(
-                    from: resolvedSource.resourcesURL,
-                    to: temporaryDirectory
-                )
-            } else {
-                try FileManager.default.copyItem(
-                    at: resolvedSource.resourcesURL,
-                    to: temporaryDirectory
-                )
-            }
+            try FileManager.default.copyItem(
+                at: resolvedSource.resourcesURL,
+                to: temporaryDirectory
+            )
 
             let manifestPolicy = WebExtensionManifestValidationPolicy.forSourceKind(
                 resolvedSource.sourceKind
@@ -928,7 +964,13 @@ extension ExtensionManager {
                     webExtension: webExtension,
                     manifest: finalManifest
                 )
-                grantRequestedMatchPatterns(to: extensionContext, webExtension: webExtension)
+                applyConfiguredSiteAccessPolicy(
+                    to: extensionContext,
+                    extensionId: extensionId,
+                    profileId: installProfileId,
+                    webExtension: webExtension,
+                    manifest: finalManifest
+                )
                 applyStoredExtensionPermissionDecisions(
                     to: extensionContext,
                     extensionId: extensionId,
@@ -1045,6 +1087,224 @@ extension ExtensionManager {
                 _ = try? await loadEnabledExtension(from: existingEntitySnapshot)
             }
 
+            throw error
+        }
+    }
+
+    private func enableDiscoveredSafariAppExtension(
+        _ resolvedSource: ResolvedInstallSource,
+        enableOnInstall: Bool
+    ) async throws -> InstalledExtension {
+        guard resolvedSource.sourceKind == .safariAppExtension,
+              let appexBundleURL = resolvedSource.appexBundleURL,
+              let bundle = Bundle(url: appexBundleURL)
+        else {
+            throw ExtensionError.installationFailed(
+                "Installed Safari app extension bundle is unavailable"
+            )
+        }
+
+        let extensionRoot = resolvedSource.resourcesURL
+        let manifestPolicy = WebExtensionManifestValidationPolicy.forSourceKind(
+            resolvedSource.sourceKind
+        )
+        let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
+        let manifest = try ExtensionUtils.validateManifest(
+            at: manifestURL,
+            policy: manifestPolicy
+        )
+        try validateMV3Requirements(manifest: manifest, baseURL: extensionRoot)
+
+        let allEntities = try context.fetch(FetchDescriptor<ExtensionEntity>())
+        let existingEntityBySource = allEntities.first {
+            URL(fileURLWithPath: $0.sourceBundlePath, isDirectory: true)
+                .standardizedFileURL.path == resolvedSource.sourceBundlePath.standardizedFileURL.path
+        }
+        let extensionId: String
+        if let existingEntityBySource {
+            extensionId = existingEntityBySource.id
+        } else if let bundleIdentifier = bundle.bundleIdentifier,
+                  bundleIdentifier.isEmpty == false
+        {
+            extensionId = bundleIdentifier
+        } else if let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any],
+                  let gecko = browserSpecificSettings["gecko"] as? [String: Any],
+                  let geckoId = gecko["id"] as? String
+        {
+            extensionId = geckoId
+        } else {
+            extensionId = UUID().uuidString
+        }
+
+        let existingEntitySnapshot: ExtensionEntity?
+        if let existingEntityBySource {
+            existingEntitySnapshot = existingEntityBySource
+        } else {
+            existingEntitySnapshot = try extensionEntity(for: extensionId)
+        }
+        let shouldRestoreExistingRuntime = existingEntitySnapshot?.isEnabled == true
+
+        do {
+            if let existingEntitySnapshot {
+                tearDownExtensionRuntimeState(
+                    for: existingEntitySnapshot.id,
+                    removeUIState: false
+                )
+            } else if hasStoredWebExtensionDataCandidate(for: extensionId) {
+                traceWebExtensionStoreLifecycle(
+                    phase: "before-safari-enable-cleanup",
+                    extensionId: extensionId,
+                    manifest: manifest
+                )
+                await removeStoredWebExtensionData(
+                    for: extensionId,
+                    mode: .preserveDirectoryForImmediateRuntimeLoad
+                )
+                traceWebExtensionStoreLifecycle(
+                    phase: "after-safari-enable-cleanup",
+                    extensionId: extensionId,
+                    manifest: manifest
+                )
+            }
+
+            let record = try makeInstalledRecord(
+                extensionId: extensionId,
+                manifest: manifest,
+                extensionRoot: extensionRoot,
+                isEnabled: enableOnInstall,
+                sourceKind: resolvedSource.sourceKind,
+                sourceBundlePath: resolvedSource.sourceBundlePath.path,
+                sourceFingerprintURL: resolvedSource.sourceFingerprintURL,
+                existingEntity: existingEntitySnapshot
+            )
+
+            if enableOnInstall {
+                let installProfileId =
+                    currentProfileId
+                    ?? browserManager?.currentProfile?.id
+                guard let installProfileId else {
+                    throw ExtensionError.installationFailed(
+                        "Extension runtime profile is unavailable"
+                    )
+                }
+                let installController = ensureExtensionController(for: installProfileId)
+
+                let (webExtension, runtimeLoadSource) = try await cachedOrCreateWebExtension(
+                    extensionId: extensionId,
+                    sourceKind: resolvedSource.sourceKind,
+                    sourceBundlePath: resolvedSource.sourceBundlePath.path,
+                    packageRoot: extensionRoot
+                )
+                extensionRuntimeTrace(
+                    "enableSafariAppExtension webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(extensionRoot.path) sourceBundlePath=\(resolvedSource.sourceBundlePath.path)"
+                )
+                let extensionContext = WKWebExtensionContext(for: webExtension)
+                configureContextIdentity(
+                    extensionContext,
+                    extensionId: extensionId,
+                    profileId: installProfileId
+                )
+                grantRequestedPermissions(
+                    to: extensionContext,
+                    webExtension: webExtension,
+                    manifest: manifest
+                )
+                applyConfiguredSiteAccessPolicy(
+                    to: extensionContext,
+                    extensionId: extensionId,
+                    profileId: installProfileId,
+                    webExtension: webExtension,
+                    manifest: manifest
+                )
+                applyStoredExtensionPermissionDecisions(
+                    to: extensionContext,
+                    extensionId: extensionId,
+                    profileId: installProfileId
+                )
+                extensionContext.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
+                observeExtensionErrors(for: extensionContext, extensionId: extensionId)
+                prepareExtensionContextForRuntime(
+                    extensionContext,
+                    extensionId: extensionId,
+                    profileId: installProfileId,
+                    manifest: manifest
+                )
+                ensureWebExtensionStorageDirectoryExists(
+                    for: extensionId,
+                    profileId: installProfileId
+                )
+                traceWebExtensionStoreLifecycle(
+                    phase: "before-safari-enable-controller-load",
+                    extensionId: extensionId,
+                    manifest: manifest
+                )
+
+                setExtensionContext(
+                    extensionContext,
+                    extensionId: extensionId,
+                    profileId: installProfileId
+                )
+                loadedExtensionManifests[extensionId] = manifest
+
+                do {
+                    #if DEBUG
+                        try testHooks.beforeControllerLoad?(
+                            extensionId,
+                            webExtensionStorageSnapshot(for: extensionId)
+                        )
+                    #endif
+                    try installController.load(extensionContext)
+                } catch {
+                    tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
+                    throw error
+                }
+
+                tabOpenNotificationGeneration &+= 1
+                updateWebViewsForProfile(
+                    installProfileId,
+                    allowWhenExtensionsNotLoaded: true
+                )
+                resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
+                    reason: "ExtensionManager.enableSafariAppExtension.afterLoad",
+                    allowWhenExtensionsNotLoaded: true
+                )
+                registerExistingWindowStateIfAttached()
+
+                let installedWebExtension = extensionContext.webExtension
+                let installedDisplayName = installedWebExtension.displayName ?? record.id
+                do {
+                    _ = try await ensureBackgroundAvailableIfRequired(
+                        for: installedWebExtension,
+                        context: extensionContext,
+                        reason: .install
+                    )
+                } catch {
+                    Self.logger.error(
+                        "Failed to wake background worker after Safari extension enable for \(installedDisplayName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+                markExtensionRuntimeReadyIfProfileContextsLoaded(for: installProfileId)
+            } else {
+                ensureWebExtensionStorageDirectoryExists(for: extensionId)
+            }
+
+            #if DEBUG
+                try testHooks.beforePersistInstalledRecord?(record)
+            #endif
+            try persist(record: record)
+            await applyInstalledExtensionsMutationOnNextRunLoop { manager in
+                manager.upsertInstalledExtension(record)
+            }
+
+            return record
+        } catch {
+            tearDownExtensionRuntimeState(
+                for: existingEntitySnapshot?.id ?? extensionId,
+                removeUIState: false
+            )
+            if shouldRestoreExistingRuntime, let existingEntitySnapshot {
+                _ = try? await loadEnabledExtension(from: existingEntitySnapshot)
+            }
             throw error
         }
     }
@@ -1504,15 +1764,18 @@ extension ExtensionManager {
         to extensionContext: WKWebExtensionContext,
         webExtension: WKWebExtension
     ) {
-        let requiredMatchPatterns = webExtension.requestedPermissionMatchPatterns
-            .union(webExtension.allRequestedMatchPatterns)
-        let matchPatterns = RuntimeDiagnostics.isRunningTests
-            ? requiredMatchPatterns.union(webExtension.optionalPermissionMatchPatterns)
-            : requiredMatchPatterns
-
-        for matchPattern in matchPatterns {
-            extensionContext.setPermissionStatus(.grantedExplicitly, for: matchPattern)
-        }
+        guard let extensionId = extensionID(for: extensionContext),
+              let profileId = profileId(for: extensionContext)
+        else { return }
+        let manifest = loadedExtensionManifests[extensionId]
+            ?? installedExtensions.first { $0.id == extensionId }?.manifest
+        applyConfiguredSiteAccessPolicy(
+            to: extensionContext,
+            extensionId: extensionId,
+            profileId: profileId,
+            webExtension: webExtension,
+            manifest: manifest
+        )
     }
 
     /// Grants temporary host access for the active tab when the manifest declares `activeTab`.
@@ -1545,6 +1808,40 @@ extension ExtensionManager {
         }
 
         extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
+        SafariExtensionPermissionLifecycleDiagnostics.logPolicySnapshot(
+            SafariExtensionPolicySnapshot(
+                extensionEnabled: true,
+                extensionBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
+                    extensionID(for: extensionContext)
+                ),
+                profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
+                    profileId(for: extensionContext)
+                ),
+                tabBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(tab.id),
+                isPrivate: tab.isEphemeral,
+                originHost: SafariExtensionPermissionLifecycleDiagnostics.host(from: url),
+                decisionSource: .activeTabTemporaryGrant,
+                declaredSurfaces: [.activeTab],
+                externallyConnectableReportedSeparately: true
+            )
+        )
+        SafariExtensionPermissionLifecycleDiagnostics.logContextApplication(
+            SafariExtensionContextApplicationSnapshot(
+                contextLoaded: extensionContext.isLoaded,
+                extensionBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
+                    extensionID(for: extensionContext)
+                ),
+                profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
+                    profileId(for: extensionContext)
+                ),
+                controllerBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
+                    extensionContext.webExtensionController.map { String(describing: ObjectIdentifier($0)) }
+                ),
+                appliedBeforeNavigation: false,
+                permissionAPIPath: .global,
+                persistedPolicyDivergenceObserved: nil
+            )
+        )
         SafariExtensionAutofillFillDiagnostics.recordActiveTabPermission(
             granted: true,
             extensionId: extensionID(for: extensionContext),

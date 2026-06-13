@@ -656,8 +656,10 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let relaySource = try Self.source(
             named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
         )
-        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
-        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
+        XCTAssertFalse(delegateSource.contains("sendMessage message: Any"))
+        XCTAssertFalse(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
         XCTAssertTrue(portSessionSource.contains("WKWebExtension.MessagePort"))
         XCTAssertTrue(relaySource.contains("SumiNativeMessagingRelay"))
         XCTAssertFalse(

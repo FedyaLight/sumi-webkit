@@ -18,6 +18,10 @@ final class SumiNativeMessagingRelay {
         case policyDenied = 5
         case relayTimeout = 6
         case relayCancelled = 7
+        case nativeHostManifestMissing = 8
+        case nativeHostExecutableMissing = 9
+        case nativeHostPermissionDenied = 10
+        case nativeHostUnsupportedKind = 11
     }
 
     static let errorDomain = "Sumi.SafariNativeMessaging"
@@ -796,9 +800,7 @@ final class SumiNativeMessagingRelay {
                     requestedApplicationIdentifier: applicationIdentifier,
                     hostBundleIdentifier: hostBundleIdentifier,
                     resolverBucket: resolverBucket,
-                    outcome: nsError.code == ErrorCode.hostNotFound.rawValue
-                        ? .hostNotFound
-                        : .hostLaunchFailed,
+                    outcome: Self.outcome(forAdapterError: nsError),
                     errorDomain: nsError.domain,
                     errorCode: nsError.code,
                     launchAttempted: gatedLauncher.lastLaunchSuppressed == false,
@@ -937,6 +939,18 @@ final class SumiNativeMessagingRelay {
         case .relayCancelled:
             message = description
                 ?? "Native messaging relay was cancelled."
+        case .nativeHostManifestMissing:
+            message = description
+                ?? "The native messaging host manifest was not found."
+        case .nativeHostExecutableMissing:
+            message = description
+                ?? "The native messaging host executable was not found."
+        case .nativeHostPermissionDenied:
+            message = description
+                ?? "Permission denied when starting the native messaging host."
+        case .nativeHostUnsupportedKind:
+            message = description
+                ?? "The native messaging host kind is unsupported."
         }
 
         var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]
@@ -1256,6 +1270,41 @@ final class SumiNativeMessagingRelay {
             failure=\(diagnostic.failureBucket?.rawValue ?? "-") \
             err=\(diagnostic.errorDomain ?? "-")/\(diagnostic.errorCode.map(String.init) ?? "-")
             """
+        }
+    }
+
+    private static func outcome(forAdapterError error: NSError)
+        -> SafariExtensionNativeMessagingOutcome
+    {
+        guard error.domain == Self.errorDomain,
+              let code = ErrorCode(rawValue: error.code)
+        else {
+            return .hostLaunchFailed
+        }
+
+        switch code {
+        case .hostNotFound:
+            return .hostNotFound
+        case .nativeHostManifestMissing:
+            return .nativeHostManifestMissing
+        case .nativeHostExecutableMissing:
+            return .nativeHostExecutableMissing
+        case .nativeHostPermissionDenied:
+            return .nativeHostPermissionDenied
+        case .nativeHostUnsupportedKind:
+            return .nativeHostUnsupportedKind
+        case .relayTimeout:
+            return .relayTimeout
+        case .relayCancelled:
+            return .relayCancelled
+        case .companionAppProtocolUnknown:
+            return .companionAppProtocolUnknown
+        case .extensionContextMissing:
+            return .extensionContextMissing
+        case .policyDenied:
+            return .policyDenied
+        case .hostLaunchFailed:
+            return .hostLaunchFailed
         }
     }
 }

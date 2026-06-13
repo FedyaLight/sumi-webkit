@@ -213,12 +213,15 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         XCTAssertEqual(windowState.window!.frame, originalMainFrame)
     }
 
-    func testActionPopupWindowOpenRoutesToAuxiliaryMiniWindowAndDoesNotResizeMainWindow() async throws {
+    func testActionPopupWindowOpenRoutesExternalURLToNormalTab() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "action-owner")
         let sourceURL = URL(string: "safari-web-extension://action-owner/popup.html")!
-        let targetURL = URL(string: "https://auth.example/login")!
+        let targetURL = URL(string: "https://account.example.test/login")!
         let mainWindow = try XCTUnwrap(harness.windowState.window)
         let originalMainFrame = mainWindow.frame
+        let initialRegularTabCount = harness.browserManager.tabManager.tabsBySpace[
+            harness.browserManager.tabManager.currentSpace!.id
+        ]?.count ?? 0
         let delegate = ExtensionActionPopupUIDelegate(
             manager: harness.extensionManager,
             popover: NSPopover()
@@ -230,37 +233,27 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             webView: popupWebView
         )
 
-        let childWebView = try XCTUnwrap(
-            delegate.webView(
-                popupWebView,
-                createWebViewWith: WKWebViewConfiguration(),
-                for: action,
-                windowFeatures: WKWindowFeatures()
-            )
-        )
-        let session = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindowManager.session(for: childWebView)
+        let childWebView = delegate.webView(
+            popupWebView,
+            createWebViewWith: WKWebViewConfiguration(),
+            for: action,
+            windowFeatures: WKWindowFeatures()
         )
 
-        XCTAssertEqual(session.ownerExtensionID, "action-owner")
-        XCTAssertTrue(session.openerTab === harness.sourceTab)
-        XCTAssertNotNil(session.miniWindowAdapter)
+        XCTAssertNil(childWebView)
+        XCTAssertTrue(harness.browserManager.tabManager.auxiliaryMiniWindowTabsByID.isEmpty)
+        XCTAssertEqual(
+            harness.browserManager.tabManager.tabsBySpace[
+                harness.browserManager.tabManager.currentSpace!.id
+            ]?.count,
+            initialRegularTabCount + 1
+        )
+        let openedTab = try XCTUnwrap(harness.browserManager.tabManager.tabs.last)
+        XCTAssertEqual(openedTab.url, targetURL)
+        XCTAssertEqual(openedTab.profileId, harness.profile.id)
+        XCTAssertFalse(openedTab.isAuxiliaryMiniWindow)
+        XCTAssertFalse(openedTab.isPopupHost)
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
-
-        let resizedMiniFrame = NSRect(x: 240, y: 220, width: 580, height: 620)
-        var resizeError: Error?
-        session.miniWindowAdapter?.setFrame(resizedMiniFrame, for: harness.extensionContext) {
-            resizeError = $0
-        }
-
-        XCTAssertNil(resizeError)
-        XCTAssertEqual(session.window.frame, resizedMiniFrame)
-        XCTAssertEqual(mainWindow.frame, originalMainFrame)
-
-        harness.browserManager.auxiliaryWindowManager.teardown(
-            for: childWebView,
-            reason: .managerCloseAll
-        )
     }
 
     func testExtensionRequestedTeardownClosesAuxiliaryMiniWindowSession() throws {
@@ -608,7 +601,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         XCTAssertEqual(focusedWindow?.sessionId, session.id)
     }
 
-    func testExtensionRequestedExternalTabFromMiniWindowCreatesAuxiliarySession() async throws {
+    func testExtensionRequestedExternalTabFromMiniWindowCreatesNormalSameProfileTab() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
         let mainWindow = try XCTUnwrap(harness.windowState.window)
         let originalMainFrame = mainWindow.frame
@@ -635,7 +628,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
                 profileId: harness.profile.id
             ).first
         )
-        let authURL = URL(string: "https://auth.example/login?client_id=abc")!
+        let authURL = URL(string: "https://account.example.test/login?client_id=abc")!
 
         let authTab = try harness.extensionManager.openExtensionRequestedTab(
             url: authURL,
@@ -648,38 +641,55 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
 
         XCTAssertTrue(harness.browserManager.auxiliaryWindowManager.contains(webView: sourcePopupWebView))
-        XCTAssertTrue(harness.browserManager.tabManager.isAuxiliaryMiniWindowTab(authTab))
+        XCTAssertFalse(harness.browserManager.tabManager.isAuxiliaryMiniWindowTab(authTab))
+        XCTAssertFalse(authTab.isAuxiliaryMiniWindow)
+        XCTAssertFalse(authTab.isPopupHost)
+        XCTAssertEqual(authTab.profileId, harness.profile.id)
+        XCTAssertEqual(authTab.spaceId, harness.browserManager.tabManager.currentSpace?.id)
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
         XCTAssertEqual(
             harness.browserManager.tabManager.tabsBySpace[
                 harness.browserManager.tabManager.currentSpace!.id
             ]?.count,
-            initialRegularTabCount
+            initialRegularTabCount + 1
         )
+        XCTAssertNil(harness.browserManager.auxiliaryWindowManager.session(for: authTab))
 
-        let authSession = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindowManager.session(for: authTab)
+        harness.extensionManager.extensionRuntimeAllowsWithoutEnabledExtensions = true
+        let webView = try XCTUnwrap(authTab.ensureWebView())
+        harness.extensionManager.prepareWebViewForExtensionRuntime(
+            webView,
+            currentURL: nil,
+            reason: "AuxiliaryWindowManagerTests.materializedExternalNormalTab"
         )
-        XCTAssertEqual(authSession.ownerExtensionID, "adapter-owner")
-        let authWindow = try XCTUnwrap(
-            harness.extensionManager.stableAdapter(for: authTab)?
-                .window(for: harness.extensionContext) as? ExtensionMiniWindowAdapter
+        harness.extensionManager.registerExtensionCreatedTabWithExtensionRuntime(
+            authTab,
+            reason: "AuxiliaryWindowManagerTests.materializedExternalNormalTab"
         )
-        XCTAssertEqual(authWindow.sessionId, authSession.id)
+        XCTAssertIdentical(
+            webView.configuration.websiteDataStore,
+            harness.extensionManager.getExtensionDataStore(for: harness.profile.id)
+        )
+        XCTAssertIdentical(
+            webView.configuration.webExtensionController,
+            harness.extensionManager.ensureExtensionController(for: harness.profile.id)
+        )
+        XCTAssertNotNil(harness.extensionManager.stableAdapter(for: authTab))
+        XCTAssertTrue(authTab.didNotifyOpenToExtensions)
     }
 
-    func testExtensionExternalWindowCreateUsesAuxiliaryMiniWindow() async throws {
+    func testExtensionExternalWindowCreateUsesNormalBrowserTab() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "adapter-owner")
         let mainWindow = try XCTUnwrap(harness.windowState.window)
         let originalMainFrame = mainWindow.frame
         let initialRegularTabCount = harness.browserManager.tabManager.tabsBySpace[
             harness.browserManager.tabManager.currentSpace!.id
         ]?.count ?? 0
-        let openedWindow = expectation(description: "extension external popup opened")
+        let openedWindow = expectation(description: "extension external tab opened")
         var createWindowCallCount = 0
         var completionWindow: (any WKWebExtensionWindow)?
         var completionError: (any Error)?
-        let authURL = URL(string: "https://auth.example/login?client_id=abc")!
+        let authURL = URL(string: "https://account.example.test/login?client_id=abc")!
 
         harness.extensionManager.openExtensionWindowUsingTabURLs(
             [authURL],
@@ -699,27 +709,27 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
 
         await fulfillment(of: [openedWindow], timeout: 2.0)
-        defer {
-            harness.browserManager.auxiliaryWindowManager.closeAll(reason: .managerCloseAll)
-        }
-
-        let miniWindow = try XCTUnwrap(completionWindow as? ExtensionMiniWindowAdapter)
-        let session = try XCTUnwrap(
-            harness.browserManager.auxiliaryWindowManager.session(for: miniWindow.sessionId)
-        )
 
         XCTAssertNil(completionError)
+        let window = try XCTUnwrap(completionWindow as? ExtensionWindowAdapter)
+        XCTAssertEqual(window.windowId, harness.windowState.id)
         XCTAssertEqual(createWindowCallCount, 0)
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
-        XCTAssertEqual(
-            harness.browserManager.tabManager.tabsBySpace[
-                harness.browserManager.tabManager.currentSpace!.id
-            ]?.count,
-            initialRegularTabCount
+        let authTab = try await waitForRegularTab(
+            with: authURL,
+            in: harness.browserManager.tabManager
         )
-        XCTAssertEqual(session.ownerExtensionID, "adapter-owner")
-        XCTAssertEqual(session.tab.url, authURL)
-        XCTAssertNil(session.tab.webExtensionContextOverride)
+        let authSpaceId = try XCTUnwrap(authTab.spaceId)
+        XCTAssertEqual(
+            harness.browserManager.tabManager.tabsBySpace[authSpaceId]?.count,
+            initialRegularTabCount + 1
+        )
+        XCTAssertEqual(authTab.url, authURL)
+        XCTAssertEqual(authTab.profileId, harness.profile.id)
+        XCTAssertFalse(authTab.isAuxiliaryMiniWindow)
+        XCTAssertFalse(authTab.isPopupHost)
+        XCTAssertNil(authTab.webExtensionContextOverride)
+        XCTAssertNil(harness.browserManager.auxiliaryWindowManager.session(for: authTab))
     }
 
     func testExtensionAuxiliaryMiniWindowNotifiesOwnerContextWindowLifecycle() async throws {
@@ -963,6 +973,28 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
 
         let webExtension = try await WKWebExtension(resourceBaseURL: directory)
         return WKWebExtensionContext(for: webExtension)
+    }
+
+    private func waitForRegularTab(
+        with url: URL,
+        in tabManager: TabManager,
+        timeout: TimeInterval = 2.0
+    ) async throws -> Tab {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if let tab = tabManager.tabsBySpace.values
+                .flatMap({ $0 })
+                .first(where: { $0.url == url && $0.isAuxiliaryMiniWindow == false }) {
+                return tab
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        } while Date() < deadline
+
+        return try XCTUnwrap(
+            tabManager.tabsBySpace.values
+                .flatMap({ $0 })
+                .first(where: { $0.url == url && $0.isAuxiliaryMiniWindow == false })
+        )
     }
 
     private func popupNavigationAction(

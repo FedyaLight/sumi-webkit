@@ -12,13 +12,13 @@ struct SafariExtensionImportCandidatesSection: View {
     let onStatus: (String) -> Void
 
     @State private var candidates: [DiscoveredSafariExtensionCandidate] = []
-    @State private var importingIDs: Set<String> = []
+    @State private var enablingIDs: Set<String> = []
     @State private var isScanning = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Safari extensions installed in other macOS apps can be imported into Sumi. Import enables the extension immediately when the runtime loads successfully.")
+                Text("Safari extensions installed in other macOS apps can be enabled in Sumi without copying their extension bundles.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -42,9 +42,9 @@ struct SafariExtensionImportCandidatesSection: View {
                     ForEach(importableCandidates) { candidate in
                         SafariExtensionImportCandidateRow(
                             candidate: candidate,
-                            isImporting: importingIDs.contains(candidate.id),
-                            onImport: {
-                                importCandidate(candidate)
+                            isEnabling: enablingIDs.contains(candidate.id),
+                            onEnable: {
+                                enableCandidate(candidate)
                             }
                         )
                     }
@@ -79,15 +79,15 @@ struct SafariExtensionImportCandidatesSection: View {
         }
     }
 
-    private func importCandidate(_ candidate: DiscoveredSafariExtensionCandidate) {
-        importingIDs.insert(candidate.id)
+    private func enableCandidate(_ candidate: DiscoveredSafariExtensionCandidate) {
+        enablingIDs.insert(candidate.id)
         Task { @MainActor in
-            defer { importingIDs.remove(candidate.id) }
+            defer { enablingIDs.remove(candidate.id) }
             do {
-                let installed = try await browserManager.extensionsModule.importSafariAppExtension(
+                let installed = try await browserManager.extensionsModule.enableSafariAppExtension(
                     from: candidate
                 )
-                onStatus("Imported and enabled \(installed.name).")
+                onStatus("Enabled \(installed.name).")
                 rescanCandidates()
             } catch {
                 onStatus(error.localizedDescription)
@@ -98,8 +98,8 @@ struct SafariExtensionImportCandidatesSection: View {
 
 private struct SafariExtensionImportCandidateRow: View {
     let candidate: DiscoveredSafariExtensionCandidate
-    let isImporting: Bool
-    let onImport: () -> Void
+    let isEnabling: Bool
+    let onEnable: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -124,16 +124,16 @@ private struct SafariExtensionImportCandidateRow: View {
 
             Spacer()
 
-            if isImporting {
+            if isEnabling {
                 ProgressView()
                     .scaleEffect(0.75)
             }
 
-            Button("Import") {
-                onImport()
+            Button("Enable") {
+                onEnable()
             }
             .buttonStyle(.borderedProminent)
-            .disabled(isImporting || candidate.isReadable == false)
+            .disabled(isEnabling || candidate.isReadable == false)
         }
         .padding(.vertical, 4)
     }

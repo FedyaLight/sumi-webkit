@@ -1,6 +1,6 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-06-11 (Cycle 13 native WebKit cleanup: runtime.connect wrapper and stale externally-connectable bridge deleted)
+Last updated: 2026-06-12 (Cycle 17 extension-popup login routing and reload stability)
 
 Sumi targets native Safari Web Extension support through public WebKit APIs
 (`WKWebExtension`, `WKWebExtensionContext`, `WKWebExtensionController`,
@@ -10,6 +10,190 @@ controlled Chrome compatibility popups are out of scope and must not return.
 Deployment target remains **macOS 15.7** until a specific API is confirmed to
 require macOS 27. Local SDK (Xcode macOS SDK) exposes `WKWebExtension` from
 **macOS 15.4+** including `extensionWithAppExtensionBundle:completionHandler:`.
+
+## Cycle 17 Extension Popup Routing and Reload Stability (2026-06-12)
+
+Evidence base:
+
+- Local WebKit 27 SDK headers state that `WKWebExtensionTab.webView(for:)`
+  must provide a live `WKWebView` configured with the same
+  `WKWebExtensionController` for WebKit to inject or modify page content.
+- Safari extension popups that open external `http` / `https` login pages enter
+  Safari's normal page/tab pipeline; the opened page is not an extension
+  auxiliary popup host.
+- Proton Pass declares `account.proton.me` and `pass.proton.me` through
+  `externally_connectable.matches` and a login content script, so the generic
+  requirement is normal page routing plus granted website access before the
+  first login page document is evaluated.
+
+### Fixed
+
+- Extension-owned `safari-web-extension://` popup navigations to external
+  `http`, `https`, and `file` URLs now open a normal foreground tab instead of
+  creating a child popup-host `WKWebView`.
+- Extension-popup routing no longer depends solely on
+  `WKNavigationAction.sourceFrame.request.url`; when WebKit does not provide a
+  source-frame URL, Sumi falls back to the source `WKWebView` URL and then the
+  owning tab URL. This keeps Safari extension login popups on the normal-tab
+  path even when WebKit omits source-frame metadata.
+- That route preloads the target profile's content-script contexts before the
+  normal tab is opened, then registers the materialized tab with WebKit's
+  extension runtime.
+- User-gesture reconciliation no longer rebuilds a live page merely because a
+  content-script rebind marker is pending. Sumi only rebuilds when the live
+  `WKWebView` cannot be attached to the correct profile
+  `WKWebExtensionController`, which removes the observed reload/blinking loop.
+- Live WebView resolution now prefers the tab-owned materialized `WKWebView`
+  before consulting browser routing state, matching tabs created outside the
+  regular window lookup path.
+
+### Tests
+
+- `SumiNavigationResponderTests.testExtensionPopupExternalCreateWebViewOpensNormalTab`
+  proves extension-popup external navigation opens a selected normal tab and
+  does not create a popup-host child WebView.
+- `SumiNavigationResponderTests.testExtensionPopupExternalCreateWebViewFallsBackToTabURLWhenSourceFrameMissing`
+  covers the same route when WebKit omits the source-frame request URL.
+- `SafariExtensionWebViewControllerWiringTests.testUserGestureReconcileDoesNotRebuildLivePageForMissedContentScriptBinding`
+  proves a missed content-script binding marker does not replace the live page.
+- Before the final source-frame fallback patch, the Safari extension regression
+  slice passed across site-access policy, origins compatibility, action popup
+  runtime, autofill runtime, inline overlay, runtime data-store, profile
+  isolation, WebView/controller wiring, native messaging guards, and popup
+  navigation responder tests. After the fallback patch, the changed popup
+  routing, reload-stability, clean-popup, and installed Proton site-access
+  tests pass individually.
+- Source guards passed:
+  `scripts/check_safari_extension_clean_import.sh`,
+  `scripts/check_userscript_hot_paths.sh`,
+  `scripts/check_prepared_bundle_runtime_boundary.sh`, and `git diff --check`.
+- Build passed with
+  `xcodebuild build -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS'`.
+
+### Proven Remaining Gaps
+
+- Manual Proton Pass popup-login E2E still must be re-run in Sumi after this
+  build. If the Proton error remains, the next boundary to instrument is native
+  WebKit page-to-extension external message delivery after the normal login tab
+  has loaded with granted site access.
+
+## Cycle 15 Extension-Created Page Preflight (2026-06-12)
+
+Evidence base:
+
+- Local WebKit 27 SDK headers state that `WKWebExtensionContext.hasInjectedContent`
+  and `hasInjectedContent(for:)` still require the context to be loaded and have
+  granted website permissions before content is actually injected.
+- `WKWebExtensionControllerDelegate.openNewTabUsing` and `openNewWindowUsing`
+  completion handlers are app-owned; Sumi can complete them after preparing the
+  target profile without faking permissions or patching manifests.
+
+### Fixed
+
+- Extension-created normal `http`, `https`, and `file` tabs now preload the
+  target profile's enabled content-script extension contexts before Sumi creates
+  the tab and sends WebKit `didOpenTab`.
+- Extension-created normal windows use the same preflight before creating the
+  first tab in the new window.
+- Extension-owned internal pages continue to bypass this normal-page preflight
+  and keep their existing `WKWebExtensionContext` override lifecycle.
+
+### Tests
+
+- `SafariExtensionWebViewControllerWiringTests`
+  `testExtensionRequestedNormalTabPreloadsContentScriptContextsBeforeOpenNotification`
+  and
+  `testExtensionRequestedNormalWindowPreloadsContentScriptContextsBeforeOpenNotification`
+  prove `didOpenTab` is delivered only after the profile content-script contexts
+  are loaded.
+
+### Proven Remaining Gaps
+
+- Proton Pass manual popup/login E2E still needs to be re-run in Sumi. The latest
+  user report showed site-access grants alone were not enough; the next generic
+  missing boundary found was first-document content-script readiness for
+  extension-created normal pages.
+
+## Cycle 14 Site-Access Permissions (2026-06-12)
+
+Evidence base:
+
+- Local WebKit 27 SDK headers confirm that Sumi, as the embedding app, owns
+  restore/persist/apply for `WKWebExtensionContext.grantedPermissions`,
+  `grantedPermissionMatchPatterns`, `deniedPermissions`,
+  `deniedPermissionMatchPatterns`, `hasRequestedOptionalAccessToAllHosts`, and
+  `hasAccessToPrivateData`.
+- `WKWebExtensionContext.setPermissionStatus(_:for:)` accepts explicit
+  granted/denied/unknown status for match patterns, and `WKWebExtension`
+  exposes required, optional, and all requested match patterns.
+- Safari remains the product reference: extension enablement is separate from
+  per-extension website access, configured-site overrides, default access for
+  other websites, and explicit private-browsing access.
+
+### Fixed
+
+- Added `SafariExtensionSiteAccessPolicy`, persisted by `(profileId,
+  extensionId)`, with default access, configured-site rules, optional
+  all-hosts-request state, and private-browsing access.
+- Runtime load/enable now applies the persisted policy before WebKit evaluates
+  `permissions.contains`, host-origin access, content-script eligibility, action
+  popup access, or extension pages.
+- Default site access grants declared required, content-script, and optional
+  host match patterns through WebKit APIs. This lets Safari extensions that
+  check optional host origins see the same Sumi-controlled enabled state instead
+  of asking the user to open Safari.app settings.
+- Default denied website access restores as explicit WebKit denial for declared
+  host patterns; default ask restores as unknown.
+- Declared website access is derived from WebKit's match-pattern properties and
+  the raw Safari extension manifest host/content-script fields, covering real
+  bundles whose broad host access is exposed differently by the SDK.
+- Current-site and WebKit permission prompts now persist through the same
+  profile-scoped policy, while legacy prompt decisions are used only for
+  migration/permission prompts and no longer override match-pattern site policy.
+- Configured-site rules are evaluated by specificity so a precise site decision
+  can override broad all-host access, matching Safari's per-site settings model.
+- Settings now keeps the extension list compact and exposes a Safari-like
+  per-extension info popover with warnings, default website access, configured
+  website rules, private-browsing access where the manifest allows it, command
+  shortcut summaries, and the extension options page.
+
+### Intentionally Kept
+
+- The default website-access state is `Allow`, matching Sumi's prior compatibility
+  behavior for imported Safari extensions while making it explicit and persistent
+  in Sumi settings.
+- `SafariExtensionPermissionsOriginsCompatibility` remains scoped to extension
+  pages for Safari/WebKit origin normalization; it is not a site-access grant or
+  a manifest patch.
+
+### Tests
+
+- `SafariExtensionSiteAccessPolicyTests` covers optional host grants, profile
+  scoping, default deny semantics, persistence across manager reload,
+  private-browsing access,
+  broad-vs-specific rule precedence, and stale legacy prompt decisions losing to
+  the current Sumi site policy.
+- The same suite loads the installed Proton Pass Safari `.appex` when present
+  and verifies that Sumi's generic policy gives the WebKit context effective
+  access to Proton's declared broad host pattern and Proton account/pass URLs.
+- Regression slices passed for origins compatibility, profile isolation, lazy
+  runtime loading, action popups/Raindrop gates, autofill infrastructure/runtime,
+  extension runtime data-store alignment, popup native-messaging lifecycle,
+  native-messaging performance guards, and Bitwarden adapter guardrails.
+- Source guards passed:
+  `scripts/check_safari_extension_clean_import.sh`,
+  `scripts/check_userscript_hot_paths.sh`, and
+  `scripts/check_prepared_bundle_runtime_boundary.sh`.
+
+### Proven Remaining Gaps
+
+- Proton Pass manual popup E2E has not been re-run in this cycle. The generic
+  missing capability found here was configured host access persistence in Sumi;
+  the automated installed-bundle check now proves WebKit receives effective
+  access for the real Proton Safari extension without Proton-specific runtime
+  branches.
+- Bitwarden and Raindrop are regression-covered by automated slices; final
+  product claims still require the manual checklist below on installed apps.
 
 ## Cycle 13 Stabilization Audit (2026-06-11)
 
@@ -178,7 +362,7 @@ Source guards: `SafariExtensionCleanImportSourceGuardTests`, `scripts/check_safa
 | Delegate | `WKWebExtensionControllerDelegate` | Implemented |
 | Tab/window model | `WKWebExtensionTab`, `WKWebExtensionWindow` | Implemented via adapters |
 | Action / popup | `WKWebExtension.Action`, `presentActionPopup` | Implemented |
-| Permissions | `WKWebExtension.Permission`, match patterns | Partial (grant on install; delegate prompts exist) |
+| Permissions | `WKWebExtension.Permission`, match patterns | **Profile-scoped site-access policy (Cycle 14)** — default, configured-site, current-site, optional host, private-browsing, and WebKit prompt paths |
 | Messaging | `WKWebExtension.MessagePort`, `connectUsing` | **Sumi relay wired (Cycle 8)** — policy + resolver + port session; companion protocol unknown |
 | Post-enable runtime finalize | Background wake + action surface seed | **Added (Cycle 3)** |
 | Dev compatibility report | `SafariExtensionCompatibilityReport` | **Extended (Cycle 6)** — platform blockers + acceptance matrix |
@@ -507,8 +691,8 @@ cookie domain counts only, popup lifecycle phase).
 ## Known gaps / next work
 
 1. **End-to-end manual validation** on Bitwarden / 1Password / Proton Pass after
-   import + enable (popup, content scripts, native messaging wake). Raindrop login/session
-   fixed generically in Cycle 9 — retest save flow.
+   import + enable (popup, content scripts, site-access settings, native messaging
+   wake). Raindrop login/session fixed generically in Cycle 9 — retest save flow.
 2. **Companion app protocol** — document/reverse-engineer PM host `.app` JSON relay
    (`companionAppProtocolUnknown`); no Chrome manifest relay.
 3. **Manifest patching vs appex runtime** — copied package remains patched for fallback; appex
@@ -624,6 +808,62 @@ cookie domain counts only, popup lifecycle phase).
 - **Tests:** clean-import guard, inline-overlay runtime, auxiliary config,
   performance modular guards, and targeted Safari/WebKit extension suite pass.
 - **Build:** `xcodebuild build -project Sumi.xcodeproj -scheme Sumi -configuration Debug -destination 'platform=macOS'`.
+
+### Cycle 15 (2026-06-12)
+
+- **Extension-created normal page preflight:** `openNewTabUsing` and
+  `openNewWindowUsing` now load enabled content-script contexts for the target
+  profile before creating normal pages and notifying WebKit, while internal
+  extension pages keep the existing context-override path.
+- **Tests:** added tab/window lifecycle coverage proving `didOpenTab` is sent
+  with loaded content-script contexts for extension-created normal pages.
+
+### Cycle 16 (2026-06-12)
+
+- **Safari/WebKit contract checked:** WebKit 27 headers define
+  `allRequestedMatchPatterns` as websites needed for injected content and for
+  receiving messages from websites; `WKWebExtensionContext` permission state is
+  app-owned/persisted; `WKWebExtensionTab.webView(for:)` must return a matching
+  controller-backed `WKWebView` for content injection/modification to work.
+- **Externally-connectable site access:** raw manifest fallback now includes
+  `externally_connectable.matches` as declared website access, matching the
+  WebKit model for pages allowed to message an extension.
+- **No false tab-open success:** `notifyTabOpened` now defers `didOpenTab`
+  unless the tab has a live `WKWebView` that can be attached to the correct
+  profile `WKWebExtensionController`. Lazy tabs are still lazy; existing
+  `setupWebView.beforeInitialLoad` / deferred registration paths retry when the
+  WebView exists.
+- **Proton compatibility evidence:** installed Proton Pass `.appex` test
+  confirms `https://account.proton.me/*` and `https://pass.proton.me/*` are
+  declared site-access patterns and are granted by Sumi policy without
+  Proton-specific runtime branches.
+- **Tests/guards:** targeted site-access, lifecycle, and clean-import source
+  guard tests pass; `check_safari_extension_clean_import.sh`,
+  `check_userscript_hot_paths.sh`, `check_prepared_bundle_runtime_boundary.sh`,
+  and `git diff --check` pass.
+
+### Cycle 14 (2026-06-12)
+
+- **Profile-scoped site-access policy:** added persistent
+  `SafariExtensionSiteAccessPolicy` for default website access, configured-site
+  rules, optional all-hosts request state, and explicit private-browsing access.
+- **WebKit permission source of truth:** install/enable/load and prompt delegates
+  now apply policy through `WKWebExtensionContext.setPermissionStatus` for
+  declared required, content-script, and optional host match patterns.
+- **Manifest fallback for site access:** declared host patterns are unioned from
+  WebKit metadata and raw manifest host/content-script fields so real Safari
+  bundles with broad host access restore correctly.
+- **Settings UI:** extension rows stay compact and use an `info.circle` popover
+  for Other Websites, configured website entries, private-browsing access,
+  warnings, shortcut summaries, and options-page routing.
+- **Legacy migration:** old match-pattern prompt decisions seed new policies but
+  no longer override the current Sumi site-access policy.
+- **Rule precedence:** specific configured sites override broad all-host rules
+  in both Sumi policy evaluation and WebKit permission restoration.
+- **Tests:** `SafariExtensionSiteAccessPolicyTests` including an installed
+  Proton Pass `.appex` WebKit access check when present, clean-import guards,
+  compatibility regression slices, native-messaging guards, and repository guard
+  scripts pass.
 
 ### Cycle 12 (2026-06-10)
 

@@ -40,34 +40,6 @@ enum SafariAppExtensionResources {
         )
     }
 
-    /// Copies unpacked extension files into a flat directory for Sumi's managed store.
-    ///
-    /// `WKWebExtension(appExtensionBundle:)` reads the signed bundle directly; Sumi still
-    /// copies resources so installs survive host-app updates and support manifest patching.
-    static func copyResources(
-        from sourceRoot: URL,
-        to destinationDirectory: URL,
-        fileManager: FileManager = .default
-    ) throws {
-        if fileManager.fileExists(atPath: destinationDirectory.path) {
-            try fileManager.removeItem(at: destinationDirectory)
-        }
-        try fileManager.createDirectory(
-            at: destinationDirectory,
-            withIntermediateDirectories: true
-        )
-
-        let items = try fileManager.contentsOfDirectory(
-            at: sourceRoot,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )
-        for item in items {
-            let destination = destinationDirectory.appendingPathComponent(item.lastPathComponent)
-            try fileManager.copyItem(at: item, to: destination)
-        }
-    }
-
     /// Resolved `.appex` on disk for a Safari import (`sourceBundlePath` stores the appex path).
     static func installedAppexBundleURL(
         sourceKind: WebExtensionSourceKind,
@@ -88,9 +60,9 @@ enum SafariAppExtensionResources {
         return appexURL
     }
 
-    /// Prefers the signed installed `.appex` when still present so WebKit can route
-    /// appex-native features (e.g. native messaging defaults); falls back to Sumi's
-    /// copied package when the host app was removed or updated away.
+    /// Uses the signed installed `.appex` for native Safari Web Extensions so WebKit can
+    /// route appex-native features (e.g. native messaging defaults) through the bundle.
+    /// Directory installs remain a separate developer/unpacked path.
     @available(macOS 15.5, *)
     static func makeWebExtension(
         sourceKind: WebExtensionSourceKind,
@@ -98,22 +70,21 @@ enum SafariAppExtensionResources {
         packageRoot: URL,
         fileManager: FileManager = .default
     ) async throws -> (extension: WKWebExtension, loadSource: SafariAppExtensionRuntimeLoadSource) {
-        if let appexURL = installedAppexBundleURL(
-            sourceKind: sourceKind,
-            sourceBundlePath: sourceBundlePath,
-            fileManager: fileManager
-        ),
-           let bundle = Bundle(url: appexURL)
-        {
-            do {
-                let webExtension = try await WKWebExtension(appExtensionBundle: bundle)
-                return (webExtension, .originalAppexBundle)
-            } catch {
-                RuntimeDiagnostics.debug(
-                    "WKWebExtension(appExtensionBundle:) failed for \(appexURL.path); falling back to copied package: \(error.localizedDescription)",
-                    category: "SafariExtension"
+        if sourceKind == .safariAppExtension {
+            guard let appexURL = installedAppexBundleURL(
+                sourceKind: sourceKind,
+                sourceBundlePath: sourceBundlePath,
+                fileManager: fileManager
+            ),
+            let bundle = Bundle(url: appexURL)
+            else {
+                throw ExtensionError.installationFailed(
+                    "Installed Safari app extension bundle is unavailable"
                 )
             }
+
+            let webExtension = try await WKWebExtension(appExtensionBundle: bundle)
+            return (webExtension, .originalAppexBundle)
         }
 
         let webExtension = try await WKWebExtension(resourceBaseURL: packageRoot)

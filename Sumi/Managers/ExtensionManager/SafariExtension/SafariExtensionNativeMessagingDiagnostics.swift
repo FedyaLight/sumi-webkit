@@ -29,6 +29,10 @@ enum SafariExtensionNativeMessagingOutcome: String, Codable, Sendable {
     case launchRateLimited
     case relayTimeout
     case relayCancelled
+    case nativeHostManifestMissing
+    case nativeHostExecutableMissing
+    case nativeHostPermissionDenied
+    case nativeHostUnsupportedKind
     case extensionContextMissing
     /// Legacy diagnostic bucket retained for decode compatibility in persisted logs.
     case hostRelayUnavailable
@@ -151,6 +155,14 @@ enum SafariExtensionNativeMessagingDiagnosticEnrichment {
             return .hostNotFound
         case .hostLaunchFailed:
             return .hostLaunchFailed
+        case .nativeHostManifestMissing:
+            return .nativeHostManifestMissing
+        case .nativeHostExecutableMissing:
+            return .nativeHostExecutableMissing
+        case .nativeHostPermissionDenied:
+            return .permissionDenied
+        case .nativeHostUnsupportedKind:
+            return .unsupportedHostKind
         case .companionAppProtocolUnknown:
             if diagnostic.protocolAdapterAvailable == false {
                 return .adapterUnavailable
@@ -170,6 +182,14 @@ enum SafariExtensionNativeMessagingDiagnosticEnrichment {
                     return .relayCancelled
                 case .hostLaunchFailed:
                     return .hostLaunchFailed
+                case .nativeHostManifestMissing:
+                    return .nativeHostManifestMissing
+                case .nativeHostExecutableMissing:
+                    return .nativeHostExecutableMissing
+                case .nativeHostPermissionDenied:
+                    return .permissionDenied
+                case .nativeHostUnsupportedKind:
+                    return .unsupportedHostKind
                 case .hostNotFound:
                     return .hostNotFound
                 default:
@@ -206,7 +226,9 @@ enum SafariExtensionNativeMessagingDiagnosticEnrichment {
                 return .relayPending
             case .launchSuppressed, .launchRateLimited:
                 return .suppressed
-            case .relayTimeout, .relayCancelled, .hostLaunchFailed:
+            case .relayTimeout, .relayCancelled, .hostLaunchFailed,
+                 .nativeHostManifestMissing, .nativeHostExecutableMissing,
+                 .nativeHostPermissionDenied, .nativeHostUnsupportedKind:
                 return .failed
             default:
                 return .adapterReady
@@ -244,7 +266,9 @@ enum SafariExtensionNativeMessagingDiagnosticEnrichment {
                 return .suppressed
             case .hostResolved:
                 return .pending
-            case .hostLaunchFailed, .companionAppProtocolUnknown, .relayCancelled, .relayTimeout:
+            case .hostLaunchFailed, .companionAppProtocolUnknown, .relayCancelled, .relayTimeout,
+                 .nativeHostManifestMissing, .nativeHostExecutableMissing,
+                 .nativeHostPermissionDenied, .nativeHostUnsupportedKind:
                 return .failed
             default:
                 return .notAttempted
@@ -255,7 +279,9 @@ enum SafariExtensionNativeMessagingDiagnosticEnrichment {
                 return .completed
             case .launchSuppressed, .launchRateLimited:
                 return .suppressed
-            case .hostLaunchFailed, .companionAppProtocolUnknown, .relayCancelled, .relayTimeout:
+            case .hostLaunchFailed, .companionAppProtocolUnknown, .relayCancelled, .relayTimeout,
+                 .nativeHostManifestMissing, .nativeHostExecutableMissing,
+                 .nativeHostPermissionDenied, .nativeHostUnsupportedKind:
                 return .failed
             default:
                 return .notAttempted
@@ -506,6 +532,10 @@ enum SafariExtensionNativeMessagingErrorBucket: String, Codable, Sendable {
     case relayTimeout
     case relayCancelled
     case extensionContextMissing
+    case nativeHostManifestMissing
+    case nativeHostExecutableMissing
+    case permissionDenied
+    case unsupportedHostKind
     case adapterUnavailable
     case launchSuppressed
     case unknown
@@ -688,7 +718,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
                 return .notAttempted
             }()
 
-            let applicationIdentifier = previewApplicationIdentifier(for: target.key)
+            let applicationIdentifier = previewApplicationIdentifier(for: target)
             let adapterPreview = previewAdapterStatus(
                 target: target,
                 installed: installed,
@@ -833,19 +863,10 @@ enum SafariExtensionNativeMessagingProbeBuilder {
         #endif
     }
 
-    private static func previewApplicationIdentifier(for targetKey: String) -> String? {
-        switch targetKey {
-        case "bitwarden":
-            return "com.bitwarden.desktop"
-        case "1password":
-            return "com.1password.safari"
-        case "proton-pass":
-            return "me.proton.pass.nm"
-        case "raindrop":
-            return nil
-        default:
-            return nil
-        }
+    private static func previewApplicationIdentifier(
+        for target: SafariExtensionCompatibilityTargets.Target
+    ) -> String? {
+        target.nativeMessagingApplicationIdentifier
     }
 
     private static func previewResolverBucket(
@@ -855,7 +876,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
     ) -> SumiNativeMessagingResolverBucket? {
         guard let installed else { return nil }
         let resolution = SumiNativeMessagingAppResolver.resolve(
-            requestedApplicationIdentifier: previewApplicationIdentifier(for: target.key),
+            requestedApplicationIdentifier: previewApplicationIdentifier(for: target),
             extensionId: installed.id,
             installedExtensions: [installed],
             importStore: importStore
@@ -887,7 +908,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
         isPasswordManager: Bool,
         errorBucket: SafariExtensionNativeMessagingErrorBucket
     ) -> AdapterPreviewStatus {
-        let applicationIdentifier = previewApplicationIdentifier(for: target.key)
+        let applicationIdentifier = previewApplicationIdentifier(for: target)
         let hostBundleIdentifier = previewHostBundleIdentifier(
             target: target,
             installed: installed,
@@ -1016,7 +1037,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
     ) -> String? {
         if let installed,
            let identity = SumiCompanionAppResolver.resolveIdentity(
-               requestedApplicationIdentifier: previewApplicationIdentifier(for: target.key),
+               requestedApplicationIdentifier: previewApplicationIdentifier(for: target),
                extensionId: installed.id,
                installedExtensions: [installed],
                importStore: importStore
@@ -1024,18 +1045,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
         {
             return identity.resolvedBundleIdentifier
         }
-        switch target.key {
-        case "bitwarden":
-            return "com.bitwarden.desktop"
-        case "1password":
-            return "com.1password.safari"
-        case "proton-pass":
-            return "me.proton.pass.catalyst"
-        case "raindrop":
-            return "io.raindrop.safari"
-        default:
-            return nil
-        }
+        return target.nativeMessagingHostBundleIdentifier
     }
 }
 

@@ -155,30 +155,19 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
     }
 
     @available(macOS 15.5, *)
-    func testMakeWebExtensionFallsBackWhenSyntheticAppexRejectedByWebKit() async throws {
-        let appexURL = try SafariExtensionScannerTestSupport.makeStandaloneAppex(
-            in: scratchDirectory,
-            specification: .init(
-                name: "RaindropSafari",
-                bundleIdentifier: "io.raindrop.safari.extension",
-                displayName: "Raindrop"
+    func testSafariAppExtensionRuntimeFactoryDoesNotExposeCopiedResourceFallback() throws {
+        let source = try String(
+            contentsOf: projectURL(
+                "Sumi/Managers/ExtensionManager/SafariExtension/SafariAppExtensionResources.swift"
             )
         )
-        let packageRoot = scratchDirectory.appendingPathComponent("copied", isDirectory: true)
-        let resourcesRoot = try SafariAppExtensionResources.resourcesRoot(in: appexURL)
-        try SafariAppExtensionResources.copyResources(from: resourcesRoot, to: packageRoot)
 
-        let result = try await SafariAppExtensionResources.makeWebExtension(
-            sourceKind: .safariAppExtension,
-            sourceBundlePath: appexURL.path,
-            packageRoot: packageRoot
-        )
-
-        XCTAssertEqual(result.loadSource, .copiedPackage)
+        XCTAssertFalse(source.contains("copyResources"))
+        XCTAssertFalse(source.contains("falling back to copied package"))
     }
 
     @available(macOS 15.5, *)
-    func testMakeWebExtensionFallsBackToCopiedPackageWhenAppexMissing() async throws {
+    func testMakeWebExtensionFailsClosedWhenSafariAppexMissing() async throws {
         let packageRoot = scratchDirectory.appendingPathComponent("package", isDirectory: true)
         try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
         let manifest: [String: Any] = [
@@ -189,13 +178,16 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
         let data = try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
         try data.write(to: packageRoot.appendingPathComponent("manifest.json"), options: [.atomic])
 
-        let result = try await SafariAppExtensionResources.makeWebExtension(
-            sourceKind: .safariAppExtension,
-            sourceBundlePath: "/tmp/missing.appex",
-            packageRoot: packageRoot
-        )
-
-        XCTAssertEqual(result.loadSource, .copiedPackage)
+        do {
+            _ = try await SafariAppExtensionResources.makeWebExtension(
+                sourceKind: .safariAppExtension,
+                sourceBundlePath: "/tmp/missing.appex",
+                packageRoot: packageRoot
+            )
+            XCTFail("Safari .appex runtime must not fall back to a copied package")
+        } catch let error as ExtensionError {
+            XCTAssertTrue(error.localizedDescription.contains("unavailable"))
+        }
     }
 
     @available(macOS 15.5, *)
@@ -224,25 +216,19 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
             let displayName = await MainActor.run { webExtension.displayName }
             XCTAssertFalse(displayName?.isEmpty ?? true)
 
-            let packageRoot = scratchDirectory
-                .appendingPathComponent("probe-\(target.key)", isDirectory: true)
             let resourcesRoot = try SafariAppExtensionResources.resourcesRoot(
                 in: candidate.appexURL
-            )
-            try SafariAppExtensionResources.copyResources(
-                from: resourcesRoot,
-                to: packageRoot
             )
             let loadResult = try await SafariAppExtensionResources.makeWebExtension(
                 sourceKind: .safariAppExtension,
                 sourceBundlePath: candidate.appexURL.path,
-                packageRoot: packageRoot
+                packageRoot: resourcesRoot
             )
             XCTAssertEqual(loadResult.loadSource, .originalAppexBundle)
         }
     }
 
-    func testSafariAppExtensionResourcesCopyProducesFlatManifestRoot() throws {
+    func testResolvedSafariSourceUsesOriginalBundleResourcesRoot() throws {
         let appexURL = try SafariExtensionScannerTestSupport.makeStandaloneAppex(
             in: scratchDirectory,
             specification: .init(
@@ -251,15 +237,17 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
                 displayName: "Raindrop"
             )
         )
-        let resourcesRoot = try SafariAppExtensionResources.resourcesRoot(in: appexURL)
-        let destination = scratchDirectory.appendingPathComponent("copied", isDirectory: true)
+        let resolved = try ExtensionManager.resolveInstallSource(at: appexURL)
 
-        try SafariAppExtensionResources.copyResources(from: resourcesRoot, to: destination)
+        XCTAssertEqual(resolved.sourceKind, .safariAppExtension)
+        XCTAssertEqual(resolved.sourceBundlePath, appexURL)
+        XCTAssertTrue(resolved.resourcesURL.path.contains(".appex/Contents"))
+    }
 
-        XCTAssertTrue(
-            FileManager.default.fileExists(
-                atPath: destination.appendingPathComponent("manifest.json").path
-            )
-        )
+    private func projectURL(_ path: String) -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent(path)
     }
 }

@@ -2086,13 +2086,16 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
     }
 
-    func testExtensionPopupExternalCreateWebViewOpensAuxiliaryMiniWindow() async throws {
+    func testExtensionPopupExternalCreateWebViewOpensNormalBrowserTab() async throws {
         let harness = makePopupFocusHarness()
         let extensionPopupURL = URL(
             string: "safari-web-extension://extension-id/popup.html"
         )!
-        let targetURL = URL(string: "https://account.example/login")!
+        let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
+        let initialRegularTabCount = harness.browserManager.tabManager.tabsBySpace[
+            harness.browserManager.tabManager.currentSpace!.id
+        ]?.count ?? 0
 
         let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
         let action = popupNavigationAction(
@@ -2108,23 +2111,29 @@ final class SumiNavigationResponderTests: XCTestCase {
             windowFeatures: WKWindowFeatures()
         )
 
-        XCTAssertNotNil(childWebView)
-        XCTAssertTrue(harness.browserManager.auxiliaryWindowManager.contains(webView: childWebView!))
-        let auxiliaryTab = harness.browserManager.tabManager.auxiliaryMiniWindowTabsByID.values.first
-        XCTAssertNotNil(auxiliaryTab)
-        XCTAssertTrue(auxiliaryTab?.isAuxiliaryMiniWindow == true)
-        XCTAssertFalse(auxiliaryTab?.isPopupHost == true)
-        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+        XCTAssertNil(childWebView)
+        XCTAssertTrue(harness.browserManager.tabManager.auxiliaryMiniWindowTabsByID.isEmpty)
+        XCTAssertEqual(
+            harness.browserManager.tabManager.tabsBySpace[
+                harness.browserManager.tabManager.currentSpace!.id
+            ]?.count,
+            initialRegularTabCount + 1
+        )
+        let openedTab = try XCTUnwrap(harness.browserManager.tabManager.tabs.last)
+        XCTAssertEqual(openedTab.url, targetURL)
+        XCTAssertFalse(openedTab.isAuxiliaryMiniWindow)
+        XCTAssertFalse(openedTab.isPopupHost)
+        XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
     }
 
-    func testExtensionPopupExternalCreateWebViewFallsBackToTabURLWhenSourceFrameMissing()
+    func testExtensionPopupExternalCreateWebViewUsesTabURLWhenSourceFrameMissing()
         async throws
     {
         let harness = makePopupFocusHarness()
         let extensionPopupURL = URL(
             string: "safari-web-extension://extension-id/popup.html"
         )!
-        let targetURL = URL(string: "https://account.example/login")!
+        let targetURL = URL(string: "https://account.example.test/login")!
         harness.sourceTab.url = extensionPopupURL
 
         let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
@@ -2141,9 +2150,13 @@ final class SumiNavigationResponderTests: XCTestCase {
             windowFeatures: WKWindowFeatures()
         )
 
-        XCTAssertNotNil(childWebView)
-        XCTAssertTrue(harness.browserManager.auxiliaryWindowManager.contains(webView: childWebView!))
-        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+        XCTAssertNil(childWebView)
+        XCTAssertTrue(harness.browserManager.tabManager.auxiliaryMiniWindowTabsByID.isEmpty)
+        let openedTab = try XCTUnwrap(harness.browserManager.tabManager.tabs.last)
+        XCTAssertEqual(openedTab.url, targetURL)
+        XCTAssertFalse(openedTab.isAuxiliaryMiniWindow)
+        XCTAssertFalse(openedTab.isPopupHost)
+        XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
     }
 
     func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() {

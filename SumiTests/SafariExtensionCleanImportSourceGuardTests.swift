@@ -22,6 +22,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppResolver.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionURLSchemeCompatibility.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionsOriginsCompatibility.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift",
     ]
 
@@ -51,7 +52,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "manifestPatchCache",
     ]
 
-    func testSafariImportPathDoesNotPatchManifestOrInjectCompatJS() throws {
+    func testSafariEnablePathDoesNotPatchManifestInjectCompatJSOrCopyAppex() throws {
         let installationSource = try source(named: extensionManagerPaths[0])
         let manifestSource = try source(named: extensionManagerPaths[1])
         let safariResourcesSource = try source(named: extensionManagerPaths[2])
@@ -65,6 +66,13 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
                 "sumi_webkit_runtime_compat",
             ],
             context: "Safari installation path"
+        )
+        assertExcludes(
+            installationSource,
+            [
+                "SafariAppExtensionResources.copyResources",
+            ],
+            context: "Safari app-extension enable path"
         )
 
         assertExcludes(
@@ -86,6 +94,14 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         XCTAssertTrue(
             safariResourcesSource.contains("originalAppexBundle"),
             "Safari runtime should record original appex load source"
+        )
+        assertExcludes(
+            safariResourcesSource,
+            [
+                "copyResources",
+                "falling back to copied package",
+            ],
+            context: "Safari app-extension runtime factory"
         )
     }
 
@@ -164,6 +180,21 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         )
     }
 
+    func testExternallyConnectableIsNotIntroducedAsSiteAccessSurface() throws {
+        let storeSource = try source(named: extensionManagerPaths[18])
+        let diagnosticsSource = try source(named: extensionManagerPaths[17])
+
+        XCTAssertTrue(
+            diagnosticsSource.contains("externallyConnectableReportedSeparately"),
+            "Diagnostics must report externally_connectable separately from site/content-script access"
+        )
+
+        XCTAssertFalse(
+            storeSource.contains("+ externallyConnectableMatches"),
+            "raw manifest site-access extraction must not union externally_connectable.matches into host/content-script match patterns"
+        )
+    }
+
     func testRuntimeConnectCompatibilityLayerWasDeleted() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -208,15 +239,17 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         )
     }
 
-    func testNativeMessagingUsesSwiftRelayNotCompatJS() throws {
+    func testNativeMessagingUsesProductionRelayWithoutCompatFallbackShims() throws {
         let delegateSource = try source(named: extensionManagerPaths[7])
         let relaySource = try source(named: extensionManagerPaths[8])
         let portSessionSource = try source(named: extensionManagerPaths[9])
 
-        XCTAssertTrue(
-            delegateSource.contains("safariNativeMessagingHost.handleSendMessage")
-                || delegateSource.contains("SumiNativeMessagingRelay")
-        )
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
+        XCTAssertTrue(delegateSource.contains("sendMessage message: Any"))
+        XCTAssertTrue(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleSendMessage"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleConnect"))
         XCTAssertTrue(
             relaySource.contains("SumiNativeMessagingRelay")
                 || portSessionSource.contains("WKWebExtension.MessagePort")
@@ -282,7 +315,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let managerSource = try source(named: extensionManagerPaths[3])
         let installationSource = try source(named: extensionManagerPaths[0])
         let controllerDelegateSource = try source(named: extensionManagerPaths[7])
-        let storeSource = try source(named: extensionManagerPaths[17])
+        let storeSource = try source(named: extensionManagerPaths[18])
 
         XCTAssertTrue(profilesSource.contains("if forceReload {"))
         XCTAssertFalse(
@@ -306,9 +339,10 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Existing-extension context loads must make background wake opt-in"
         )
         XCTAssertTrue(
-            installationSource.contains("requiredMatchPatterns.union(webExtension.optionalPermissionMatchPatterns)")
-                && installationSource.contains(": requiredMatchPatterns"),
-            "Production context load should auto-grant required host/content-script match patterns while keeping optional host patterns prompt-controlled"
+            installationSource.contains("applyConfiguredSiteAccessPolicy")
+                && storeSource.contains("extensionSiteAccessStorageKey")
+                && storeSource.contains("webExtension.optionalPermissionMatchPatterns"),
+            "Production context load should restore profile-scoped site access policy, including optional host patterns only when Sumi settings allow them"
         )
         XCTAssertTrue(
             controllerDelegateSource.contains("promptForExtensionPermissionDecision")
@@ -336,6 +370,137 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             XCTAssertFalse(coalescerSource.localizedCaseInsensitiveContains(token))
         }
         XCTAssertTrue(loopGuardSource.contains("supportedRelayProtocolHostBundleIdentifiers"))
+    }
+
+    func testGenericPermissionLifecycleCodeHasNoVendorSpecificBranches() throws {
+        let genericSources = try [
+            "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionManager+Installation.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionManager+ProfileRuntime.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicy.swift",
+        ].map(source(named:)).joined(separator: "\n")
+
+        for token in [
+            "bitwarden",
+            "1password",
+            "proton",
+            "raindrop",
+            "account.proton",
+            "pass.proton",
+            "com.bitwarden",
+        ] {
+            XCTAssertFalse(
+                genericSources.localizedCaseInsensitiveContains(token),
+                "Generic permission/lifecycle code must not contain vendor-specific branches or domains: \(token)"
+            )
+        }
+    }
+
+    func testPermissionLifecycleDiagnosticsSourceDoesNotLogSecrets() throws {
+        let diagnosticsSource = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift"
+        )
+
+        assertExcludes(
+            diagnosticsSource,
+            [
+                "HTTPCookie",
+                "document.cookie",
+                "access_token",
+                "refresh_token",
+                "authPayload",
+                "messageBody",
+                "message.body",
+                "domContent",
+                "document.body.innerHTML",
+                "absoluteString",
+            ],
+            context: "permission lifecycle diagnostics"
+        )
+        XCTAssertTrue(diagnosticsSource.contains("sanitizedURL"))
+        XCTAssertTrue(diagnosticsSource.contains("redactedPath"))
+    }
+
+    func testActiveTabTemporaryGrantRiskIsDocumented() throws {
+        let installationSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+Installation.swift"
+        )
+        XCTAssertTrue(installationSource.contains("grantActiveTabURLAccess"))
+        XCTAssertTrue(
+            installationSource.contains("decisionSource: .activeTabTemporaryGrant"),
+            "activeTab grants must be visible in diagnostics"
+        )
+        XCTExpectFailure(
+            "Current activeTab implementation grants a URL globally. Goal 2 should make it tab/navigation-scoped with WebKit tab-aware APIs."
+        ) {
+            XCTAssertFalse(
+                installationSource.contains("extensionContext.setPermissionStatus(.grantedExplicitly, for: url)"),
+                "activeTab/current-page grants must not become global URL grants"
+            )
+        }
+    }
+
+    func testSiteAccessPolicyApplyDoesNotUseDestructiveWebViewRebuildAsRepair() throws {
+        let storeSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift"
+        )
+        let profileSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift"
+        )
+        let runtimeSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ProfileRuntime.swift"
+        )
+
+        XCTAssertTrue(storeSource.contains("logReloadRebuild"))
+        XCTExpectFailure(
+            "Current policy apply path can reach updateWebViewsForProfile and rebuildLiveWebViews; Goal 2 should replace this with bounded reload/rebind semantics."
+        ) {
+            XCTAssertFalse(
+                storeSource.contains("reconcileOpenTabsAfterExtensionContextLoad")
+                    && profileSource.contains("updateWebViewsForProfile")
+                    && runtimeSource.contains("coordinator.rebuildLiveWebViews(for: tab)"),
+                "Applying site-access policy must not destructively rebuild live normal WebViews"
+            )
+        }
+    }
+
+    func testExtensionCreatedExternalLoginURLRoutesThroughNormalTabs() throws {
+        let delegateSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
+        )
+
+        XCTAssertTrue(
+            delegateSource.contains(".normalBrowserTab"),
+            "Extension-created external web URLs must be diagnosable as normal browser tabs"
+        )
+        XCTAssertFalse(
+            delegateSource.contains("presentExtensionExternalWebPopupSession"),
+            "External https://account.example.test/login URLs requested by extensions should not use the auxiliary mini-window path"
+        )
+    }
+
+    func testTabAwarePermissionAPIsAreAvailableButNotYetPreferred() throws {
+        let installationSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+Installation.swift"
+        )
+        let controllerSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
+        )
+
+        XCTAssertTrue(controllerSource.contains("in tab: (any WKWebExtensionTab)?"))
+        XCTExpectFailure(
+            "Current permission decisions still use mostly global WebKit permission APIs. Goal 2 should prefer permissionStatus(for:in:) when tab context is known."
+        ) {
+            XCTAssertTrue(
+                installationSource.contains("permissionStatus(for: url, in:")
+                    || installationSource.contains("setPermissionStatus(.grantedExplicitly, for: url, in:"),
+                "Known-tab permission decisions should use/pass tab context"
+            )
+        }
     }
 
     func testRaindropAndRescanPathsDoNotRestoreMV3Shims() throws {

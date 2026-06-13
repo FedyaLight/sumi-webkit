@@ -42,6 +42,11 @@ check_absent \
   'ExtensionManager\+ExternallyConnectableScripts|pageWorldExternallyConnectableBridgeScript|webKitRuntimeCompatibilityPreludeScript|selectiveContentScriptGuardScript' \
   "${extension_manager_paths[@]}"
 
+check_absent \
+  "Safari app-extension copied-resource runtime fallback" \
+  'SafariAppExtensionResources\.copyResources|falling back to copied package' \
+  Sumi/Managers/ExtensionManager
+
 if [[ -d Sumi/Managers/ExtensionManager/ExtensionRuntimeResources ]]; then
   remaining_js="$(find Sumi/Managers/ExtensionManager/ExtensionRuntimeResources -name '*.js' 2>/dev/null || true)"
   if [[ -n "$remaining_js" ]]; then

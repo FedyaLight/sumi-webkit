@@ -26,7 +26,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         return recentExtensionTabOpenRequests.consume(key: key)
     }
 
-    private func recordRecentlyOpenedExtensionTabRequest(for url: URL?) {
+    func recordRecentlyOpenedExtensionTabRequest(for url: URL?) {
         guard let key = Self.recentExtensionTabOpenRequestKey(for: url) else {
             return
         }
@@ -195,6 +195,139 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         return (loadURL, controller.extensionContext(for: loadURL))
     }
 
+    private struct ExtensionRequestedTabTarget {
+        let window: BrowserWindowState?
+        let space: Space?
+    }
+
+    private func extensionRequestedTabTarget(
+        requestedWindow: (any WKWebExtensionWindow)?,
+        extensionContext: WKWebExtensionContext? = nil
+    ) throws -> ExtensionRequestedTabTarget {
+        guard let browserManager else {
+            throw NSError(
+                domain: "ExtensionManager",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
+            )
+        }
+
+        if let miniWindowAdapter = requestedWindow as? ExtensionMiniWindowAdapter,
+           let session = browserManager.auxiliaryWindowManager.session(for: miniWindowAdapter.sessionId)
+        {
+            return ExtensionRequestedTabTarget(
+                window: nil,
+                space: extensionRequestedTargetSpace(for: session.tab)
+            )
+        }
+
+        if requestedWindow == nil,
+           let extensionContext,
+           let ownerExtensionID = extensionID(for: extensionContext),
+           let profileId = profileId(for: extensionContext),
+           let miniWindowAdapter = extensionMiniWindowAdapters(
+               ownerExtensionID: ownerExtensionID,
+               profileId: profileId
+           ).first,
+           let session = browserManager.auxiliaryWindowManager.session(for: miniWindowAdapter.sessionId)
+        {
+            return ExtensionRequestedTabTarget(
+                window: nil,
+                space: extensionRequestedTargetSpace(for: session.tab)
+            )
+        }
+
+        let requestedWindowState = (requestedWindow as? ExtensionWindowAdapter)
+            .flatMap { browserManager.windowRegistry?.windows[$0.windowId] }
+        let targetWindow = requestedWindowState ?? browserManager.windowRegistry?.activeWindow
+        let targetSpace = targetWindow?.currentSpaceId.flatMap { spaceID in
+            browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
+        } ?? browserManager.tabManager.currentSpace
+        return ExtensionRequestedTabTarget(
+            window: targetWindow,
+            space: targetSpace
+        )
+    }
+
+    private func extensionRequestedTargetSpace(for tab: Tab) -> Space? {
+        guard let browserManager else { return nil }
+        return tab.spaceId.flatMap { spaceID in
+            browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
+        } ?? browserManager.tabManager.currentSpace
+    }
+
+    @discardableResult
+    func prepareExtensionRequestedTabForInitialLoad(
+        url: URL?,
+        requestedWindow: (any WKWebExtensionWindow)?,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext? = nil
+    ) async throws -> UUID? {
+        let resolvedExtensionLoad = extensionLoadURL(
+            for: url,
+            controller: controller
+        )
+        guard shouldPreloadContentScriptContextsForExtensionRequestedTab(
+            loadURL: resolvedExtensionLoad.url,
+            webExtensionContextOverride: resolvedExtensionLoad.context
+        ) else {
+            return nil
+        }
+
+        let target = try extensionRequestedTabTarget(
+            requestedWindow: requestedWindow,
+            extensionContext: extensionContext
+        )
+        return await prepareContentScriptContextsForExtensionRequestedInitialLoad(
+            loadURL: resolvedExtensionLoad.url,
+            webExtensionContextOverride: resolvedExtensionLoad.context,
+            targetWindow: target.window,
+            targetSpace: target.space,
+            controller: controller
+        )
+    }
+
+    @discardableResult
+    func prepareContentScriptContextsForExtensionRequestedInitialLoad(
+        loadURL: URL?,
+        webExtensionContextOverride: WKWebExtensionContext?,
+        targetWindow: BrowserWindowState?,
+        targetSpace: Space?,
+        controller: WKWebExtensionController
+    ) async -> UUID? {
+        guard shouldPreloadContentScriptContextsForExtensionRequestedTab(
+            loadURL: loadURL,
+            webExtensionContextOverride: webExtensionContextOverride
+        ) else {
+            return nil
+        }
+
+        guard let profileId =
+            targetSpace?.profileId
+                ?? targetWindow.flatMap(resolvedProfileId(for:))
+                ?? profileId(for: controller)
+                ?? currentProfileId
+                ?? browserManager?.currentProfile?.id
+        else {
+            return nil
+        }
+
+        await ensureContentScriptContextsLoaded(for: profileId)
+        return profileId
+    }
+
+    private func shouldPreloadContentScriptContextsForExtensionRequestedTab(
+        loadURL: URL?,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Bool {
+        guard webExtensionContextOverride == nil,
+              let scheme = loadURL?.scheme?.lowercased()
+        else {
+            return false
+        }
+        return scheme == "http" || scheme == "https" || scheme == "file"
+    }
+
     @discardableResult
     func openExtensionRequestedTab(
         url: URL?,
@@ -202,6 +335,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         shouldBePinned: Bool,
         requestedWindow: (any WKWebExtensionWindow)?,
         controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext? = nil,
         reason: String = #function
     ) throws -> Tab {
         guard let browserManager else {
@@ -212,12 +346,12 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             )
         }
 
-        let requestedWindowState = (requestedWindow as? ExtensionWindowAdapter)
-            .flatMap { browserManager.windowRegistry?.windows[$0.windowId] }
-        let targetWindow = requestedWindowState ?? browserManager.windowRegistry?.activeWindow
-        let targetSpace = targetWindow?.currentSpaceId.flatMap { spaceID in
-            browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-        } ?? browserManager.tabManager.currentSpace
+        let target = try extensionRequestedTabTarget(
+            requestedWindow: requestedWindow,
+            extensionContext: extensionContext
+        )
+        let targetWindow = target.window
+        let targetSpace = target.space
 
         let resolvedExtensionLoad = extensionLoadURL(
             for: url,
@@ -230,6 +364,22 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             shouldBePinned: shouldBePinned,
             webExtensionContextOverride: webExtensionContextOverride
         )
+        let externalWebConfigurationOverride =
+            extensionRequestedExternalWebConfigurationOverride(
+                loadURL: resolvedExtensionLoad.url,
+                webExtensionContextOverride: webExtensionContextOverride,
+                targetWindow: targetWindow,
+                targetSpace: targetSpace,
+                controller: controller,
+                extensionContext: extensionContext,
+                reason: reason
+            )
+        let diagnosticProfileId =
+            targetSpace?.profileId
+                ?? targetWindow.flatMap(resolvedProfileId(for:))
+                ?? extensionContext.flatMap { profileId(for: $0) }
+                ?? profileId(for: controller)
+                ?? currentProfileId
 
         let newTab: Tab
         if shouldUseTransientInternalTab, let loadURL = resolvedExtensionLoad.url {
@@ -244,12 +394,14 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 url: loadURL.absoluteString,
                 in: targetSpace,
                 activate: shouldBeActive,
+                webViewConfigurationOverride: externalWebConfigurationOverride,
                 webExtensionContextOverride: webExtensionContextOverride
             )
         } else {
             newTab = browserManager.tabManager.createNewTab(
                 in: targetSpace,
                 activate: shouldBeActive,
+                webViewConfigurationOverride: externalWebConfigurationOverride,
                 webExtensionContextOverride: webExtensionContextOverride
             )
         }
@@ -272,7 +424,63 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             isActive: shouldBeActive,
             hasWindowSelection: targetWindow != nil
         )
+        SafariExtensionPermissionLifecycleDiagnostics.logTabBinding(
+            SafariExtensionTabBindingSnapshot(
+                route: shouldUseTransientInternalTab ? .extensionInternal : .normalBrowserTab,
+                profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
+                    resolvedProfileId(for: newTab) ?? diagnosticProfileId
+                ),
+                tabBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(newTab.id),
+                dataStoreMatched: nil,
+                controllerMatched: nil,
+                tabAdapterCreated: stableAdapter(for: newTab) != nil,
+                didOpenTabTiming: newTab.lastExtensionOpenNotificationGeneration > 0
+                    ? .beforeNavigation : .deferred,
+                firstNavigationHost: SafariExtensionPermissionLifecycleDiagnostics.host(
+                    from: resolvedExtensionLoad.url
+                ),
+                firstCommitHost: nil
+            )
+        )
         return newTab
+    }
+
+    private func extensionRequestedExternalWebConfigurationOverride(
+        loadURL: URL?,
+        webExtensionContextOverride: WKWebExtensionContext?,
+        targetWindow: BrowserWindowState?,
+        targetSpace: Space?,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext?,
+        reason: String
+    ) -> WKWebViewConfiguration? {
+        guard webExtensionContextOverride == nil,
+              let loadURL,
+              Self.isExtensionOwnedURL(loadURL) == false,
+              let scheme = loadURL.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            return nil
+        }
+
+        let resolvedProfileId =
+            targetSpace?.profileId
+                ?? targetWindow.flatMap(resolvedProfileId(for:))
+                ?? (extensionContext.flatMap { profileId(for: $0) })
+                ?? profileId(for: controller)
+                ?? currentProfileId
+                ?? browserManager?.currentProfile?.id
+        guard let profileId = resolvedProfileId else {
+            return nil
+        }
+
+        let configuration = WKWebViewConfiguration()
+        prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            profileId: profileId,
+            reason: "\(reason).externalNormalTabConfiguration"
+        )
+        return configuration
     }
 
     private func shouldOpenAsTransientInternalExtensionTab(
@@ -347,8 +555,45 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ controller: WKWebExtensionController,
         focusedWindowFor extensionContext: WKWebExtensionContext
     ) -> (any WKWebExtensionWindow)? {
-        if let windowId = browserManager?.windowRegistry?.activeWindow?.id {
-            return windowAdapter(for: windowId)
+        guard let browserManager else { return nil }
+        let auxiliaryWindowManager = browserManager.auxiliaryWindowManager
+        let contextProfileId = profileId(for: extensionContext)
+        let ownerExtensionId = extensionID(for: extensionContext)
+        let ownerMiniWindowAdapters: [ExtensionMiniWindowAdapter] = {
+            guard let ownerExtensionId else { return [] }
+            return extensionMiniWindowAdapters(
+                ownerExtensionID: ownerExtensionId,
+                profileId: contextProfileId
+            )
+        }()
+
+        if let keyWindow = NSApp.keyWindow,
+           let session = auxiliaryWindowManager.session(for: keyWindow),
+           let miniWindowAdapter = session.miniWindowAdapter,
+           ownerMiniWindowAdapters.contains(where: { $0.sessionId == miniWindowAdapter.sessionId })
+        {
+            auxiliaryWindowManager.recordAuxiliarySessionFocus(session.id)
+            return miniWindowAdapter
+        }
+
+        if let miniWindowAdapter = ownerMiniWindowAdapters.first {
+            auxiliaryWindowManager.recordAuxiliarySessionFocus(miniWindowAdapter.sessionId)
+            return miniWindowAdapter
+        }
+
+        if let keyWindow = NSApp.keyWindow,
+           let mainWindowState = browserManager.windowRegistry?.windows.values.first(where: {
+               $0.window === keyWindow
+           }),
+           contextProfileId.map({ windowMatchesProfile(mainWindowState, profileId: $0) }) ?? true
+        {
+            return windowAdapter(for: mainWindowState.id)
+        }
+
+        if let activeWindow = browserManager.windowRegistry?.activeWindow,
+           contextProfileId.map({ windowMatchesProfile(activeWindow, profileId: $0) }) ?? true
+        {
+            return windowAdapter(for: activeWindow.id)
         }
         return nil
     }
@@ -360,12 +605,76 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         guard let browserManager,
               let contextProfileId = profileId(for: extensionContext)
         else { return [] }
-        return browserManager.windowRegistry?.windows.compactMap { windowId, windowState in
+
+        let ownerMiniWindowAdapters: [ExtensionMiniWindowAdapter] = {
+            guard let ownerExtensionId = extensionID(for: extensionContext) else { return [] }
+            return extensionMiniWindowAdapters(
+                ownerExtensionID: ownerExtensionId,
+                profileId: contextProfileId
+            )
+        }()
+
+        var openWindows: [any WKWebExtensionWindow] = ownerMiniWindowAdapters
+        openWindows += browserManager.windowRegistry?.windows.compactMap { windowId, windowState -> (any WKWebExtensionWindow)? in
             guard windowMatchesProfile(windowState, profileId: contextProfileId) else {
                 return nil
             }
             return windowAdapter(for: windowId)
         } ?? []
+
+        return openWindows
+    }
+
+    func focusedOwnerMiniWindowAdapter(
+        for extensionContext: WKWebExtensionContext
+    ) -> ExtensionMiniWindowAdapter? {
+        guard let ownerExtensionID = extensionID(for: extensionContext) else {
+            return nil
+        }
+
+        let contextProfileId = profileId(for: extensionContext)
+        let adapters = extensionMiniWindowAdapters(
+            ownerExtensionID: ownerExtensionID,
+            profileId: contextProfileId
+        )
+        return adapters.first
+    }
+
+    func extensionMiniWindowAdapters(
+        ownerExtensionID: String,
+        profileId: UUID?
+    ) -> [ExtensionMiniWindowAdapter] {
+        guard let browserManager else { return [] }
+
+        let auxiliaryWindowManager = browserManager.auxiliaryWindowManager
+        var adapters = miniWindowAdapters.values.compactMap { adapter -> ExtensionMiniWindowAdapter? in
+            guard let session = auxiliaryWindowManager.session(for: adapter.sessionId),
+                  session.ownerExtensionID == ownerExtensionID,
+                  session.window.isVisible,
+                  let sessionAdapter = session.miniWindowAdapter,
+                  let tab = browserManager.tabManager.tab(for: sessionAdapter.tabId)
+            else {
+                return nil
+            }
+            if let profileId, resolvedProfileId(for: tab) != profileId {
+                return nil
+            }
+            return sessionAdapter
+        }
+
+        adapters.sort { lhs, rhs in
+            lhs.sessionId.uuidString < rhs.sessionId.uuidString
+        }
+
+        if let focused = auxiliaryWindowManager.focusedMiniWindowAdapter(
+            forOwnerExtensionID: ownerExtensionID
+        ),
+           let focusedIndex = adapters.firstIndex(where: { $0.sessionId == focused.sessionId })
+        {
+            adapters.insert(adapters.remove(at: focusedIndex), at: 0)
+        }
+
+        return adapters
     }
 
     func webExtensionController(
@@ -655,27 +964,33 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
         let extensionId = extensionID(for: extensionContext)
         let profileId = profileId(for: extensionContext)
-        var storedResolvedMatches = Set<WKWebExtension.MatchPattern>()
+        var policyResolvedMatches = Set<WKWebExtension.MatchPattern>()
         for matchPattern in unresolvedMatches {
-            guard let extensionId, let profileId,
-                  let stored = storedExtensionPermissionDecision(
-                      extensionId: extensionId,
-                      profileId: profileId,
-                      targetKind: .matchPattern,
-                      target: matchPattern.string
-                  )
-            else { continue }
-            let status: WKWebExtensionContext.PermissionStatus =
-                stored.state == .allowed ? .grantedExplicitly : .deniedExplicitly
-            extensionContext.setPermissionStatus(
-                status,
+            guard let extensionId, let profileId else { continue }
+            switch configuredSiteAccessLevel(
                 for: matchPattern,
-                expirationDate: stored.expiresAt
-            )
-            storedResolvedMatches.insert(matchPattern)
+                extensionId: extensionId,
+                profileId: profileId
+            ) {
+            case .allow:
+                extensionContext.setPermissionStatus(
+                    .grantedExplicitly,
+                    for: matchPattern
+                )
+                policyResolvedMatches.insert(matchPattern)
+            case .deny:
+                extensionContext.setPermissionStatus(
+                    .deniedExplicitly,
+                    for: matchPattern
+                )
+                policyResolvedMatches.insert(matchPattern)
+            case .ask:
+                break
+            }
         }
 
-        let promptMatches = unresolvedMatches.subtracting(storedResolvedMatches)
+        let promptMatches = unresolvedMatches
+            .subtracting(policyResolvedMatches)
 
         guard promptMatches.isEmpty == false else {
             let grantedMatches = matchPatterns.filter {
@@ -716,6 +1031,13 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                             state: .allowed,
                             expiresAt: expirationDate
                         )
+                        self.setConfiguredSiteAccess(
+                            .allow,
+                            extensionId: extensionId,
+                            profileId: profileId,
+                            matchPatternString: matchPattern.string,
+                            expiresAt: expirationDate
+                        )
                     }
                 }
                 let grantedMatches = matchPatterns.filter {
@@ -737,6 +1059,12 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                             target: matchPattern.string,
                             state: .denied,
                             expiresAt: nil
+                        )
+                        self.setConfiguredSiteAccess(
+                            .deny,
+                            extensionId: extensionId,
+                            profileId: profileId,
+                            matchPatternString: matchPattern.string
                         )
                     }
                 }
@@ -785,6 +1113,45 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     extensionId: extensionId,
                     reason: "promptMatchPattern"
                 )
+            } else if let extensionId,
+                      let profileId,
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "")
+            {
+                switch configuredSiteAccessLevel(
+                    for: url,
+                    extensionId: extensionId,
+                    profileId: profileId
+                ) {
+                case .allow:
+                    grantSiteAccess(
+                        to: url,
+                        in: extensionContext,
+                        extensionId: extensionId,
+                        profileId: profileId,
+                        persistPolicy: false
+                    )
+                    autoGranted.insert(url)
+                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                        granted: true,
+                        extensionId: extensionId,
+                        reason: "promptSiteAccessAllowed"
+                    )
+                case .deny:
+                    denySiteAccess(
+                        to: url,
+                        in: extensionContext,
+                        extensionId: extensionId,
+                        profileId: profileId,
+                        persistPolicy: false
+                    )
+                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                        granted: false,
+                        extensionId: extensionId,
+                        reason: "promptSiteAccessDenied"
+                    )
+                case .ask:
+                    unresolved.insert(url)
+                }
             } else if let patternString = hostMatchPatternString(for: url),
                       let extensionId,
                       let profileId,
@@ -856,32 +1223,26 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             switch decision {
             case .allow(let expirationDate):
                 for url in unresolved {
-                    if let patternString = self.hostMatchPatternString(for: url),
-                       let matchPattern = try? WKWebExtension.MatchPattern(
-                           string: patternString
-                       )
-                    {
-                        extensionContext.setPermissionStatus(
-                            .grantedExplicitly,
-                            for: matchPattern,
-                            expirationDate: expirationDate
-                        )
-                        if let extensionId, let profileId {
-                            self.persistExtensionPermissionDecision(
-                                extensionId: extensionId,
-                                profileId: profileId,
-                                targetKind: .matchPattern,
-                                target: patternString,
-                                state: .allowed,
-                                expiresAt: expirationDate
-                            )
-                        }
-                    }
-                    extensionContext.setPermissionStatus(
-                        .grantedExplicitly,
-                        for: url,
+                    self.grantSiteAccess(
+                        to: url,
+                        in: extensionContext,
+                        extensionId: extensionId,
+                        profileId: profileId,
                         expirationDate: expirationDate
                     )
+                    if let patternString = self.hostMatchPatternString(for: url),
+                       let extensionId,
+                       let profileId
+                    {
+                        self.persistExtensionPermissionDecision(
+                            extensionId: extensionId,
+                            profileId: profileId,
+                            targetKind: .matchPattern,
+                            target: patternString,
+                            state: .allowed,
+                            expiresAt: expirationDate
+                        )
+                    }
                     SafariExtensionAutofillFillDiagnostics.recordHostPermission(
                         granted: true,
                         extensionId: extensionId,
@@ -891,32 +1252,25 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 completionHandler(autoGranted.union(unresolved), expirationDate)
             case .deny:
                 for url in unresolved {
-                    if let patternString = self.hostMatchPatternString(for: url),
-                       let matchPattern = try? WKWebExtension.MatchPattern(
-                           string: patternString
-                       )
-                    {
-                        extensionContext.setPermissionStatus(
-                            .deniedExplicitly,
-                            for: matchPattern,
-                            expirationDate: nil
-                        )
-                        if let extensionId, let profileId {
-                            self.persistExtensionPermissionDecision(
-                                extensionId: extensionId,
-                                profileId: profileId,
-                                targetKind: .matchPattern,
-                                target: patternString,
-                                state: .denied,
-                                expiresAt: nil
-                            )
-                        }
-                    }
-                    extensionContext.setPermissionStatus(
-                        .deniedExplicitly,
-                        for: url,
-                        expirationDate: nil
+                    self.denySiteAccess(
+                        to: url,
+                        in: extensionContext,
+                        extensionId: extensionId,
+                        profileId: profileId
                     )
+                    if let patternString = self.hostMatchPatternString(for: url),
+                       let extensionId,
+                       let profileId
+                    {
+                        self.persistExtensionPermissionDecision(
+                            extensionId: extensionId,
+                            profileId: profileId,
+                            targetKind: .matchPattern,
+                            target: patternString,
+                            state: .denied,
+                            expiresAt: nil
+                        )
+                    }
                     SafariExtensionAutofillFillDiagnostics.recordHostPermission(
                         granted: false,
                         extensionId: extensionId,
@@ -934,21 +1288,42 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any WKWebExtensionTab)?, (any Error)?) -> Void
     ) {
-        do {
-            let newTab = try openExtensionRequestedTab(
-                url: configuration.url,
-                shouldBeActive: configuration.shouldBeActive,
-                shouldBePinned: configuration.shouldBePinned,
-                requestedWindow: configuration.window,
-                controller: controller,
-                reason: "webExtensionController.openNewTabUsing"
-            )
-            completionHandler(stableAdapter(for: newTab), nil)
-        } catch {
-            completionHandler(
-                nil,
-                SumiWebExtensionCallbackErrorMapper.webExtensionCallbackError(from: error)
-            )
+        Task { @MainActor [weak self] in
+            guard let self else {
+                completionHandler(
+                    nil,
+                    NSError(
+                        domain: "ExtensionManager",
+                        code: 3,
+                        userInfo: [NSLocalizedDescriptionKey: "Extension manager is unavailable"]
+                    )
+                )
+                return
+            }
+
+            do {
+                try await self.prepareExtensionRequestedTabForInitialLoad(
+                    url: configuration.url,
+                    requestedWindow: configuration.window,
+                    controller: controller,
+                    extensionContext: extensionContext
+                )
+                let newTab = try self.openExtensionRequestedTab(
+                    url: configuration.url,
+                    shouldBeActive: configuration.shouldBeActive,
+                    shouldBePinned: configuration.shouldBePinned,
+                    requestedWindow: configuration.window,
+                    controller: controller,
+                    extensionContext: extensionContext,
+                    reason: "webExtensionController.openNewTabUsing"
+                )
+                completionHandler(self.stableAdapter(for: newTab), nil)
+            } catch {
+                completionHandler(
+                    nil,
+                    SumiWebExtensionCallbackErrorMapper.webExtensionCallbackError(from: error)
+                )
+            }
         }
     }
 
@@ -958,10 +1333,49 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
     ) {
-        _ = extensionContext
+        if configuration.windowType == .popup {
+            Task { @MainActor [weak self, weak browserManager] in
+                guard let self, let browserManager else {
+                    completionHandler(
+                        nil,
+                        NSError(
+                            domain: "ExtensionManager",
+                            code: 4,
+                            userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
+                        )
+                    )
+                    return
+                }
+
+                let parentWindow = browserManager.windowRegistry?.activeWindow?.window
+                let adapter = await browserManager.auxiliaryWindowManager.presentExtensionPopupWindow(
+                    configuration: configuration,
+                    controller: controller,
+                    extensionContext: extensionContext,
+                    extensionManager: self,
+                    parentWindow: parentWindow
+                )
+
+                if let adapter {
+                    completionHandler(adapter, nil)
+                } else {
+                    completionHandler(
+                        nil,
+                        NSError(
+                            domain: "ExtensionManager",
+                            code: 6,
+                            userInfo: [NSLocalizedDescriptionKey: "Sumi could not open the extension popup window"]
+                        )
+                    )
+                }
+            }
+            return
+        }
+
         openExtensionWindowUsingTabURLs(
             configuration.tabURLs,
             controller: controller,
+            extensionContext: extensionContext,
             createWindow: { [weak browserManager] in
                 browserManager?.createNewWindow()
             },
@@ -1011,7 +1425,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 }
             }
         #endif
-        safariNativeMessagingHost.handleSendMessage(
+        nativeMessagingRelay.handleSendMessage(
             applicationIdentifier: applicationIdentifier,
             message: message,
             extensionId: extensionId,
@@ -1046,7 +1460,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             )
         }
 
-        let portKey = ObjectIdentifier(port)
         let profileId = profileId(for: extensionContext)
         #if DEBUG || SUMI_DIAGNOSTICS
             if RuntimeDiagnostics.isVerboseEnabled {
@@ -1060,7 +1473,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 }
             }
         #endif
-        _ = safariNativeMessagingHost.handleConnect(
+
+        let portKey = ObjectIdentifier(port)
+        _ = nativeMessagingRelay.handleConnect(
             port: port,
             extensionId: extensionId,
             profileId: profileId,
@@ -1071,7 +1486,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 if let extensionId {
                     self.nativeMessagePortExtensionIDs[portKey] = extensionId
                 }
-                if let profileId = self.profileId(for: extensionContext) {
+                if let profileId {
                     self.nativeMessagePortProfileIDs[portKey] = profileId
                 }
             },

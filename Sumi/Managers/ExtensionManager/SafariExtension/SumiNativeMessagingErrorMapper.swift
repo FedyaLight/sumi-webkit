@@ -55,6 +55,18 @@ enum SumiNativeMessagingErrorMapper {
         case .relayCancelled:
             message = description
                 ?? "Native messaging relay was cancelled."
+        case .nativeHostManifestMissing:
+            message = description
+                ?? "The native messaging host manifest was not found."
+        case .nativeHostExecutableMissing:
+            message = description
+                ?? "The native messaging host executable was not found."
+        case .nativeHostPermissionDenied:
+            message = description
+                ?? "Permission denied when starting the native messaging host."
+        case .nativeHostUnsupportedKind:
+            message = description
+                ?? "The native messaging host kind is unsupported."
         }
 
         var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]

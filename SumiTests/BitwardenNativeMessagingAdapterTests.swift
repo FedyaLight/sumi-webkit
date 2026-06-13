@@ -832,7 +832,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertEqual(fake.sentMessages.count, 1)
     }
 
-    func testDelegateNativeMessagingSelectorsVisibleToObjC() throws {
+    func testDelegateNativeMessagingSelectorsAreRestoredForProductionRelay() throws {
         let container = try ModelContainer(
             for: ExtensionEntity.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
@@ -857,20 +857,16 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
     }
 
-    func testDelegateImplementsWebKitNativeMessagingSelectors() throws {
+    func testDelegateRoutesNativeMessagingThroughExplicitRelay() throws {
         let delegateSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
         )
-        XCTAssertTrue(
-            delegateSource.contains(
-                "func webExtensionController(\n        _ controller: WKWebExtensionController,\n        sendMessage message: Any,\n        toApplicationWithIdentifier applicationIdentifier: String?,"
-            )
-        )
-        XCTAssertTrue(
-            delegateSource.contains(
-                "func webExtensionController(\n        _ controller: WKWebExtensionController,\n        connectUsing port: WKWebExtension.MessagePort,"
-            )
-        )
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
+        XCTAssertTrue(delegateSource.contains("sendMessage message: Any"))
+        XCTAssertTrue(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleSendMessage"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleConnect"))
     }
 
     func testUnsupportedHostFailsSafelyWithoutLaunch() async throws {

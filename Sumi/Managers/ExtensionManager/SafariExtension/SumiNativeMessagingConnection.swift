@@ -448,6 +448,14 @@ enum SumiNativeMessagingConnection {
             return .hostNotFound
         case .hostLaunchFailed:
             return .hostLaunchFailed
+        case .nativeHostManifestMissing:
+            return .nativeHostManifestMissing
+        case .nativeHostExecutableMissing:
+            return .nativeHostExecutableMissing
+        case .nativeHostPermissionDenied:
+            return .nativeHostPermissionDenied
+        case .nativeHostUnsupportedKind:
+            return .nativeHostUnsupportedKind
         case .companionAppProtocolUnknown:
             return .companionAppProtocolUnknown
         case .relayTimeout:

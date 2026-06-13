@@ -24,6 +24,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         24 * 60 * 60
     nonisolated static let extensionPermissionDecisionsStorageKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.permissionDecisions.v1"
+    nonisolated static let extensionSiteAccessStorageKey =
+        "\(SumiAppIdentity.bundleIdentifier).extensions.siteAccess.v1"
     #if DEBUG
         nonisolated static let testControllerIdentifiersDefaultsKey =
             "\(SumiAppIdentity.bundleIdentifier).tests.WKWebExtensionController.Identifiers"
@@ -68,6 +70,12 @@ final class ExtensionManager: NSObject, ObservableObject {
         var lastBackgroundWakeReason: ExtensionBackgroundWakeReason?
         var lastBackgroundWakeFailed = false
         var errorUpdateDuration: TimeInterval = 0
+    }
+
+    struct WebExtensionRuntimeSourceKey: Equatable {
+        let sourceKind: WebExtensionSourceKind
+        let sourceBundlePath: String
+        let packageRootPath: String
     }
 
     enum ExtensionRuntimeState: String, Codable, CaseIterable {
@@ -130,6 +138,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var extensionContextsByProfile: [UUID: [String: WKWebExtensionContext]] = [:]
     /// Parsed extension resources are profile-agnostic; each profile gets its own context.
     var cachedWebExtensionsByID: [String: WKWebExtension] = [:]
+    var cachedWebExtensionRuntimeSourceKeysByID: [String: WebExtensionRuntimeSourceKey] = [:]
     var lastExtensionLoadErrors: [String: Error] = [:]
     var liveExtensionContextOrder: [String] = []
     var runtimeState: ExtensionRuntimeState = .idle
@@ -153,6 +162,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var deferredPopupContextUnloadProfileIDs: [String: UUID] = [:]
     var tabAdapters: [UUID: ExtensionTabAdapter] = [:]
     var windowAdapters: [UUID: ExtensionWindowAdapter] = [:]
+    var miniWindowAdapters: [UUID: ExtensionMiniWindowAdapter] = [:]
     var nativeMessagePortHandlers: [ObjectIdentifier: NativeMessagingHandler] = [:]
     var nativeMessagePortExtensionIDs: [ObjectIdentifier: String] = [:]
     var nativeMessagePortProfileIDs: [ObjectIdentifier: UUID] = [:]
@@ -348,6 +358,36 @@ final class ExtensionManager: NSObject, ObservableObject {
                 )
             }
         #endif
+    }
+
+    func miniWindowAdapter(for tab: Tab) -> ExtensionMiniWindowAdapter? {
+        browserManager?.auxiliaryWindowManager.session(for: tab)?.miniWindowAdapter
+    }
+
+    func miniWindowAdapter(
+        for sessionId: UUID,
+        tab: Tab,
+        window: NSWindow,
+        isPrivate: Bool,
+        shouldActivateApp: Bool
+    ) -> ExtensionMiniWindowAdapter? {
+        guard let browserManager else { return nil }
+
+        if let existing = miniWindowAdapters[sessionId] {
+            return existing
+        }
+
+        let created = ExtensionMiniWindowAdapter(
+            sessionId: sessionId,
+            tabId: tab.id,
+            window: window,
+            browserManager: browserManager,
+            extensionManager: self,
+            isPrivate: isPrivate,
+            shouldActivateApp: shouldActivateApp
+        )
+        miniWindowAdapters[sessionId] = created
+        return created
     }
 
     func windowAdapter(for windowId: UUID) -> ExtensionWindowAdapter? {

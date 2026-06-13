@@ -631,6 +631,18 @@ extension ExtensionManager {
             extensionRuntimeTrace(
                 "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) controllerMismatch=true contentScriptRebind=\(tabNeedsExtensionContentScriptRebind(tab)) \(extensionRuntimeTabDescription(tab))"
             )
+            SafariExtensionPermissionLifecycleDiagnostics.logReloadRebuild(
+                SafariExtensionReloadRebuildSnapshot(
+                    triggerReason: reason,
+                    profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
+                        resolvedProfileId(for: tab)
+                    ),
+                    tabBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(tab.id),
+                    host: SafariExtensionPermissionLifecycleDiagnostics.host(from: tab.url),
+                    userActionCaused: false,
+                    action: .destructiveRebuild
+                )
+            )
             tab.resetExtensionRuntimeDocumentBindingForContentScriptRebind()
             coordinator.rebuildLiveWebViews(for: tab)
             // WebKit only injects manifest content scripts when the controller is on the
@@ -710,23 +722,26 @@ extension ExtensionManager {
             return .deletedImportRecordStale
         }
 
-        let packageExists = FileManager.default.fileExists(
-            atPath: installed.packagePath
-        )
-        if packageExists == false {
-            return .copiedResourcesMissing
-        }
-
         let hasOriginalAppex =
             SafariAppExtensionResources.installedAppexBundleURL(
                 sourceKind: installed.sourceKind,
                 sourceBundlePath: installed.sourceBundlePath
             ) != nil
         if installed.sourceKind == .safariAppExtension,
-           hasOriginalAppex == false,
-           packageExists == false
+           hasOriginalAppex == false
         {
             return .originalAppExtensionBundleMissing
+        }
+        let resourcesRoot = try? extensionResourcesRoot(
+            sourceKind: installed.sourceKind,
+            packagePath: installed.packagePath,
+            sourceBundlePath: installed.sourceBundlePath
+        )
+        let resourcesExist = resourcesRoot.map {
+            FileManager.default.fileExists(atPath: $0.path)
+        } ?? false
+        if resourcesExist == false {
+            return .sourceResourcesMissing
         }
 
         if let loadError = lastExtensionLoadError(
@@ -791,9 +806,14 @@ extension ExtensionManager {
                 sourceKind: installedExtension.sourceKind,
                 sourceBundlePath: installedExtension.sourceBundlePath
             ) != nil
-        let packageExists = FileManager.default.fileExists(
-            atPath: installedExtension.packagePath
+        let resourcesRoot = try? extensionResourcesRoot(
+            sourceKind: installedExtension.sourceKind,
+            packagePath: installedExtension.packagePath,
+            sourceBundlePath: installedExtension.sourceBundlePath
         )
+        let resourcesExist = resourcesRoot.map {
+            FileManager.default.fileExists(atPath: $0.path)
+        } ?? false
 
         var lines = [
             "failureBucket=\(failureBucket.rawValue)",
@@ -802,7 +822,7 @@ extension ExtensionManager {
             "profileId=\(profileId.uuidString)",
             "sourceKind=\(installedExtension.sourceKind.rawValue)",
             "hasOriginalAppex=\(hasOriginalAppex)",
-            "copiedResourcesPresent=\(packageExists)",
+            "sourceResourcesPresent=\(resourcesExist)",
             "controllerExists=\(controller != nil)",
             "contextExists=\(context != nil)",
             "contextLoaded=\(context?.isLoaded ?? false)",

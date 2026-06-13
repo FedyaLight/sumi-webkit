@@ -196,8 +196,12 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
 
         XCTAssertFalse(relaySource.contains("ChromeMV3NativeMessagingInternalRuntime"))
         XCTAssertFalse(portSource.contains("ChromeMV3NativeMessagingInternalRuntime"))
-        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
-        XCTAssertTrue(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
+        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
+        XCTAssertTrue(delegateSource.contains("sendMessage message: Any"))
+        XCTAssertTrue(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleSendMessage"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleConnect"))
         XCTAssertTrue(portSource.contains("WKWebExtension.MessagePort"))
 
         let processCallToken = "Process" + "("

@@ -77,6 +77,24 @@ enum SafariExtensionCompatibilityTargets {
         let containingAppName: String
         /// Expected `.appex` bundle identifier when installed (from Cycle 3 dev probe).
         let expectedAppexBundleIdentifier: String
+        let nativeMessagingApplicationIdentifier: String?
+        let nativeMessagingHostBundleIdentifier: String?
+
+        init(
+            key: String,
+            displayName: String,
+            containingAppName: String,
+            expectedAppexBundleIdentifier: String,
+            nativeMessagingApplicationIdentifier: String? = nil,
+            nativeMessagingHostBundleIdentifier: String? = nil
+        ) {
+            self.key = key
+            self.displayName = displayName
+            self.containingAppName = containingAppName
+            self.expectedAppexBundleIdentifier = expectedAppexBundleIdentifier
+            self.nativeMessagingApplicationIdentifier = nativeMessagingApplicationIdentifier
+            self.nativeMessagingHostBundleIdentifier = nativeMessagingHostBundleIdentifier
+        }
     }
 
     static let all: [Target] = [
@@ -84,25 +102,32 @@ enum SafariExtensionCompatibilityTargets {
             key: "bitwarden",
             displayName: "Bitwarden",
             containingAppName: "Bitwarden",
-            expectedAppexBundleIdentifier: "com.bitwarden.desktop.safari"
+            expectedAppexBundleIdentifier: "com.bitwarden.desktop.safari",
+            nativeMessagingApplicationIdentifier: BitwardenNativeMessagingIdentifiers.hostBundleIdentifier,
+            nativeMessagingHostBundleIdentifier: BitwardenNativeMessagingIdentifiers.hostBundleIdentifier
         ),
         Target(
             key: "1password",
             displayName: "1Password",
             containingAppName: "1Password for Safari",
-            expectedAppexBundleIdentifier: "com.1password.safari.extension"
+            expectedAppexBundleIdentifier: "com.1password.safari.extension",
+            nativeMessagingApplicationIdentifier: "com.1password.safari",
+            nativeMessagingHostBundleIdentifier: "com.1password.safari"
         ),
         Target(
             key: "proton-pass",
             displayName: "Proton Pass",
             containingAppName: "Proton Pass for Safari",
-            expectedAppexBundleIdentifier: "me.proton.pass.catalyst.safari-extension"
+            expectedAppexBundleIdentifier: "me.proton.pass.catalyst.safari-extension",
+            nativeMessagingApplicationIdentifier: ProtonNativeMessagingIdentifiers.requestedApplicationIdentifier,
+            nativeMessagingHostBundleIdentifier: ProtonNativeMessagingIdentifiers.safariHostBundleIdentifier
         ),
         Target(
             key: "raindrop",
             displayName: "Raindrop",
             containingAppName: "Save to Raindrop.io",
-            expectedAppexBundleIdentifier: "io.raindrop.safari.extension"
+            expectedAppexBundleIdentifier: "io.raindrop.safari.extension",
+            nativeMessagingHostBundleIdentifier: "io.raindrop.safari"
         ),
     ]
 }
@@ -192,7 +217,7 @@ enum SafariExtensionCompatibilityReportBuilder {
                 ) != nil {
                     return .originalAppexBundle
                 }
-                return .copiedPackage
+                return nil
             }()
 
             return SafariExtensionCompatibilityEntry(

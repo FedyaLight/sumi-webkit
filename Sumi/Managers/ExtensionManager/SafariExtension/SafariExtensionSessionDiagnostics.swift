@@ -90,7 +90,7 @@ enum SafariExtensionSessionDiagnosticsBuilder {
             ) != nil {
                 return .originalAppexBundle
             }
-            return .copiedPackage
+            return nil
         }()
 
         let profileStore =

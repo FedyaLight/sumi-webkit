@@ -35,7 +35,7 @@ enum ExtensionActionPopupRuntimeFailureBucket: String, Codable, CaseIterable, Se
     case wrongProfileRuntimeLookup
     case enabledStateWithoutRuntime
     case originalAppExtensionBundleMissing
-    case copiedResourcesMissing
+    case sourceResourcesMissing
     case webExtensionCreationFailed
     case manifestValidationPolicyWrongForSourceKind
     case staleActionSurfaceRecord

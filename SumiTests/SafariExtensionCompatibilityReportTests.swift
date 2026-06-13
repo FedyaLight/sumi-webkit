@@ -135,7 +135,7 @@ final class SafariExtensionCompatibilityReportTests: XCTestCase {
         )
 
         XCTAssertEqual(report.entries[0].popupLoadStatus, .unavailable)
-        XCTAssertEqual(report.entries[0].safariRuntimeLoadSource, .copiedPackage)
+        XCTAssertNil(report.entries[0].safariRuntimeLoadSource)
     }
 
     func testResolvePopupLoadStatusLoadedWhenActionPresentsPopup() throws {

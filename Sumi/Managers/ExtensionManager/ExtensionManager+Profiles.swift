@@ -38,7 +38,85 @@ extension ExtensionManager {
         windowAdapters.removeValue(forKey: windowId)
     }
 
+    func notifyAuxiliaryWindowOpened(_ session: AuxiliaryWindowSession) {
+        guard let adapter = session.miniWindowAdapter,
+              let extensionContext = auxiliaryOwnerExtensionContext(for: session)
+        else {
+            return
+        }
+
+        extensionContext.didOpenWindow(adapter)
+        if session.shouldActivateApp {
+            browserManager?.auxiliaryWindowManager.recordAuxiliarySessionFocus(session.id)
+            extensionContext.didFocusWindow(adapter)
+        }
+    }
+
+    func notifyAuxiliaryWindowFocused(_ session: AuxiliaryWindowSession) {
+        guard let adapter = session.miniWindowAdapter,
+              let extensionContext = auxiliaryOwnerExtensionContext(for: session)
+        else {
+            return
+        }
+
+        guard extensionContext.openWindows.contains(where: { window in
+            (window as? ExtensionMiniWindowAdapter)?.sessionId == session.id
+        }) else {
+            return
+        }
+        if (extensionContext.focusedWindow as? ExtensionMiniWindowAdapter)?.sessionId == session.id {
+            return
+        }
+
+        extensionContext.didFocusWindow(adapter)
+    }
+
+    func notifyAuxiliaryWindowClosed(_ session: AuxiliaryWindowSession) {
+        guard let adapter = session.miniWindowAdapter,
+              let extensionContext = auxiliaryOwnerExtensionContext(for: session)
+        else {
+            miniWindowAdapters.removeValue(forKey: session.id)
+            return
+        }
+
+        extensionContext.didCloseWindow(adapter)
+        if let activeWindow = browserManager?.windowRegistry?.activeWindow,
+           let profileId = resolvedProfileId(for: session.tab),
+           windowMatchesProfile(activeWindow, profileId: profileId),
+           let focusedAdapter = windowAdapter(for: activeWindow.id)
+        {
+            extensionContext.didFocusWindow(focusedAdapter)
+        } else {
+            extensionContext.didFocusWindow(nil)
+        }
+
+        miniWindowAdapters.removeValue(forKey: session.id)
+    }
+
+    private func auxiliaryOwnerExtensionContext(
+        for session: AuxiliaryWindowSession
+    ) -> WKWebExtensionContext? {
+        if let context = session.tab.webExtensionContextOverride {
+            return context
+        }
+
+        guard let ownerExtensionID = session.ownerExtensionID,
+              let profileId = resolvedProfileId(for: session.tab)
+        else {
+            return nil
+        }
+
+        return extensionContexts(for: profileId)[ownerExtensionID]
+    }
+
     func notifyWindowFocused(_ windowState: BrowserWindowState) {
+        if let keyWindow = NSApp.keyWindow,
+           let auxiliarySession = browserManager?.auxiliaryWindowManager.session(for: keyWindow)
+        {
+            browserManager?.auxiliaryWindowManager.focus(sessionID: auxiliarySession.id)
+            return
+        }
+
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             switchProfile(profileId: profile.id)
         } else if let profileId = windowState.currentProfileId,
@@ -131,6 +209,23 @@ extension ExtensionManager {
             return false
         }
 
+        guard tabHasUsableWebViewForExtensionOpenNotification(
+            tab,
+            controller: controller,
+            profileId: profileId
+        ) else {
+            SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
+                injected: false,
+                extensionId: nil,
+                reason: "notifyTabOpenedMissingUsableWebView",
+                pageURL: tab.url
+            )
+            extensionRuntimeTrace(
+                "didOpenTab deferred because=missingUsableWebView generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) controller=\(extensionRuntimeControllerDescription(controller)) \(extensionRuntimeTabDescription(tab))"
+            )
+            return false
+        }
+
         extensionRuntimeTrace(
             "didOpenTab start generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) controller=\(extensionRuntimeControllerDescription(controller)) \(extensionRuntimeTabDescription(tab)) adapter=\(extensionRuntimeObjectDescription(adapter))"
         )
@@ -151,6 +246,35 @@ extension ExtensionManager {
         extensionRuntimeTrace(
             "didOpenTab complete generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) \(extensionRuntimeTabDescription(tab))"
         )
+        return true
+    }
+
+    private func tabHasUsableWebViewForExtensionOpenNotification(
+        _ tab: Tab,
+        controller: WKWebExtensionController,
+        profileId: UUID
+    ) -> Bool {
+        guard let webView = resolvedLiveWebView(for: tab) else {
+            extensionRuntimeTrace(
+                "didOpenTab deferred because=noLiveWebView profile=\(profileId.uuidString) \(extensionRuntimeTabDescription(tab))"
+            )
+            return false
+        }
+
+        guard attachExtensionControllerIfNeeded(to: webView, for: tab) else {
+            extensionRuntimeTrace(
+                "didOpenTab deferred because=controllerAttachFailed webView=\(extensionRuntimeWebViewDescription(webView)) profile=\(profileId.uuidString) \(extensionRuntimeTabDescription(tab))"
+            )
+            return false
+        }
+
+        guard webView.configuration.webExtensionController === controller else {
+            extensionRuntimeTrace(
+                "didOpenTab deferred because=controllerMismatch webView=\(extensionRuntimeWebViewDescription(webView)) profile=\(profileId.uuidString) \(extensionRuntimeTabDescription(tab))"
+            )
+            return false
+        }
+
         return true
     }
 
@@ -542,6 +666,7 @@ extension ExtensionManager {
         if forceReload {
             resetLoadedExtensionRuntimeStateForReload()
             cachedWebExtensionsByID.removeAll()
+            cachedWebExtensionRuntimeSourceKeysByID.removeAll()
             lastExtensionLoadErrors.removeAll()
             liveExtensionContextOrder.removeAll()
         }
@@ -622,6 +747,11 @@ extension ExtensionManager {
         for extensionId: String,
         removeUIState: Bool
     ) {
+        browserManager?.auxiliaryWindowManager.closeAll(
+            forExtensionId: extensionId,
+            reason: .extensionDisable
+        )
+
         let signpostState = PerformanceTrace.beginInterval(
             "ExtensionManager.tearDownExtensionRuntimeState"
         )
@@ -643,6 +773,7 @@ extension ExtensionManager {
         removeExtensionErrorObserver(for: extensionId)
         loadedExtensionManifests.removeValue(forKey: extensionId)
         cachedWebExtensionsByID.removeValue(forKey: extensionId)
+        cachedWebExtensionRuntimeSourceKeysByID.removeValue(forKey: extensionId)
         lastExtensionLoadErrors = lastExtensionLoadErrors.filter {
             !$0.key.hasSuffix(":\(extensionId)")
         }
@@ -683,6 +814,7 @@ extension ExtensionManager {
         loadedExtensionManifests.removeAll()
         actionStatesByExtensionID.removeAll()
         cachedWebExtensionsByID.removeAll()
+        cachedWebExtensionRuntimeSourceKeysByID.removeAll()
         lastExtensionLoadErrors.removeAll()
         liveExtensionContextOrder.removeAll()
         backgroundWakeTasks.values.forEach { $0.cancel() }
@@ -754,6 +886,7 @@ extension ExtensionManager {
         loadedExtensionManifests.removeAll()
         actionStatesByExtensionID.removeAll()
         cachedWebExtensionsByID.removeAll()
+        cachedWebExtensionRuntimeSourceKeysByID.removeAll()
         lastExtensionLoadErrors.removeAll()
         liveExtensionContextOrder.removeAll()
         backgroundWakeTasks.removeAll()

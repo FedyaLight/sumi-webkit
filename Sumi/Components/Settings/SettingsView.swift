@@ -481,7 +481,7 @@ struct SumiExtensionsSettingsPane: View {
                 title: "Installed Extensions",
                 subtitle: installedExtensions.isEmpty
                     ? "No extensions are installed"
-                    : "Imported and sideloaded extensions managed by Sumi"
+                    : "Safari app extensions and unpacked developer extensions enabled in Sumi"
             ) {
                 if installedExtensions.isEmpty {
                     Text("Sumi did not find any installed extensions in its local runtime store.")
@@ -541,7 +541,7 @@ struct SumiExtensionsSettingsPane: View {
             }
 
             SettingsSection(
-                title: "Import from Safari Apps",
+                title: "Safari App Extensions",
                 subtitle: "Discover Safari Web Extensions bundled in installed macOS apps"
             ) {
                 SafariExtensionImportCandidatesSection(

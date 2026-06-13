@@ -238,6 +238,20 @@ final class SumiExtensionsModule {
         ) ?? false
     }
 
+    func recordRecentlyOpenedExtensionTabRequestIfLoaded(for url: URL?) {
+        managerIfLoadedAndEnabled()?.recordRecentlyOpenedExtensionTabRequest(for: url)
+    }
+
+    func registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
+        _ tab: Tab,
+        reason: String
+    ) {
+        managerIfLoadedAndEnabled()?.registerExtensionCreatedTabWithExtensionRuntime(
+            tab,
+            reason: reason
+        )
+    }
+
     func enableExtension(_ extensionId: String) async throws -> InstalledExtension {
         guard let manager = managerIfEnabled() else {
             throw ExtensionError.unsupportedOS
@@ -260,7 +274,7 @@ final class SumiExtensionsModule {
         try await manager.uninstallExtension(extensionId)
     }
 
-    func importSafariAppExtension(
+    func enableSafariAppExtension(
         from candidate: DiscoveredSafariExtensionCandidate
     ) async throws -> InstalledExtension {
         guard let manager = managerIfEnabled() else {
@@ -314,6 +328,78 @@ final class SumiExtensionsModule {
         managerIfEnabled()?.unpinFromToolbar(extensionId)
     }
 
+    func siteAccessPolicy(
+        extensionId: String,
+        profileId: UUID? = nil
+    ) -> SafariExtensionSiteAccessPolicy? {
+        guard let manager = managerIfEnabled() else { return nil }
+        let resolvedProfileId =
+            profileId
+            ?? manager.currentProfileId
+            ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId else { return nil }
+        return manager.siteAccessPolicy(
+            extensionId: extensionId,
+            profileId: resolvedProfileId
+        )
+    }
+
+    func setDefaultSiteAccess(
+        _ access: SafariExtensionSiteAccessLevel,
+        extensionId: String,
+        profileId: UUID? = nil
+    ) {
+        guard let manager = managerIfEnabled() else { return }
+        let resolvedProfileId =
+            profileId
+            ?? manager.currentProfileId
+            ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId else { return }
+        manager.setDefaultSiteAccess(
+            access,
+            extensionId: extensionId,
+            profileId: resolvedProfileId
+        )
+    }
+
+    func setPrivateBrowsingAccess(
+        _ isAllowed: Bool,
+        extensionId: String,
+        profileId: UUID? = nil
+    ) {
+        guard let manager = managerIfEnabled() else { return }
+        let resolvedProfileId =
+            profileId
+            ?? manager.currentProfileId
+            ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId else { return }
+        manager.setPrivateBrowsingAccess(
+            isAllowed,
+            extensionId: extensionId,
+            profileId: resolvedProfileId
+        )
+    }
+
+    func setConfiguredSiteAccess(
+        _ access: SafariExtensionSiteAccessLevel,
+        extensionId: String,
+        profileId: UUID? = nil,
+        matchPatternString: String
+    ) {
+        guard let manager = managerIfEnabled() else { return }
+        let resolvedProfileId =
+            profileId
+            ?? manager.currentProfileId
+            ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId else { return }
+        manager.setConfiguredSiteAccess(
+            access,
+            extensionId: extensionId,
+            profileId: resolvedProfileId,
+            matchPatternString: matchPatternString
+        )
+    }
+
     @discardableResult
     func requestExtensionRuntime(
         reason: ExtensionManager.ExtensionRuntimeRequestReason
@@ -325,6 +411,36 @@ final class SumiExtensionsModule {
         for extensionId: String
     ) -> WKWebExtensionContext? {
         managerIfLoadedAndEnabled()?.getExtensionContext(for: extensionId)
+    }
+
+    func openOptionsPage(
+        extensionId: String,
+        profileId: UUID? = nil
+    ) async {
+        guard let manager = managerIfEnabled() else { return }
+        let resolvedProfileId =
+            profileId
+            ?? manager.currentProfileId
+            ?? browserManager?.currentProfile?.id
+        guard let resolvedProfileId,
+              let context = try? await manager.ensureExtensionLoaded(
+                  extensionId: extensionId,
+                  profileId: resolvedProfileId
+              )
+        else {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            manager.presentOptionsPageWindow(for: context) { error in
+                if let error {
+                    RuntimeDiagnostics.debug(category: "Extensions") {
+                        "Unable to open extension options for \(extensionId): \(error.localizedDescription)"
+                    }
+                }
+                continuation.resume()
+            }
+        }
     }
 
     func openActionPopupFromURLHub(

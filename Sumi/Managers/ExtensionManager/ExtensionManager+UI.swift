@@ -15,6 +15,38 @@ final class ExtensionActionPopupUIDelegate: NSObject, WKUIDelegate {
         super.init()
     }
 
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        manager?.createAuxiliaryWebViewFromActionPopup(
+            webView,
+            with: configuration,
+            for: navigationAction,
+            windowFeatures: windowFeatures
+        )
+    }
+
+    @objc(_webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:completionHandler:)
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWithConfiguration configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures,
+        completionHandler: @escaping (WKWebView?) -> Void
+    ) {
+        completionHandler(
+            manager?.createAuxiliaryWebViewFromActionPopup(
+                webView,
+                with: configuration,
+                for: navigationAction,
+                windowFeatures: windowFeatures
+            )
+        )
+    }
+
     func webViewDidClose(_ webView: WKWebView) {
         _ = webView
         guard let popover, popover.isShown else { return }
@@ -140,6 +172,84 @@ extension ExtensionManager: NSPopoverDelegate {
         updateActionSurfaceState(for: action, extensionContext: extensionContext)
     }
 
+    func createAuxiliaryWebViewFromActionPopup(
+        _ popupWebView: WKWebView,
+        with configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        guard navigationAction.targetFrame == nil,
+              let browserManager
+        else {
+            return nil
+        }
+
+        let sourceURL = navigationAction.sumiWebKitSourceURL ?? popupWebView.url
+        let requestURL = navigationAction.request.url
+        let resolvedOwnerExtensionID = ownerExtensionID(extensionOwnedSourceURL: sourceURL)
+            ?? ownerExtensionID(extensionOwnedSourceURL: requestURL)
+            ?? activePopupExtensionID
+
+        guard resolvedOwnerExtensionID != nil
+            || Tab.isExtensionOriginatedPopupNavigation(
+                sourceURL: sourceURL,
+                requestURL: requestURL
+            )
+        else {
+            return nil
+        }
+
+        guard let openerTab = browserManager.currentTabForActiveWindow()
+            ?? browserManager.tabManager.currentTab
+        else {
+            return nil
+        }
+
+        if let requestURL,
+           Self.isExtensionExternalWebPopupURL(requestURL)
+        {
+            let profileId =
+                resolvedProfileId(for: openerTab)
+                ?? currentProfileId
+                ?? browserManager.currentProfile?.id
+            let controller =
+                popupWebView.configuration.webExtensionController
+                ?? configuration.webExtensionController
+                ?? profileId.map { ensureExtensionController(for: $0) }
+            guard let controller else { return nil }
+
+            do {
+                _ = try openExtensionRequestedTab(
+                    url: requestURL,
+                    shouldBeActive: true,
+                    shouldBePinned: false,
+                    requestedWindow: nil,
+                    controller: controller,
+                    extensionContext: resolvedOwnerExtensionID.flatMap {
+                        getExtensionContext(for: $0, profileId: profileId)
+                    },
+                    reason: "ExtensionManager.createNormalTabFromActionPopupExternalURL"
+                )
+                return nil
+            } catch {
+                RuntimeDiagnostics.debug(category: "SafariExtensionPermissions") {
+                    "Failed to open extension external URL in normal tab: \(error.localizedDescription)"
+                }
+                return nil
+            }
+        }
+
+        return browserManager.auxiliaryWindowManager.presentExtensionExternalWebPopup(
+            configuration: configuration,
+            request: navigationAction.request,
+            windowFeatures: windowFeatures,
+            openerTab: openerTab,
+            shouldActivateApp: true,
+            extensionOwnedSourceURL: sourceURL,
+            ownerExtensionID: resolvedOwnerExtensionID
+        )
+    }
+
     /// After context load, seed action state and optionally wake background for explicit
     /// lifecycle events such as user-enabled extension activation.
     func finalizeEnabledExtensionRuntime(
@@ -190,7 +300,7 @@ extension ExtensionManager: NSPopoverDelegate {
             )
         }
         extensionRuntimeTrace(
-            "urlHubAction click extensionId=\(extensionId) manifestHash=\(installedExtension.manifestRootFingerprint) generatedBundlePath=\(installedExtension.packagePath) originalPackagePath=\(installedExtension.sourceBundlePath) extensionEnabled=\(installedExtension.isEnabled) runtimeState=\(runtimeState.rawValue) contextLoaded=\(getExtensionContext(for: extensionId) != nil) currentProfile=\(currentProfileId?.uuidString ?? "nil") tabProfile=\(currentTab?.profileId?.uuidString ?? "nil") tabOffRecord=\(currentTab?.isEphemeral ?? false) currentURLShape=\(sanitizedURLHubTraceURL(currentTab?.url))"
+            "urlHubAction click extensionId=\(extensionId) manifestHash=\(installedExtension.manifestRootFingerprint) resourcesPath=\(installedExtension.packagePath) sourceBundlePath=\(installedExtension.sourceBundlePath) extensionEnabled=\(installedExtension.isEnabled) runtimeState=\(runtimeState.rawValue) contextLoaded=\(getExtensionContext(for: extensionId) != nil) currentProfile=\(currentProfileId?.uuidString ?? "nil") tabProfile=\(currentTab?.profileId?.uuidString ?? "nil") tabOffRecord=\(currentTab?.isEphemeral ?? false) currentURLShape=\(sanitizedURLHubTraceURL(currentTab?.url))"
         )
         guard installedExtension.isEnabled else {
             return .blocked(
@@ -270,7 +380,7 @@ extension ExtensionManager: NSPopoverDelegate {
                 )
                 return .blocked(
                     .contextUnavailable,
-                    message: "\(installedExtension.name) has no enabled persisted local package record for WebKit context loading.",
+                    message: "\(installedExtension.name) has no enabled WebKit extension context for this profile.",
                     diagnostics: diagnostics
                 )
             }
@@ -293,7 +403,7 @@ extension ExtensionManager: NSPopoverDelegate {
             )
             return .blocked(
                 .runtimeLoadFailed,
-                message: "\(installedExtension.name) WebKit context load failed for the selected local package: \(error.localizedDescription)",
+                message: "\(installedExtension.name) WebKit context load failed: \(error.localizedDescription)",
                 diagnostics: diagnostics
             )
         }
@@ -455,6 +565,43 @@ extension ExtensionManager: NSPopoverDelegate {
             return true
         }
 
+        let decisionProfileId = tab.profileId ?? resolvedProfileId(for: tab) ?? currentProfileId
+        if let extensionId = extensionID(for: extensionContext),
+           let decisionProfileId
+        {
+            switch configuredSiteAccessLevel(
+                for: currentURL,
+                extensionId: extensionId,
+                profileId: decisionProfileId
+            ) {
+            case .allow:
+                grantSiteAccess(
+                    to: currentURL,
+                    in: extensionContext,
+                    extensionId: extensionId,
+                    profileId: decisionProfileId,
+                    persistPolicy: false
+                )
+                return true
+            case .deny:
+                denySiteAccess(
+                    to: currentURL,
+                    in: extensionContext,
+                    extensionId: extensionId,
+                    profileId: decisionProfileId,
+                    persistPolicy: false
+                )
+                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
+                    granted: false,
+                    extensionId: installedExtension.id,
+                    reason: "actionClickSiteAccessDenied"
+                )
+                return false
+            case .ask:
+                break
+            }
+        }
+
         guard hasActionCurrentPagePermission(
             installedExtension,
             currentURL: currentURL
@@ -464,7 +611,6 @@ extension ExtensionManager: NSPopoverDelegate {
 
         let host = currentURL.host ?? currentURL.scheme ?? "this site"
         let patternString = hostMatchPatternString(for: currentURL)
-        let decisionProfileId = tab.profileId ?? resolvedProfileId(for: tab) ?? currentProfileId
         let decision = await promptForExtensionPermissionDecision(
             extensionContext: extensionContext,
             targets: [host],
@@ -477,30 +623,23 @@ extension ExtensionManager: NSPopoverDelegate {
 
         switch decision {
         case .allow(let expirationDate):
-            if let patternString,
-               let matchPattern = try? WKWebExtension.MatchPattern(string: patternString)
-            {
-                extensionContext.setPermissionStatus(
-                    .grantedExplicitly,
-                    for: matchPattern,
-                    expirationDate: expirationDate
-                )
-                if let decisionProfileId {
-                    persistExtensionPermissionDecision(
-                        extensionId: installedExtension.id,
-                        profileId: decisionProfileId,
-                        targetKind: .matchPattern,
-                        target: patternString,
-                        state: .allowed,
-                        expiresAt: expirationDate
-                    )
-                }
-            }
-            extensionContext.setPermissionStatus(
-                .grantedExplicitly,
-                for: currentURL,
+            grantSiteAccess(
+                to: currentURL,
+                in: extensionContext,
+                extensionId: installedExtension.id,
+                profileId: decisionProfileId,
                 expirationDate: expirationDate
             )
+            if let patternString, let decisionProfileId {
+                persistExtensionPermissionDecision(
+                    extensionId: installedExtension.id,
+                    profileId: decisionProfileId,
+                    targetKind: .matchPattern,
+                    target: patternString,
+                    state: .allowed,
+                    expiresAt: expirationDate
+                )
+            }
             SafariExtensionAutofillFillDiagnostics.recordHostPermission(
                 granted: true,
                 extensionId: installedExtension.id,
@@ -508,30 +647,22 @@ extension ExtensionManager: NSPopoverDelegate {
             )
             return true
         case .deny:
-            if let patternString,
-               let matchPattern = try? WKWebExtension.MatchPattern(string: patternString)
-            {
-                extensionContext.setPermissionStatus(
-                    .deniedExplicitly,
-                    for: matchPattern,
-                    expirationDate: nil
-                )
-                if let decisionProfileId {
-                    persistExtensionPermissionDecision(
-                        extensionId: installedExtension.id,
-                        profileId: decisionProfileId,
-                        targetKind: .matchPattern,
-                        target: patternString,
-                        state: .denied,
-                        expiresAt: nil
-                    )
-                }
-            }
-            extensionContext.setPermissionStatus(
-                .deniedExplicitly,
-                for: currentURL,
-                expirationDate: nil
+            denySiteAccess(
+                to: currentURL,
+                in: extensionContext,
+                extensionId: installedExtension.id,
+                profileId: decisionProfileId
             )
+            if let patternString, let decisionProfileId {
+                persistExtensionPermissionDecision(
+                    extensionId: installedExtension.id,
+                    profileId: decisionProfileId,
+                    targetKind: .matchPattern,
+                    target: patternString,
+                    state: .denied,
+                    expiresAt: nil
+                )
+            }
             SafariExtensionAutofillFillDiagnostics.recordHostPermission(
                 granted: false,
                 extensionId: installedExtension.id,
@@ -722,6 +853,18 @@ extension ExtensionManager: NSPopoverDelegate {
            webViewNeedsExtensionRuntimeRebuild(webView, for: owningTab),
            let coordinator = browserManager?.webViewCoordinator
         {
+            SafariExtensionPermissionLifecycleDiagnostics.logReloadRebuild(
+                SafariExtensionReloadRebuildSnapshot(
+                    triggerReason: reason,
+                    profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
+                        resolvedProfileId(for: owningTab)
+                    ),
+                    tabBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(owningTab.id),
+                    host: SafariExtensionPermissionLifecycleDiagnostics.host(from: owningTab.url),
+                    userActionCaused: false,
+                    action: .destructiveRebuild
+                )
+            )
             coordinator.rebuildLiveWebViews(for: owningTab)
             owningTab.lastExtensionOpenNotificationGeneration = 0
             registerTabWithExtensionRuntime(
@@ -752,8 +895,27 @@ extension ExtensionManager: NSPopoverDelegate {
     }
 
     func openExtensionWindowUsingTabURLs(
+        _ configuration: WKWebExtension.WindowConfiguration,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext? = nil,
+        createWindow: @escaping @MainActor () -> Void,
+        awaitWindowRegistration: @escaping @MainActor (Set<UUID>) async -> BrowserWindowState?,
+        completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
+    ) {
+        openExtensionWindowUsingTabURLs(
+            configuration.tabURLs,
+            controller: controller,
+            extensionContext: extensionContext,
+            createWindow: createWindow,
+            awaitWindowRegistration: awaitWindowRegistration,
+            completionHandler: completionHandler
+        )
+    }
+
+    func openExtensionWindowUsingTabURLs(
         _ tabURLs: [URL],
         controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext? = nil,
         createWindow: @escaping @MainActor () -> Void,
         awaitWindowRegistration: @escaping @MainActor (Set<UUID>) async -> BrowserWindowState?,
         completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
@@ -770,31 +932,60 @@ extension ExtensionManager: NSPopoverDelegate {
             return
         }
 
-        if let firstURL = tabURLs.first,
-           OAuthDetector.isLikelyOAuthPopupURL(firstURL),
+        if let extensionContext,
+           let firstURL = tabURLs.first,
+           Self.isExtensionExternalWebPopupURL(firstURL),
            let activeWindow = windowRegistry.activeWindow
         {
-            let targetSpace = activeWindow.currentSpaceId.flatMap { spaceID in
-                browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-            } ?? browserManager.tabManager.currentSpace
+            Task { @MainActor [weak self, weak browserManager] in
+                guard let self, let browserManager else {
+                    completionHandler(
+                        nil,
+                        NSError(
+                            domain: "ExtensionManager",
+                            code: 4,
+                            userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
+                        )
+                    )
+                    return
+                }
+                let targetSpace = activeWindow.currentSpaceId.flatMap { spaceID in
+                    browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
+                } ?? browserManager.tabManager.currentSpace
 
-            let resolvedExtensionLoad = extensionLoadURL(
-                for: firstURL,
-                controller: controller
-            )
-            let createdTab = browserManager.tabManager.createNewTab(
-                url: (resolvedExtensionLoad.url ?? firstURL).absoluteString,
-                in: targetSpace,
-                activate: false,
-                webExtensionContextOverride: resolvedExtensionLoad.context
-            )
-
-            browserManager.selectTab(createdTab, in: activeWindow)
-            registerExtensionCreatedTabWithExtensionRuntime(
-                createdTab,
-                reason: "webExtensionController.openNewWindowUsing"
-            )
-            completionHandler(windowAdapter(for: activeWindow.id), nil)
+                let resolvedExtensionLoad = self.extensionLoadURL(
+                    for: firstURL,
+                    controller: controller
+                )
+                await self.prepareContentScriptContextsForExtensionRequestedInitialLoad(
+                    loadURL: resolvedExtensionLoad.url,
+                    webExtensionContextOverride: resolvedExtensionLoad.context,
+                    targetWindow: activeWindow,
+                    targetSpace: targetSpace,
+                    controller: controller
+                )
+                do {
+                    _ = try self.openExtensionRequestedTab(
+                        url: firstURL,
+                        shouldBeActive: true,
+                        shouldBePinned: false,
+                        requestedWindow: self.windowAdapter(for: activeWindow.id),
+                        controller: controller,
+                        extensionContext: extensionContext,
+                        reason: "webExtensionController.openNewWindowUsing.externalNormalTab"
+                    )
+                    completionHandler(self.windowAdapter(for: activeWindow.id), nil)
+                } catch {
+                    completionHandler(
+                        nil,
+                        NSError(
+                            domain: "ExtensionManager",
+                            code: 6,
+                            userInfo: [NSLocalizedDescriptionKey: "Sumi could not open the extension external tab"]
+                        )
+                    )
+                }
+            }
             return
         }
 
@@ -802,7 +993,17 @@ extension ExtensionManager: NSPopoverDelegate {
         createWindow()
 
         Task { @MainActor [weak self, weak browserManager] in
-            guard let self, let browserManager else { return }
+            guard let self, let browserManager else {
+                completionHandler(
+                    nil,
+                    NSError(
+                        domain: "ExtensionManager",
+                        code: 4,
+                        userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
+                    )
+                )
+                return
+            }
 
             guard let windowState = await awaitWindowRegistration(existingWindowIDs) else {
                 completionHandler(nil, NSError(
@@ -821,6 +1022,13 @@ extension ExtensionManager: NSPopoverDelegate {
             if let firstURL = tabURLs.first {
                 let resolvedExtensionLoad = self.extensionLoadURL(
                     for: firstURL,
+                    controller: controller
+                )
+                await self.prepareContentScriptContextsForExtensionRequestedInitialLoad(
+                    loadURL: resolvedExtensionLoad.url,
+                    webExtensionContextOverride: resolvedExtensionLoad.context,
+                    targetWindow: windowState,
+                    targetSpace: targetSpace,
                     controller: controller
                 )
                 createdTab = browserManager.tabManager.createNewTab(
@@ -843,6 +1051,18 @@ extension ExtensionManager: NSPopoverDelegate {
             )
             completionHandler(self.windowAdapter(for: windowState.id), nil)
         }
+    }
+
+    private nonisolated static func isExtensionExternalWebPopupURL(_ url: URL?) -> Bool {
+        guard let url,
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              ExtensionUtils.isExtensionOwnedURL(url) == false
+        else {
+            return false
+        }
+
+        return true
     }
 
     func presentOptionsPageWindow(

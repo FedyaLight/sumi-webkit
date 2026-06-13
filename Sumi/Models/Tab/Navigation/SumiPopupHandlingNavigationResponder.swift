@@ -503,16 +503,29 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                requestURL: requestURL
            )
         {
-            let popupWebView = browserManager.auxiliaryWindowManager.presentExtensionExternalWebPopup(
-                configuration: configuration,
-                request: navigationAction.request,
-                windowFeatures: windowFeatures,
-                openerTab: tab,
-                shouldActivateApp: true,
-                extensionOwnedSourceURL: sourceURL
+            browserManager.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
+                configuration,
+                profileId: tab.resolveProfile()?.id ?? tab.profileId,
+                reason: "SumiPopupHandlingNavigationResponder.extensionExternalTab"
             )
+            let targetSpace = tab.spaceId.flatMap { spaceID in
+                browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
+            } ?? browserManager.tabManager.currentSpace
+            let childTab = browserManager.tabManager.createNewTab(
+                url: requestURL.absoluteString,
+                in: targetSpace,
+                activate: true,
+                webViewConfigurationOverride: configuration
+            )
+            browserManager.extensionsModule.registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
+                childTab,
+                reason: "SumiPopupHandlingNavigationResponder.extensionExternalTab"
+            )
+            if let windowState = browserManager.windowState(containing: tab) {
+                browserManager.selectTab(childTab, in: windowState)
+            }
             resetLinkGestureModifierState(for: tab)
-            return popupWebView
+            return nil
         }
 
         if policy.isPopup {
