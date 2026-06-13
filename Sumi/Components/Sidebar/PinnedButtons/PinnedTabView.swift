@@ -350,19 +350,9 @@ struct PinnedTileVisual: View {
                     .foregroundStyle(tokens.primaryText)
             } else {
                 tabIcon
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .scaledToFit()
             }
         }
         .frame(width: height, height: height)
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: PinnedTileFaviconLayout.cornerRadius,
-                style: .continuous
-            )
-        )
     }
 
     private func accentSelectionRingOverlay(

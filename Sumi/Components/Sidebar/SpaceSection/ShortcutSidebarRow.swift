@@ -72,6 +72,10 @@ private struct ShortcutSidebarLiveRowContent: View {
         ShortcutSidebarRowChrome(
             pin: pin,
             liveTab: liveTab,
+            faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
+                for: pin,
+                currentSpaceId: windowState.currentSpaceId
+            ),
             resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
             runtimeAffordance: browserManager.tabManager.shortcutRuntimeAffordanceState(
                 for: pin,
@@ -109,6 +113,10 @@ private struct ShortcutSidebarStoredRowContent: View {
         ShortcutSidebarRowChrome(
             pin: pin,
             liveTab: nil,
+            faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
+                for: pin,
+                currentSpaceId: windowState.currentSpaceId
+            ),
             resolvedTitle: pin.preferredDisplayTitle,
             runtimeAffordance: browserManager.tabManager.shortcutRuntimeAffordanceState(
                 for: pin,
@@ -130,6 +138,7 @@ private struct ShortcutSidebarStoredRowContent: View {
 private struct ShortcutSidebarRowChrome: View {
     let pin: ShortcutPin
     let liveTab: Tab?
+    let faviconPartition: SumiFaviconPartition
     let resolvedTitle: String
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     var accessibilityID: String? = nil
@@ -272,24 +281,30 @@ private struct ShortcutSidebarRowChrome: View {
                     .foregroundStyle(textColor)
             } else {
                 displayFavicon
-                    .resizable()
-                    .scaledToFit()
             }
         }
         .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .saturation(runtimeAffordance.shouldDesaturateIcon ? 0.0 : 1.0)
         .opacity(runtimeAffordance.shouldDesaturateIcon ? 0.8 : 1.0)
     }
 
     private var displayFavicon: Image {
-        liveTab?.favicon ?? currentLoadedStoredFavicon ?? pin.storedFavicon
+        if let launcherFavicon = currentCachedStoredFavicon {
+            return launcherFavicon
+        }
+        if let liveTab, !liveTab.faviconIsTemplateGlobePlaceholder {
+            return liveTab.favicon
+        }
+        return pin.storedFaviconImage(partition: faviconPartition)
     }
 
     private var chromeTemplateSystemImageName: String? {
         if let liveTab {
             if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
                 return SumiSurface.settingsTabFaviconSystemImageName
+            }
+            if currentCachedStoredFavicon != nil {
+                return nil
             }
             if liveTab.faviconIsTemplateGlobePlaceholder {
                 return SumiPersistentGlyph.launcherSystemImageFallback
@@ -299,7 +314,7 @@ private struct ShortcutSidebarRowChrome: View {
         if currentLoadedStoredFavicon != nil {
             return nil
         }
-        return pin.storedChromeTemplateSystemImageName
+        return pin.storedChromeTemplateSystemImageName(for: faviconPartition)
     }
 
     @ViewBuilder
@@ -523,21 +538,34 @@ private struct ShortcutSidebarRowChrome: View {
         loadedStoredFaviconURL == pin.launchURL ? loadedStoredFavicon : nil
     }
 
+    private var currentCachedStoredFavicon: Image? {
+        currentLoadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon(
+            for: pin.launchURL,
+            partition: faviconPartition
+        )
+    }
+
     private var storedFaviconLoadKey: String {
-        guard liveTab == nil, pin.iconAsset == nil else {
+        guard pin.iconAsset == nil else {
             return "disabled|\(pin.id.uuidString)|\(faviconCacheRefreshID.uuidString)"
         }
-        return "\(pin.launchURL.absoluteString)|\(faviconCacheRefreshID.uuidString)"
+        return [
+            pin.launchURL.absoluteString,
+            faviconPartition.storageComponent,
+            faviconCacheRefreshID.uuidString,
+        ].joined(separator: "|")
     }
 
     @MainActor
     private func loadStoredFavicon() async {
-        guard liveTab == nil, pin.iconAsset == nil else { return }
+        guard pin.iconAsset == nil else { return }
 
         let launchURL = pin.launchURL
-        guard let image = await TabFaviconStore.loadCachedLauncherImage(forDocumentURL: launchURL),
+        guard let image = await TabFaviconStore.loadCachedLauncherImage(
+            forDocumentURL: launchURL,
+            partition: faviconPartition
+        ),
               !Task.isCancelled,
-              liveTab == nil,
               launchURL == pin.launchURL
         else { return }
 

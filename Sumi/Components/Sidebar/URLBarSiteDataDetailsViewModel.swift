@@ -94,6 +94,7 @@ final class URLBarSiteDataDetailsViewModel: ObservableObject {
             includingCookies: true,
             in: profile.dataStore
         )
+        SumiFaviconSystem.shared.invalidateSite(domain: host, profile: profile)
         await profile.refreshDataStoreStats()
         await load(url: url, profile: profile)
     }

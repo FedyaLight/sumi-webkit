@@ -7,7 +7,7 @@ scan_paths=(
   "Sumi/Managers"
   "Sumi/Models"
   "Sumi/Components"
-  "Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift"
+  "Sumi/Favicons/V2/SumiFaviconUserScript.swift"
 )
 
 failed=0
@@ -16,9 +16,9 @@ is_allowed() {
   local line="$1"
   case "$line" in
     # Favicon transport observes bounded <link rel=icon> changes and posts a small typed payload.
-    Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*MutationObserver*) return 0 ;;
-    Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*setTimeout*) return 0 ;;
-    Sumi/Favicons/DDG/SumiDDGFaviconSupport.swift:*JSON.stringify*) return 0 ;;
+    Sumi/Favicons/V2/SumiFaviconUserScript.swift:*MutationObserver*) return 0 ;;
+    Sumi/Favicons/V2/SumiFaviconUserScript.swift:*setTimeout*) return 0 ;;
+    Sumi/Favicons/V2/SumiFaviconUserScript.swift:*JSON.stringify*) return 0 ;;
     # GM compatibility: caller-provided GM_addElement innerHTML and request-body normalization.
     Sumi/Managers/SumiScripts/UserScriptGMBridge+JSShim.swift:*innerHTML*) return 0 ;;
     Sumi/Managers/SumiScripts/UserScriptGMBridge+JSShim.swift:*JSON.stringify*) return 0 ;;

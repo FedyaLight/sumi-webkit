@@ -715,7 +715,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             url: URL(string: "https://normal.example")
         )
         let auxiliary = browserConfiguration.auxiliaryWebViewConfiguration(
-            surface: .faviconDownload
+            surface: .glance
         )
 
         XCTAssertFalse(auxiliary.websiteDataStore.isPersistent)
@@ -729,7 +729,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     func testAuxiliaryConfigurationsDoNotInstallTabSuspensionBridge() {
         let browserConfiguration = BrowserConfiguration()
         let configurations = [
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
@@ -742,7 +741,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     func testAuxiliaryConfigurationsUsePlainLightweightControllers() {
         let browserConfiguration = BrowserConfiguration()
         let configurations = [
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
@@ -755,16 +753,16 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         }
     }
 
-    func testFaviconDownloadAuxiliaryConfigurationIsEphemeralAndJavaScriptDisabled() {
-        let browserConfiguration = BrowserConfiguration()
-        let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
-            surface: .faviconDownload
-        )
+    func testFaviconV2DoesNotDeclareAuxiliaryDownloadSurface() throws {
+        let browserConfigSource = try Self.source(named: "Sumi/Models/BrowserConfig/BrowserConfig.swift")
+        let fetchSource = try Self.source(named: "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift")
 
-        XCTAssertFalse(configuration.websiteDataStore.isPersistent)
-        XCTAssertFalse(configuration.defaultWebpagePreferences.allowsContentJavaScript)
-        XCTAssertFalse(configuration.preferences.javaScriptCanOpenWindowsAutomatically)
-        XCTAssertTrue(configuration.userContentController.userScripts.isEmpty)
+        XCTAssertFalse(browserConfigSource.contains("case faviconDownload"))
+        XCTAssertFalse(browserConfigSource.contains("Sumi Web Content (Favicon)"))
+        XCTAssertFalse(Self.fileExists("Sumi/Favicons/DDG/Model/FaviconDownloader.swift"))
+        XCTAssertTrue(fetchSource.contains("case sessionProfileAware"))
+        XCTAssertTrue(fetchSource.contains("case publicRootFallback"))
+        XCTAssertTrue(fetchSource.contains("URLSession(configuration: .ephemeral)"))
     }
 
     func testProfileAwareAuxiliaryConfigurationsPreserveProfileDataStore() {
@@ -800,7 +798,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     func testAuxiliaryConfigurationsInstallNoUserscriptRuntimeContributions() {
         let browserConfiguration = BrowserConfiguration()
         let configurations = [
-            browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .glance),
             browserConfiguration.auxiliaryWebViewConfiguration(surface: .extensionOptions),
         ]
@@ -826,7 +823,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             forMainFrameOnly: true
         )
         let blockedScripts = [
-            "__sumiDDGFaviconTransportInstalled",
+            "__sumiFaviconTransportInstalled",
             "__sumiTabSuspension",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "SUMI_USER_SCRIPT_RUNTIME",
@@ -859,7 +856,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(sources.contains("__sumiExtensionOptionsAllowedScript"))
         XCTAssertEqual(configuration.userContentController.userScripts.count, 1)
         for blockedMarker in [
-            "__sumiDDGFaviconTransportInstalled",
+            "__sumiFaviconTransportInstalled",
             "__sumiTabSuspension",
             SumiTransientChromeInteractionShieldUserScript.sourceMarker,
             "SUMI_USER_SCRIPT_RUNTIME",
@@ -875,7 +872,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessTrackingRuntime() throws {
         for relativePath in [
-            "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
+            "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift",
+            "Sumi/Favicons/V2/SumiFaviconService.swift",
         ] {
             let source = try Self.source(named: relativePath)
             XCTAssertFalse(source.contains("trackingProtectionModule"), relativePath)
@@ -888,7 +886,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessUserscriptsRuntime() throws {
         for relativePath in [
-            "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
+            "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift",
+            "Sumi/Favicons/V2/SumiFaviconService.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
         ] {
             let source = try Self.source(named: relativePath)
@@ -902,7 +901,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
     func testAuxiliaryAndFaviconPathsDoNotAccessExtensionsRuntime() throws {
         for relativePath in [
-            "Sumi/Favicons/DDG/Model/FaviconDownloader.swift",
+            "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift",
+            "Sumi/Favicons/V2/SumiFaviconService.swift",
             "Sumi/Models/BrowserConfig/BrowserConfig.swift",
         ] {
             let source = try Self.source(named: relativePath)
@@ -920,9 +920,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     }
 
     func testAuxiliarySurfacesDoNotUseNormalTabConfiguration() throws {
-        let faviconSource = try Self.source(named: "Sumi/Favicons/DDG/Model/FaviconDownloader.swift")
-        XCTAssertTrue(faviconSource.contains("auxiliaryWebViewConfiguration"))
-        XCTAssertTrue(faviconSource.contains("surface: .faviconDownload"))
+        let faviconSource = try Self.source(named: "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift")
+        XCTAssertFalse(Self.fileExists("Sumi/Favicons/DDG/Model/FaviconDownloader.swift"))
         XCTAssertFalse(faviconSource.contains("WKWebViewConfiguration()"))
         XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
 
@@ -1228,6 +1227,13 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             .deletingLastPathComponent()
         let sourceURL = repoRoot.appendingPathComponent(relativePath)
         return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+
+    private static func fileExists(_ relativePath: String) -> Bool {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent(relativePath).path)
     }
 
     private func temporaryDirectory(prefix: String) -> URL {

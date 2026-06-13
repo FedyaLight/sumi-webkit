@@ -7,6 +7,7 @@ final class SumiBookmarkManager: ObservableObject {
 
     private let repository: any SumiBookmarkRepository
     private let syncFavicons: Bool
+    private var faviconPrefetchPartition: SumiFaviconPartition = .regular(nil)
     private var bookmarksByID: [String: SumiBookmark] = [:]
     private var bookmarkIDByURLKey: [String: String] = [:]
     private var foldersCache: [SumiBookmarkFolder] = []
@@ -77,6 +78,16 @@ final class SumiBookmarkManager: ObservableObject {
 
     func folders() -> [SumiBookmarkFolder] {
         foldersCache
+    }
+
+    func setFaviconPrefetchPartition(_ partition: SumiFaviconPartition) {
+        guard faviconPrefetchPartition != partition else { return }
+        faviconPrefetchPartition = partition
+        guard syncFavicons, !bookmarksByID.isEmpty else { return }
+        SumiFaviconSystem.shared.syncBookmarks(
+            Array(bookmarksByID.values),
+            partition: faviconPrefetchPartition
+        )
     }
 
     func allBookmarks() -> [SumiBookmark] {
@@ -292,7 +303,10 @@ final class SumiBookmarkManager: ObservableObject {
         foldersCache = repository.snapshot(sortMode: .manual).flattenedFolders
 
         if syncFavicons {
-            SumiFaviconSystem.shared.syncBookmarks(bookmarks)
+            SumiFaviconSystem.shared.syncBookmarks(
+                bookmarks,
+                partition: faviconPrefetchPartition
+            )
         }
 
         if notify {

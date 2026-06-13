@@ -17,6 +17,7 @@ struct HistorySuggestionItem: View {
     @State private var resolvedFavicon: SwiftUI.Image? = nil
     @State private var isDeleteConfirming = false
     @State private var isDeleteHovered = false
+    @EnvironmentObject private var browserManager: BrowserManager
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     
@@ -37,8 +38,6 @@ struct HistorySuggestionItem: View {
         HStack(alignment: .center, spacing: 9) {
             FloatingBarFaviconContainer {
                 faviconImage
-                    .resizable()
-                    .scaledToFit()
                     .foregroundStyle(colors.faviconColor)
                     .frame(
                         width: FloatingBarSuggestionMetrics.faviconImageSize,
@@ -71,11 +70,15 @@ struct HistorySuggestionItem: View {
         }
     }
 
+    private var faviconPartition: SumiFaviconPartition {
+        SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
+    }
+
     private var faviconImage: Image {
         if let resolvedFavicon {
             return resolvedFavicon
         }
-        return Image(nsImage: SumiFaviconResolver.menuImage(for: entry.url))
+        return Image(nsImage: SumiFaviconResolver.menuImage(for: entry.url, partition: faviconPartition))
     }
 
     @ViewBuilder
@@ -148,7 +151,7 @@ struct HistorySuggestionItem: View {
             return
         }
 
-        guard let image = await SumiFaviconResolver.image(for: url) else {
+        guard let image = await SumiFaviconResolver.image(for: url, partition: faviconPartition) else {
             await MainActor.run { self.resolvedFavicon = defaultFavicon }
             return
         }

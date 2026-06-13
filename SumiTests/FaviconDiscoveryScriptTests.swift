@@ -130,6 +130,53 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
         await fulfillment(of: [updatedPayload], timeout: 5.0)
     }
 
+    func testDDGUserContentControllerReportsSPANavigationChanges() async throws {
+        let (controller, normalTabController, scriptsProvider) = try makeFaviconController()
+        let recorder = FaviconUserScriptRecorder()
+        scriptsProvider.faviconScript.delegate = recorder
+        await normalTabController.waitForContentBlockingAssetsInstalled()
+
+        let webView = makeWebView(userContentController: controller)
+        let initialPayload = expectation(description: "initial SPA payload delivered")
+        recorder.onLinks = { links, documentURL, _ in
+            guard documentURL.absoluteString == "https://example.com/start" else { return }
+            if links.contains(where: { $0.href.absoluteString == "https://example.com/one.ico" }) {
+                initialPayload.fulfill()
+            }
+        }
+
+        try await loadHTML(
+            """
+            <!doctype html>
+            <html>
+              <head>
+                <link id="fav" rel="icon" href="/one.ico" type="image/x-icon">
+              </head>
+              <body>ok</body>
+            </html>
+            """,
+            baseURL: URL(string: "https://example.com/start")!,
+            into: webView
+        )
+
+        await fulfillment(of: [initialPayload], timeout: 5.0)
+
+        let spaPayload = expectation(description: "SPA navigation payload delivered")
+        recorder.onLinks = { links, documentURL, _ in
+            guard documentURL.absoluteString == "https://example.com/new-route" else { return }
+            if links.contains(where: { $0.href.absoluteString == "https://example.com/one.ico" }) {
+                spaPayload.fulfill()
+            }
+        }
+
+        try await evaluate(
+            #"history.pushState({}, "", "/new-route");"#,
+            in: webView
+        )
+
+        await fulfillment(of: [spaPayload], timeout: 5.0)
+    }
+
     func testDDGUserContentControllerSuppressesNoiseWhenHeadChangesWithoutFaviconChange() async throws {
         let (controller, normalTabController, scriptsProvider) = try makeFaviconController()
         let recorder = FaviconUserScriptRecorder()
@@ -230,7 +277,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
     private func makeFaviconController() throws -> (
         WKUserContentController,
         SumiNormalTabUserContentControlling,
-        SumiDDGFaviconUserScripts
+        SumiFaviconUserScripts
     ) {
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController()
         let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
@@ -287,16 +334,18 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
 }
 
 @MainActor
-private final class FaviconUserScriptRecorder: NSObject, SumiDDGFaviconUserScriptDelegate {
-    var onLinks: (([SumiDDGFaviconUserScript.FaviconLink], URL, WKWebView?) -> Void)?
+private final class FaviconUserScriptRecorder: NSObject, SumiFaviconUserScriptDelegate {
+    var onLinks: (([SumiFaviconUserScript.FaviconLink], URL, WKWebView?) -> Void)?
 
     func faviconUserScript(
-        _ faviconUserScript: SumiDDGFaviconUserScript,
-        didFindFaviconLinks faviconLinks: [SumiDDGFaviconUserScript.FaviconLink],
-        for documentUrl: URL,
+        _ faviconUserScript: SumiFaviconUserScript,
+        didFindFaviconLinks faviconLinks: [SumiFaviconUserScript.FaviconLink],
+        documentUrl: URL,
+        baseURL: URL?,
         in webView: WKWebView?
     ) {
         _ = faviconUserScript
+        _ = baseURL
         onLinks?(faviconLinks, documentUrl, webView)
     }
 }

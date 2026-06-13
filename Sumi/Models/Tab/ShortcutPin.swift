@@ -196,26 +196,54 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         return nil
     }
 
-    static func cachedLaunchFavicon(for url: URL) -> Image? {
-        Tab.getCachedFavicon(forDocumentURL: url)
+    static func cachedLaunchFavicon(
+        for url: URL,
+        partition: SumiFaviconPartition = .regular(nil)
+    ) -> Image? {
+        guard let image = TabFaviconStore.getCachedImage(
+            forDocumentURL: url,
+            partition: partition,
+            context: .pinnedLauncher
+        ) else {
+            return nil
+        }
+        return Image(nsImage: image)
     }
 
     var storedFavicon: Image {
-        if let cached = Self.cachedLaunchFavicon(for: launchURL) {
+        storedFaviconImage(partition: .regular(executionProfileId ?? profileId))
+    }
+
+    func storedFaviconImage(partition: SumiFaviconPartition) -> Image {
+        if let cached = Self.cachedLaunchFavicon(
+            for: launchURL,
+            partition: partition
+        ) {
             return cached
         }
         return Image(systemName: SumiPersistentGlyph.launcherSystemImageFallback)
     }
 
     var storedFaviconIsTemplateGlobePlaceholder: Bool {
-        Self.cachedLaunchFavicon(for: launchURL) == nil
+        hasStoredFaviconPlaceholder(partition: .regular(executionProfileId ?? profileId))
+    }
+
+    func hasStoredFaviconPlaceholder(partition: SumiFaviconPartition) -> Bool {
+        Self.cachedLaunchFavicon(
+            for: launchURL,
+            partition: partition
+        ) == nil
     }
 
     var storedChromeTemplateSystemImageName: String? {
+        storedChromeTemplateSystemImageName(for: .regular(executionProfileId ?? profileId))
+    }
+
+    func storedChromeTemplateSystemImageName(for partition: SumiFaviconPartition) -> String? {
         if SumiSurface.isSettingsSurfaceURL(launchURL) {
             return SumiSurface.settingsTabFaviconSystemImageName
         }
-        if storedFaviconIsTemplateGlobePlaceholder {
+        if hasStoredFaviconPlaceholder(partition: partition) {
             return SumiPersistentGlyph.launcherSystemImageFallback
         }
         return nil

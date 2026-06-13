@@ -7,10 +7,6 @@ import XCTest
 final class WebContentProcessDisplayNameTests: XCTestCase {
     func testAuxiliarySurfaceDisplayNameMapping() {
         XCTAssertEqual(
-            BrowserConfigurationAuxiliarySurface.faviconDownload.sumiWebContentProcessDisplayName,
-            "Sumi Web Content (Favicon)"
-        )
-        XCTAssertEqual(
             BrowserConfigurationAuxiliarySurface.glance.sumiWebContentProcessDisplayName,
             "Sumi Web Content (Peek)"
         )

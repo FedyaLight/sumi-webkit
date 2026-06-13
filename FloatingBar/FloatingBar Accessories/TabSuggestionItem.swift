@@ -26,8 +26,6 @@ struct TabSuggestionItem: View {
             HStack(spacing: 9) {
                 FloatingBarFaviconContainer {
                     tab.favicon
-                        .resizable()
-                        .scaledToFit()
                         .foregroundStyle(foreground)
                         .frame(
                             width: FloatingBarSuggestionMetrics.faviconImageSize,

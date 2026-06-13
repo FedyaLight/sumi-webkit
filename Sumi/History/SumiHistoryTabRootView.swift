@@ -401,7 +401,7 @@ private struct HistoryRow: View {
     }
 
     private var favicon: some View {
-        HistoryFaviconView(url: item.url)
+        HistoryFaviconView(url: item.url, partition: viewModel.faviconPartition)
             .frame(width: RowLayout.faviconSize, height: RowLayout.faviconSize)
     }
 
@@ -474,6 +474,7 @@ private struct HistoryRow: View {
 
 private struct HistoryFaviconView: View {
     let url: URL
+    let partition: SumiFaviconPartition
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var image: NSImage?
@@ -486,9 +487,6 @@ private struct HistoryFaviconView: View {
         Group {
             if let image {
                 Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             } else {
                 Image(systemName: "globe")
                     .resizable()
@@ -503,9 +501,18 @@ private struct HistoryFaviconView: View {
 
     @MainActor
     private func loadImage() async {
-        let cachedImage = TabFaviconStore.getCachedImage(forDocumentURL: url)
+        let cachedImage = TabFaviconStore.getCachedImage(
+            forDocumentURL: url,
+            partition: partition,
+            context: .historyBookmarkRow
+        )
         image = cachedImage
-        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url)
+        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(
+            forDocumentURL: url,
+            partition: partition,
+            context: .historyBookmarkRow,
+            priority: .historyBookmarkVisibleRow
+        )
         guard !Task.isCancelled else { return }
         image = loadedImage ?? cachedImage
     }

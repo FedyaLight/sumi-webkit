@@ -169,138 +169,130 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(startupRestoreSource.contains("loadsCachedFaviconOnInit: false"))
     }
 
-    func testFaviconImageCacheStartupDoesNotEagerLoadStoredImages() async throws {
-        let faviconURL = try XCTUnwrap(URL(string: "https://assets.example/favicon.ico"))
-        let favicon = Favicon(
-            identifier: UUID(),
-            url: faviconURL,
-            image: nil,
-            relation: .favicon,
-            documentUrl: try XCTUnwrap(URL(string: "https://example.com")),
-            dateCreated: Date()
-        )
-        let store = LazyFaviconStoreProbe(favicon: favicon)
-        let cache = FaviconImageCache(faviconStoring: store)
+    func testFaviconV2StartupDoesNotRestoreOldImageCacheOrManager() throws {
+        let systemSource = try Self.source(named: "Sumi/Favicons/SumiFaviconSystem.swift")
+        let tabFaviconStoreSource = try Self.source(named: "Sumi/Models/Tab/TabFaviconStore.swift")
 
-        try await cache.load()
-
-        XCTAssertTrue(cache.loaded)
-        XCTAssertNil(cache.get(faviconUrl: faviconURL))
-        XCTAssertTrue(cache.hasCachedFavicon(faviconUrl: faviconURL))
-        XCTAssertEqual(store.loadFaviconsCallCount, 0)
-
-        let loadedFavicons = await cache.loadCachedFavicons(with: [faviconURL])
-
-        XCTAssertEqual(loadedFavicons.map(\.url), [faviconURL])
-        XCTAssertEqual(cache.get(faviconUrl: faviconURL)?.url, faviconURL)
-        XCTAssertEqual(store.loadFaviconsWithURLRequests, [[faviconURL]])
+        XCTAssertTrue(systemSource.contains("let service: SumiFaviconService"))
+        XCTAssertFalse(systemSource.contains("FaviconManager"))
+        XCTAssertFalse(systemSource.contains("SumiBookmarkMirrorManager"))
+        XCTAssertFalse(systemSource.contains("SumiDDGBookmarkFavicon"))
+        XCTAssertTrue(tabFaviconStoreSource.contains("service.cachedPreparedImage"))
+        XCTAssertTrue(tabFaviconStoreSource.contains("service.preparedImage"))
+        XCTAssertFalse(tabFaviconStoreSource.contains("FaviconImageCache"))
     }
 
     func testStoredLaunchersLazyLoadVisibleFaviconsOnly() throws {
         let tabFaviconStoreSource = try Self.source(named: "Sumi/Models/Tab/TabFaviconStore.swift")
-        XCTAssertTrue(tabFaviconStoreSource.contains("loadCachedLauncherImage(forDocumentURL"))
+        XCTAssertTrue(tabFaviconStoreSource.contains("loadCachedLauncherImage("))
         XCTAssertTrue(tabFaviconStoreSource.contains("loadCachedDisplayImage("))
-        XCTAssertTrue(tabFaviconStoreSource.contains("sizeCategory: Favicon.SizeCategory = .medium"))
-        XCTAssertTrue(tabFaviconStoreSource.contains("cache.countLimit = 96"))
-        XCTAssertTrue(tabFaviconStoreSource.contains("cache.totalCostLimit = 8 * 1024 * 1024"))
+        XCTAssertTrue(tabFaviconStoreSource.contains("context: .pinnedLauncher"))
+        XCTAssertTrue(tabFaviconStoreSource.contains("priority: .pinnedLauncher"))
+        XCTAssertTrue(tabFaviconStoreSource.contains("SumiFaviconSystem.shared.service.preparedImage"))
         XCTAssertFalse(tabFaviconStoreSource.contains("loadFavicons() async"))
 
         let pinnedGridSource = try Self.source(named: "Sumi/Components/Sidebar/PinnedButtons/PinnedGrid.swift")
         XCTAssertTrue(pinnedGridSource.contains(".task(id: storedFaviconLoadKey)"))
-        XCTAssertTrue(pinnedGridSource.contains("TabFaviconStore.loadCachedLauncherImage(forDocumentURL: launchURL)"))
+        XCTAssertTrue(pinnedGridSource.contains("TabFaviconStore.loadCachedLauncherImage("))
+        XCTAssertTrue(pinnedGridSource.contains("faviconPartition: browserManager.tabManager.resolvedFaviconPartition"))
+        XCTAssertTrue(pinnedGridSource.contains("partition: faviconPartition"))
 
         let shortcutRowSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift")
         XCTAssertTrue(shortcutRowSource.contains(".task(id: storedFaviconLoadKey)"))
-        XCTAssertTrue(shortcutRowSource.contains("guard liveTab == nil, pin.iconAsset == nil else { return }"))
-        XCTAssertTrue(shortcutRowSource.contains("TabFaviconStore.loadCachedLauncherImage(forDocumentURL: launchURL)"))
+        XCTAssertTrue(shortcutRowSource.contains("currentLoadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon("))
+        XCTAssertFalse(shortcutRowSource.contains("guard liveTab == nil, pin.iconAsset == nil else { return }"))
+        XCTAssertTrue(shortcutRowSource.contains("TabFaviconStore.loadCachedLauncherImage("))
+        XCTAssertTrue(shortcutRowSource.contains("browserManager.tabManager.resolvedFaviconPartition"))
+        XCTAssertTrue(shortcutRowSource.contains("partition: faviconPartition"))
+        XCTAssertTrue(shortcutRowSource.contains("if let liveTab, !liveTab.faviconIsTemplateGlobePlaceholder"))
 
         let tabExtensionSource = try Self.source(named: "Sumi/Tab/DDGExtensions/FaviconsTabExtension.swift")
         XCTAssertFalse(tabExtensionSource.contains("guard faviconManagement.isCacheLoaded else { return }"))
+        XCTAssertFalse(tabExtensionSource.contains("guard tab.requiresPrimaryWebView else"))
         XCTAssertTrue(tabExtensionSource.contains("cachedFaviconLoadingTask = Task"))
+
+        let shortcutPinSource = try Self.source(named: "Sumi/Models/Tab/ShortcutPin.swift")
+        XCTAssertTrue(shortcutPinSource.contains("storedFaviconImage(partition: .regular(executionProfileId ?? profileId))"))
+        XCTAssertTrue(shortcutPinSource.contains("context: .pinnedLauncher"))
+
+        XCTAssertTrue(pinnedGridSource.contains("LivePinnedTileContent("))
+        XCTAssertTrue(pinnedGridSource.contains("let launcherFavicon = currentCachedStoredFavicon"))
+        XCTAssertTrue(pinnedGridSource.contains("hasLauncherFavicon: launcherFavicon != nil"))
     }
 
     func testHistoryAndBookmarksLazyLoadPersistedFavicons() throws {
         let bookmarksSource = try Self.source(named: "Sumi/Bookmarks/SumiBookmarksTabRootView.swift")
         XCTAssertTrue(bookmarksSource.contains(".task(id: faviconLoadID)"))
-        XCTAssertTrue(bookmarksSource.contains("TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url)"))
+        XCTAssertTrue(bookmarksSource.contains("TabFaviconStore.loadCachedDisplayImage("))
+        XCTAssertTrue(bookmarksSource.contains("partition: faviconPartition"))
+        XCTAssertTrue(bookmarksSource.contains("context: .historyBookmarkRow"))
+        XCTAssertTrue(bookmarksSource.contains("priority: .historyBookmarkVisibleRow"))
         XCTAssertTrue(bookmarksSource.contains("faviconImage = loadedImage ?? cachedFaviconImage"))
-        XCTAssertTrue(bookmarksSource.contains(".clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))"))
         XCTAssertFalse(bookmarksSource.contains("Tab.getCachedFavicon(for: cacheKey)"))
 
         let historySource = try Self.source(named: "Sumi/History/SumiHistoryTabRootView.swift")
-        XCTAssertTrue(historySource.contains("TabFaviconStore.getCachedImage(forDocumentURL: url)"))
-        XCTAssertTrue(historySource.contains("TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url)"))
+        XCTAssertTrue(historySource.contains("TabFaviconStore.getCachedImage("))
+        XCTAssertTrue(historySource.contains("TabFaviconStore.loadCachedDisplayImage("))
+        XCTAssertTrue(historySource.contains("partition: partition"))
+        XCTAssertTrue(historySource.contains("context: .historyBookmarkRow"))
+        XCTAssertTrue(historySource.contains("priority: .historyBookmarkVisibleRow"))
         XCTAssertTrue(historySource.contains("image = loadedImage ?? cachedImage"))
-        XCTAssertTrue(historySource.contains(".clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))"))
         XCTAssertFalse(historySource.contains("TabFaviconStore.getCachedImage(for: cacheKey)"))
     }
 
-    func testDisplayFaviconSelectionPrefersSharpSharedCandidateOverTinyExactFavicon() throws {
+    func testYouTubeFaviconSelectionPrefersSharpDocumentCandidateOverTinyShortcutIcon() throws {
         let documentURL = try XCTUnwrap(URL(string: "https://www.youtube.com/watch?v=J8O9LLpJNrg"))
         let tinyURL = try XCTUnwrap(URL(string: "https://www.youtube.com/favicon.ico"))
-        let sharpURL = try XCTUnwrap(URL(string: "https://www.youtube.com/s/desktop/test/img/favicon_96x96.png"))
-
-        let tinyExactFavicon = Favicon(
-            identifier: UUID(),
-            url: tinyURL,
-            image: Self.testFaviconImage(side: 16),
-            relation: .favicon,
-            documentUrl: documentURL,
-            dateCreated: Date(timeIntervalSince1970: 10)
+        let sharpURL = try XCTUnwrap(URL(string: "https://www.youtube.com/s/desktop/test/img/favicon_48x48.png"))
+        let tiny = SumiFaviconCandidate(
+            pageURL: documentURL,
+            iconURL: tinyURL,
+            sourceKind: .documentLink,
+            relTokens: ["shortcut", "icon"],
+            declaredSizes: [SumiFaviconDeclaredSize(width: 16, height: 16)],
+            declaredType: "image/x-icon",
+            partition: .regular(nil)
         )
-        let sharpHostFavicon = Favicon(
-            identifier: UUID(),
-            url: sharpURL,
-            image: Self.testFaviconImage(side: 96),
-            relation: .icon,
-            documentUrl: try XCTUnwrap(URL(string: "https://www.youtube.com/")),
-            dateCreated: Date(timeIntervalSince1970: 1)
-        )
-
-        let selected = FaviconSelector.getMostSuitableFavicon(
-            forDisplayTargetPixelSize: CGFloat(SumiFaviconImagePolicy.maxLauncherDisplayPixelSize),
-            favicons: [tinyExactFavicon, sharpHostFavicon]
+        let sharp = SumiFaviconCandidate(
+            pageURL: documentURL,
+            iconURL: sharpURL,
+            sourceKind: .documentLink,
+            relTokens: ["icon"],
+            declaredSizes: [SumiFaviconDeclaredSize(width: 48, height: 48)],
+            declaredType: "image/png",
+            partition: .regular(nil)
         )
 
-        XCTAssertEqual(selected?.url, sharpURL)
+        let selected = SumiFaviconCandidateSelector.bestCandidate(
+            [tiny, sharp],
+            for: .pinnedLauncher,
+            backingScale: 2
+        )
+
+        XCTAssertEqual(selected?.iconURL, sharpURL)
     }
 
-    func testFaviconPipelineStoresEncodedPayloadsAndDecodesBoundedThumbnails() throws {
-        let faviconSource = try Self.source(named: "Sumi/Favicons/DDG/Model/Favicon.swift")
-        XCTAssertTrue(faviconSource.contains("maxDecodedPixelSize = 256"))
-        XCTAssertTrue(faviconSource.contains("CGImageSourceCreateThumbnailAtIndex"))
-        XCTAssertTrue(faviconSource.contains("kCGImageSourceThumbnailMaxPixelSize"))
-        XCTAssertTrue(faviconSource.contains("kCGImageSourceShouldCache: false"))
+    func testFaviconPipelineUsesV2BlobStoreDecodePipelineAndPreparedCacheOnly() throws {
+        let blobStoreSource = try Self.source(named: "Sumi/Favicons/V2/SumiFaviconBlobStore.swift")
+        XCTAssertTrue(blobStoreSource.contains("sha256Hex"))
+        XCTAssertTrue(blobStoreSource.contains("pageMappings"))
+        XCTAssertTrue(blobStoreSource.contains("candidateMappings"))
+        XCTAssertTrue(blobStoreSource.contains("diskBudgetBytes"))
 
-        let storeSource = try Self.source(named: "Sumi/Favicons/DDG/Services/FaviconStore.swift")
-        XCTAssertTrue(storeSource.contains("FaviconDiskImageStore"))
-        XCTAssertTrue(storeSource.contains("appendingPathComponent(\"FaviconImageData\""))
-        XCTAssertTrue(storeSource.contains("imageEncrypted = nil"))
-        XCTAssertTrue(storeSource.contains("fetchRequest.resultType = .dictionaryResultType"))
-        XCTAssertFalse(storeSource.contains("prepareImagePayloadStorageIfNeeded"))
-        XCTAssertFalse(storeSource.contains("migrateLegacyImagePayloads"))
-        XCTAssertFalse(storeSource.contains("legacyImage(from:"))
-        XCTAssertFalse(storeSource.contains("legacyNSImageAllowedClasses"))
-        XCTAssertFalse(storeSource.contains("removeOrphanedData(keeping:"))
-        XCTAssertTrue(storeSource.contains("FaviconSQLiteStoreCompactor"))
-        XCTAssertTrue(storeSource.contains("VACUUM;"))
-        XCTAssertFalse(storeSource.contains("legacyFavicons("))
+        let preparedPipelineSource = try Self.source(named: "Sumi/Favicons/V2/SumiPreparedFaviconPipeline.swift")
+        XCTAssertTrue(preparedPipelineSource.contains("CGImageSourceCreateThumbnailAtIndex"))
+        XCTAssertTrue(preparedPipelineSource.contains("kCGImageSourceThumbnailMaxPixelSize"))
+        XCTAssertTrue(preparedPipelineSource.contains("bestImageIndex"))
+        XCTAssertTrue(preparedPipelineSource.contains("CGContext("))
+        XCTAssertFalse(preparedPipelineSource.contains("lockFocus"))
 
-        let cacheSource = try Self.source(named: "Sumi/Favicons/DDG/Model/FaviconImageCache.swift")
-        XCTAssertTrue(cacheSource.contains("maximumInMemoryCost = 24 * 1024 * 1024"))
-        XCTAssertTrue(cacheSource.contains("favicon.withoutImageData"))
-        XCTAssertTrue(cacheSource.contains("knownFaviconUrls = Set(try await storing.loadFaviconMetadata().map(\\.url))"))
-        XCTAssertTrue(cacheSource.contains("totalEntryCost > Self.maximumInMemoryCost"))
-
-        let managerSource = try Self.source(named: "Sumi/Favicons/DDG/Model/FaviconManager.swift")
-        XCTAssertTrue(managerSource.contains("imageCache.hasCachedFavicon(faviconUrl: faviconURL)"))
-        XCTAssertTrue(managerSource.contains("loadCachedDisplayFavicon(for"))
-        XCTAssertTrue(managerSource.contains("forDisplayTargetPixelSize: targetPixelSize"))
+        let preparedCacheSource = try Self.source(named: "Sumi/Favicons/V2/SumiPreparedFaviconCache.swift")
+        XCTAssertTrue(preparedCacheSource.contains("preparedMemoryBudgetBytes"))
+        XCTAssertTrue(preparedCacheSource.contains("totalCostLimit"))
 
         let systemSource = try Self.source(named: "Sumi/Favicons/SumiFaviconSystem.swift")
-        XCTAssertFalse(systemSource.contains("removeLegacyStandaloneStoresIfNeeded"))
         XCTAssertFalse(systemSource.contains("\"favicons.sqlite\""))
-        XCTAssertFalse(systemSource.contains(".favicons_SUPPORT"))
+        XCTAssertFalse(systemSource.contains("FaviconManager"))
     }
 
     func testCachedProtectionAttachmentPlanDropsEncodedRuleListsAfterPreparation() throws {
@@ -452,11 +444,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             assertNoOptionalModuleScriptsOrHandlers(in: configuration.userContentController)
         }
 
-        let faviconConfiguration = browserConfiguration.auxiliaryWebViewConfiguration(surface: .faviconDownload)
-        XCTAssertFalse(faviconConfiguration.websiteDataStore.isPersistent)
-        XCTAssertFalse(faviconConfiguration.defaultWebpagePreferences.allowsContentJavaScript)
-        XCTAssertFalse(faviconConfiguration.preferences.javaScriptCanOpenWindowsAutomatically)
-
         let sourceConfiguration = WKWebViewConfiguration()
         for marker in [
             "__sumiTabSuspension",
@@ -480,9 +467,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
         XCTAssertTrue(filteredConfiguration.userContentController.userScripts.isEmpty)
 
-        let faviconSource = try Self.source(named: "Sumi/Favicons/DDG/Model/FaviconDownloader.swift")
-        XCTAssertTrue(faviconSource.contains("auxiliaryWebViewConfiguration"))
-        XCTAssertTrue(faviconSource.contains("surface: .faviconDownload"))
+        let faviconSource = try Self.source(named: "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift")
+        XCTAssertFalse(Self.fileExists("Sumi/Favicons/DDG/Model/FaviconDownloader.swift"))
         XCTAssertFalse(faviconSource.contains("WKWebViewConfiguration()"))
         XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
 
@@ -1013,57 +999,15 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             .sorted()
     }
 
+    private static func fileExists(_ relativePath: String) -> Bool {
+        FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent(relativePath).path)
+    }
+
     private static var repoRoot: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
     }
-}
-
-private final class LazyFaviconStoreProbe: FaviconStoring, @unchecked Sendable {
-    private let favicon: Favicon
-    private(set) var loadFaviconsCallCount = 0
-    private(set) var loadFaviconsWithURLRequests = [[URL]]()
-
-    init(favicon: Favicon) {
-        self.favicon = favicon
-    }
-
-    func loadFavicons() async throws -> [Favicon] {
-        loadFaviconsCallCount += 1
-        return [favicon]
-    }
-
-    func loadFavicons(with urls: [URL]) async throws -> [Favicon] {
-        loadFaviconsWithURLRequests.append(urls)
-        return urls.contains(favicon.url) ? [favicon] : []
-    }
-
-    func loadFaviconMetadata() async throws -> [FaviconMetadata] {
-        [
-            FaviconMetadata(
-                identifier: favicon.identifier,
-                url: favicon.url,
-                documentUrl: favicon.documentUrl,
-                dateCreated: favicon.dateCreated
-            )
-        ]
-    }
-
-    func save(_ favicons: [Favicon]) async throws {}
-    func removeFavicons(_ favicons: [Favicon]) async throws {}
-    func removeFavicons(with urls: [URL]) async throws {}
-    func removeFavicons(withIdentifiers identifiers: [UUID]) async throws {}
-
-    func loadFaviconReferences() async throws -> ([FaviconHostReference], [FaviconUrlReference]) {
-        ([], [])
-    }
-
-    func save(hostReference: FaviconHostReference) async throws {}
-    func save(urlReference: FaviconUrlReference) async throws {}
-    func remove(hostReferences: [FaviconHostReference]) async throws {}
-    func remove(urlReferences: [FaviconUrlReference]) async throws {}
-    func clearAll() async throws {}
 }
 
 private final class UserscriptsRuntimeProbe {

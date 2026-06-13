@@ -424,6 +424,11 @@ class BrowserManager: ObservableObject {
         // Initialize managers with current profile context for isolation
         self.historyManager = HistoryManager(context: startupModelContext, profileId: initialProfile?.id)
         self.bookmarkManager = SumiBookmarkManager()
+        if let initialProfile {
+            self.bookmarkManager.setFaviconPrefetchPartition(
+                SumiFaviconSystem.shared.partition(profile: initialProfile)
+            )
+        }
         self.recentlyClosedManager = RecentlyClosedManager()
         self.lastSessionWindowsStore = LastSessionWindowsStore()
         self.startupLastSessionWindowSnapshots = self.lastSessionWindowsStore.snapshots
@@ -687,6 +692,9 @@ class BrowserManager: ObservableObject {
                 }
                 self.currentProfile = profile
                 self.windowRegistry?.activeWindow?.currentProfileId = profile.id
+                self.bookmarkManager.setFaviconPrefetchPartition(
+                    SumiFaviconSystem.shared.partition(profile: profile)
+                )
                 self.extensionsModule.switchProfileIfLoaded(profile)
                 // Update history filtering
                 self.historyManager.switchProfile(profile.id)

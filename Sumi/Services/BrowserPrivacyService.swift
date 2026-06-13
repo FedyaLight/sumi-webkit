@@ -35,12 +35,16 @@ final class BrowserPrivacyService {
             reloadFromOrigin(currentTab, webView: webView)
         }
 
-        let dataStore = context.currentDataStore()
-        Task {
+        Task { @MainActor in
+            let dataStore = context.currentDataStore()
             await cleanupService.removeWebsiteDataForDomain(
                 host,
                 includingCookies: false,
                 in: dataStore
+            )
+            SumiFaviconSystem.shared.invalidateSite(
+                domain: host,
+                profile: currentTab.resolveProfile()
             )
         }
     }

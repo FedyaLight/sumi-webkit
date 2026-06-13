@@ -10,14 +10,11 @@ import SwiftUI
 import WebKit
 
 enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
-    case faviconDownload
     case glance
     case extensionOptions
 
     var sumiWebContentProcessDisplayName: String {
         switch self {
-        case .faviconDownload:
-            return "Sumi Web Content (Favicon)"
         case .glance:
             return "Sumi Web Content (Peek)"
         case .extensionOptions:
@@ -27,8 +24,6 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
 
     var allowsJavaScript: Bool {
         switch self {
-        case .faviconDownload:
-            return false
         case .glance, .extensionOptions:
             return true
         }
@@ -36,8 +31,6 @@ enum BrowserConfigurationAuxiliarySurface: String, CaseIterable {
 
     var javaScriptCanOpenWindowsAutomatically: Bool {
         switch self {
-        case .faviconDownload:
-            return false
         case .glance, .extensionOptions:
             return true
         }
@@ -52,7 +45,7 @@ class BrowserConfiguration {
     private let autoplayPolicyStore: SumiAutoplayPolicyStoreAdapter?
     private let visitedLinkStoreProvider: SharedVisitedLinkStoreProvider
     private static let auxiliaryFilteredUserScriptMarkers = [
-        "__sumiDDGFaviconTransportInstalled",
+        "__sumiFaviconTransportInstalled",
         "__sumiTabSuspension",
         SumiTransientChromeInteractionShieldUserScript.sourceMarker,
         "SUMI_USER_SCRIPT_RUNTIME",
@@ -161,7 +154,7 @@ class BrowserConfiguration {
     // MARK: - Auxiliary Surface Configuration
 
     /// Auxiliary WebViews are intentionally separate from primary normal tabs:
-    /// popup WebViews come from WebKit, Glance/MiniWindow/Favicon use lightweight
+    /// popup WebViews come from WebKit, Glance/MiniWindow use lightweight
     /// wrappers, and extension option pages may start from WebKit extension
     /// context config.
     @MainActor

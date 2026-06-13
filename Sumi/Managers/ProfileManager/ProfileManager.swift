@@ -131,7 +131,8 @@ final class ProfileManager: ObservableObject {
         // Remove from tracking immediately to stop tracking
         ephemeralProfiles.removeValue(forKey: windowId)
         SharedVisitedLinkStoreProvider.shared.discardStore(for: profile.id)
-        
+
+        SumiFaviconSystem.shared.clearFaviconPartition(for: profile)
         profile.destroyEphemeralDataStore()
         
         RuntimeDiagnostics.emit("🔒 [ProfileManager] Ephemeral profile removed: \(profile.id) for window: \(windowId)")

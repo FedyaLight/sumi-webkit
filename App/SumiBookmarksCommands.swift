@@ -37,6 +37,7 @@ struct SumiBookmarksCommands: Commands {
             let _ = bookmarkManager.revision
             let _ = menuFaviconInvalidator.revision
             let bookmarkSnapshot = snapshotStore.snapshot
+            let faviconPartition = SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
 
             Button("Bookmark This Page…") {
                 browserManager.requestBookmarkEditorForActiveWindowFromMenu()
@@ -77,7 +78,8 @@ struct SumiBookmarksCommands: Commands {
             } else {
                 SumiBookmarkCommandItems(
                     entities: bookmarkChildren,
-                    browserManager: browserManager
+                    browserManager: browserManager,
+                    faviconPartition: faviconPartition
                 )
             }
         }
@@ -87,12 +89,14 @@ struct SumiBookmarksCommands: Commands {
 private struct SumiBookmarkCommandItems: View {
     let entities: [SumiBookmarkEntity]
     let browserManager: BrowserManager
+    let faviconPartition: SumiFaviconPartition
 
     var body: some View {
         ForEach(entities) { entity in
             SumiBookmarkCommandItem(
                 entity: entity,
-                browserManager: browserManager
+                browserManager: browserManager,
+                faviconPartition: faviconPartition
             )
         }
     }
@@ -101,6 +105,7 @@ private struct SumiBookmarkCommandItems: View {
 private struct SumiBookmarkCommandItem: View {
     let entity: SumiBookmarkEntity
     let browserManager: BrowserManager
+    let faviconPartition: SumiFaviconPartition
 
     var body: some View {
         if entity.isFolder {
@@ -111,7 +116,8 @@ private struct SumiBookmarkCommandItem: View {
                 } else {
                     SumiBookmarkCommandItems(
                         entities: entity.children,
-                        browserManager: browserManager
+                        browserManager: browserManager,
+                        faviconPartition: faviconPartition
                     )
                 }
             } label: {
@@ -128,7 +134,8 @@ private struct SumiBookmarkCommandItem: View {
             } label: {
                 SumiCommandMenuLabels.site(
                     SumiCommandMenuLabels.bookmarkTitle(for: entity),
-                    url: entity.url
+                    url: entity.url,
+                    partition: faviconPartition
                 )
             }
             .disabled(entity.url == nil)

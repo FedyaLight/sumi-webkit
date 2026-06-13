@@ -7,7 +7,7 @@ final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor
     let source: String
     let injectionTime: WKUserScriptInjectionTime = .atDocumentEnd
     let forMainFrameOnly = true
-    let requiresRunInPageContentWorld = false
+    let requiresRunInPageContentWorld = true
     let messageNames: [String]
 
     init(context: String = "sumiFavicons") {
@@ -22,78 +22,82 @@ final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor
         """
         (() => {
           const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers["\(context)"];
-          if (!handler || window.__sumiDDGFaviconTransportInstalled) { return; }
-          window.__sumiDDGFaviconTransportInstalled = true;
+          if (!handler || window.__sumiFaviconTransportInstalled) { return; }
+          window.__sumiFaviconTransportInstalled = true;
 
-          let lastSignature = { value: null };
-
-          const collectFavicons = () => {
+          let lastSignature = "";
+          const faviconRelTokens = (rel) => (rel || "")
+            .split(/\\s+/)
+            .map((token) => token.toLowerCase())
+            .filter((token) => token.length > 0);
+          const isFaviconRel = (rel) => {
+            const tokens = faviconRelTokens(rel);
+            return tokens.includes("icon")
+              || tokens.includes("apple-touch-icon")
+              || tokens.includes("apple-touch-icon-precomposed")
+              || tokens.includes("mask-icon")
+              || tokens.includes("manifest");
+          };
+          let collectLinks = () => {
             const head = document.head;
             if (!head) { return []; }
-
-            const selectors = [
-              "link[href][rel='favicon']",
-              "link[href][rel*='icon']",
-              "link[href][rel='apple-touch-icon']",
-              "link[href][rel='apple-touch-icon-precomposed']"
-            ];
-
-            return Array.from(head.querySelectorAll(selectors.join(',')))
+            return Array.from(head.querySelectorAll("link[href][rel]"))
               .filter((element) => element instanceof HTMLLinkElement)
               .map((link) => ({
-                href: link.href || '',
-                rel: link.getAttribute('rel') || '',
-                type: link.type || ''
+                href: link.href || "",
+                rel: link.getAttribute("rel") || "",
+                type: link.getAttribute("type") || "",
+                sizes: link.getAttribute("sizes") || "",
+                media: link.getAttribute("media") || ""
               }))
-              .filter((link) => link.href.length > 0 && link.rel.length > 0);
+              .filter((link) => link.href.length > 0 && isFaviconRel(link.rel));
           };
 
           const postPayload = () => {
-            const favicons = collectFavicons();
-            const signature = JSON.stringify([document.URL, favicons]);
-            if (signature === lastSignature.value) { return; }
-            lastSignature.value = signature;
-
+            const links = collectLinks();
+            const signature = JSON.stringify([document.URL, document.baseURI, links]);
+            if (signature === lastSignature) { return; }
+            lastSignature = signature;
             handler.postMessage({
               context: "\(context)",
               featureName: "favicon",
               method: "faviconFound",
               params: {
                 documentUrl: document.URL,
-                favicons
+                baseUrl: document.baseURI,
+                favicons: links
               }
             });
           };
 
-          const observe = () => {
+          let pending = false;
+          const schedule = () => {
+            if (pending) { return; }
+            pending = true;
+            setTimeout(() => {
+              pending = false;
+              postPayload();
+            }, 120);
+          };
+
+          const observeHead = () => {
             const head = document.head;
             if (!head || !window.MutationObserver) { return; }
-
-            let pending = false;
-            const schedule = () => {
-              if (pending) { return; }
-              pending = true;
-              setTimeout(() => {
-                pending = false;
-                postPayload();
-              }, 50);
-            };
-
             const observer = new MutationObserver((mutations) => {
               for (const mutation of mutations) {
-                if (mutation.type === 'attributes' && mutation.target instanceof HTMLLinkElement) {
+                if (mutation.type === "attributes" && mutation.target instanceof HTMLLinkElement) {
                   schedule();
                   return;
                 }
-                if (mutation.type === 'childList') {
-                  for (const addedNode of mutation.addedNodes) {
-                    if (addedNode instanceof HTMLLinkElement) {
+                if (mutation.type === "childList") {
+                  for (const node of mutation.addedNodes) {
+                    if (node instanceof HTMLLinkElement || (node.querySelector && node.querySelector("link[href][rel]"))) {
                       schedule();
                       return;
                     }
                   }
-                  for (const removedNode of mutation.removedNodes) {
-                    if (removedNode instanceof HTMLLinkElement) {
+                  for (const node of mutation.removedNodes) {
+                    if (node instanceof HTMLLinkElement || (node.querySelector && node.querySelector("link[href][rel]"))) {
                       schedule();
                       return;
                     }
@@ -101,18 +105,32 @@ final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor
                 }
               }
             });
-
             observer.observe(head, {
               childList: true,
               subtree: true,
               attributes: true,
-              attributeFilter: ["rel", "href", "type"]
+              attributeFilter: ["rel", "href", "type", "sizes", "media"]
             });
+          };
+
+          const wrapHistoryMethod = (name) => {
+            const original = history[name];
+            if (typeof original !== "function" || original.__sumiFaviconWrapped) { return; }
+            const wrapped = function() {
+              const result = original.apply(this, arguments);
+              schedule();
+              return result;
+            };
+            wrapped.__sumiFaviconWrapped = true;
+            history[name] = wrapped;
           };
 
           const start = () => {
             postPayload();
-            observe();
+            observeHead();
+            wrapHistoryMethod("pushState");
+            wrapHistoryMethod("replaceState");
+            window.addEventListener("popstate", schedule, { passive: true });
           };
 
           if (document.readyState === "loading") {
@@ -131,7 +149,7 @@ final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor
     ) async -> (Any?, String?) {
         let action = broker.messageHandlerFor(message)
         do {
-            let json = try await executeDDGFaviconBrokerAction(action, original: message)
+            let json = try await executeSumiFaviconBrokerAction(action, original: message)
             return (json, nil)
         } catch {
             return (nil, error.localizedDescription)
@@ -145,15 +163,15 @@ final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor
 }
 
 @MainActor
-final class SumiDDGFaviconUserScripts: SumiUserScriptsProvider {
+final class SumiFaviconUserScripts: SumiUserScriptsProvider {
     let transportScript: SumiFaviconTransportUserScript
-    let faviconScript = SumiDDGFaviconUserScript()
+    let faviconScript = SumiFaviconUserScript()
     lazy var userScripts: [SumiUserScript] = [transportScript]
 
     init() {
         let transportScript = SumiFaviconTransportUserScript()
         self.transportScript = transportScript
-        transportScript.registerSubfeature(delegate: SumiDDGFaviconSubfeature(faviconScript: faviconScript))
+        transportScript.registerSubfeature(delegate: SumiFaviconSubfeature(faviconScript: faviconScript))
     }
 
     func loadWKUserScripts() async -> [WKUserScript] {
@@ -167,19 +185,21 @@ final class SumiDDGFaviconUserScripts: SumiUserScriptsProvider {
     }
 }
 
-protocol SumiDDGFaviconUserScriptDelegate: AnyObject {
+protocol SumiFaviconUserScriptDelegate: AnyObject {
     @MainActor
     func faviconUserScript(
-        _ faviconUserScript: SumiDDGFaviconUserScript,
-        didFindFaviconLinks faviconLinks: [SumiDDGFaviconUserScript.FaviconLink],
-        for documentUrl: URL,
+        _ faviconUserScript: SumiFaviconUserScript,
+        didFindFaviconLinks faviconLinks: [SumiFaviconUserScript.FaviconLink],
+        documentUrl: URL,
+        baseURL: URL?,
         in webView: WKWebView?
     )
 }
 
-final class SumiDDGFaviconUserScript: NSObject {
+final class SumiFaviconUserScript: NSObject {
     struct FaviconsFoundPayload: Codable, Equatable {
         let documentUrl: URL
+        let baseUrl: URL?
         let favicons: [FaviconLink]
     }
 
@@ -187,15 +207,35 @@ final class SumiDDGFaviconUserScript: NSObject {
         let href: URL
         let rel: String
         let type: String?
+        let sizes: String?
+        let media: String?
 
-        init(href: URL, rel: String, type: String? = nil) {
+        init(
+            href: URL,
+            rel: String,
+            type: String? = nil,
+            sizes: String? = nil,
+            media: String? = nil
+        ) {
             self.href = href
             self.rel = rel
             self.type = type
+            self.sizes = sizes
+            self.media = media
+        }
+
+        var discoveredLink: SumiFaviconDiscoveredLink {
+            SumiFaviconDiscoveredLink(
+                href: href.absoluteString,
+                rel: rel,
+                type: type,
+                sizes: sizes,
+                media: media
+            )
         }
     }
 
-    weak var delegate: SumiDDGFaviconUserScriptDelegate?
+    weak var delegate: SumiFaviconUserScriptDelegate?
 
     enum MessageNames: String, CaseIterable {
         case faviconFound
@@ -203,13 +243,13 @@ final class SumiDDGFaviconUserScript: NSObject {
 }
 
 @MainActor
-private func executeDDGFaviconBrokerAction(
+private func executeSumiFaviconBrokerAction(
     _ action: SumiUserScriptMessageBroker.Action,
     original: WKScriptMessage
 ) async throws -> String {
     switch action {
     case .notify(let handler, let params):
-        let params = SumiDDGFaviconMessageParams(from: params)
+        let params = SumiFaviconMessageParams(from: params)
         do {
             _ = try await handler(params, original)
         } catch {
@@ -218,23 +258,23 @@ private func executeDDGFaviconBrokerAction(
         return "{}"
 
     case .respond(let handler, let request):
-        let params = SumiDDGFaviconMessageParams(from: request.params)
-        let request = SumiDDGFaviconRequestEnvelope(request: request)
+        let params = SumiFaviconMessageParams(from: request.params)
+        let request = SumiFaviconRequestEnvelope(request: request)
         do {
             guard let result = try await handler(params, original) else {
-                return SumiDDGFaviconMessageErrorResponse(
+                return SumiFaviconMessageErrorResponse(
                     request: request,
                     message: "could not access encodable result"
                 ).toJSON()
             }
 
-            return SumiDDGFaviconMessageResponse(request: request, result: result).toJSON()
-                ?? SumiDDGFaviconMessageErrorResponse(
+            return SumiFaviconMessageResponse(request: request, result: result).toJSON()
+                ?? SumiFaviconMessageErrorResponse(
                     request: request,
                     message: "could not convert result to json"
                 ).toJSON()
         } catch {
-            return SumiDDGFaviconMessageErrorResponse(
+            return SumiFaviconMessageErrorResponse(
                 request: request,
                 message: error.localizedDescription
             ).toJSON()
@@ -250,19 +290,19 @@ private func executeDDGFaviconBrokerAction(
 }
 
 @MainActor
-private final class SumiDDGFaviconSubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
+private final class SumiFaviconSubfeature: NSObject, @MainActor SumiUserScriptSubfeature {
     let featureName: String = "favicon"
     let messageOriginPolicy: SumiUserScriptMessageOriginPolicy = .all
 
-    private let faviconScript: SumiDDGFaviconUserScript
+    private let faviconScript: SumiFaviconUserScript
 
-    init(faviconScript: SumiDDGFaviconUserScript) {
+    init(faviconScript: SumiFaviconUserScript) {
         self.faviconScript = faviconScript
         super.init()
     }
 
     func handler(forMethodNamed methodName: String) -> SumiUserScriptSubfeature.Handler? {
-        switch SumiDDGFaviconUserScript.MessageNames(rawValue: methodName) {
+        switch SumiFaviconUserScript.MessageNames(rawValue: methodName) {
         case .faviconFound:
             return { [weak self] params, original in
                 try await self?.faviconFound(params: params, original: original)
@@ -273,19 +313,20 @@ private final class SumiDDGFaviconSubfeature: NSObject, @MainActor SumiUserScrip
     }
 
     private func faviconFound(params: Any, original: WKScriptMessage) async throws -> Encodable? {
-        guard let faviconsPayload = SumiDDGFaviconMessagePayload.decode(from: params) else { return nil }
+        guard let faviconsPayload = SumiFaviconMessagePayload.decode(from: params) else { return nil }
 
         faviconScript.delegate?.faviconUserScript(
             faviconScript,
             didFindFaviconLinks: faviconsPayload.favicons,
-            for: faviconsPayload.documentUrl,
+            documentUrl: faviconsPayload.documentUrl,
+            baseURL: faviconsPayload.baseURL,
             in: original.webView
         )
         return nil
     }
 }
 
-private struct SumiDDGFaviconRequestEnvelope: Sendable {
+private struct SumiFaviconRequestEnvelope: Sendable {
     let context: String
     let featureName: String
     let id: String
@@ -297,23 +338,26 @@ private struct SumiDDGFaviconRequestEnvelope: Sendable {
     }
 }
 
-private struct SumiDDGFaviconMessageParams: Sendable {
+private struct SumiFaviconMessageParams: Sendable {
     let documentUrl: URL?
+    let baseURL: URL?
     let favicons: [FaviconLink]
 
     init(from params: Any) {
-        if let params = params as? SumiDDGFaviconMessageParams {
+        if let params = params as? SumiFaviconMessageParams {
             self = params
             return
         }
 
-        guard let faviconsPayload: SumiDDGFaviconUserScript.FaviconsFoundPayload = SumiDecodableHelper.decode(from: params) else {
+        guard let faviconsPayload: SumiFaviconUserScript.FaviconsFoundPayload = SumiDecodableHelper.decode(from: params) else {
             self.documentUrl = nil
+            self.baseURL = nil
             self.favicons = []
             return
         }
 
         self.documentUrl = faviconsPayload.documentUrl
+        self.baseURL = faviconsPayload.baseUrl
         self.favicons = faviconsPayload.favicons.map(FaviconLink.init(faviconLink:))
     }
 
@@ -321,37 +365,49 @@ private struct SumiDDGFaviconMessageParams: Sendable {
         let href: URL
         let rel: String
         let type: String?
+        let sizes: String?
+        let media: String?
 
-        init(faviconLink: SumiDDGFaviconUserScript.FaviconLink) {
+        init(faviconLink: SumiFaviconUserScript.FaviconLink) {
             self.href = faviconLink.href
             self.rel = faviconLink.rel
             self.type = faviconLink.type
+            self.sizes = faviconLink.sizes
+            self.media = faviconLink.media
         }
     }
 }
 
-private struct SumiDDGFaviconMessagePayload {
+private struct SumiFaviconMessagePayload {
     let documentUrl: URL
-    let favicons: [SumiDDGFaviconUserScript.FaviconLink]
+    let baseURL: URL?
+    let favicons: [SumiFaviconUserScript.FaviconLink]
 
-    static func decode(from params: Any) -> SumiDDGFaviconMessagePayload? {
-        guard let params = params as? SumiDDGFaviconMessageParams,
+    static func decode(from params: Any) -> SumiFaviconMessagePayload? {
+        guard let params = params as? SumiFaviconMessageParams,
               let documentUrl = params.documentUrl
         else {
             return nil
         }
 
-        return SumiDDGFaviconMessagePayload(
+        return SumiFaviconMessagePayload(
             documentUrl: documentUrl,
+            baseURL: params.baseURL,
             favicons: params.favicons.map {
-                SumiDDGFaviconUserScript.FaviconLink(href: $0.href, rel: $0.rel, type: $0.type)
+                SumiFaviconUserScript.FaviconLink(
+                    href: $0.href,
+                    rel: $0.rel,
+                    type: $0.type,
+                    sizes: $0.sizes,
+                    media: $0.media
+                )
             }
         )
     }
 }
 
-private struct SumiDDGFaviconMessageResponse: Encodable {
-    let request: SumiDDGFaviconRequestEnvelope
+private struct SumiFaviconMessageResponse: Encodable {
+    let request: SumiFaviconRequestEnvelope
     let result: Encodable
 
     func encode(to encoder: Encoder) throws {
@@ -375,13 +431,13 @@ private struct SumiDDGFaviconMessageResponse: Encodable {
     }
 }
 
-private struct SumiDDGFaviconMessageErrorResponse: Encodable {
+private struct SumiFaviconMessageErrorResponse: Encodable {
     let context: String
     let featureName: String
     let id: String
     private let error: MessageError
 
-    init(request: SumiDDGFaviconRequestEnvelope, message: String) {
+    init(request: SumiFaviconRequestEnvelope, message: String) {
         self.context = request.context
         self.featureName = request.featureName
         self.id = request.id

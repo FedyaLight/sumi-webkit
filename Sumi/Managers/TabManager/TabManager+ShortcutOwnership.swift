@@ -199,6 +199,16 @@ extension TabManager {
         }
     }
 
+    func resolvedFaviconPartition(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> SumiFaviconPartition {
+        let profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
+        guard let profileId,
+              let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId })
+        else {
+            return .regular(profileId)
+        }
+        return SumiFaviconSystem.shared.partition(profile: profile)
+    }
+
     func updateTransientShortcutBindings(for pin: ShortcutPin) {
         for (windowId, tabsByPin) in transientShortcutTabsByWindow {
             if let tab = tabsByPin[pin.id] {

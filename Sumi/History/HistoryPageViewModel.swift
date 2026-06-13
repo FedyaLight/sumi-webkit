@@ -74,6 +74,10 @@ final class HistoryPageViewModel: ObservableObject {
         sections.contains { !$0.items.isEmpty }
     }
 
+    var faviconPartition: SumiFaviconPartition {
+        SumiFaviconSystem.shared.partition(profile: browserManager?.currentProfile)
+    }
+
     var selectionCount: Int {
         selectedItemIDs.count
     }

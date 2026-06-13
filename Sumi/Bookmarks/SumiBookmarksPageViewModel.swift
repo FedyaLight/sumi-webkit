@@ -49,6 +49,10 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         !selectedEntityIDs.isEmpty
     }
 
+    var faviconPartition: SumiFaviconPartition {
+        SumiFaviconSystem.shared.partition(profile: browserManager?.currentProfile)
+    }
+
     var selectionCount: Int {
         selectedEntityIDs.count
     }

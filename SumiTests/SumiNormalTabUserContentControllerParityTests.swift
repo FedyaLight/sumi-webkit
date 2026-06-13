@@ -33,7 +33,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
         XCTAssertEqual(installedScriptCount(containing: "__sumiParityContentBlocking", in: controller), 1)
         XCTAssertEqual(installedScriptCount(containing: "__sumiParityManaged", in: controller), 1)
-        XCTAssertEqual(installedScriptCount(containing: "__sumiDDGFaviconTransportInstalled", in: controller), 1)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiFaviconTransportInstalled", in: controller), 1)
     }
 
     func testFactoryPreinstallsDisabledUserContentWithoutAsyncWait() throws {
@@ -83,7 +83,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertEqual(installedScriptCount(containing: "__sumiParityStableContentBlocking", in: controller), 1)
         XCTAssertEqual(installedScriptCount(containing: "__sumiParityFirstManaged", in: controller), 0)
         XCTAssertEqual(installedScriptCount(containing: "__sumiParitySecondManaged", in: controller), 1)
-        XCTAssertEqual(installedScriptCount(containing: "__sumiDDGFaviconTransportInstalled", in: controller), 1)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiFaviconTransportInstalled", in: controller), 1)
     }
 
     func testEquivalentReplacementDoesNotDuplicateInstalledScripts() async throws {
@@ -103,7 +103,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
 
         XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
         XCTAssertEqual(installedScriptCount(containing: "__sumiParityIdempotentManaged", in: controller), 1)
-        XCTAssertEqual(installedScriptCount(containing: "__sumiDDGFaviconTransportInstalled", in: controller), 1)
+        XCTAssertEqual(installedScriptCount(containing: "__sumiFaviconTransportInstalled", in: controller), 1)
     }
 
     func testEquivalentManagedScriptSetDoesNotAdvanceRevision() {

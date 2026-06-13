@@ -245,7 +245,8 @@ final class SumiNavigationHistoryMenuDelegate: NSObject, NSMenuDelegate {
             menuItem.state = item.isCurrent ? .on : .off
             menuItem.isEnabled = item.url != nil
             menuItem.representedObject = item.id
-            menuItem.image = SumiFaviconResolver.menuImage(for: item.url)
+            let partition = SumiFaviconSystem.shared.partition(profile: tabProvider?()?.resolveProfile())
+            menuItem.image = SumiFaviconResolver.menuImage(for: item.url, partition: partition)
             menu.addItem(menuItem)
         }
     }

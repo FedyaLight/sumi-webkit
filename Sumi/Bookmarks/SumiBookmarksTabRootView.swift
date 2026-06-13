@@ -335,7 +335,8 @@ struct SumiBookmarksTabRootView: View {
                                     parentID: entity.isFolder ? entity.id : viewModel.selectedFolderID
                                 )
                             },
-                            searchActive: !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            searchActive: !viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                            faviconPartition: viewModel.faviconPartition
                         )
                     }
                 }
@@ -377,6 +378,7 @@ private struct SumiBookmarkEntityRow: View {
     let openMode: (BrowserManager.HistoryOpenMode) -> Void
     let newFolder: () -> Void
     let searchActive: Bool
+    let faviconPartition: SumiFaviconPartition
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var hoverUpdatesEnabled
@@ -441,10 +443,7 @@ private struct SumiBookmarkEntityRow: View {
                 .frame(width: 22, height: 22)
         } else if let image = faviconImage ?? cachedFaviconImage {
             Image(nsImage: image)
-                .resizable()
-                .scaledToFit()
                 .frame(width: 22, height: 22)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         } else {
             Image(systemName: "globe")
                 .font(.system(size: 17, weight: .medium))
@@ -459,7 +458,11 @@ private struct SumiBookmarkEntityRow: View {
 
     private var cachedFaviconImage: NSImage? {
         guard let url = entity.url else { return nil }
-        return TabFaviconStore.getCachedImage(forDocumentURL: url)
+        return TabFaviconStore.getCachedImage(
+            forDocumentURL: url,
+            partition: faviconPartition,
+            context: .historyBookmarkRow
+        )
     }
 
     @MainActor
@@ -470,7 +473,12 @@ private struct SumiBookmarkEntityRow: View {
         }
 
         faviconImage = cachedFaviconImage
-        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url)
+        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(
+            forDocumentURL: url,
+            partition: faviconPartition,
+            context: .historyBookmarkRow,
+            priority: .historyBookmarkVisibleRow
+        )
         guard !Task.isCancelled else { return }
         faviconImage = loadedImage ?? cachedFaviconImage
     }

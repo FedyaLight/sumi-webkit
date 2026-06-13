@@ -16,6 +16,7 @@ extension Tab {
     ) -> Bool {
         let defaultFavicon = SwiftUI.Image(systemName: "globe")
         let lookupIdentifier = Self.faviconLookupIdentifier(for: url)
+        let partition = SumiFaviconSystem.shared.partition(profile: resolveProfile())
 
         if SumiSurface.isSettingsSurfaceURL(url) {
             favicon = SwiftUI.Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
@@ -41,7 +42,11 @@ extension Tab {
         guard allowCacheLookup,
               SumiFaviconResolver.cacheKey(for: url) != nil,
               let lookupIdentifier,
-              let image = TabFaviconStore.getCachedImage(forDocumentURL: url)
+              let image = TabFaviconStore.getCachedImage(
+                forDocumentURL: url,
+                partition: partition,
+                context: .tabSidebar
+              )
         else {
             if resolvedFaviconCacheKey == lookupIdentifier,
                !faviconIsTemplateGlobePlaceholder {
@@ -67,7 +72,13 @@ extension Tab {
             return
         }
 
-        if let image = await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: requestedURL),
+        let partition = SumiFaviconSystem.shared.partition(profile: resolveProfile())
+        if let image = await TabFaviconStore.loadCachedDisplayImage(
+            forDocumentURL: requestedURL,
+            partition: partition,
+            context: .tabSidebar,
+            priority: .visibleSidebarOrTabStrip
+        ),
            !Task.isCancelled,
            url == requestedURL {
             favicon = SwiftUI.Image(nsImage: image)
@@ -81,13 +92,12 @@ extension Tab {
     }
 
     @MainActor
-    func ensureFaviconsTabExtension(using scriptsProvider: SumiDDGFaviconUserScripts) {
+    func ensureFaviconsTabExtension(using scriptsProvider: SumiFaviconUserScripts) {
         faviconCancellables = []
 
         let extensionInstance = FaviconsTabExtension(
             scriptsPublisher: Just(scriptsProvider).eraseToAnyPublisher(),
-            tab: self,
-            faviconManagement: SumiFaviconSystem.shared.manager
+            tab: self
         )
         faviconsTabExtension = extensionInstance
         extensionInstance.loadCachedFavicon(previousURL: nil, error: nil)

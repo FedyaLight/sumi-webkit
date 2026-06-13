@@ -527,6 +527,10 @@ struct PinnedGrid: View {
         if let placeholderGroup = splitPlaceholderGroup(for: pin) {
             PinnedSplitPlaceholderTile(
                 pin: pin,
+                faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
+                    for: pin,
+                    currentSpaceId: windowState.currentSpaceId
+                ),
                 isSelected: isSplitPlaceholderSelected(placeholderGroup, pin: pin),
                 accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled,
@@ -556,6 +560,10 @@ struct PinnedGrid: View {
 
             PinnedTile(
                 pin: pin,
+                faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
+                    for: pin,
+                    currentSpaceId: windowState.currentSpaceId
+                ),
                 presentationState: presentationState,
                 liveTab: liveTab,
                 essentialRuntimeState: essentialRuntimeState(pin),
@@ -1024,6 +1032,7 @@ struct PinnedGrid: View {
 
 private struct PinnedSplitPlaceholderTile: View {
     @ObservedObject var pin: ShortcutPin
+    let faviconPartition: SumiFaviconPartition
     let isSelected: Bool
     let accessibilityID: String
     let isAppKitInteractionEnabled: Bool
@@ -1040,9 +1049,9 @@ private struct PinnedSplitPlaceholderTile: View {
     var body: some View {
         let _ = faviconCacheRefreshID
         let configuration = PinnedTabsConfiguration.large
-        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFavicon
+        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(partition: faviconPartition)
         let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
-            ? pin.storedChromeTemplateSystemImageName
+            ? pin.storedChromeTemplateSystemImageName(for: faviconPartition)
             : nil
 
         PinnedTileVisual(
@@ -1101,7 +1110,11 @@ private struct PinnedSplitPlaceholderTile: View {
     }
 
     private var storedFaviconLoadKey: String {
-        "\(pin.launchURL.absoluteString)|\(faviconCacheRefreshID.uuidString)"
+        [
+            pin.launchURL.absoluteString,
+            faviconPartition.storageComponent,
+            faviconCacheRefreshID.uuidString,
+        ].joined(separator: "|")
     }
 
     private var tokens: ChromeThemeTokens {
@@ -1111,7 +1124,10 @@ private struct PinnedSplitPlaceholderTile: View {
     @MainActor
     private func loadStoredFavicon() async {
         let launchURL = pin.launchURL
-        guard let image = await TabFaviconStore.loadCachedLauncherImage(forDocumentURL: launchURL),
+        guard let image = await TabFaviconStore.loadCachedLauncherImage(
+            forDocumentURL: launchURL,
+            partition: faviconPartition
+        ),
               !Task.isCancelled,
               launchURL == pin.launchURL
         else { return }
@@ -1147,6 +1163,7 @@ private struct EssentialTileContextMenuActions {
 
 private struct PinnedTile: View {
     @ObservedObject var pin: ShortcutPin
+    let faviconPartition: SumiFaviconPartition
     let presentationState: ShortcutPresentationState
     let liveTab: Tab?
     let essentialRuntimeState: SumiEssentialRuntimeState?
@@ -1164,6 +1181,7 @@ private struct PinnedTile: View {
             if let liveTab {
                 LivePinnedTileContent(
                     pin: pin,
+                    faviconPartition: faviconPartition,
                     liveTab: liveTab,
                     presentationState: presentationState,
                     essentialRuntimeState: essentialRuntimeState,
@@ -1179,6 +1197,7 @@ private struct PinnedTile: View {
             } else {
                 StoredPinnedTileContent(
                     pin: pin,
+                    faviconPartition: faviconPartition,
                     presentationState: presentationState,
                     essentialRuntimeState: essentialRuntimeState,
                     accessibilityID: accessibilityID,
@@ -1198,6 +1217,7 @@ private struct PinnedTile: View {
 
 private struct LivePinnedTileContent: View {
     @ObservedObject var pin: ShortcutPin
+    let faviconPartition: SumiFaviconPartition
     @ObservedObject var liveTab: Tab
     let presentationState: ShortcutPresentationState
     let essentialRuntimeState: SumiEssentialRuntimeState?
@@ -1209,14 +1229,23 @@ private struct LivePinnedTileContent: View {
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
+    @State private var faviconCacheRefreshID = UUID()
+    @State private var loadedStoredFaviconURL: URL?
+    @State private var loadedStoredFavicon: Image?
 
     var body: some View {
+        let _ = faviconCacheRefreshID
         let resolvedTitle = pin.resolvedDisplayTitle(liveTab: liveTab)
         let glyphText = pin.glyphText
+        let launcherFavicon = currentCachedStoredFavicon
+        let resolvedFavicon = launcherFavicon ?? liveTab.favicon
         let chromeTemplateSystemImageName = pin.chromeTemplateSystemImageName
-            ?? Self.chromeTemplateSystemImageName(for: liveTab)
+            ?? Self.chromeTemplateSystemImageName(
+                for: liveTab,
+                hasLauncherFavicon: launcherFavicon != nil
+            )
         PinnedTabView(
-            tabIcon: liveTab.favicon,
+            tabIcon: resolvedFavicon,
             glyphText: glyphText,
             chromeTemplateSystemImageName: chromeTemplateSystemImageName,
             presentationState: presentationState,
@@ -1224,7 +1253,7 @@ private struct LivePinnedTileContent: View {
             dragSourceConfiguration: makePinnedTileDragSourceConfiguration(
                 pin: pin,
                 resolvedTitle: resolvedTitle,
-                previewIcon: liveTab.favicon,
+                previewIcon: resolvedFavicon,
                 chromeTemplateSystemImageName: chromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
                 pinnedConfiguration: dragPinnedConfiguration,
@@ -1242,11 +1271,26 @@ private struct LivePinnedTileContent: View {
             onUnload: onUnload,
             accentSourceURL: pin.launchURL
         )
+        .task(id: storedFaviconLoadKey) {
+            await loadStoredFavicon()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
+            guard shouldReloadPinnedTileFavicon(for: notification, launchURL: pin.launchURL) else { return }
+            loadedStoredFaviconURL = nil
+            loadedStoredFavicon = nil
+            faviconCacheRefreshID = UUID()
+        }
     }
 
-    private static func chromeTemplateSystemImageName(for liveTab: Tab) -> String? {
+    private static func chromeTemplateSystemImageName(
+        for liveTab: Tab,
+        hasLauncherFavicon: Bool
+    ) -> String? {
         if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
             return SumiSurface.settingsTabFaviconSystemImageName
+        }
+        if hasLauncherFavicon {
+            return nil
         }
         if liveTab.faviconIsTemplateGlobePlaceholder {
             return SumiPersistentGlyph.launcherSystemImageFallback
@@ -1263,10 +1307,50 @@ private struct LivePinnedTileContent: View {
 
         return zones
     }
+
+    private var currentLoadedStoredFavicon: Image? {
+        loadedStoredFaviconURL == pin.launchURL ? loadedStoredFavicon : nil
+    }
+
+    private var currentCachedStoredFavicon: Image? {
+        currentLoadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon(
+            for: pin.launchURL,
+            partition: faviconPartition
+        )
+    }
+
+    private var storedFaviconLoadKey: String {
+        guard pin.iconAsset == nil else {
+            return "disabled|\(pin.id.uuidString)|\(faviconCacheRefreshID.uuidString)"
+        }
+        return [
+            pin.launchURL.absoluteString,
+            faviconPartition.storageComponent,
+            faviconCacheRefreshID.uuidString,
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func loadStoredFavicon() async {
+        guard pin.iconAsset == nil else { return }
+
+        let launchURL = pin.launchURL
+        guard let image = await TabFaviconStore.loadCachedLauncherImage(
+            forDocumentURL: launchURL,
+            partition: faviconPartition
+        ),
+              !Task.isCancelled,
+              launchURL == pin.launchURL
+        else { return }
+
+        loadedStoredFaviconURL = launchURL
+        loadedStoredFavicon = Image(nsImage: image)
+    }
 }
 
 private struct StoredPinnedTileContent: View {
     @ObservedObject var pin: ShortcutPin
+    let faviconPartition: SumiFaviconPartition
     let presentationState: ShortcutPresentationState
     let essentialRuntimeState: SumiEssentialRuntimeState?
     let accessibilityID: String
@@ -1284,10 +1368,10 @@ private struct StoredPinnedTileContent: View {
     var body: some View {
         let _ = faviconCacheRefreshID
         let resolvedTitle = pin.preferredDisplayTitle
-        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFavicon
+        let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(partition: faviconPartition)
         let glyphText = pin.glyphText
         let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
-            ? (pin.chromeTemplateSystemImageName ?? pin.storedChromeTemplateSystemImageName)
+            ? (pin.chromeTemplateSystemImageName ?? pin.storedChromeTemplateSystemImageName(for: faviconPartition))
             : nil
         PinnedTabView(
             tabIcon: resolvedFavicon,
@@ -1334,13 +1418,20 @@ private struct StoredPinnedTileContent: View {
     }
 
     private var storedFaviconLoadKey: String {
-        "\(pin.launchURL.absoluteString)|\(faviconCacheRefreshID.uuidString)"
+        [
+            pin.launchURL.absoluteString,
+            faviconPartition.storageComponent,
+            faviconCacheRefreshID.uuidString,
+        ].joined(separator: "|")
     }
 
     @MainActor
     private func loadStoredFavicon() async {
         let launchURL = pin.launchURL
-        guard let image = await TabFaviconStore.loadCachedLauncherImage(forDocumentURL: launchURL),
+        guard let image = await TabFaviconStore.loadCachedLauncherImage(
+            forDocumentURL: launchURL,
+            partition: faviconPartition
+        ),
               !Task.isCancelled,
               launchURL == pin.launchURL
         else { return }

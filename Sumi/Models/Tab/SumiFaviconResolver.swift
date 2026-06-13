@@ -7,7 +7,10 @@ enum SumiFaviconResolver {
         SumiFaviconLookupKey.cacheKey(for: url)
     }
 
-    static func menuImage(for url: URL?) -> NSImage {
+    static func menuImage(
+        for url: URL?,
+        partition: SumiFaviconPartition = .regular(nil)
+    ) -> NSImage {
         guard let url else {
             return menuSystemImage("globe")
         }
@@ -16,17 +19,12 @@ enum SumiFaviconResolver {
             return menuSystemImage(systemName)
         }
 
-        if let cacheKey = cacheKey(for: url),
-           let cachedImage = MenuImageCache.image(for: cacheKey) {
-            return cachedImage
-        }
-
-        if let image = TabFaviconStore.getCachedImage(forDocumentURL: url) {
-            let resizedImage = image.sumiMenuResizedToFaviconSize()
-            if let cacheKey = cacheKey(for: url) {
-                MenuImageCache.setImage(resizedImage, for: cacheKey)
-            }
-            return resizedImage
+        if let image = TabFaviconStore.getCachedImage(
+            forDocumentURL: url,
+            partition: partition,
+            context: .menu
+        ) {
+            return image
         }
 
         return menuSystemImage("globe")
@@ -39,13 +37,26 @@ enum SumiFaviconResolver {
     }
 
     @MainActor
-    static func image(for url: URL, webView: WKWebView? = nil) async -> NSImage? {
-        if let image = await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url) {
+    static func image(
+        for url: URL,
+        partition: SumiFaviconPartition = .regular(nil),
+        webView: WKWebView? = nil
+    ) async -> NSImage? {
+        if let image = await TabFaviconStore.loadCachedDisplayImage(
+            forDocumentURL: url,
+            partition: partition,
+            context: .tabSidebar,
+            priority: webView == nil ? .historyBookmarkVisibleRow : .visibleSidebarOrTabStrip
+        ) {
             return image
         }
 
-        _ = await SumiFaviconSystem.shared.manager.handleFaviconLinks([], documentUrl: url, webView: webView)
-        return await TabFaviconStore.loadCachedDisplayImage(forDocumentURL: url)
+        SumiFaviconSystem.shared.service.scheduleColdFetch(
+            for: url,
+            partition: partition,
+            priority: webView == nil ? .historyBookmarkVisibleRow : .visibleSidebarOrTabStrip
+        )
+        return nil
     }
 
     private static func systemImageName(for url: URL) -> String? {
@@ -59,58 +70,5 @@ enum SumiFaviconResolver {
             return SumiSurface.bookmarksTabFaviconSystemImageName
         }
         return nil
-    }
-}
-
-private enum MenuImageCache {
-    private static let storage = Storage()
-
-    static func image(for key: String) -> NSImage? {
-        storage.image(for: key)
-    }
-
-    static func setImage(_ image: NSImage, for key: String) {
-        storage.setImage(image, for: key)
-    }
-
-    private final class Storage: @unchecked Sendable {
-        private let cache = NSCache<NSString, NSImage>()
-        private var observer: NSObjectProtocol?
-
-        init() {
-            observer = NotificationCenter.default.addObserver(
-                forName: .faviconCacheUpdated,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                self?.cache.removeAllObjects()
-            }
-        }
-
-        func image(for key: String) -> NSImage? {
-            _ = observer
-            return cache.object(forKey: key as NSString)
-        }
-
-        func setImage(_ image: NSImage, for key: String) {
-            _ = observer
-            cache.setObject(image, forKey: key as NSString)
-        }
-    }
-}
-
-private extension NSImage {
-    func sumiMenuResizedToFaviconSize() -> NSImage {
-        let targetSize = NSSize(width: 16, height: 16)
-        let image = NSImage(size: targetSize)
-        image.lockFocus()
-        draw(
-            in: NSRect(origin: .zero, size: targetSize),
-            from: NSRect(origin: .zero, size: size),
-            operation: .copy,
-            fraction: 1.0
-        )
-        image.unlockFocus()
-        return image
     }
 }

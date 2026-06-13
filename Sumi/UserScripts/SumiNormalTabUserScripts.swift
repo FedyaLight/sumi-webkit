@@ -11,7 +11,7 @@ final class SumiNormalTabUserScripts: SumiUserScriptsProvider {
         let messageNames: [String]
     }
 
-    let faviconScripts = SumiDDGFaviconUserScripts()
+    let faviconScripts = SumiFaviconUserScripts()
     private let transientChromeInteractionShieldUserScript = SumiTransientChromeInteractionShieldUserScript()
     private var contentBlockingUserScripts: [SumiUserScript]
     private var managedUserScripts: [SumiUserScript]

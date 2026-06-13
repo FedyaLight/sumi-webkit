@@ -475,12 +475,12 @@ struct URLBarSiteDataFavicon: View {
             return image
         }
 
-        let manager = SumiFaviconSystem.shared.manager
-        if let favicon = manager.getCachedFavicon(
-            for: normalizedDomain,
-            sizeCategory: .small,
-            fallBackToSmaller: true
-        ), let image = favicon.image {
+        if let url = URL(string: "https://\(normalizedDomain)"),
+           let image = TabFaviconStore.getCachedImage(
+            forDocumentURL: url,
+            partition: .regular(nil),
+            context: .historyBookmarkRow
+           ) {
             return Image(nsImage: image)
         }
 

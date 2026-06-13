@@ -633,6 +633,80 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(appResidueCleaner.clearFaviconNegativeCacheCallCount, 1)
     }
 
+    func testBrowsingDataSiteDataOnlyClearInvalidatesFaviconsForAffectedDomains() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        let faviconCleaner = FakeFaviconCleaner()
+        let service = SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            faviconCacheCleaner: faviconCleaner,
+            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
+        )
+
+        try await harness.historyManager.store.recordVisit(
+            url: URL(string: "https://www.reddit.com/r/browsers")!,
+            title: "Recent",
+            visitedAt: historyTestDate("2026-04-23T11:45:00Z"),
+            profileId: harness.profileID
+        )
+
+        await service.clear(
+            range: .lastHour,
+            categories: [.siteData],
+            historyManager: harness.historyManager,
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
+        )
+
+        XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
+        XCTAssertEqual(cleanupService.removedDomainSets[0].domains, ["reddit.com"])
+        XCTAssertEqual(faviconCleaner.invalidateSiteCalls.count, 1)
+        XCTAssertEqual(faviconCleaner.invalidateSiteCalls[0].domain, "reddit.com")
+        XCTAssertEqual(
+            faviconCleaner.invalidateSiteCalls[0].partition,
+            SumiFaviconPartition.regular(harness.profileID)
+        )
+        XCTAssertTrue(faviconCleaner.burnDomainsCalls.isEmpty)
+        XCTAssertTrue(faviconCleaner.burnAfterHistoryClearSavedLogins.isEmpty)
+    }
+
+    func testBrowsingDataAllTimeSiteDataOnlyInvalidatesDiscoveredWebsiteDataDomains() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        cleanupService.recordResponses = [
+            [FakeWKWebsiteDataRecord(displayName: "reddit.com", dataTypes: WKWebsiteDataStore.sumiSiteDataTypes)],
+        ]
+        let faviconCleaner = FakeFaviconCleaner()
+        let service = SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            faviconCacheCleaner: faviconCleaner,
+            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
+        )
+
+        await service.clear(
+            range: .allTime,
+            categories: [.siteData],
+            historyManager: harness.historyManager,
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
+        )
+
+        XCTAssertEqual(cleanupService.removedWebsiteDataTypes.count, 1)
+        XCTAssertEqual(
+            cleanupService.removedWebsiteDataTypes[0],
+            WKWebsiteDataStore.sumiSiteDataTypes
+        )
+        XCTAssertEqual(cleanupService.cookieRemovalSelections, [.all])
+        XCTAssertEqual(faviconCleaner.invalidateSiteCalls.count, 1)
+        XCTAssertEqual(faviconCleaner.invalidateSiteCalls[0].domain, "reddit.com")
+        XCTAssertEqual(
+            faviconCleaner.invalidateSiteCalls[0].partition,
+            SumiFaviconPartition.regular(harness.profileID)
+        )
+        XCTAssertTrue(faviconCleaner.burnDomainsCalls.isEmpty)
+        XCTAssertTrue(faviconCleaner.burnAfterHistoryClearSavedLogins.isEmpty)
+    }
+
     func testBrowsingDataFiniteCacheClearBurnsAffectedFaviconsWithoutHistorySelection() async throws {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
@@ -1059,6 +1133,7 @@ private final class FakeFaviconCleaner: SumiBrowsingDataFaviconCleaning {
         remainingHistoryHosts: Set<String>,
         savedLogins: Set<String>
     )] = []
+    private(set) var invalidateSiteCalls: [(domain: String, partition: SumiFaviconPartition)] = []
 
     func burnAfterHistoryClear(savedLogins: Set<String>) async {
         burnAfterHistoryClearSavedLogins.append(savedLogins)
@@ -1070,6 +1145,10 @@ private final class FakeFaviconCleaner: SumiBrowsingDataFaviconCleaning {
         savedLogins: Set<String>
     ) async {
         burnDomainsCalls.append((domains, remainingHistoryHosts, savedLogins))
+    }
+
+    func invalidateSite(domain: String, partition: SumiFaviconPartition) {
+        invalidateSiteCalls.append((domain, partition))
     }
 }
 

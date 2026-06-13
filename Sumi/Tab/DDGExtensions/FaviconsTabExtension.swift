@@ -4,20 +4,14 @@ import Foundation
 import WebKit
 
 /**
- * Port of DDG `FaviconsTabExtension`, adapted to Sumi's `Tab` model.
- *
- * The ownership boundary stays the same as DDG:
- * - load cached favicon or placeholder from the shared favicon backend
- * - receive live favicon links only through `SumiDDGFaviconUserScript`
- * - publish the resolved favicon back to the tab/UI layer
+ * Sumi favicon tab bridge.
+ * Receives bounded live discovery from the favicon user script and publishes
+ * already prepared v2 images back to the tab/UI layer.
  */
 @MainActor
 final class FaviconsTabExtension {
-    let faviconManagement: FaviconManagement
-
     private weak var tab: Tab?
-    private weak var faviconUserScript: SumiDDGFaviconUserScript?
-    private let registrableDomainResolver: any SumiRegistrableDomainResolving
+    private weak var faviconUserScript: SumiFaviconUserScript?
     private var cancellables = Set<AnyCancellable>()
     private var faviconHandlingTask: Task<Void, Never>? {
         willSet {
@@ -33,14 +27,10 @@ final class FaviconsTabExtension {
     @Published private(set) var favicon: NSImage?
 
     init(
-        scriptsPublisher: some Publisher<SumiDDGFaviconUserScripts, Never>,
-        tab: Tab,
-        faviconManagement: FaviconManagement,
-        registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
+        scriptsPublisher: some Publisher<SumiFaviconUserScripts, Never>,
+        tab: Tab
     ) {
         self.tab = tab
-        self.faviconManagement = faviconManagement
-        self.registrableDomainResolver = registrableDomainResolver
 
         scriptsPublisher
             .sink { [weak self] scripts in
@@ -55,24 +45,27 @@ final class FaviconsTabExtension {
         guard let tab, error == nil else { return }
         let currentURL = tab.existingWebView?.url ?? tab.url
 
-        guard tab.requiresPrimaryWebView else {
-            favicon = nil
-            return
-        }
-
-        if faviconManagement.isCacheLoaded {
-            if let cachedFavicon = displayImage(from: cachedDisplayFavicon(for: currentURL)) {
-                if cachedFavicon != favicon {
-                    favicon = cachedFavicon
-                }
-            } else if previousURL?.host != currentURL.host {
-                favicon = nil
+        let partition = SumiFaviconSystem.shared.partition(profile: tab.resolveProfile())
+        if let cachedFavicon = TabFaviconStore.getCachedImage(
+            forDocumentURL: currentURL,
+            partition: partition,
+            context: .tabSidebar
+        ) {
+            if cachedFavicon != favicon {
+                favicon = cachedFavicon
             }
+        } else if previousURL?.host != currentURL.host {
+            favicon = nil
         }
 
         cachedFaviconLoadingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            guard let cachedFavicon = displayImage(from: await loadCachedDisplayFavicon(for: currentURL)) else { return }
+            guard let cachedFavicon = await TabFaviconStore.loadCachedDisplayImage(
+                forDocumentURL: currentURL,
+                partition: partition,
+                context: .tabSidebar,
+                priority: .visibleSidebarOrTabStrip
+            ) else { return }
             guard let tab = self.tab,
                   currentURL == (tab.existingWebView?.url ?? tab.url) else { return }
 
@@ -80,22 +73,6 @@ final class FaviconsTabExtension {
                 self.favicon = cachedFavicon
             }
         }
-    }
-
-    private func cachedDisplayFavicon(for currentURL: URL) -> Favicon? {
-        faviconManagement.getCachedDisplayFavicon(
-            for: currentURL,
-            baseDomain: registrableDomainResolver.registrableDomain(forHost: currentURL.host),
-            targetPixelSize: CGFloat(SumiFaviconImagePolicy.maxLauncherDisplayPixelSize)
-        )
-    }
-
-    private func loadCachedDisplayFavicon(for currentURL: URL) async -> Favicon? {
-        await faviconManagement.loadCachedDisplayFavicon(
-            for: currentURL,
-            baseDomain: registrableDomainResolver.registrableDomain(forHost: currentURL.host),
-            targetPixelSize: CGFloat(SumiFaviconImagePolicy.maxLauncherDisplayPixelSize)
-        )
     }
 
     deinit {
@@ -108,38 +85,55 @@ final class FaviconsTabExtension {
     }
 }
 
-extension FaviconsTabExtension: SumiDDGFaviconUserScriptDelegate {
+extension FaviconsTabExtension: SumiFaviconUserScriptDelegate {
     func faviconUserScript(
-        _ faviconUserScript: SumiDDGFaviconUserScript,
-        didFindFaviconLinks faviconLinks: [SumiDDGFaviconUserScript.FaviconLink],
-        for documentUrl: URL,
+        _ faviconUserScript: SumiFaviconUserScript,
+        didFindFaviconLinks faviconLinks: [SumiFaviconUserScript.FaviconLink],
+        documentUrl: URL,
+        baseURL: URL?,
         in webView: WKWebView?
     ) {
         guard let tab else { return }
         let currentURL = tab.existingWebView?.url ?? tab.url
-        guard documentUrl == currentURL else { return }
+        guard Self.documentURL(documentUrl, matches: currentURL) else { return }
 
-        faviconHandlingTask = Task { [weak self, faviconManagement] in
+        faviconHandlingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let handledFavicon = await faviconManagement.handleFaviconLinks(
-                faviconLinks,
-                documentUrl: documentUrl,
-                webView: webView
+            let partition = SumiFaviconSystem.shared.partition(profile: tab.resolveProfile())
+            let image = await SumiFaviconSystem.shared.service.ingestVisibleTabDiscovery(
+                links: faviconLinks.map(\.discoveredLink),
+                documentURL: documentUrl,
+                baseURL: baseURL,
+                partition: partition,
+                webView: webView,
+                aliasPageURLs: self.aliasPageURLs(for: tab, currentURL: currentURL)
             )
-            let displayFavicon = await self.loadCachedDisplayFavicon(for: documentUrl) ?? handledFavicon
-            if let image = self.displayImage(from: displayFavicon),
+            if let image,
                !Task.isCancelled,
                let tab = self.tab,
-               documentUrl == (tab.existingWebView?.url ?? tab.url)
+               Self.documentURL(documentUrl, matches: tab.existingWebView?.url ?? tab.url)
             {
                 self.favicon = image
             }
         }
     }
 
-    private func displayImage(from favicon: Favicon?) -> NSImage? {
-        favicon?.image?.sumiFaviconImageConstrained(
-            maxLongestSide: CGFloat(SumiFaviconImagePolicy.maxLauncherDisplayPixelSize)
-        )
+    nonisolated static func documentURL(_ documentURL: URL, matches currentURL: URL) -> Bool {
+        SumiFaviconCanonicalURL.equivalentPageURLs(documentURL, currentURL)
+    }
+
+    private func aliasPageURLs(for tab: Tab, currentURL: URL) -> [URL] {
+        var urls = [currentURL, tab.url]
+        if let shortcutPinId = tab.shortcutPinId,
+           let launchURL = tab.browserManager?.tabManager.shortcutPin(by: shortcutPinId)?.launchURL
+        {
+            urls.append(launchURL)
+        }
+
+        var seen = Set<String>()
+        return urls.filter { url in
+            let key = SumiFaviconCanonicalURL.pageKey(for: url)
+            return seen.insert(key).inserted
+        }
     }
 }

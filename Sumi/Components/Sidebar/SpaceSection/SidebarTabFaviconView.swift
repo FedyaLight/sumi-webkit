@@ -44,12 +44,9 @@ struct SidebarTabFaviconView: View {
                     .frame(width: size, height: size)
             } else {
                 tab.favicon
-                    .resizable()
-                    .scaledToFit()
                     .frame(width: size, height: size)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 

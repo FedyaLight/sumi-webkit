@@ -71,14 +71,12 @@ struct FloatingBarFaviconContainer<Content: View>: View {
     var body: some View {
         ZStack {
             content
-                .clipShape(iconShape)
         }
         .frame(
             width: FloatingBarSuggestionMetrics.iconContainerSize,
             height: FloatingBarSuggestionMetrics.iconContainerSize
         )
         .background(background)
-        .clipShape(iconShape)
     }
 
     private var iconShape: RoundedRectangle {

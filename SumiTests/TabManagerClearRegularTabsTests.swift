@@ -140,6 +140,44 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         XCTAssertEqual(tabManager.essentialPins(for: ownerProfileId).first?.id, pin.id)
     }
 
+    func testLauncherFaviconPartitionFallsBackToContainerProfileWhenExecutionProfileIsImplicit() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let tab = tabManager.createNewTab(url: "https://example.com/app", in: space, activate: false)
+        tab.profileId = profileId
+
+        let essentialPin = try XCTUnwrap(
+            tabManager.convertTabToShortcutPin(
+                tab,
+                role: .essential,
+                profileId: profileId,
+                spaceId: nil,
+                folderId: nil,
+                at: 0
+            )
+        )
+        XCTAssertNil(essentialPin.executionProfileId)
+        XCTAssertEqual(tabManager.resolvedExecutionProfileId(for: essentialPin), profileId)
+        XCTAssertEqual(tabManager.resolvedFaviconPartition(for: essentialPin), .regular(profileId))
+
+        let spacePinnedTab = tabManager.createNewTab(url: "https://example.com/space", in: space, activate: false)
+        spacePinnedTab.profileId = profileId
+        let spacePin = try XCTUnwrap(
+            tabManager.convertTabToShortcutPin(
+                spacePinnedTab,
+                role: .spacePinned,
+                profileId: nil,
+                spaceId: space.id,
+                folderId: nil,
+                at: 0
+            )
+        )
+        XCTAssertNil(spacePin.executionProfileId)
+        XCTAssertEqual(tabManager.resolvedExecutionProfileId(for: spacePin, currentSpaceId: space.id), profileId)
+        XCTAssertEqual(tabManager.resolvedFaviconPartition(for: spacePin, currentSpaceId: space.id), .regular(profileId))
+    }
+
     private func makeInMemoryTabManager() throws -> TabManager {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,

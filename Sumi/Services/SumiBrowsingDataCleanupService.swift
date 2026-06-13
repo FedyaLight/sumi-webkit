@@ -147,6 +147,7 @@ protocol SumiBrowsingDataFaviconCleaning: AnyObject {
         remainingHistoryHosts: Set<String>,
         savedLogins: Set<String>
     ) async
+    func invalidateSite(domain: String, partition: SumiFaviconPartition)
 }
 
 extension SumiFaviconSystem: SumiBrowsingDataFaviconCleaning {}
@@ -306,7 +307,7 @@ final class SumiBrowsingDataCleanupService {
             range: range,
             categories: categories,
             historyManager: historyManager,
-            profileDataStores: targetProfiles.map(\.dataStore),
+            targetProfiles: targetProfiles,
             targetProfileIds: Set(targetProfiles.map(\.id)),
             includeAllProfiles: includeAllProfiles
         )
@@ -316,7 +317,7 @@ final class SumiBrowsingDataCleanupService {
         range: SumiBrowsingDataTimeRange,
         categories: Set<SumiBrowsingDataCategory>,
         historyManager: HistoryManager,
-        profileDataStores: [WKWebsiteDataStore],
+        targetProfiles: [Profile],
         targetProfileIds: Set<UUID>,
         includeAllProfiles: Bool
     ) async {
@@ -349,13 +350,25 @@ final class SumiBrowsingDataCleanupService {
 
         let dataTypes = websiteDataTypes(for: categories)
         let includesCookies = categories.contains(.siteData)
-        for dataStore in profileDataStores {
+        for profile in targetProfiles {
+            let siteDataFaviconDomains = await siteDataFaviconDomainsToInvalidate(
+                range: range,
+                categories: categories,
+                domains: domains,
+                dataTypes: dataTypes,
+                includesCookies: includesCookies,
+                dataStore: profile.dataStore
+            )
             await clearWebsiteData(
                 range: range,
                 dataTypes: dataTypes,
                 includesCookies: includesCookies,
                 domains: domains,
-                dataStore: dataStore
+                dataStore: profile.dataStore
+            )
+            invalidateSiteDataFavicons(
+                domains: siteDataFaviconDomains,
+                partition: SumiFaviconPartition.regular(profile.id)
             )
         }
 
@@ -368,7 +381,7 @@ final class SumiBrowsingDataCleanupService {
 
         if includeAllProfiles,
            range == .allTime,
-           !profileDataStores.isEmpty,
+           !targetProfiles.isEmpty,
            categories.contains(.siteData) || categories.contains(.cache) {
             _ = await websiteDataCleanupService.prunePersistentDataStores(
                 keeping: targetProfileIds
@@ -604,6 +617,38 @@ final class SumiBrowsingDataCleanupService {
                 remainingHistoryHosts: [],
                 savedLogins: savedLogins
             )
+        }
+    }
+
+    private func siteDataFaviconDomainsToInvalidate(
+        range: SumiBrowsingDataTimeRange,
+        categories: Set<SumiBrowsingDataCategory>,
+        domains: Set<String>,
+        dataTypes: Set<String>,
+        includesCookies: Bool,
+        dataStore: WKWebsiteDataStore
+    ) async -> Set<String> {
+        guard categories.contains(.siteData) else { return [] }
+        guard !categories.contains(.history) else { return [] }
+
+        if range == .allTime {
+            return normalizeDomains(
+                await websiteDataDomains(
+                    ofTypes: dataTypes,
+                    includeCookies: includesCookies,
+                    in: dataStore
+                )
+            )
+        }
+        return domains
+    }
+
+    private func invalidateSiteDataFavicons(
+        domains: Set<String>,
+        partition: SumiFaviconPartition
+    ) {
+        for domain in domains {
+            faviconCacheCleaner.invalidateSite(domain: domain, partition: partition)
         }
     }
 

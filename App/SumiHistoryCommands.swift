@@ -27,6 +27,7 @@ struct SumiHistoryCommands: Commands {
         CommandMenu("History") {
             let _ = historyManager.revision
             let _ = menuFaviconInvalidator.revision
+            let faviconPartition = SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
 
             Button("Back") {
                 browserManager.goBackInActiveWindow()
@@ -68,17 +69,20 @@ struct SumiHistoryCommands: Commands {
                             case .tab(let tab):
                                 SumiCommandMenuLabels.site(
                                     SumiCommandMenuLabels.recentlyClosedTitle(for: item),
-                                    url: tab.url
+                                    url: tab.url,
+                                    partition: faviconPartition
                                 )
                             case .shortcutLiveInstance(let shortcut):
                                 SumiCommandMenuLabels.site(
                                     SumiCommandMenuLabels.recentlyClosedTitle(for: item),
-                                    url: shortcut.url
+                                    url: shortcut.url,
+                                    partition: faviconPartition
                                 )
                             case .shortcutLauncher(let shortcut):
                                 SumiCommandMenuLabels.site(
                                     SumiCommandMenuLabels.recentlyClosedTitle(for: item),
-                                    url: shortcut.pin.launchURL
+                                    url: shortcut.pin.launchURL,
+                                    partition: faviconPartition
                                 )
                             case .window:
                                 SumiCommandMenuLabels.system(
@@ -108,7 +112,11 @@ struct SumiHistoryCommands: Commands {
                     Button {
                         browserManager.openHistoryURLFromMenuItem(visit.url)
                     } label: {
-                        SumiCommandMenuLabels.site(visit.displayTitle, url: visit.url)
+                        SumiCommandMenuLabels.site(
+                            visit.displayTitle,
+                            url: visit.url,
+                            partition: faviconPartition
+                        )
                     }
                 }
             }

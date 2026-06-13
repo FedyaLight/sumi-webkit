@@ -44,6 +44,7 @@ final class SumiProfileMaintenanceService {
                 fallbackProfileId: replacement.id
             )
             await profile.clearAllData()
+            SumiFaviconSystem.shared.clearFaviconPartition(for: profile)
 
             let deleted = context.profileManager.deleteProfile(profile)
             if deleted == false {
