@@ -8,33 +8,14 @@ struct SpaceSnapshotPinnedTileView: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: configuration.cornerRadius, style: .continuous)
-                .fill(item.presentationState.isSelected ? tokens.pinnedActiveBackground : tokens.pinnedIdleBackground)
-                .overlay {
-                    if item.presentationState.isSelected && !item.showsSplitOutline {
-                        RoundedRectangle(cornerRadius: configuration.cornerRadius, style: .continuous)
-                            .inset(by: configuration.strokeWidth / 2)
-                            .stroke(tokens.sidebarSelectionShadow.opacity(0.35), lineWidth: configuration.strokeWidth)
-                    }
-                }
-
-            SpaceSnapshotIconView(
-                icon: item.icon,
-                size: configuration.faviconHeight,
-                cornerRadius: PinnedTileFaviconLayout.cornerRadius,
-                foregroundColor: tokens.primaryText
+            PinnedTileVisual(
+                tabIcon: pinnedTileTabIcon,
+                glyphText: pinnedTileGlyphText,
+                chromeTemplateSystemImageName: pinnedTileChromeTemplateSystemImageName,
+                presentationState: item.presentationState,
+                showsSplitGroupOutline: item.showsSplitOutline,
+                configuration: configuration
             )
-            .saturation(item.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
-            .opacity(item.presentationState.shouldDesaturateIcon ? 0.8 : 1.0)
-
-            if item.showsSplitOutline {
-                PinnedTileSplitGroupOutlineMask(
-                    corner: configuration.cornerRadius,
-                    thickness: max(1.25, configuration.strokeWidth * 0.7),
-                    strokeColor: tokens.accent
-                )
-                .allowsHitTesting(false)
-            }
 
             if item.showsAudioButton {
                 VStack {
@@ -59,5 +40,29 @@ struct SpaceSnapshotPinnedTileView: View {
             y: item.presentationState.isSelected ? 1 : 0
         )
         .accessibilityIdentifier("essential-shortcut-snapshot-\(item.id.uuidString)")
+    }
+
+    private var pinnedTileTabIcon: Image {
+        if case .image(let image) = item.icon {
+            return image
+        }
+
+        return Image(systemName: SumiPersistentGlyph.launcherSystemImageFallback)
+    }
+
+    private var pinnedTileGlyphText: String? {
+        if case .emoji(let emoji) = item.icon {
+            return emoji
+        }
+
+        return nil
+    }
+
+    private var pinnedTileChromeTemplateSystemImageName: String? {
+        if case .system(let systemName) = item.icon {
+            return systemName
+        }
+
+        return nil
     }
 }

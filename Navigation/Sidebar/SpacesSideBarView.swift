@@ -567,7 +567,12 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         return SpaceShortcutSnapshot(
             id: pin.id,
             title: pin.resolvedDisplayTitle(liveTab: liveTab),
-            icon: shortcutIcon(for: pin),
+            icon: shortcutIcon(
+                for: pin,
+                liveTab: liveTab,
+                browserManager: browserManager,
+                windowState: windowState
+            ),
             presentationState: presentationState,
             showsAudioButton: liveTab?.audioState.showsTabAudioButton ?? false,
             isMuted: liveTab?.audioState.isMuted ?? false,
@@ -609,7 +614,12 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         return .system("globe")
     }
 
-    private static func shortcutIcon(for pin: ShortcutPin) -> SpaceSidebarSnapshotIcon {
+    private static func shortcutIcon(
+        for pin: ShortcutPin,
+        liveTab: Tab?,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState
+    ) -> SpaceSidebarSnapshotIcon {
         if let iconAsset = pin.iconAsset {
             if SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
                 return .emoji(iconAsset)
@@ -617,11 +627,35 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             return .system(SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
         }
 
-        if let systemName = pin.storedChromeTemplateSystemImageName {
+        let faviconPartition = browserManager.tabManager.resolvedFaviconPartition(
+            for: pin,
+            currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
+        )
+
+        if let liveTab {
+            if SumiSurface.isSettingsSurfaceURL(liveTab.url) {
+                return .system(SumiSurface.settingsTabFaviconSystemImageName)
+            }
+
+            if let cachedFavicon = ShortcutPin.cachedLaunchFavicon(
+                for: pin.launchURL,
+                partition: faviconPartition
+            ) {
+                return .image(cachedFavicon)
+            }
+
+            if !liveTab.faviconIsTemplateGlobePlaceholder {
+                return .image(liveTab.favicon)
+            }
+
+            return .system(SumiPersistentGlyph.launcherSystemImageFallback)
+        }
+
+        if let systemName = pin.storedChromeTemplateSystemImageName(for: faviconPartition) {
             return .system(systemName)
         }
 
-        return .image(pin.storedFavicon)
+        return .image(pin.storedFaviconImage(partition: faviconPartition))
     }
 }
 
@@ -1231,10 +1265,6 @@ struct SpaceSnapshotIconView: View {
             switch icon {
             case .image(let image):
                 image
-                    .resizable()
-                    .interpolation(.high)
-                    .antialiased(true)
-                    .scaledToFit()
             case .system(let systemName):
                 Image(systemName: systemName)
                     .font(.system(size: size * 0.78, weight: .medium))
@@ -1249,7 +1279,6 @@ struct SpaceSnapshotIconView: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
 
