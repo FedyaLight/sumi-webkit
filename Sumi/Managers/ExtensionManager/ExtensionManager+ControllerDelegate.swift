@@ -312,7 +312,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             return nil
         }
 
-        await ensureContentScriptContextsLoaded(for: profileId)
+        await ensureInitialDocumentExtensionContextsLoaded(for: profileId)
         return profileId
     }
 

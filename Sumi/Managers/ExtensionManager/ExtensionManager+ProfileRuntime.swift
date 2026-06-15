@@ -390,6 +390,11 @@ extension ExtensionManager {
         profileHasLoadedContentScriptContexts(profileId: profileId) == false
     }
 
+    func profileNeedsInitialDocumentExtensionContextLoad(profileId: UUID) -> Bool {
+        profileNeedsContentScriptContextLoad(profileId: profileId)
+            || profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profileId)
+    }
+
     func ensureContentScriptContextsLoaded(for profileId: UUID) async {
         guard profileNeedsContentScriptContextLoad(profileId: profileId) else { return }
 
@@ -417,6 +422,93 @@ extension ExtensionManager {
         await task.value
     }
 
+    /// Prepares extension contexts needed by the first normal-tab document.
+    ///
+    /// Manifest content scripts are still loaded lazily, but extensions that combine
+    /// `content_scripts`, background content, and the required `nativeMessaging`
+    /// permission need their background page/service worker ready before the first
+    /// content-script message. Chrome/Firefox route native messaging through that
+    /// background context, and WebKit exposes `loadBackgroundContent` for the same
+    /// app-owned preflight without opening the action popup.
+    func ensureInitialDocumentExtensionContextsLoaded(for profileId: UUID) async {
+        await ensureContentScriptContextsLoaded(for: profileId)
+        await ensureInitialDocumentNativeMessagingBackgroundsLoaded(for: profileId)
+    }
+
+    private func ensureInitialDocumentNativeMessagingBackgroundsLoaded(
+        for profileId: UUID
+    ) async {
+        guard profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profileId)
+        else { return }
+
+        if let existingTask =
+            initialDocumentNativeMessagingWarmupTasksByProfile[profileId]
+        {
+            await existingTask.value
+            return
+        }
+
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                self.initialDocumentNativeMessagingWarmupTasksByProfile
+                    .removeValue(forKey: profileId)
+            }
+            guard Task.isCancelled == false else { return }
+
+            for entity in self.initialDocumentNativeMessagingWarmupEntities(
+                profileId: profileId
+            ) {
+                guard Task.isCancelled == false else { return }
+                guard let extensionContext = try? await self.ensureExtensionLoaded(
+                    extensionId: entity.id,
+                    profileId: profileId
+                ) else {
+                    continue
+                }
+                _ = try? await self.ensureBackgroundAvailableIfRequired(
+                    for: extensionContext.webExtension,
+                    context: extensionContext,
+                    reason: .nativeMessaging
+                )
+            }
+        }
+        initialDocumentNativeMessagingWarmupTasksByProfile[profileId] = task
+        await task.value
+    }
+
+    func profileNeedsInitialDocumentNativeMessagingWarmup(profileId: UUID) -> Bool {
+        initialDocumentNativeMessagingWarmupEntities(profileId: profileId).contains {
+            backgroundRuntimeState(for: $0.id, profileId: profileId) != .loaded
+        }
+    }
+
+    private func initialDocumentNativeMessagingWarmupEntities(
+        profileId: UUID
+    ) -> [ExtensionEntity] {
+        enabledPersistedExtensionEntities().filter { entity in
+            entity.isEnabled
+                && entity.hasContentScripts
+                && entity.hasBackground
+                && extensionDeclaresNativeMessaging(entity)
+                && backgroundRuntimeState(for: entity.id, profileId: profileId) != .loaded
+        }
+    }
+
+    private func extensionDeclaresNativeMessaging(_ entity: ExtensionEntity) -> Bool {
+        let manifest =
+            loadedExtensionManifests[entity.id]
+            ?? installedExtensions.first(where: { $0.id == entity.id })?.manifest
+            ?? InstalledExtensionRecord(from: entity)?.manifest
+            ?? [:]
+        let permissions = Self.manifestStringArray(from: manifest["permissions"])
+        return permissions.contains("nativeMessaging")
+    }
+
+    private nonisolated static func manifestStringArray(from value: Any?) -> [String] {
+        value as? [String] ?? []
+    }
+
     func scheduleDeferredTabNotificationAfterContextLoad(
         _ tab: Tab,
         profileId: UUID,
@@ -425,7 +517,7 @@ extension ExtensionManager {
         let tabId = tab.id
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await self.ensureContentScriptContextsLoaded(for: profileId)
+            await self.ensureInitialDocumentExtensionContextsLoaded(for: profileId)
             guard let resolvedTab = self.browserManager?.tabManager.tab(for: tabId) else { return }
             self.reconcileTabAfterContentScriptContextsLoaded(
                 resolvedTab,
@@ -439,6 +531,12 @@ extension ExtensionManager {
         reason: String = #function
     ) {
         guard tab.isEphemeral == false else { return }
+        if tab.lastExtensionOpenNotificationGeneration == tabOpenNotificationGeneration,
+           tab.extensionRuntimeOpenNotifiedDocumentSequence == tab.extensionRuntimeDocumentSequence,
+           tab.extensionRuntimeOpenNotifiedWithLoadedContexts == true
+        {
+            return
+        }
 
         if tab.extensionRuntimeDocumentSequence > 0,
            tabNeedsExtensionContentScriptRebind(tab)

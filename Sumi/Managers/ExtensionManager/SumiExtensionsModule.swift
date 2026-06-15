@@ -232,6 +232,19 @@ final class SumiExtensionsModule {
             .ensureContentScriptContextsLoaded(for: profileId)
     }
 
+    func ensureInitialDocumentExtensionContextsLoadedIfNeeded(profileId: UUID) async {
+        guard isEnabled else { return }
+        await managerIfNeededForNormalTabRuntime()?
+            .ensureInitialDocumentExtensionContextsLoaded(for: profileId)
+    }
+
+    func needsInitialDocumentExtensionContextLoadIfNeeded(profileId: UUID) -> Bool {
+        guard isEnabled else { return false }
+        return managerIfNeededForNormalTabRuntime()?
+            .profileNeedsInitialDocumentExtensionContextLoad(profileId: profileId)
+            ?? false
+    }
+
     func consumeRecentlyOpenedExtensionTabRequestIfLoaded(for url: URL) -> Bool {
         managerIfLoadedAndEnabled()?.consumeRecentlyOpenedExtensionTabRequest(
             for: url

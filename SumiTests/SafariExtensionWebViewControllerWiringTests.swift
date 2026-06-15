@@ -297,6 +297,216 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
+    func testNormalTabSetupDelaysOpenNotificationUntilInitialDocumentWarmup() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            initialProfileProvider: { profile }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
+        extensionsModule.attach(browserManager: browserManager)
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+
+        let scratchDirectory = try makeScratchDirectory()
+        let manager = try XCTUnwrap(extensionsModule.managerIfEnabled())
+        let installed = try await installContentScriptNativeMessagingProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+        _ = try await manager.enableExtension(installed.id)
+        manager.unloadExtensionContextIfLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        manager.extensionsLoaded = true
+
+        XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+
+        let pageURL = URL(string: "https://example.com/login")!
+        let tab = browserManager.tabManager.createNewTab(
+            url: pageURL.absoluteString,
+            in: space,
+            activate: false
+        )
+        tab.profileId = profile.id
+
+        var didOpenCount = 0
+        let didOpenExpectation = expectation(description: "didOpenTab after warmup")
+        manager.testHooks.didOpenTab = { tabID in
+            guard tabID == tab.id else { return }
+            didOpenCount += 1
+            if didOpenCount == 1 {
+                didOpenExpectation.fulfill()
+            }
+        }
+        defer {
+            manager.testHooks.didOpenTab = nil
+        }
+
+        let webView = try XCTUnwrap(tab.ensureWebView())
+        XCTAssertIdentical(
+            webView.configuration.webExtensionController,
+            manager.ensureExtensionController(for: profile.id)
+        )
+        XCTAssertEqual(
+            didOpenCount,
+            0,
+            "Tab.setupWebView must not notify extensions before initial-document context warmup"
+        )
+
+        await fulfillment(of: [didOpenExpectation], timeout: 3.0)
+        XCTAssertEqual(didOpenCount, 1)
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+        XCTAssertTrue(tab.didNotifyOpenToExtensions)
+        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+
+        for _ in 0..<5 {
+            await Task.yield()
+            if let contentScriptTask =
+                manager.contentScriptContextLoadTasksByProfile[profile.id]
+            {
+                await contentScriptTask.value
+            }
+            if let nativeMessagingTask =
+                manager.initialDocumentNativeMessagingWarmupTasksByProfile[profile.id]
+            {
+                await nativeMessagingTask.value
+            }
+        }
+        webView.stopLoading()
+    }
+
+    func testVisibleTabSelectionDefersInitialWebViewCreationUntilNativeMessagingWarmup()
+        async throws
+    {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            initialProfileProvider: { profile }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        let windowState = BrowserWindowState()
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let manager = try XCTUnwrap(extensionsModule.managerIfEnabled())
+        let installed = try await installContentScriptNativeMessagingProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+        _ = try await manager.enableExtension(installed.id)
+        manager.unloadExtensionContextIfLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        manager.extensionsLoaded = true
+
+        var backgroundWakeCount = 0
+        let backgroundWakeExpectation = expectation(
+            description: "nativeMessaging warmup before WebView creation"
+        )
+        manager.testHooks.backgroundContentWake = { _, _ in
+            backgroundWakeCount += 1
+            backgroundWakeExpectation.fulfill()
+        }
+        defer {
+            manager.testHooks.backgroundContentWake = nil
+        }
+
+        let pageURL = URL(string: "https://example.com/login")!
+        let tab = browserManager.tabManager.createNewTab(
+            url: pageURL.absoluteString,
+            in: space,
+            activate: false
+        )
+        tab.profileId = profile.id
+        windowState.currentTabId = tab.id
+
+        let coordinator = try XCTUnwrap(browserManager.webViewCoordinator)
+        XCTAssertTrue(
+            extensionsModule.needsInitialDocumentExtensionContextLoadIfNeeded(
+                profileId: profile.id
+            )
+        )
+        browserManager.selectTab(tab, in: windowState, loadPolicy: .immediate)
+        XCTAssertNil(tab.existingWebView)
+        XCTAssertNil(coordinator.getWebView(for: tab.id, in: windowState.id))
+
+        await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
+        XCTAssertEqual(backgroundWakeCount, 1)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .loaded
+        )
+
+        var createdWebView: WKWebView?
+        for _ in 0..<20 {
+            await Task.yield()
+            createdWebView = coordinator.getOrCreateWebView(
+                for: tab,
+                in: windowState.id
+            )
+            if createdWebView != nil {
+                break
+            }
+        }
+        let webView = try XCTUnwrap(createdWebView)
+        XCTAssertIdentical(tab.existingWebView, webView)
+        XCTAssertIdentical(
+            webView.configuration.webExtensionController,
+            manager.ensureExtensionController(for: profile.id)
+        )
+    }
+
     func testExtensionRequestedInternalTabUsesContextConfigurationAndStaysRuntimeOwned() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Extension Page Profile")
@@ -1185,6 +1395,71 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
     }
 
+    func testNotifyTabOpenedDefersUntilInitialDocumentNativeMessagingWarmup() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        _ = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+
+        let browserManager = BrowserManager()
+        manager.attach(browserManager: browserManager)
+        browserManager.profileManager.profiles = [profile]
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptNativeMessagingProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+        let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
+        entity.isEnabled = true
+        try container.mainContext.save()
+        _ = manager.loadInstalledExtensionMetadata()
+
+        await manager.ensureContentScriptContextsLoaded(for: profile.id)
+
+        var backgroundWakeCount = 0
+        let backgroundWakeExpectation = expectation(description: "nativeMessaging warmup")
+        manager.testHooks.backgroundContentWake = { _, _ in
+            backgroundWakeCount += 1
+            backgroundWakeExpectation.fulfill()
+        }
+        defer {
+            manager.testHooks.backgroundContentWake = nil
+        }
+
+        let tab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "https://example.com/login")!
+        )
+        tab.browserManager = browserManager
+        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        attachUsableExtensionWebView(
+            to: tab,
+            manager: manager,
+            profile: profile
+        )
+
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+        XCTAssertTrue(manager.profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profile.id))
+        XCTAssertFalse(manager.notifyTabOpened(tab))
+        XCTAssertFalse(tab.didNotifyOpenToExtensions)
+
+        await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
+        XCTAssertEqual(backgroundWakeCount, 1)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .loaded
+        )
+    }
+
     func testNotifyTabOpenedDefersUntilLiveWebViewExists() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
@@ -1539,6 +1814,158 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertEqual(
             manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
             .neverLoaded
+        )
+    }
+
+    func testDeferredTabNotificationWaitsForInitialDocumentNativeMessagingWarmup() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptNativeMessagingProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+
+        let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
+        entity.isEnabled = true
+        try container.mainContext.save()
+        _ = manager.loadInstalledExtensionMetadata()
+
+        var backgroundWakeCount = 0
+        let backgroundWakeExpectation = expectation(description: "nativeMessaging background wake")
+        manager.testHooks.backgroundContentWake = { _, _ in
+            backgroundWakeCount += 1
+            backgroundWakeExpectation.fulfill()
+        }
+
+        await manager.ensureContentScriptContextsLoaded(for: profile.id)
+
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+        XCTAssertEqual(backgroundWakeCount, 0)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .neverLoaded
+        )
+        XCTAssertTrue(
+            manager.profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profile.id)
+        )
+        XCTAssertTrue(
+            manager.profileNeedsInitialDocumentExtensionContextLoad(profileId: profile.id)
+        )
+
+        let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
+        let tab = makeTab(profileId: profile.id, url: pageURL)
+        defer {
+            manager.testHooks.backgroundContentWake = nil
+        }
+
+        manager.scheduleDeferredTabNotificationAfterContextLoad(
+            tab,
+            profileId: profile.id,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
+        for _ in 0..<5 {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(backgroundWakeCount, 1)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .loaded
+        )
+    }
+
+    func testInitialDocumentWarmupDoesNotWakeBackgroundWithoutNativeMessaging() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptBackgroundProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+
+        let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
+        entity.isEnabled = true
+        try container.mainContext.save()
+        _ = manager.loadInstalledExtensionMetadata()
+
+        var backgroundWakeCount = 0
+        manager.testHooks.backgroundContentWake = { _, _ in
+            backgroundWakeCount += 1
+        }
+
+        await manager.ensureInitialDocumentExtensionContextsLoaded(for: profile.id)
+
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+        XCTAssertEqual(backgroundWakeCount, 0)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .neverLoaded
+        )
+    }
+
+    func testInitialDocumentWarmupWakesBackgroundForNativeMessagingContentScripts() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptNativeMessagingProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+
+        let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
+        entity.isEnabled = true
+        try container.mainContext.save()
+        _ = manager.loadInstalledExtensionMetadata()
+
+        var backgroundWakeCount = 0
+        manager.testHooks.backgroundContentWake = { _, _ in
+            backgroundWakeCount += 1
+        }
+
+        await manager.ensureInitialDocumentExtensionContextsLoaded(for: profile.id)
+
+        let context = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+        let nativeMessagingPermission = WKWebExtension.Permission(rawValue: "nativeMessaging")
+        XCTAssertTrue(context.isLoaded)
+        XCTAssertTrue(
+            manager.isGrantedPermissionStatus(
+                context.permissionStatus(for: nativeMessagingPermission)
+            )
+        )
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+        XCTAssertEqual(backgroundWakeCount, 1)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .loaded
+        )
+        XCTAssertEqual(
+            manager.runtimeMetricsByExtensionID[
+                manager.backgroundScopedKey(
+                    extensionId: installed.id,
+                    profileId: profile.id
+                )
+            ]?.lastBackgroundWakeReason,
+            .nativeMessaging
         )
     }
 
@@ -2132,6 +2559,47 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         try Data("true;".utf8)
             .write(to: directoryURL.appendingPathComponent("content.js"), options: [.atomic])
         try Data("globalThis.__sumiBackgroundProbe = true;".utf8)
+            .write(to: directoryURL.appendingPathComponent("background.js"), options: [.atomic])
+
+        return try await manager.performInstallation(
+            from: directoryURL,
+            enableOnInstall: false
+        )
+    }
+
+    private func installContentScriptNativeMessagingProbeExtension(
+        manager: ExtensionManager,
+        scratchDirectory: URL
+    ) async throws -> InstalledExtension {
+        let directoryURL = scratchDirectory.appendingPathComponent(
+            "ContentScriptNativeMessagingProbe",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true
+        )
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "ContentScriptNativeMessagingProbe",
+            "version": "1.0",
+            "permissions": ["nativeMessaging"],
+            "host_permissions": ["<all_urls>"],
+            "background": [
+                "service_worker": "background.js",
+            ],
+            "content_scripts": [[
+                "matches": ["<all_urls>"],
+                "js": ["content.js"],
+                "run_at": "document_start",
+            ]],
+        ]
+        let manifestURL = directoryURL.appendingPathComponent("manifest.json")
+        try JSONSerialization.data(withJSONObject: manifest, options: [.sortedKeys])
+            .write(to: manifestURL, options: [.atomic])
+        try Data("browser.runtime.sendMessage({kind:'probe'});".utf8)
+            .write(to: directoryURL.appendingPathComponent("content.js"), options: [.atomic])
+        try Data("globalThis.__sumiNativeMessagingBackgroundProbe = true;".utf8)
             .write(to: directoryURL.appendingPathComponent("background.js"), options: [.atomic])
 
         return try await manager.performInstallation(

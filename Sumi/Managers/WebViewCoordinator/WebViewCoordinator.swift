@@ -316,6 +316,12 @@ class WebViewCoordinator {
     private var scheduledPrepareWindowIds: Set<UUID> = []
 
     @ObservationIgnored
+    private var initialDocumentWarmupInFlightProfileIds: Set<UUID> = []
+
+    @ObservationIgnored
+    private var initialDocumentWarmupAttemptedProfileIds: Set<UUID> = []
+
+    @ObservationIgnored
     weak var browserManager: BrowserManager?
 
     @ObservationIgnored
@@ -909,6 +915,13 @@ class WebViewCoordinator {
         if let adoptedWebView = adoptExistingPrimaryWebViewIfNeeded(for: tab, in: windowId) {
             return adoptedWebView
         }
+
+        if deferWebViewCreationForInitialDocumentWarmupIfNeeded(
+            tab,
+            windowId: windowId
+        ) {
+            return nil
+        }
         
         // Check if another window already has this tab displayed
         let allWindowsForTab = webViewsByTabAndWindow[tabId] ?? [:]
@@ -926,6 +939,54 @@ class WebViewCoordinator {
             
             return cloneWebView
         }
+    }
+
+    private func deferWebViewCreationForInitialDocumentWarmupIfNeeded(
+        _ tab: Tab,
+        windowId: UUID
+    ) -> Bool {
+        guard tab.isEphemeral == false,
+              isInitialDocumentExtensionWarmupURL(tab.url),
+              let profileId = tab.resolveProfile()?.id ?? tab.profileId,
+              let browserManager = tab.browserManager ?? self.browserManager
+        else {
+            return false
+        }
+
+        if initialDocumentWarmupInFlightProfileIds.contains(profileId) {
+            return true
+        }
+
+        guard initialDocumentWarmupAttemptedProfileIds.contains(profileId) == false,
+              browserManager.extensionsModule
+                .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
+        else {
+            return false
+        }
+
+        initialDocumentWarmupAttemptedProfileIds.insert(profileId)
+        initialDocumentWarmupInFlightProfileIds.insert(profileId)
+
+        Task { @MainActor [weak self, weak browserManager] in
+            await browserManager?.extensionsModule
+                .ensureInitialDocumentExtensionContextsLoadedIfNeeded(
+                    profileId: profileId
+                )
+            guard let self else { return }
+            self.initialDocumentWarmupInFlightProfileIds.remove(profileId)
+
+            guard let browserManager,
+                  let windowState = browserManager.windowRegistry?.windows[windowId]
+            else { return }
+            browserManager.refreshCompositor(for: windowState)
+        }
+
+        return true
+    }
+
+    private func isInitialDocumentExtensionWarmupURL(_ url: URL) -> Bool {
+        let scheme = url.scheme?.lowercased()
+        return scheme == "http" || scheme == "https"
     }
     
     /// Creates the "primary" WebView - the first WebView for a tab
@@ -986,7 +1047,7 @@ class WebViewCoordinator {
                 if let profileId,
                    let extensionsModule = tab?.browserManager?.extensionsModule
                 {
-                    await extensionsModule.ensureContentScriptContextsLoadedIfNeeded(
+                    await extensionsModule.ensureInitialDocumentExtensionContextsLoadedIfNeeded(
                         profileId: profileId
                     )
                 }

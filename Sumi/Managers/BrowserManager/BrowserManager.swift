@@ -2007,15 +2007,29 @@ class BrowserManager: ObservableObject {
 
         switch loadPolicy {
         case .immediate:
-            compositorManager.loadTab(tab)
+            materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
         case .deferred:
             Task { @MainActor [weak self, weak tab] in
                 guard let self, let tab else { return }
                 await Task.yield()
                 guard self.currentTab(for: windowState)?.id == tab.id else { return }
-                self.compositorManager.loadTab(tab)
+                self.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
                 self.refreshCompositor(for: windowState)
             }
+        }
+    }
+
+    func materializeVisibleTabWebViewIfNeeded(
+        _ tab: Tab,
+        in windowState: BrowserWindowState
+    ) {
+        compositorManager.markTabAccessed(tab.id)
+        guard let webViewCoordinator else {
+            tab.loadWebViewIfNeeded()
+            return
+        }
+        if webViewCoordinator.getWebView(for: tab.id, in: windowState.id) == nil {
+            _ = webViewCoordinator.getOrCreateWebView(for: tab, in: windowState.id)
         }
     }
 

@@ -307,7 +307,15 @@ extension Tab {
             applyOwnedTabWebViewNavigationPreferences(to: webView)
         }
 
-        registerNormalTabWithExtensionRuntimeIfNeeded(reason: "Tab.setupWebView")
+        let shouldDelayInitialNormalTabRuntimeRegistration =
+            !isPopupHost
+            && _existingWebView == nil
+            && didCreateAuxiliaryOverrideWebView == false
+            && Self.isInitialDocumentExtensionWarmupURL(url)
+
+        if shouldDelayInitialNormalTabRuntimeRegistration == false {
+            registerNormalTabWithExtensionRuntimeIfNeeded(reason: "Tab.setupWebView")
+        }
 
         if didCreateAuxiliaryOverrideWebView,
            ExtensionUtils.isExtensionOwnedURL(url),
@@ -318,7 +326,7 @@ extension Tab {
             return
         }
 
-        if !isPopupHost && _existingWebView == nil {
+        if shouldDelayInitialNormalTabRuntimeRegistration {
             if let controller = _webView?.configuration.userContentController.sumiNormalTabUserContentController {
                 let initialWebView = _webView
                 let targetURL = url
@@ -330,7 +338,7 @@ extension Tab {
                     if let profileId,
                        let extensionsModule = self?.browserManager?.extensionsModule
                     {
-                        await extensionsModule.ensureContentScriptContextsLoadedIfNeeded(
+                        await extensionsModule.ensureInitialDocumentExtensionContextsLoadedIfNeeded(
                             profileId: profileId
                         )
                     }
@@ -353,7 +361,7 @@ extension Tab {
                     if let profileId,
                        let extensionsModule = self?.browserManager?.extensionsModule
                     {
-                        await extensionsModule.ensureContentScriptContextsLoadedIfNeeded(
+                        await extensionsModule.ensureInitialDocumentExtensionContextsLoadedIfNeeded(
                             profileId: profileId
                         )
                     }
@@ -367,6 +375,11 @@ extension Tab {
         }
 
         finishSuspendedRestoreIfNeeded()
+    }
+
+    private static func isInitialDocumentExtensionWarmupURL(_ url: URL) -> Bool {
+        let scheme = url.scheme?.lowercased()
+        return scheme == "http" || scheme == "https"
     }
 
     private func loadExtensionOwnedInitialURL(_ targetURL: URL, on webView: WKWebView) {

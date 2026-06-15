@@ -1026,7 +1026,12 @@ class TabManager: ObservableObject {
         
             // Load the tab in compositor if it's the current tab
             if tab.id == currentTab?.id {
-                browserManager?.compositorManager.loadTab(tab)
+                if let browserManager,
+                   let activeWindow = browserManager.windowRegistry?.activeWindow {
+                    browserManager.materializeVisibleTabWebViewIfNeeded(tab, in: activeWindow)
+                } else {
+                    browserManager?.compositorManager.loadTab(tab)
+                }
             }
         
             RuntimeDiagnostics.debug("Added regular tab '\(tab.name)' to space \(sid.uuidString).", category: "TabManager")

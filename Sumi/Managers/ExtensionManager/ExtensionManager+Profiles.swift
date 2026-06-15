@@ -193,12 +193,12 @@ extension ExtensionManager {
             return false
         }
 
-        let contextsReady = profileHasLoadedContentScriptContexts(profileId: profileId)
+        let contextsReady = profileNeedsInitialDocumentExtensionContextLoad(profileId: profileId) == false
         guard contextsReady else {
             SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
                 injected: false,
                 extensionId: nil,
-                reason: "notifyTabOpenedContextsNotLoaded",
+                reason: "notifyTabOpenedInitialDocumentContextsNotLoaded",
                 pageURL: tab.url
             )
             scheduleDeferredTabNotificationAfterContextLoad(
@@ -229,14 +229,14 @@ extension ExtensionManager {
         extensionRuntimeTrace(
             "didOpenTab start generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) controller=\(extensionRuntimeControllerDescription(controller)) \(extensionRuntimeTabDescription(tab)) adapter=\(extensionRuntimeObjectDescription(adapter))"
         )
-        controller.didOpenTab(adapter)
-        #if DEBUG
-            testHooks.didOpenTab?(tab.id)
-        #endif
         tab.extensionRuntimeOpenNotifiedDocumentSequence = tab.extensionRuntimeDocumentSequence
         tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration =
             extensionContextBindingGeneration(for: profileId)
         tab.extensionRuntimeOpenNotifiedWithLoadedContexts = true
+        controller.didOpenTab(adapter)
+        #if DEBUG
+            testHooks.didOpenTab?(tab.id)
+        #endif
         SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
             injected: true,
             extensionId: nil,
@@ -1165,6 +1165,12 @@ extension ExtensionManager {
         }
         guard tab.isEphemeral == false else { return }
         guard isExtensionInjectableCommittedURL(destinationURL) else { return }
+        if tab.extensionRuntimeDocumentSequence == 0,
+           tab.extensionRuntimeOpenNotifiedDocumentSequence == 0,
+           tab.extensionRuntimeOpenNotifiedWithLoadedContexts == true
+        {
+            return
+        }
 
         tab.lastExtensionOpenNotificationGeneration = 0
         extensionRuntimeTrace(
@@ -1185,7 +1191,7 @@ extension ExtensionManager {
         ensureExtensionControllerAttachedForTab(tab, reason: reason)
 
         if let profileId = resolvedProfileId(for: tab),
-           profileNeedsContentScriptContextLoad(profileId: profileId)
+           profileNeedsInitialDocumentExtensionContextLoad(profileId: profileId)
         {
             scheduleDeferredTabNotificationAfterContextLoad(
                 tab,

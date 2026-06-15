@@ -376,7 +376,6 @@ final class SplitViewManager: ObservableObject {
                 excludingGroupId: group.id
             )
             tm.upsertSplitGroup(group)
-            bm.compositorManager.loadTab(resolvedIncoming.tab)
             bm.selectTab(resolvedIncoming.tab, in: windowState)
             bm.refreshCompositor(for: windowState)
             notifyChanged(for: windowState.id)
@@ -420,8 +419,6 @@ final class SplitViewManager: ObservableObject {
             excludingGroupId: group.id
         )
         tm.upsertSplitGroup(group)
-        bm.compositorManager.loadTab(resolvedAnchor.tab)
-        bm.compositorManager.loadTab(resolvedIncoming.tab)
         bm.selectTab(resolvedIncoming.tab, in: windowState)
         bm.refreshCompositor(for: windowState)
         notifyChanged(for: windowState.id)

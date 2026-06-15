@@ -196,6 +196,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var tabOpenNotificationGeneration: UInt64 = 1
     var extensionContextBindingGenerationByProfile: [UUID: UInt64] = [:]
     var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
+    var initialDocumentNativeMessagingWarmupTasksByProfile: [UUID: Task<Void, Never>] = [:]
     var extensionPermissionPromptQueue: [@MainActor () -> Void] = []
     var isPresentingExtensionPermissionPrompt = false
     var extensionPermissionPromptWaitersByKey:

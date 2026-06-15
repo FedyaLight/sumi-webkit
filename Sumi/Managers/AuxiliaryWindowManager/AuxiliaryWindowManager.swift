@@ -344,7 +344,9 @@ final class AuxiliaryWindowManager {
             ?? browserManager.currentProfile?.id
 
         if let profileId {
-            await extensionManager.ensureContentScriptContextsLoaded(for: profileId)
+            await extensionManager.ensureInitialDocumentExtensionContextsLoaded(
+                for: profileId
+            )
         }
 
         let firstURL = configuration.tabURLs.first

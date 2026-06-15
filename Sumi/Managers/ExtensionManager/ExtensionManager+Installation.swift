@@ -1719,9 +1719,10 @@ extension ExtensionManager {
         webExtension: WKWebExtension,
         manifest: [String: Any]
     ) {
-        let permissions = RuntimeDiagnostics.isRunningTests
+        var permissions = RuntimeDiagnostics.isRunningTests
             ? webExtension.requestedPermissions.union(webExtension.optionalPermissions)
             : webExtension.requestedPermissions
+        permissions.formUnion(Self.requiredManifestWebExtensionPermissions(from: manifest))
 
         for permission in permissions {
             if shouldDenyAutoGrantForWebKitRuntime(permission, manifest: manifest) {
@@ -1730,6 +1731,24 @@ extension ExtensionManager {
             }
             extensionContext.setPermissionStatus(.grantedExplicitly, for: permission)
         }
+    }
+
+    private static func requiredManifestWebExtensionPermissions(
+        from manifest: [String: Any]
+    ) -> Set<WKWebExtension.Permission> {
+        Set(
+            installationManifestStringArray(from: manifest["permissions"])
+                .filter { isManifestWebExtensionPermission($0) }
+                .map { WKWebExtension.Permission(rawValue: $0) }
+        )
+    }
+
+    private static func installationManifestStringArray(from value: Any?) -> [String] {
+        value as? [String] ?? []
+    }
+
+    private static func isManifestWebExtensionPermission(_ value: String) -> Bool {
+        (try? WKWebExtension.MatchPattern(string: value)) == nil
     }
 
     func shouldDenyAutoGrantForWebKitRuntime(
