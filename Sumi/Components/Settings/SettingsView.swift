@@ -387,7 +387,6 @@ struct SumiExtensionsSettingsPane: View {
     @EnvironmentObject private var browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @State private var busyExtensionIDs: Set<String> = []
-    @State private var statusMessage: String?
     @State private var extensionPendingRemoval: InstalledExtension?
     @State private var extensionOperationTasks: [String: Task<Void, Never>] = [:]
 
@@ -471,11 +470,6 @@ struct SumiExtensionsSettingsPane: View {
         installedExtensions: [InstalledExtension]
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            if let statusMessage {
-                Text(statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
 
             SettingsSection(
                 title: "Installed Extensions",
@@ -546,7 +540,7 @@ struct SumiExtensionsSettingsPane: View {
             ) {
                 SafariExtensionImportCandidatesSection(
                     installedExtensions: installedExtensions,
-                    onStatus: { statusMessage = $0 }
+                    onStatus: { _ in }
                 )
             }
         }
@@ -556,24 +550,18 @@ struct SumiExtensionsSettingsPane: View {
         extensionOperationTasks[extensionRecord.id]?.cancel()
         busyExtensionIDs.insert(extensionRecord.id)
         extensionOperationTasks[extensionRecord.id] = Task { @MainActor in
-            let nextStatusMessage: String
             do {
                 if extensionRecord.isEnabled {
                     try await browserManager.extensionsModule.disableExtension(
                         extensionRecord.id
                     )
-                    nextStatusMessage = "Disabled \(extensionRecord.name)."
                 } else {
-                    let enabled = try await browserManager.extensionsModule.enableExtension(
+                    _ = try await browserManager.extensionsModule.enableExtension(
                         extensionRecord.id
                     )
-                    nextStatusMessage = "Enabled \(enabled.name)."
                 }
-            } catch {
-                nextStatusMessage = error.localizedDescription
-            }
+            } catch {}
             guard !Task.isCancelled else { return }
-            statusMessage = nextStatusMessage
             busyExtensionIDs.remove(extensionRecord.id)
             extensionOperationTasks[extensionRecord.id] = nil
         }
@@ -583,17 +571,12 @@ struct SumiExtensionsSettingsPane: View {
         extensionOperationTasks[extensionRecord.id]?.cancel()
         busyExtensionIDs.insert(extensionRecord.id)
         extensionOperationTasks[extensionRecord.id] = Task { @MainActor in
-            let nextStatusMessage: String
             do {
                 try await browserManager.extensionsModule.uninstallExtension(
                     extensionRecord.id
                 )
-                nextStatusMessage = "Removed \(extensionRecord.name)."
-            } catch {
-                nextStatusMessage = error.localizedDescription
-            }
+            } catch {}
             guard !Task.isCancelled else { return }
-            statusMessage = nextStatusMessage
             busyExtensionIDs.remove(extensionRecord.id)
             extensionOperationTasks[extensionRecord.id] = nil
         }
@@ -741,34 +724,7 @@ private struct ExtensionCatalogRow: View {
     }
 
     private var rowSummary: String {
-        var parts = ["Version \(extensionRecord.version)"]
-        if showsWebsiteAccessControls {
-            parts.append("Website access: \(defaultSiteAccess.title)")
-        }
-        if privateAccessAllowed {
-            parts.append("Private Browsing")
-        }
-        return parts.joined(separator: " - ")
-    }
-
-    private var showsWebsiteAccessControls: Bool {
-        extensionRecord.activationSummary.matchPatternStrings.isEmpty == false
-            || optionalHostPermissionStrings.isEmpty == false
-            || optionalPermissionHostPatternStrings.isEmpty == false
-    }
-
-    private var optionalHostPermissionStrings: [String] {
-        extensionRecord.manifest["optional_host_permissions"] as? [String] ?? []
-    }
-
-    private var optionalPermissionHostPatternStrings: [String] {
-        (extensionRecord.manifest["optional_permissions"] as? [String] ?? [])
-            .filter {
-                $0 == "<all_urls>"
-                    || $0.hasPrefix("http://")
-                    || $0.hasPrefix("https://")
-                    || $0.hasPrefix("*://")
-            }
+        "Version \(extensionRecord.version)"
     }
 
     private func syncSiteAccessState() {
