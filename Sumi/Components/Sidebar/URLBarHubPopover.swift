@@ -99,8 +99,14 @@ struct URLBarHubPopover: View {
 
     private var showsExtensionSection: Bool {
         let sumiScriptsEnabled = browserManager.userscriptsModule.isEnabled
-        return !extensionSurfaceStore.enabledExtensions.isEmpty
+        return !unpinnedEnabledExtensionActions.isEmpty
             || sumiScriptsEnabled
+    }
+
+    private var unpinnedEnabledExtensionActions: [InstalledExtension] {
+        extensionSurfaceStore.enabledExtensions
+            .filter(\.hasAction)
+            .filter { browserManager.extensionsModule.isPinnedToToolbar($0.id) == false }
     }
 
     private var permissionDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies {
@@ -379,7 +385,7 @@ struct URLBarHubPopover: View {
             )
 
             ExtensionActionView(
-                extensions: extensionSurfaceStore.enabledExtensions,
+                extensions: unpinnedEnabledExtensionActions,
                 layout: .hubTiles
             )
             .environmentObject(browserManager)

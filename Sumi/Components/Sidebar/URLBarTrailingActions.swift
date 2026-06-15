@@ -19,6 +19,7 @@ extension URLBarView {
             let showsZoomButton = shouldShowZoomButton(for: currentTab)
             let permissionIndicatorState = permissionIndicatorDisplayState(for: currentTab)
             HStack(spacing: 6) {
+                urlBarExtensionActions
                 copyLinkButton(for: currentTab)
                 hubButton
                 if permissionIndicatorState.isVisible {
@@ -54,6 +55,27 @@ extension URLBarView {
             .animation(.smooth(duration: 0.18), value: showsZoomButton)
             .animation(.smooth(duration: 0.18), value: permissionIndicatorState.isVisible)
         }
+    }
+
+    @ViewBuilder
+    var urlBarExtensionActions: some View {
+        if ExtensionActionPlacement.resolve(totalActions: orderedExtensionActionCount) == .urlBar {
+            ExtensionActionView(
+                extensions: extensionSurfaceStore.enabledExtensions,
+                layout: .compactStrip
+            )
+            .environmentObject(browserManager)
+            .environment(windowState)
+            .accessibilityIdentifier("urlbar-extension-action-strip")
+        }
+    }
+
+    var orderedExtensionActionCount: Int {
+        browserManager.extensionsModule.orderedPinnedToolbarSlots(
+            enabledExtensions: extensionSurfaceStore.enabledExtensions,
+            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled
+        )
+        .count
     }
 
     func copyLinkButton(for currentTab: Tab) -> some View {

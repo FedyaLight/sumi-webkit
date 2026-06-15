@@ -39,6 +39,7 @@ enum URLBarPresentationMode {
 struct URLBarView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var glanceManager: GlanceManager
+    @EnvironmentObject var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext

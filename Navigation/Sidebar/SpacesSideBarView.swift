@@ -197,10 +197,28 @@ struct EssentialsSnapshot {
     let items: [SpaceShortcutSnapshot]
 }
 
+enum ExtensionActionSlotSnapshotKind {
+    case sumiScriptsManager
+    case webExtension
+}
+
+struct ExtensionActionSlotSnapshot: Identifiable {
+    let id: String
+    let kind: ExtensionActionSlotSnapshotKind
+    let icon: NSImage?
+    let badgeText: String?
+    let hasUnreadBadgeText: Bool
+}
+
+struct ExtensionActionGridSnapshot {
+    let slots: [ExtensionActionSlotSnapshot]
+}
+
 struct SpaceSidebarPageSnapshot {
     let spaceId: UUID
     let title: String
     let iconValue: String
+    let extensionActions: ExtensionActionGridSnapshot?
     let essentials: EssentialsSnapshot?
     let pinnedItems: [SpacePinnedItemSnapshot]
     let regularItems: [SpaceTabRowSnapshot]
@@ -309,6 +327,12 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             spaceId: space.id,
             title: space.name,
             iconValue: space.icon,
+            extensionActions: windowState.isIncognito
+                ? nil
+                : extensionActionsSnapshot(
+                    profileId: profileId,
+                    browserManager: browserManager
+                ),
             essentials: windowState.isIncognito
                 ? nil
                 : essentialsSnapshot(
@@ -329,6 +353,56 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             showsTopNewTabButton: settings.tabListNewTabButtonPosition == .top,
             rowCornerRadius: settings.resolvedCornerRadius(12),
             pinnedTabsConfiguration: .large
+        )
+    }
+
+    private static func extensionActionsSnapshot(
+        profileId: UUID?,
+        browserManager: BrowserManager
+    ) -> ExtensionActionGridSnapshot? {
+        let surfaceStore = browserManager.extensionsModule.surfaceStore
+        let slots = browserManager.extensionsModule.orderedPinnedToolbarSlots(
+            enabledExtensions: surfaceStore.enabledExtensions,
+            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled,
+            profileId: profileId
+        )
+        guard ExtensionActionPlacement.resolve(totalActions: slots.count) == .sidebarGrid else {
+            return nil
+        }
+
+        let snapshots = slots.map { slot -> ExtensionActionSlotSnapshot in
+            switch slot {
+            case .sumiScriptsManager:
+                return ExtensionActionSlotSnapshot(
+                    id: SumiScriptsToolbarConstants.nativeToolbarItemID,
+                    kind: .sumiScriptsManager,
+                    icon: nil,
+                    badgeText: nil,
+                    hasUnreadBadgeText: false
+                )
+            case .webExtension(let ext):
+                let actionState = surfaceStore.actionStatesByExtensionID[ext.id]
+                let icon = actionState?.icon ?? extensionIcon(for: ext)
+                let badgeText = actionState?.badgeText
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return ExtensionActionSlotSnapshot(
+                    id: ext.id,
+                    kind: .webExtension,
+                    icon: icon,
+                    badgeText: badgeText?.isEmpty == false ? badgeText : nil,
+                    hasUnreadBadgeText: actionState?.hasUnreadBadgeText == true
+                )
+            }
+        }
+
+        return ExtensionActionGridSnapshot(slots: snapshots)
+    }
+
+    private static func extensionIcon(for extensionRecord: InstalledExtension) -> NSImage? {
+        guard let iconPath = extensionRecord.iconPath else { return nil }
+        return ExtensionIconCache.shared.image(
+            extensionId: extensionRecord.id,
+            iconPath: iconPath
         )
     }
 
@@ -672,6 +746,14 @@ private struct SpaceTransitionSnapshotPageView: View {
 
     var body: some View {
         VStack(spacing: 8) {
+            if includesEssentials, let extensionActions = snapshot.extensionActions {
+                ExtensionActionSnapshotGrid(
+                    snapshot: extensionActions,
+                    tokens: tokens
+                )
+                .padding(.horizontal, 8)
+            }
+
             if includesEssentials, let essentials = snapshot.essentials {
                 EssentialsSnapshotGrid(
                     snapshot: essentials,
@@ -704,6 +786,86 @@ private struct SpaceTransitionSnapshotPageView: View {
         .allowsHitTesting(false)
         .transaction { transaction in
             transaction.disablesAnimations = true
+        }
+    }
+}
+
+private struct ExtensionActionSnapshotGrid: View {
+    let snapshot: ExtensionActionGridSnapshot
+    let tokens: ChromeThemeTokens
+
+    private var columns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: 32, maximum: .infinity),
+                spacing: 8,
+                alignment: .center
+            ),
+        ]
+    }
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+            ForEach(snapshot.slots) { slot in
+                ExtensionActionSnapshotButton(slot: slot, tokens: tokens)
+            }
+        }
+        .padding(.horizontal, 2)
+        .accessibilityIdentifier("sidebar-extension-action-grid-snapshot")
+    }
+}
+
+private struct ExtensionActionSnapshotButton: View {
+    let slot: ExtensionActionSlotSnapshot
+    let tokens: ChromeThemeTokens
+
+    var body: some View {
+        iconView
+            .frame(width: 16, height: 16)
+            .padding(5)
+            .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
+            .background(tokens.pinnedIdleBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay(alignment: .topTrailing) {
+                if let badgeText = slot.badgeText {
+                    Text(badgeText)
+                        .font(.system(size: 8, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                        .padding(.horizontal, 3)
+                        .frame(minWidth: 10, minHeight: 10)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.red.opacity(slot.hasUnreadBadgeText ? 0.95 : 0.78))
+                        )
+                        .padding(2)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        switch slot.kind {
+        case .sumiScriptsManager:
+            Image(systemName: "curlybraces.square")
+                .resizable()
+                .interpolation(.high)
+                .antialiased(true)
+                .scaledToFit()
+        case .webExtension:
+            if let icon = slot.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .scaledToFit()
+            } else {
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(tokens.primaryText)
+            }
         }
     }
 }
@@ -1302,6 +1464,7 @@ private struct SidebarPageInputGraphIdentity: Hashable {
 
 struct SpacesSideBarView: View {
     @EnvironmentObject var browserManager: BrowserManager
+    @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
@@ -1589,6 +1752,21 @@ struct SpacesSideBarView: View {
 
         VStack(spacing: 8) {
             if !windowState.isIncognito {
+                if let extensionActions = transitionSnapshot?.source.extensionActions {
+                    ExtensionActionSnapshotGrid(
+                        snapshot: extensionActions,
+                        tokens: themeContext.tokens(settings: sumiSettings)
+                    )
+                    .padding(.horizontal, 8)
+                    .allowsHitTesting(false)
+                } else {
+                    makeSidebarExtensionGrid(
+                        profileId: resolvedPageProfileId(for: sourceSpace),
+                        pageRenderMode: pageRenderMode
+                    )
+                    .allowsHitTesting(false)
+                }
+
                 if let essentials = transitionSnapshot?.stationaryEssentials {
                     EssentialsSnapshotGrid(
                         snapshot: essentials,
@@ -2202,6 +2380,11 @@ struct SpacesSideBarView: View {
 
         VStack(spacing: 8) {
             if includesPinnedGrid && !windowState.isIncognito {
+                makeSidebarExtensionGrid(
+                    profileId: pageProfileId,
+                    pageRenderMode: pageRenderMode
+                )
+
                 makePinnedGrid(
                     spaceId: space.id,
                     profileId: pageProfileId,
@@ -2231,6 +2414,36 @@ struct SpacesSideBarView: View {
                 recoveryGeneration: inputRecoveryGeneration
             )
         )
+    }
+
+    @ViewBuilder
+    private func makeSidebarExtensionGrid(
+        profileId: UUID?,
+        pageRenderMode: SidebarPageRenderMode
+    ) -> some View {
+        let slots = browserManager.extensionsModule.orderedPinnedToolbarSlots(
+            enabledExtensions: extensionSurfaceStore.enabledExtensions,
+            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled,
+            profileId: profileId
+        )
+        let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
+
+        if ExtensionActionPlacement.resolve(totalActions: slots.count) == .sidebarGrid {
+            ExtensionActionView(
+                extensions: extensionSurfaceStore.enabledExtensions,
+                layout: .sidebarGrid,
+                profileId: profileId
+            )
+            .environmentObject(browserManager)
+            .environment(windowState)
+            .padding(.horizontal, 8)
+            .allowsHitTesting(allowsInteractiveWork)
+            .transaction { transaction in
+                if !allowsInteractiveWork {
+                    transaction.disablesAnimations = true
+                }
+            }
+        }
     }
 
     @ViewBuilder

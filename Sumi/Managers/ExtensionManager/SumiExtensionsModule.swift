@@ -66,6 +66,7 @@ final class SumiExtensionsModule {
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
         cachedManager?.attach(browserManager: browserManager)
+        ensureActionSurfaceMetadataLoadedIfNeeded()
     }
 
     func setEnabled(_ isEnabled: Bool) {
@@ -309,36 +310,38 @@ final class SumiExtensionsModule {
         enabledExtensions: [InstalledExtension],
         sumiScriptsManagerEnabled: Bool
     ) -> [PinnedToolbarSlot] {
-        if let manager = managerIfLoadedAndEnabled() {
-            return manager.orderedPinnedToolbarSlots(
-                enabledExtensions: enabledExtensions,
-                sumiScriptsManagerEnabled: sumiScriptsManagerEnabled
-            )
-        }
-
-        var slots: [PinnedToolbarSlot] = []
-        if sumiScriptsManagerEnabled {
-            slots.append(.sumiScriptsManager)
-        }
-        slots.append(
-            contentsOf: enabledExtensions
-                .filter(\.isEnabled)
-                .filter(\.hasAction)
-                .map { .webExtension($0) }
+        orderedPinnedToolbarSlots(
+            enabledExtensions: enabledExtensions,
+            sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
+            profileId: nil
         )
-        return slots
+    }
+
+    func orderedPinnedToolbarSlots(
+        enabledExtensions: [InstalledExtension],
+        sumiScriptsManagerEnabled: Bool,
+        profileId: UUID?
+    ) -> [PinnedToolbarSlot] {
+        guard let manager = managerIfLoadedAndEnabled() else { return [] }
+        return manager.orderedPinnedToolbarSlots(
+            enabledExtensions: enabledExtensions,
+            sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
+            profileId: profileId ?? manager.currentProfileId
+        )
     }
 
     func isPinnedToToolbar(_ extensionId: String) -> Bool {
-        managerIfLoadedAndEnabled()?.isPinnedToToolbar(extensionId) ?? true
+        managerIfLoadedAndEnabled()?.isPinnedToToolbar(extensionId) ?? false
     }
 
     func pinToToolbar(_ extensionId: String) {
         managerIfEnabled()?.pinToToolbar(extensionId)
+        browserManager?.tabStructuralRevision &+= 1
     }
 
     func unpinFromToolbar(_ extensionId: String) {
         managerIfEnabled()?.unpinFromToolbar(extensionId)
+        browserManager?.tabStructuralRevision &+= 1
     }
 
     func siteAccessPolicy(

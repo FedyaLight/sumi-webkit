@@ -135,28 +135,29 @@ extension ExtensionManager {
         enabledExtensions: [InstalledExtension],
         sumiScriptsManagerEnabled: Bool
     ) -> [PinnedToolbarSlot] {
+        orderedPinnedToolbarSlots(
+            enabledExtensions: enabledExtensions,
+            sumiScriptsManagerEnabled: sumiScriptsManagerEnabled,
+            profileId: currentProfileId
+        )
+    }
+
+    func orderedPinnedToolbarSlots(
+        enabledExtensions: [InstalledExtension],
+        sumiScriptsManagerEnabled: Bool,
+        profileId: UUID?
+    ) -> [PinnedToolbarSlot] {
         let enabledByID = Dictionary(
             uniqueKeysWithValues: enabledExtensions
                 .filter(\.isEnabled)
                 .filter(\.hasAction)
                 .map { ($0.id, $0) }
         )
+        let profileKey = Self.pinnedToolbarProfileKey(for: profileId)
         let normalizedPinnedIDs =
-            Self.normalizedPinnedToolbarExtensionIDs(pinnedToolbarExtensionIDs)
-
-        if normalizedPinnedIDs.isEmpty {
-            var slots: [PinnedToolbarSlot] = []
-            if sumiScriptsManagerEnabled {
-                slots.append(.sumiScriptsManager)
-            }
-            slots.append(
-                contentsOf: enabledExtensions
-                    .filter(\.isEnabled)
-                    .filter(\.hasAction)
-                    .map { .webExtension($0) }
+            Self.normalizedPinnedToolbarExtensionIDs(
+                pinnedToolbarExtensionIDsByProfile[profileKey] ?? []
             )
-            return slots
-        }
 
         return normalizedPinnedIDs.compactMap { id -> PinnedToolbarSlot? in
             if id == SumiScriptsToolbarConstants.nativeToolbarItemID {

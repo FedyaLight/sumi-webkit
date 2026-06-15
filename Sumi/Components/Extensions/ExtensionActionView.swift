@@ -10,7 +10,26 @@ import SwiftUI
 
 enum ExtensionActionLayout {
     case compactStrip
+    case sidebarGrid
     case hubTiles
+}
+
+enum ExtensionActionPlacement: Equatable {
+    case hidden
+    case urlBar
+    case sidebarGrid
+
+    static let sidebarGridThreshold = 3
+
+    static func resolve(totalActions: Int) -> Self {
+        if totalActions <= 0 {
+            return .hidden
+        }
+        if totalActions >= sidebarGridThreshold {
+            return .sidebarGrid
+        }
+        return .urlBar
+    }
 }
 
 enum ExtensionActionVisibility {
@@ -104,6 +123,7 @@ struct ExtensionActionView: View {
     let extensions: [InstalledExtension]
     var layout: ExtensionActionLayout = .compactStrip
     var visibleActionLimit: Int? = nil
+    var profileId: UUID? = nil
     @EnvironmentObject var browserManager: BrowserManager
     
     var body: some View {
@@ -114,6 +134,12 @@ struct ExtensionActionView: View {
                 visibleActionLimit: visibleActionLimit
             )
             .environmentObject(browserManager)
+        case .sidebarGrid:
+            SidebarExtensionActionGrid(
+                extensions: extensions,
+                profileId: profileId
+            )
+                .environmentObject(browserManager)
         case .hubTiles:
             LazyVGrid(columns: hubTileColumns, alignment: .leading, spacing: 8) {
                 if browserManager.userscriptsModule.isEnabled {
@@ -121,7 +147,7 @@ struct ExtensionActionView: View {
                         .environmentObject(browserManager)
                 }
 
-                ForEach(extensions.filter { $0.isEnabled }, id: \.id) { ext in
+                ForEach(hubExtensions, id: \.id) { ext in
                     ExtensionActionButton(ext: ext, layout: .hubTiles)
                         .environmentObject(browserManager)
                 }
@@ -134,6 +160,58 @@ struct ExtensionActionView: View {
         Array(
             repeating: GridItem(.flexible(minimum: 0, maximum: .infinity), spacing: 8),
             count: 4
+        )
+    }
+
+    private var hubExtensions: [InstalledExtension] {
+        extensions
+            .filter { $0.isEnabled && $0.hasAction }
+            .filter { browserManager.extensionsModule.isPinnedToToolbar($0.id) == false }
+    }
+}
+
+@available(macOS 15.5, *)
+private struct SidebarExtensionActionGrid: View {
+    let extensions: [InstalledExtension]
+    let profileId: UUID?
+    @EnvironmentObject private var browserManager: BrowserManager
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+            ForEach(pinnedSlots) { slot in
+                switch slot {
+                case .sumiScriptsManager:
+                    SumiScriptsToolbarControl(layout: .sidebarGrid)
+                        .environmentObject(browserManager)
+                case .webExtension(let ext):
+                    ExtensionActionButton(ext: ext, layout: .sidebarGrid)
+                        .environmentObject(browserManager)
+                }
+            }
+        }
+        .padding(.horizontal, 2)
+        .accessibilityIdentifier("sidebar-extension-action-grid")
+    }
+
+    private var columns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: 32, maximum: .infinity),
+                spacing: 8,
+                alignment: .center
+            ),
+        ]
+    }
+
+    private var enabledExtensions: [InstalledExtension] {
+        extensions.filter { $0.isEnabled }
+    }
+
+    private var pinnedSlots: [PinnedToolbarSlot] {
+        browserManager.extensionsModule.orderedPinnedToolbarSlots(
+            enabledExtensions: enabledExtensions,
+            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled,
+            profileId: profileId
         )
     }
 }
@@ -184,6 +262,7 @@ private struct CompactExtensionActionStrip: View {
 @available(macOS 15.5, *)
 private enum SumiScriptsToolbarLayout {
     case compactStrip
+    case sidebarGrid
     case hubTile
 }
 
@@ -193,6 +272,8 @@ private struct SumiScriptsToolbarControl: View {
 
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering = false
     @State private var isPressed = false
     @State private var showingPopup = false
@@ -212,6 +293,18 @@ private struct SumiScriptsToolbarControl: View {
                     .padding(6)
                     .background(isHovering ? .white.opacity(0.1) : .clear)
                     .clipShape(RoundedRectangle(cornerRadius: 7))
+            case .sidebarGrid:
+                Image(systemName: "curlybraces.square")
+                    .resizable()
+                    .interpolation(.high)
+                    .antialiased(true)
+                    .scaledToFit()
+                    .frame(width: 16, height: 16)
+                    .padding(5)
+                    .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
+                    .background(sidebarGridBackgroundFill)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             case .hubTile:
                 Image(systemName: "curlybraces.square")
                     .font(.system(size: 18, weight: .medium))
@@ -258,6 +351,14 @@ private struct SumiScriptsToolbarControl: View {
         isHovering ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
     }
 
+    private var sidebarGridBackgroundFill: Color {
+        isHovering ? tokens.pinnedHoverBackground : tokens.pinnedIdleBackground
+    }
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
     private var hubButtonScale: CGFloat {
         if isPressed && isHovering {
             return 0.97
@@ -291,7 +392,7 @@ private struct HubTilePressGestureModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         switch layout {
-        case .compactStrip:
+        case .compactStrip, .sidebarGrid:
             content
         case .hubTile:
             content
@@ -309,6 +410,21 @@ private struct HubTilePressGestureModifier: ViewModifier {
 }
 
 @available(macOS 15.5, *)
+private struct ExtensionActionContextMenuModifier: ViewModifier {
+    let layout: ExtensionActionLayout
+    let entries: () -> [SidebarContextMenuEntry]
+
+    func body(content: Content) -> some View {
+        switch layout {
+        case .sidebarGrid:
+            content
+        case .compactStrip, .hubTiles:
+            content.sumiAppKitContextMenu(entries: entries)
+        }
+    }
+}
+
+@available(macOS 15.5, *)
 struct ExtensionActionButton: View {
     let ext: InstalledExtension
     var layout: ExtensionActionLayout = .compactStrip
@@ -316,20 +432,36 @@ struct ExtensionActionButton: View {
     @EnvironmentObject private var extensionSurfaceStore:
         BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
+    @Environment(\.sumiSettings) private var sumiSettings
+    @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering: Bool = false
     @State private var isPressed = false
     
     var body: some View {
-        Button(action: {
-            showExtensionPopup()
-        }) {
-            buttonLabel
+        Group {
+            if layout == .sidebarGrid {
+                buttonLabel
+                    .sidebarAppKitContextMenu(
+                        surfaceKind: .button,
+                        primaryAction: showExtensionPopup,
+                        entries: extensionContextMenuEntries
+                    )
+            } else {
+                Button(action: {
+                    showExtensionPopup()
+                }) {
+                    buttonLabel
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
         .help(actionTitle)
         .disabled(actionState?.isEnabled == false)
         .opacity(actionState?.isEnabled == false ? 0.55 : 1)
-        .sumiAppKitContextMenu(entries: extensionContextMenuEntries)
+        .modifier(ExtensionActionContextMenuModifier(
+            layout: layout,
+            entries: extensionContextMenuEntries
+        ))
         .onHover { state in
             isHovering = state
         }
@@ -357,10 +489,32 @@ struct ExtensionActionButton: View {
                             extensionId: ext.id,
                             extensionsModule: browserManager.extensionsModule
                         )
+                        .allowsHitTesting(false)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 7))
                     .overlay(alignment: .topTrailing) {
                         actionBadgeView
+                    }
+            case .sidebarGrid:
+                iconView(tint: URLBarHubNativeStyle.primaryText)
+                    .frame(width: 16, height: 16)
+                    .padding(5)
+                    .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
+                    .background(sidebarGridBackgroundFill)
+                    .background(
+                        ActionAnchorView(
+                            extensionId: ext.id,
+                            extensionsModule: browserManager.extensionsModule
+                        )
+                        .allowsHitTesting(false)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
+                        if let badgeText = visibleBadgeText {
+                            actionBadge(badgeText)
+                                .padding(2)
+                        }
                     }
             case .hubTiles:
                 iconView(tint: URLBarHubNativeStyle.primaryText)
@@ -372,6 +526,7 @@ struct ExtensionActionButton: View {
                             extensionId: ext.id,
                             extensionsModule: browserManager.extensionsModule
                         )
+                        .allowsHitTesting(false)
                     )
                     .overlay {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -469,6 +624,14 @@ struct ExtensionActionButton: View {
         isHovering ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground
     }
 
+    private var sidebarGridBackgroundFill: Color {
+        isHovering ? tokens.pinnedHoverBackground : tokens.pinnedIdleBackground
+    }
+
+    private var tokens: ChromeThemeTokens {
+        themeContext.tokens(settings: sumiSettings)
+    }
+
     private var hubButtonScale: CGFloat {
         if isPressed && isHovering {
             return 0.97
@@ -480,17 +643,17 @@ struct ExtensionActionButton: View {
     }
 
     private func showExtensionPopup() {
-        let currentTab = browserManager.currentTab(for: windowState)
-        let profileId =
-            currentTab?.profileId
-            ?? windowState.currentProfileId
-            ?? browserManager.currentProfile?.id
-        browserManager.extensionsModule.captureActionPopupAnchor(
-            extensionId: ext.id,
-            windowId: windowState.id,
-            profileId: profileId
-        )
         Task { @MainActor in
+            let currentTab = await currentExtensionActionTabForClick()
+            let profileId =
+                currentTab?.profileId
+                ?? windowState.currentProfileId
+                ?? browserManager.currentProfile?.id
+            browserManager.extensionsModule.captureActionPopupAnchor(
+                extensionId: ext.id,
+                windowId: windowState.id,
+                profileId: profileId
+            )
             let result = await browserManager.extensionsModule
                 .openActionPopupFromURLHub(
                     extensionId: ext.id,
@@ -504,8 +667,51 @@ struct ExtensionActionButton: View {
         }
     }
 
+    @MainActor
+    private func currentExtensionActionTabForClick() async -> Tab? {
+        if let currentTab = currentExtensionActionTab {
+            return currentTab
+        }
+
+        guard windowState.isAwaitingInitialSessionResolution
+                || !browserManager.tabManager.hasLoadedInitialData
+        else {
+            return nil
+        }
+
+        for _ in 0..<30 {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            if let currentTab = currentExtensionActionTab {
+                return currentTab
+            }
+            if !windowState.isAwaitingInitialSessionResolution
+                && browserManager.tabManager.hasLoadedInitialData
+            {
+                return nil
+            }
+        }
+        return currentExtensionActionTab
+    }
+
+    private var currentExtensionActionTab: Tab? {
+        browserManager.currentTab(for: windowState)
+            ?? windowState.currentTabId.flatMap { browserManager.tabManager.tab(for: $0) }
+            ?? browserManager.shellSelectionService.currentTab(
+                for: windowState,
+                tabStore: browserManager.tabManager.runtimeStore
+            )
+            ?? browserManager.windowRegistry?.activeWindow.flatMap {
+                browserManager.currentTab(for: $0)
+                    ?? browserManager.shellSelectionService.currentTab(
+                        for: $0,
+                        tabStore: browserManager.tabManager.runtimeStore
+                    )
+            }
+            ?? browserManager.tabManager.currentTab
+    }
+
     private func extensionContextMenuEntries() -> [SidebarContextMenuEntry] {
-        [
+        var entries: [SidebarContextMenuEntry] = [
             .action(
                 SidebarContextMenuAction(
                     title: "Manage Extensions",
@@ -516,6 +722,38 @@ struct ExtensionActionButton: View {
                     }
                 )
             ),
+        ]
+
+        switch layout {
+        case .hubTiles:
+            entries.append(
+                .action(
+                    SidebarContextMenuAction(
+                        title: "Pin to Toolbar",
+                        systemImage: "pin",
+                        classification: .presentationOnly,
+                        action: {
+                            browserManager.extensionsModule.pinToToolbar(ext.id)
+                        }
+                    )
+                )
+            )
+        case .compactStrip, .sidebarGrid:
+            entries.append(
+                .action(
+                    SidebarContextMenuAction(
+                        title: "Unpin from Toolbar",
+                        systemImage: "pin.slash",
+                        classification: .presentationOnly,
+                        action: {
+                            browserManager.extensionsModule.unpinFromToolbar(ext.id)
+                        }
+                    )
+                )
+            )
+        }
+
+        entries.append(
             .action(
                 SidebarContextMenuAction(
                     title: "Open Extension Action",
@@ -525,8 +763,10 @@ struct ExtensionActionButton: View {
                         showExtensionPopup()
                     }
                 )
-            ),
-        ]
+            )
+        )
+
+        return entries
     }
 }
 
@@ -541,14 +781,40 @@ private struct ActionAnchorView: NSViewRepresentable {
     let extensionsModule: SumiExtensionsModule
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        view.translatesAutoresizingMaskIntoConstraints = true
-        view.autoresizingMask = [.width, .height]
-        extensionsModule.setActionAnchorIfLoaded(for: extensionId, anchorView: view)
+        let view = ActionAnchorHostView(frame: .zero)
+        configure(view)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        extensionsModule.setActionAnchorIfLoaded(for: extensionId, anchorView: nsView)
+        guard let nsView = nsView as? ActionAnchorHostView else { return }
+        configure(nsView)
+    }
+
+    private func configure(_ view: ActionAnchorHostView) {
+        view.translatesAutoresizingMaskIntoConstraints = true
+        view.autoresizingMask = [.width, .height]
+        view.extensionId = extensionId
+        view.extensionsModule = extensionsModule
+        view.registerAnchor()
+    }
+}
+
+@available(macOS 15.5, *)
+private final class ActionAnchorHostView: NSView {
+    var extensionId: String?
+    weak var extensionsModule: SumiExtensionsModule?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        registerAnchor()
+    }
+
+    func registerAnchor() {
+        guard let extensionId, let extensionsModule else { return }
+        extensionsModule.setActionAnchorIfLoaded(
+            for: extensionId,
+            anchorView: self
+        )
     }
 }

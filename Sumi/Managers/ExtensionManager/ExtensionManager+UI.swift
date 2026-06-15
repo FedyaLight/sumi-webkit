@@ -314,13 +314,7 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "\(installedExtension.name) does not declare a Chrome action."
             )
         }
-        guard let currentTab else {
-            return .blocked(
-                .noEligibleTab,
-                message: "No active eligible tab is available for the extension action."
-            )
-        }
-        guard currentTab.isEphemeral == false else {
+        guard currentTab?.isEphemeral != true else {
             return .blocked(
                 .noEligibleTab,
                 message: "Private tabs are not eligible for extension action popups."
@@ -333,49 +327,53 @@ extension ExtensionManager: NSPopoverDelegate {
             )
         }
         extensionRuntimeTrace(
-            "urlHubAction preflight passed extensionId=\(extensionId) localExperimentalRecordEnabled=true currentTabEligible=true currentPagePermission=true moduleWorkerUnsupported=false"
+            "urlHubAction preflight passed extensionId=\(extensionId) localExperimentalRecordEnabled=true currentTabEligible=\(currentTab != nil) currentPagePermission=true moduleWorkerUnsupported=false"
         )
 
-        guard let tabProfileId = resolvedProfileId(for: currentTab) else {
+        guard let actionProfileId =
+                currentTab.flatMap({ resolvedProfileId(for: $0) })
+                ?? currentProfileId
+                ?? browserManager?.currentProfile?.id
+        else {
             return .blocked(
                 .noEligibleTab,
-                message: "No profile is available for the active tab."
+                message: "No profile is available for the extension action."
             )
         }
         if latestActionPopupAnchorSessionByExtensionID[extensionId] == nil {
             let windowId =
-                currentTab.primaryWindowId
+                currentTab?.primaryWindowId
                 ?? browserManager?.windowRegistry?.activeWindow?.id
             if let windowId {
                 _ = captureActionPopupAnchor(
                     extensionId: extensionId,
                     windowId: windowId,
-                    profileId: tabProfileId
+                    profileId: actionProfileId
                 )
             }
         }
-        switchProfile(profileId: tabProfileId)
-        _ = ensureExtensionController(for: tabProfileId)
+        switchProfile(profileId: actionProfileId)
+        _ = ensureExtensionController(for: actionProfileId)
 
         let extensionContext: WKWebExtensionContext
         do {
             guard let loadedContext = try await loadActionPopupContextIfNeeded(
                 for: installedExtension,
-                profileId: tabProfileId
+                profileId: actionProfileId
             ) else {
                 let failureBucket = classifyActionPopupRuntimeFailure(
                     extensionId: extensionId,
-                    profileId: tabProfileId,
+                    profileId: actionProfileId,
                     installedExtension: installedExtension
                 )
                 let diagnostics = actionPopupRuntimeDiagnosticLines(
                     extensionId: extensionId,
-                    profileId: tabProfileId,
+                    profileId: actionProfileId,
                     installedExtension: installedExtension,
                     failureBucket: failureBucket,
                     lastLoadError: lastExtensionLoadError(
                         extensionId: extensionId,
-                        profileId: tabProfileId
+                        profileId: actionProfileId
                     )
                 )
                 return .blocked(
@@ -388,12 +386,12 @@ extension ExtensionManager: NSPopoverDelegate {
         } catch {
             let failureBucket = classifyActionPopupRuntimeFailure(
                 extensionId: extensionId,
-                profileId: tabProfileId,
+                profileId: actionProfileId,
                 installedExtension: installedExtension
             )
             let diagnostics = actionPopupRuntimeDiagnosticLines(
                 extensionId: extensionId,
-                profileId: tabProfileId,
+                profileId: actionProfileId,
                 installedExtension: installedExtension,
                 failureBucket: failureBucket,
                 lastLoadError: error
@@ -411,21 +409,21 @@ extension ExtensionManager: NSPopoverDelegate {
         guard extensionContext.isLoaded else {
             let failureBucket = classifyActionPopupRuntimeFailure(
                 extensionId: extensionId,
-                profileId: tabProfileId,
+                profileId: actionProfileId,
                 installedExtension: installedExtension
             )
             let diagnostics = actionPopupRuntimeDiagnosticLines(
                 extensionId: extensionId,
-                profileId: tabProfileId,
+                profileId: actionProfileId,
                 installedExtension: installedExtension,
                 failureBucket: failureBucket,
                 lastLoadError: lastExtensionLoadError(
                     extensionId: extensionId,
-                    profileId: tabProfileId
+                    profileId: actionProfileId
                 )
             )
             extensionRuntimeTrace(
-                "urlHubAction runtime gate failed extensionId=\(extensionId) profileId=\(tabProfileId.uuidString) bucket=\(failureBucket.rawValue) \(diagnostics.joined(separator: " "))"
+                "urlHubAction runtime gate failed extensionId=\(extensionId) profileId=\(actionProfileId.uuidString) bucket=\(failureBucket.rawValue) \(diagnostics.joined(separator: " "))"
             )
             let blocker: BrowserExtensionActionPopupBlocker =
                 failureBucket == .globalRuntimeLoadFailed
@@ -440,10 +438,19 @@ extension ExtensionManager: NSPopoverDelegate {
             )
         }
         extensionRuntimeTrace(
-            "urlHubAction runtime ready extensionId=\(extensionId) profileId=\(tabProfileId.uuidString) loadedContexts=\(extensionContexts(for: tabProfileId).count) selectedContextLoaded=true"
+            "urlHubAction runtime ready extensionId=\(extensionId) profileId=\(actionProfileId.uuidString) loadedContexts=\(extensionContexts(for: actionProfileId).count) selectedContextLoaded=true currentTabEligible=\(currentTab != nil)"
         )
 
-        let adapter = stableAdapter(for: currentTab)
+        let adapter: ExtensionTabAdapter?
+        if let currentTab {
+            registerTabWithExtensionRuntime(
+                currentTab,
+                reason: "ExtensionManager.openActionPopupFromURLHub"
+            )
+            adapter = stableAdapter(for: currentTab)
+        } else {
+            adapter = nil
+        }
         grantRequestedPermissions(
             to: extensionContext,
             webExtension: extensionContext.webExtension,
@@ -453,16 +460,18 @@ extension ExtensionManager: NSPopoverDelegate {
             to: extensionContext,
             webExtension: extensionContext.webExtension
         )
-        let hasActionPageAccess = await prepareActionClickPageAccess(
-            for: extensionContext,
-            installedExtension: installedExtension,
-            tab: currentTab
-        )
-        guard hasActionPageAccess else {
-            return .blocked(
-                .currentPagePermissionMissing,
-                message: "\(installedExtension.name) was not granted access to the current page."
+        if let currentTab {
+            let hasActionPageAccess = await prepareActionClickPageAccess(
+                for: extensionContext,
+                installedExtension: installedExtension,
+                tab: currentTab
             )
+            guard hasActionPageAccess else {
+                return .blocked(
+                    .currentPagePermissionMissing,
+                    message: "\(installedExtension.name) was not granted access to the current page."
+                )
+            }
         }
 
         guard let action = extensionContext.action(for: adapter) else {
