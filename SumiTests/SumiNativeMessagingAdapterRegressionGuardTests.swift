@@ -13,6 +13,9 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingConnection.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/CompanionApplicationMessageRouter.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariApplicationIDAdapter.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariCompanionStore.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingDiagnostics.swift",
     ]
 
@@ -91,6 +94,64 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         XCTAssertTrue(relaySource.contains("recordSuppressedRetry"))
         XCTAssertTrue(relaySource.contains("launchSuppressed"))
         XCTAssertTrue(relaySource.contains("SumiNativeMessagingAdapterRegistry"))
+        XCTAssertTrue(relaySource.contains("CompanionApplicationMessageRouter"))
+    }
+
+    func testApplicationIdCompanionRouterDoesNotUseStandardNativeHostBackend() throws {
+        let routerSource = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/CompanionApplicationMessageRouter.swift"
+        )
+        XCTAssertTrue(routerSource.contains("CompanionApplicationMessageRouter"))
+        XCTAssertTrue(routerSource.contains("CompanionApplicationBackendRegistry"))
+        XCTAssertTrue(routerSource.contains("CompanionApplicationMessageBackend"))
+        XCTAssertTrue(routerSource.contains("isSafariContainingApplicationRequest"))
+        XCTAssertFalse(routerSource.contains("StandardNativeMessagingHostBackend"))
+        XCTAssertFalse(routerSource.contains("NativeMessagingHostManifestResolver"))
+    }
+
+    func testProtonSpecificLogicIsIsolatedToCompanionBackendLayer() throws {
+        let allowedFiles = Set([
+            "Sumi/Managers/ExtensionManager/SafariExtension/ProtonNativeMessagingIdentifiers.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/CompanionApplicationMessageRouter.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariApplicationIDAdapter.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariCompanionStore.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingClassification.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionInlineUIClassificationCatalog.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionCompatibilityReport.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionManualVerificationCatalog.swift",
+        ])
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let candidates = try FileManager.default.subpathsOfDirectory(atPath: root.path)
+            .filter { $0.hasSuffix(".swift") && $0.hasPrefix("Sumi/") }
+        for path in candidates where allowedFiles.contains(path) == false {
+            let contents = try source(named: path)
+            XCTAssertFalse(
+                contents.localizedCaseInsensitiveContains("proton"),
+                "Unexpected Proton-specific logic in \(path)"
+            )
+        }
+    }
+
+    func testCompanionBackendDoesNotUseAppexNSExtensionPlugInKitManifestOrJSPatching() throws {
+        let combined = try [
+            "Sumi/Managers/ExtensionManager/SafariExtension/CompanionApplicationMessageRouter.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariApplicationIDAdapter.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariCompanionStore.swift",
+        ].map { try source(named: $0) }.joined(separator: "\n")
+
+        for forbidden in [
+            "NSExtension",
+            "PlugInKit",
+            "SafariAppExtensionNativeMessagingBackend",
+            "patchManifest",
+            "JavaScript",
+            "StandardNativeMessagingHostBackend",
+            "NativeMessagingHostManifestResolver",
+        ] {
+            XCTAssertFalse(combined.contains(forbidden), "Forbidden token \(forbidden)")
+        }
     }
 
     func testDiagnosticsExposeAdapterBoundaryFields() throws {

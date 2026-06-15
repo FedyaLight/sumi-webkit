@@ -10,6 +10,7 @@ import Foundation
 enum ProtonNativeMessagingIdentifiers {
     static let requestedApplicationIdentifier = "me.proton.pass.nm"
     static let safariHostBundleIdentifier = "me.proton.pass.catalyst"
+    static let safariExtensionBundleIdentifier = "me.proton.pass.catalyst.safari-extension"
     static let desktopHostBundleIdentifier = "me.proton.pass.electron"
     static let nativeHostManifestName = requestedApplicationIdentifier + ".json"
     static let nativeHostExecutableName = "proton_pass_nm_host"
@@ -40,6 +41,17 @@ enum ProtonNativeMessagingIdentifiers {
             URL(fileURLWithPath: "/Applications/Proton Pass for Safari.app"),
         ]
     )
+
+    static func isSafariExtensionIdentity(sourceBundlePath: String) -> Bool {
+        if SumiCompanionAppResolver.appexBundleIdentifier(at: sourceBundlePath)
+            == safariExtensionBundleIdentifier
+        {
+            return true
+        }
+        return SumiCompanionAppResolver.containingApplicationBundleIdentifier(
+            forAppexPath: sourceBundlePath
+        ) == safariHostBundleIdentifier
+    }
 }
 
 enum StandardNativeMessagingHostCompatibilityRecords {

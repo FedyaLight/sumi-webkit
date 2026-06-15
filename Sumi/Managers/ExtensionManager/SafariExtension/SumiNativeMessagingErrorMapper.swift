@@ -67,6 +67,30 @@ enum SumiNativeMessagingErrorMapper {
         case .nativeHostUnsupportedKind:
             message = description
                 ?? "The native messaging host kind is unsupported."
+        case .companionApplicationUnsupportedApplicationId:
+            message = description
+                ?? "Safari containing-application messaging only supports application.id."
+        case .companionApplicationUnsupportedExtension:
+            message = description
+                ?? "Safari containing-application messaging is not supported for this extension."
+        case .companionApplicationUnsupportedBackend:
+            message = description
+                ?? "No Sumi companion application backend is registered for this extension."
+        case .companionApplicationInvalidPayload:
+            message = description
+                ?? "The companion application message payload is invalid."
+        case .companionApplicationUnsupportedMessageType:
+            message = description
+                ?? "The companion application message type is unsupported."
+        case .companionApplicationSecureStoreFailure:
+            message = description
+                ?? "The companion application secure store operation failed."
+        case .companionApplicationExactlyOnceReplyViolation:
+            message = description
+                ?? "The companion application backend attempted to reply more than once."
+        case .companionApplicationSecureStateMissing:
+            message = description
+                ?? "The companion application secure state is missing."
         }
 
         var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]

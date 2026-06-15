@@ -22,6 +22,14 @@ final class SumiNativeMessagingRelay {
         case nativeHostExecutableMissing = 9
         case nativeHostPermissionDenied = 10
         case nativeHostUnsupportedKind = 11
+        case companionApplicationUnsupportedApplicationId = 12
+        case companionApplicationUnsupportedExtension = 13
+        case companionApplicationUnsupportedBackend = 14
+        case companionApplicationInvalidPayload = 15
+        case companionApplicationUnsupportedMessageType = 16
+        case companionApplicationSecureStoreFailure = 17
+        case companionApplicationExactlyOnceReplyViolation = 18
+        case companionApplicationSecureStateMissing = 19
     }
 
     static let errorDomain = "Sumi.SafariNativeMessaging"
@@ -30,6 +38,7 @@ final class SumiNativeMessagingRelay {
     private let importStore: SafariExtensionImportStore
     private let launcher: SumiHostApplicationLaunching
     private let adapterRegistry: SumiNativeMessagingAdapterRegistry
+    private let companionApplicationRouter: CompanionApplicationMessageRouter
     private let launchPolicy: SumiCompanionAppLaunchPolicy
     private let loopGuard: SumiNativeMessagingRelayLoopGuard
     private let diagnosticCoalescer: SumiNativeMessagingDiagnosticCoalescer
@@ -50,6 +59,8 @@ final class SumiNativeMessagingRelay {
         importStore: SafariExtensionImportStore = .shared,
         launcher: SumiHostApplicationLaunching = SumiNSWorkspaceHostApplicationLauncher(),
         adapterRegistry: SumiNativeMessagingAdapterRegistry = .shared,
+        companionApplicationRouter: CompanionApplicationMessageRouter =
+            CompanionApplicationMessageRouter(),
         launchPolicy: SumiCompanionAppLaunchPolicy = .shared,
         loopGuard: SumiNativeMessagingRelayLoopGuard = SumiNativeMessagingRelayLoopGuard(),
         extensionsModuleEnabled: @escaping @MainActor () -> Bool = { SumiExtensionsModule.shared.isEnabled },
@@ -60,6 +71,7 @@ final class SumiNativeMessagingRelay {
         self.importStore = importStore
         self.launcher = launcher
         self.adapterRegistry = adapterRegistry
+        self.companionApplicationRouter = companionApplicationRouter
         self.launchPolicy = launchPolicy
         self.loopGuard = loopGuard
         self.extensionsModuleEnabled = extensionsModuleEnabled
@@ -229,6 +241,17 @@ final class SumiNativeMessagingRelay {
         if extensionsModuleEnabled() == false {
             launchPolicy.clearPendingState()
             loopGuard.clearAll()
+        }
+
+        if companionApplicationRouter.route(
+            applicationIdentifier: applicationIdentifier,
+            message: message,
+            extensionId: extensionId,
+            profileId: profileId,
+            installedExtension: installed,
+            replyHandler: replyHandler
+        ) {
+            return
         }
 
         let evaluation = SumiCompanionAppResolver.evaluate(
@@ -964,6 +987,30 @@ final class SumiNativeMessagingRelay {
         case .nativeHostUnsupportedKind:
             message = description
                 ?? "The native messaging host kind is unsupported."
+        case .companionApplicationUnsupportedApplicationId:
+            message = description
+                ?? "Safari containing-application messaging only supports application.id."
+        case .companionApplicationUnsupportedExtension:
+            message = description
+                ?? "Safari containing-application messaging is not supported for this extension."
+        case .companionApplicationUnsupportedBackend:
+            message = description
+                ?? "No Sumi companion application backend is registered for this extension."
+        case .companionApplicationInvalidPayload:
+            message = description
+                ?? "The companion application message payload is invalid."
+        case .companionApplicationUnsupportedMessageType:
+            message = description
+                ?? "The companion application message type is unsupported."
+        case .companionApplicationSecureStoreFailure:
+            message = description
+                ?? "The companion application secure store operation failed."
+        case .companionApplicationExactlyOnceReplyViolation:
+            message = description
+                ?? "The companion application backend attempted to reply more than once."
+        case .companionApplicationSecureStateMissing:
+            message = description
+                ?? "The companion application secure state is missing."
         }
 
         var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]
@@ -1330,6 +1377,15 @@ final class SumiNativeMessagingRelay {
             return .policyDenied
         case .hostLaunchFailed:
             return .hostLaunchFailed
+        case .companionApplicationUnsupportedApplicationId,
+             .companionApplicationUnsupportedExtension,
+             .companionApplicationUnsupportedBackend,
+             .companionApplicationInvalidPayload,
+             .companionApplicationUnsupportedMessageType,
+             .companionApplicationSecureStoreFailure,
+             .companionApplicationExactlyOnceReplyViolation,
+             .companionApplicationSecureStateMissing:
+            return .companionAppProtocolUnknown
         }
     }
 }

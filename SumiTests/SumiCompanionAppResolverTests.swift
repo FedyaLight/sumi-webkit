@@ -139,7 +139,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         XCTAssertTrue(identityB?.isContainingApp == true)
     }
 
-    func testApplicationIdReturnsUnsupportedBackendWithoutSafariHandlerAdapter()
+    func testApplicationIdReturnsTypedUnsupportedBackendWithoutSafariHandlerAdapter()
         async throws
     {
         let appexPath = try makeFixtureApp(
@@ -151,15 +151,16 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         launcher.bundleURLs["com.example.containing"] = URL(
             fileURLWithPath: "/Applications/Example.app"
         )
-        var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
         let relay = SumiNativeMessagingRelay(
             importStore: SafariExtensionImportStore(defaults: makeDefaults()),
             launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(),
+            companionApplicationRouter: CompanionApplicationMessageRouter(
+                registry: CompanionApplicationBackendRegistry(backends: [])
+            ),
             launchPolicy: SumiCompanionAppLaunchPolicy(),
             loopGuard: SumiNativeMessagingRelayLoopGuard(),
-            extensionsModuleEnabled: { true },
-            logDiagnostic: { diagnostics.append($0) }
+            extensionsModuleEnabled: { true }
         )
 
         let reply = await sendMessageReply(
@@ -174,16 +175,14 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         let error = try XCTUnwrap(reply.error as NSError?)
         XCTAssertEqual(
             error.code,
-            SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
+            SumiNativeMessagingRelay.ErrorCode
+                .companionApplicationUnsupportedBackend.rawValue
         )
-        let diagnostic = try XCTUnwrap(diagnostics.last)
-        XCTAssertEqual(
-            diagnostic.requestedApplicationIdentifier,
-            SafariExtensionNativeMessagingRoutingProbe.safariContainingApplicationIdentifier
+        XCTAssertFalse(
+            error.localizedDescription.contains(
+                "Companion host application messaging protocol is not implemented in Sumi"
+            )
         )
-        XCTAssertEqual(diagnostic.hostBundleIdentifier, "com.example.containing")
-        XCTAssertEqual(diagnostic.isContainingApp, true)
-        XCTAssertEqual(diagnostic.protocolAdapterAvailable, false)
     }
 
     func testAppFoundButProtocolUnknownDoesNotLaunchRepeatedly() async throws {
