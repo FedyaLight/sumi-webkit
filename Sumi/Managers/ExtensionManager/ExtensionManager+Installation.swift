@@ -516,6 +516,14 @@ extension ExtensionManager {
                 sourceBundlePath: entity.sourceBundlePath,
                 packageRoot: extensionRoot
             )
+            traceNativeMessagingContextBinding(
+                phase: "webExtensionCreated",
+                extensionId: entity.id,
+                profileId: resolvedProfileId,
+                loadSource: runtimeLoadSource,
+                webExtension: webExtension,
+                controller: extensionController
+            )
             extensionRuntimeTrace(
                 "loadEnabledExtension webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(extensionRoot.path) sourceBundlePath=\(entity.sourceBundlePath)"
             )
@@ -557,6 +565,15 @@ extension ExtensionManager {
                 profileId: resolvedProfileId,
                 manifest: manifest
             )
+            traceNativeMessagingContextBinding(
+                phase: "contextPrepared",
+                extensionId: entity.id,
+                profileId: resolvedProfileId,
+                loadSource: runtimeLoadSource,
+                webExtension: webExtension,
+                extensionContext: extensionContext,
+                controller: extensionController
+            )
             ensureWebExtensionStorageDirectoryExists(
                 for: entity.id,
                 profileId: resolvedProfileId
@@ -573,6 +590,15 @@ extension ExtensionManager {
                 profileId: resolvedProfileId
             )
             loadedExtensionManifests[entity.id] = manifest
+            traceNativeMessagingContextBinding(
+                phase: "beforeControllerLoad",
+                extensionId: entity.id,
+                profileId: resolvedProfileId,
+                loadSource: runtimeLoadSource,
+                webExtension: webExtension,
+                extensionContext: extensionContext,
+                controller: extensionController
+            )
 
             do {
                 #if DEBUG
@@ -587,6 +613,16 @@ extension ExtensionManager {
                     $0.contextLoadDuration =
                         CFAbsoluteTimeGetCurrent() - contextLoadStart
                 }
+                traceNativeMessagingContextBinding(
+                    phase: "afterControllerLoad",
+                    extensionId: entity.id,
+                    profileId: resolvedProfileId,
+                    loadSource: runtimeLoadSource,
+                    webExtension: webExtension,
+                    extensionContext: extensionContext,
+                    controller: extensionController,
+                    configuration: extensionContext.webViewConfiguration
+                )
             } catch {
                 tearDownExtensionRuntimeState(for: entity.id, removeUIState: false)
                 throw error
@@ -952,6 +988,14 @@ extension ExtensionManager {
                     sourceBundlePath: resolvedSource.sourceBundlePath.path,
                     packageRoot: destinationDirectory
                 )
+                traceNativeMessagingContextBinding(
+                    phase: "installWebExtensionCreated",
+                    extensionId: extensionId,
+                    profileId: installProfileId,
+                    loadSource: runtimeLoadSource,
+                    webExtension: webExtension,
+                    controller: installController
+                )
                 extensionRuntimeTrace(
                     "performInstallation webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(destinationDirectory.path) sourceBundlePath=\(resolvedSource.sourceBundlePath.path)"
                 )
@@ -988,6 +1032,15 @@ extension ExtensionManager {
                     profileId: installProfileId,
                     manifest: finalManifest
                 )
+                traceNativeMessagingContextBinding(
+                    phase: "installContextPrepared",
+                    extensionId: extensionId,
+                    profileId: installProfileId,
+                    loadSource: runtimeLoadSource,
+                    webExtension: webExtension,
+                    extensionContext: extensionContext,
+                    controller: installController
+                )
                 ensureWebExtensionStorageDirectoryExists(
                     for: extensionId,
                     profileId: installProfileId
@@ -1004,6 +1057,15 @@ extension ExtensionManager {
                     profileId: installProfileId
                 )
                 loadedExtensionManifests[extensionId] = finalManifest
+                traceNativeMessagingContextBinding(
+                    phase: "installBeforeControllerLoad",
+                    extensionId: extensionId,
+                    profileId: installProfileId,
+                    loadSource: runtimeLoadSource,
+                    webExtension: webExtension,
+                    extensionContext: extensionContext,
+                    controller: installController
+                )
 
                 do {
                     #if DEBUG
@@ -1013,6 +1075,16 @@ extension ExtensionManager {
                         )
                     #endif
                     try installController.load(extensionContext)
+                    traceNativeMessagingContextBinding(
+                        phase: "installAfterControllerLoad",
+                        extensionId: extensionId,
+                        profileId: installProfileId,
+                        loadSource: runtimeLoadSource,
+                        webExtension: webExtension,
+                        extensionContext: extensionContext,
+                        controller: installController,
+                        configuration: extensionContext.webViewConfiguration
+                    )
                 } catch {
                     tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
                     throw error
@@ -1199,6 +1271,14 @@ extension ExtensionManager {
                     sourceBundlePath: resolvedSource.sourceBundlePath.path,
                     packageRoot: extensionRoot
                 )
+                traceNativeMessagingContextBinding(
+                    phase: "safariEnableWebExtensionCreated",
+                    extensionId: extensionId,
+                    profileId: installProfileId,
+                    loadSource: runtimeLoadSource,
+                    webExtension: webExtension,
+                    controller: installController
+                )
                 extensionRuntimeTrace(
                     "enableSafariAppExtension webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(extensionRoot.path) sourceBundlePath=\(resolvedSource.sourceBundlePath.path)"
                 )
@@ -1235,6 +1315,15 @@ extension ExtensionManager {
                     profileId: installProfileId,
                     manifest: manifest
                 )
+                traceNativeMessagingContextBinding(
+                    phase: "safariEnableContextPrepared",
+                    extensionId: extensionId,
+                    profileId: installProfileId,
+                    loadSource: runtimeLoadSource,
+                    webExtension: webExtension,
+                    extensionContext: extensionContext,
+                    controller: installController
+                )
                 ensureWebExtensionStorageDirectoryExists(
                     for: extensionId,
                     profileId: installProfileId
@@ -1251,6 +1340,15 @@ extension ExtensionManager {
                     profileId: installProfileId
                 )
                 loadedExtensionManifests[extensionId] = manifest
+                traceNativeMessagingContextBinding(
+                    phase: "safariEnableBeforeControllerLoad",
+                    extensionId: extensionId,
+                    profileId: installProfileId,
+                    loadSource: runtimeLoadSource,
+                    webExtension: webExtension,
+                    extensionContext: extensionContext,
+                    controller: installController
+                )
 
                 do {
                     #if DEBUG
@@ -1260,6 +1358,16 @@ extension ExtensionManager {
                         )
                     #endif
                     try installController.load(extensionContext)
+                    traceNativeMessagingContextBinding(
+                        phase: "safariEnableAfterControllerLoad",
+                        extensionId: extensionId,
+                        profileId: installProfileId,
+                        loadSource: runtimeLoadSource,
+                        webExtension: webExtension,
+                        extensionContext: extensionContext,
+                        controller: installController,
+                        configuration: extensionContext.webViewConfiguration
+                    )
                 } catch {
                     tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
                     throw error

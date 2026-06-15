@@ -89,6 +89,20 @@ After a PM unlock attempt, verbose `SafariNativeMessaging` logs must include **o
 
 Must **not** log message bodies, credentials, or storage payloads.
 
+### Proton Pass unsupported companion messages
+
+When Proton Pass reaches Sumi's Safari `application.id` companion adapter with an
+unsupported message, capture the metadata-only boundary line with:
+
+```bash
+log stream --style compact --level info --predicate 'subsystem == "com.sumi.browser" AND (category == "ProtonCompanion" OR eventMessage CONTAINS "ProtonCompanionUnsupported")'
+```
+
+For a completed run, use the same predicate with `log show --last 10m --style compact --predicate ...`.
+The marker is `ProtonCompanionUnsupported` and includes only payload class, parse
+mode, top-level keys, selected type, parse failure reason, and redacted profile /
+extension buckets.
+
 ### Bitwarden (adapter registered)
 
 - `adapterSelected=true`, `adapterId=com.bitwarden.desktop.native-messaging`

@@ -1367,6 +1367,16 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             forExtensionID: extensionId,
             installedExtensions: installedExtensions
         )
+        traceNativeMessagingContextBinding(
+            phase: "delegateSendMessage",
+            extensionId: extensionId,
+            profileId: profileId,
+            loadSource: nativeMessagingLoadSource(for: extensionId),
+            webExtension: extensionContext.webExtension,
+            extensionContext: extensionContext,
+            controller: controller,
+            configuration: extensionContext.webViewConfiguration
+        )
         let messageShape = SafariExtensionNativeMessagingRoutingProbe
             .sanitizedMessageShape(for: message)
         #if DEBUG || SUMI_DIAGNOSTICS
@@ -1425,6 +1435,16 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         let extensionDisplayName = ExtensionUtils.displayName(
             forExtensionID: extensionId,
             installedExtensions: installedExtensions
+        )
+        traceNativeMessagingContextBinding(
+            phase: "delegateConnectNative",
+            extensionId: extensionId,
+            profileId: profileId,
+            loadSource: nativeMessagingLoadSource(for: extensionId),
+            webExtension: extensionContext.webExtension,
+            extensionContext: extensionContext,
+            controller: controller,
+            configuration: extensionContext.webViewConfiguration
         )
         #if DEBUG || SUMI_DIAGNOSTICS
             if RuntimeDiagnostics.isVerboseEnabled {

@@ -68,6 +68,39 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         XCTAssertFalse(safariResources.contains("patchManifestForWebKit"))
     }
 
+    func testNativeMessagingContextTraceStaysMetadataOnly() throws {
+        let managerSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager.swift"
+        )
+        let start = try XCTUnwrap(
+            managerSource.range(of: "func traceNativeMessagingContextBinding")
+        )
+        let end = try XCTUnwrap(
+            managerSource[start.lowerBound...].range(of: "func nativeMessagingLoadSource")
+        )
+        let helperSource = String(managerSource[start.lowerBound..<end.lowerBound])
+
+        XCTAssertTrue(helperSource.contains("nativeMessagingGranted"))
+        XCTAssertTrue(helperSource.contains("unsupportedNativeMessaging"))
+        XCTAssertTrue(helperSource.contains("controllerOwnsContext"))
+        for forbidden in [
+            "payload",
+            "messageBody",
+            "rawMessage",
+            "absoluteString",
+            "query",
+            "fragment",
+            "AccessToken",
+            "RefreshToken",
+            "clipboard",
+        ] {
+            XCTAssertFalse(
+                helperSource.localizedCaseInsensitiveContains(forbidden),
+                "Context trace must not log raw sensitive data token \(forbidden)"
+            )
+        }
+    }
+
     func testLazyRuntimeProfileIsolationAndPopupAnchorGuardsRemain() throws {
         let profilesSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift"

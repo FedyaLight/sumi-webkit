@@ -151,8 +151,8 @@ enum CompanionApplicationMessageError: Error, Equatable {
     case unsupportedApplicationId
     case unsupportedExtension
     case unsupportedBackend
-    case invalidPayload
-    case unsupportedMessageType(String?)
+    case invalidPayload(ProtonPassSafariCompanionMessageShape? = nil)
+    case unsupportedMessageType(String?, ProtonPassSafariCompanionMessageShape? = nil)
     case secureStoreFailure
     case exactlyOnceReplyViolation
     case secureStateMissing
@@ -160,38 +160,48 @@ enum CompanionApplicationMessageError: Error, Equatable {
     func relayError() -> NSError {
         let code: SumiNativeMessagingRelay.ErrorCode
         let message: String
+        let additionalUserInfo: [String: Any]
 
         switch self {
         case .unsupportedApplicationId:
             code = .companionApplicationUnsupportedApplicationId
             message = "Safari containing-application messaging only supports application.id."
+            additionalUserInfo = [:]
         case .unsupportedExtension:
             code = .companionApplicationUnsupportedExtension
             message = "Safari containing-application messaging is not supported for this extension."
+            additionalUserInfo = [:]
         case .unsupportedBackend:
             code = .companionApplicationUnsupportedBackend
             message = "No Sumi companion application backend is registered for this extension."
-        case .invalidPayload:
+            additionalUserInfo = [:]
+        case .invalidPayload(let shape):
             code = .companionApplicationInvalidPayload
             message = "The companion application message payload is invalid."
-        case .unsupportedMessageType:
+            additionalUserInfo = shape?.errorUserInfo ?? [:]
+        case .unsupportedMessageType(_, let shape):
             code = .companionApplicationUnsupportedMessageType
             message = "The companion application message type is unsupported."
+            additionalUserInfo = shape?.errorUserInfo ?? [:]
         case .secureStoreFailure:
             code = .companionApplicationSecureStoreFailure
             message = "The companion application secure store operation failed."
+            additionalUserInfo = [:]
         case .exactlyOnceReplyViolation:
             code = .companionApplicationExactlyOnceReplyViolation
             message = "The companion application backend attempted to reply more than once."
+            additionalUserInfo = [:]
         case .secureStateMissing:
             code = .companionApplicationSecureStateMissing
             message = "The companion application secure state is missing."
+            additionalUserInfo = [:]
         }
 
         return SumiNativeMessagingErrorMapper.relayError(
             code: code,
             description: message,
-            diagnostic: nil
+            diagnostic: nil,
+            additionalUserInfo: additionalUserInfo
         )
     }
 }

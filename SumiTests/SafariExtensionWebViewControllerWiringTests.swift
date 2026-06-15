@@ -75,6 +75,38 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
+    func testProfileExtensionControllerUsesSumiNativeMessagingDelegate() throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let controller = manager.ensureExtensionController(for: profile.id)
+        let delegateObject = try XCTUnwrap(controller.delegate.map { $0 as AnyObject })
+        let delegate = try XCTUnwrap(controller.delegate as NSObjectProtocol?)
+        let sendSelector = #selector(
+            WKWebExtensionControllerDelegate.webExtensionController(
+                _:sendMessage:toApplicationWithIdentifier:for:replyHandler:
+            )
+        )
+        let connectSelector = #selector(
+            WKWebExtensionControllerDelegate.webExtensionController(
+                _:connectUsing:for:completionHandler:
+            )
+        )
+
+        XCTAssertTrue(delegateObject === manager)
+        XCTAssertTrue(delegate.responds(to: sendSelector))
+        XCTAssertTrue(delegate.responds(to: connectSelector))
+        XCTAssertIdentical(
+            browserConfiguration.webViewConfiguration.webExtensionController,
+            controller
+        )
+    }
+
     func testExtensionWebViewReturnsNilWithoutControllerOnLoadedPage() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")

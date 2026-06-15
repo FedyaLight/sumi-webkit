@@ -742,6 +742,13 @@ extension ExtensionManager: NSPopoverDelegate {
         if shouldAssignController {
             configuration.webExtensionController = requestedController
         }
+        traceNativeMessagingContextBinding(
+            phase: "prepareWebViewConfiguration",
+            extensionId: nil,
+            profileId: resolvedProfileId,
+            controller: requestedController,
+            configuration: configuration
+        )
         configuration.websiteDataStore = getExtensionDataStore(for: resolvedProfileId)
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         installURLSchemeCompatibilityPreludes(
@@ -884,6 +891,14 @@ extension ExtensionManager: NSPopoverDelegate {
 
         extensionRuntimeTrace(
             "prepareWebView reason=\(reason) webView=\(extensionRuntimeWebViewDescription(webView)) configuration=\(extensionRuntimeConfigurationDescription(webView.configuration)) userContentController=\(extensionRuntimeUserContentControllerDescription(webView.configuration.userContentController)) currentURL=\(currentURL?.absoluteString ?? "nil") existingController=\(extensionRuntimeControllerDescription(existingController)) extensionController=\(extensionRuntimeControllerDescription(extensionController)) willAssign=\(didAttach)"
+        )
+        traceNativeMessagingContextBinding(
+            phase: "prepareWebView",
+            extensionId: nil,
+            profileId: owningTab.flatMap { resolvedProfileId(for: $0) },
+            controller: webView.configuration.webExtensionController,
+            configuration: webView.configuration,
+            webView: webView
         )
 
         webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true

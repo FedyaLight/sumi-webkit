@@ -993,6 +993,13 @@ extension ExtensionManager {
 
         let controller = WKWebExtensionController(configuration: configuration)
         controller.delegate = self
+        traceNativeMessagingContextBinding(
+            phase: "controllerCreated",
+            extensionId: nil,
+            profileId: profileId,
+            controller: controller,
+            configuration: extensionPageConfiguration
+        )
 
         if currentProfileId == profileId {
             runtimeWebConfiguration.webExtensionController = controller
@@ -1039,6 +1046,12 @@ extension ExtensionManager {
                 return
             }
             controller.delegate = self
+            self.traceNativeMessagingContextBinding(
+                phase: "delegateRebound",
+                extensionId: nil,
+                profileId: self.profileId(for: controller),
+                controller: controller
+            )
         }
     }
 

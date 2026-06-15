@@ -30,7 +30,8 @@ enum SumiNativeMessagingErrorMapper {
     static func relayError(
         code: SumiNativeMessagingRelay.ErrorCode,
         description: String? = nil,
-        diagnostic: SafariExtensionNativeMessagingDiagnostic?
+        diagnostic: SafariExtensionNativeMessagingDiagnostic?,
+        additionalUserInfo: [String: Any] = [:]
     ) -> NSError {
         let message: String
         switch code {
@@ -102,6 +103,9 @@ enum SumiNativeMessagingErrorMapper {
             if let resolverBucket = diagnostic.resolverBucket {
                 userInfo["SumiNativeMessagingResolverBucket"] = resolverBucket.rawValue
             }
+        }
+        for (key, value) in additionalUserInfo {
+            userInfo[key] = value
         }
         return NSError(domain: relayErrorDomain, code: code.rawValue, userInfo: userInfo)
     }
