@@ -89,6 +89,7 @@ enum SumiFaviconCanonicalURL {
 
 enum SumiFaviconSourceKind: String, Codable, Sendable {
     case documentLink
+    case extensionManifest
     case webAppManifest
     case rootFavicon
     case appleTouchRoot
@@ -98,6 +99,8 @@ enum SumiFaviconSourceKind: String, Codable, Sendable {
         switch self {
         case .documentLink:
             return 0
+        case .extensionManifest:
+            return 1
         case .webAppManifest:
             return 2
         case .rootFavicon:

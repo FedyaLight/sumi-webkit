@@ -36,6 +36,42 @@ enum TabFaviconStore {
     }
 
     @MainActor
+    static func loadExtensionPageImage(
+        forDocumentURL url: URL,
+        iconFileURL: URL,
+        partition: SumiFaviconPartition,
+        context: SumiFaviconDisplayContext = .tabSidebar
+    ) async -> NSImage? {
+        guard SumiFaviconResolver.cacheKey(for: url) != nil else {
+            return nil
+        }
+
+        let service = SumiFaviconSystem.shared.service
+        let request = SumiPreparedFaviconRequest(
+            pageURL: url,
+            partition: partition,
+            context: context,
+            backingScale: SumiFaviconService.defaultBackingScale()
+        )
+        if let selection = service.cachedSelection(for: url, partition: partition),
+           sameFileURL(selection.sourceURL, iconFileURL),
+           let image = await service.preparedImage(
+               for: request,
+               priority: .visibleSidebarOrTabStrip,
+               scheduleFetchOnMiss: false
+           ) {
+            return image
+        }
+
+        return await service.ingestLocalExtensionIcon(
+            fileURL: iconFileURL,
+            documentURL: url,
+            partition: partition,
+            context: context
+        )
+    }
+
+    @MainActor
     static func loadCachedLauncherImage(
         forDocumentURL url: URL,
         partition: SumiFaviconPartition = .regular(nil)
@@ -88,6 +124,10 @@ enum TabFaviconStore {
             result = body(SumiFaviconSystem.shared.service)
         }
         return result
+    }
+
+    private static func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.standardizedFileURL.path == rhs.standardizedFileURL.path
     }
 
 }

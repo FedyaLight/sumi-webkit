@@ -630,6 +630,39 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
 
 @MainActor
 final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
+    func testLocalExtensionIconIsPreparedThroughFaviconPipeline() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiFaviconV2ExtensionIcon-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let iconURL = directory.appendingPathComponent("extension-icon-128.png")
+        try SumiFaviconTestImages.pngData(width: 128, height: 128).write(to: iconURL, options: [.atomic])
+
+        let pageURL = try XCTUnwrap(URL(string: "webkit-extension://ext-test/onboarding.html"))
+        XCTAssertNotNil(SumiFaviconLookupKey.cacheKey(for: pageURL))
+
+        let service = SumiFaviconService(rootDirectory: directory.appendingPathComponent("store", isDirectory: true))
+        let partition = SumiFaviconPartition.regular(UUID())
+        let image = await service.ingestLocalExtensionIcon(
+            fileURL: iconURL,
+            documentURL: pageURL,
+            partition: partition,
+            context: .tabSidebar
+        )
+        let request = request(pageURL: pageURL, partition: partition, context: .tabSidebar)
+        try assertPreparedImage(image, matches: request)
+
+        let selection = try XCTUnwrap(service.cachedSelection(for: pageURL, partition: partition))
+        XCTAssertEqual(selection.sourceKind, .extensionManifest)
+        XCTAssertEqual(selection.sourceURL.standardizedFileURL.path, iconURL.standardizedFileURL.path)
+
+        try assertPreparedImage(
+            service.cachedPreparedImage(for: request),
+            matches: request
+        )
+    }
+
     func testSpeedometerRelativeDocumentIconPersistsForColdCacheBackedLookup() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2Speedometer-\(UUID().uuidString)", isDirectory: true)

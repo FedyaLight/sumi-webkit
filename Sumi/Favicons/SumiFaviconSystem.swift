@@ -4,7 +4,7 @@ import Foundation
 enum SumiFaviconLookupKey {
     static func cacheKey(for url: URL) -> String? {
         guard let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https"
+              isCacheableScheme(scheme)
         else {
             return nil
         }
@@ -25,12 +25,17 @@ enum SumiFaviconLookupKey {
 
         if let explicitURL = URL(string: trimmed),
            let scheme = explicitURL.scheme?.lowercased(),
-           scheme == "http" || scheme == "https"
+           isCacheableScheme(scheme)
         {
             return explicitURL
         }
 
         return URL(string: "https://\(trimmed)")
+    }
+
+    private static func isCacheableScheme(_ scheme: String) -> Bool {
+        scheme == "http" || scheme == "https"
+            || ExtensionUtils.extensionOwnedURLSchemes.contains(scheme)
     }
 }
 

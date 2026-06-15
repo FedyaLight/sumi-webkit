@@ -125,6 +125,143 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         )
     }
 
+    func testIconPathPrefersLargestManifestIconBeforeActionIcon() throws {
+        let directory = try temporaryExtensionDirectory()
+        try writeEmptyFile("icons/16.png", in: directory)
+        try writeEmptyFile("icons/48.png", in: directory)
+        try writeEmptyFile("icons/128.png", in: directory)
+        try writeEmptyFile("action/512.png", in: directory)
+
+        let manifest: [String: Any] = [
+            "icons": [
+                "16": "icons/16.png",
+                "48": "icons/48.png",
+                "128": "icons/128.png",
+            ],
+            "action": [
+                "default_icon": [
+                    "512": "action/512.png",
+                ],
+            ],
+        ]
+
+        XCTAssertEqual(
+            ExtensionUtils.iconPath(in: directory, manifest: manifest),
+            directory.appendingPathComponent("icons/128.png").path
+        )
+    }
+
+    func testIconPathFallsBackToActionDefaultIconWhenManifestIconsAreMissing() throws {
+        let directory = try temporaryExtensionDirectory()
+        try writeEmptyFile("action/32.png", in: directory)
+
+        let manifest: [String: Any] = [
+            "icons": [
+                "128": "missing-128.png",
+            ],
+            "action": [
+                "default_icon": [
+                    "128": "missing-action-128.png",
+                    "32": "action/32.png",
+                ],
+            ],
+        ]
+
+        XCTAssertEqual(
+            ExtensionUtils.iconPath(in: directory, manifest: manifest),
+            directory.appendingPathComponent("action/32.png").path
+        )
+    }
+
+    func testIconPathAcceptsExtensionRootAbsoluteManifestIconPath() throws {
+        let directory = try temporaryExtensionDirectory()
+        try writeEmptyFile("assets/protonpass-icon-128.png", in: directory)
+
+        let manifest: [String: Any] = [
+            "icons": [
+                "128": "/assets/protonpass-icon-128.png",
+            ],
+        ]
+
+        XCTAssertEqual(
+            ExtensionUtils.iconPath(in: directory, manifest: manifest),
+            directory.appendingPathComponent("assets/protonpass-icon-128.png").path
+        )
+    }
+
+    func testStoredExtensionIconPathFallsBackToManifestWhenPersistedIconPathIsMissing() throws {
+        let directory = try temporaryExtensionDirectory()
+        try writeEmptyFile("assets/protonpass-icon-128.png", in: directory)
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Proton Pass",
+            "version": "1.0",
+            "icons": [
+                "128": "/assets/protonpass-icon-128.png",
+            ],
+        ]
+        let record = try makeInstalledRecord(
+            manifestVersion: 3,
+            id: "me.proton.pass.catalyst.safari-extension",
+            packagePath: directory.path,
+            iconPath: nil,
+            manifest: manifest
+        )
+
+        XCTAssertEqual(
+            ExtensionUtils.iconPath(for: record),
+            directory.appendingPathComponent("assets/protonpass-icon-128.png").path
+        )
+    }
+
+    func testExtensionOwnedURLIconPathUsesInstalledExtensionID() throws {
+        let directory = try temporaryExtensionDirectory()
+        try writeEmptyFile("icons/128.png", in: directory)
+        let iconPath = directory.appendingPathComponent("icons/128.png").path
+        let record = try makeInstalledRecord(
+            manifestVersion: 3,
+            id: "extension-id",
+            iconPath: iconPath
+        )
+
+        XCTAssertEqual(
+            ExtensionUtils.iconPath(
+                forExtensionOwnedURL: URL(string: "safari-web-extension://extension-id/onboarding.html"),
+                installedExtensions: [record]
+            ),
+            iconPath
+        )
+        XCTAssertNil(
+            ExtensionUtils.iconPath(
+                forExtensionOwnedURL: URL(string: "safari-web-extension://other-extension/onboarding.html"),
+                installedExtensions: [record]
+            )
+        )
+    }
+
+    func testExtensionOwnedURLIconPathDecodesSumiScopedWebKitHost() throws {
+        let directory = try temporaryExtensionDirectory()
+        try writeEmptyFile("icons/128.png", in: directory)
+        let iconPath = directory.appendingPathComponent("icons/128.png").path
+        let record = try makeInstalledRecord(
+            manifestVersion: 3,
+            id: "com.1password.safari.extension",
+            iconPath: iconPath
+        )
+        let scopedIdentifier = "3135281a-0e69-48bd-b2c6-5b4171e9400c:\(record.id)"
+        let host = "ext-" + scopedIdentifier.utf8.map {
+            String(format: "%02x", $0)
+        }.joined()
+
+        XCTAssertEqual(
+            ExtensionUtils.iconPath(
+                forExtensionOwnedURL: URL(string: "webkit-extension://\(host)/app/app.html#/page/welcome"),
+                installedExtensions: [record]
+            ),
+            iconPath
+        )
+    }
+
     @available(macOS 15.5, *)
     @MainActor
     func testLoadInstalledMetadataRefreshesLegacyMV2BackgroundRecord() throws {
@@ -266,18 +403,29 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         )
     }
 
-    private func makeInstalledRecord(manifestVersion: Int) throws -> InstalledExtensionRecord {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        addTeardownBlock {
-            try? FileManager.default.removeItem(at: directory)
+    private func makeInstalledRecord(
+        manifestVersion: Int,
+        id: String = UUID().uuidString,
+        packagePath: String? = nil,
+        iconPath: String? = nil,
+        manifest overrideManifest: [String: Any]? = nil
+    ) throws -> InstalledExtensionRecord {
+        let directory: URL
+        if let packagePath {
+            directory = URL(fileURLWithPath: packagePath, isDirectory: true)
+        } else {
+            directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            addTeardownBlock {
+                try? FileManager.default.removeItem(at: directory)
+            }
         }
 
-        let manifest: [String: Any] = [
+        let manifest: [String: Any] = overrideManifest ?? [
             "manifest_version": manifestVersion,
             "name": "Test Extension",
             "version": "1.0",
@@ -290,7 +438,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         try data.write(to: manifestURL, options: [.atomic])
 
         return InstalledExtensionRecord(
-            id: UUID().uuidString,
+            id: id,
             name: "Test Extension",
             version: "1.0",
             manifestVersion: manifestVersion,
@@ -299,7 +447,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
             installDate: Date(),
             lastUpdateDate: Date(),
             packagePath: directory.path,
-            iconPath: nil,
+            iconPath: iconPath,
             sourceKind: .safariAppExtension,
             backgroundModel: .none,
             incognitoMode: .spanning,
@@ -323,6 +471,28 @@ final class WebExtensionManifestValidationTests: XCTestCase {
             ),
             manifest: manifest
         )
+    }
+
+    private func temporaryExtensionDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        return directory
+    }
+
+    private func writeEmptyFile(_ relativePath: String, in directory: URL) throws {
+        let url = directory.appendingPathComponent(relativePath)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data().write(to: url, options: [.atomic])
     }
 
     private func writeManifest(_ manifest: [String: Any]) throws -> URL {

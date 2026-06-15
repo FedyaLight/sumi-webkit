@@ -73,6 +73,19 @@ extension Tab {
         }
 
         let partition = SumiFaviconSystem.shared.partition(profile: resolveProfile())
+        if let image = await loadExtensionPageFavicon(
+            for: requestedURL,
+            partition: partition
+        ),
+           !Task.isCancelled,
+           url == requestedURL {
+            favicon = SwiftUI.Image(nsImage: image)
+            faviconIsTemplateGlobePlaceholder = false
+            resolvedFaviconCacheKey = Self.faviconLookupIdentifier(for: requestedURL)
+                ?? SumiFaviconResolver.cacheKey(for: requestedURL)
+            return
+        }
+
         if let image = await TabFaviconStore.loadCachedDisplayImage(
             forDocumentURL: requestedURL,
             partition: partition,
@@ -89,6 +102,31 @@ extension Tab {
         }
 
         faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
+    }
+
+    @MainActor
+    private func loadExtensionPageFavicon(
+        for url: URL,
+        partition: SumiFaviconPartition
+    ) async -> NSImage? {
+        guard ExtensionUtils.isExtensionOwnedURL(url) else { return nil }
+        let installedExtensions =
+            browserManager?.extensionsModule.managerIfLoadedAndEnabled()?.installedExtensions
+            ?? browserManager?.extensionSurfaceStore.installedExtensions
+            ?? []
+        guard let iconPath = ExtensionUtils.iconPath(
+            forExtensionOwnedURL: url,
+            installedExtensions: installedExtensions
+        ) else {
+            return nil
+        }
+
+        return await TabFaviconStore.loadExtensionPageImage(
+            forDocumentURL: url,
+            iconFileURL: URL(fileURLWithPath: iconPath),
+            partition: partition,
+            context: .tabSidebar
+        )
     }
 
     @MainActor

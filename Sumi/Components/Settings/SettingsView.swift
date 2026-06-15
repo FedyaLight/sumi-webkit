@@ -729,7 +729,7 @@ private struct ExtensionCatalogRow: View {
 
     @ViewBuilder
     private var extensionIcon: some View {
-        if let iconPath = extensionRecord.iconPath,
+        if let iconPath = ExtensionUtils.iconPath(for: extensionRecord),
            let image = NSImage(contentsOfFile: iconPath) {
             Image(nsImage: image)
                 .resizable()
@@ -910,7 +910,7 @@ private struct ExtensionCatalogDetailsPopover: View {
     private var header: some View {
         HStack(alignment: .center, spacing: 10) {
             Group {
-                if let iconPath = extensionRecord.iconPath,
+                if let iconPath = ExtensionUtils.iconPath(for: extensionRecord),
                    let image = NSImage(contentsOfFile: iconPath) {
                     Image(nsImage: image)
                         .resizable()

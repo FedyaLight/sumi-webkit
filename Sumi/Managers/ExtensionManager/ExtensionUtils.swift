@@ -78,7 +78,35 @@ struct ExtensionUtils {
         else {
             return nil
         }
-        return host
+        return extensionID(fromExtensionHost: host) ?? host
+    }
+
+    static func extensionID(fromExtensionHost host: String) -> String? {
+        let normalizedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedHost.hasPrefix("ext-") else { return nil }
+        let hex = String(normalizedHost.dropFirst(4))
+        guard hex.count.isMultiple(of: 2) else { return nil }
+
+        var bytes = [UInt8]()
+        var index = hex.startIndex
+        while index < hex.endIndex {
+            let nextIndex = hex.index(index, offsetBy: 2)
+            guard let byte = UInt8(hex[index..<nextIndex], radix: 16) else {
+                return nil
+            }
+            bytes.append(byte)
+            index = nextIndex
+        }
+
+        guard let scopedIdentifier = String(bytes: bytes, encoding: .utf8),
+              let separator = scopedIdentifier.firstIndex(of: ":")
+        else {
+            return nil
+        }
+
+        let extensionID = scopedIdentifier[scopedIdentifier.index(after: separator)...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return extensionID.isEmpty ? nil : extensionID
     }
 
     static func displayName(
@@ -104,6 +132,34 @@ struct ExtensionUtils {
             forExtensionID: extensionID(fromExtensionOwnedURL: url),
             installedExtensions: installedExtensions
         )
+    }
+
+    static func iconPath(
+        forExtensionOwnedURL url: URL?,
+        installedExtensions: [InstalledExtension]
+    ) -> String? {
+        guard
+            let extensionID = extensionID(fromExtensionOwnedURL: url),
+            let installedExtension = installedExtensions.first(where: { $0.id == extensionID })
+        else {
+            return nil
+        }
+
+        return iconPath(for: installedExtension)
+    }
+
+    static func iconPath(for installedExtension: InstalledExtension) -> String? {
+        if let iconPath = installedExtension.iconPath,
+           FileManager.default.fileExists(atPath: iconPath)
+        {
+            return iconPath
+        }
+
+        let extensionRoot = URL(
+            fileURLWithPath: installedExtension.packagePath,
+            isDirectory: true
+        )
+        return iconPath(in: extensionRoot, manifest: installedExtension.manifest)
     }
 
     static func webKitLoadableExtensionURL(for url: URL) -> URL {
@@ -289,9 +345,10 @@ struct ExtensionUtils {
         let candidates = iconCandidates(from: manifest)
 
         for relativePath in candidates {
+            let resolvedPath = iconResourcePath(relativePath)
             guard let candidate = url(
                 extensionRoot,
-                appendingManifestRelativePath: relativePath
+                appendingManifestRelativePath: resolvedPath
             ) else {
                 continue
             }
@@ -303,12 +360,32 @@ struct ExtensionUtils {
         return nil
     }
 
+    private static func iconResourcePath(_ path: String) -> String {
+        var result = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        while result.hasPrefix("/") {
+            result.removeFirst()
+        }
+        return result
+    }
+
     private static func iconCandidates(from manifest: [String: Any]) -> [String] {
         var candidates: [String] = []
 
         func appendIconMap(_ value: Any?) {
             guard let map = value as? [String: Any] else { return }
-            for key in map.keys.sorted(by: >) {
+            let sortedKeys = map.keys.sorted { lhs, rhs in
+                switch (Int(lhs), Int(rhs)) {
+                case let (lhsSize?, rhsSize?):
+                    return lhsSize > rhsSize
+                case (_?, nil):
+                    return true
+                case (nil, _?):
+                    return false
+                case (nil, nil):
+                    return lhs > rhs
+                }
+            }
+            for key in sortedKeys {
                 if let path = map[key] as? String, path.isEmpty == false {
                     candidates.append(path)
                 }

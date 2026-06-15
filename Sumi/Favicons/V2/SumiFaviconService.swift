@@ -205,6 +205,59 @@ final class SumiFaviconService: @unchecked Sendable {
         )
     }
 
+    func ingestLocalExtensionIcon(
+        fileURL: URL,
+        documentURL: URL,
+        partition: SumiFaviconPartition,
+        context: SumiFaviconDisplayContext
+    ) async -> NSImage? {
+        guard ExtensionUtils.isExtensionOwnedURL(documentURL),
+              let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe])
+        else {
+            return nil
+        }
+
+        let candidate = SumiFaviconCandidate(
+            pageURL: documentURL,
+            iconURL: fileURL.standardizedFileURL,
+            sourceKind: .extensionManifest,
+            relTokens: ["icon"],
+            declaredType: mimeType(forIconFileURL: fileURL),
+            partition: partition
+        )
+        let validation = SumiFaviconPayloadValidator.validate(
+            data: data,
+            responseMimeType: nil,
+            candidate: candidate
+        )
+        guard case .valid(let payload) = validation else {
+            return nil
+        }
+
+        do {
+            let oldSelection = blobStore.cachedSelection(for: documentURL, partition: partition)
+            let selection = try blobStore.storeValidatedPayload(payload, for: candidate)
+            invalidatePreparedVariantsIfRevisionChanged(
+                oldSelection: oldSelection,
+                newSelection: selection
+            )
+            postUpdate(
+                domain: documentURL.host,
+                partition: partition,
+                revision: selection.revision
+            )
+            let request = SumiPreparedFaviconRequest(
+                pageURL: documentURL,
+                partition: partition,
+                context: context,
+                backingScale: Self.defaultBackingScale()
+            )
+            return await preparedPipeline.preparedImage(for: selection, request: request)
+        } catch {
+            return nil
+        }
+    }
+
     func hasFavicon(
         for pageURL: URL,
         partition: SumiFaviconPartition
@@ -287,9 +340,7 @@ final class SumiFaviconService: @unchecked Sendable {
             return cachedSelection
         }
 
-        let hasExplicitCandidates = candidates.contains {
-            $0.sourceKind == .documentLink || $0.sourceKind == .webAppManifest
-        }
+        let hasExplicitCandidates = candidates.contains(where: Self.isExplicitCandidate)
         if !hasExplicitCandidates,
            blobStore.isNoIconFresh(for: pageURL, partition: partition)
         {
@@ -390,7 +441,7 @@ final class SumiFaviconService: @unchecked Sendable {
         guard !explicitCandidates.isEmpty else { return true }
 
         switch selection.sourceKind {
-        case .documentLink, .webAppManifest:
+        case .documentLink, .extensionManifest, .webAppManifest:
             return !Self.explicitCandidatesCanImprove(over: selection, candidates: explicitCandidates)
         case .rootFavicon, .appleTouchRoot, .browserFallback:
             return false
@@ -398,7 +449,9 @@ final class SumiFaviconService: @unchecked Sendable {
     }
 
     private static func isExplicitCandidate(_ candidate: SumiFaviconCandidate) -> Bool {
-        candidate.sourceKind == .documentLink || candidate.sourceKind == .webAppManifest
+        candidate.sourceKind == .documentLink
+            || candidate.sourceKind == .extensionManifest
+            || candidate.sourceKind == .webAppManifest
     }
 
     private static func explicitCandidatesCanImprove(
@@ -480,6 +533,25 @@ final class SumiFaviconService: @unchecked Sendable {
             return Data(base64Encoded: String(payload))
         }
         return String(payload).removingPercentEncoding?.data(using: .utf8)
+    }
+
+    private func mimeType(forIconFileURL fileURL: URL) -> String? {
+        switch fileURL.pathExtension.lowercased() {
+        case "png":
+            return "image/png"
+        case "jpg", "jpeg":
+            return "image/jpeg"
+        case "gif":
+            return "image/gif"
+        case "webp":
+            return "image/webp"
+        case "ico":
+            return "image/x-icon"
+        case "svg":
+            return "image/svg+xml"
+        default:
+            return nil
+        }
     }
 
     private func invalidatePreparedVariantsIfRevisionChanged(
