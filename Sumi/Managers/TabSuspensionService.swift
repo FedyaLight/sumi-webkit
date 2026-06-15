@@ -381,6 +381,7 @@ final class TabSuspensionService {
                 noteTabBecameHidden(tab, context: context)
             }
         }
+        refreshLazyRestoreQueue(using: context)
 
         RuntimeDiagnostics.debug(category: "TabSuspension") {
             "reconciled proactive timers reason=\(reason) active=\(proactiveTimers.count)"
@@ -758,6 +759,38 @@ final class TabSuspensionService {
             visible[windowState.id] = Set(tabIDs)
         }
         return visible
+    }
+
+    private func refreshLazyRestoreQueue(using context: TabSuspensionEvaluationContext) {
+        guard let browserManager,
+              let windowRegistry = browserManager.windowRegistry
+        else {
+            return
+        }
+
+        let activeWindowId = windowRegistry.activeWindow?.id
+        let anchors = windowRegistry.allWindows
+            .sorted { lhs, rhs in
+                let lhsPriority = lhs.id == activeWindowId ? 0 : 1
+                let rhsPriority = rhs.id == activeWindowId ? 0 : 1
+                if lhsPriority != rhsPriority {
+                    return lhsPriority < rhsPriority
+                }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            .compactMap { windowState in
+                let currentTab = browserManager.currentTab(for: windowState)
+                return browserManager.tabManager.opportunisticRestoreAnchor(
+                    in: windowState,
+                    currentTab: currentTab
+                )
+            }
+
+        browserManager.tabManager.lazyRestoreCoordinator.refresh(
+            anchors: anchors,
+            selectedTabIDs: context.selectedTabIDs,
+            visibleTabIDs: context.visibleTabIDs
+        )
     }
 
     private static func nanoseconds(for interval: TimeInterval) -> UInt64 {

@@ -83,6 +83,7 @@ struct SumiApp: App {
         appDelegate.externalURLHandler = browserManager
         appDelegate.persistenceHandler = browserManager
         appDelegate.updateHandler = browserManager
+        appDelegate.appLifecycleHandler = browserManager
         appDelegate.settingsHandler = settingsManager
         appDelegate.shortcutManager = keyboardShortcutManager
 

@@ -89,6 +89,12 @@ final class SharedVisitedLinkStoreProvider {
         storesByProfileId.removeValue(forKey: profileId)
     }
 
+#if DEBUG
+    func seedStoreForTesting(_ store: NSObject, profileId: UUID) {
+        storesByProfileId[profileId] = store
+    }
+#endif
+
     private func store(for profileId: UUID, seed: NSObject?) -> NSObject? {
         if let existing = storesByProfileId[profileId] {
             return existing

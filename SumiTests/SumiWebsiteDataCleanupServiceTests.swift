@@ -51,6 +51,47 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(store.recordRemovals.count, 1)
     }
 
+    func testConcurrentDomainCleanupRequestsCoalesce() async {
+        let cookieStore = FakeDDGCookieStore(cookies: [
+            .make(domain: "example.com"),
+            .make(domain: "sub.example.com")
+        ])
+        let store = FakeDDGWebsiteDataStore(
+            cookieStore: cookieStore,
+            records: [
+                FakeDDGWebsiteDataRecord(displayName: "example.com"),
+                FakeDDGWebsiteDataRecord(displayName: "sub.example.com")
+            ]
+        )
+        store.recordFetchDelayNanoseconds = 50_000_000
+        store.recordRemovalDelayNanoseconds = 50_000_000
+        let service = SumiWebsiteDataCleanupService()
+
+        async let first: Void = service.removeWebsiteDataForDomains(
+            ["example.com"],
+            ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
+            includingCookies: true,
+            using: store,
+            storeIdentifier: "coalesced-domain-store"
+        )
+        await Task.yield()
+        async let second: Void = service.removeWebsiteDataForDomains(
+            ["example.com"],
+            ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
+            includingCookies: true,
+            using: store,
+            storeIdentifier: "coalesced-domain-store"
+        )
+        _ = await (first, second)
+
+        XCTAssertEqual(store.fetchTypes, [WKWebsiteDataStore.sumiCacheDataTypes])
+        XCTAssertEqual(store.recordRemovals.count, 1)
+        XCTAssertEqual(
+            Set(cookieStore.deletedCookies.map(\.domain)),
+            Set(["example.com", "sub.example.com"])
+        )
+    }
+
     func testDomainScopedDeletionCallsRecordRemovalWithExpectedTypes() async {
         let store = FakeDDGWebsiteDataStore(
             records: [
@@ -538,9 +579,11 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
         let appResidueCleaner = FakeAppResidueCleaner()
+        let destructiveCleanupPreparer = FakeDestructiveCleanupPreparer()
         let service = SumiBrowsingDataCleanupService(
             websiteDataCleanupService: cleanupService,
             appResidueCleaner: appResidueCleaner,
+            destructiveCleanupPreparer: destructiveCleanupPreparer,
             sharedWebsiteDataStoreProvider: { .nonPersistent() },
             referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
         )
@@ -566,6 +609,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         ).items
         XCTAssertTrue(remaining.isEmpty)
         XCTAssertEqual(cleanupService.clearedProfileStores, 2)
+        XCTAssertEqual(
+            destructiveCleanupPreparer.preparedProfileIDSets,
+            [Set([harness.profileID])]
+        )
         XCTAssertEqual(appResidueCleaner.clearSharedURLCacheCallCount, 1)
         XCTAssertEqual(appResidueCleaner.clearFaviconNegativeCacheCallCount, 1)
     }
@@ -574,9 +621,11 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
         let appResidueCleaner = FakeAppResidueCleaner()
+        let destructiveCleanupPreparer = FakeDestructiveCleanupPreparer()
         let service = SumiBrowsingDataCleanupService(
             websiteDataCleanupService: cleanupService,
             appResidueCleaner: appResidueCleaner,
+            destructiveCleanupPreparer: destructiveCleanupPreparer,
             sharedWebsiteDataStoreProvider: { .nonPersistent() },
             referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
         )
@@ -628,9 +677,42 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertTrue(currentProfileRemaining.isEmpty)
         XCTAssertTrue(otherProfileVisits.isEmpty)
         XCTAssertEqual(cleanupService.clearedProfileStores, 3)
+        XCTAssertEqual(
+            destructiveCleanupPreparer.preparedProfileIDSets,
+            [Set([harness.profileID, otherProfileID])]
+        )
         XCTAssertEqual(cleanupService.prunedKeepSets, [Set([harness.profileID, otherProfileID])])
         XCTAssertEqual(appResidueCleaner.clearSharedURLCacheCallCount, 1)
         XCTAssertEqual(appResidueCleaner.clearFaviconNegativeCacheCallCount, 1)
+    }
+
+    func testBrowsingDataFiniteRangeDoesNotPrepareLiveWebViewsForCleanup() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        let destructiveCleanupPreparer = FakeDestructiveCleanupPreparer()
+        let service = SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            destructiveCleanupPreparer: destructiveCleanupPreparer,
+            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
+        )
+
+        try await harness.historyManager.store.recordVisit(
+            url: URL(string: "https://www.reddit.com/r/browsers")!,
+            title: "Recent",
+            visitedAt: historyTestDate("2026-04-23T11:45:00Z"),
+            profileId: harness.profileID
+        )
+
+        await service.clear(
+            range: .lastHour,
+            categories: [.siteData, .cache],
+            historyManager: harness.historyManager,
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
+        )
+
+        XCTAssertTrue(destructiveCleanupPreparer.preparedProfileIDSets.isEmpty)
+        XCTAssertEqual(cleanupService.removedDomainSets.count, 1)
     }
 
     func testBrowsingDataSiteDataOnlyClearInvalidatesFaviconsForAffectedDomains() async throws {
@@ -941,6 +1023,8 @@ private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
     var recordRemovals: [(types: Set<String>, records: [FakeDDGWebsiteDataRecord])] = []
     var fetchTypes: [Set<String>] = []
     var delayNanoseconds: UInt64 = 0
+    var recordFetchDelayNanoseconds: UInt64 = 0
+    var recordRemovalDelayNanoseconds: UInt64 = 0
 
     private let cookieStore: FakeDDGCookieStore
 
@@ -959,6 +1043,7 @@ private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
 
     func dataRecords(ofTypes types: Set<String>) async -> [FakeDDGWebsiteDataRecord] {
         fetchTypes.append(types)
+        await delayIfNeeded(recordFetchDelayNanoseconds)
         return records
     }
 
@@ -966,12 +1051,18 @@ private final class FakeDDGWebsiteDataStore: SumiWebsiteDataStore {
         ofTypes types: Set<String>,
         for records: [FakeDDGWebsiteDataRecord]
     ) async {
+        await delayIfNeeded(recordRemovalDelayNanoseconds)
         recordRemovals.append((types, records))
     }
 
     private func delayIfNeeded() async {
         guard delayNanoseconds > 0 else { return }
         try? await Task.sleep(nanoseconds: delayNanoseconds)
+    }
+
+    private func delayIfNeeded(_ nanoseconds: UInt64) async {
+        guard nanoseconds > 0 else { return }
+        try? await Task.sleep(nanoseconds: nanoseconds)
     }
 }
 
@@ -1163,6 +1254,15 @@ private final class FakeAppResidueCleaner: SumiBrowsingDataAppResidueCleaning {
 
     func clearFaviconNegativeCache() {
         clearFaviconNegativeCacheCallCount += 1
+    }
+}
+
+@MainActor
+private final class FakeDestructiveCleanupPreparer: SumiDestructiveBrowsingDataCleanupPreparing {
+    private(set) var preparedProfileIDSets: [Set<UUID>] = []
+
+    func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async {
+        preparedProfileIDSets.append(profileIDs)
     }
 }
 

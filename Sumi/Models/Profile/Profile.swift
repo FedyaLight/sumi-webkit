@@ -117,6 +117,9 @@ final class Profile: NSObject, Identifiable {
 
     // MARK: - Cleanup
     func clearAllData() async {
+        await SumiBrowsingDataCleanupService.shared.prepareForDestructiveWebsiteDataCleanup(
+            profileIDs: [id]
+        )
         await SumiWebsiteDataCleanupService.shared.clearAllProfileWebsiteData(in: dataStore)
         await refreshDataStoreStats()
     }

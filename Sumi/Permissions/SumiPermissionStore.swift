@@ -16,8 +16,7 @@ struct SumiPermissionStoreRecord: Codable, Equatable, Hashable, Sendable {
     }
 
     static func normalizedDisplayDomain(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Unknown Origin" : trimmed.lowercased()
+        SumiPermissionDomainCache.shared.lowercasedDisplayDomain(value)
     }
 }
 

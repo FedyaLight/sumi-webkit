@@ -11,7 +11,7 @@ import Combine
 @Observable
 @MainActor
 class ZoomManager: ObservableObject {
-    private let userDefaults = UserDefaults.standard
+    private let userDefaults: UserDefaults
     private let zoomKeyPrefix = "zoom."
     private static let defaultZoomLevel: Double = 1.0
 
@@ -25,26 +25,45 @@ class ZoomManager: ObservableObject {
     var currentZoomLevel: Double = 1.0
     var currentDomain: String?
 
-    init() {}
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+    }
 
     // MARK: - Public Methods
 
     /// Get zoom level for a specific domain
-    func getZoomLevel(for domain: String) -> Double {
-        let key = zoomKeyPrefix + domain
-        guard let storedValue = userDefaults.object(forKey: key) else {
+    func getZoomLevel(for domain: String, profileId: UUID? = nil) -> Double {
+        guard let key = zoomStorageKey(for: domain, profileId: profileId) else {
             return Self.defaultZoomLevel
         }
-        let rawValue = (storedValue as? Double) ?? (storedValue as? NSNumber)?.doubleValue ?? Self.defaultZoomLevel
+
+        if let rawValue = zoomLevel(forKey: key) {
+            return clampZoom(rawValue)
+        }
+
+        guard profileId != nil,
+              let legacyKey = zoomStorageKey(for: domain, profileId: nil),
+              let rawValue = zoomLevel(forKey: legacyKey)
+        else {
+            return Self.defaultZoomLevel
+        }
+
         return clampZoom(rawValue)
     }
 
     /// Save zoom level for a specific domain
-    func saveZoomLevel(_ zoomLevel: Double, for domain: String) {
-        let key = zoomKeyPrefix + domain
+    func saveZoomLevel(_ zoomLevel: Double, for domain: String, profileId: UUID? = nil) {
+        guard let key = zoomStorageKey(for: domain, profileId: profileId) else {
+            return
+        }
+
         let clampedZoom = clampZoom(zoomLevel)
         if isDefaultZoom(clampedZoom) {
             userDefaults.removeObject(forKey: key)
+            if profileId != nil,
+               let legacyKey = zoomStorageKey(for: domain, profileId: nil) {
+                userDefaults.removeObject(forKey: legacyKey)
+            }
         } else {
             userDefaults.set(clampedZoom, forKey: key)
         }
@@ -63,7 +82,13 @@ class ZoomManager: ObservableObject {
     }
 
     /// Apply zoom to WebView with persistence
-    func applyZoom(_ zoomLevel: Double, to webView: WKWebView, domain: String?, tabId: UUID) {
+    func applyZoom(
+        _ zoomLevel: Double,
+        to webView: WKWebView,
+        domain: String?,
+        tabId: UUID,
+        profileId: UUID? = nil
+    ) {
         let clampedZoom = clampZoom(zoomLevel)
 
         // Apply page zoom to WebView (this scales the content, not the view)
@@ -74,7 +99,7 @@ class ZoomManager: ObservableObject {
 
         // Save for domain if available
         if let domain = domain {
-            saveZoomLevel(clampedZoom, for: domain)
+            saveZoomLevel(clampedZoom, for: domain, profileId: profileId)
             currentDomain = domain
         }
 
@@ -82,28 +107,39 @@ class ZoomManager: ObservableObject {
     }
 
     /// Zoom in for the current tab
-    func zoomIn(for webView: WKWebView, domain: String?, tabId: UUID) {
+    func zoomIn(for webView: WKWebView, domain: String?, tabId: UUID, profileId: UUID? = nil) {
         let currentLevel = getZoomLevel(for: tabId)
         let nextLevel = findNextZoomLevel(from: currentLevel, direction: .up)
-        applyZoom(nextLevel, to: webView, domain: domain, tabId: tabId)
+        applyZoom(nextLevel, to: webView, domain: domain, tabId: tabId, profileId: profileId)
     }
 
     /// Zoom out for the current tab
-    func zoomOut(for webView: WKWebView, domain: String?, tabId: UUID) {
+    func zoomOut(for webView: WKWebView, domain: String?, tabId: UUID, profileId: UUID? = nil) {
         let currentLevel = getZoomLevel(for: tabId)
         let nextLevel = findNextZoomLevel(from: currentLevel, direction: .down)
-        applyZoom(nextLevel, to: webView, domain: domain, tabId: tabId)
+        applyZoom(nextLevel, to: webView, domain: domain, tabId: tabId, profileId: profileId)
     }
 
     /// Reset zoom to 100%
-    func resetZoom(for webView: WKWebView, domain: String?, tabId: UUID) {
-        applyZoom(Self.defaultZoomLevel, to: webView, domain: domain, tabId: tabId)
+    func resetZoom(for webView: WKWebView, domain: String?, tabId: UUID, profileId: UUID? = nil) {
+        applyZoom(
+            Self.defaultZoomLevel,
+            to: webView,
+            domain: domain,
+            tabId: tabId,
+            profileId: profileId
+        )
     }
 
     /// Load saved zoom level for a domain and apply to WebView (only for existing tabs, not new tabs)
-    func loadSavedZoom(for webView: WKWebView, domain: String, tabId: UUID) {
-        let savedZoom = getZoomLevel(for: domain)
-        applyZoom(savedZoom, to: webView, domain: domain, tabId: tabId)
+    func loadSavedZoom(
+        for webView: WKWebView,
+        domain: String,
+        tabId: UUID,
+        profileId: UUID? = nil
+    ) {
+        let savedZoom = getZoomLevel(for: domain, profileId: profileId)
+        applyZoom(savedZoom, to: webView, domain: domain, tabId: tabId, profileId: profileId)
         currentDomain = domain
     }
 
@@ -158,6 +194,26 @@ class ZoomManager: ObservableObject {
 
     private func isDefaultZoom(_ zoomLevel: Double) -> Bool {
         abs(zoomLevel - Self.defaultZoomLevel) < 0.01
+    }
+
+    private func zoomStorageKey(for domain: String, profileId: UUID?) -> String? {
+        let normalizedDomain = domain.normalizedWebsiteDataDomain
+        guard !normalizedDomain.isEmpty else { return nil }
+
+        if let profileId {
+            let normalizedProfileId = profileId.uuidString.lowercased()
+            return "\(zoomKeyPrefix)\(normalizedProfileId).\(normalizedDomain)"
+        }
+
+        return "\(zoomKeyPrefix)\(normalizedDomain)"
+    }
+
+    private func zoomLevel(forKey key: String) -> Double? {
+        guard let storedValue = userDefaults.object(forKey: key) else {
+            return nil
+        }
+
+        return (storedValue as? Double) ?? (storedValue as? NSNumber)?.doubleValue
     }
 
     // MARK: - Cleanup

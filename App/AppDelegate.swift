@@ -28,6 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     weak var externalURLHandler: (any ExternalURLHandling)?
     weak var persistenceHandler: (any BrowserPersistenceHandling)?
     weak var updateHandler: BrowserManager?
+    weak var appLifecycleHandler: (any BrowserAppLifecycleHandling)?
     weak var settingsHandler: SumiSettingsService?
     var shortcutManager: KeyboardShortcutManager?
 
@@ -52,6 +53,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     func applicationDidBecomeActive(_ notification: Notification) {
         scheduleCloseMenuConfiguration()
+        appLifecycleHandler?.handleApplicationDidBecomeActive()
+    }
+
+    func applicationWillResignActive(_ notification: Notification) {
+        appLifecycleHandler?.handleApplicationWillResignActive()
     }
 
     nonisolated func userNotificationCenter(

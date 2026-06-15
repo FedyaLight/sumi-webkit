@@ -15,7 +15,7 @@ extension Tab {
         allowCacheLookup: Bool = true
     ) -> Bool {
         let defaultFavicon = SwiftUI.Image(systemName: "globe")
-        let lookupIdentifier = Self.faviconLookupIdentifier(for: url)
+        let referenceKey = TabFaviconStore.referenceKey(forDocumentURL: url)
         let partition = SumiFaviconSystem.shared.partition(profile: resolveProfile())
 
         if SumiSurface.isSettingsSurfaceURL(url) {
@@ -40,15 +40,14 @@ extension Tab {
         }
 
         guard allowCacheLookup,
-              SumiFaviconResolver.cacheKey(for: url) != nil,
-              let lookupIdentifier,
+              let referenceKey,
               let image = TabFaviconStore.getCachedImage(
-                forDocumentURL: url,
+                forReferenceKey: referenceKey,
                 partition: partition,
                 context: .tabSidebar
               )
         else {
-            if resolvedFaviconCacheKey == lookupIdentifier,
+            if resolvedFaviconCacheKey == referenceKey,
                !faviconIsTemplateGlobePlaceholder {
                 return false
             }
@@ -59,7 +58,7 @@ extension Tab {
 
         favicon = SwiftUI.Image(nsImage: image)
         faviconIsTemplateGlobePlaceholder = false
-        resolvedFaviconCacheKey = lookupIdentifier
+        resolvedFaviconCacheKey = referenceKey
         return true
     }
 
@@ -81,8 +80,7 @@ extension Tab {
            url == requestedURL {
             favicon = SwiftUI.Image(nsImage: image)
             faviconIsTemplateGlobePlaceholder = false
-            resolvedFaviconCacheKey = Self.faviconLookupIdentifier(for: requestedURL)
-                ?? SumiFaviconResolver.cacheKey(for: requestedURL)
+            resolvedFaviconCacheKey = TabFaviconStore.referenceKey(forDocumentURL: requestedURL)
             return
         }
 
@@ -96,8 +94,7 @@ extension Tab {
            url == requestedURL {
             favicon = SwiftUI.Image(nsImage: image)
             faviconIsTemplateGlobePlaceholder = false
-            resolvedFaviconCacheKey = Self.faviconLookupIdentifier(for: requestedURL)
-                ?? SumiFaviconResolver.cacheKey(for: requestedURL)
+            resolvedFaviconCacheKey = TabFaviconStore.referenceKey(forDocumentURL: requestedURL)
             return
         }
 
@@ -146,20 +143,24 @@ extension Tab {
             .sink { [weak self] (image: NSImage?) in
                 guard let self, let image else { return }
                 let currentURL = self.existingWebView?.url ?? self.url
-                guard let cacheKey = SumiFaviconResolver.cacheKey(for: currentURL) else { return }
+                guard let referenceKey = TabFaviconStore.referenceKey(forDocumentURL: currentURL) else { return }
                 self.favicon = SwiftUI.Image(nsImage: image)
                 self.faviconIsTemplateGlobePlaceholder = false
-                self.resolvedFaviconCacheKey = Self.faviconLookupIdentifier(for: currentURL) ?? cacheKey
+                self.resolvedFaviconCacheKey = referenceKey
             }
             .store(in: &cancellables)
         faviconCancellables = cancellables
     }
 
-    static func getCachedFavicon(for key: String) -> SwiftUI.Image? {
-        guard let image = TabFaviconStore.getCachedImage(for: key) else {
+    static func getCachedFavicon(forReferenceKey referenceKey: String) -> SwiftUI.Image? {
+        guard let image = TabFaviconStore.getCachedImage(forReferenceKey: referenceKey) else {
             return nil
         }
         return SwiftUI.Image(nsImage: image)
+    }
+
+    static func getCachedFavicon(for key: String) -> SwiftUI.Image? {
+        getCachedFavicon(forReferenceKey: key)
     }
 
     static func getCachedFavicon(forDocumentURL url: URL) -> SwiftUI.Image? {
@@ -167,12 +168,6 @@ extension Tab {
             return nil
         }
         return SwiftUI.Image(nsImage: image)
-    }
-
-    private static func faviconLookupIdentifier(for url: URL) -> String? {
-        guard SumiFaviconResolver.cacheKey(for: url) != nil else { return nil }
-        let absoluteString = url.absoluteString.trimmingCharacters(in: .whitespacesAndNewlines)
-        return absoluteString.isEmpty ? nil : absoluteString
     }
 
 }

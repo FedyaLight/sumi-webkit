@@ -280,7 +280,7 @@ private struct TrackedWebViewOwner: Equatable {
 
 @MainActor
 @Observable
-class WebViewCoordinator {
+class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     /// Window-specific web views: tabId -> windowId -> WKWebView
     @ObservationIgnored
     private var webViewsByTabAndWindow: [UUID: [UUID: WKWebView]] = [:]
@@ -341,6 +341,9 @@ class WebViewCoordinator {
 
     @ObservationIgnored
     private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
+
+    @ObservationIgnored
+    private var destructiveCleanupBlankingWebViewIDs: Set<ObjectIdentifier> = []
 
     // MARK: - Compositor Container Management
 
@@ -432,6 +435,55 @@ class WebViewCoordinator {
         return result
     }
 
+    func isPreparingForDestructiveDataCleanupNavigation(on webView: WKWebView) -> Bool {
+        destructiveCleanupBlankingWebViewIDs.contains(ObjectIdentifier(webView))
+    }
+
+    func finishDestructiveDataCleanupNavigation(on webView: WKWebView) {
+        destructiveCleanupBlankingWebViewIDs.remove(ObjectIdentifier(webView))
+    }
+
+    func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async {
+        guard !profileIDs.isEmpty else { return }
+        guard let browserManager else { return }
+
+        var seenTabIDs = Set<UUID>()
+        var preparedWebViewCount = 0
+        var skippedProtectedWebViewCount = 0
+
+        func visit(_ tab: Tab) {
+            guard seenTabIDs.insert(tab.id).inserted else { return }
+            guard let profileId = tab.resolveProfile()?.id ?? tab.profileId,
+                  profileIDs.contains(profileId),
+                  !tab.representsSumiNativeSurface
+            else {
+                return
+            }
+
+            let liveWebViews = liveWebViews(for: tab)
+            let eligibleWebViews = liveWebViews.filter {
+                isWebViewProtectedFromCompositorMutation($0) == false
+            }
+            guard !eligibleWebViews.isEmpty else {
+                skippedProtectedWebViewCount += liveWebViews.count
+                return
+            }
+
+            tab.cancelPendingMainFrameNavigation()
+            for webView in eligibleWebViews {
+                prepareForDestructiveCleanup(webView, tab: tab)
+                preparedWebViewCount += 1
+            }
+        }
+
+        browserManager.tabManager.allPinnedTabsAllProfiles.forEach(visit)
+        browserManager.tabManager.allTabs().forEach(visit)
+
+        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
+            "Prepared \(preparedWebViewCount) live WebView(s) for destructive data cleanup across \(profileIDs.count) profile(s); skipped \(skippedProtectedWebViewCount) protected WebView(s)."
+        }
+    }
+
     func windowIDs(for tabId: UUID) -> [UUID] {
         guard let windowWebViews = webViewsByTabAndWindow[tabId] else { return [] }
         return Array(windowWebViews.keys)
@@ -439,6 +491,29 @@ class WebViewCoordinator {
 
     func setWebView(_ webView: WKWebView, for tabId: UUID, in windowId: UUID) {
         registerTrackedWebView(webView, for: tabId, in: windowId)
+    }
+
+    private func prepareForDestructiveCleanup(_ webView: WKWebView, tab: Tab) {
+        tab.stopLoading(on: webView)
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+
+        if webView.cameraCaptureState != .none {
+            webView.setCameraCaptureState(.none, completionHandler: nil)
+        }
+        if webView.microphoneCaptureState != .none {
+            webView.setMicrophoneCaptureState(.none, completionHandler: nil)
+        }
+
+        guard webView.url?.absoluteString != SumiSurface.emptyTabURL.absoluteString else {
+            finishDestructiveDataCleanupNavigation(on: webView)
+            return
+        }
+
+        let webViewID = ObjectIdentifier(webView)
+        destructiveCleanupBlankingWebViewIDs.insert(webViewID)
+        if webView.load(URLRequest(url: SumiSurface.emptyTabURL)) == nil {
+            destructiveCleanupBlankingWebViewIDs.remove(webViewID)
+        }
     }
 
     func registerPromotedHost(
@@ -814,6 +889,7 @@ class WebViewCoordinator {
     func handleWebViewDidClose(_ webView: WKWebView) -> Bool {
         let webViewID = ObjectIdentifier(webView)
         noteWeakWebView(webView)
+        finishDestructiveDataCleanupNavigation(on: webView)
 
         if enqueueDeferredProtectedCommand(
             .closeWebViewFromWebKit(webViewID: webViewID),
@@ -1724,6 +1800,7 @@ class WebViewCoordinator {
         _ webView: WKWebView,
         owner: TrackedWebViewOwner
     ) {
+        finishDestructiveDataCleanupNavigation(on: webView)
         removeWebViewFromContainers(webView)
         _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
 

@@ -76,7 +76,6 @@ enum SumiPermissionPromptStrings {
     }
 
     static func normalizedDisplayDomain(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Current site" : trimmed
+        SumiPermissionDomainCache.shared.trimmedDisplayDomain(value)
     }
 }

@@ -159,6 +159,11 @@ protocol SumiBrowsingDataAppResidueCleaning: AnyObject {
 }
 
 @MainActor
+protocol SumiDestructiveBrowsingDataCleanupPreparing: AnyObject {
+    func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async
+}
+
+@MainActor
 final class SumiBrowsingDataAppResidueCleaner: SumiBrowsingDataAppResidueCleaning {
     static let shared = SumiBrowsingDataAppResidueCleaner()
 
@@ -192,11 +197,13 @@ final class SumiBrowsingDataCleanupService {
     private let appResidueCleaner: any SumiBrowsingDataAppResidueCleaning
     private let sharedWebsiteDataStoreProvider: @MainActor () -> WKWebsiteDataStore
     private let referenceDateProvider: @MainActor () -> Date
+    weak var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
 
     init(
         websiteDataCleanupService: (any SumiWebsiteDataCleanupServicing)? = nil,
         faviconCacheCleaner: (any SumiBrowsingDataFaviconCleaning)? = nil,
         appResidueCleaner: (any SumiBrowsingDataAppResidueCleaning)? = nil,
+        destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)? = nil,
         sharedWebsiteDataStoreProvider: @escaping @MainActor () -> WKWebsiteDataStore = {
             .default()
         },
@@ -206,8 +213,16 @@ final class SumiBrowsingDataCleanupService {
             ?? SumiWebsiteDataCleanupService.shared
         self.faviconCacheCleaner = faviconCacheCleaner ?? SumiFaviconSystem.shared
         self.appResidueCleaner = appResidueCleaner ?? SumiBrowsingDataAppResidueCleaner.shared
+        self.destructiveCleanupPreparer = destructiveCleanupPreparer
         self.sharedWebsiteDataStoreProvider = sharedWebsiteDataStoreProvider
         self.referenceDateProvider = referenceDateProvider
+    }
+
+    func prepareForDestructiveWebsiteDataCleanup(profileIDs: Set<UUID>) async {
+        guard !profileIDs.isEmpty else { return }
+        await destructiveCleanupPreparer?.prepareForDestructiveDataCleanup(
+            profileIDs: profileIDs
+        )
     }
 
     func summary(
@@ -347,6 +362,12 @@ final class SumiBrowsingDataCleanupService {
                 domains: domains
             )
         }
+
+        await prepareForDestructiveWebsiteDataCleanupIfNeeded(
+            range: range,
+            categories: categories,
+            targetProfiles: targetProfiles
+        )
 
         let dataTypes = websiteDataTypes(for: categories)
         let includesCookies = categories.contains(.siteData)
@@ -541,6 +562,18 @@ final class SumiBrowsingDataCleanupService {
                 in: dataStore
             )
         }
+    }
+
+    private func prepareForDestructiveWebsiteDataCleanupIfNeeded(
+        range: SumiBrowsingDataTimeRange,
+        categories: Set<SumiBrowsingDataCategory>,
+        targetProfiles: [Profile]
+    ) async {
+        guard range == .allTime else { return }
+        guard categories.contains(.siteData) || categories.contains(.cache) else { return }
+        await prepareForDestructiveWebsiteDataCleanup(
+            profileIDs: Set(targetProfiles.map(\.id))
+        )
     }
 
     private func websiteDataTypes(

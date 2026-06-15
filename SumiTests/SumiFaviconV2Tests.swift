@@ -663,6 +663,58 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         )
     }
 
+    func testReferenceKeyHelpersShareTheSameNormalization() throws {
+        let url = try XCTUnwrap(URL(string: "https://EXAMPLE.com/Path?q=1"))
+        let referenceKey = try XCTUnwrap(SumiFaviconLookupKey.referenceKey(for: url))
+
+        XCTAssertEqual(referenceKey, "example.com")
+        XCTAssertEqual(TabFaviconStore.referenceKey(forDocumentURL: url), referenceKey)
+        XCTAssertEqual(
+            SumiFaviconLookupKey.documentURL(forReferenceKey: referenceKey)?.absoluteString,
+            "https://example.com"
+        )
+        XCTAssertEqual(
+            TabFaviconStore.documentURL(forReferenceKey: referenceKey)?.absoluteString,
+            "https://example.com"
+        )
+    }
+
+    func testReferenceKeyAndDocumentURLLookupHitTheSamePreparedImage() async throws {
+        let pageURL = try XCTUnwrap(URL(string: "https://example.com/path"))
+        let partition = SumiFaviconPartition.regular(nil)
+        let imageData = try SumiFaviconTestImages.pngData(width: 64, height: 64)
+
+        try await SumiFaviconSystem.shared.service.storeExternalPayload(
+            imageData,
+            faviconURL: pageURL.appendingPathComponent("favicon.png"),
+            documentURL: pageURL,
+            partition: partition
+        )
+
+        let loadedImage = await TabFaviconStore.loadCachedDisplayImage(
+            forDocumentURL: pageURL,
+            partition: partition,
+            context: .tabSidebar,
+            priority: .visibleSidebarOrTabStrip
+        )
+        XCTAssertNotNil(loadedImage)
+
+        let referenceKey = try XCTUnwrap(TabFaviconStore.referenceKey(forDocumentURL: pageURL))
+        let imageByReference = TabFaviconStore.getCachedImage(
+            forReferenceKey: referenceKey,
+            partition: partition,
+            context: .tabSidebar
+        )
+        let imageByDocumentURL = TabFaviconStore.getCachedImage(
+            forDocumentURL: pageURL,
+            partition: partition
+        )
+
+        XCTAssertNotNil(imageByReference)
+        XCTAssertNotNil(imageByDocumentURL)
+        XCTAssertEqual(imageByReference?.size, imageByDocumentURL?.size)
+    }
+
     func testSpeedometerRelativeDocumentIconPersistsForColdCacheBackedLookup() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2Speedometer-\(UUID().uuidString)", isDirectory: true)

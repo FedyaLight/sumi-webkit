@@ -77,7 +77,6 @@ struct SumiPermissionRequest: Codable, Equatable, Hashable, Identifiable, Sendab
     }
 
     private static func normalizedDisplayDomain(_ value: String) -> String {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Unknown Origin" : trimmed
+        SumiPermissionDomainCache.shared.trimmedDisplayDomain(value, fallback: "Unknown Origin")
     }
 }

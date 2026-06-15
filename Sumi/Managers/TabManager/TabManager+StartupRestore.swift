@@ -10,6 +10,7 @@ import Foundation
 extension TabManager {
     func resetRegularTabsAndShortcutLiveInstancesForStartup() {
         withStructuralUpdateTransaction {
+            lazyRestoreCoordinator.clear()
             let liveShortcutTabs = transientShortcutTabsByWindow.values.flatMap(\.values)
             if !liveShortcutTabs.isEmpty {
                 for tab in liveShortcutTabs {
@@ -69,6 +70,13 @@ extension TabManager {
                 currentTab = restoredTab
             }
 
+            lazyRestoreCoordinator.reset(
+                restoredTabIDs: Set(
+                    snapshot.tabs
+                        .filter { !$0.isPinned && !$0.isSpacePinned }
+                        .map(\.id)
+                )
+            )
             scheduleStructuralPersistence()
         }
     }

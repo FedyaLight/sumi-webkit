@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 enum SumiFaviconLookupKey {
-    static func cacheKey(for url: URL) -> String? {
+    static func referenceKey(for url: URL) -> String? {
         guard let scheme = url.scheme?.lowercased(),
               isCacheableScheme(scheme)
         else {
@@ -19,7 +19,11 @@ enum SumiFaviconLookupKey {
         return absoluteString.isEmpty ? nil : absoluteString.lowercased()
     }
 
-    static func documentURL(for key: String) -> URL? {
+    static func cacheKey(for url: URL) -> String? {
+        referenceKey(for: url)
+    }
+
+    static func documentURL(forReferenceKey key: String) -> URL? {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -31,6 +35,10 @@ enum SumiFaviconLookupKey {
         }
 
         return URL(string: "https://\(trimmed)")
+    }
+
+    static func documentURL(for key: String) -> URL? {
+        documentURL(forReferenceKey: key)
     }
 
     private static func isCacheableScheme(_ scheme: String) -> Bool {

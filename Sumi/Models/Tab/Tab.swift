@@ -48,6 +48,7 @@ enum SumiWebViewShutdown {
             controller.cleanUpBeforeClosing()
         }
 
+        prepareForReleaseIfNeeded(webView, scope: scope)
         additionalTabCleanup?()
 
         webView.navigationDelegate = nil
@@ -84,6 +85,13 @@ enum SumiWebViewShutdown {
         if webView.microphoneCaptureState != .none {
             webView.setMicrophoneCaptureState(.none, completionHandler: nil)
         }
+    }
+
+    @MainActor
+    private static func prepareForReleaseIfNeeded(_ webView: WKWebView, scope: Scope) {
+        guard case .normal = scope else { return }
+        guard webView.url?.absoluteString != SumiSurface.emptyTabURL.absoluteString else { return }
+        _ = webView.load(URLRequest(url: SumiSurface.emptyTabURL))
     }
 }
 

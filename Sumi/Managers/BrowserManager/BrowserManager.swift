@@ -31,6 +31,12 @@ struct WindowTabSelectionTargetState: Equatable {
     let regularTabMemoryUpdate: RegularTabMemoryUpdate
 }
 
+@MainActor
+protocol BrowserAppLifecycleHandling: AnyObject {
+    func handleApplicationWillResignActive()
+    func handleApplicationDidBecomeActive()
+}
+
 enum WindowTabSelectionPolicy {
     static func targetState(
         tabId: UUID,
@@ -196,6 +202,7 @@ class BrowserManager: ObservableObject {
     var findManager: FindManager
     let systemPermissionService: any SumiSystemPermissionService
     let permissionCoordinator: any SumiPermissionCoordinating
+    private let geolocationProvider: (any SumiGeolocationProviding)?
     let runtimePermissionController: any SumiRuntimePermissionControlling
     let webKitPermissionBridge: SumiWebKitPermissionBridge
     let webKitGeolocationBridge: SumiWebKitGeolocationBridge
@@ -215,6 +222,7 @@ class BrowserManager: ObservableObject {
     let permissionSidebarPinningController = SumiPermissionSidebarPinningController()
     private var permissionRecentActivityTask: Task<Void, Never>?
     private var permissionSidebarPinningTask: Task<Void, Never>?
+    private var didPauseGeolocationForApplicationBackground = false
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -258,6 +266,7 @@ class BrowserManager: ObservableObject {
                 oldValue?.browserManager = nil
             }
             webViewCoordinator?.browserManager = self
+            SumiBrowsingDataCleanupService.shared.destructiveCleanupPreparer = webViewCoordinator
         }
     }
 
@@ -442,6 +451,7 @@ class BrowserManager: ObservableObject {
         self.findManager = FindManager()
         self.systemPermissionService = systemPermissionService
         self.permissionCoordinator = permissionCoordinator
+        self.geolocationProvider = geolocationProvider
         self.runtimePermissionController = runtimePermissionController
         self.webKitPermissionBridge = webKitPermissionBridge
             ?? SumiWebKitPermissionBridge(
@@ -2694,6 +2704,23 @@ extension BrowserManager: WindowSessionServiceDelegate {
 }
 
 extension BrowserManager: SumiProfileRoutingSupport {}
+
+extension BrowserManager: BrowserAppLifecycleHandling {
+    func handleApplicationWillResignActive() {
+        guard let geolocationProvider,
+              geolocationProvider.currentState == .active
+        else { return }
+
+        didPauseGeolocationForApplicationBackground = geolocationProvider.pause() == .paused
+    }
+
+    func handleApplicationDidBecomeActive() {
+        guard didPauseGeolocationForApplicationBackground else { return }
+
+        didPauseGeolocationForApplicationBackground = false
+        _ = geolocationProvider?.resume()
+    }
+}
 
 // MARK: - WebView routing (delegates to BrowserWebViewRoutingService / WebViewCoordinator)
 

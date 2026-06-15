@@ -50,7 +50,7 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
     }
 
     private let userDefaults: UserDefaults
-    private let registrableDomainResolver: any SumiRegistrableDomainResolving
+    private let domainCache: SumiPermissionDomainCache
     private var persistentRecordsById: [String: SumiPermissionSiteActivityRecord] = [:]
     private var ephemeralRecordsById: [String: SumiPermissionSiteActivityRecord] = [:]
 
@@ -59,7 +59,7 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
         registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
     ) {
         self.userDefaults = userDefaults
-        self.registrableDomainResolver = registrableDomainResolver
+        self.domainCache = SumiPermissionDomainCache(registrableDomainResolver: registrableDomainResolver)
         persistentRecordsById = Self.loadRecords(from: userDefaults)
     }
 
@@ -389,7 +389,7 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
 
     private func siteHost(for origin: SumiPermissionOrigin) -> String? {
         guard origin.isWebOrigin, let host = origin.host else { return nil }
-        return (registrableDomainResolver.registrableDomain(forHost: host) ?? host).lowercased()
+        return (domainCache.registrableDomain(forHost: host) ?? host).lowercased()
     }
 
     private static func recordId(

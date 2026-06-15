@@ -960,6 +960,9 @@ extension TabManager {
         }
 
         rebuildTabLookupForRestore()
+        lazyRestoreCoordinator.reset(
+            restoredTabIDs: Set(restoredTabsBySpace.values.flatMap { $0.map(\.id) })
+        )
         markSnapshotCacheDirty()
         resetStructuralDirtySet()
         structuralPersistRequestID &+= 1

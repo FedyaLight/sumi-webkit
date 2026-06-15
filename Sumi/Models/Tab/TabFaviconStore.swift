@@ -2,6 +2,14 @@ import AppKit
 import Foundation
 
 enum TabFaviconStore {
+    static func referenceKey(forDocumentURL url: URL) -> String? {
+        SumiFaviconLookupKey.referenceKey(for: url)
+    }
+
+    static func documentURL(forReferenceKey key: String) -> URL? {
+        SumiFaviconLookupKey.documentURL(forReferenceKey: key)
+    }
+
     static func getCachedImage(forDocumentURL url: URL) -> NSImage? {
         getCachedImage(forDocumentURL: url, partition: .regular(nil), context: .tabSidebar)
     }
@@ -11,20 +19,15 @@ enum TabFaviconStore {
         partition: SumiFaviconPartition,
         context: SumiFaviconDisplayContext = .tabSidebar
     ) -> NSImage? {
-        guard SumiFaviconResolver.cacheKey(for: url) != nil else {
+        guard referenceKey(forDocumentURL: url) != nil else {
             return nil
         }
 
-        return withService { service in
-            service.cachedPreparedImage(
-                for: SumiPreparedFaviconRequest(
-                    pageURL: url,
-                    partition: partition,
-                    context: context,
-                    backingScale: SumiFaviconService.defaultBackingScale()
-                )
-            )
-        }
+        return cachedImage(
+            forDocumentURL: url,
+            partition: partition,
+            context: context
+        )
     }
 
     static func getCachedImage(forDocumentURL url: URL, maxLongestSide: CGFloat) -> NSImage? {
@@ -42,7 +45,7 @@ enum TabFaviconStore {
         partition: SumiFaviconPartition,
         context: SumiFaviconDisplayContext = .tabSidebar
     ) async -> NSImage? {
-        guard SumiFaviconResolver.cacheKey(for: url) != nil else {
+        guard referenceKey(forDocumentURL: url) != nil else {
             return nil
         }
 
@@ -91,7 +94,7 @@ enum TabFaviconStore {
         context: SumiFaviconDisplayContext = .tabSidebar,
         priority: SumiFaviconFetchPriority = .visibleSidebarOrTabStrip
     ) async -> NSImage? {
-        guard SumiFaviconResolver.cacheKey(for: url) != nil else {
+        guard referenceKey(forDocumentURL: url) != nil else {
             return nil
         }
 
@@ -108,8 +111,41 @@ enum TabFaviconStore {
     }
 
     static func getCachedImage(for key: String) -> NSImage? {
-        guard let documentURL = SumiFaviconLookupKey.documentURL(for: key) else { return nil }
-        return getCachedImage(forDocumentURL: documentURL)
+        getCachedImage(forReferenceKey: key)
+    }
+
+    static func getCachedImage(
+        forReferenceKey referenceKey: String,
+        partition: SumiFaviconPartition,
+        context: SumiFaviconDisplayContext = .tabSidebar
+    ) -> NSImage? {
+        guard let documentURL = documentURL(forReferenceKey: referenceKey) else { return nil }
+        return cachedImage(
+            forDocumentURL: documentURL,
+            partition: partition,
+            context: context
+        )
+    }
+
+    static func getCachedImage(forReferenceKey referenceKey: String) -> NSImage? {
+        getCachedImage(forReferenceKey: referenceKey, partition: .regular(nil), context: .tabSidebar)
+    }
+
+    private static func cachedImage(
+        forDocumentURL url: URL,
+        partition: SumiFaviconPartition,
+        context: SumiFaviconDisplayContext
+    ) -> NSImage? {
+        withService { service in
+            service.cachedPreparedImage(
+                for: SumiPreparedFaviconRequest(
+                    pageURL: url,
+                    partition: partition,
+                    context: context,
+                    backingScale: SumiFaviconService.defaultBackingScale()
+                )
+            )
+        }
     }
 
     private static func withService<T: Sendable>(_ body: @MainActor (SumiFaviconService) -> T) -> T {

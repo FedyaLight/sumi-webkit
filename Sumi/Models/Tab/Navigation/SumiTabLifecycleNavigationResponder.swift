@@ -21,6 +21,15 @@ final class SumiTabLifecycleNavigationResponder:
               let webView = context.webView
         else { return }
 
+        if shouldSuppressForDestructiveDataCleanup(
+            on: webView,
+            contextURL: context.url,
+            requestURL: context.action?.request.url,
+            allowCurrentWebViewURLFallback: true
+        ) {
+            return
+        }
+
         StartupPerformanceTrace.firstNavigationStarted()
 
         if context.action?.navigationType.isBackForward == true {
@@ -55,6 +64,15 @@ final class SumiTabLifecycleNavigationResponder:
               let webView = context.webView
         else { return }
 
+        if shouldSuppressForDestructiveDataCleanup(
+            on: webView,
+            contextURL: context.url,
+            requestURL: context.action?.request.url,
+            allowCurrentWebViewURLFallback: true
+        ) {
+            return
+        }
+
         tab.beginLoadingPresentationIfNeeded()
         tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
 
@@ -85,6 +103,15 @@ final class SumiTabLifecycleNavigationResponder:
               context.isMainFrame == true,
               let webView = context.webView
         else { return }
+
+        if shouldSuppressForDestructiveDataCleanup(
+            on: webView,
+            contextURL: context.url,
+            requestURL: context.action?.request.url,
+            allowCurrentWebViewURLFallback: true
+        ) {
+            return
+        }
 
         StartupPerformanceTrace.firstNavigationCommitted()
 
@@ -126,6 +153,16 @@ final class SumiTabLifecycleNavigationResponder:
               context?.isMainFrame == true,
               let webView = context?.webView
         else { return }
+
+        if shouldSuppressForDestructiveDataCleanup(
+            on: webView,
+            contextURL: context?.url,
+            requestURL: context?.action?.request.url,
+            allowCurrentWebViewURLFallback: true
+        ) {
+            finishDestructiveDataCleanupSuppression(on: webView)
+            return
+        }
 
         StartupPerformanceTrace.firstNavigationFinished()
 
@@ -197,6 +234,16 @@ final class SumiTabLifecycleNavigationResponder:
         else { return }
 
         let webView = context?.webView
+        if let webView, shouldSuppressForDestructiveDataCleanup(
+            on: webView,
+            contextURL: context?.url,
+            requestURL: context?.action?.request.url,
+            allowCurrentWebViewURLFallback: false
+        ) {
+            finishDestructiveDataCleanupSuppression(on: webView)
+            return
+        }
+
         let isBackForwardNavigation = context?.action?.navigationType.isBackForward == true
         if isBackForwardNavigation {
             tab.finishBackForwardNavigationTracking(using: webView)
@@ -261,6 +308,36 @@ final class SumiTabLifecycleNavigationResponder:
                 continuation.resume(returning: .next)
             }
         }
+    }
+
+    private func shouldSuppressForDestructiveDataCleanup(
+        on webView: WKWebView,
+        contextURL: URL?,
+        requestURL: URL?,
+        allowCurrentWebViewURLFallback: Bool
+    ) -> Bool {
+        guard tab?.browserManager?.webViewCoordinator?
+            .isPreparingForDestructiveDataCleanupNavigation(on: webView) == true
+        else {
+            return false
+        }
+
+        if let candidateURL = contextURL ?? requestURL,
+           SumiSurface.isEmptyNewTabURL(candidateURL) {
+            return true
+        }
+
+        guard allowCurrentWebViewURLFallback,
+              let currentURL = webView.url
+        else {
+            return false
+        }
+        return SumiSurface.isEmptyNewTabURL(currentURL)
+    }
+
+    private func finishDestructiveDataCleanupSuppression(on webView: WKWebView) {
+        tab?.browserManager?.webViewCoordinator?
+            .finishDestructiveDataCleanupNavigation(on: webView)
     }
 }
 

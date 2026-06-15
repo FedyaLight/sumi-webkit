@@ -1,4 +1,5 @@
 import SwiftData
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -197,6 +198,75 @@ final class HistoryBoundedQueryTests: XCTestCase {
         XCTAssertFalse(hasVisits)
     }
 
+    func testClearAllExplicitIsIdempotentWhenRepeated() async throws {
+        let harness = try makeHarness()
+        for index in 0..<2 {
+            try await recordVisit(
+                url: URL(string: "https://idempotent.example/\(index)")!,
+                title: "Idempotent \(index)",
+                at: referenceDate.addingTimeInterval(TimeInterval(index)),
+                harness: harness
+            )
+        }
+
+        let firstDeletedCount = try await harness.store.clearAllExplicit(profileId: harness.profileID)
+        let secondDeletedCount = try await harness.store.clearAllExplicit(profileId: harness.profileID)
+        let hasVisits = try await harness.store.hasVisits(profileId: harness.profileID)
+
+        XCTAssertEqual(firstDeletedCount, 2)
+        XCTAssertEqual(secondDeletedCount, 0)
+        XCTAssertFalse(hasVisits)
+    }
+
+    func testHistoryDeleteReloadsVisitedLinksOnlyForCurrentProfile() async throws {
+        let harness = try makeHarness()
+        let historyManager = HistoryManager(
+            context: ModelContext(harness.container),
+            profileId: harness.profileID
+        )
+        let provider = SharedVisitedLinkStoreProvider.shared
+        let currentStore = FakeVisitedLinkStore()
+        let otherStore = FakeVisitedLinkStore()
+        let otherProfileID = UUID()
+
+        provider.seedStoreForTesting(currentStore, profileId: harness.profileID)
+        provider.seedStoreForTesting(otherStore, profileId: otherProfileID)
+        defer {
+            provider.discardStore(for: harness.profileID)
+            provider.discardStore(for: otherProfileID)
+        }
+
+        let remainingURL = URL(string: "https://keep.example/remaining")!
+        try await recordVisit(
+            url: URL(string: "https://drop.example/remove")!,
+            title: "Remove",
+            at: referenceDate.addingTimeInterval(1),
+            harness: harness
+        )
+        try await recordVisit(
+            url: remainingURL,
+            title: "Keep",
+            at: referenceDate.addingTimeInterval(2),
+            harness: harness
+        )
+        try await harness.store.recordVisit(
+            url: URL(string: "https://other.example/other")!,
+            title: "Other",
+            visitedAt: referenceDate.addingTimeInterval(3),
+            profileId: otherProfileID
+        )
+
+        await historyManager.delete(
+            query: .domainFilter(["drop.example"])
+        )
+
+        await waitForVisitedLinkReload(store: currentStore, expectedRemoveAllCount: 1)
+        XCTAssertEqual(currentStore.removeAllCallCount, 1)
+        XCTAssertEqual(currentStore.addedURLs, [remainingURL])
+        XCTAssertEqual(otherStore.removeAllCallCount, 0)
+        XCTAssertTrue(otherStore.addedURLs.isEmpty)
+    }
+
     func testProductionHistoryPathsDoNotUseUnboundedHistoryFetches() throws {
         let source = try productionSource(
             paths: [
@@ -265,5 +335,41 @@ final class HistoryBoundedQueryTests: XCTestCase {
         return try paths
             .map { try String(contentsOf: repoRoot.appendingPathComponent($0), encoding: .utf8) }
             .joined(separator: "\n")
+    }
+
+    private func waitForVisitedLinkReload(
+        store: FakeVisitedLinkStore,
+        expectedRemoveAllCount: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<20 {
+            if store.removeAllCallCount >= expectedRemoveAllCount {
+                return
+            }
+            await Task.yield()
+        }
+        XCTAssertEqual(
+            store.removeAllCallCount,
+            expectedRemoveAllCount,
+            "Timed out waiting for visited-link reload",
+            file: file,
+            line: line
+        )
+    }
+}
+
+@objcMembers
+private final class FakeVisitedLinkStore: NSObject {
+    private(set) var removeAllCallCount = 0
+    private(set) var addedURLs: [URL] = []
+
+    func addVisitedLinkWithURL(_ url: NSURL) {
+        addedURLs.append(url as URL)
+    }
+
+    func removeAll() {
+        removeAllCallCount += 1
+        addedURLs.removeAll()
     }
 }

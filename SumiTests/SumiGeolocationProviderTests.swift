@@ -73,4 +73,29 @@ final class SumiGeolocationProviderTests: XCTestCase {
         XCTAssertEqual(provider.pause(), .unavailable)
         XCTAssertEqual(provider.resume(), .unavailable)
     }
+
+    func testBrowserManagerPausesActiveGeolocationWhileApplicationInactive() {
+        let provider = FakeSumiGeolocationProvider(currentState: .active)
+        let browserManager = BrowserManager(geolocationProvider: provider)
+
+        browserManager.handleApplicationWillResignActive()
+        XCTAssertEqual(provider.currentState, .paused)
+        XCTAssertEqual(provider.pauseCallCount, 1)
+
+        browserManager.handleApplicationDidBecomeActive()
+        XCTAssertEqual(provider.currentState, .active)
+        XCTAssertEqual(provider.resumeCallCount, 1)
+    }
+
+    func testBrowserManagerDoesNotResumeUserPausedGeolocationOnActivation() {
+        let provider = FakeSumiGeolocationProvider(currentState: .paused)
+        let browserManager = BrowserManager(geolocationProvider: provider)
+
+        browserManager.handleApplicationWillResignActive()
+        browserManager.handleApplicationDidBecomeActive()
+
+        XCTAssertEqual(provider.currentState, .paused)
+        XCTAssertEqual(provider.pauseCallCount, 0)
+        XCTAssertEqual(provider.resumeCallCount, 0)
+    }
 }

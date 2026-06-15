@@ -27,6 +27,7 @@ class TabManager: ObservableObject {
 
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
     lazy var folderService = TabFolderService(tabManager: self)
+    lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
 
     // Spaces
     @Published var spaces: [Space] = []
