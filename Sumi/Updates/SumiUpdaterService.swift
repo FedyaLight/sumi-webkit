@@ -794,7 +794,13 @@ private final class SumiSparkleUpdaterDelegate: NSObject, SPUUpdaterDelegate {
         didFinishUpdateCycleFor updateCheck: SPUUpdateCheck,
         error: (any Error)?
     ) {
-        let errorMessage = error?.localizedDescription
+        let errorMessage: String?
+        if let error = error as NSError?,
+           error.domain == SUSparkleErrorDomain && (error.code == SUError.noUpdateError.rawValue || error.code == 2 || error.code == 1001) {
+            errorMessage = nil
+        } else {
+            errorMessage = error?.localizedDescription
+        }
         Task { @MainActor [weak service] in
             service?.recordUpdateCheckFinished(errorMessage: errorMessage)
             service?.syncStateFromBackend()

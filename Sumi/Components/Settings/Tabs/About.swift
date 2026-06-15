@@ -137,12 +137,22 @@ private struct SumiAboutUpdatePanel: View {
             )
 
         case .upToDate:
-            SumiAboutUpdateStatusRow(
-                systemImage: "checkmark.circle.fill",
-                title: "Installed latest version",
-                subtitle: "\(viewModel.metadata.displayName) \(viewModel.metadata.shortVersion) is current.",
-                symbolStyle: .green
-            )
+            HStack(alignment: .center, spacing: 14) {
+                SumiAboutUpdateStatusRow(
+                    systemImage: nil,
+                    title: "Sumi is up to date",
+                    subtitle: "Sumi \(viewModel.metadata.shortVersion)",
+                    symbolStyle: .green,
+                    customIcon: AnyView(MacOSSoftwareUpdateCheckmarkIcon())
+                )
+
+                Spacer(minLength: 16)
+
+                Button("Check for Updates", action: onRetry)
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+                    .disabled(!viewModel.checkButtonIsEnabled)
+            }
 
         case .updateAvailable(let update):
             HStack(alignment: .center, spacing: 14) {
@@ -189,12 +199,41 @@ private struct SumiAboutUpdatePanel: View {
     }
 }
 
+private struct MacOSSoftwareUpdateCheckmarkIcon: View {
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(nsColor: NSColor(red: 52/255, green: 199/255, blue: 89/255, alpha: 1)),
+                            Color(nsColor: NSColor(red: 46/255, green: 180/255, blue: 80/255, alpha: 1))
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .shadow(color: Color.black.opacity(0.12), radius: 1, x: 0, y: 1)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 0.5)
+                )
+
+            Image(systemName: "checkmark")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(.white)
+        }
+        .frame(width: 28, height: 28)
+    }
+}
+
 private struct SumiAboutUpdateStatusRow: View {
     let systemImage: String?
     let title: String
     let subtitle: String
     var progress = false
     var symbolStyle: Color = .secondary
+    var customIcon: AnyView? = nil
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -202,6 +241,8 @@ private struct SumiAboutUpdateStatusRow: View {
                 if progress {
                     ProgressView()
                         .controlSize(.small)
+                } else if let customIcon {
+                    customIcon
                 } else if let systemImage {
                     Image(systemName: systemImage)
                         .font(.system(size: 22, weight: .semibold))
@@ -209,7 +250,7 @@ private struct SumiAboutUpdateStatusRow: View {
                         .foregroundStyle(symbolStyle)
                 }
             }
-            .frame(width: 26, height: 26)
+            .frame(width: 28, height: 28)
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
