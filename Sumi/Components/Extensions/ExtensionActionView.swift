@@ -184,7 +184,11 @@ private struct SidebarExtensionActionGrid: View {
                     SumiScriptsToolbarControl(layout: .sidebarGrid)
                         .environmentObject(browserManager)
                 case .webExtension(let ext):
-                    ExtensionActionButton(ext: ext, layout: .sidebarGrid)
+                    ExtensionActionButton(
+                        ext: ext,
+                        layout: .sidebarGrid,
+                        profileId: profileId
+                    )
                         .environmentObject(browserManager)
                 }
             }
@@ -428,6 +432,7 @@ private struct ExtensionActionContextMenuModifier: ViewModifier {
 struct ExtensionActionButton: View {
     let ext: InstalledExtension
     var layout: ExtensionActionLayout = .compactStrip
+    var profileId: UUID? = nil
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore:
         BrowserExtensionSurfaceStore
@@ -753,20 +758,34 @@ struct ExtensionActionButton: View {
             )
         }
 
-        entries.append(
-            .action(
-                SidebarContextMenuAction(
-                    title: "Open Extension Action",
-                    systemImage: "arrow.up.right.square",
-                    classification: .presentationOnly,
-                    action: {
-                        showExtensionPopup()
-                    }
+        if ext.hasOptionsPage {
+            entries.append(
+                .action(
+                    SidebarContextMenuAction(
+                        title: "Options",
+                        systemImage: "slider.horizontal.3",
+                        classification: .presentationOnly,
+                        action: {
+                            Task { @MainActor in
+                                await browserManager.extensionsModule.openOptionsPage(
+                                    extensionId: ext.id,
+                                    profileId: extensionActionProfileId
+                                )
+                            }
+                        }
+                    )
                 )
             )
-        )
+        }
 
         return entries
+    }
+
+    private var extensionActionProfileId: UUID? {
+        profileId
+            ?? currentExtensionActionTab?.profileId
+            ?? windowState.currentProfileId
+            ?? browserManager.currentProfile?.id
     }
 }
 

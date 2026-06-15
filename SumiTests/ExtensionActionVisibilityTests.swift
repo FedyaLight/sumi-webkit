@@ -130,6 +130,10 @@ final class ExtensionActionVisibilityTests: XCTestCase {
         XCTAssertTrue(source.contains("browserManager.extensionsModule.pinToToolbar(ext.id)"))
         XCTAssertTrue(source.contains("title: \"Unpin from Toolbar\""))
         XCTAssertTrue(source.contains("browserManager.extensionsModule.unpinFromToolbar(ext.id)"))
+        XCTAssertTrue(source.contains("if ext.hasOptionsPage"))
+        XCTAssertTrue(source.contains("title: \"Options\""))
+        XCTAssertTrue(source.contains("browserManager.extensionsModule.openOptionsPage"))
+        XCTAssertFalse(source.contains("title: \"Open Extension Action\""))
     }
 
     func testSidebarGridUsesSidebarPinnedChromeAndNonInteractiveAnchor() throws {
