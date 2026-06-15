@@ -83,6 +83,16 @@ enum SumiCompanionAppResolver {
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let trimmedRequest, trimmedRequest.isEmpty == false {
+            if SafariExtensionNativeMessagingRoutingProbe
+                .isSafariContainingApplicationRequest(trimmedRequest)
+            {
+                return containingApplicationIdentity(
+                    extensionId: extensionId,
+                    installedExtensions: installedExtensions,
+                    importStore: importStore
+                )
+            }
+
             let normalized = SumiCompanionAppIdentityMetadata
                 .normalizedHostBundleIdentifier(trimmedRequest)
             let source: SumiCompanionAppResolutionSource =
@@ -106,48 +116,11 @@ enum SumiCompanionAppResolver {
             )
         }
 
-        guard let extensionId, extensionId.isEmpty == false else {
-            return nil
-        }
-
-        guard let installed = installedExtensions.first(where: { $0.id == extensionId }),
-              installed.sourceKind == .safariAppExtension
-        else {
-            return nil
-        }
-
-        if let containing = containingApplicationBundleIdentifier(
-            forAppexPath: installed.sourceBundlePath
-        ) {
-            return IdentityResolution(
-                resolvedBundleIdentifier: SumiCompanionAppIdentityMetadata
-                    .normalizedHostBundleIdentifier(containing),
-                resolutionSource: .containingAppOfImportedAppex,
-                isContainingApp: true
-            )
-        }
-
-        if let appexBundleID = appexBundleIdentifier(at: installed.sourceBundlePath),
-           let discovered = importStore.discoveredCandidates().first(where: {
-               $0.extensionBundleIdentifier == appexBundleID
-           }),
-           let containing = containingApplicationBundleIdentifier(
-               forAppexPath: discovered.appexPath
-           )
-        {
-            return IdentityResolution(
-                resolvedBundleIdentifier: SumiCompanionAppIdentityMetadata
-                    .normalizedHostBundleIdentifier(containing),
-                resolutionSource: .containingAppOfImportedAppex,
-                isContainingApp: true
-            )
-        }
-
-        if let metadataHost = resolveFromAppGroupsMetadata(appexPath: installed.sourceBundlePath) {
-            return metadataHost
-        }
-
-        return nil
+        return containingApplicationIdentity(
+            extensionId: extensionId,
+            installedExtensions: installedExtensions,
+            importStore: importStore
+        )
     }
 
     @MainActor
@@ -183,10 +156,14 @@ enum SumiCompanionAppResolver {
 
         let hostBundleIdentifier = identity.resolvedBundleIdentifier
         let appInstalled = launcher.urlForApplication(withBundleIdentifier: hostBundleIdentifier) != nil
-        let adapterAvailable = adapterRegistry.isAdapterAvailable(
-            forApplicationIdentifier: trimmedRequest,
-            hostBundleIdentifier: hostBundleIdentifier
-        )
+        let adapterAvailable =
+            SafariExtensionNativeMessagingRoutingProbe
+                .isSafariContainingApplicationRequest(trimmedRequest)
+            ? adapterRegistry.isAdapterAvailable(forApplicationIdentifier: trimmedRequest)
+            : adapterRegistry.isAdapterAvailable(
+                forApplicationIdentifier: trimmedRequest,
+                hostBundleIdentifier: hostBundleIdentifier
+            )
 
         let launchDecision = launchPolicy.evaluateLaunch(
             hostBundleIdentifier: hostBundleIdentifier,
@@ -293,6 +270,55 @@ enum SumiCompanionAppResolver {
             return false
         }
         return bundleIdentifier == containing
+    }
+
+    private static func containingApplicationIdentity(
+        extensionId: String?,
+        installedExtensions: [InstalledExtension],
+        importStore: SafariExtensionImportStore
+    ) -> IdentityResolution? {
+        guard let extensionId, extensionId.isEmpty == false else {
+            return nil
+        }
+
+        guard let installed = installedExtensions.first(where: { $0.id == extensionId }),
+              installed.sourceKind == .safariAppExtension
+        else {
+            return nil
+        }
+
+        if let containing = containingApplicationBundleIdentifier(
+            forAppexPath: installed.sourceBundlePath
+        ) {
+            return IdentityResolution(
+                resolvedBundleIdentifier: SumiCompanionAppIdentityMetadata
+                    .normalizedHostBundleIdentifier(containing),
+                resolutionSource: .containingAppOfImportedAppex,
+                isContainingApp: true
+            )
+        }
+
+        if let appexBundleID = appexBundleIdentifier(at: installed.sourceBundlePath),
+           let discovered = importStore.discoveredCandidates().first(where: {
+               $0.extensionBundleIdentifier == appexBundleID
+           }),
+           let containing = containingApplicationBundleIdentifier(
+               forAppexPath: discovered.appexPath
+           )
+        {
+            return IdentityResolution(
+                resolvedBundleIdentifier: SumiCompanionAppIdentityMetadata
+                    .normalizedHostBundleIdentifier(containing),
+                resolutionSource: .containingAppOfImportedAppex,
+                isContainingApp: true
+            )
+        }
+
+        if let metadataHost = resolveFromAppGroupsMetadata(appexPath: installed.sourceBundlePath) {
+            return metadataHost
+        }
+
+        return nil
     }
 
     private static func resolveFromAppGroupsMetadata(

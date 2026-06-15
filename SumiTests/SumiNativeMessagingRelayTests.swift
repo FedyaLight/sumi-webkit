@@ -443,6 +443,22 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         )
     }
 
+    func testRoutingProbeReportsMessageShapeWithoutValues() {
+        let shape = SafariExtensionNativeMessagingRoutingProbe.sanitizedMessageShape(
+            for:
+                """
+                {"type":"unlock","token":"secret-token","payload":{"uid":"secret-uid"}}
+                """
+        )
+
+        XCTAssertEqual(shape.container, "jsonStringObject")
+        XCTAssertEqual(shape.topLevelKeys, ["payload", "token", "type"])
+        XCTAssertEqual(shape.typeKeys, ["type"])
+        XCTAssertFalse(shape.keysForLog.contains("secret-token"))
+        XCTAssertFalse(shape.keysForLog.contains("secret-uid"))
+        XCTAssertFalse(shape.typeKeysForLog.contains("unlock"))
+    }
+
     func testPolicyDeniesWhenModuleDisabled() async throws {
         let relay = SumiNativeMessagingRelay(
             extensionsModuleEnabled: { false }
@@ -700,4 +716,3 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         )
     }
 }
-

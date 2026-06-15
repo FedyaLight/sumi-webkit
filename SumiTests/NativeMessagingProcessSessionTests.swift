@@ -39,6 +39,10 @@ final class NativeMessagingProcessSessionTests: XCTestCase {
                 "Library/Application Support",
                 "readDataToEndOfFile",
                 "waitUntilExit",
+                "SafariAppExtensionNativeMessagingBackend",
+                "PlugInKit",
+                "NSExtensionContext",
+                "beginRequest(with:",
                 uncheckedSendableToken,
             ],
             context: "Safari native messaging foundation"

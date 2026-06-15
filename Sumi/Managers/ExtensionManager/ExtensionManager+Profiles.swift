@@ -493,6 +493,23 @@ extension ExtensionManager {
             extensionContext: extensionContext,
             manifest: resolvedManifest
         )
+        SafariExtensionNativeMessagingPermissionDiagnostics.logContextState(
+            extensionId: extensionId,
+            profileId: profileId,
+            manifestDeclaresNativeMessaging: Self.manifestDeclaresNativeMessaging(
+                resolvedManifest
+            ),
+            permissionGranted: {
+                if #available(macOS 15.4, *) {
+                    return isGrantedPermissionStatus(
+                        extensionContext.permissionStatus(for: .nativeMessaging)
+                    )
+                }
+                return false
+            }(),
+            unsupportedAPIsContainNativeMessaging: extensionContext.unsupportedAPIs
+                .contains { $0.localizedCaseInsensitiveContains("nativeMessaging") }
+        )
 
         _ = extensionControllersByProfile[profileId]
             ?? ensureExtensionController(for: profileId)

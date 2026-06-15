@@ -2123,6 +2123,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(openedTab.url, targetURL)
         XCTAssertFalse(openedTab.isAuxiliaryMiniWindow)
         XCTAssertFalse(openedTab.isPopupHost)
+        XCTAssertNil(openedTab.webViewConfigurationOverride)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
     }
 
@@ -2156,6 +2157,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(openedTab.url, targetURL)
         XCTAssertFalse(openedTab.isAuxiliaryMiniWindow)
         XCTAssertFalse(openedTab.isPopupHost)
+        XCTAssertNil(openedTab.webViewConfigurationOverride)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
     }
 

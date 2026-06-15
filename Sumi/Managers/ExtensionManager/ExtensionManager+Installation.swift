@@ -533,6 +533,8 @@ extension ExtensionManager {
             grantRequestedPermissions(
                 to: extensionContext,
                 webExtension: webExtension,
+                extensionId: entity.id,
+                profileId: resolvedProfileId,
                 manifest: manifest
             )
             applyConfiguredSiteAccessPolicy(
@@ -962,6 +964,8 @@ extension ExtensionManager {
                 grantRequestedPermissions(
                     to: extensionContext,
                     webExtension: webExtension,
+                    extensionId: extensionId,
+                    profileId: installProfileId,
                     manifest: finalManifest
                 )
                 applyConfiguredSiteAccessPolicy(
@@ -1207,6 +1211,8 @@ extension ExtensionManager {
                 grantRequestedPermissions(
                     to: extensionContext,
                     webExtension: webExtension,
+                    extensionId: extensionId,
+                    profileId: installProfileId,
                     manifest: manifest
                 )
                 applyConfiguredSiteAccessPolicy(
@@ -1717,12 +1723,21 @@ extension ExtensionManager {
     func grantRequestedPermissions(
         to extensionContext: WKWebExtensionContext,
         webExtension: WKWebExtension,
+        extensionId: String? = nil,
+        profileId: UUID? = nil,
         manifest: [String: Any]
     ) {
         var permissions = RuntimeDiagnostics.isRunningTests
             ? webExtension.requestedPermissions.union(webExtension.optionalPermissions)
             : webExtension.requestedPermissions
         permissions.formUnion(Self.requiredManifestWebExtensionPermissions(from: manifest))
+        grantNativeMessagingPermissionIfDeclared(
+            to: extensionContext,
+            permissions: &permissions,
+            extensionId: extensionId,
+            profileId: profileId,
+            manifest: manifest
+        )
 
         for permission in permissions {
             if shouldDenyAutoGrantForWebKitRuntime(permission, manifest: manifest) {
@@ -1730,6 +1745,32 @@ extension ExtensionManager {
                 continue
             }
             extensionContext.setPermissionStatus(.grantedExplicitly, for: permission)
+        }
+    }
+
+    private func grantNativeMessagingPermissionIfDeclared(
+        to extensionContext: WKWebExtensionContext,
+        permissions: inout Set<WKWebExtension.Permission>,
+        extensionId: String?,
+        profileId: UUID?,
+        manifest: [String: Any]
+    ) {
+        guard Self.manifestDeclaresNativeMessaging(manifest) else { return }
+
+        if #available(macOS 15.4, *) {
+            permissions.insert(.nativeMessaging)
+            extensionContext.setPermissionStatus(
+                .grantedExplicitly,
+                for: .nativeMessaging
+            )
+            SafariExtensionNativeMessagingPermissionDiagnostics.logGrant(
+                extensionId: extensionId,
+                profileId: profileId,
+                manifestDeclaresNativeMessaging: true,
+                permissionGranted: isGrantedPermissionStatus(
+                    extensionContext.permissionStatus(for: .nativeMessaging)
+                )
+            )
         }
     }
 
@@ -1745,6 +1786,14 @@ extension ExtensionManager {
 
     private static func installationManifestStringArray(from value: Any?) -> [String] {
         value as? [String] ?? []
+    }
+
+    static func manifestDeclaresNativeMessaging(_ manifest: [String: Any]) -> Bool {
+        let permissions = installationManifestStringArray(from: manifest["permissions"])
+        let optionalPermissions = installationManifestStringArray(
+            from: manifest["optional_permissions"]
+        )
+        return (permissions + optionalPermissions).contains("nativeMessaging")
     }
 
     private static func isManifestWebExtensionPermission(_ value: String) -> Bool {

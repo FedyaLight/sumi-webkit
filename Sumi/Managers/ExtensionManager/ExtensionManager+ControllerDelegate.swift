@@ -364,16 +364,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             shouldBePinned: shouldBePinned,
             webExtensionContextOverride: webExtensionContextOverride
         )
-        let externalWebConfigurationOverride =
-            extensionRequestedExternalWebConfigurationOverride(
-                loadURL: resolvedExtensionLoad.url,
-                webExtensionContextOverride: webExtensionContextOverride,
-                targetWindow: targetWindow,
-                targetSpace: targetSpace,
-                controller: controller,
-                extensionContext: extensionContext,
-                reason: reason
-            )
         let diagnosticProfileId =
             targetSpace?.profileId
                 ?? targetWindow.flatMap(resolvedProfileId(for:))
@@ -394,14 +384,12 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 url: loadURL.absoluteString,
                 in: targetSpace,
                 activate: shouldBeActive,
-                webViewConfigurationOverride: externalWebConfigurationOverride,
                 webExtensionContextOverride: webExtensionContextOverride
             )
         } else {
             newTab = browserManager.tabManager.createNewTab(
                 in: targetSpace,
                 activate: shouldBeActive,
-                webViewConfigurationOverride: externalWebConfigurationOverride,
                 webExtensionContextOverride: webExtensionContextOverride
             )
         }
@@ -443,44 +431,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             )
         )
         return newTab
-    }
-
-    private func extensionRequestedExternalWebConfigurationOverride(
-        loadURL: URL?,
-        webExtensionContextOverride: WKWebExtensionContext?,
-        targetWindow: BrowserWindowState?,
-        targetSpace: Space?,
-        controller: WKWebExtensionController,
-        extensionContext: WKWebExtensionContext?,
-        reason: String
-    ) -> WKWebViewConfiguration? {
-        guard webExtensionContextOverride == nil,
-              let loadURL,
-              Self.isExtensionOwnedURL(loadURL) == false,
-              let scheme = loadURL.scheme?.lowercased(),
-              scheme == "http" || scheme == "https"
-        else {
-            return nil
-        }
-
-        let resolvedProfileId =
-            targetSpace?.profileId
-                ?? targetWindow.flatMap(resolvedProfileId(for:))
-                ?? (extensionContext.flatMap { profileId(for: $0) })
-                ?? profileId(for: controller)
-                ?? currentProfileId
-                ?? browserManager?.currentProfile?.id
-        guard let profileId = resolvedProfileId else {
-            return nil
-        }
-
-        let configuration = WKWebViewConfiguration()
-        prepareWebViewConfigurationForExtensionRuntime(
-            configuration,
-            profileId: profileId,
-            reason: "\(reason).externalNormalTabConfiguration"
-        )
-        return configuration
     }
 
     private func shouldOpenAsTransientInternalExtensionTab(
@@ -1413,14 +1363,24 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             )
         }
         let profileId = profileId(for: extensionContext)
+        let extensionDisplayName = ExtensionUtils.displayName(
+            forExtensionID: extensionId,
+            installedExtensions: installedExtensions
+        )
+        let messageShape = SafariExtensionNativeMessagingRoutingProbe
+            .sanitizedMessageShape(for: message)
         #if DEBUG || SUMI_DIAGNOSTICS
             if RuntimeDiagnostics.isVerboseEnabled {
                 RuntimeDiagnostics.debug(category: "SafariNativeMessagingRouting") {
                     """
                     WKWebExtensionControllerDelegate.sendMessage \
-                    ext=\(extensionId ?? "unknown") \
+                    extBucket=\(SafariExtensionNativeMessagingRoutingProbe.extensionIdBucket(extensionId)) \
+                    extLabel=\(SafariExtensionNativeMessagingRoutingProbe.sanitizedExtensionLabel(extensionDisplayName)) \
                     profile=\(SafariExtensionNativeMessagingRoutingProbe.profileIdBucket(profileId)) \
-                    appId=\(applicationIdentifier ?? "(nil)")
+                    appId=\(applicationIdentifier ?? "(nil)") \
+                    messageShape=\(messageShape.container) \
+                    messageKeys=\(messageShape.keysForLog) \
+                    messageTypeKeys=\(messageShape.typeKeysForLog)
                     """
                 }
             }
@@ -1431,6 +1391,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             extensionId: extensionId,
             profileId: profileId,
             installedExtensions: installedExtensions,
+            extensionDisplayName: extensionDisplayName,
             replyHandler: SumiWebExtensionCallbackRelay.wrapNativeMessagingReplyHandler(
                 api: .runtimeSendNativeMessage,
                 extensionId: extensionId,
@@ -1461,12 +1422,17 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
 
         let profileId = profileId(for: extensionContext)
+        let extensionDisplayName = ExtensionUtils.displayName(
+            forExtensionID: extensionId,
+            installedExtensions: installedExtensions
+        )
         #if DEBUG || SUMI_DIAGNOSTICS
             if RuntimeDiagnostics.isVerboseEnabled {
                 RuntimeDiagnostics.debug(category: "SafariNativeMessagingRouting") {
                     """
                     WKWebExtensionControllerDelegate.connectUsing \
-                    ext=\(extensionId ?? "unknown") \
+                    extBucket=\(SafariExtensionNativeMessagingRoutingProbe.extensionIdBucket(extensionId)) \
+                    extLabel=\(SafariExtensionNativeMessagingRoutingProbe.sanitizedExtensionLabel(extensionDisplayName)) \
                     profile=\(SafariExtensionNativeMessagingRoutingProbe.profileIdBucket(profileId)) \
                     appId=\(port.applicationIdentifier ?? "(nil)")
                     """

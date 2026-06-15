@@ -181,6 +181,50 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertEqual(contextB.permissionStatus(for: matchPattern), .grantedExplicitly)
     }
 
+    func testNativeMessagingPermissionGrantIsProfileScopedAndUsesSDKPermission()
+        async throws
+    {
+        let container = try makeTestContainer()
+        let profileA = Profile(name: "Profile A")
+        let profileB = Profile(name: "Profile B")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profileA
+        )
+
+        let installed = try await installExtension(
+            manager: manager,
+            name: "NativeMessagingPermission",
+            permissions: ["nativeMessaging"]
+        )
+        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profileB.id
+        )
+
+        let contextA = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profileA.id)
+        )
+        let contextB = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profileB.id)
+        )
+
+        XCTAssertEqual(
+            contextA.permissionStatus(for: .nativeMessaging),
+            .grantedExplicitly
+        )
+        XCTAssertEqual(
+            contextB.permissionStatus(for: .nativeMessaging),
+            .grantedExplicitly
+        )
+        XCTAssertFalse(
+            contextA.unsupportedAPIs.contains {
+                $0.localizedCaseInsensitiveContains("nativeMessaging")
+            }
+        )
+    }
+
     func testConfiguredAskOverridesDefaultAllow() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Configured Ask")
@@ -617,6 +661,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         manager: ExtensionManager,
         name: String,
         incognitoMode: String = "spanning",
+        permissions: [String] = ["storage"],
         optionalHostPermissions: [String] = [
             "https://account.proton.me/*",
             "https://pass.proton.me/*",
@@ -641,7 +686,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             "name": name,
             "version": "1.0",
             "incognito": incognitoMode,
-            "permissions": ["storage"],
+            "permissions": permissions,
             "optional_host_permissions": optionalHostPermissions,
             "action": ["default_popup": "popup.html"],
         ]

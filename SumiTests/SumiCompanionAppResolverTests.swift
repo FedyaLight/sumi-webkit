@@ -104,6 +104,88 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         XCTAssertFalse(identity?.isContainingApp == true)
     }
 
+    func testApplicationIdResolvesByExtensionContainingApp() throws {
+        let appexA = try makeFixtureApp(
+            appBundleID: "com.example.containing.a",
+            appexBundleID: "com.example.containing.a.extension"
+        )
+        let appexB = try makeFixtureApp(
+            appBundleID: "com.example.containing.b",
+            appexBundleID: "com.example.containing.b.extension"
+        )
+        let installedA = makeInstalledExtension(id: "ext-a", sourceBundlePath: appexA)
+        let installedB = makeInstalledExtension(id: "ext-b", sourceBundlePath: appexB)
+        let importStore = SafariExtensionImportStore(defaults: makeDefaults())
+
+        let identityA = SumiCompanionAppResolver.resolveIdentity(
+            requestedApplicationIdentifier:
+                SafariExtensionNativeMessagingRoutingProbe.safariContainingApplicationIdentifier,
+            extensionId: installedA.id,
+            installedExtensions: [installedA, installedB],
+            importStore: importStore
+        )
+        let identityB = SumiCompanionAppResolver.resolveIdentity(
+            requestedApplicationIdentifier:
+                SafariExtensionNativeMessagingRoutingProbe.safariContainingApplicationIdentifier,
+            extensionId: installedB.id,
+            installedExtensions: [installedA, installedB],
+            importStore: importStore
+        )
+
+        XCTAssertEqual(identityA?.resolvedBundleIdentifier, "com.example.containing.a")
+        XCTAssertEqual(identityB?.resolvedBundleIdentifier, "com.example.containing.b")
+        XCTAssertEqual(identityA?.resolutionSource, .containingAppOfImportedAppex)
+        XCTAssertTrue(identityA?.isContainingApp == true)
+        XCTAssertTrue(identityB?.isContainingApp == true)
+    }
+
+    func testApplicationIdReturnsUnsupportedBackendWithoutSafariHandlerAdapter()
+        async throws
+    {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.containing",
+            appexBundleID: "com.example.containing.extension"
+        )
+        let installed = makeInstalledExtension(id: "ext-application-id", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.containing"] = URL(
+            fileURLWithPath: "/Applications/Example.app"
+        )
+        var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
+        let relay = SumiNativeMessagingRelay(
+            importStore: SafariExtensionImportStore(defaults: makeDefaults()),
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true },
+            logDiagnostic: { diagnostics.append($0) }
+        )
+
+        let reply = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier:
+                SafariExtensionNativeMessagingRoutingProbe.safariContainingApplicationIdentifier
+        )
+
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
+        XCTAssertNil(reply.value)
+        let error = try XCTUnwrap(reply.error as NSError?)
+        XCTAssertEqual(
+            error.code,
+            SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
+        )
+        let diagnostic = try XCTUnwrap(diagnostics.last)
+        XCTAssertEqual(
+            diagnostic.requestedApplicationIdentifier,
+            SafariExtensionNativeMessagingRoutingProbe.safariContainingApplicationIdentifier
+        )
+        XCTAssertEqual(diagnostic.hostBundleIdentifier, "com.example.containing")
+        XCTAssertEqual(diagnostic.isContainingApp, true)
+        XCTAssertEqual(diagnostic.protocolAdapterAvailable, false)
+    }
+
     func testAppFoundButProtocolUnknownDoesNotLaunchRepeatedly() async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.example.host",

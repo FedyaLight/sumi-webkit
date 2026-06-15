@@ -1650,6 +1650,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         XCTAssertEqual(tab.url, pageURL)
         XCTAssertEqual(tab.spaceId, space.id)
+        XCTAssertNil(tab.webViewConfigurationOverride)
         if tab.extensionRuntimeOpenNotifiedWithLoadedContexts != true {
             attachUsableExtensionWebView(
                 to: tab,

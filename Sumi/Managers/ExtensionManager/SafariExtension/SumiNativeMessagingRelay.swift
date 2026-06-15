@@ -109,7 +109,7 @@ final class SumiNativeMessagingRelay {
                     )
                     RuntimeDiagnostics.debug(category: "SafariNativeMessaging") {
                         """
-                        coalesced ext=\(diagnostic.extensionId) \
+                        coalesced extBucket=\(SafariExtensionNativeMessagingRoutingProbe.extensionIdBucket(diagnostic.extensionId)) \
                         dir=\(diagnostic.direction.rawValue) \
                         outcome=\(diagnostic.outcome.rawValue) \
                         repeatCount=\(repeatCount) \
@@ -127,6 +127,7 @@ final class SumiNativeMessagingRelay {
         extensionId: String?,
         profileId: UUID? = nil,
         installedExtensions: [InstalledExtension],
+        extensionDisplayName: String? = nil,
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
         SumiNativeMessagingRuntimeCounters.recordSendMessage(
@@ -137,7 +138,14 @@ final class SumiNativeMessagingRelay {
             direction: .send,
             applicationIdentifier: applicationIdentifier,
             extensionId: extensionId,
-            profileId: profileId
+            extensionDisplayName: extensionDisplayName
+                ?? ExtensionUtils.displayName(
+                    forExtensionID: extensionId,
+                    installedExtensions: installedExtensions
+                ),
+            profileId: profileId,
+            messageShape: SafariExtensionNativeMessagingRoutingProbe
+                .sanitizedMessageShape(for: message)
         )
 
         guard let extensionId else {
@@ -493,7 +501,12 @@ final class SumiNativeMessagingRelay {
             direction: .connect,
             applicationIdentifier: applicationIdentifier,
             extensionId: extensionId,
-            profileId: profileId
+            extensionDisplayName: ExtensionUtils.displayName(
+                forExtensionID: extensionId,
+                installedExtensions: installedExtensions
+            ),
+            profileId: profileId,
+            messageShape: nil
         )
 
         guard let extensionId else {
@@ -1170,6 +1183,14 @@ final class SumiNativeMessagingRelay {
     ) -> RegisteredAdapterLookup {
         let byHost = adapterRegistry.adapter(forHostBundleIdentifier: hostBundleIdentifier)
         let byApplication = adapterRegistry.adapter(forApplicationIdentifier: applicationIdentifier)
+        if SafariExtensionNativeMessagingRoutingProbe
+            .isSafariContainingApplicationRequest(applicationIdentifier)
+        {
+            return RegisteredAdapterLookup(
+                adapter: byApplication,
+                adapterByApplicationIdentifier: byApplication
+            )
+        }
         return RegisteredAdapterLookup(
             adapter: byHost ?? byApplication,
             adapterByApplicationIdentifier: byApplication
@@ -1181,14 +1202,18 @@ final class SumiNativeMessagingRelay {
         direction: SafariExtensionNativeMessagingDirection,
         applicationIdentifier: String?,
         extensionId: String?,
-        profileId: UUID?
+        extensionDisplayName: String?,
+        profileId: UUID?,
+        messageShape: SafariExtensionNativeMessagingMessageShape?
     ) {
         SafariExtensionNativeMessagingRoutingProbe.logDelegateObserved(
             delegateMethod: delegateMethod,
             direction: direction,
             extensionId: extensionId,
+            extensionDisplayName: extensionDisplayName,
             applicationIdentifier: applicationIdentifier,
-            profileId: profileId
+            profileId: profileId,
+            messageShape: messageShape
         )
     }
 
@@ -1243,7 +1268,7 @@ final class SumiNativeMessagingRelay {
         }
         RuntimeDiagnostics.debug(category: "SafariNativeMessaging") {
             """
-            ext=\(diagnostic.extensionId) \
+            extBucket=\(SafariExtensionNativeMessagingRoutingProbe.extensionIdBucket(diagnostic.extensionId)) \
             dir=\(diagnostic.direction.rawValue) \
             req=\(diagnostic.requestedApplicationIdentifier ?? "(nil)") \
             host=\(diagnostic.hostBundleIdentifier ?? "(nil)") \

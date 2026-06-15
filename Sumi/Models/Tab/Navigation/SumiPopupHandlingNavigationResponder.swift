@@ -503,19 +503,13 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                requestURL: requestURL
            )
         {
-            browserManager.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
-                configuration,
-                profileId: tab.resolveProfile()?.id ?? tab.profileId,
-                reason: "SumiPopupHandlingNavigationResponder.extensionExternalTab"
-            )
             let targetSpace = tab.spaceId.flatMap { spaceID in
                 browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
             } ?? browserManager.tabManager.currentSpace
             let childTab = browserManager.tabManager.createNewTab(
                 url: requestURL.absoluteString,
                 in: targetSpace,
-                activate: true,
-                webViewConfigurationOverride: configuration
+                activate: true
             )
             browserManager.extensionsModule.registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
                 childTab,
