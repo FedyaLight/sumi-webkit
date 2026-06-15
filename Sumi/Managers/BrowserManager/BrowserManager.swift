@@ -226,6 +226,7 @@ class BrowserManager: ObservableObject {
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
+            downloadManager.settings = sumiSettings
             tabSuspensionService.rebuildProactiveTimers(reason: "settings-attached")
             reconcileStartupSessionIfPossible()
             scheduleAutomaticBrowsingDataCleanup(reason: "settings-attached")

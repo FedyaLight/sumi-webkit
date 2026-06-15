@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import Navigation
 import UniformTypeIdentifiers
 import WebKit
 
@@ -61,7 +62,27 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
     ) async -> URL? {
         guard !isCancelling else { return nil }
 
-        let reservation = coordinator?.reserveDestination(
+        if let promptRequest = item.promptRequest {
+            let promptResult = await promptForDownloadIfNeeded(
+                promptRequest: promptRequest,
+                response: response,
+                suggestedFilename: suggestedFilename
+            )
+            switch promptResult {
+            case .cancel:
+                cancel()
+                return nil
+            case .downloadThenOpen(let intent):
+                item.openIntent = intent
+            case .saveFile:
+                break
+            case .navigate, .prompt:
+                break
+            }
+            item.promptRequest = nil
+        }
+
+        let reservation = await coordinator?.reserveDestination(
             for: item,
             response: response,
             suggestedFilename: suggestedFilename
@@ -87,6 +108,87 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
             }
         }
         return reservation.tempURL
+    }
+
+    private func promptForDownloadIfNeeded(
+        promptRequest: SumiDownloadPromptRequest,
+        response: URLResponse,
+        suggestedFilename: String
+    ) async -> SumiDownloadResolvedAction {
+        let filename = DownloadFileUtilities.suggestedFilename(
+            response: response,
+            requestURL: item.downloadURL,
+            fallback: suggestedFilename
+        )
+        let responseIdentity = SumiDownloadContentIdentity.resolve(
+            mimeType: response.mimeType,
+            filename: filename
+        )
+        let identity = responseIdentity.contentType == nil ? promptRequest.identity : responseIdentity
+        let alert = NSAlert()
+        alert.messageText = "What should Sumi do with this file?"
+        alert.informativeText = "\(filename)\nType: \(identity.displayName)"
+        alert.addButton(withTitle: "Open File")
+        alert.addButton(withTitle: "Save File")
+        alert.addButton(withTitle: "Cancel")
+        let checkbox = NSButton(
+            checkboxWithTitle: "Do this automatically for files like this from now on",
+            target: nil,
+            action: nil
+        )
+        checkbox.isEnabled = promptRequest.canPersistChoice
+        alert.accessoryView = checkbox
+
+        guard let window = download.targetWebView?.window
+            ?? download.originatingWebView?.window
+            ?? NSApp.keyWindow
+        else {
+            return .saveFile
+        }
+
+        let response = await withCheckedContinuation { continuation in
+            alert.beginSheetModal(for: window) { result in
+                continuation.resume(returning: result)
+            }
+        }
+
+        let result: SumiDownloadResolvedAction
+        switch response {
+        case .alertFirstButtonReturn:
+            result = .downloadThenOpen(.systemDefault)
+        case .alertSecondButtonReturn:
+            result = .saveFile
+        default:
+            result = .cancel
+        }
+
+        if checkbox.state == .on,
+           promptRequest.canPersistChoice,
+           let contentType = identity.contentType {
+            switch result {
+            case .downloadThenOpen:
+                coordinator?.settings?.downloadApplicationsStore.upsert(
+                    SumiContentHandlerRecord(
+                        contentType: contentType,
+                        displayName: identity.displayName,
+                        handler: .useSystemDefault,
+                        applicationURL: nil
+                    )
+                )
+            case .saveFile:
+                coordinator?.settings?.downloadApplicationsStore.upsert(
+                    SumiContentHandlerRecord(
+                        contentType: contentType,
+                        displayName: identity.displayName,
+                        handler: .saveFile,
+                        applicationURL: nil
+                    )
+                )
+            default:
+                break
+            }
+        }
+        return result
     }
 
     func downloadDidFinish(_ download: WKDownload) {
@@ -224,6 +326,6 @@ private extension URLResponse {
         if let charsetRange = mimeType.range(of: ";charset=") {
             mimeType = String(mimeType[..<charsetRange.lowerBound])
         }
-        return UTType(mimeType: mimeType)
+        return UTType.types(tag: mimeType, tagClass: .mimeType, conformingTo: nil).first
     }
 }

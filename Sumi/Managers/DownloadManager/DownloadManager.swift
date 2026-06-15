@@ -11,6 +11,11 @@ final class DownloadManager: ObservableObject {
     @Published private(set) var combinedProgressFraction: Double?
 
     private let coordinator: DownloadListCoordinator
+    weak var settings: SumiSettingsService? {
+        didSet {
+            coordinator.settings = settings
+        }
+    }
     weak var browserManager: BrowserManager?
 
     init() {
@@ -22,6 +27,9 @@ final class DownloadManager: ObservableObject {
 
         coordinator.onChange = { [weak self] in
             self?.publishCoordinatorState()
+        }
+        coordinator.onFinish = { [weak self] item in
+            self?.openCompletedDownloadIfNeeded(item)
         }
     }
 
@@ -38,12 +46,16 @@ final class DownloadManager: ObservableObject {
         _ download: WKDownload,
         originalURL: URL,
         suggestedFilename: String,
+        openIntent: SumiDownloadOpenIntent? = nil,
+        promptRequest: SumiDownloadPromptRequest? = nil,
         flyAnimationOriginalRect: NSRect? = nil
     ) -> DownloadItem {
         let item = coordinator.start(
             download: download,
             originalURL: originalURL,
             suggestedFilename: suggestedFilename,
+            openIntent: openIntent,
+            promptRequest: promptRequest,
             flyAnimationOriginalRect: flyAnimationOriginalRect
         )
         publishCoordinatorState()
@@ -247,6 +259,35 @@ final class DownloadManager: ObservableObject {
             coordinator.didFail(item, error: .moveFailed(message: error.localizedDescription))
         }
         publishCoordinatorState()
+    }
+
+    func openCompletedDownloadIfNeeded(_ item: DownloadItem) {
+        guard let intent = item.openIntent,
+              let url = item.localURL,
+              FileManager.default.fileExists(atPath: url.path),
+              !isCurrentApplication(url)
+        else { return }
+
+        switch intent {
+        case .systemDefault:
+            NSWorkspace.shared.open(url)
+        case .application(let applicationURL):
+            guard !isCurrentApplication(applicationURL) else { return }
+            let configuration = NSWorkspace.OpenConfiguration()
+            NSWorkspace.shared.open(
+                [url],
+                withApplicationAt: applicationURL,
+                configuration: configuration,
+                completionHandler: nil
+            )
+        }
+    }
+
+    private func isCurrentApplication(_ url: URL) -> Bool {
+        let bundleURL = Bundle.main.bundleURL.standardizedFileURL
+        let standardizedURL = url.standardizedFileURL
+        return standardizedURL == bundleURL
+            || standardizedURL.path.hasPrefix(bundleURL.path + "/")
     }
 
     private func retryWebView() -> WKWebView? {

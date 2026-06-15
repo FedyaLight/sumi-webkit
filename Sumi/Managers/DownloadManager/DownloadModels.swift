@@ -75,6 +75,8 @@ final class DownloadItem: ObservableObject, Identifiable {
     }
 
     @Published var progress: DownloadProgress?
+    var openIntent: SumiDownloadOpenIntent?
+    var promptRequest: SumiDownloadPromptRequest?
 
     @Published var completedUnitCount: Int64 {
         didSet { touchIfChanged(completedUnitCount, oldValue) }
@@ -103,6 +105,8 @@ final class DownloadItem: ObservableObject, Identifiable {
         state: DownloadState = .pending,
         error: DownloadError? = nil,
         progress: DownloadProgress? = nil,
+        openIntent: SumiDownloadOpenIntent? = nil,
+        promptRequest: SumiDownloadPromptRequest? = nil,
         completedUnitCount: Int64 = 0,
         totalUnitCount: Int64 = -1,
         throughput: Int? = nil,
@@ -118,6 +122,8 @@ final class DownloadItem: ObservableObject, Identifiable {
         self.state = state
         self.error = error
         self.progress = progress
+        self.openIntent = openIntent
+        self.promptRequest = promptRequest
         self.completedUnitCount = completedUnitCount
         self.totalUnitCount = totalUnitCount
         self.throughput = throughput

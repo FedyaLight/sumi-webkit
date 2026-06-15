@@ -41,6 +41,10 @@ class SumiSettingsService {
     private let startupModeKey = "settings.startup.mode"
     private let startupPageURLStringKey = "settings.startup.pageURL"
     private let browsingDataRetentionDaysKey = "settings.browsingData.retentionDays"
+    private let downloadsAlwaysAskWhereToSaveKey = "settings.downloads.alwaysAskWhereToSave"
+    private let downloadsDirectoryBookmarkKey = "settings.downloads.directoryBookmark"
+    private let downloadsDirectoryPathKey = "settings.downloads.directoryPath"
+    private let downloadsFallbackActionKey = "settings.downloads.fallbackAction"
     private let energySaverSystemMonitor: any SumiEnergySaverSystemMonitoring
     @ObservationIgnored
     nonisolated(unsafe) private var energySaverSystemObservationToken: UUID?
@@ -48,6 +52,7 @@ class SumiSettingsService {
     var currentSettingsTab: SettingsTabs = .general
 
     var privacySettingsRoute: SumiPrivacySettingsRoute = .overview
+    let downloadApplicationsStore: SumiDownloadApplicationsStore
 
     /// Extensions vs SumiScripts, when `currentSettingsTab == .extensions`.
     var extensionsSettingsSubPane: SumiExtensionsSettingsSubPane = .extensions
@@ -320,6 +325,76 @@ class SumiSettingsService {
         }
     }
 
+    var downloadsAlwaysAskWhereToSave: Bool {
+        didSet {
+            userDefaults.set(downloadsAlwaysAskWhereToSave, forKey: downloadsAlwaysAskWhereToSaveKey)
+        }
+    }
+
+    private(set) var downloadsDirectoryURL: URL? {
+        didSet {
+            userDefaults.set(downloadsDirectoryURL?.path, forKey: downloadsDirectoryPathKey)
+        }
+    }
+
+    var downloadsFallbackAction: SumiDownloadFallbackAction {
+        didSet {
+            userDefaults.set(downloadsFallbackAction.rawValue, forKey: downloadsFallbackActionKey)
+        }
+    }
+
+    var downloadsDestinationPreference: SumiDownloadDestinationPreference {
+        SumiDownloadDestinationPreference(
+            alwaysAskWhereToSave: downloadsAlwaysAskWhereToSave,
+            customDirectoryURL: resolvedDownloadsDirectoryURL()
+        )
+    }
+
+    var downloadsDirectoryDisplayName: String {
+        let url = resolvedDownloadsDirectoryURL() ?? DownloadsDirectoryResolver.resolvedDownloadsDirectory()
+        return url.lastPathComponent.isEmpty ? url.path : url.lastPathComponent
+    }
+
+    func setDownloadsDirectory(_ url: URL) {
+        do {
+            let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
+            userDefaults.set(bookmark, forKey: downloadsDirectoryBookmarkKey)
+            downloadsDirectoryURL = url
+        } catch {
+            RuntimeDiagnostics.debug(
+                "Failed to save downloads directory bookmark: \(String(describing: error))",
+                category: "DownloadManager"
+            )
+        }
+    }
+
+    func clearDownloadsDirectory() {
+        userDefaults.removeObject(forKey: downloadsDirectoryBookmarkKey)
+        userDefaults.removeObject(forKey: downloadsDirectoryPathKey)
+        downloadsDirectoryURL = nil
+    }
+
+    func resolvedDownloadsDirectoryURL() -> URL? {
+        guard let bookmark = userDefaults.data(forKey: downloadsDirectoryBookmarkKey) else {
+            return downloadsDirectoryURL
+        }
+        var stale = false
+        do {
+            let url = try URL(
+                resolvingBookmarkData: bookmark,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale
+            )
+            if stale {
+                setDownloadsDirectory(url)
+            }
+            return url
+        } catch {
+            return downloadsDirectoryURL
+        }
+    }
+
     var resolvedStartupPageURL: URL {
         SumiStartupPageURL.runtimeURL(from: startupPageURLString)
     }
@@ -327,10 +402,12 @@ class SumiSettingsService {
     init(
         userDefaults: UserDefaults = .standard,
         energySaverSystemMonitor: any SumiEnergySaverSystemMonitoring =
-            SumiEnergySaverSystemMonitor.shared
+            SumiEnergySaverSystemMonitor.shared,
+        downloadApplicationsStore: SumiDownloadApplicationsStore = SumiDownloadApplicationsStore()
     ) {
         self.userDefaults = userDefaults
         self.energySaverSystemMonitor = energySaverSystemMonitor
+        self.downloadApplicationsStore = downloadApplicationsStore
 
         // Register default values
         userDefaults.register(defaults: [
@@ -363,6 +440,8 @@ class SumiSettingsService {
             startupModeKey: SumiStartupMode.restorePreviousSession.rawValue,
             startupPageURLStringKey: SumiStartupPageURL.defaultURLString,
             browsingDataRetentionDaysKey: SumiBrowsingDataRetentionPeriod.defaultPeriod.rawValue,
+            downloadsAlwaysAskWhereToSaveKey: false,
+            downloadsFallbackActionKey: SumiDownloadFallbackAction.saveFile.rawValue,
         ])
 
         // Initialize properties from UserDefaults
@@ -471,6 +550,14 @@ class SumiSettingsService {
                 forKey: browsingDataRetentionDaysKey
             )
         }
+        self.downloadsAlwaysAskWhereToSave = userDefaults.bool(forKey: downloadsAlwaysAskWhereToSaveKey)
+        self.downloadsDirectoryURL = userDefaults.string(forKey: downloadsDirectoryPathKey).flatMap {
+            $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true)
+        }
+        self.downloadsFallbackAction = SumiDownloadFallbackAction(
+            rawValue: userDefaults.string(forKey: downloadsFallbackActionKey)
+                ?? SumiDownloadFallbackAction.saveFile.rawValue
+        ) ?? .saveFile
 
         let loadedSearchEngines: [SumiSearchEngine]
         if let data = userDefaults.data(forKey: searchEnginesKey),

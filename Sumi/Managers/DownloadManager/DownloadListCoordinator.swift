@@ -14,9 +14,11 @@ final class DownloadListCoordinator {
     private var tasks: [UUID: SumiWebKitDownloadTask] = [:]
     private var progressSubscriptions: [UUID: AnyCancellable] = [:]
     private var reservedDestinationPaths: Set<String> = []
+    weak var settings: SumiSettingsService?
 
     private(set) var items: [DownloadItem]
     var onChange: (() -> Void)?
+    var onFinish: ((DownloadItem) -> Void)?
 
     init() {
         self.items = []
@@ -56,11 +58,15 @@ final class DownloadListCoordinator {
         download: WKDownload,
         originalURL: URL,
         suggestedFilename: String,
+        openIntent: SumiDownloadOpenIntent?,
+        promptRequest: SumiDownloadPromptRequest?,
         flyAnimationOriginalRect: NSRect?
     ) -> DownloadItem {
         let item = DownloadItem(
             downloadURL: originalURL,
-            fileName: DownloadFileUtilities.sanitizedFilename(suggestedFilename)
+            fileName: DownloadFileUtilities.sanitizedFilename(suggestedFilename),
+            openIntent: openIntent,
+            promptRequest: promptRequest
         )
         upsert(item)
         attach(download: download, to: item, flyAnimationOriginalRect: flyAnimationOriginalRect)
@@ -119,7 +125,7 @@ final class DownloadListCoordinator {
         for item: DownloadItem,
         response: URLResponse?,
         suggestedFilename: String
-    ) -> DownloadDestinationReservation {
+    ) async -> DownloadDestinationReservation? {
         if let destinationURL = item.destinationURL,
            let tempURL = item.tempURL,
            !reservedDestinationPaths.contains(destinationURL.path) {
@@ -137,7 +143,9 @@ final class DownloadListCoordinator {
             fallback: suggestedFilename.isEmpty ? item.fileName : suggestedFilename
         )
         let cleanName = DownloadFileUtilities.sanitizedFilename(responseFilename)
-        let destinationURL = uniqueReservedDestination(for: cleanName)
+        guard let destinationURL = await chooseDestination(for: cleanName) else {
+            return nil
+        }
         reservedDestinationPaths.insert(destinationURL.path)
 
         return DownloadDestinationReservation(
@@ -189,6 +197,7 @@ final class DownloadListCoordinator {
         progressSubscriptions[item.id] = nil
         releaseReservation(for: reservedDestinationURL)
         notify()
+        onFinish?(item)
     }
 
     func didFail(_ item: DownloadItem, error: DownloadError) {
@@ -260,7 +269,10 @@ final class DownloadListCoordinator {
     }
 
     private func uniqueReservedDestination(for filename: String) -> URL {
-        let directory = DownloadsDirectoryResolver.resolvedDownloadsDirectory()
+        let directory = SumiDownloadDestinationResolver.defaultDirectory(
+            preference: settings?.downloadsDestinationPreference
+                ?? SumiDownloadDestinationPreference(alwaysAskWhereToSave: false, customDirectoryURL: nil)
+        )
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let cleanName = DownloadFileUtilities.sanitizedFilename(filename)
@@ -281,6 +293,25 @@ final class DownloadListCoordinator {
             }
             counter += 1
         }
+    }
+
+    private func chooseDestination(for filename: String) async -> URL? {
+        guard settings?.downloadsAlwaysAskWhereToSave == true else {
+            return uniqueReservedDestination(for: filename)
+        }
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = filename
+        panel.canCreateDirectories = true
+        panel.directoryURL = settings?.resolvedDownloadsDirectoryURL()
+            ?? DownloadsDirectoryResolver.resolvedDownloadsDirectory()
+        let response = await withCheckedContinuation { continuation in
+            panel.begin { result in
+                continuation.resume(returning: result)
+            }
+        }
+        guard response == .OK, let url = panel.url else { return nil }
+        return url
     }
 
     private func releaseReservation(for item: DownloadItem) {

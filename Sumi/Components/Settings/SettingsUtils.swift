@@ -56,6 +56,18 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                     "pinned", "essential", "launcher", "homepage", "start page"
                 ]
             )
+        case .downloads:
+            return SettingsPaneDescriptor(
+                tab: tab,
+                title: "Downloads",
+                subtitle: "Download destination and file handling behavior.",
+                icon: tab.icon,
+                group: .browser,
+                keywords: [
+                    "downloads", "folder", "save files", "applications",
+                    "handlers", "open file", "mime", "content type"
+                ]
+            )
         case .appearance:
             return SettingsPaneDescriptor(
                 tab: tab,
@@ -247,6 +259,7 @@ enum SettingsTabs: Hashable, CaseIterable {
     case general
     case appearance
     case startup
+    case downloads
     case performance
     case privacy
     case profiles
@@ -296,6 +309,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         switch self {
         case .general: return "gearshape"
         case .startup: return "power"
+        case .downloads: return "arrow.down.circle"
         case .appearance: return "paintpalette"
         case .performance: return "speedometer"
         case .privacy: return "lock.shield"
@@ -312,6 +326,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         switch self {
         case .general: return .gray
         case .startup: return .green
+        case .downloads: return .blue
         case .appearance: return .purple
         case .performance: return .orange
         case .privacy: return .blue
@@ -330,6 +345,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         case .appearance: return "appearance"
         case .general: return "general"
         case .startup: return "startup"
+        case .downloads: return "downloads"
         case .performance: return "performance"
         case .privacy: return "privacy"
         case .profiles: return "profiles"
@@ -346,6 +362,7 @@ enum SettingsTabs: Hashable, CaseIterable {
         case "appearance": self = .appearance
         case "general": self = .general
         case "startup": self = .startup
+        case "downloads": self = .downloads
         case "performance": self = .performance
         case "privacy": self = .privacy
         case "profiles": self = .profiles
