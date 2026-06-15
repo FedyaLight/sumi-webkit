@@ -562,11 +562,11 @@ final class AuxiliaryWindowManager {
             parentWindow(for: $0, browserManager: browserManager)
         } ?? explicitOpenerWindow
         let window = AuxiliaryCompactWindow(contentRect: geometry.contentRect)
-        if let title = request?.url?.host, title.isEmpty == false {
-            window.title = title
-        } else {
-            window.title = "Popup"
-        }
+        window.title = Self.windowTitle(
+            for: request?.url,
+            ownerExtensionID: ownerExtensionID,
+            installedExtensions: extensionManager?.installedExtensions ?? []
+        )
 
         let containerView = NSView(frame: NSRect(origin: .zero, size: geometry.contentRect.size))
         window.contentView = containerView
@@ -626,6 +626,28 @@ final class AuxiliaryWindowManager {
             recordAuxiliarySessionFocus(sessionID)
         }
         return sessionID
+    }
+
+    static func windowTitle(
+        for url: URL?,
+        ownerExtensionID: String?,
+        installedExtensions: [InstalledExtension]
+    ) -> String {
+        if ExtensionUtils.isExtensionOwnedURL(url) {
+            return ExtensionUtils.displayName(
+                forExtensionOwnedURL: url,
+                installedExtensions: installedExtensions
+            ) ?? ExtensionUtils.displayName(
+                forExtensionID: ownerExtensionID,
+                installedExtensions: installedExtensions
+            ) ?? "Extension"
+        }
+
+        if let title = url?.host, title.isEmpty == false {
+            return title
+        }
+
+        return "Popup"
     }
 
     private func registerSession(_ session: AuxiliaryWindowSession) {

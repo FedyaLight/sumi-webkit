@@ -170,7 +170,9 @@ struct URLBarView: View {
     }
 
     func focusFloatingBarFromURLBar() {
-        let currentURL = activePageURL?.absoluteString ?? ""
+        let currentURL = ExtensionUtils.isExtensionOwnedURL(activePageURL)
+            ? ""
+            : activePageURL?.absoluteString ?? ""
         browserManager.focusFloatingBar(
             in: windowState,
             prefill: currentURL,

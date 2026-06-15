@@ -66,6 +66,12 @@ extension URLBarView {
         if SumiSurface.isBookmarksSurfaceURL(url) {
             return String(localized: "Bookmarks")
         }
+        if ExtensionUtils.isExtensionOwnedURL(url) {
+            return ExtensionUtils.displayName(
+                forExtensionOwnedURL: url,
+                installedExtensions: browserManager.extensionSurfaceStore.installedExtensions
+            ) ?? String(localized: "Extension")
+        }
         guard let host = url.host else {
             return url.absoluteString
         }

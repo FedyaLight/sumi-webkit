@@ -70,6 +70,42 @@ struct ExtensionUtils {
         return extensionOwnedURLSchemes.contains(scheme)
     }
 
+    static func extensionID(fromExtensionOwnedURL url: URL?) -> String? {
+        guard
+            isExtensionOwnedURL(url),
+            let host = url?.host?.trimmingCharacters(in: .whitespacesAndNewlines),
+            host.isEmpty == false
+        else {
+            return nil
+        }
+        return host
+    }
+
+    static func displayName(
+        forExtensionID extensionID: String?,
+        installedExtensions: [InstalledExtension]
+    ) -> String? {
+        guard
+            let extensionID,
+            let installedExtension = installedExtensions.first(where: { $0.id == extensionID })
+        else {
+            return nil
+        }
+
+        let name = installedExtension.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
+    }
+
+    static func displayName(
+        forExtensionOwnedURL url: URL?,
+        installedExtensions: [InstalledExtension]
+    ) -> String? {
+        displayName(
+            forExtensionID: extensionID(fromExtensionOwnedURL: url),
+            installedExtensions: installedExtensions
+        )
+    }
+
     static func webKitLoadableExtensionURL(for url: URL) -> URL {
         guard url.scheme?.lowercased() == "safari-web-extension",
               var components = URLComponents(
