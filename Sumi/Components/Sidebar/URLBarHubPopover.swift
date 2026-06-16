@@ -745,7 +745,22 @@ struct URLBarHubPopover: View {
     }
 
     private func handleReaderMode() {
-        // Sumi does not expose a reader-mode pipeline yet.
+        guard let currentTab,
+              let webView = browserManager.getWebView(
+                for: currentTab.id,
+                in: windowState.id
+              )
+        else {
+            return
+        }
+
+        Task { @MainActor in
+            try? await SumiReaderModeService.toggleReaderMode(
+                on: webView,
+                tab: currentTab
+            )
+            onClose()
+        }
     }
 
     private func scheduleCoalescedRefresh() {

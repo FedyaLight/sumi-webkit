@@ -207,7 +207,9 @@ struct SiteControlsSnapshot: Equatable {
         return SiteControlsSnapshot(
             hubAnchorAppearance: .zenPermissions,
             securityState: securityState,
-            readerAvailability: .disabledPlaceholder,
+            readerAvailability: (scheme == "http" || scheme == "https")
+                ? .available
+                : .disabledPlaceholder,
             settingsRows: settingsRows
         )
     }
