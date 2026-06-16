@@ -66,15 +66,15 @@ struct SidebarUnloadedRegularTabFaviconIndicator<Icon: View>: View {
 
     var body: some View {
         HStack(spacing: max(3, size * 0.17)) {
-            icon()
-                .saturation(0.0)
-                .opacity(0.8)
-                .frame(width: size, height: size)
-
             Circle()
                 .fill(indicatorColor)
                 .frame(width: indicatorSize, height: indicatorSize)
                 .accessibilityHidden(true)
+
+            icon()
+                .saturation(0.0)
+                .opacity(0.8)
+                .frame(width: size, height: size)
         }
         .fixedSize()
     }
