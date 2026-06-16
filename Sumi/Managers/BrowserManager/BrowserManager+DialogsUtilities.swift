@@ -243,13 +243,26 @@ extension BrowserManager {
         }
         picker.delegate = bridge
 
-        let anchor = NSRect(
-            x: contentView.bounds.midX,
-            y: contentView.bounds.midY,
-            width: 1,
-            height: 1
-        )
-        picker.show(relativeTo: anchor, of: contentView, preferredEdge: .minY)
+        let anchorView: NSView
+        let anchorRect: NSRect
+        if let ownerView = source.originOwnerView,
+           ownerView.window != nil,
+           ownerView.superview != nil,
+           !ownerView.isHiddenOrHasHiddenAncestor,
+           ownerView.alphaValue > 0
+        {
+            anchorView = ownerView
+            anchorRect = ownerView.bounds
+        } else {
+            anchorView = contentView
+            anchorRect = NSRect(
+                x: contentView.bounds.midX,
+                y: contentView.bounds.midY,
+                width: 1,
+                height: 1
+            )
+        }
+        picker.show(relativeTo: anchorRect, of: anchorView, preferredEdge: .minY)
         bridge?.scheduleFallbackFinish()
     }
 

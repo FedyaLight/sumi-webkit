@@ -82,6 +82,7 @@ struct URLBarHubPopover: View {
     @State private var scheduledPermissionsReloadTask: Task<Void, Never>?
     @State private var readerModeIsActive = false
     @State private var isCapturingScreenshot = false
+    @StateObject private var shareButtonAnchor = URLBarHubShareAnchorStore()
     @AppStorage("URLBarHubScreenshotQualityScale") private var screenshotQualityScale = URLBarHubScreenshotQuality.twoX.rawValue
     @AppStorage("URLBarHubScreenshotCaptureTarget") private var screenshotCaptureTarget = URLBarHubScreenshotCaptureTarget.visiblePage.rawValue
     @AppStorage("URLBarHubScreenshotDestination") private var screenshotDestination = URLBarHubScreenshotDestination.askEveryTime.rawValue
@@ -419,6 +420,7 @@ struct URLBarHubPopover: View {
             ) {
                 shareCurrentPage()
             }
+            .background(URLBarHubShareAnchorView(anchor: shareButtonAnchor))
 
             SumiHubHeaderButton(
                 iconName: "reader-mode",
@@ -713,7 +715,8 @@ struct URLBarHubPopover: View {
     private func shareCurrentPage() {
         guard let url = currentTab?.url else { return }
         let source = windowState.sidebarTransientSessionCoordinator.preparedPresentationSource(
-            window: windowState.window
+            window: windowState.window,
+            ownerView: shareButtonAnchor.view
         )
         browserManager.presentSharingServicePicker([url], source: source)
     }
@@ -1038,5 +1041,27 @@ private struct SumiHubHeaderButton: View {
             return 0.97
         }
         return 1
+    }
+}
+
+private final class URLBarHubShareAnchorStore: ObservableObject {
+    weak var view: NSView?
+}
+
+private struct URLBarHubShareAnchorView: NSViewRepresentable {
+    let anchor: URLBarHubShareAnchorStore
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        anchor.view = view
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        anchor.view = nsView
+    }
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: ()) {
+        _ = nsView
     }
 }
