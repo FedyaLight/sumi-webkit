@@ -80,6 +80,7 @@ struct URLBarHubPopover: View {
     @State private var containerWidth: CGFloat = Mode.controls.preferredWidth
     @State private var bookmarkErrorMessage: String?
     @State private var scheduledPermissionsReloadTask: Task<Void, Never>?
+    @State private var readerModeIsActive = false
     @State private var isCapturingScreenshot = false
     @AppStorage("URLBarHubScreenshotQualityScale") private var screenshotQualityScale = URLBarHubScreenshotQuality.twoX.rawValue
     @AppStorage("URLBarHubScreenshotCaptureTarget") private var screenshotCaptureTarget = URLBarHubScreenshotCaptureTarget.visiblePage.rawValue
@@ -139,6 +140,14 @@ struct URLBarHubPopover: View {
         ].joined(separator: "|")
     }
 
+    private var readerModeLoadKey: String {
+        [
+            currentTab?.id.uuidString ?? "none",
+            currentTab?.url.absoluteString ?? "none",
+            "\(refreshNonce)",
+        ].joined(separator: "|")
+    }
+
     private var audioStatePublisher: AnyPublisher<SumiWebViewAudioState, Never> {
         guard let currentTab else {
             return Empty<SumiWebViewAudioState, Never>().eraseToAnyPublisher()
@@ -176,11 +185,15 @@ struct URLBarHubPopover: View {
         .task(id: permissionsLoadKey) {
             await reloadPermissionsImmediately()
         }
+        .task(id: readerModeLoadKey) {
+            await reloadReaderModeState()
+        }
         .onChange(of: bookmarkPresentationRequest) { _, request in
             handleBookmarkPresentationRequest(request)
         }
         .onChange(of: currentTab?.id) { _, _ in
             resetToControls()
+            readerModeIsActive = false
             scheduleCoalescedRefresh()
             schedulePermissionsReloadAfterStoreChange()
         }
@@ -410,8 +423,9 @@ struct URLBarHubPopover: View {
             SumiHubHeaderButton(
                 iconName: "reader-mode",
                 fallbackSystemName: "doc.richtext",
-                help: "Reader Mode",
-                isEnabled: snapshot.readerAvailability == .available
+                help: readerModeIsActive ? "Hide Reader" : "Reader Mode",
+                isEnabled: snapshot.readerAvailability == .available,
+                isActive: readerModeIsActive
             ) {
                 handleReaderMode()
             }
@@ -547,6 +561,20 @@ struct URLBarHubPopover: View {
             dependencies: permissionDependencies,
             systemSnapshotMode: .none
         )
+    }
+
+    private func reloadReaderModeState() async {
+        guard let currentTab,
+              let webView = browserManager.getWebView(
+                for: currentTab.id,
+                in: windowState.id
+              )
+        else {
+            readerModeIsActive = false
+            return
+        }
+
+        readerModeIsActive = await SumiReaderModeService.isReaderModeActive(on: webView)
     }
 
     private func cyclePermission(_ row: SumiCurrentSitePermissionRow) {
@@ -898,6 +926,7 @@ struct URLBarHubPopover: View {
                 on: webView,
                 tab: currentTab
             )
+            readerModeIsActive = await SumiReaderModeService.isReaderModeActive(on: webView)
             onClose()
         }
     }
@@ -953,14 +982,14 @@ private struct SumiHubHeaderButton: View {
                 iconName: iconName,
                 fallbackSystemName: fallbackSystemName,
                 size: 18,
-                tint: URLBarHubNativeStyle.primaryText
+                tint: iconTint
             )
             .frame(maxWidth: .infinity)
             .frame(height: 36)
             .background(backgroundFill)
             .overlay {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
+                    .stroke(borderColor, lineWidth: 0.5)
             }
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .scaleEffect(buttonScale)
@@ -987,10 +1016,21 @@ private struct SumiHubHeaderButton: View {
     }
 
     private var backgroundFill: Color {
-        if isPressed || isHovered || isActive {
+        if isActive {
+            return URLBarHubNativeStyle.accentBackground
+        }
+        if isPressed || isHovered {
             return URLBarHubNativeStyle.hoveredControlBackground
         }
         return URLBarHubNativeStyle.controlBackground
+    }
+
+    private var iconTint: Color {
+        isActive ? URLBarHubNativeStyle.accentText : URLBarHubNativeStyle.primaryText
+    }
+
+    private var borderColor: Color {
+        isActive ? URLBarHubNativeStyle.accentBackground : URLBarHubNativeStyle.separator
     }
 
     private var buttonScale: CGFloat {

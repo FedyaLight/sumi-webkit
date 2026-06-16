@@ -9,8 +9,12 @@ enum SumiReaderModeService {
     }
 
     static func toggleReaderMode(on webView: WKWebView, tab: Tab?) async throws {
-        if try await isReaderModeActive(on: webView) {
-            webView.reload()
+        if let readerSourceURL = try await readerModeSourceURL(on: webView) {
+            if let tab {
+                tab.loadURL(readerSourceURL)
+            } else {
+                webView.load(URLRequest(url: readerSourceURL))
+            }
             return
         }
 
@@ -25,16 +29,30 @@ enum SumiReaderModeService {
         }
 
         let html = readerHTML(for: article, sourceURL: sourceURL)
-        try await write(html, into: webView)
-
-        tab?.name = article.title
+        load(html, sourceURL: sourceURL, into: webView)
+        reconcileReaderPresentation(
+            tab: tab,
+            webView: webView,
+            sourceURL: sourceURL,
+            title: article.title
+        )
     }
 
-    private static func isReaderModeActive(on webView: WKWebView) async throws -> Bool {
+    static func isReaderModeActive(on webView: WKWebView) async -> Bool {
+        (try? await readerModeSourceURL(on: webView)) != nil
+    }
+
+    private static func readerModeSourceURL(on webView: WKWebView) async throws -> URL? {
         let value = try await webView.evaluateJavaScript("""
-            document.documentElement.dataset.sumiReaderMode === "true"
+            (() => {
+              const root = document.documentElement;
+              return root.dataset.sumiReaderMode === "true"
+                ? root.dataset.sumiReaderSourceUrl || ""
+                : "";
+            })();
         """)
-        return (value as? Bool) == true
+        guard let source = value as? String, !source.isEmpty else { return nil }
+        return URL(string: source)
     }
 
     private static func extractArticle(from webView: WKWebView) async throws -> Article? {
@@ -62,20 +80,43 @@ enum SumiReaderModeService {
         )
     }
 
-    private static func write(_ html: String, into webView: WKWebView) async throws {
-        let data = try JSONSerialization.data(withJSONObject: [html], options: [])
-        guard let json = String(data: data, encoding: .utf8) else {
-            throw ReaderError.extractionFailed
+    private static func load(_ html: String, sourceURL: URL, into webView: WKWebView) {
+        webView.loadHTMLString(html, baseURL: sourceURL)
+    }
+
+    private static func reconcileReaderPresentation(
+        tab: Tab?,
+        webView: WKWebView,
+        sourceURL: URL,
+        title: String
+    ) {
+        applyReaderPresentation(tab: tab, sourceURL: sourceURL, title: title)
+
+        Task { @MainActor [weak webView, weak tab] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard let webView,
+                  (try? await readerModeSourceURL(on: webView)) == sourceURL
+            else {
+                return
+            }
+            applyReaderPresentation(tab: tab, sourceURL: sourceURL, title: title)
         }
-        let script = """
-            (() => {
-              const html = \(json)[0];
-              document.open();
-              document.write(html);
-              document.close();
-            })();
-        """
-        _ = try await webView.evaluateJavaScript(script)
+    }
+
+    private static func applyReaderPresentation(
+        tab: Tab?,
+        sourceURL: URL,
+        title: String
+    ) {
+        guard let tab else { return }
+        tab.url = sourceURL
+        tab.name = title
+        tab.updateNavigationState()
+        NotificationCenter.default.post(
+            name: .sumiTabNavigationStateDidChange,
+            object: tab,
+            userInfo: ["tabId": tab.id]
+        )
     }
 
     private static func readerHTML(for article: Article, sourceURL: URL) -> String {
@@ -91,7 +132,7 @@ enum SumiReaderModeService {
 
         return """
         <!doctype html>
-        <html lang="\(escaped(article.language))" data-sumi-reader-mode="true">
+        <html lang="\(escaped(article.language))" data-sumi-reader-mode="true" data-sumi-reader-source-url="\(source)">
         <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
