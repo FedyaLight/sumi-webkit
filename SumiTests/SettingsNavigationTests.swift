@@ -6,7 +6,7 @@ final class SettingsNavigationTests: XCTestCase {
     func testSidebarOrderingKeepsAboutLastAndHidesUserscripts() {
         XCTAssertEqual(
             SettingsTabs.ordered,
-            [.general, .appearance, .startup, .downloads, .performance, .privacy, .profiles, .shortcuts, .extensions, .advanced, .about]
+            [.general, .appearance, .downloads, .startup, .performance, .privacy, .profiles, .shortcuts, .extensions, .advanced, .about]
         )
         XCTAssertEqual(SettingsTabs.ordered.last, .about)
         XCTAssertFalse(SettingsTabs.ordered.contains(.userScripts))
