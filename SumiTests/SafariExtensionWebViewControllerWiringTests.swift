@@ -1698,6 +1698,94 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertTrue(tab.didNotifyOpenToExtensions)
     }
 
+    func testExtensionRequestedNormalTabDoesNotWakeNativeMessagingBackgrounds() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        let controller = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        let windowState = BrowserWindowState()
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        manager.attach(browserManager: browserManager)
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptNativeMessagingProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+        let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
+        entity.isEnabled = true
+        try container.mainContext.save()
+        _ = manager.loadInstalledExtensionMetadata()
+
+        var backgroundWakeCount = 0
+        manager.testHooks.backgroundContentWake = { _, _ in
+            backgroundWakeCount += 1
+        }
+        defer {
+            manager.testHooks.backgroundContentWake = nil
+        }
+
+        let pageURL = URL(string: "https://example.com/login")!
+        XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+
+        let preparedProfileId = try await manager.prepareExtensionRequestedTabForInitialLoad(
+            url: pageURL,
+            requestedWindow: nil,
+            controller: controller
+        )
+
+        XCTAssertEqual(preparedProfileId, profile.id)
+        XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
+        XCTAssertTrue(manager.profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profile.id))
+        XCTAssertEqual(backgroundWakeCount, 0)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .neverLoaded
+        )
+
+        _ = try manager.openExtensionRequestedTab(
+            url: pageURL,
+            shouldBeActive: true,
+            shouldBePinned: false,
+            requestedWindow: nil,
+            controller: controller,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertEqual(backgroundWakeCount, 0)
+        XCTAssertEqual(
+            manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
+            .neverLoaded
+        )
+    }
+
     func testExtensionRequestedNormalWindowPreloadsContentScriptContextsBeforeOpenNotification() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
