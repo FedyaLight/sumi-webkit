@@ -25,14 +25,14 @@ struct SidebarHeader: View {
             SidebarWindowControlsView()
                 .environmentObject(browserManager)
                 .environment(windowState)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             NavButtonsView()
                 .environmentObject(browserManager)
                 .environment(windowState)
-
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, SidebarChromeMetrics.horizontalPadding)
+        .frame(maxWidth: .infinity)
         .frame(height: SidebarChromeMetrics.controlStripHeight)
     }
 
