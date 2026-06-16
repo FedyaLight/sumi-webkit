@@ -128,6 +128,9 @@ struct SumiApp: App {
                     tabManager: browserManager.tabManager
                 )
                 browserManager.splitManager.cleanupWindow(windowId)
+                browserManager.backgroundMediaOptimizationService.scheduleReconcile(
+                    reason: "window-closed"
+                )
 
                 // Clean up incognito window if applicable
                 if let windowState = browserManager.windowRegistry?.windows[windowId],
@@ -149,6 +152,11 @@ struct SumiApp: App {
         windowRegistry.onActiveWindowChange = {
             [weak browserManager] windowState in
             browserManager?.setActiveWindowState(windowState)
+        }
+
+        windowRegistry.onWindowVisibilityChange = {
+            [weak browserManager] windowState in
+            browserManager?.handleWindowVisibilityChanged(windowState)
         }
 
         windowRegistry.onAllWindowsClosed = { [weak browserManager] in

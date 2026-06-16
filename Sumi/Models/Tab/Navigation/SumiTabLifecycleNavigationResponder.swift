@@ -197,6 +197,9 @@ final class SumiTabLifecycleNavigationResponder:
             tab,
             properties: [.URL, .title, .loading]
         )
+        tab.browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
+            reason: "navigation-did-finish"
+        )
         tab.browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
         SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: nil)
     }

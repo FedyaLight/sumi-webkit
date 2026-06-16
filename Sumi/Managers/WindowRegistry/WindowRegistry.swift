@@ -50,6 +50,10 @@ class WindowRegistry {
     @ObservationIgnored
     var onActiveWindowChange: ((BrowserWindowState) -> Void)?
 
+    /// Callback when an AppKit window visibility signal changes.
+    @ObservationIgnored
+    var onWindowVisibilityChange: ((BrowserWindowState) -> Void)?
+
     /// Called after the last window is removed from the registry (e.g. to reset single global session restore).
     @ObservationIgnored
     var onAllWindowsClosed: (() -> Void)?
@@ -112,6 +116,10 @@ class WindowRegistry {
         RuntimeDiagnostics.emit {
             "🪟 [WindowRegistry] Active window: \(window.id)"
         }
+    }
+
+    func notifyWindowVisibilityChanged(_ window: BrowserWindowState) {
+        onWindowVisibilityChange?(window)
     }
 
     /// Get all windows as an array

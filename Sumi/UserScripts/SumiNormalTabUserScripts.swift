@@ -13,6 +13,7 @@ final class SumiNormalTabUserScripts: SumiUserScriptsProvider {
 
     let faviconScripts = SumiFaviconUserScripts()
     private let transientChromeInteractionShieldUserScript = SumiTransientChromeInteractionShieldUserScript()
+    private let backgroundVideoOptimizationUserScript = SumiBackgroundVideoOptimizationUserScript()
     private var contentBlockingUserScripts: [SumiUserScript]
     private var managedUserScripts: [SumiUserScript]
     private var managedUserScriptSignature: [UserScriptSignature]
@@ -34,6 +35,7 @@ final class SumiNormalTabUserScripts: SumiUserScriptsProvider {
         }
 
         let scripts = [transientChromeInteractionShieldUserScript]
+            + [backgroundVideoOptimizationUserScript]
             + contentBlockingUserScripts
             + faviconScripts.userScripts
             + managedUserScripts

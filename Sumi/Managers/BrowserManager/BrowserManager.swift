@@ -197,6 +197,7 @@ class BrowserManager: ObservableObject {
     var lastSessionWindowsStore: LastSessionWindowsStore
     var compositorManager: TabCompositorManager
     let tabSuspensionService: TabSuspensionService
+    let backgroundMediaOptimizationService = SumiBackgroundMediaOptimizationService()
     var splitManager: SplitViewManager
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
@@ -228,6 +229,7 @@ class BrowserManager: ObservableObject {
         didSet {
             downloadManager.settings = sumiSettings
             tabSuspensionService.rebuildProactiveTimers(reason: "settings-attached")
+            backgroundMediaOptimizationService.scheduleReconcile(reason: "settings-attached")
             reconcileStartupSessionIfPossible()
             scheduleAutomaticBrowsingDataCleanup(reason: "settings-attached")
         }
@@ -289,6 +291,7 @@ class BrowserManager: ObservableObject {
             Task { @MainActor [weak self] in
                 await self?.reconcilePermissionSidebarPins(reason: "window-registry-updated")
             }
+            backgroundMediaOptimizationService.scheduleReconcile(reason: "window-registry-updated")
             reconcileStartupSessionIfPossible()
         }
     }
@@ -527,6 +530,7 @@ class BrowserManager: ObservableObject {
         // Phase 2: wire dependencies and perform side effects (safe to use self)
         self.compositorManager.browserManager = self
         self.tabSuspensionService.attach(browserManager: self)
+        self.backgroundMediaOptimizationService.attach(browserManager: self)
         self.splitManager.browserManager = self
         self.splitManager.windowRegistry = self.windowRegistry
         // Note: settingsManager will be injected later, so we skip initialization here
@@ -573,6 +577,9 @@ class BrowserManager: ObservableObject {
             .sink { [weak self] _ in
                 self?.tabStructuralRevision &+= 1
                 self?.tabSuspensionService.scheduleProactiveTimerReconcile(
+                    reason: "tab-structure-changed"
+                )
+                self?.backgroundMediaOptimizationService.scheduleReconcile(
                     reason: "tab-structure-changed"
                 )
             }
@@ -1591,6 +1598,7 @@ class BrowserManager: ObservableObject {
         extensionsModule.notifyWindowFocusedIfLoaded(windowState)
         adoptProfileIfNeeded(for: windowState, context: .windowActivation)
         SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+        backgroundMediaOptimizationService.scheduleReconcile(reason: "window-activated")
     }
 
     // MARK: - Window-Aware Tab Operations
@@ -1918,6 +1926,7 @@ class BrowserManager: ObservableObject {
         }
         extensionsModule.notifyTabActivatedIfLoaded(newTab: tab, previous: previousTab)
         tabSuspensionService.reconcileProactiveTimers(reason: "tab-selection-changed")
+        backgroundMediaOptimizationService.scheduleReconcile(reason: "tab-selection-changed")
 
         // Update global tab state for the active window
         if windowRegistry?.activeWindow?.id == windowState.id {
@@ -2708,6 +2717,8 @@ extension BrowserManager: SumiProfileRoutingSupport {}
 
 extension BrowserManager: BrowserAppLifecycleHandling {
     func handleApplicationWillResignActive() {
+        backgroundMediaOptimizationService.scheduleReconcile(reason: "app-will-resign-active")
+
         guard let geolocationProvider,
               geolocationProvider.currentState == .active
         else { return }
@@ -2716,10 +2727,17 @@ extension BrowserManager: BrowserAppLifecycleHandling {
     }
 
     func handleApplicationDidBecomeActive() {
+        backgroundMediaOptimizationService.scheduleReconcile(reason: "app-did-become-active")
+
         guard didPauseGeolocationForApplicationBackground else { return }
 
         didPauseGeolocationForApplicationBackground = false
         _ = geolocationProvider?.resume()
+    }
+
+    func handleWindowVisibilityChanged(_ windowState: BrowserWindowState) {
+        _ = windowState
+        backgroundMediaOptimizationService.scheduleReconcile(reason: "window-visibility-changed")
     }
 }
 

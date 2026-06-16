@@ -601,6 +601,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         browserManager.tabSuspensionService.scheduleProactiveTimerReconcile(
             reason: "visible-webviews-prepared"
         )
+        browserManager.backgroundMediaOptimizationService.scheduleReconcile(
+            reason: "visible-webviews-prepared"
+        )
 
         return didCreateWebView
     }

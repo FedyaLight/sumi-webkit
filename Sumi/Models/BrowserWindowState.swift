@@ -176,6 +176,9 @@ class BrowserWindowState {
     /// Reference to the actual NSWindow for this window state
     var window: NSWindow?
 
+    /// Physical AppKit visibility used by background media optimization.
+    var windowVisibilityState: SumiWindowVisibilityState = .unknown
+
     /// Reference to TabManager for computed properties
     /// Set by BrowserManager during window registration
     weak var tabManager: TabManager?

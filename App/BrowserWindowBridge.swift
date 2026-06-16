@@ -31,8 +31,7 @@ struct BrowserWindowBridge: NSViewRepresentable {
         let windowRegistry: WindowRegistry
 
         private weak var window: NSWindow?
-        private var keyObserver: NSObjectProtocol?
-        private var willCloseObserver: NSObjectProtocol?
+        private var notificationObservers: [(NotificationCenter, NSObjectProtocol)] = []
 
         init(windowState: BrowserWindowState, windowRegistry: WindowRegistry) {
             self.windowState = windowState
@@ -50,22 +49,65 @@ struct BrowserWindowBridge: NSViewRepresentable {
 
             promoteToSumiBrowserWindowIfNeeded(window)
             window.applyBrowserWindowShellConfiguration(shouldApplyInitialSize: true)
+            refreshWindowVisibilityState()
 
-            keyObserver = NotificationCenter.default.addObserver(
+            addObserver(
+                center: .default,
                 forName: NSWindow.didBecomeKeyNotification,
-                object: window,
-                queue: .main
+                object: window
             ) { [weak self] _ in
                 guard let self else { return }
                 Task { @MainActor in
                     self.windowRegistry.setActive(self.windowState)
+                    self.refreshWindowVisibilityState()
                 }
             }
 
-            willCloseObserver = NotificationCenter.default.addObserver(
+            addObserver(
+                center: .default,
+                forName: NSWindow.didMiniaturizeNotification,
+                object: window
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshWindowVisibilityState()
+                }
+            }
+
+            addObserver(
+                center: .default,
+                forName: NSWindow.didDeminiaturizeNotification,
+                object: window
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshWindowVisibilityState()
+                }
+            }
+
+            addObserver(
+                center: .default,
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: window
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshWindowVisibilityState()
+                }
+            }
+
+            addObserver(
+                center: NSWorkspace.shared.notificationCenter,
+                forName: NSWorkspace.activeSpaceDidChangeNotification,
+                object: nil
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    await Task.yield()
+                    self?.refreshWindowVisibilityState()
+                }
+            }
+
+            addObserver(
+                center: .default,
                 forName: NSWindow.willCloseNotification,
-                object: window,
-                queue: .main
+                object: window
             ) { [weak self] _ in
                 guard let self else { return }
                 MainActor.assumeIsolated {
@@ -80,6 +122,7 @@ struct BrowserWindowBridge: NSViewRepresentable {
 
         func detach() {
             removeObservers()
+            windowState.windowVisibilityState = .unknown
             windowState.window = nil
             window = nil
         }
@@ -87,20 +130,39 @@ struct BrowserWindowBridge: NSViewRepresentable {
         private func handleWindowWillClose() {
             windowRegistry.unregister(windowState.id)
             removeObservers()
+            windowState.windowVisibilityState = .unknown
             windowState.window = nil
             window = nil
         }
 
         private func removeObservers() {
-            if let keyObserver {
-                NotificationCenter.default.removeObserver(keyObserver)
-                self.keyObserver = nil
+            for (center, observer) in notificationObservers {
+                center.removeObserver(observer)
             }
+            notificationObservers.removeAll()
+        }
 
-            if let willCloseObserver {
-                NotificationCenter.default.removeObserver(willCloseObserver)
-                self.willCloseObserver = nil
-            }
+        private func addObserver(
+            center: NotificationCenter,
+            forName name: Notification.Name,
+            object: Any?,
+            using block: @escaping @Sendable (Notification) -> Void
+        ) {
+            let observer = center.addObserver(
+                forName: name,
+                object: object,
+                queue: .main,
+                using: block
+            )
+            notificationObservers.append((center, observer))
+        }
+
+        private func refreshWindowVisibilityState() {
+            let newState = SumiWindowVisibilityState(window: window)
+            guard windowState.windowVisibilityState != newState else { return }
+
+            windowState.windowVisibilityState = newState
+            windowRegistry.notifyWindowVisibilityChanged(windowState)
         }
     }
 }
