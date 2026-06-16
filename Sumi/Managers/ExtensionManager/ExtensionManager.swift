@@ -570,6 +570,8 @@ final class ExtensionManager: NSObject, ObservableObject {
                 guard let webViewController, let effectiveController else { return false }
                 return webViewController === effectiveController
             }()
+            let delegateRespondsToSend = delegateNSObject?.responds(to: sendSelector) ?? false
+            let delegateRespondsToConnect = delegateNSObject?.responds(to: connectSelector) ?? false
 
             RuntimeDiagnostics.debug(category: "SafariNativeMessagingContext") {
                 """
@@ -587,8 +589,8 @@ final class ExtensionManager: NSObject, ObservableObject {
                 unsupportedNativeMessaging=\(unsupportedNativeMessaging) \
                 delegate=\(delegateObject.map { String(describing: type(of: $0)) } ?? "nil") \
                 delegateIsSumi=\(delegateIsSumi) \
-                delegateSend=\(delegateNSObject?.responds(to: sendSelector) ?? false) \
-                delegateConnect=\(delegateNSObject?.responds(to: connectSelector) ?? false) \
+                delegateSend=\(delegateRespondsToSend) \
+                delegateConnect=\(delegateRespondsToConnect) \
                 contextConfigControllerMatches=\(contextConfigurationControllerMatches) \
                 configControllerMatches=\(configurationControllerMatches) \
                 webViewControllerMatches=\(webViewControllerMatches)

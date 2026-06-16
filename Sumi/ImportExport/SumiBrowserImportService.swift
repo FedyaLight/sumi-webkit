@@ -471,9 +471,13 @@ struct SumiZenImportParser {
         let zenFolders = root["folders"] as? [[String: Any]] ?? []
         let zenTabs = root["tabs"] as? [[String: Any]] ?? []
 
-        var profilesByContainer: [Int: SumiPortableProfile] = [
-            0: SumiPortableProfile(id: "zen-container-0", name: "Default", icon: SumiProfileIcon.defaultIcon, index: 0)
-        ]
+        let defaultProfile = SumiPortableProfile(
+            id: "zen-container-0",
+            name: "Default",
+            icon: SumiProfileIcon.defaultIcon,
+            index: 0
+        )
+        var profilesByContainer: [Int: SumiPortableProfile] = [0: defaultProfile]
         for container in containers.sorted(by: { $0.key < $1.key }) where container.key != 0 {
             profilesByContainer[container.key] = SumiPortableProfile(
                 id: "zen-container-\(container.key)",
@@ -491,7 +495,7 @@ struct SumiZenImportParser {
             let firstContainerId = tabsByWorkspace[workspaceId]?
                 .compactMap { $0["userContextId"] as? Int }
                 .first(where: { $0 != 0 }) ?? 0
-            let profile = profilesByContainer[firstContainerId] ?? profilesByContainer[0]!
+            let profile = profilesByContainer[firstContainerId] ?? defaultProfile
             workspaceProfileId[workspaceId] = profile.id
             spaces.append(
                 SumiPortableSpace(

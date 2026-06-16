@@ -89,21 +89,22 @@ final class ShellSelectionService {
            let space = tabStore.spaces.first(where: { $0.id == currentSpaceId })
         {
             let regularTabs = tabStore.tabs(in: space)
-            if let historyMatch = windowState.recentRegularTabIdsBySpace[currentSpaceId]?
-                .compactMap({ tabId in regularTabs.first(where: { $0.id == tabId }) })
-                .first
-            {
+            let regularTabById = tabLookup(for: regularTabs)
+            if let historyMatch = firstTab(
+                matching: windowState.recentRegularTabIdsBySpace[currentSpaceId],
+                in: regularTabById
+            ) {
                 return historyMatch
             }
 
             if let rememberedId = windowState.activeTabForSpace[currentSpaceId],
-               let remembered = regularTabs.first(where: { $0.id == rememberedId })
+               let remembered = regularTabById[rememberedId]
             {
                 return remembered
             }
 
             if let activeId = space.activeTabId,
-               let active = regularTabs.first(where: { $0.id == activeId })
+               let active = regularTabById[activeId]
             {
                 return active
             }
@@ -126,21 +127,22 @@ final class ShellSelectionService {
         }
 
         let regularTabs = tabStore.tabs(in: space)
-        if let historyMatch = windowState.recentRegularTabIdsBySpace[space.id]?
-            .compactMap({ tabId in regularTabs.first(where: { $0.id == tabId }) })
-            .first
-        {
+        let regularTabById = tabLookup(for: regularTabs)
+        if let historyMatch = firstTab(
+            matching: windowState.recentRegularTabIdsBySpace[space.id],
+            in: regularTabById
+        ) {
             return historyMatch
         }
 
         if let rememberedId = windowState.activeTabForSpace[space.id],
-           let remembered = regularTabs.first(where: { $0.id == rememberedId })
+           let remembered = regularTabById[rememberedId]
         {
             return remembered
         }
 
         if let activeId = space.activeTabId,
-           let active = regularTabs.first(where: { $0.id == activeId })
+           let active = regularTabById[activeId]
         {
             return active
         }
@@ -262,6 +264,24 @@ final class ShellSelectionService {
         }
 
         return !tab.isPinned && !tab.isSpacePinned
+    }
+
+    private func tabLookup(for tabs: [Tab]) -> [UUID: Tab] {
+        tabs.reduce(into: [:]) { lookup, tab in
+            if lookup[tab.id] == nil {
+                lookup[tab.id] = tab
+            }
+        }
+    }
+
+    private func firstTab(matching tabIds: [UUID]?, in tabsById: [UUID: Tab]) -> Tab? {
+        guard let tabIds else { return nil }
+        for tabId in tabIds {
+            if let tab = tabsById[tabId] {
+                return tab
+            }
+        }
+        return nil
     }
 
     func space(

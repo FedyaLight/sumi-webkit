@@ -53,6 +53,26 @@ final class ShellSelectionServiceTests: XCTestCase {
         XCTAssertEqual(resolved?.id, regular.id)
     }
 
+    func testPreferredTabForSpaceUsesRecentRegularHistoryOrder() {
+        let service = ShellSelectionService { _ in [] }
+        let space = Space(name: "Research")
+        let first = Tab(url: URL(string: "https://first.example")!, name: "First", spaceId: space.id, index: 0)
+        let second = Tab(url: URL(string: "https://second.example")!, name: "Second", spaceId: space.id, index: 1)
+        let missing = UUID()
+        let store = FakeShellSelectionTabStore(
+            spaces: [space],
+            allTabs: [first, second],
+            tabsBySpace: [space.id: [first, second]]
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        windowState.recentRegularTabIdsBySpace[space.id] = [missing, second.id, first.id]
+
+        let resolved = service.preferredTabForSpace(space, in: windowState, tabStore: store)
+        XCTAssertEqual(resolved?.id, second.id)
+    }
+
     func testTabsForDisplayExcludesLegacyPinnedTabs() {
         let service = ShellSelectionService { _ in [] }
         let space = Space(name: "Docs")

@@ -570,7 +570,9 @@ final class SumiImportApplier {
             pinnedLaunchers: data.pinnedLaunchers
         )
         data.essentials = normalizeLaunchers(data.essentials, bucket: { $0.profileId ?? "" })
-        data.regularTabs = normalizeByBucket(data.regularTabs, bucket: \.spaceId)
+        data.regularTabs = normalizeByBucket(data.regularTabs, bucket: \.spaceId) { tab, index in
+            tab.index = index
+        }
     }
 
     static func normalizedSidebarContainerIndices(
@@ -658,19 +660,14 @@ final class SumiImportApplier {
 
     private func normalizeByBucket<T>(
         _ items: [T],
-        bucket: KeyPath<T, String>
+        bucket: KeyPath<T, String>,
+        setIndex: (inout T, Int) -> Void
     ) -> [T] {
         Dictionary(grouping: items, by: { $0[keyPath: bucket] }).values.flatMap { group in
             group.enumerated().map { idx, item in
-                if var folder = item as? SumiPortableFolder {
-                    folder.index = idx
-                    return folder as! T
-                }
-                if var tab = item as? SumiPortableRegularTab {
-                    tab.index = idx
-                    return tab as! T
-                }
-                return item
+                var copy = item
+                setIndex(&copy, idx)
+                return copy
             }
         }
     }
