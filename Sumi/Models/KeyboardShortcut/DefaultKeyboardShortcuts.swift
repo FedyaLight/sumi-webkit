@@ -44,6 +44,7 @@ enum DefaultKeyboardShortcuts {
         KeyboardShortcut(action: .toggleSidebar, keyCombination: KeyCombination(key: "s", modifiers: [.command])),
         KeyboardShortcut(action: .copyCurrentURL, keyCombination: KeyCombination(key: "c", modifiers: [.command, .shift])),
         KeyboardShortcut(action: .hardReload, keyCombination: KeyCombination(key: "r", modifiers: [.command, .shift])),
+        KeyboardShortcut(action: .toggleReaderMode, keyCombination: nil),
         KeyboardShortcut(action: .muteUnmuteAudio, keyCombination: nil),
         KeyboardShortcut(action: .customizeSpaceGradient, keyCombination: KeyCombination(key: "g", modifiers: [.command, .shift]))
     ]

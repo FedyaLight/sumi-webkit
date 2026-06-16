@@ -105,6 +105,8 @@ final class ShortcutActionDispatcher {
                 browserManager.copyCurrentURL()
             case .hardReload:
                 browserManager.hardReloadCurrentPage()
+            case .toggleReaderMode:
+                browserManager.toggleReaderModeInActiveWindow()
             case .muteUnmuteAudio:
                 browserManager.toggleMuteCurrentTabInActiveWindow()
             case .customizeSpaceGradient:

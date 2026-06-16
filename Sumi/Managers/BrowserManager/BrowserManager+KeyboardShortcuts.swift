@@ -125,4 +125,18 @@ extension BrowserManager {
         tabManager.setAllFolders(open: true, in: currentSpaceId)
         persistWindowSession(for: windowState)
     }
+
+    func toggleReaderModeInActiveWindow() {
+        guard let tab = activePageTabForActiveWindow(),
+              tab.representsSumiNativeSurface == false,
+              let windowState = windowRegistry?.activeWindow,
+              let webView = activePageWebViewForActiveWindow() ?? getWebView(for: tab.id, in: windowState.id)
+        else {
+            return
+        }
+
+        Task { @MainActor in
+            try? await SumiReaderModeService.toggleReaderMode(on: webView, tab: tab)
+        }
+    }
 }

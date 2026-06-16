@@ -47,6 +47,7 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
     case toggleSidebar = "toggle_sidebar"
     case copyCurrentURL = "copy_current_url"
     case hardReload = "hard_reload"
+    case toggleReaderMode = "toggle_reader_mode"
     case muteUnmuteAudio = "mute_unmute_audio"
     case customizeSpaceGradient = "customize_space_gradient"
 
@@ -94,6 +95,7 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
         case .toggleSidebar: return "Toggle Sidebar"
         case .copyCurrentURL: return "Copy Current URL"
         case .hardReload: return "Hard Reload"
+        case .toggleReaderMode: return "Toggle Reader Mode"
         case .muteUnmuteAudio: return "Mute/Unmute Audio"
         case .customizeSpaceGradient: return "Customize Space Gradient"
         }
@@ -101,7 +103,7 @@ enum ShortcutAction: String, CaseIterable, Hashable, Codable {
 
     var category: ShortcutCategory {
         switch self {
-        case .goBack, .goForward, .refresh, .clearCookiesAndRefresh, .focusAddressBar, .findInPage, .hardReload:
+        case .goBack, .goForward, .refresh, .clearCookiesAndRefresh, .focusAddressBar, .findInPage, .hardReload, .toggleReaderMode:
             return .navigation
         case .newTab, .closeTab, .undoCloseTab, .nextTab, .previousTab, .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8, .goToLastTab, .duplicateTab, .splitGrid, .splitVertical, .splitHorizontal, .unsplit, .newEmptySplit:
             return .tabs
