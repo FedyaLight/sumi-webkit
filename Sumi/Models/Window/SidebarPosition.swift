@@ -1,6 +1,16 @@
 import Foundation
 import SwiftUI
 
+enum SidebarResizeMetrics {
+    static let hitAreaWidth: CGFloat = 18
+    static let hitAreaVerticalInset: CGFloat = 18
+    static let hitAreaEdgeOverlap: CGFloat = 9
+    static let indicatorWidth: CGFloat = 9
+    static let indicatorEdgeOverlap: CGFloat = 4.5
+    static let grabberWidth: CGFloat = 3
+    static let grabberHeight: CGFloat = 56
+}
+
 enum SidebarPosition: String, CaseIterable, Identifiable {
     case left
     case right
@@ -53,11 +63,11 @@ struct SidebarShellEdge: Equatable {
     }
 
     var resizeIndicatorOffset: CGFloat {
-        isRight ? 3 : -3
+        isLeft ? SidebarResizeMetrics.indicatorEdgeOverlap : -SidebarResizeMetrics.indicatorEdgeOverlap
     }
 
     var resizeHitAreaOffset: CGFloat {
-        isRight ? 5 : -5
+        isLeft ? SidebarResizeMetrics.hitAreaEdgeOverlap : -SidebarResizeMetrics.hitAreaEdgeOverlap
     }
 
     func containsTriggerZone(

@@ -326,7 +326,6 @@ struct WindowView: View {
         .opacity(min(max(layoutProgress * 2, 0), 1))
         .frame(width: max(layoutWidth, 0), alignment: presentationContext.shellEdge.overlayAlignment)
         .clipped()
-        .alwaysArrowCursor()
     }
 
     private func syncDockedSidebarLayout(isVisible: Bool, animated: Bool) {

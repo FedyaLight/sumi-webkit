@@ -69,6 +69,47 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
         )
     }
 
+    func testSidebarResizeEdgeUsesSymmetricNativeHitTargetMetrics() {
+        XCTAssertEqual(SidebarResizeMetrics.hitAreaWidth, 18)
+        XCTAssertEqual(SidebarResizeMetrics.hitAreaEdgeOverlap, SidebarResizeMetrics.hitAreaWidth / 2)
+        XCTAssertEqual(SidebarResizeMetrics.indicatorEdgeOverlap, SidebarResizeMetrics.indicatorWidth / 2)
+        XCTAssertEqual(SidebarPosition.left.shellEdge.resizeHitAreaOffset, SidebarResizeMetrics.hitAreaEdgeOverlap)
+        XCTAssertEqual(SidebarPosition.right.shellEdge.resizeHitAreaOffset, -SidebarResizeMetrics.hitAreaEdgeOverlap)
+        XCTAssertEqual(SidebarPosition.left.shellEdge.resizeIndicatorOffset, SidebarResizeMetrics.indicatorEdgeOverlap)
+        XCTAssertEqual(SidebarPosition.right.shellEdge.resizeIndicatorOffset, -SidebarResizeMetrics.indicatorEdgeOverlap)
+    }
+
+    func testSidebarResizeDeltaMirrorsLeftAndRightEdges() {
+        XCTAssertEqual(
+            SidebarPosition.left.shellEdge.resizeDelta(startingMouseX: 300, currentMouseX: 340),
+            40
+        )
+        XCTAssertEqual(
+            SidebarPosition.right.shellEdge.resizeDelta(startingMouseX: 300, currentMouseX: 260),
+            40
+        )
+        XCTAssertEqual(
+            SidebarPosition.left.shellEdge.resizeDelta(startingMouseX: 300, currentMouseX: 260),
+            -40
+        )
+        XCTAssertEqual(
+            SidebarPosition.right.shellEdge.resizeDelta(startingMouseX: 300, currentMouseX: 340),
+            -40
+        )
+    }
+
+    func testSidebarResizeSourceUsesCursorBridgeInsteadOfManualCursorSetting() throws {
+        let resizeSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarResizeView.swift")
+        let windowViewSource = try Self.source(named: "App/Window/WindowView.swift")
+
+        XCTAssertTrue(resizeSource.contains(".chromeCursor(.resizeLeftRight"))
+        XCTAssertTrue(resizeSource.contains("transaction.disablesAnimations = true"))
+        XCTAssertTrue(resizeSource.contains("persist: false"))
+        XCTAssertTrue(resizeSource.contains("persistWindowSession(for: windowState)"))
+        XCTAssertFalse(resizeSource.contains("NSCursor."))
+        XCTAssertFalse(windowViewSource.contains(".alwaysArrowCursor()"))
+    }
+
     func testSidebarHoverOverlayRevealPolicyMatchesTrafficLightVisibilityInputs() {
         XCTAssertFalse(SidebarHoverOverlayRevealPolicy.isOverlayRevealed(
             isOverlayVisible: false,

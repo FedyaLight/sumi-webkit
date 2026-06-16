@@ -16,7 +16,7 @@ struct SidebarResizeView: View {
     @State private var isHovering = false
     @State private var startingWidth: CGFloat = 0
     @State private var startingMouseX: CGFloat = 0
-    @State private var hoverTask: Task<Void, Never>?
+    @State private var lastAppliedWidth: CGFloat = 0
     private let minWidth: CGFloat = BrowserWindowState.sidebarMinimumWidth
     private let maxWidth: CGFloat = BrowserWindowState.sidebarMaximumWidth
 
@@ -42,47 +42,17 @@ struct SidebarResizeView: View {
 
     var body: some View {
         ZStack {
-            if isHovering || isResizing {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(tokens.accent.opacity(isResizing ? 0.14 : 0.08))
-                        .frame(width: 8)
-                        .frame(maxHeight: .infinity)
-
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(tokens.accent.opacity(isResizing ? 0.95 : 0.82))
-                        .frame(width: 2, height: 50)
-                }
-                .offset(x: indicatorOffset)
-                .animation(.easeInOut(duration: 0.15), value: isResizing)
-                .animation(.easeInOut(duration: 0.15), value: isHovering)
-                .padding(.vertical, 20)
-            }
+            indicator
 
             Rectangle()
                 .fill(Color.clear)
-                .frame(width: 12)
-                .padding(.vertical, 30)
+                .frame(width: SidebarResizeMetrics.hitAreaWidth)
+                .padding(.vertical, SidebarResizeMetrics.hitAreaVerticalInset)
                 .offset(x: hitAreaOffset)
                 .contentShape(.interaction, .rect)
                 .onHover { hovering in
                     guard windowState.isSidebarVisible else { return }
-
-                    hoverTask?.cancel()
-
-                    if hovering && !isResizing {
-                        hoverTask = Task {
-                            try? await Task.sleep(for: .seconds(0.1))
-                            guard !Task.isCancelled else { return }
-                            isHovering = true
-                            NSCursor.resizeLeftRight.set()
-                        }
-                    } else {
-                        isHovering = false
-                        if !isResizing {
-                            NSCursor.arrow.set()
-                        }
-                    }
+                    isHovering = hovering || isResizing
                 }
                 .gesture(
                     DragGesture(minimumDistance: 0, coordinateSpace: .global)
@@ -92,8 +62,8 @@ struct SidebarResizeView: View {
                             if !isResizing {
                                 startingWidth = windowState.sidebarWidth
                                 startingMouseX = value.startLocation.x
+                                lastAppliedWidth = startingWidth
                                 isResizing = true
-                                NSCursor.resizeLeftRight.set()
                             }
 
                             let currentMouseX = value.location.x
@@ -103,25 +73,53 @@ struct SidebarResizeView: View {
                             )
                             let newWidth = startingWidth + mouseMovement
                             let clampedWidth = max(minWidth, min(maxWidth, newWidth))
+                                .rounded(.toNearestOrAwayFromZero)
+                            guard clampedWidth != lastAppliedWidth else { return }
+                            lastAppliedWidth = clampedWidth
 
-                            browserManager.updateSidebarWidth(
-                                clampedWidth,
-                                for: windowState,
-                                persist: false
-                            )
+                            var transaction = Transaction()
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) {
+                                browserManager.updateSidebarWidth(
+                                    clampedWidth,
+                                    for: windowState,
+                                    persist: false
+                                )
+                            }
                         }
                         .onEnded { _ in
                             isResizing = false
+                            lastAppliedWidth = 0
                             browserManager.persistWindowSession(for: windowState)
-
-                            if isHovering {
-                                NSCursor.resizeLeftRight.set()
-                            } else {
-                                NSCursor.arrow.set()
-                            }
                         }
                 )
         }
-        .frame(width: 8)
+        .frame(width: SidebarResizeMetrics.hitAreaWidth)
+        .chromeCursor(.resizeLeftRight, isEnabled: windowState.isSidebarVisible)
+        .accessibilityLabel("Resize sidebar")
+        .accessibilityHint("Drag horizontally to change the sidebar width.")
+    }
+
+    @ViewBuilder
+    private var indicator: some View {
+        if isHovering || isResizing {
+            ZStack {
+                Capsule(style: .continuous)
+                    .fill(Color(nsColor: .separatorColor).opacity(isResizing ? 0.48 : 0.30))
+                    .frame(width: SidebarResizeMetrics.indicatorWidth)
+                    .frame(maxHeight: .infinity)
+
+                Capsule(style: .continuous)
+                    .fill(tokens.accent.opacity(isResizing ? 0.82 : 0.46))
+                    .frame(
+                        width: SidebarResizeMetrics.grabberWidth,
+                        height: SidebarResizeMetrics.grabberHeight
+                    )
+            }
+            .offset(x: indicatorOffset)
+            .padding(.vertical, SidebarResizeMetrics.hitAreaVerticalInset)
+            .animation(.easeInOut(duration: 0.12), value: isHovering)
+            .animation(.easeInOut(duration: 0.08), value: isResizing)
+        }
     }
 }
