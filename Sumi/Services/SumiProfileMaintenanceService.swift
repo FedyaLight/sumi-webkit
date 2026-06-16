@@ -3,7 +3,6 @@ import Foundation
 @MainActor
 final class SumiProfileMaintenanceService {
     struct Notice {
-        var icon: String
         var title: String
         var subtitle: String
         var message: String
@@ -21,7 +20,6 @@ final class SumiProfileMaintenanceService {
         guard context.profileManager.profiles.count > 1 else {
             context.showNotice(
                 Notice(
-                    icon: "exclamationmark.triangle",
                     title: "Cannot Delete Last Profile",
                     subtitle: profile.name,
                     message: "At least one profile must remain."
@@ -50,7 +48,6 @@ final class SumiProfileMaintenanceService {
             if deleted == false {
                 context.showNotice(
                     Notice(
-                        icon: "exclamationmark.triangle",
                         title: "Couldn't Delete Profile",
                         subtitle: profile.name,
                         message: "An error occurred while saving changes. Please try again."

@@ -44,7 +44,6 @@ struct WorkspaceThemePosition: Codable, Hashable, Sendable {
     }
 
     static let topLeft = WorkspaceThemePosition(x: 0.2, y: 0.24)
-    static let topRight = WorkspaceThemePosition(x: 0.8, y: 0.24)
     static let bottom = WorkspaceThemePosition(x: 0.5, y: 0.82)
     static let monochrome = WorkspaceThemePosition(x: 0.66, y: 0.5)
 }
@@ -485,19 +484,6 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
             copy.isPrimary = index == 0
             copy.lightness = min(max(color.lightness, 0), 1)
             return copy
-        }
-    }
-
-    private static func defaultPositions(for count: Int) -> [WorkspaceThemePosition] {
-        switch count {
-        case 0:
-            return [WorkspaceThemePosition.monochrome]
-        case 1:
-            return [WorkspaceThemePosition.monochrome]
-        case 2:
-            return [.topLeft, .bottom]
-        default:
-            return [.topLeft, .topRight, .bottom]
         }
     }
 

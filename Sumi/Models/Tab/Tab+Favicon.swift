@@ -163,11 +163,4 @@ extension Tab {
         getCachedFavicon(forReferenceKey: key)
     }
 
-    static func getCachedFavicon(forDocumentURL url: URL) -> SwiftUI.Image? {
-        guard let image = TabFaviconStore.getCachedImage(forDocumentURL: url) else {
-            return nil
-        }
-        return SwiftUI.Image(nsImage: image)
-    }
-
 }

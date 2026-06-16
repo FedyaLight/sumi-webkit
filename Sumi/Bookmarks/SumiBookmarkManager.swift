@@ -24,16 +24,6 @@ final class SumiBookmarkManager: ObservableObject {
         installSaveObserver()
     }
 
-    init(
-        repository: any SumiBookmarkRepository,
-        syncFavicons: Bool = true
-    ) {
-        self.repository = repository
-        self.syncFavicons = syncFavicons
-        reload(notify: false)
-        installSaveObserver()
-    }
-
     isolated deinit {
         if let saveObserver {
             NotificationCenter.default.removeObserver(saveObserver)

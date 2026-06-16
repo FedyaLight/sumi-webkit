@@ -97,7 +97,6 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
             SidebarDropCoordinator.validatedScope(
                 for: item,
                 pasteboard: pasteboard,
-                dragState: dragState,
                 windowState: windowState
             ),
             scope
@@ -152,7 +151,6 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
             SidebarDropCoordinator.validatedScope(
                 for: item,
                 pasteboard: pasteboard,
-                dragState: dragState,
                 windowState: windowState
             )
         )

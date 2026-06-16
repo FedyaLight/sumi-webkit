@@ -5,32 +5,17 @@ enum SumiPrivacyFeature: String {
     case contentBlocking
 }
 
-protocol SumiPrivacySubfeature: RawRepresentable where RawValue == String {}
-
-enum SumiBrowserConfigSubfeature: String, SumiPrivacySubfeature {
-    case faviconWKDownload
-}
-
 protocol SumiPrivacyConfiguration {
     func isEnabled(featureKey: SumiPrivacyFeature, defaultValue: Bool) -> Bool
-    func isSubfeatureEnabled(_ subfeature: any SumiPrivacySubfeature, defaultValue: Bool) -> Bool
 }
 
 extension SumiPrivacyConfiguration {
     func isEnabled(featureKey: SumiPrivacyFeature, defaultValue: Bool = false) -> Bool {
         isEnabled(featureKey: featureKey, defaultValue: defaultValue)
     }
-
-    func isSubfeatureEnabled(_ subfeature: any SumiPrivacySubfeature, defaultValue: Bool = false) -> Bool {
-        isSubfeatureEnabled(subfeature, defaultValue: defaultValue)
-    }
 }
 
-protocol SumiPrivacyConfigurationManaging: AnyObject {
-    var sumiPrivacyConfig: any SumiPrivacyConfiguration { get }
-}
-
-final class SumiContentBlockingPrivacyConfigurationManager: SumiPrivacyConfigurationManaging, PrivacyConfigurationManaging {
+final class SumiContentBlockingPrivacyConfigurationManager: PrivacyConfigurationManaging {
     private let lock = NSLock()
     private var configuration: SumiContentBlockingPrivacyConfiguration
 
@@ -79,19 +64,4 @@ struct SumiContentBlockingPrivacyConfiguration: SumiPrivacyConfiguration, Privac
         return featureKey == .contentBlocking ? isContentBlockingEnabled : false
     }
 
-    func isSubfeatureEnabled(
-        _ subfeature: any SumiPrivacySubfeature,
-        defaultValue: Bool
-    ) -> Bool {
-        _ = subfeature
-        return defaultValue
-    }
-
-    func isSubfeatureEnabled(
-        _ subfeature: any PrivacySubfeature,
-        defaultValue: Bool
-    ) -> Bool {
-        _ = subfeature
-        return defaultValue
-    }
 }

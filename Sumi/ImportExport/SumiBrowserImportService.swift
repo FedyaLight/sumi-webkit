@@ -182,9 +182,7 @@ struct SumiArcImportParser {
         }
 
         let essentials = parseEssentials(
-            root,
             itemLookup: itemLookup,
-            spacesInfo: spacesInfo,
             spaceProfileName: spaceProfileName,
             profileRecordsByName: profileRecordsByName
         )
@@ -300,9 +298,7 @@ struct SumiArcImportParser {
     }
 
     private func parseEssentials(
-        _ root: [String: Any],
         itemLookup: [String: [String: Any]],
-        spacesInfo: [String: ArcSpaceInfo],
         spaceProfileName: [String: String],
         profileRecordsByName: [String: SumiPortableProfile]
     ) -> [SumiPortableLauncher] {

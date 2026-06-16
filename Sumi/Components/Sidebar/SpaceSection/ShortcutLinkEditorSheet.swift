@@ -59,10 +59,6 @@ final class ShortcutLinkEditorSession: ObservableObject, Identifiable {
             || normalizedURL != pin.launchURL
             || iconAsset != pin.iconAsset
     }
-
-    private static func normalizedLaunchURL(from rawValue: String) -> URL? {
-        SumiURLNormalization.normalizedShortcutURL(from: rawValue)
-    }
 }
 
 struct ShortcutLinkEditorSheet: View {

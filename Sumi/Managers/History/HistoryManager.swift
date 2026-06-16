@@ -184,24 +184,6 @@ final class HistoryManager: ObservableObject {
         )
     }
 
-    func countVisits(matching query: HistoryQuery) async -> Int {
-        do {
-            return try await store.countVisits(
-                matching: query,
-                profileId: currentProfileId,
-                referenceDate: Date(),
-                calendar: .autoupdatingCurrent
-            )
-        } catch {
-            RuntimeDiagnostics.emit("Error counting history visits: \(error)")
-            return 0
-        }
-    }
-
-    func visitDomains(matching query: HistoryQuery) async -> Set<String> {
-        await dataProvider.visitDomains(for: query)
-    }
-
     func delete(query: HistoryQuery) async {
         let faviconDomains = await faviconBurnDomains(for: query)
         await dataProvider.deleteVisits(matching: query)

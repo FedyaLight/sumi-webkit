@@ -37,10 +37,6 @@ enum SumiFaviconLookupKey {
         return URL(string: "https://\(trimmed)")
     }
 
-    static func documentURL(for key: String) -> URL? {
-        documentURL(forReferenceKey: key)
-    }
-
     private static func isCacheableScheme(_ scheme: String) -> Bool {
         scheme == "http" || scheme == "https"
             || ExtensionUtils.extensionOwnedURLSchemes.contains(scheme)

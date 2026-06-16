@@ -3,13 +3,7 @@ import Foundation
 import Persistence
 
 final class SumiDDGCoreDataDatabase: SumiCoreDataDatabase {
-    let name: String
-    let containerLocation: URL
     let ddgDatabase: CoreDataDatabase
-
-    var storeURL: URL {
-        containerLocation.appendingPathComponent("\(name).sqlite")
-    }
 
     init(
         name: String,
@@ -18,8 +12,6 @@ final class SumiDDGCoreDataDatabase: SumiCoreDataDatabase {
         readOnly: Bool = false,
         options: [String: NSObject] = [:]
     ) {
-        self.name = name
-        self.containerLocation = containerLocation
         self.ddgDatabase = CoreDataDatabase(
             name: name,
             containerLocation: containerLocation,

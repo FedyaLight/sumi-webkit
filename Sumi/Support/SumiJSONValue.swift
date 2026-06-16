@@ -9,35 +9,6 @@ enum SumiJSONValue: Codable, Equatable {
     case array([SumiJSONValue])
     case object([String: SumiJSONValue])
 
-    init(foundationObject value: Any?) {
-        switch value {
-        case nil, is NSNull:
-            self = .null
-        case let value as Bool:
-            self = .bool(value)
-        case let value as Int:
-            self = .int(value)
-        case let value as Double:
-            self = .double(value)
-        case let value as Float:
-            self = .double(Double(value))
-        case let value as NSNumber:
-            if CFGetTypeID(value) == CFBooleanGetTypeID() {
-                self = .bool(value.boolValue)
-            } else {
-                self = .double(value.doubleValue)
-            }
-        case let value as String:
-            self = .string(value)
-        case let value as [Any]:
-            self = .array(value.map(SumiJSONValue.init(foundationObject:)))
-        case let value as [String: Any]:
-            self = .object(value.mapValues(SumiJSONValue.init(foundationObject:)))
-        default:
-            self = .string(String(describing: value!))
-        }
-    }
-
     var foundationObject: Any {
         switch self {
         case .null:

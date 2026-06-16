@@ -26,10 +26,6 @@ struct SumiBookmarkImportNode: Equatable, Sendable {
     let urlString: String?
     var children: [SumiBookmarkImportNode]?
 
-    var url: URL? {
-        urlString.flatMap(URL.init(string:))
-    }
-
     init(
         name: String,
         type: NodeType,
@@ -46,15 +42,6 @@ struct SumiBookmarkImportNode: Equatable, Sendable {
         SumiBookmarkImportNode(
             name: name,
             type: .bookmark,
-            urlString: url.absoluteString,
-            children: nil
-        )
-    }
-
-    static func favorite(name: String, url: URL) -> SumiBookmarkImportNode {
-        SumiBookmarkImportNode(
-            name: name,
-            type: .favorite,
             urlString: url.absoluteString,
             children: nil
         )

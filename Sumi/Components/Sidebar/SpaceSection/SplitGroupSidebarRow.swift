@@ -540,7 +540,7 @@ private struct SplitGroupSegment: View {
     @ViewBuilder
     private var icon: some View {
         if let tab = item.tab {
-            SidebarTabFaviconView(tab: tab, size: 16, cornerRadius: 4)
+            SidebarTabFaviconView(tab: tab, size: 16)
         } else if let pin = item.pin {
             pin.storedFavicon
                 .resizable()

@@ -669,15 +669,6 @@ extension WKWebsiteDataStore {
         return types
     }
 
-    static var safelyRemovableWebsiteDataTypes: Set<String> {
-        var types = Self.allWebsiteDataTypesExceptCookies
-
-        types.remove(WKWebsiteDataTypeLocalStorage)
-        types.remove(WKWebsiteDataTypeIndexedDBDatabases)
-
-        return types
-    }
-
     static var sumiCacheDataTypes: Set<String> {
         [
             WKWebsiteDataTypeDiskCache,

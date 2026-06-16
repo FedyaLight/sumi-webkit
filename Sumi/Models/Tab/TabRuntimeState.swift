@@ -21,16 +21,6 @@ struct TabBackForwardNavigationContext {
     let originHistoryItem: WKBackForwardListItem?
 }
 
-struct SumiAdblockReloadRequirement: Equatable {
-    let siteHost: String?
-    let desiredAttachmentState: SumiAdblockAttachmentState
-
-    static func == (lhs: SumiAdblockReloadRequirement, rhs: SumiAdblockReloadRequirement) -> Bool {
-        lhs.siteHost == rhs.siteHost
-            && lhs.desiredAttachmentState == rhs.desiredAttachmentState
-    }
-}
-
 struct SumiAutoplayReloadRequirement: Equatable {
     let desiredPolicy: SumiAutoplayPolicy
     let runtimeRequirement: SumiRuntimePermissionReloadRequirement
@@ -152,8 +142,6 @@ final class TabWebViewRuntime {
     var isSuspensionRestoreInProgress: Bool = false
     var suspensionRestoreTraceState: OSSignpostIntervalState?
     var profileAwaitCancellable: AnyCancellable?
-    var adblockAppliedAttachmentState: SumiAdblockAttachmentState?
-    var adblockReloadRequirement: SumiAdblockReloadRequirement?
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState?
     var protectionReloadRequirement: SumiProtectionReloadRequirement?
     var didManualReloadRebuildProtectionWebView: Bool = false

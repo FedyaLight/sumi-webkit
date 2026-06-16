@@ -132,8 +132,7 @@ class SidebarDragNSView: NSView {
                 pasteboard: sender.draggingPasteboard,
                 resolution: resolution,
                 browserManager: browserManager,
-                windowState: windowState,
-                dragState: state
+                windowState: windowState
             )
         }
     }
@@ -181,7 +180,6 @@ class SidebarDragNSView: NSView {
             SidebarDropCoordinator.validatedScope(
                 for: $0,
                 pasteboard: pasteboard,
-                dragState: SidebarDragState.shared,
                 windowState: windowState
             )
         }

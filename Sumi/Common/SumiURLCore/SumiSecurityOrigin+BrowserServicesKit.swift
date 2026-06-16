@@ -5,10 +5,6 @@ extension SumiFrameHandle {
     init(_ handle: FrameHandle) {
         self.init(frameID: handle.frameID)
     }
-
-    var navigationFrameHandle: FrameHandle? {
-        FrameHandle(rawValue: frameID)
-    }
 }
 
 extension SumiNavigationFrameInfo {

@@ -8,15 +8,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-enum SettingsViewStateDeferral {
-    static func schedule(_ mutation: @escaping @MainActor () -> Void) {
-        Task { @MainActor in
-            await Task.yield()
-            mutation()
-        }
-    }
-}
-
 /// Profile management (also used in the in-tab settings surface).
 struct SumiProfilesSettingsPane: View {
     var body: some View {

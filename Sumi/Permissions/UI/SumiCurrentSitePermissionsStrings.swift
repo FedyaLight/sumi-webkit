@@ -3,7 +3,6 @@ import Foundation
 enum SumiCurrentSitePermissionsStrings {
     static let rowTitle = "Permissions"
     static let sessionOnly = "Session only"
-    static let defaultSummary = "Default"
     static let ask = "Ask"
     static let allow = "Allow"
     static let block = "Block"

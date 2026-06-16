@@ -506,17 +506,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         )
     }
 
-    var sourceID: String? {
-        itemConfiguration.sourceID
-    }
-
-    var recoveryDebugDescription: String {
-        let sourceID = itemConfiguration.sourceID ?? "nil"
-        let surface = sidebarContextMenuSurfaceDebugDescription(itemConfiguration.surfaceKind)
-        let mode = sidebarPresentationModeDebugDescription(itemConfiguration.presentationMode)
-        return "\(recoveryMetadata.description){source=\(sourceID),surface=\(surface),mode=\(mode)}"
-    }
-
     func recoveryResolutionReason(
         matching metadata: SidebarInteractiveOwnerRecoveryMetadata
     ) -> String? {

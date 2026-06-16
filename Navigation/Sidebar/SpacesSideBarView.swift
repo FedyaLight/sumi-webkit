@@ -1198,7 +1198,6 @@ private struct SpaceSnapshotShortcutRowView: View {
             SpaceSnapshotIconView(
                 icon: shortcut.icon,
                 size: SidebarRowLayout.faviconSize,
-                cornerRadius: 6,
                 foregroundColor: tokens.primaryText
             )
             .saturation(shortcut.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
@@ -1340,7 +1339,6 @@ private struct SpaceSnapshotRegularTabRowView: View {
                 SpaceSnapshotIconView(
                     icon: tab.icon,
                     size: SidebarRowLayout.faviconSize,
-                    cornerRadius: 6,
                     foregroundColor: tokens.primaryText
                 )
             }
@@ -1348,7 +1346,6 @@ private struct SpaceSnapshotRegularTabRowView: View {
             SpaceSnapshotIconView(
                 icon: tab.icon,
                 size: SidebarRowLayout.faviconSize,
-                cornerRadius: 6,
                 foregroundColor: tokens.primaryText
             )
         }
@@ -1418,7 +1415,6 @@ private struct SpaceSnapshotTrailingFadeMask: View {
 struct SpaceSnapshotIconView: View {
     let icon: SpaceSidebarSnapshotIcon
     let size: CGFloat
-    let cornerRadius: CGFloat
     let foregroundColor: Color
 
     var body: some View {
@@ -2346,12 +2342,6 @@ struct SpacesSideBarView: View {
                 )
             },
             onCloseTab: { browserManager.closeTab($0, in: windowState) },
-            onPinTab: {
-                browserManager.tabManager.pinTab(
-                    $0,
-                    context: .init(windowState: windowState, spaceId: space.id)
-                )
-            },
             onMoveTabUp: { browserManager.tabManager.moveTabUp($0.id) },
             onMoveTabDown: { browserManager.tabManager.moveTabDown($0.id) },
             onMuteTab: { $0.toggleMute() }
@@ -2543,23 +2533,6 @@ struct SpacesSideBarView: View {
         return !browserManager.profileManager.profiles.contains {
             $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
         }
-    }
-
-    private func resolveCurrentSpace() -> Space? {
-        if windowState.isIncognito {
-            if let currentId = windowState.currentSpaceId {
-                return windowState.ephemeralSpaces.first { $0.id == currentId }
-            }
-            return windowState.ephemeralSpaces.first
-        }
-
-        if let currentId = windowState.currentSpaceId {
-            return browserManager.tabManager.spaces.first { $0.id == currentId }
-        }
-        if let current = browserManager.tabManager.currentSpace {
-            return current
-        }
-        return browserManager.tabManager.spaces.first
     }
 
     // MARK: - Computed Properties

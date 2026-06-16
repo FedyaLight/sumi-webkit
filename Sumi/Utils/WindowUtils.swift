@@ -7,13 +7,6 @@ import Foundation
 //
 import SwiftUI
 
-@MainActor
-func zoomCurrentWindow() {
-    if let window = NSApp.keyWindow {
-        window.zoom(nil)
-    }
-}
-
 extension View {
     public func backgroundDraggable() -> some View {
         modifier(BackgroundDraggableModifier(gesture: WindowDragGesture()))

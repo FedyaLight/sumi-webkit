@@ -2,7 +2,6 @@ import AppKit
 
 @MainActor
 final class SpaceEditorSession {
-    let id = UUID()
     let spaceID: UUID
     let originalName: String
     let originalIcon: String

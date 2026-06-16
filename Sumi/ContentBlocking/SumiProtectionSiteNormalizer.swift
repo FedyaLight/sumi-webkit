@@ -12,18 +12,6 @@ struct SumiProtectionSiteNormalizer {
         return normalizedHost(fromRawHost: rawHost)
     }
 
-    func normalizedHost(fromUserInput input: String) -> String? {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        if let url = URL(string: trimmed), url.host != nil {
-            return normalizedHost(for: url)
-        }
-        if let url = URL(string: "https://\(trimmed)"), url.host != nil {
-            return normalizedHost(for: url)
-        }
-        return normalizedHost(fromRawHost: trimmed)
-    }
-
     func normalizedHost(fromRawHost rawHost: String) -> String? {
         let host = rawHost
             .trimmingCharacters(in: .whitespacesAndNewlines)

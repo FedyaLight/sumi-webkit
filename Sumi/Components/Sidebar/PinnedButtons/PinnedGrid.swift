@@ -569,7 +569,6 @@ struct PinnedGrid: View {
                 essentialRuntimeState: essentialRuntimeState(pin),
                 accessibilityID: "essential-shortcut-\(pin.id.uuidString)",
                 onActivate: { activate(pin) },
-                onClose: { closeIfActive(pin) },
                 onUnload: { unload(pin) },
                 contextMenuActions: contextMenuActions,
                 dragPinnedConfiguration: configuration,
@@ -640,12 +639,6 @@ struct PinnedGrid: View {
             tab,
             in: windowState
         )
-    }
-
-    private func closeIfActive(_ pin: ShortcutPin) {
-        guard let current = browserManager.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState)
-        else { return }
-        browserManager.closeTab(current, in: windowState)
     }
 
     private func unload(_ pin: ShortcutPin) {
@@ -1169,7 +1162,6 @@ private struct PinnedTile: View {
     let essentialRuntimeState: SumiEssentialRuntimeState?
     let accessibilityID: String
     let onActivate: () -> Void
-    let onClose: () -> Void
     let onUnload: () -> Void
     let contextMenuActions: EssentialTileContextMenuActions
     let dragPinnedConfiguration: PinnedTabsConfiguration
@@ -1187,7 +1179,6 @@ private struct PinnedTile: View {
                     essentialRuntimeState: essentialRuntimeState,
                     accessibilityID: accessibilityID,
                     onActivate: onActivate,
-                    onClose: onClose,
                     onUnload: onUnload,
                     contextMenuActions: contextMenuActions,
                     dragPinnedConfiguration: dragPinnedConfiguration,
@@ -1202,7 +1193,6 @@ private struct PinnedTile: View {
                     essentialRuntimeState: essentialRuntimeState,
                     accessibilityID: accessibilityID,
                     onActivate: onActivate,
-                    onClose: onClose,
                     onUnload: onUnload,
                     contextMenuActions: contextMenuActions,
                     dragPinnedConfiguration: dragPinnedConfiguration,
@@ -1223,7 +1213,6 @@ private struct LivePinnedTileContent: View {
     let essentialRuntimeState: SumiEssentialRuntimeState?
     let accessibilityID: String
     let onActivate: () -> Void
-    let onClose: () -> Void
     let onUnload: () -> Void
     let contextMenuActions: EssentialTileContextMenuActions
     let dragPinnedConfiguration: PinnedTabsConfiguration
@@ -1355,7 +1344,6 @@ private struct StoredPinnedTileContent: View {
     let essentialRuntimeState: SumiEssentialRuntimeState?
     let accessibilityID: String
     let onActivate: () -> Void
-    let onClose: () -> Void
     let onUnload: () -> Void
     let contextMenuActions: EssentialTileContextMenuActions
     let dragPinnedConfiguration: PinnedTabsConfiguration

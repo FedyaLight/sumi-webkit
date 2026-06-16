@@ -313,14 +313,6 @@ final class SumiContentBlockingService {
         latestUpdate?.rules.map(\.storeIdentifier).sorted() ?? []
     }
 
-    var latestLookupSucceededIdentifiers: [String] {
-        latestUpdate?.lookupSucceededIdentifiers ?? []
-    }
-
-    var latestLookupFailedIdentifiers: [String] {
-        latestUpdate?.lookupFailedIdentifiers ?? []
-    }
-
     init(
         policy: SumiContentBlockingPolicy = .defaultPolicy,
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),

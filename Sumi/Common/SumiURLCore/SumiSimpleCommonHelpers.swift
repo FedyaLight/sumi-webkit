@@ -2,10 +2,6 @@ import Foundation
 import os.log
 
 extension Date {
-    static var sumiWeekAgo: Date {
-        Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-    }
-
     static var sumiMonthAgo: Date {
         Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
     }

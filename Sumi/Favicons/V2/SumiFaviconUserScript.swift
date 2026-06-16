@@ -163,7 +163,7 @@ final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor
 }
 
 @MainActor
-final class SumiFaviconUserScripts: SumiUserScriptsProvider {
+final class SumiFaviconUserScripts {
     let transportScript: SumiFaviconTransportUserScript
     let faviconScript = SumiFaviconUserScript()
     lazy var userScripts: [SumiUserScript] = [transportScript]
@@ -174,15 +174,6 @@ final class SumiFaviconUserScripts: SumiUserScriptsProvider {
         transportScript.registerSubfeature(delegate: SumiFaviconSubfeature(faviconScript: faviconScript))
     }
 
-    func loadWKUserScripts() async -> [WKUserScript] {
-        let scriptsToLoad = userScripts
-        var scripts: [WKUserScript] = []
-        scripts.reserveCapacity(scriptsToLoad.count)
-        for userScript in scriptsToLoad {
-            scripts.append(SumiUserScriptBuilder.makeWKUserScript(from: userScript))
-        }
-        return scripts
-    }
 }
 
 protocol SumiFaviconUserScriptDelegate: AnyObject {

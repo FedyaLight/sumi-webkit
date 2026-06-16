@@ -218,10 +218,10 @@ struct SpaceTab: View {
             SidebarUnloadedRegularTabFaviconIndicator(
                 size: SidebarRowLayout.faviconSize
             ) {
-                SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize, cornerRadius: 6)
+                SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize)
             }
         } else {
-            SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize, cornerRadius: 6)
+            SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize)
         }
     }
 
@@ -418,8 +418,7 @@ struct SidebarGlanceTrailingAccessory: View {
             closeButton
             SidebarTabFaviconView(
                 tab: session.previewTab,
-                size: SidebarRowLayout.faviconSize,
-                cornerRadius: 6
+                size: SidebarRowLayout.faviconSize
             )
             .frame(
                 width: SidebarRowLayout.trailingActionSize,

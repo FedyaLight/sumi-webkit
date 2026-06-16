@@ -20,12 +20,6 @@ extension SumiUserScript {
     }
 }
 
-@MainActor
-protocol SumiUserScriptsProvider: AnyObject {
-    var userScripts: [SumiUserScript] { get }
-    func loadWKUserScripts() async -> [WKUserScript]
-}
-
 enum SumiUserScriptBuilder {
     @MainActor
     static func makeWKUserScript(from userScript: SumiUserScript) -> WKUserScript {

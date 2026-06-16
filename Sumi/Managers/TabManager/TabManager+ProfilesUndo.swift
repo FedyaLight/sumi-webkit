@@ -2,11 +2,6 @@ import Foundation
 
 // MARK: - Profile Cleanup & Stats
 extension TabManager {
-    func cleanupProfileReferences(_ deletedProfileId: UUID) {
-        guard let fallback = browserManager?.profileManager.profiles.first else { return }
-        cleanupProfileReferences(deletedProfileId, fallbackProfileId: fallback.id)
-    }
-
     func cleanupProfileReferences(_ deletedProfileId: UUID, fallbackProfileId: UUID) {
         var didChange = false
         var dirtySpaceIds = Set<UUID>()
@@ -257,10 +252,6 @@ extension TabManager {
         }
 
         browserManager?.presentTabClosureToast(tabCount: count)
-    }
-
-    func undoCloseTab() {
-        browserManager?.reopenMostRecentClosedItem()
     }
 
 }

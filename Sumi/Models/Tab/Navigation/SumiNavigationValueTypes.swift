@@ -58,17 +58,6 @@ extension CustomNavigationType {
 }
 
 extension SumiNavigationActionPolicy {
-    init(_ policy: NavigationActionPolicy) {
-        switch policy {
-        case .allow:
-            self = .allow
-        case .cancel:
-            self = .cancel
-        case .download:
-            self = .download
-        }
-    }
-
     var navigationActionPolicy: NavigationActionPolicy {
         switch self {
         case .allow:
@@ -82,17 +71,6 @@ extension SumiNavigationActionPolicy {
 }
 
 extension SumiNavigationResponsePolicy {
-    init(_ policy: NavigationResponsePolicy) {
-        switch policy {
-        case .allow:
-            self = .allow
-        case .cancel:
-            self = .cancel
-        case .download:
-            self = .download
-        }
-    }
-
     var navigationResponsePolicy: NavigationResponsePolicy {
         switch self {
         case .allow:

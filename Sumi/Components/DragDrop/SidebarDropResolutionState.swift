@@ -295,7 +295,6 @@ enum SidebarDropResolver {
                     target,
                     frame: headerFrame,
                     location: location,
-                    state: state,
                     draggedItem: draggedItem
                 )
             }
@@ -336,7 +335,6 @@ enum SidebarDropResolver {
         _ target: SidebarFolderDropTargetMetrics,
         frame: CGRect,
         location: CGPoint,
-        state: SidebarDragState,
         draggedItem: SumiDragItem?
     ) -> SidebarDropResolution {
         if draggedItem?.kind == .folder, draggedItem?.tabId == target.folderId {

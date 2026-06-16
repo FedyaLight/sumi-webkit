@@ -276,10 +276,6 @@ struct TabFolderView: View {
         8
     }
 
-    private var isTopLevelPinnedFolder: Bool {
-        parentFolderId == nil
-    }
-
     private var folderBodyShouldRender: Bool {
         folder.isOpen || hasCollapsedProjectionForLayout
     }
@@ -1116,10 +1112,6 @@ struct TabFolderView: View {
         )
     }
 
-    private var folderHasCustomIcon: Bool {
-        folderGlyphPresentation.bundledIconName != nil
-    }
-
     private var folderHasProjectedContent: Bool {
         folderProjectionState.hasActiveProjection || folderHasActiveSelection || hasCollapsedProjectionForLayout
     }
@@ -1161,12 +1153,6 @@ struct TabFolderView: View {
             tab,
             in: windowState
         )
-    }
-
-    private func closeShortcutPinIfActive(_ pin: ShortcutPin) {
-        guard let current = browserManager.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState)
-        else { return }
-        browserManager.closeTab(current, in: windowState)
     }
 
     private func removeShortcutPin(_ pin: ShortcutPin) {

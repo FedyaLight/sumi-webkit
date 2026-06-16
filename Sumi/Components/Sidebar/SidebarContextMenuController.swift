@@ -13,10 +13,6 @@ final class SidebarInteractionState {
     private var dragTokenID: UUID?
     private(set) var activePressedSourceID: String?
 
-    var isContextMenuPresented: Bool {
-        isKindActive(.contextMenu)
-    }
-
     var freezesSidebarHoverState: Bool {
         activeKinds.contains(where: \.pinsCollapsedSidebar)
     }
@@ -27,11 +23,6 @@ final class SidebarInteractionState {
 
     var allowsSidebarDragSourceHitTesting: Bool {
         activeKinds.contains(where: \.blocksSidebarDragSources) == false
-    }
-
-    var activeKindsDescription: String {
-        let values = activeKinds.map(\.rawValue).sorted()
-        return values.isEmpty ? "none" : values.joined(separator: ",")
     }
 
     func beginPressedSource(_ sourceID: String?) {
@@ -92,10 +83,6 @@ final class SidebarInteractionState {
 
     private var activeKinds: Set<SidebarTransientUIKind> {
         Set(activeSessionTokenIDsByKind.keys)
-    }
-
-    private func isKindActive(_ kind: SidebarTransientUIKind) -> Bool {
-        activeSessionTokenIDsByKind[kind]?.isEmpty == false
     }
 }
 

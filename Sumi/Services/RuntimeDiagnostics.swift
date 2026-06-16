@@ -51,21 +51,6 @@ enum RuntimeDiagnostics {
         static let isSwipeTraceEnabled = false
     #endif
 
-    static func debugDefaultBool(forKey key: String) -> Bool {
-        #if DEBUG || SUMI_DIAGNOSTICS
-            if isRunningTests {
-                return UserDefaults.standard.bool(forKey: key)
-            }
-            guard hasExplicitDebugLaunchIntent || allowsPersistedDebugDefaults else {
-                return false
-            }
-            return UserDefaults.standard.bool(forKey: key)
-        #else
-            _ = key
-            return false
-        #endif
-    }
-
     static func logger(category: String) -> Logger {
         Logger(subsystem: subsystem, category: category)
     }

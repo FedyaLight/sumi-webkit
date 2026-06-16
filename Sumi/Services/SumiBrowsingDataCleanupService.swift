@@ -28,14 +28,6 @@ enum SumiBrowsingDataTimeRange: String, CaseIterable, Identifiable {
         }
     }
 
-    static var primaryRanges: [Self] {
-        [.last15Minutes, .lastHour]
-    }
-
-    static var moreRanges: [Self] {
-        [.last24Hours, .last7Days, .last4Weeks, .allTime]
-    }
-
     func historyQuery(referenceDate: Date) -> HistoryQuery {
         guard let startDate = startDate(referenceDate: referenceDate) else {
             return .rangeFilter(.all)

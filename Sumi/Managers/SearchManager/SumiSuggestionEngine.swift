@@ -1,28 +1,12 @@
 import Foundation
 
 struct SumiSuggestionEngine {
-    enum Platform {
-        case desktop
-    }
-
     enum Item: Equatable {
         case phrase(String)
         case website(URL)
         case bookmark(title: String, url: URL, isFavorite: Bool, score: Int)
         case history(title: String?, url: URL, score: Int)
         case openTab(title: String, url: URL, tabId: UUID?, score: Int)
-
-        var url: URL? {
-            switch self {
-            case .website(let url),
-                 .bookmark(_, let url, _, _),
-                 .history(_, let url, _),
-                 .openTab(_, let url, _, _):
-                return url
-            case .phrase:
-                return nil
-            }
-        }
     }
 
     struct Result: Equatable {
@@ -87,8 +71,6 @@ struct SumiSuggestionEngine {
 
     private static let maximumNumberOfSuggestions = 12
     private static let maximumNumberOfTopHits = 2
-    private static let minimumNumberInSuggestionGroup = 5
-
     func result(
         for query: String,
         history: [HistoryItem],

@@ -10,10 +10,6 @@ enum TabFaviconStore {
         SumiFaviconLookupKey.documentURL(forReferenceKey: key)
     }
 
-    static func getCachedImage(forDocumentURL url: URL) -> NSImage? {
-        getCachedImage(forDocumentURL: url, partition: .regular(nil), context: .tabSidebar)
-    }
-
     static func getCachedImage(
         forDocumentURL url: URL,
         partition: SumiFaviconPartition,
@@ -27,14 +23,6 @@ enum TabFaviconStore {
             forDocumentURL: url,
             partition: partition,
             context: context
-        )
-    }
-
-    static func getCachedImage(forDocumentURL url: URL, maxLongestSide: CGFloat) -> NSImage? {
-        getCachedImage(
-            forDocumentURL: url,
-            partition: .regular(nil),
-            context: maxLongestSide <= 22 ? .tabSidebar : .largePreview
         )
     }
 

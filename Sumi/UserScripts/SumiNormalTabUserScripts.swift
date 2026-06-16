@@ -1,7 +1,7 @@
 import WebKit
 
 @MainActor
-final class SumiNormalTabUserScripts: SumiUserScriptsProvider {
+final class SumiNormalTabUserScripts {
     private struct UserScriptSignature: Equatable {
         let typeName: String
         let source: String

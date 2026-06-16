@@ -23,10 +23,6 @@ enum SettingsSurfaceStyle {
         Color.primary.opacity(0.055)
     }
 
-    static var groupedBackgroundProminent: Color {
-        Color.primary.opacity(0.075)
-    }
-
     static var fieldBackground: Color {
         Color.primary.opacity(0.055)
     }

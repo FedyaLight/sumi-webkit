@@ -11,7 +11,6 @@ import SwiftUI
 struct SidebarTabFaviconView: View {
     @ObservedObject var tab: Tab
     var size: CGFloat
-    var cornerRadius: CGFloat = 6
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext

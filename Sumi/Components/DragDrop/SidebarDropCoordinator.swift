@@ -14,7 +14,6 @@ enum SidebarDropCoordinator {
     static func validatedScope(
         for item: SumiDragItem,
         pasteboard: NSPasteboard,
-        dragState: SidebarDragState,
         windowState: BrowserWindowState?
     ) -> SidebarDragScope? {
         guard let payload = SidebarDragPasteboardPayload.fromPasteboard(pasteboard),
@@ -44,7 +43,6 @@ enum SidebarDropCoordinator {
             validatedScope(
                 for: $0,
                 pasteboard: pasteboard,
-                dragState: dragState,
                 windowState: windowState
             )
         }
@@ -68,8 +66,7 @@ enum SidebarDropCoordinator {
         pasteboard: NSPasteboard,
         resolution: SidebarDropResolution,
         browserManager: BrowserManager,
-        windowState: BrowserWindowState?,
-        dragState: SidebarDragState
+        windowState: BrowserWindowState?
     ) -> Bool {
         guard resolution.slot != .empty else { return false }
 
@@ -77,7 +74,6 @@ enum SidebarDropCoordinator {
             guard let scope = validatedScope(
                 for: draggedItem,
                 pasteboard: pasteboard,
-                dragState: dragState,
                 windowState: windowState
             ),
                   let payload = browserManager.tabManager.resolveSidebarDragPayload(for: draggedItem) else {

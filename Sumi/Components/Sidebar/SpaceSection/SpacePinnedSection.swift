@@ -140,10 +140,6 @@ extension SpaceView {
         }
     }
 
-    private var spacePinnedUsesProjectedDropLayout: Bool {
-        spacePinnedProjectedSourceItem != nil || spacePinnedProjectedInsertionIndex != nil
-    }
-
     private var spacePinnedProjectedSourceItem: SpacePinnedListItem? {
         guard dragState.isDropProjectionActive,
               dragState.projectionDragScope?.sourceContainer == .spacePinned(space.id),
@@ -743,12 +739,6 @@ extension SpaceView {
             tab,
             in: windowState
         )
-    }
-
-    private func closeShortcutPinIfActive(_ pin: ShortcutPin) {
-        guard let current = browserManager.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState)
-        else { return }
-        browserManager.closeTab(current, in: windowState)
     }
 
     private func unloadShortcutPin(_ pin: ShortcutPin) {

@@ -63,9 +63,6 @@ struct SumiAdblockAttachmentState: Equatable, Sendable {
         self.attachedShardIdentifiers = attachedShardIdentifiers.sorted()
     }
 
-    static func disabled(siteHost: String?) -> SumiAdblockAttachmentState {
-        SumiAdblockAttachmentState(siteHost: siteHost, isEnabled: false)
-    }
 }
 
 extension SumiAdblockEffectivePolicy {
@@ -166,7 +163,6 @@ final class AdblockWebKitRuleListStore {
     private let updateCoordinator: AdblockUpdateCoordinator
     private let isAdblockEnabled: @Sendable () async -> Bool
     private let embeddedBundleURLProvider: @MainActor () -> URL?
-    private(set) var lastFailedShardIdentifier: String?
     private(set) var lastUpdateDiagnostics: AdblockUpdateDiagnostics?
 
     var activeManifest: AdblockCompiledGenerationManifest? { ruleListProvider.activeManifest }
@@ -241,7 +237,6 @@ final class AdblockWebKitRuleListStore {
                     replacing: observedManifest,
                     compiledDefinitions: Self.metadataOnlyDefinitions(for: manifest!)
                 )
-                lastFailedShardIdentifier = nil
                 return
             }
             if let manifest { try await manifestStore.validateCompiledShardFiles(for: manifest) }
@@ -250,13 +245,10 @@ final class AdblockWebKitRuleListStore {
                 replacing: observedManifest,
                 compiledDefinitions: manifest.map { Self.metadataOnlyDefinitions(for: $0) } ?? []
             )
-            lastFailedShardIdentifier = nil
         } catch let diagnostics as AdblockUpdateDiagnostics {
-            lastFailedShardIdentifier = diagnostics.failedShardIdentifier
             lastUpdateDiagnostics = diagnostics
             updateManifestIfNoNewerPublication(nil, replacing: observedManifest)
         } catch {
-            lastFailedShardIdentifier = "manifest-load"
             lastUpdateDiagnostics = AdblockUpdateDiagnostics(summary: error.localizedDescription)
             updateManifestIfNoNewerPublication(nil, replacing: observedManifest)
         }
@@ -291,7 +283,6 @@ final class AdblockWebKitRuleListStore {
         )
 #endif
         try await publishPersistedManifest(manifest)
-        lastFailedShardIdentifier = nil
         lastUpdateDiagnostics = AdblockUpdateDiagnostics(
             summary: "success: restored prepared Adblock bundle",
             generationSource: manifest.generationSource,
@@ -416,7 +407,6 @@ final class AdblockWebKitRuleListStore {
             )
         }
         await updateCoordinator.commitEmbeddedBundlePublication(publication)
-        lastFailedShardIdentifier = nil
         lastUpdateDiagnostics = AdblockUpdateDiagnostics(
             summary: "success: Adblock bundle installed",
             generationSource: source.generationSource,
@@ -530,7 +520,6 @@ final class AdblockWebKitRuleListStore {
             bundleProfileId: profileId,
             bundlePath: bundleURL.path
         )
-        lastFailedShardIdentifier = diagnostics.failedShardIdentifier
         lastUpdateDiagnostics = diagnostics
         return diagnostics
     }
@@ -681,10 +670,6 @@ final class SumiAdBlockingModule {
             remoteBundlesRootURL: preparedBundleRemoteRootURL,
             generatedBundlesRootURL: preparedBundleGeneratedRootURL
         )
-    }
-
-    func normalizedSiteHost(for url: URL?) -> String? {
-        sitePolicyStoreIfEnabled().normalizedHost(for: url)
     }
 
     func surfaceEligibility(for url: URL?) -> SumiAdblockSurfaceEligibility {

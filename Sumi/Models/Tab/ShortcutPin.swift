@@ -21,9 +21,6 @@ enum SumiEssentialRuntimeState {
         }
     }
 
-    var isSelected: Bool {
-        self == .splitProxySelected
-    }
 }
 
 enum ShortcutPresentationState {
@@ -222,10 +219,6 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
             return cached
         }
         return Image(systemName: SumiPersistentGlyph.launcherSystemImageFallback)
-    }
-
-    var storedFaviconIsTemplateGlobePlaceholder: Bool {
-        hasStoredFaviconPlaceholder(partition: .regular(executionProfileId ?? profileId))
     }
 
     func hasStoredFaviconPlaceholder(partition: SumiFaviconPartition) -> Bool {

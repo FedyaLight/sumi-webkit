@@ -47,7 +47,6 @@ struct SpaceView: View {
 
     let onActivateTab: (Tab) -> Void
     let onCloseTab: (Tab) -> Void
-    let onPinTab: (Tab) -> Void
     let onMoveTabUp: (Tab) -> Void
     let onMoveTabDown: (Tab) -> Void
     let onMuteTab: (Tab) -> Void

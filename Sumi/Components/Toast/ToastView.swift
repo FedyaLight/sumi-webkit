@@ -53,7 +53,6 @@ private struct ToastTransitionModifier: ViewModifier {
 struct BrowserToastView: View {
     let toast: BrowserToast
     @Environment(KeyboardShortcutManager.self) private var shortcutManager
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ToastView {

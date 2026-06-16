@@ -210,10 +210,6 @@ extension BrowserManager {
         openURLsInNewWindow(urls)
     }
 
-    func reopenLastClosedItem() {
-        reopenMostRecentClosedItem()
-    }
-
     func reopenMostRecentClosedItem() {
         guard let item = recentlyClosedManager.mostRecentItem else { return }
         reopenRecentlyClosedItem(item)

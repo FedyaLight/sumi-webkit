@@ -2,7 +2,6 @@ import Foundation
 
 enum SumiPermissionRuntimeControlsStrings {
     static let defaultDisplayDomain = "This site"
-    static let sectionTitle = "Active now"
     static let cameraTitle = "Camera"
     static let microphoneTitle = "Microphone"
     static let locationTitle = "Location"

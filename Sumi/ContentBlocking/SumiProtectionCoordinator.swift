@@ -148,13 +148,6 @@ struct SumiProtectionOverlapSummary: Equatable, Sendable {
     let exactComparisonAvailable: Bool
     let notes: [String]
 
-    static let empty = SumiProtectionOverlapSummary(
-        exactCanonicalOverlapCount: 0,
-        domainResourceOverlapCount: 0,
-        exactComparisonAvailable: false,
-        notes: []
-    )
-
     static let deferred = SumiProtectionOverlapSummary(
         exactCanonicalOverlapCount: 0,
         domainResourceOverlapCount: 0,
@@ -218,16 +211,6 @@ struct SumiProtectionNormalTabDecision: Equatable, Sendable {
 
     var attachmentState: SumiProtectionAttachmentState {
         plan.attachmentState
-    }
-
-    var adblockAttachmentState: SumiAdblockAttachmentState {
-        SumiAdblockAttachmentState(
-            siteHost: plan.siteHost,
-            isEnabled: plan.adblockGroupActive,
-            attachedShardIdentifiers: plan.expectedRuleListIdentifiers.filter {
-                $0.hasPrefix("sumi.adblock.")
-            }
-        )
     }
 
     static func == (lhs: SumiProtectionNormalTabDecision, rhs: SumiProtectionNormalTabDecision) -> Bool {
@@ -624,7 +607,6 @@ final class SumiProtectionCoordinator {
                 }
                 let readinessPlan = globalAttachmentPlan(
                     for: selectedLevel,
-                    profileId: nil,
                     includeExpensiveDiagnostics: false,
                     loadRuleDefinitions: false
                 )
@@ -849,7 +831,6 @@ final class SumiProtectionCoordinator {
         let globalPlan = siteAllowsProtection
             ? globalAttachmentPlan(
                 for: requestedLevel,
-                profileId: profileId,
                 includeExpensiveDiagnostics: includeExpensiveDiagnostics,
                 loadRuleDefinitions: loadRuleDefinitions
             )
@@ -892,7 +873,6 @@ final class SumiProtectionCoordinator {
 
     private func globalAttachmentPlan(
         for level: SumiProtectionLevel,
-        profileId: UUID?,
         includeExpensiveDiagnostics: Bool,
         loadRuleDefinitions: Bool
     ) -> SumiProtectionGlobalAttachmentPlan {
@@ -1097,7 +1077,6 @@ final class SumiProtectionCoordinator {
 
         let metadataPlan = globalAttachmentPlan(
             for: level,
-            profileId: nil,
             includeExpensiveDiagnostics: false,
             loadRuleDefinitions: false
         )
@@ -1149,7 +1128,6 @@ final class SumiProtectionCoordinator {
 
         let plan = globalAttachmentPlan(
             for: level,
-            profileId: nil,
             includeExpensiveDiagnostics: false,
             loadRuleDefinitions: true
         )
@@ -1512,10 +1490,6 @@ final class SumiProtectionCoordinator {
         return lines.joined(separator: "\n")
     }
 #endif
-
-    func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {
-        adBlockingModule.siteOverride(for: url)
-    }
 
     func setSiteOverride(_ override: SumiAdblockSiteOverride, for url: URL?) {
         adBlockingModule.setSiteOverride(override, for: url)

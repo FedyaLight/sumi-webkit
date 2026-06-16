@@ -104,29 +104,6 @@ extension SidebarContextMenuEntry {
 enum SidebarContextMenuSurfaceKind: Equatable {
     case row
     case button
-    case background
-}
-
-func sidebarContextMenuSurfaceDebugDescription(_ surfaceKind: SidebarContextMenuSurfaceKind) -> String {
-    switch surfaceKind {
-    case .row:
-        return "row"
-    case .button:
-        return "button"
-    case .background:
-        return "background"
-    }
-}
-
-func sidebarPresentationModeDebugDescription(_ mode: SidebarPresentationMode) -> String {
-    switch mode {
-    case .docked:
-        return "docked"
-    case .collapsedHidden:
-        return "collapsedHidden"
-    case .collapsedVisible:
-        return "collapsedVisible"
-    }
 }
 
 struct SidebarContextMenuTriggers: OptionSet {

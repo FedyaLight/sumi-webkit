@@ -625,19 +625,3 @@ private extension BrowserWindowTrafficLightAction {
         }
     }
 }
-
-/// MiniWindow still uses AppKit's native titlebar buttons. This spacer reserves
-/// the same leading width as Sumi's browser traffic-light cluster.
-struct BrowserWindowNativeTrafficLightSpacer: View {
-    var isVisible: Bool = true
-
-    var body: some View {
-        Color.clear
-            .frame(
-                width: BrowserWindowTrafficLightMetrics.sidebarReservedWidth(isVisible: isVisible),
-                height: BrowserWindowTrafficLightMetrics.clusterHeight
-            )
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-    }
-}
