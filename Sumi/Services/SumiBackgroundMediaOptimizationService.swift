@@ -82,6 +82,11 @@ struct SumiBackgroundMediaOptimizationPolicy: Equatable {
     }
 }
 
+private struct SumiBackgroundMediaOptimizationCommand: Equatable {
+    let mode: SumiBackgroundMediaOptimizationMode
+    let graceMilliseconds: Int
+}
+
 @MainActor
 final class SumiBackgroundMediaOptimizationService {
     private weak var browserManager: BrowserManager?
@@ -89,6 +94,7 @@ final class SumiBackgroundMediaOptimizationService {
     private var scheduledReconcileTask: Task<Void, Never>?
     private var pendingReasons: [String] = []
     private var didTruncatePendingReasons = false
+    private var appliedCommandsByWebView: [ObjectIdentifier: SumiBackgroundMediaOptimizationCommand] = [:]
 
     init() {
         energySaverPolicyObserver = NotificationCenter.default.addObserver(
@@ -142,16 +148,22 @@ final class SumiBackgroundMediaOptimizationService {
               let coordinator = browserManager.webViewCoordinator
         else { return }
 
+        if shouldResetAppliedCommands(for: reason) {
+            appliedCommandsByWebView.removeAll()
+        }
+
         let policy = SumiBackgroundMediaOptimizationPolicy.make(
             energySaverActive: browserManager.sumiSettings?.energySaverActivation.isActive ?? false
         )
         let visibleTabIDsByWindow = effectiveVisibleTabIDsByWindow(browserManager: browserManager)
+        var liveWebViewIDs = Set<ObjectIdentifier>()
 
         for tab in allKnownTabs(browserManager: browserManager) {
             let entries = liveWebViewEntries(for: tab, coordinator: coordinator)
             guard !entries.isEmpty else { continue }
 
             for entry in entries {
+                liveWebViewIDs.insert(ObjectIdentifier(entry.webView))
                 let mode = policy.mode(
                     isVisible: isVisible(tab: tab, in: entry.windowID, visibleTabIDsByWindow: visibleTabIDsByWindow),
                     isEligible: isEligibleForOptimization(tab: tab, webView: entry.webView),
@@ -161,19 +173,29 @@ final class SumiBackgroundMediaOptimizationService {
                 apply(
                     mode: mode,
                     graceMilliseconds: policy.hiddenGraceMilliseconds,
-                    to: [entry.webView],
+                    to: entry.webView,
                     reason: reason
                 )
             }
         }
+
+        appliedCommandsByWebView = appliedCommandsByWebView.filter { liveWebViewIDs.contains($0.key) }
     }
 
     private func apply(
         mode: SumiBackgroundMediaOptimizationMode,
         graceMilliseconds: Int,
-        to webViews: [WKWebView],
+        to webView: WKWebView,
         reason: String
     ) {
+        let command = SumiBackgroundMediaOptimizationCommand(
+            mode: mode,
+            graceMilliseconds: graceMilliseconds
+        )
+        let webViewID = ObjectIdentifier(webView)
+        guard appliedCommandsByWebView[webViewID] != command else { return }
+        appliedCommandsByWebView[webViewID] = command
+
         let source = """
         if (window.__sumiBackgroundVideoOptimizer) {
             window.__sumiBackgroundVideoOptimizer.setNativeVisibility(mode, graceMs, reason);
@@ -185,15 +207,13 @@ final class SumiBackgroundMediaOptimizationService {
             "reason": reason
         ]
 
-        for webView in webViews {
-            webView.callAsyncJavaScript(
-                source,
-                arguments: arguments,
-                in: nil,
-                in: .defaultClient,
-                completionHandler: nil
-            )
-        }
+        webView.callAsyncJavaScript(
+            source,
+            arguments: arguments,
+            in: nil,
+            in: .defaultClient,
+            completionHandler: nil
+        )
     }
 
     private func effectiveVisibleTabIDsByWindow(browserManager: BrowserManager) -> [UUID: Set<UUID>] {
@@ -287,5 +307,9 @@ final class SumiBackgroundMediaOptimizationService {
             return
         }
         pendingReasons.append(reason)
+    }
+
+    private func shouldResetAppliedCommands(for reason: String) -> Bool {
+        reason.contains("navigation-did-finish")
     }
 }
