@@ -1054,7 +1054,9 @@ private struct PinnedSplitPlaceholderTile: View {
             isHovered: displayIsHovered,
             showsSplitGroupOutline: true,
             faviconOpacity: 1,
-            configuration: configuration
+            configuration: configuration,
+            accentSourceURL: pin.launchURL,
+            accentSourcePartition: faviconPartition
         )
         .frame(maxWidth: .infinity)
         .frame(height: configuration.height)
@@ -1258,7 +1260,8 @@ private struct LivePinnedTileContent: View {
             contextMenuEntries: { contextMenuActions.entries() },
             action: onActivate,
             onUnload: onUnload,
-            accentSourceURL: pin.launchURL
+            accentSourceURL: pin.launchURL,
+            accentSourcePartition: faviconPartition
         )
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
@@ -1386,7 +1389,8 @@ private struct StoredPinnedTileContent: View {
             contextMenuEntries: { contextMenuActions.entries() },
             action: onActivate,
             onUnload: onUnload,
-            accentSourceURL: pin.launchURL
+            accentSourceURL: pin.launchURL,
+            accentSourcePartition: faviconPartition
         )
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()

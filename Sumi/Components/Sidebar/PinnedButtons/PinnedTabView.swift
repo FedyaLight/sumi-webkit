@@ -34,6 +34,7 @@ struct PinnedTabView: View {
     var action: () -> Void
     var onUnload: () -> Void
     var accentSourceURL: URL? = nil
+    var accentSourcePartition: SumiFaviconPartition? = nil
 
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -55,7 +56,8 @@ struct PinnedTabView: View {
                 isLoading: liveTab?.isLoading ?? false,
                 showsSplitGroupOutline: showsSplitGroupOutline,
                 configuration: pinnedTabsConfiguration,
-                accentSourceURL: accentSourceURL ?? liveTab?.url
+                accentSourceURL: accentSourceURL ?? liveTab?.url,
+                accentSourcePartition: accentSourcePartition
             )
 
             if supportsActionButton {
@@ -230,14 +232,21 @@ struct PinnedTileVisual: View {
     var faviconOpacity: Double = 1
     var configuration: PinnedTabsConfiguration? = nil
     var accentSourceURL: URL? = nil
+    var accentSourcePartition: SumiFaviconPartition? = nil
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var loadedSelectionAccentColor: Color?
+    @State private var accentCacheRefreshID = UUID()
 
     private var selectionAccentColor: Color {
-        PinnedTileAccentResolver.resolve(
+        if let loadedSelectionAccentColor {
+            return loadedSelectionAccentColor
+        }
+        return PinnedTileAccentResolver.resolve(
             launchURL: accentSourceURL,
+            partition: accentSourcePartition,
             glyphText: glyphText,
             chromeTemplateSystemImageName: chromeTemplateSystemImageName,
             tokens: tokens
@@ -309,6 +318,15 @@ struct PinnedTileVisual: View {
         .frame(height: pinnedTabsConfiguration.height)
         .frame(minWidth: pinnedTabsConfiguration.minWidth)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .task(id: selectionAccentLoadKey) {
+            await loadSelectionAccentColorIfNeeded()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
+            guard PinnedTileAccentResolver.faviconUpdate(notification, matches: accentSourceURL) else { return }
+            loadedSelectionAccentColor = nil
+            PinnedTileAccentResolver.invalidateAccent(for: accentSourceURL)
+            accentCacheRefreshID = UUID()
+        }
     }
 
     private var backgroundColor: Color {
@@ -332,6 +350,66 @@ struct PinnedTileVisual: View {
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
+    }
+
+    private var drawsAccentChrome: Bool {
+        presentationState.isSelected || showsSplitGroupOutline
+    }
+
+    private var selectionAccentLoadKey: String {
+        [
+            accentSourceURL?.absoluteString ?? "no-url",
+            accentSourcePartition?.storageComponent ?? "no-partition",
+            glyphText == nil ? "no-glyph" : "glyph",
+            chromeTemplateSystemImageName ?? "no-template",
+            drawsAccentChrome ? "draws-accent" : "no-accent",
+            accentCacheRefreshID.uuidString,
+        ].joined(separator: "|")
+    }
+
+    @MainActor
+    private func loadSelectionAccentColorIfNeeded() async {
+        guard drawsAccentChrome,
+              glyphText == nil,
+              chromeTemplateSystemImageName == nil,
+              let accentSourceURL,
+              let accentSourcePartition
+        else { return }
+
+        if let cached = PinnedTileAccentResolver.cachedAccent(
+            for: accentSourceURL,
+            partition: accentSourcePartition
+        ) {
+            loadedSelectionAccentColor = cached
+            return
+        }
+
+        let cachedImage = TabFaviconStore.getCachedImage(
+            forDocumentURL: accentSourceURL,
+            partition: accentSourcePartition,
+            context: .pinnedLauncher
+        )
+        let image: NSImage?
+        if let cachedImage {
+            image = cachedImage
+        } else {
+            image = await TabFaviconStore.loadCachedLauncherImage(
+                forDocumentURL: accentSourceURL,
+                partition: accentSourcePartition
+            )
+        }
+
+        guard !Task.isCancelled,
+              let image,
+              let accent = SumiFaviconAccentColor.extract(from: image)
+        else { return }
+
+        PinnedTileAccentResolver.storeAccent(
+            accent,
+            for: accentSourceURL,
+            partition: accentSourcePartition
+        )
+        loadedSelectionAccentColor = accent
     }
 
     @ViewBuilder
