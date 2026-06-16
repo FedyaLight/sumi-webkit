@@ -1334,9 +1334,8 @@ private struct SpaceSnapshotRegularTabRowView: View {
     @ViewBuilder
     private var favicon: some View {
         if tab.showsUnloadedIndicator {
-            SidebarUnloadedRegularTabFaviconFrame(
-                size: SidebarRowLayout.faviconSize,
-                cornerRadius: 6
+            SidebarUnloadedRegularTabFaviconIndicator(
+                size: SidebarRowLayout.faviconSize
             ) {
                 SpaceSnapshotIconView(
                     icon: tab.icon,

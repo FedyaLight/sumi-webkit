@@ -215,9 +215,8 @@ struct SpaceTab: View {
     @ViewBuilder
     private var favicon: some View {
         if tab.showsWebViewUnloadedIndicator {
-            SidebarUnloadedRegularTabFaviconFrame(
-                size: SidebarRowLayout.faviconSize,
-                cornerRadius: 6
+            SidebarUnloadedRegularTabFaviconIndicator(
+                size: SidebarRowLayout.faviconSize
             ) {
                 SidebarTabFaviconView(tab: tab, size: SidebarRowLayout.faviconSize, cornerRadius: 6)
             }
