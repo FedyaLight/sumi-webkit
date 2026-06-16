@@ -80,6 +80,10 @@ struct URLBarHubPopover: View {
     @State private var containerWidth: CGFloat = Mode.controls.preferredWidth
     @State private var bookmarkErrorMessage: String?
     @State private var scheduledPermissionsReloadTask: Task<Void, Never>?
+    @State private var isCapturingScreenshot = false
+    @AppStorage("URLBarHubScreenshotQualityScale") private var screenshotQualityScale = URLBarHubScreenshotQuality.twoX.rawValue
+    @AppStorage("URLBarHubScreenshotCaptureTarget") private var screenshotCaptureTarget = URLBarHubScreenshotCaptureTarget.visiblePage.rawValue
+    @AppStorage("URLBarHubScreenshotDestination") private var screenshotDestination = URLBarHubScreenshotDestination.askEveryTime.rawValue
     @StateObject private var siteDataDetailsModel = URLBarSiteDataDetailsViewModel()
     @StateObject private var currentSitePermissionsModel = SumiCurrentSitePermissionsViewModel()
 
@@ -415,9 +419,13 @@ struct URLBarHubPopover: View {
             SumiHubHeaderButton(
                 iconName: "camera",
                 fallbackSystemName: "camera",
-                help: "Screenshot"
+                help: "Screenshot (\(screenshotQuality.label))",
+                isEnabled: !isCapturingScreenshot
             ) {
-                captureCurrentPage()
+                captureCurrentPageUsingSavedSettings()
+            }
+            .contextMenu {
+                Button("Screenshot Settings...", action: presentScreenshotSettings)
             }
 
             SumiHubHeaderButton(
@@ -430,6 +438,18 @@ struct URLBarHubPopover: View {
                 showBookmarkEditor()
             }
         }
+    }
+
+    private var screenshotQuality: URLBarHubScreenshotQuality {
+        URLBarHubScreenshotQuality(rawValue: screenshotQualityScale) ?? .oneX
+    }
+
+    private var screenshotOptions: URLBarHubScreenshotOptions {
+        URLBarHubScreenshotOptions(
+            target: URLBarHubScreenshotCaptureTarget(rawValue: screenshotCaptureTarget) ?? .visiblePage,
+            destination: URLBarHubScreenshotDestination(rawValue: screenshotDestination) ?? .askEveryTime,
+            scale: screenshotQuality
+        )
     }
 
     private var isCurrentPageBookmarked: Bool {
@@ -670,38 +690,157 @@ struct URLBarHubPopover: View {
         browserManager.presentSharingServicePicker([url], source: source)
     }
 
-    private func captureCurrentPage() {
+    private func captureCurrentPageUsingSavedSettings() {
         guard let currentTab,
               let webView = browserManager.getWebView(
                 for: currentTab.id,
                 in: windowState.id
-              ) else {
+              ),
+              !isCapturingScreenshot else {
             return
         }
 
-        webView.takeSnapshot(with: nil) { image, _ in
-            guard let image,
-                  let tiffData = image.tiffRepresentation,
-                  let bitmapRep = NSBitmapImageRep(data: tiffData),
-                  let pngData = bitmapRep.representation(
-                    using: .png,
-                    properties: [:]
-                  ) else {
-                return
+        captureCurrentPage(
+            currentTab: currentTab,
+            webView: webView,
+            options: screenshotOptions
+        )
+    }
+
+    private func presentScreenshotSettings() {
+        guard let currentTab,
+              let webView = browserManager.getWebView(
+                for: currentTab.id,
+                in: windowState.id
+              ),
+              !isCapturingScreenshot else {
+            return
+        }
+
+        URLBarHubScreenshotSettingsPresenter.present(
+            initial: screenshotOptions,
+            window: windowState.window
+        ) { options in
+            guard let options else { return }
+            screenshotCaptureTarget = options.target.rawValue
+            screenshotDestination = options.destination.rawValue
+            screenshotQualityScale = options.scale.rawValue
+            captureCurrentPage(currentTab: currentTab, webView: webView, options: options)
+        }
+    }
+
+    private func captureCurrentPage(
+        currentTab: Tab,
+        webView: WKWebView,
+        options: URLBarHubScreenshotOptions
+    ) {
+        guard !isCapturingScreenshot else { return }
+        isCapturingScreenshot = true
+
+        switch options.target {
+        case .visiblePage:
+            saveCurrentPageCapture(
+                currentTab: currentTab,
+                webView: webView,
+                rect: webView.bounds,
+                options: options
+            )
+
+        case .selectedArea:
+            URLBarHubScreenshotRegionSelector.selectRegion(in: webView) { rect in
+                guard let rect else {
+                    isCapturingScreenshot = false
+                    return
+                }
+
+                saveCurrentPageCapture(
+                    currentTab: currentTab,
+                    webView: webView,
+                    rect: rect,
+                    options: options
+                )
+            }
+        }
+    }
+
+    private func saveCurrentPageCapture(
+        currentTab: Tab,
+        webView: WKWebView,
+        rect: CGRect,
+        options: URLBarHubScreenshotOptions
+    ) {
+        let suggestedFilename = URLBarHubSnapshotActions.suggestedFilename(
+            for: currentTab,
+            quality: options.scale
+        )
+
+        switch options.destination {
+        case .askEveryTime:
+            askForScreenshotDestination(
+                suggestedFilename: suggestedFilename
+            ) { destinationURL in
+                guard let destinationURL else {
+                    isCapturingScreenshot = false
+                    return
+                }
+
+                writeCurrentPageCapture(
+                    webView: webView,
+                    rect: rect,
+                    options: options,
+                    destinationURL: destinationURL
+                )
             }
 
-            let savePanel = NSSavePanel()
-            savePanel.title = "Save Page Capture"
-            savePanel.message = "Choose where to save the page snapshot"
-            savePanel.nameFieldStringValue = URLBarHubSnapshotActions.suggestedFilename(
-                for: currentTab
+        case .downloads:
+            writeCurrentPageCapture(
+                webView: webView,
+                rect: rect,
+                options: options,
+                destinationURL: DownloadFileUtilities.uniqueDestination(for: suggestedFilename)
             )
-            savePanel.allowedContentTypes = [.png]
-            savePanel.begin { result in
-                guard result == .OK,
-                      let destinationURL = savePanel.url else { return }
-                try? pngData.write(to: destinationURL)
+        }
+    }
+
+    private func askForScreenshotDestination(
+        suggestedFilename: String,
+        completion: @escaping @MainActor (URL?) -> Void
+    ) {
+        let savePanel = NSSavePanel()
+        savePanel.title = "Save Page Capture"
+        savePanel.message = "Choose where to save the page snapshot"
+        savePanel.nameFieldStringValue = suggestedFilename
+        savePanel.allowedContentTypes = [.png]
+
+        let panelCompletion: (NSApplication.ModalResponse) -> Void = { result in
+            guard result == .OK,
+                  let destinationURL = savePanel.url else {
+                completion(nil)
+                return
             }
+            completion(destinationURL)
+        }
+
+        if let window = windowState.window {
+            savePanel.beginSheetModal(for: window, completionHandler: panelCompletion)
+        } else {
+            savePanel.begin(completionHandler: panelCompletion)
+        }
+    }
+
+    private func writeCurrentPageCapture(
+        webView: WKWebView,
+        rect: CGRect,
+        options: URLBarHubScreenshotOptions,
+        destinationURL: URL
+    ) {
+        URLBarHubScreenshotCapture.writeVisibleSnapshot(
+            of: webView,
+            rect: rect,
+            quality: options.scale,
+            to: destinationURL
+        ) { _ in
+            isCapturingScreenshot = false
         }
     }
 
