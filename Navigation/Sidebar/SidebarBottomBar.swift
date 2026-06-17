@@ -61,6 +61,18 @@ struct SidebarBottomBar: View {
                     Button("New Folder", systemImage: "folder.badge.plus") {
                         createFolderInCurrentSpace()
                     }
+
+                    Menu("New Live Folder", systemImage: "sparkles") {
+                        Button("RSS Feed", systemImage: "dot.radiowaves.left.and.right") {
+                            createRSSLiveFolderInCurrentSpace()
+                        }
+                        Button("GitHub Pull Requests", systemImage: "chevron.left.forwardslash.chevron.right") {
+                            createGitHubPullRequestsLiveFolderInCurrentSpace()
+                        }
+                        Button("GitHub Issues", systemImage: "exclamationmark.circle") {
+                            createGitHubIssuesLiveFolderInCurrentSpace()
+                        }
+                    }
                 } label: {
                     newSpaceButtonLabel
                 }
@@ -93,10 +105,31 @@ struct SidebarBottomBar: View {
                     onAction: createFolderInCurrentSpace
                 )
             ),
+            .submenu(
+                title: "New Live Folder",
+                systemImage: "sparkles",
+                children: [
+                    .action(.init(title: "RSS Feed", systemImage: "dot.radiowaves.left.and.right", classification: .structuralMutation, onAction: createRSSLiveFolderInCurrentSpace)),
+                    .action(.init(title: "GitHub Pull Requests", systemImage: "chevron.left.forwardslash.chevron.right", classification: .structuralMutation, onAction: createGitHubPullRequestsLiveFolderInCurrentSpace)),
+                    .action(.init(title: "GitHub Issues", systemImage: "exclamationmark.circle", classification: .structuralMutation, onAction: createGitHubIssuesLiveFolderInCurrentSpace)),
+                ]
+            ),
         ]
     }
 
     private func createFolderInCurrentSpace() {
         browserManager.createFolderInCurrentSpace(in: windowState)
+    }
+
+    private func createRSSLiveFolderInCurrentSpace() {
+        browserManager.createRSSLiveFolderInCurrentSpace(in: windowState)
+    }
+
+    private func createGitHubPullRequestsLiveFolderInCurrentSpace() {
+        browserManager.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
+    }
+
+    private func createGitHubIssuesLiveFolderInCurrentSpace() {
+        browserManager.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
     }
 }

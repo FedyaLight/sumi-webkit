@@ -248,6 +248,11 @@ extension TabManager {
         at targetIndex: Int,
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
+        if let folderId = pin.folderId,
+           browserManager?.liveFolderManager.isLiveFolder(folderId) == true {
+            return nil
+        }
+
         switch pin.role {
         case .essential:
             guard let profileId = pin.profileId else { return nil }

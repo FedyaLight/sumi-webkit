@@ -2305,6 +2305,15 @@ struct SpacesSideBarView: View {
                     browserManager.openNewTabOrFloatingBar(in: windowState)
                 },
                 newFolder: newFolderAction,
+                newRSSLiveFolder: newFolderAction.map { _ in
+                    { browserManager.createRSSLiveFolderInCurrentSpace(in: windowState) }
+                },
+                newGitHubPullRequestsLiveFolder: newFolderAction.map { _ in
+                    { browserManager.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState) }
+                },
+                newGitHubIssuesLiveFolder: newFolderAction.map { _ in
+                    { browserManager.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState) }
+                },
                 changeTheme: changeThemeAction,
                 toggleCompactMode: {
                     browserManager.toggleSidebar(for: windowState)

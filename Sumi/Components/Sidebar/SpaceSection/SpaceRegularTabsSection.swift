@@ -683,6 +683,7 @@ extension SpaceView {
         let profiles = browserManager.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
             folders: browserManager.tabManager.folders(for: space.id)
+                .filter { !browserManager.liveFolderManager.isLiveFolder($0.id) }
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
             spaces: browserManager.tabManager.spaces,

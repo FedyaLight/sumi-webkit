@@ -573,7 +573,8 @@ extension SpaceView {
         let presentationState = shortcutPresentationState(for: pin)
         let profiles = browserManager.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
-            folders: browserManager.tabManager.folders(for: space.id),
+            folders: browserManager.tabManager.folders(for: space.id)
+                .filter { !browserManager.liveFolderManager.isLiveFolder($0.id) },
             selectedFolderId: pin.folderId
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(

@@ -12,6 +12,7 @@ struct TabFolderView: View {
     private enum FolderListItem: Hashable {
         case folder(UUID)
         case shortcut(UUID)
+        case liveItem(String)
         case splitGroup(UUID)
         case restoreGap(UUID)
         case placeholder
@@ -82,8 +83,23 @@ struct TabFolderView: View {
         windowState.sidebarFolderProjection(for: folder.id)
     }
 
+    private var liveFolderSource: SumiLiveFolderSource? {
+        browserManager.liveFolderManager.source(for: folder.id)
+    }
+
+    private var isLiveFolder: Bool {
+        liveFolderSource != nil
+    }
+
+    private var liveFolderItems: [SumiLiveFolderItem] {
+        browserManager.liveFolderManager.visibleItems(for: folder.id)
+    }
+
     private var baseFolderItems: [FolderListItem] {
-        sortedFolderItems(childFolders: childFolders, shortcutPins: shortcutPinsInFolder)
+        if isLiveFolder {
+            return liveFolderItems.map { .liveItem($0.id) }
+        }
+        return sortedFolderItems(childFolders: childFolders, shortcutPins: shortcutPinsInFolder)
     }
 
     private func sortedFolderItems(childFolders: [TabFolder], shortcutPins: [ShortcutPin]) -> [FolderListItem] {
@@ -107,11 +123,15 @@ struct TabFolderView: View {
                      (.shortcut(let left), .shortcut(let right)),
                      (.splitGroup(let left), .splitGroup(let right)):
                     return left.uuidString < right.uuidString
+                case (.liveItem(let left), .liveItem(let right)):
+                    return left < right
                 case (.splitGroup, .folder), (.splitGroup, .shortcut),
                      (.folder, .shortcut):
                     return true
                 case (.folder, .splitGroup), (.shortcut, .splitGroup),
                      (.shortcut, .folder):
+                    return false
+                case (.liveItem, _), (_, .liveItem):
                     return false
                 case (.restoreGap, _), (_, .restoreGap),
                      (.placeholder, _), (_, .placeholder):
@@ -168,6 +188,8 @@ struct TabFolderView: View {
             switch item {
             case .folder(let id), .shortcut(let id), .splitGroup(let id):
                 return id == projectionDragItemId
+            case .liveItem:
+                return false
             case .restoreGap, .placeholder:
                 return false
             }
@@ -188,6 +210,8 @@ struct TabFolderView: View {
                     switch item {
                     case .folder(let id), .shortcut(let id), .splitGroup(let id):
                         return id == projectionDragItemId
+                    case .liveItem:
+                        return false
                     case .restoreGap, .placeholder:
                         return false
                     }
@@ -281,7 +305,7 @@ struct TabFolderView: View {
     }
 
     private var folderBodyGeometryIsActive: Bool {
-        isInteractive && folderBodyShouldRender
+        isInteractive && folderBodyShouldRender && !isLiveFolder
     }
 
     private var folderLayoutAnimation: Animation? {
@@ -295,6 +319,12 @@ struct TabFolderView: View {
     }
 
     private var folderHasActiveSelection: Bool {
+        if isLiveFolder,
+           let currentURLString = browserManager.currentTab(for: windowState)?.url.absoluteString,
+           liveFolderItems.contains(where: { $0.urlString == currentURLString }) {
+            return true
+        }
+
         if let currentShortcutPinId = windowState.currentShortcutPinId,
            descendantShortcutPins.contains(where: { $0.id == currentShortcutPinId }) {
             return true
@@ -364,6 +394,7 @@ struct TabFolderView: View {
             .onChange(of: folder.isOpen) { _, _ in
                 syncDisplayedCollapsedProjectionIDs(animated: true)
                 scheduleProjectionStateRefresh()
+                refreshLiveFolderIfNeeded()
             }
             .onChange(of: windowState.currentTabId) { _, _ in
                 syncDisplayedCollapsedProjectionIDs(animated: true)
@@ -376,7 +407,13 @@ struct TabFolderView: View {
             .onAppear {
                 syncDisplayedCollapsedProjectionIDs(animated: false)
                 scheduleProjectionStateRefresh()
+                refreshLiveFolderIfNeeded()
             }
+    }
+
+    private func refreshLiveFolderIfNeeded() {
+        guard folder.isOpen else { return }
+        browserManager.liveFolderManager.refreshIfStale(folderId: folder.id)
     }
 
     private var folderCompositeContent: some View {
@@ -472,7 +509,7 @@ struct TabFolderView: View {
             isOpen: folder.isOpen,
             region: .header,
             generation: dragState.sidebarGeometryGeneration,
-            isActive: isInteractive
+            isActive: isInteractive && !isLiveFolder
         )
         .sidebarAppKitContextMenu(
             isEnabled: true,
@@ -595,6 +632,10 @@ struct TabFolderView: View {
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
                         }
+                    case .liveItem(let itemId):
+                        if let item = liveFolderItems.first(where: { $0.id == itemId }) {
+                            liveFolderItemView(item)
+                        }
                     case .splitGroup(let groupId):
                         if let group = browserManager.tabManager.splitGroup(with: groupId) {
                             shortcutHostedSplitGroupView(group)
@@ -673,7 +714,7 @@ struct TabFolderView: View {
                 id: folderDisplayID(for: item, placeholderIndex: childCount)
             )
             switch item {
-            case .folder, .shortcut, .splitGroup:
+            case .folder, .shortcut, .liveItem, .splitGroup:
                 childCount += 1
             case .restoreGap, .placeholder:
                 break
@@ -698,6 +739,11 @@ struct TabFolderView: View {
                 return isFolderSplitPlaceholderSelected(placeholderGroup, pin: pin)
             }
             return shortcutPinIsElevated(pin)
+        case .liveItem(let itemId):
+            guard let item = liveFolderItems.first(where: { $0.id == itemId }) else {
+                return false
+            }
+            return browserManager.currentTab(for: windowState)?.url.absoluteString == item.urlString
         case .splitGroup(let groupId):
             guard let group = browserManager.tabManager.splitGroup(with: groupId) else {
                 return false
@@ -745,6 +791,8 @@ struct TabFolderView: View {
             return "folder-\(id.uuidString)"
         case .shortcut(let id):
             return "item-\(id.uuidString)"
+        case .liveItem(let id):
+            return "live-item-\(id)"
         case .splitGroup(let id):
             return "split-group-\(id.uuidString)"
         case .restoreGap(let id):
@@ -936,6 +984,24 @@ struct TabFolderView: View {
         }
     }
 
+    private func liveFolderItemView(_ item: SumiLiveFolderItem) -> some View {
+        SumiLiveFolderItemRow(
+            item: item,
+            accessibilityID: "live-folder-item-\(folder.id.uuidString)-\(item.id)",
+            contextMenuEntries: {
+                liveFolderItemContextMenuEntries(item)
+            },
+            action: {
+                browserManager.liveFolderManager.open(item: item, in: windowState)
+            },
+            onDismiss: {
+                browserManager.liveFolderManager.dismiss(item: item)
+            }
+        )
+        .environmentObject(browserManager)
+        .environment(windowState)
+    }
+
     private func isFolderSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
         if windowState.currentShortcutPinId == pin.id {
             return true
@@ -951,7 +1017,8 @@ struct TabFolderView: View {
         let presentationState = shortcutPresentationState(for: pin)
         let profiles = browserManager.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
-            folders: browserManager.tabManager.folders(for: space.id),
+            folders: browserManager.tabManager.folders(for: space.id)
+                .filter { !browserManager.liveFolderManager.isLiveFolder($0.id) },
             selectedFolderId: pin.folderId
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
@@ -1027,7 +1094,41 @@ struct TabFolderView: View {
         )
     }
 
+    private func liveFolderItemContextMenuEntries(_ item: SumiLiveFolderItem) -> [SidebarContextMenuEntry] {
+        guard let url = item.url else {
+            return []
+        }
+
+        return joinSidebarMenuSections(
+            [
+                [
+                    .action(.init(title: "Open", systemImage: "arrow.up.right.square", classification: .presentationOnly) {
+                        browserManager.liveFolderManager.open(item: item, in: windowState)
+                    }),
+                    .action(.init(title: "Copy Link", systemImage: "link", classification: .presentationOnly) {
+                        copyLink(url)
+                    }),
+                    .action(.init(title: "Share…", systemImage: "square.and.arrow.up", classification: .presentationOnly) {
+                        presentSharePicker(
+                            for: url,
+                            source: windowState.resolveSidebarPresentationSource()
+                        )
+                    }),
+                ],
+                [
+                    .action(.init(title: "Hide Item", systemImage: "xmark", classification: .stateMutationNonStructural) {
+                        browserManager.liveFolderManager.dismiss(item: item)
+                    }),
+                ],
+            ]
+        )
+    }
+
     private func folderHeaderContextMenuEntries() -> [SidebarContextMenuEntry] {
+        if isLiveFolder {
+            return liveFolderHeaderContextMenuEntries()
+        }
+
         let unloadActiveTabsAction: (() -> Void)?
         if folderHasLiveSavedTabs {
             unloadActiveTabsAction = unloadActiveFolderTabs
@@ -1050,6 +1151,86 @@ struct TabFolderView: View {
                 ungroup: onUngroup,
                 delete: onDelete
             )
+        )
+    }
+
+    private func liveFolderHeaderContextMenuEntries() -> [SidebarContextMenuEntry] {
+        let source = liveFolderSource
+        let statusTitle: String = {
+            if let error = source?.lastErrorKind {
+                return error.displayTitle
+            }
+            if let lastSuccessAt = source?.lastSuccessAt {
+                return "Last Updated \(lastSuccessAt.formatted(date: .omitted, time: .shortened))"
+            }
+            return "Not Updated Yet"
+        }()
+
+        let githubLoginSection: [SidebarContextMenuEntry]
+        if source?.lastErrorKind == .notAuthenticated,
+           source?.kind == .githubPullRequests || source?.kind == .githubIssues {
+            githubLoginSection = [
+                .action(.init(title: "Sign in to GitHub", systemImage: "person.crop.circle.badge.exclamationmark", classification: .presentationOnly) {
+                    browserManager.openNewTab(
+                        url: "https://github.com/login",
+                        context: .foreground(windowState: windowState, preferredSpaceId: space.id)
+                    )
+                }),
+            ]
+        } else {
+            githubLoginSection = []
+        }
+
+        return joinSidebarMenuSections(
+            [
+                [
+                    .action(.init(title: statusTitle, systemImage: "clock", isEnabled: false, classification: .presentationOnly) {}),
+                    .action(.init(title: "Refresh Now", systemImage: "arrow.clockwise", classification: .stateMutationNonStructural) {
+                        browserManager.liveFolderManager.refresh(folderId: folder.id)
+                    }),
+                    refreshIntervalSubmenu(for: source),
+                ],
+                githubLoginSection,
+                [
+                    .action(
+                        .init(
+                            title: "Delete Live Folder",
+                            systemImage: "trash",
+                            role: .destructive,
+                            classification: .structuralMutation,
+                            onAction: onDelete
+                        )
+                    ),
+                ],
+            ]
+        )
+    }
+
+    private func refreshIntervalSubmenu(for source: SumiLiveFolderSource?) -> SidebarContextMenuEntry {
+        let options: [(title: String, seconds: TimeInterval)] = [
+            ("15 Minutes", 15 * 60),
+            ("30 Minutes", 30 * 60),
+            ("1 Hour", 60 * 60),
+            ("6 Hours", 6 * 60 * 60),
+        ]
+        let currentInterval = source?.refreshIntervalSeconds
+
+        return .submenu(
+            title: "Refresh Every",
+            systemImage: "timer",
+            children: options.map { option in
+                .action(
+                    .init(
+                        title: option.title,
+                        systemImage: nil,
+                        isEnabled: currentInterval != option.seconds,
+                        state: currentInterval == option.seconds ? .on : .off,
+                        classification: .stateMutationNonStructural
+                    ) {
+                        browserManager.liveFolderManager.setRefreshInterval(folderId: folder.id, seconds: option.seconds)
+                    }
+                )
+            }
         )
     }
 

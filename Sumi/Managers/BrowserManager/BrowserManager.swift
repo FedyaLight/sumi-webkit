@@ -240,6 +240,7 @@ class BrowserManager: ObservableObject {
     let windowShellService = BrowserWindowShellService()
     let workspaceAppearanceService = WorkspaceAppearanceService()
     let privacyService = BrowserPrivacyService()
+    let liveFolderManager = SumiLiveFolderManager()
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
         guard let self else { return [] }
@@ -536,6 +537,7 @@ class BrowserManager: ObservableObject {
         // Note: settingsManager will be injected later, so we skip initialization here
         self.tabManager.browserManager = self
         self.tabManager.reattachBrowserManager(self)
+        self.liveFolderManager.attach(browserManager: self)
         self.downloadManager.browserManager = self
         self.extensionsModule.attach(browserManager: self)
         self.userscriptsModule.attach(browserManager: self)
@@ -604,6 +606,7 @@ class BrowserManager: ObservableObject {
     /// Called when TabManager finishes loading initial data from persistence
     private func handleTabManagerDataLoaded() {
         windowSessionService.handleTabManagerDataLoaded(delegate: self)
+        liveFolderManager.startAfterTabRestore()
         reconcileStartupSessionIfPossible()
     }
 
@@ -924,6 +927,48 @@ class BrowserManager: ObservableObject {
     func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
         _ = tabManager.createFolder(for: space.id)
+    }
+
+    func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
+        guard let space = spaceForSidebarActions(in: windowState),
+              let feedURLString = promptForLiveFolderFeedURL() else {
+            return
+        }
+        liveFolderManager.createRSSFolder(in: space.id, feedURLString: feedURLString)
+    }
+
+    func createGitHubPullRequestsLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
+        guard let space = spaceForSidebarActions(in: windowState) else { return }
+        liveFolderManager.createGitHubFolder(in: space.id, kind: .githubPullRequests)
+    }
+
+    func createGitHubIssuesLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
+        guard let space = spaceForSidebarActions(in: windowState) else { return }
+        liveFolderManager.createGitHubFolder(in: space.id, kind: .githubIssues)
+    }
+
+    private func promptForLiveFolderFeedURL() -> String? {
+        let alert = NSAlert()
+        alert.messageText = "New RSS Live Folder"
+        alert.informativeText = "Enter an RSS or Atom feed URL."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
+        field.placeholderString = "https://example.com/feed.xml"
+        alert.accessoryView = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return nil
+        }
+
+        let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: value),
+              ["http", "https"].contains(url.scheme?.lowercased()) else {
+            return nil
+        }
+        return value
     }
 
     func updateFloatingBarDraft(

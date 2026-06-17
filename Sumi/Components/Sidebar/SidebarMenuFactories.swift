@@ -22,6 +22,9 @@ struct SidebarSpaceMenuActions {
 struct SidebarShellMenuActions {
     let newTab: () -> Void
     let newFolder: (() -> Void)?
+    var newRSSLiveFolder: (() -> Void)? = nil
+    var newGitHubPullRequestsLiveFolder: (() -> Void)? = nil
+    var newGitHubIssuesLiveFolder: (() -> Void)? = nil
     let changeTheme: (() -> Void)?
     let toggleCompactMode: () -> Void
     let openSettings: () -> Void
@@ -101,7 +104,7 @@ private enum SidebarChoiceSubmenuAvailability {
     }
 }
 
-private func joinSidebarMenuSections(_ sections: [[SidebarContextMenuEntry]]) -> [SidebarContextMenuEntry] {
+func joinSidebarMenuSections(_ sections: [[SidebarContextMenuEntry]]) -> [SidebarContextMenuEntry] {
     sections
         .filter { !$0.isEmpty }
         .enumerated()
@@ -522,11 +525,26 @@ func makeSidebarShellContextMenuEntries(
     isCompactModeEnabled: Bool,
     actions: SidebarShellMenuActions
 ) -> [SidebarContextMenuEntry] {
+    let liveFolderChildren: [SidebarContextMenuEntry] = [
+        actions.newRSSLiveFolder.map {
+            .action(.init(title: "RSS Feed", systemImage: "dot.radiowaves.left.and.right", classification: .structuralMutation, onAction: $0))
+        },
+        actions.newGitHubPullRequestsLiveFolder.map {
+            .action(.init(title: "GitHub Pull Requests", systemImage: "chevron.left.forwardslash.chevron.right", classification: .structuralMutation, onAction: $0))
+        },
+        actions.newGitHubIssuesLiveFolder.map {
+            .action(.init(title: "GitHub Issues", systemImage: "exclamationmark.circle", classification: .structuralMutation, onAction: $0))
+        },
+    ].compactMap { $0 }
+
     let createSection: [SidebarContextMenuEntry] = [
         .action(.init(title: "New Tab", systemImage: "plus", classification: .presentationOnly, onAction: actions.newTab)),
         actions.newFolder.map {
             .action(.init(title: "New Folder", systemImage: "folder.badge.plus", classification: .structuralMutation, onAction: $0))
         },
+        liveFolderChildren.isEmpty
+            ? nil
+            : .submenu(title: "New Live Folder", systemImage: "sparkles", children: liveFolderChildren),
     ].compactMap { $0 }
 
     let appearanceSection: [SidebarContextMenuEntry] = [

@@ -161,6 +161,7 @@ final class TabFolderService {
                 tabManager.removeTab(tabId)
             }
 
+            tabManager.browserManager?.liveFolderManager.deleteState(forFolderIds: deletedFolderIds)
             tabManager.scheduleStructuralPersistence()
         }
     }
@@ -198,6 +199,7 @@ final class TabFolderService {
                 tabManager.markRegularTabsStructurallyDirty(for: spaceId)
             }
 
+            tabManager.browserManager?.liveFolderManager.deleteState(forFolderIds: [folderId])
             tabManager.scheduleStructuralPersistence()
         }
     }
@@ -231,6 +233,7 @@ final class TabFolderService {
     func moveTabToFolder(tab: Tab, folderId: UUID) {
         tabManager.withStructuralUpdateTransaction {
             guard let targetFolder = tabManager.folder(by: folderId) else { return }
+            guard tabManager.browserManager?.liveFolderManager.isLiveFolder(folderId) != true else { return }
 
             targetFolder.isOpen = true
             tabManager.markFoldersStructurallyDirty(for: targetFolder.spaceId)
@@ -267,6 +270,9 @@ final class TabFolderService {
         case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
             return tabManager.reorderFolderInTopLevelPinned(folder, in: toSpaceId, to: operation.toIndex)
         case (.spacePinned(let fromSpaceId), .folder(let targetFolderId)) where fromSpaceId == folder.spaceId:
+            guard tabManager.browserManager?.liveFolderManager.isLiveFolder(targetFolderId) != true else {
+                return false
+            }
             guard let targetSpaceId = tabManager.folderSpaceId(for: targetFolderId),
                   targetSpaceId == folder.spaceId else {
                 return false
@@ -277,6 +283,7 @@ final class TabFolderService {
             return moveFolder(folder, toParentFolderId: nil, in: toSpaceId, to: operation.toIndex)
         case (.folder(let sourceParentId), .folder(let targetFolderId)):
             guard folder.parentFolderId == sourceParentId,
+                  tabManager.browserManager?.liveFolderManager.isLiveFolder(targetFolderId) != true,
                   let targetSpaceId = tabManager.folderSpaceId(for: targetFolderId),
                   targetSpaceId == folder.spaceId else {
                 return false
