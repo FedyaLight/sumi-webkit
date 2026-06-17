@@ -178,6 +178,7 @@ class BrowserManager: ObservableObject {
     let protectionCoordinator: SumiProtectionCoordinator
     let extensionsModule: SumiExtensionsModule
     let userscriptsModule: SumiUserscriptsModule
+    let boostsModule: SumiBoostsModule
     var extensionSurfaceStore: BrowserExtensionSurfaceStore {
         extensionsModule.surfaceStore
     }
@@ -333,6 +334,7 @@ class BrowserManager: ObservableObject {
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
         userscriptsModule: SumiUserscriptsModule? = nil,
+        boostsModule: SumiBoostsModule? = nil,
         systemPermissionService: (any SumiSystemPermissionService)? = nil,
         permissionCoordinator: (any SumiPermissionCoordinating)? = nil,
         geolocationProvider: (any SumiGeolocationProviding)? = nil,
@@ -409,6 +411,7 @@ class BrowserManager: ObservableObject {
                 moduleRegistry: moduleRegistry,
                 context: startupModelContext
             )
+        self.boostsModule = boostsModule ?? SumiBoostsModule()
         self.startupWorkspaceTheme = StartupWorkspaceThemeResolver.resolve(
             lastWindowSessionKey: Self.lastWindowSessionKey,
             modelContext: startupModelContext
@@ -541,6 +544,7 @@ class BrowserManager: ObservableObject {
         self.downloadManager.browserManager = self
         self.extensionsModule.attach(browserManager: self)
         self.userscriptsModule.attach(browserManager: self)
+        self.boostsModule.attach(browserManager: self)
         bindTabManagerStructuralUpdates()
         self.auxiliaryWindowManager.attach(browserManager: self)
         self.glanceManager.attach(browserManager: self)

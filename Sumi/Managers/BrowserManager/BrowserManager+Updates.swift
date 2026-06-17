@@ -4,6 +4,9 @@
 //
 //
 
+import Foundation
+import WebKit
+
 enum ZoomPopoverSource {
     case toolbar
     case menu
@@ -40,7 +43,7 @@ extension BrowserManager {
         else { return }
 
         let domain = currentTab.url.host ?? currentTab.url.absoluteString
-        zoomManager.zoomIn(for: webView, domain: domain, tabId: currentTab.id)
+        applyUserZoomStep(.up, for: currentTab, webView: webView, domain: domain)
         didUpdateZoom(for: currentTab, in: windowState, source: source)
     }
 
@@ -55,7 +58,7 @@ extension BrowserManager {
         else { return }
 
         let domain = currentTab.url.host ?? currentTab.url.absoluteString
-        zoomManager.zoomOut(for: webView, domain: domain, tabId: currentTab.id)
+        applyUserZoomStep(.down, for: currentTab, webView: webView, domain: domain)
         didUpdateZoom(for: currentTab, in: windowState, source: source)
     }
 
@@ -70,7 +73,9 @@ extension BrowserManager {
         else { return }
 
         let domain = currentTab.url.host ?? currentTab.url.absoluteString
-        zoomManager.resetZoom(for: webView, domain: domain, tabId: currentTab.id)
+        let profileId = currentTab.resolveProfile()?.id ?? currentTab.profileId
+        zoomManager.saveZoomLevel(1.0, for: domain, profileId: profileId)
+        applyBoostAwareZoom(for: currentTab, webView: webView)
         didUpdateZoom(for: currentTab, in: windowState, source: source)
     }
 
@@ -82,8 +87,7 @@ extension BrowserManager {
               let webView = getWebView(for: tabId, in: windowState.id)
         else { return }
 
-        let domain = tab.url.host ?? tab.url.absoluteString
-        zoomManager.loadSavedZoom(for: webView, domain: domain, tabId: tabId)
+        applyBoostAwareZoom(for: tab, webView: webView)
         didUpdateZoom(for: tab, in: windowState, source: nil)
     }
 
@@ -113,5 +117,38 @@ extension BrowserManager {
         if let source {
             requestZoomPopover(for: tab, in: windowState, source: source)
         }
+    }
+
+    func applyBoostAwareZoom(for tab: Tab, webView: WKWebView) {
+        let domain = tab.url.host ?? tab.url.absoluteString
+        let profileId = tab.resolveProfile()?.id ?? tab.profileId
+        let savedZoom = zoomManager.getZoomLevel(for: domain, profileId: profileId)
+        let boostMultiplier = boostsModule.sizeOverride(for: tab.url, profileId: profileId)
+        let effectiveZoom = zoomManager.effectiveZoom(
+            baseZoom: savedZoom,
+            multiplier: boostMultiplier
+        )
+        zoomManager.applyTransientZoom(
+            effectiveZoom,
+            to: webView,
+            domain: domain,
+            tabId: tab.id
+        )
+    }
+
+    private func applyUserZoomStep(
+        _ direction: ZoomStepDirection,
+        for tab: Tab,
+        webView: WKWebView,
+        domain: String
+    ) {
+        let profileId = tab.resolveProfile()?.id ?? tab.profileId
+        let savedZoom = zoomManager.getZoomLevel(for: domain, profileId: profileId)
+        let nextBaseZoom = zoomManager.nextZoomLevel(
+            from: savedZoom,
+            direction: direction
+        )
+        zoomManager.saveZoomLevel(nextBaseZoom, for: domain, profileId: profileId)
+        applyBoostAwareZoom(for: tab, webView: webView)
     }
 }

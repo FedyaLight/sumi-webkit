@@ -172,6 +172,14 @@ extension Tab {
                     isEphemeral: isEphemeral
                 ) ?? []
             )
+
+            scripts.append(
+                contentsOf: browserManager?.boostsModule.normalTabUserScripts(
+                    for: targetURL,
+                    profileId: resolveProfile()?.id ?? profileId,
+                    isEphemeral: isEphemeral
+                ) ?? []
+            )
         }
 
         return scripts

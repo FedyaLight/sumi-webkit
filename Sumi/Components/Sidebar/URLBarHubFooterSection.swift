@@ -63,3 +63,55 @@ struct SumiFooterSiteSettingsButton: View {
         }
     }
 }
+
+struct SumiFooterBoostButton: View {
+    let boosts: [SumiBoost]
+    let activeBoostId: UUID?
+    let action: () -> Void
+    let createAction: () -> Void
+    let toggleAction: (SumiBoost) -> Void
+    let editAction: (SumiBoost) -> Void
+
+    @State private var isHovered = false
+
+    private var isActive: Bool {
+        activeBoostId != nil
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: isActive ? "paintbrush.pointed.fill" : "paintbrush.pointed")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isActive ? URLBarHubNativeStyle.accentBackground : URLBarHubNativeStyle.primaryText)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .background(isHovered ? URLBarHubNativeStyle.hoveredControlBackground : URLBarHubNativeStyle.controlBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help("Boosts")
+        .accessibilityLabel("Boosts")
+        .accessibilityIdentifier("urlhub-boosts-button")
+        .contextMenu {
+            Button("Create Boost", action: createAction)
+
+            if !boosts.isEmpty {
+                Divider()
+            }
+
+            ForEach(boosts) { boost in
+                Button(activeBoostId == boost.id ? "Disable \(boost.data.boostName)" : "Enable \(boost.data.boostName)") {
+                    toggleAction(boost)
+                }
+                Button("Edit \(boost.data.boostName)") {
+                    editAction(boost)
+                }
+            }
+        }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.12)) {
+                isHovered = hovering
+            }
+        }
+    }
+}

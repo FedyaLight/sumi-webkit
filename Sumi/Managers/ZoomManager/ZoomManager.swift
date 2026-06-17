@@ -81,6 +81,27 @@ class ZoomManager: ObservableObject {
         currentZoomLevel = clampedZoom
     }
 
+    func effectiveZoom(baseZoom: Double, multiplier: Double) -> Double {
+        clampZoom(baseZoom * multiplier)
+    }
+
+    func nextZoomLevel(from currentLevel: Double, direction: ZoomStepDirection) -> Double {
+        findNextZoomLevel(from: currentLevel, direction: direction)
+    }
+
+    func applyTransientZoom(
+        _ zoomLevel: Double,
+        to webView: WKWebView,
+        domain: String?,
+        tabId: UUID
+    ) {
+        let clampedZoom = clampZoom(zoomLevel)
+        webView.pageZoom = clampedZoom
+        setZoomLevel(clampedZoom, for: tabId)
+        currentZoomLevel = clampedZoom
+        currentDomain = domain
+    }
+
     /// Apply zoom to WebView with persistence
     func applyZoom(
         _ zoomLevel: Double,
@@ -160,7 +181,7 @@ class ZoomManager: ObservableObject {
     }
 
     /// Find the closest zoom preset in the specified direction
-    private func findNextZoomLevel(from currentLevel: Double, direction: ZoomDirection) -> Double {
+    private func findNextZoomLevel(from currentLevel: Double, direction: ZoomStepDirection) -> Double {
         let presets = Self.zoomPresets.sorted()
 
         switch direction {
@@ -227,7 +248,7 @@ class ZoomManager: ObservableObject {
 
 // MARK: - Supporting Types
 
-private enum ZoomDirection {
+enum ZoomStepDirection {
     case up    // Zoom in
     case down  // Zoom out
 }

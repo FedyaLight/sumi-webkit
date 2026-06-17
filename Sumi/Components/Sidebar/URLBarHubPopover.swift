@@ -109,6 +109,26 @@ struct URLBarHubPopover: View {
             || sumiScriptsEnabled
     }
 
+    private var showsBoostsSection: Bool {
+        browserManager.boostsModule.canBoost(url: currentTab?.url)
+    }
+
+    private var currentSiteBoosts: [SumiBoost] {
+        _ = refreshNonce
+        return browserManager.boostsModule.changedBoosts(
+            for: currentTab?.url,
+            profileId: activeProfile?.id
+        )
+    }
+
+    private var currentActiveBoostId: UUID? {
+        _ = refreshNonce
+        return browserManager.boostsModule.activeBoostId(
+            for: currentTab?.url,
+            profileId: activeProfile?.id
+        )
+    }
+
     private var unpinnedEnabledExtensionActions: [InstalledExtension] {
         extensionSurfaceStore.enabledExtensions
             .filter(\.hasAction)
@@ -218,6 +238,9 @@ struct URLBarHubPopover: View {
         }
         .onReceive(browserManager.permissionSiteActivityStore.objectWillChange) { _ in
             schedulePermissionsReloadAfterStoreChange()
+        }
+        .onReceive(browserManager.boostsModule.store.changesPublisher) { _ in
+            scheduleCoalescedRefresh()
         }
         .onReceive(audioStatePublisher) { _ in
             schedulePermissionsReloadAfterStoreChange()
@@ -501,6 +524,18 @@ struct URLBarHubPopover: View {
             )
             .frame(maxWidth: .infinity, alignment: .leading)
 
+            if showsBoostsSection {
+                SumiFooterBoostButton(
+                    boosts: currentSiteBoosts,
+                    activeBoostId: currentActiveBoostId,
+                    action: openBoostFromFooter,
+                    createAction: createBoost,
+                    toggleAction: toggleBoost,
+                    editAction: editBoost
+                )
+                .frame(width: 42)
+            }
+
             SumiFooterSiteSettingsButton(
                 siteSettingsAction: openSiteSettings,
                 clearSiteDataAction: openSiteDataDetails,
@@ -710,6 +745,49 @@ struct URLBarHubPopover: View {
             afterChangingPolicyFor: currentTab.url
         )
         scheduleCoalescedRefresh()
+    }
+
+    private func createBoost() {
+        guard let currentTab else { return }
+        do {
+            try browserManager.boostsModule.createBoostAndOpenEditor(
+                tab: currentTab,
+                profile: activeProfile,
+                windowState: windowState
+            )
+            onClose()
+        } catch {
+            bookmarkErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func toggleBoost(_ boost: SumiBoost) {
+        browserManager.boostsModule.toggleActiveBoost(
+            boost,
+            isEphemeral: activeProfile?.isEphemeral == true
+        )
+        scheduleCoalescedRefresh()
+    }
+
+    private func editBoost(_ boost: SumiBoost) {
+        guard let currentTab else { return }
+        browserManager.boostsModule.presentEditor(
+            boost: boost,
+            tab: currentTab,
+            profile: activeProfile,
+            windowState: windowState
+        )
+        onClose()
+    }
+
+    private func openBoostFromFooter() {
+        if let activeBoost = currentSiteBoosts.first(where: { $0.id == currentActiveBoostId }) {
+            editBoost(activeBoost)
+        } else if let boost = currentSiteBoosts.first {
+            editBoost(boost)
+        } else {
+            createBoost()
+        }
     }
 
     private func shareCurrentPage() {
