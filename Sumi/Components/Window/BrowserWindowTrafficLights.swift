@@ -170,7 +170,6 @@ private struct BrowserWindowStandardTrafficLightCluster: NSViewRepresentable {
 
     func makeNSView(context: Context) -> BrowserWindowStandardTrafficLightClusterView {
         let view = BrowserWindowStandardTrafficLightClusterView()
-        view.configure()
         view.update(actionProvider: actionProvider, isVisible: isVisible)
         return view
     }
@@ -187,21 +186,19 @@ private struct BrowserWindowStandardTrafficLightCluster: NSViewRepresentable {
     }
 }
 
+// Hosts the window's LIVE standard window buttons (close, minimize, zoom) repositioned from the
+// theme frame into the sidebar header. Because these are the real instances returned by
+// `window.standardWindowButton(_:)` (per Apple's documentation: "the window button of a given
+// kind in the window's view hierarchy"), AppKit keeps driving their active/inactive dimming and
+// hover glyphs. Reparenting via `addSubview` implicitly detaches a view from its previous parent
+// (documented NSView behavior), so no explicit detach call is needed. All three buttons therefore
+// behave identically — close, minimize and zoom are no longer asymmetric.
 @MainActor
 private final class BrowserWindowStandardTrafficLightClusterView: NSView {
     private var buttonsByAction: [BrowserWindowTrafficLightAction: NSButton] = [:]
-    private let glyphOverlayView = BrowserWindowTrafficLightRolloverGlyphOverlayView()
     private var actionProvider: BrowserWindowTrafficLightActionProvider?
-    private var rolloverTrackingArea: NSTrackingArea?
-    private var pressEventMonitor: Any?
-    private var isRolloverHighlighted = false
-    private var pressedAction: BrowserWindowTrafficLightAction? {
-        didSet {
-            guard pressedAction != oldValue else { return }
-            updateGlyphOverlayState()
-        }
-    }
     private var isClusterVisible = false
+    private var reclamationObservers: [NSObjectProtocol] = []
 
     override var isOpaque: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -216,92 +213,128 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
     }
 
     isolated deinit {
-        removePressEventMonitor()
+        if reclamationObservers.isEmpty == false {
+            let center = NotificationCenter.default
+            for observer in reclamationObservers {
+                center.removeObserver(observer)
+            }
+            reclamationObservers.removeAll()
+        }
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
 
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        refreshRolloverTrackingArea()
-    }
-
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        installReclamationObserversIfNeeded()
+        configure()
         updateButtonStates()
-        syncPressEventMonitor()
-        refreshRolloverTrackingArea()
+    }
+
+    // AppKit's theme frame reclaims the live standardWindowButton instances on certain window
+    // transitions (sheet attachment, key become/resign) and repositions them back into the
+    // titlebar. We cannot prevent that, so we reactively undo it: on each such transition we check
+    // whether the buttons are still descendants of this cluster and, if not, re-parent them back
+    // here. This keeps the buttons pinned to the sidebar header even while a sheet (e.g. the Cmd+Q
+    // confirmation) is attached. `didEndSheet` covers the documented re-grab case; the key
+    // notifications cover activation transitions. Main/occlusion overlap with key for a browser
+    // window and were trimmed to avoid redundant fires.
+    private func installReclamationObserversIfNeeded() {
+        guard reclamationObservers.isEmpty, let window else { return }
+        let center = NotificationCenter.default
+        let handler: (Notification) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.reclaimButtonsIfNeeded()
+            }
+        }
+        for name in [
+            NSWindow.didResignKeyNotification,
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.didEndSheetNotification,
+        ] {
+            reclamationObservers.append(
+                center.addObserver(forName: name, object: window, queue: .main, using: handler)
+            )
+        }
+    }
+
+    private func reclaimButtonsIfNeeded() {
+        guard buttonsByAction.isEmpty == false,
+              buttonsByAction.values.contains(where: { $0.isDescendant(of: self) == false })
+        else { return }
+        configure()
+        needsLayout = true
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard isClusterVisible,
-              isHidden == false,
-              alphaValue > 0
-        else { return nil }
+        guard isClusterVisible, isHidden == false else { return nil }
 
         let hitView = super.hitTest(point)
         return hitView === self ? nil : hitView
     }
 
     func configure() {
-        guard buttonsByAction.isEmpty else {
-            updateButtonStates()
+        // Re-fetch the live buttons whenever the hosting window changes or AppKit reclaims them.
+        // `standardWindowButton` returns the window's own button instance; `addSubview` reparents
+        // it here implicitly, and is skipped when the button is already in the cluster to avoid
+        // redundant will/didAddSubview churn.
+        guard let window else {
+            buttonsByAction.removeAll()
             return
         }
 
+        var didReparent = false
         for action in BrowserWindowTrafficLightAction.allCases {
-            guard let button = NSWindow.standardWindowButton(
-                action.buttonType,
-                for: SumiBrowserChromeConfiguration.requiredStyleMask
-            ) else { continue }
-
-            button.identifier = NSUserInterfaceItemIdentifier(action.accessibilityIdentifier)
-            button.setAccessibilityIdentifier(action.accessibilityIdentifier)
-            button.setAccessibilityLabel(action.accessibilityLabel)
-            button.translatesAutoresizingMaskIntoConstraints = true
-            button.autoresizingMask = []
-            addSubview(button)
+            guard let button = window.standardWindowButton(action.buttonType) else { continue }
             buttonsByAction[action] = button
+            applyIdentity(to: button, for: action)
+            if button.isDescendant(of: self) == false {
+                button.translatesAutoresizingMaskIntoConstraints = true
+                button.autoresizingMask = []
+                addSubview(button)
+                didReparent = true
+            }
         }
 
-        glyphOverlayView.translatesAutoresizingMaskIntoConstraints = true
-        glyphOverlayView.autoresizingMask = [.width, .height]
-        glyphOverlayView.setAccessibilityElement(false)
-        addSubview(glyphOverlayView)
+        if didReparent {
+            needsLayout = true
+        }
+    }
 
-        updateButtonStates()
+    // The identifier is constant for a given action, so it is set once at configure time. The
+    // accessibility label is handled in updateButtonStates because it can flip between
+    // "Enter"/"Exit Full Screen" based on the window's fullScreen style-mask bit.
+    private func applyIdentity(to button: NSButton, for action: BrowserWindowTrafficLightAction) {
+        button.identifier = NSUserInterfaceItemIdentifier(action.accessibilityIdentifier)
+        button.setAccessibilityIdentifier(action.accessibilityIdentifier)
     }
 
     func clearWindowActionTargets() {
+        // On dismantle we only stop observing and mark invisible. We deliberately do NOT nil the
+        // buttons' target/action: these are the window's live instances, which AppKit may reuse
+        // (e.g. when the titlebar buttons resurface during fullscreen). Stripping their wiring
+        // would leave dead buttons until the cluster is recreated. deinit owns observer removal.
         isClusterVisible = false
-        pressedAction = nil
-        setRolloverHighlighted(false)
-        refreshRolloverTrackingArea()
-        syncPressEventMonitor()
-        updateButtonStates()
-        for button in buttonsByAction.values {
-            button.target = nil
-            button.action = nil
+        if reclamationObservers.isEmpty == false {
+            let center = NotificationCenter.default
+            for observer in reclamationObservers {
+                center.removeObserver(observer)
+            }
+            reclamationObservers.removeAll()
         }
     }
 
     func update(actionProvider: BrowserWindowTrafficLightActionProvider, isVisible: Bool) {
         self.actionProvider = actionProvider
         isHidden = !isVisible
-        alphaValue = isVisible ? 1 : 0
         setAccessibilityElement(isVisible)
-        let visibilityChanged = isClusterVisible != isVisible
         isClusterVisible = isVisible
+        // Re-grab in case AppKit reclaimed the live instances (sheet/key transition) since the
+        // last update; configure() is cheap when the buttons are already in the cluster.
+        configure()
         updateButtonStates()
-        syncPressEventMonitor()
-        if visibilityChanged {
-            refreshRolloverTrackingArea()
-        } else {
-            syncRolloverHighlightWithCurrentMouseLocation()
-        }
-
         needsLayout = true
     }
 
@@ -314,20 +347,6 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
             let y = max((bounds.height - size.height) / 2, 0)
             button.frame = NSRect(origin: NSPoint(x: x, y: y), size: size)
         }
-        syncRolloverHighlightWithCurrentMouseLocation()
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        setRolloverHighlighted(true)
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        setRolloverHighlighted(bounds.contains(convert(event.locationInWindow, from: nil)))
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        pressedAction = nil
-        setRolloverHighlighted(false)
     }
 
     private func updateButtonStates() {
@@ -338,22 +357,16 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
 
             button.target = targetWindow
             button.action = action.selector
-            button.identifier = NSUserInterfaceItemIdentifier(action.accessibilityIdentifier)
-            button.setAccessibilityIdentifier(action.accessibilityIdentifier)
             button.isHidden = !isClusterVisible
             button.alphaValue = isClusterVisible ? 1 : 0
             button.isEnabled = isClusterVisible
                 && (actionProvider?.isEnabled(action, preferred: window) ?? false)
-            button.isHighlighted = false
             button.setAccessibilityLabel(
                 actionProvider?.accessibilityLabel(for: action, preferred: window)
                     ?? action.accessibilityLabel
             )
-            button.setAccessibilityElement(isClusterVisible)
             button.setAccessibilityHidden(!isClusterVisible)
         }
-
-        updateGlyphOverlayState()
     }
 
     private static func buttonSize(for button: NSButton) -> NSSize {
@@ -365,251 +378,6 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
             )
         }
         return currentSize
-    }
-
-    private func refreshRolloverTrackingArea() {
-        if let rolloverTrackingArea {
-            removeTrackingArea(rolloverTrackingArea)
-            self.rolloverTrackingArea = nil
-        }
-
-        guard isClusterVisible, window != nil else {
-            setRolloverHighlighted(false)
-            return
-        }
-
-        let trackingArea = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .mouseMoved, .activeInActiveApp, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(trackingArea)
-        rolloverTrackingArea = trackingArea
-        syncRolloverHighlightWithCurrentMouseLocation()
-    }
-
-    private func syncPressEventMonitor() {
-        if isClusterVisible, window != nil {
-            installPressEventMonitorIfNeeded()
-        } else {
-            pressedAction = nil
-            removePressEventMonitor()
-        }
-    }
-
-    private func installPressEventMonitorIfNeeded() {
-        guard pressEventMonitor == nil else { return }
-
-        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
-        pressEventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            MainActor.assumeIsolated {
-                self?.handlePressEvent(event)
-            }
-            return event
-        }
-    }
-
-    private func removePressEventMonitor() {
-        guard let pressEventMonitor else { return }
-        NSEvent.removeMonitor(pressEventMonitor)
-        self.pressEventMonitor = nil
-    }
-
-    private func handlePressEvent(_ event: NSEvent) {
-        guard event.window === window else {
-            if event.type == .leftMouseUp {
-                pressedAction = nil
-            }
-            return
-        }
-
-        let localPoint = convert(event.locationInWindow, from: nil)
-        switch event.type {
-        case .leftMouseDown:
-            pressedAction = action(at: localPoint)
-            setRolloverHighlighted(bounds.contains(localPoint))
-        case .leftMouseDragged:
-            guard pressedAction != nil else { return }
-            setRolloverHighlighted(bounds.contains(localPoint))
-        case .leftMouseUp:
-            pressedAction = nil
-            setRolloverHighlighted(bounds.contains(localPoint))
-        default:
-            break
-        }
-    }
-
-    func syncRolloverHighlightWithCurrentMouseLocation() {
-        guard isClusterVisible,
-              isHidden == false,
-              alphaValue > 0,
-              let window
-        else {
-            setRolloverHighlighted(false)
-            return
-        }
-
-        let localPoint = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        setRolloverHighlighted(bounds.contains(localPoint))
-    }
-
-    private func setRolloverHighlighted(_ isHighlighted: Bool) {
-        isRolloverHighlighted = isHighlighted
-        updateGlyphOverlayState()
-    }
-
-    private func updateGlyphOverlayState() {
-        glyphOverlayView.frame = bounds
-        glyphOverlayView.buttonFramesByAction = buttonsByAction.mapValues(\.frame)
-        let shouldShowGlyphs = isRolloverHighlighted
-            && isClusterVisible
-        glyphOverlayView.isClusterHovered = shouldShowGlyphs
-        var enabledActions = Set(BrowserWindowTrafficLightAction.allCases.filter { action in
-            buttonsByAction[action]?.isEnabled == true
-        })
-        if let pressedAction {
-            enabledActions.remove(pressedAction)
-        }
-        glyphOverlayView.enabledActions = enabledActions
-        glyphOverlayView.isHidden = !shouldShowGlyphs
-        glyphOverlayView.needsDisplay = true
-    }
-
-    private func action(at point: NSPoint) -> BrowserWindowTrafficLightAction? {
-        for action in BrowserWindowTrafficLightAction.allCases {
-            guard buttonsByAction[action]?.frame.contains(point) == true else { continue }
-            return action
-        }
-        return nil
-    }
-}
-
-@MainActor
-private final class BrowserWindowTrafficLightRolloverGlyphOverlayView: NSView {
-    var isClusterHovered = false {
-        didSet {
-            guard isClusterHovered != oldValue else { return }
-            needsDisplay = true
-        }
-    }
-    var buttonFramesByAction: [BrowserWindowTrafficLightAction: NSRect] = [:] {
-        didSet {
-            needsDisplay = true
-        }
-    }
-    var enabledActions: Set<BrowserWindowTrafficLightAction> = [] {
-        didSet {
-            needsDisplay = true
-        }
-    }
-
-    override var isOpaque: Bool { false }
-    override var mouseDownCanMoveWindow: Bool { false }
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-
-        context.saveGState()
-        defer { context.restoreGState() }
-        context.clear(bounds)
-
-        guard isClusterHovered, enabledActions.isEmpty == false else { return }
-
-        for action in BrowserWindowTrafficLightAction.allCases {
-            guard enabledActions.contains(action),
-                  let frame = buttonFramesByAction[action]
-            else { continue }
-
-            drawGlyph(action, in: frame, context: context)
-        }
-    }
-
-    private func drawGlyph(
-        _ action: BrowserWindowTrafficLightAction,
-        in frame: NSRect,
-        context: CGContext
-    ) {
-        let rect = frame.insetBy(
-            dx: max(0, (frame.width - BrowserWindowTrafficLightMetrics.buttonDiameter) / 2),
-            dy: max(0, (frame.height - BrowserWindowTrafficLightMetrics.buttonDiameter) / 2)
-        )
-
-        context.setStrokeColor(glyphColor(for: action).cgColor)
-        context.setFillColor(glyphColor(for: action).cgColor)
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-
-        switch action {
-        case .close:
-            context.setLineWidth(max(1.1, rect.width * 0.11))
-            let inset = rect.width * 0.32
-            context.move(to: CGPoint(x: rect.minX + inset, y: rect.minY + inset))
-            context.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - inset))
-            context.move(to: CGPoint(x: rect.minX + inset, y: rect.maxY - inset))
-            context.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY + inset))
-            context.strokePath()
-
-        case .minimize:
-            context.setLineWidth(max(1.2, rect.width * 0.11))
-            let xInset = rect.width * 0.28
-            context.move(to: CGPoint(x: rect.minX + xInset, y: rect.midY))
-            context.addLine(to: CGPoint(x: rect.maxX - xInset, y: rect.midY))
-            context.strokePath()
-
-        case .zoom:
-            drawZoomGlyph(in: rect, context: context)
-        }
-    }
-
-    private func drawZoomGlyph(in rect: NSRect, context: CGContext) {
-        let referenceSize: CGFloat = 85.4
-        let scale = min(rect.width, rect.height) / referenceSize
-        let origin = CGPoint(
-            x: rect.midX - referenceSize * scale / 2,
-            y: rect.midY - referenceSize * scale / 2
-        )
-
-        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: origin.x + x * scale, y: origin.y + y * scale)
-        }
-
-        context.move(to: point(31.2, 20.8))
-        context.addLine(to: point(57.9, 20.8))
-        context.addCurve(
-            to: point(64.4, 27.3),
-            control1: point(61.5, 20.8),
-            control2: point(64.4, 23.7)
-        )
-        context.addLine(to: point(64.4, 54.0))
-        context.closePath()
-        context.fillPath()
-
-        context.move(to: point(54.4, 64.5))
-        context.addLine(to: point(27.6, 64.5))
-        context.addCurve(
-            to: point(21.1, 58.0),
-            control1: point(24.0, 64.5),
-            control2: point(21.1, 61.6)
-        )
-        context.addLine(to: point(21.1, 31.2))
-        context.closePath()
-        context.fillPath()
-    }
-
-    private func glyphColor(for action: BrowserWindowTrafficLightAction) -> NSColor {
-        switch action {
-        case .close:
-            return NSColor(calibratedRed: 0.43, green: 0.03, blue: 0.01, alpha: 0.86)
-        case .minimize:
-            return NSColor(calibratedRed: 0.50, green: 0.33, blue: 0.00, alpha: 0.86)
-        case .zoom:
-            return NSColor(calibratedRed: 0.16, green: 0.38, blue: 0.09, alpha: 0.86)
-        }
     }
 }
 
