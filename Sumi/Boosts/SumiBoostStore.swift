@@ -53,8 +53,13 @@ final class SumiBoostStore: ObservableObject {
     private var entries: [SumiBoostDomainKey: SumiBoostDomainEntry] = [:]
     private var didLoad = false
     private let changesSubject = PassthroughSubject<Void, Never>()
-
-    @Published private(set) var revision: Int = 0
+    // Debounced persistence: editor edits (dot drag, sliders) mutate the store
+    // many times per second; writing the entire boosts.json on every tick is
+    // wasteful. A pending write is scheduled and re-scheduled, coalescing a
+    // burst of edits into a single disk write. Lifecycle events (create,
+    // delete, import, discard, flush) bypass the debounce and write now.
+    private var pendingWriteTask: Task<Void, Never>?
+    private static let writeDebounceNanoseconds: UInt64 = 300_000_000
 
     var changesPublisher: AnyPublisher<Void, Never> {
         changesSubject.eraseToAnyPublisher()
@@ -129,7 +134,7 @@ final class SumiBoostStore: ObservableObject {
         entry.boosts.insert(boost, at: 0)
         entry.activeBoostId = boost.id
         entries[key] = entry
-        persistIfNeeded(isEphemeral: entry.isEphemeral)
+        persistImmediately(isEphemeral: entry.isEphemeral)
         notifyChanged()
         return boost
     }
@@ -215,7 +220,7 @@ final class SumiBoostStore: ObservableObject {
             entries[key] = entry
         }
         removeCSSFile(for: boost.id)
-        persistIfNeeded(isEphemeral: entry.isEphemeral)
+        persistImmediately(isEphemeral: entry.isEphemeral)
         notifyChanged()
     }
 
@@ -269,7 +274,7 @@ final class SumiBoostStore: ObservableObject {
         entry.boosts.insert(boost, at: 0)
         entry.activeBoostId = boost.id
         entries[key] = entry
-        persistIfNeeded(isEphemeral: entry.isEphemeral)
+        persistImmediately(isEphemeral: entry.isEphemeral)
         notifyChanged()
         return boost
     }
@@ -324,9 +329,43 @@ final class SumiBoostStore: ObservableObject {
         )
     }
 
+    /// Schedules a debounced disk write. Coalesces a burst of editor edits
+    /// (dot drag, sliders) into a single `persist()` so the main thread isn't
+    /// blocked re-encoding and atomically rewriting boosts.json on every tick.
     private func persistIfNeeded(isEphemeral: Bool) {
         guard !isEphemeral else { return }
+        schedulePersist()
+    }
+
+    /// Writes immediately, cancelling any debounced write. Call from lifecycle
+    /// events (create/delete/import/discard) and when the editor closes, so a
+    /// draft or final state is durable without waiting for the debounce.
+    private func persistImmediately(isEphemeral: Bool) {
+        guard !isEphemeral else { return }
+        pendingWriteTask?.cancel()
+        pendingWriteTask = nil
         persist()
+    }
+
+    /// Public flush hook for the module: ensures any debounced write lands on
+    /// disk now (used when the editor closes).
+    func flushPendingWrites() {
+        guard pendingWriteTask != nil else { return }
+        pendingWriteTask?.cancel()
+        pendingWriteTask = nil
+        persist()
+    }
+
+    private func schedulePersist() {
+        pendingWriteTask?.cancel()
+        pendingWriteTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.writeDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.pendingWriteTask = nil
+                self?.persist()
+            }
+        }
     }
 
     private func persist() {
@@ -402,7 +441,6 @@ final class SumiBoostStore: ObservableObject {
     }
 
     private func notifyChanged() {
-        revision += 1
         changesSubject.send(())
     }
 

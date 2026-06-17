@@ -59,11 +59,15 @@ enum SumiBoostCSSBuilder {
         var filters: [String] = []
 
         if data.enableColorBoost {
-            let hue = normalizedDegrees(data.dotAngleDeg)
+            // The page accent is conveyed by the background color set in
+            // contentCSS (the secondary dot color). We deliberately do NOT
+            // apply a hue-rotate filter here: a global hue-rotate would also
+            // shift the background and break the match between the editor
+            // dots and the actual page colors. The advanced sliders only tune
+            // luminance/saturation/contrast on top of the picked hue.
             let brightness = clamped(0.7 + data.brightness * 0.6, lower: 0.4, upper: 1.6)
             let saturation = clamped(data.saturation * 2, lower: 0, upper: 2.5)
             let contrast = clamped(0.5 + data.contrast, lower: 0.4, upper: 2.0)
-            filters.append("hue-rotate(\(format(hue))deg)")
             filters.append("brightness(\(format(brightness)))")
             filters.append("saturate(\(format(saturation)))")
             filters.append("contrast(\(format(contrast)))")

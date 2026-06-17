@@ -155,6 +155,12 @@ final class SumiBoostEditorSession: ObservableObject {
     private let onClose: @MainActor () -> Void
     private var didDelete = false
 
+    /// Full list of available font families, captured once at session build.
+    /// This is a (relatively) expensive system call + sort; caching it avoids
+    /// re-enumerating all installed fonts on every SwiftUI body evaluation
+    /// (which happens on every editor tick — dot drag, slider, etc.).
+    let fontFamilies: [String]
+
     init(
         boost: SumiBoost,
         tab: Tab,
@@ -169,6 +175,7 @@ final class SumiBoostEditorSession: ObservableObject {
         self.windowState = windowState
         self.module = module
         self.onClose = onClose
+        self.fontFamilies = [""] + NSFontManager.shared.availableFontFamilies.sorted()
     }
 
     var isEphemeral: Bool {
@@ -192,10 +199,6 @@ final class SumiBoostEditorSession: ObservableObject {
         case .lowercase: return "Lower"
         case .capitalize: return "Title"
         }
-    }
-
-    var fontFamilies: [String] {
-        [""] + NSFontManager.shared.availableFontFamilies.sorted()
     }
 
     var commonFontFamilies: [String] {
@@ -241,7 +244,15 @@ final class SumiBoostEditorSession: ObservableObject {
         module?.stopZapSelection()
         isZapActive = false
         guard !didDelete else { return }
-        module?.discardUnchangedDraft(boost)
+        // If the user made changes, the boost is persisted and active; we must
+        // re-sync the atDocumentStart WKUserScript so the final state takes
+        // effect on the next navigation, and flush any debounced disk write.
+        // If nothing changed, discard the ephemeral draft instead.
+        if boost.data.changeWasMade {
+            module?.reinstallUserScriptsAfterEdit(profileId: boost.profileId, host: boost.host)
+        } else {
+            module?.discardUnchangedDraft(boost)
+        }
     }
 
     func dismiss() {
@@ -346,7 +357,9 @@ final class SumiBoostEditorSession: ObservableObject {
         let sizes: [Double] = [1.0, 1.1, 1.25, 1.5, 0.9]
         let current = boost.data.sizeOverride
         let index = sizes.firstIndex { abs($0 - current) < 0.01 } ?? 0
-        update { data in
+        // Only the page zoom changes, so use the cheap zoom-only refresh path
+        // and skip the CSS injection that applyLiveBoostState would otherwise do.
+        update(refreshPath: .zoomOnly) { data in
             data.sizeOverride = sizes[(index + 1) % sizes.count]
         }
     }
@@ -492,11 +505,15 @@ final class SumiBoostEditorSession: ObservableObject {
         module?.browserManager?.openWebInspector()
     }
 
-    private func update(_ mutate: (inout SumiBoostData) -> Void) {
+    private func update(
+        refreshPath: SumiBoostsModule.RefreshPath = .liveState,
+        _ mutate: (inout SumiBoostData) -> Void
+    ) {
         guard let updated = module?.updateBoost(
             boost,
             isEphemeral: isEphemeral,
             markChanged: true,
+            refreshPath: refreshPath,
             mutate: mutate
         ) else {
             return
@@ -555,6 +572,7 @@ private struct SumiBoostEditorView: View {
     @ObservedObject var session: SumiBoostEditorSession
     @Environment(\.colorScheme) private var colorScheme
     @State private var navigationDirection: NavigationDirection = .forward
+    @State private var isBoostMenuPresented = false
 
     private enum NavigationDirection {
         case forward
@@ -657,28 +675,40 @@ private struct SumiBoostEditorView: View {
 
             SumiBoostHeaderDragSpacer()
 
-            Menu {
-                Button("Rename Boost", action: session.promptRename)
-                Button("Shuffle Boost", action: session.shuffleBoost)
-                Button("Reset All Edits", action: session.reset)
-                Divider()
-                Button("Import Boost...", action: session.importJSON)
-                Button("Export Boost...", action: session.exportJSON)
-                Divider()
-                Button("Delete Boost", role: .destructive, action: session.delete)
+            // The boost name. In the Zen reference this is a plain <p> text
+            // element with a small down-arrow background glyph that opens a
+            // separate popup on click. A SwiftUI Menu with a custom label
+            // truncates to "…" here, so we render plain text + a chevron and
+            // surface the actions via a popover instead.
+            //
+            // fixedSize + layoutPriority: the two drag spacers flanking this
+            // button use maxWidth: .infinity and would otherwise starve the
+            // label of width, truncating "My Boost" to "…". fixedSize lets the
+            // button claim its ideal content width; layoutPriority(1) makes
+            // the spacers absorb any shortfall rather than the name.
+            Button {
+                isBoostMenuPresented.toggle()
             } label: {
-                Text(session.boost.data.boostName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .foregroundStyle(SumiBoostEditorStyle.primaryText(for: colorScheme))
-                    .frame(maxWidth: 122)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 4)
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                HStack(spacing: 3) {
+                    Text(session.boost.data.boostName.isEmpty ? "My Boost" : session.boost.data.boostName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .foregroundStyle(SumiBoostEditorStyle.primaryText(for: colorScheme))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(SumiBoostEditorStyle.secondaryText(for: colorScheme))
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .menuStyle(.borderlessButton)
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
+            .popover(isPresented: $isBoostMenuPresented, arrowEdge: .bottom) {
+                SumiBoostHeaderMenu(session: session, isPresented: $isBoostMenuPresented)
+            }
 
             SumiBoostHeaderDragSpacer()
 
@@ -876,6 +906,65 @@ private struct SumiBoostHeaderDragSpacer: View {
     }
 }
 
+private struct SumiBoostHeaderMenu: View {
+    @ObservedObject var session: SumiBoostEditorSession
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            menuButton("Rename Boost") {
+                isPresented = false
+                session.promptRename()
+            }
+            menuButton("Shuffle Boost") {
+                isPresented = false
+                session.shuffleBoost()
+            }
+            menuButton("Reset All Edits") {
+                isPresented = false
+                session.reset()
+            }
+
+            Divider().padding(.vertical, 4)
+
+            menuButton("Import Boost...") {
+                isPresented = false
+                session.importJSON()
+            }
+            menuButton("Export Boost...") {
+                isPresented = false
+                session.exportJSON()
+            }
+
+            Divider().padding(.vertical, 4)
+
+            menuButton("Delete Boost", role: .destructive) {
+                isPresented = false
+                session.delete()
+            }
+        }
+        .padding(.vertical, 6)
+        .frame(width: 200)
+    }
+
+    @ViewBuilder
+    private func menuButton(
+        _ title: String,
+        role: ButtonRole? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: action) {
+            Text(title)
+                .font(.system(size: 13))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct SumiBoostPanelDragRegion: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         _ = context
@@ -897,15 +986,22 @@ private final class SumiBoostPanelDragView: NSView {
 }
 
 private enum SumiBoostColorPreview {
+    /// Mirrors the Zen reference editor (ZenBoostsEditor.mjs `updateDot`):
+    /// the dots visualize the *input* hue + saturation picked on the wheel
+    /// (saturation comes from the radial distance), with fixed lightness.
+    /// They are not a literal preview of the page filter; the advanced
+    /// brightness/contrast/saturation sliders drive the page filter on top.
     static func primaryDotColor(for data: SumiBoostData) -> Color {
         hslColor(
             hueDegrees: data.dotAngleDeg,
-            saturation: clamped(data.saturation * 2, lower: 0.05, upper: 1),
-            lightness: clamped(0.52 + (data.brightness - 0.5) * 0.24, lower: 0.32, upper: 0.72)
+            saturation: clamped(data.dotDistance, lower: 0.05, upper: 1),
+            lightness: 0.55
         )
     }
 
     static func backgroundDotColor(for data: SumiBoostData) -> Color {
+        // Same hue/saturation formula the CSS builder uses for the page
+        // background, so the secondary dot tells the truth about the bg color.
         hslColor(
             hueDegrees: data.dotAngleDeg + data.secondaryDotAngleDegDelta,
             saturation: clamped(data.dotDistance, lower: 0.05, upper: 1),
@@ -1044,9 +1140,9 @@ private struct SumiBoostColorCanvas: View {
                 Button(action: session.toggleMonochromeMode) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(session.isMonochromeMode ? .white : SumiBoostEditorStyle.primaryText(for: colorScheme))
+                        .foregroundStyle(session.isMonochromeMode ? monochromeIconForeground : SumiBoostEditorStyle.primaryText(for: colorScheme))
                         .frame(width: 24, height: 24)
-                        .background(session.isMonochromeMode ? SumiBoostEditorStyle.primaryText(for: colorScheme) : Color.white)
+                        .background(monochromeButtonBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                         .shadow(color: .black.opacity(0.08), radius: 3, y: 2)
                 }
@@ -1067,6 +1163,23 @@ private struct SumiBoostColorCanvas: View {
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .gesture(dotDrag(in: proxy, setter: session.setPrimaryDot))
         }
+    }
+
+    /// Monochrome (sparkles) toggle button styling. Mirrors the Zen
+    /// magic-theme button (`light-dark(white, #3a3a3a)` inactive, inverted when
+    /// active) so the icon is always legible against its background in both
+    /// light and dark schemes — never white-on-white.
+    private var monochromeButtonBackground: Color {
+        if session.isMonochromeMode {
+            return colorScheme == .dark ? Color.white : Color(hex: "#3a3a3a")
+        }
+        return colorScheme == .dark ? Color(hex: "#3a3a3a") : Color.white
+    }
+
+    private var monochromeIconForeground: Color {
+        // When active the background is inverted, so the icon takes the
+        // opposite tone to stay readable.
+        colorScheme == .dark ? Color(hex: "#3a3a3a") : Color.white
     }
 
     private func point(for dotPosition: SumiBoostDotPosition, in size: CGSize) -> CGPoint {

@@ -11,6 +11,16 @@ final class SumiBoostsModule: ObservableObject {
     private let editorPresenter = SumiBoostEditorPanelController()
     private var activeZapSession: SumiBoostZapSession?
 
+    /// Selects how aggressively a boost mutation is propagated to live pages.
+    enum RefreshPath {
+        /// Idempotent `<style>` upsert + zoom reapply via `evaluateJavaScript`.
+        /// Use for any edit that changes the boost's *contents*.
+        case liveState
+        /// Just reapply the boost-derived page zoom. Use when only `sizeOverride`
+        /// changed, so the CSS payload isn't re-shipped to the page.
+        case zoomOnly
+    }
+
     init(store: SumiBoostStore = .shared) {
         self.store = store
     }
@@ -61,7 +71,9 @@ final class SumiBoostsModule: ObservableObject {
             profileId: profile?.id,
             isEphemeral: profile?.isEphemeral == true
         )
-        refreshTabs(profileId: boost.profileId, host: boost.host)
+        // A new active draft may need to take effect on the next navigation,
+        // so reinstall the managed user-script set on matching tabs.
+        reinstallUserScripts(profileId: boost.profileId, host: boost.host)
         presentEditor(
             boost: boost,
             tab: tab,
@@ -91,6 +103,7 @@ final class SumiBoostsModule: ObservableObject {
         _ boost: SumiBoost,
         isEphemeral: Bool,
         markChanged: Bool = true,
+        refreshPath: RefreshPath = .liveState,
         mutate: (inout SumiBoostData) -> Void
     ) -> SumiBoost? {
         do {
@@ -102,7 +115,18 @@ final class SumiBoostsModule: ObservableObject {
                 markChanged: markChanged,
                 mutate: mutate
             )
-            refreshTabs(profileId: updated.profileId, host: updated.host)
+            // Content edits only need a live page update: the existing
+            // atDocumentStart WKUserScript does NOT re-run on the current
+            // document, so rebuilding/reinstalling the managed-script set
+            // would be wasted work. The evaluateJavaScript upsert below is
+            // what actually refreshes the visible page. The WKUserScript is
+            // re-synced lazily when the editor closes (reinstallUserScripts).
+            switch refreshPath {
+            case .liveState:
+                refreshLiveBoostState(profileId: updated.profileId, host: updated.host)
+            case .zoomOnly:
+                refreshBoostZoom(profileId: updated.profileId, host: updated.host)
+            }
             return updated
         } catch {
             RuntimeDiagnostics.debug(
@@ -118,7 +142,9 @@ final class SumiBoostsModule: ObservableObject {
         isEphemeral: Bool
     ) {
         store.toggleActiveBoost(boost, isEphemeral: isEphemeral)
-        refreshTabs(profileId: boost.profileId, host: boost.host)
+        // The *active* boost set changed, so the WKUserScript that runs on
+        // the next navigation must be reinstalled for every matching tab.
+        reinstallUserScripts(profileId: boost.profileId, host: boost.host)
     }
 
     func deleteBoost(
@@ -126,12 +152,12 @@ final class SumiBoostsModule: ObservableObject {
         isEphemeral: Bool
     ) {
         store.deleteBoost(boost, isEphemeral: isEphemeral)
-        refreshTabs(profileId: boost.profileId, host: boost.host)
+        reinstallUserScripts(profileId: boost.profileId, host: boost.host)
     }
 
     func discardUnchangedDraft(_ boost: SumiBoost) {
         store.discardUnchangedDraft(boost)
-        refreshTabs(profileId: boost.profileId, host: boost.host)
+        reinstallUserScripts(profileId: boost.profileId, host: boost.host)
     }
 
     @discardableResult
@@ -147,7 +173,8 @@ final class SumiBoostsModule: ObservableObject {
             profileId: resolvedProfile?.id,
             isEphemeral: resolvedProfile?.isEphemeral == true
         )
-        refreshTabs(profileId: boost.profileId, host: boost.host)
+        // Import replaces/activates a boost, changing the active set → reinstall.
+        reinstallUserScripts(profileId: boost.profileId, host: boost.host)
         return boost
     }
 
@@ -194,14 +221,53 @@ final class SumiBoostsModule: ObservableObject {
         webView.evaluateJavaScript(script, completionHandler: nil)
     }
 
-    func refreshTabs(profileId: UUID, host: String) {
+    /// Cheap live update for the current document: idempotent `<style>`
+    /// upsert via `evaluateJavaScript` + zoom reapply. Called on every content
+    /// edit (dot drag, sliders, font, case, custom CSS, zap selectors). Does
+    /// NOT touch the WKUserScript set — `atDocumentStart` scripts don't re-run
+    /// on the current document anyway, so rebuilding them would be wasted work.
+    func refreshLiveBoostState(profileId: UUID, host: String) {
         guard let browserManager else { return }
         let normalizedHost = host.lowercased()
-        var appliedWebViews = Set<ObjectIdentifier>()
+        forEachMatchingWebView(
+            browserManager: browserManager,
+            profileId: profileId,
+            host: normalizedHost
+        ) { tab, webView in
+            self.applyLiveBoostState(to: webView, tab: tab)
+        }
+    }
 
-        func apply(to tab: Tab, webView: WKWebView) {
-            let identifier = ObjectIdentifier(webView)
-            guard appliedWebViews.insert(identifier).inserted else { return }
+    /// Refreshes only the boost-derived page zoom (the `sizeOverride`
+    /// multiplier). Cheaper than `refreshLiveBoostState` because it skips the
+    /// CSS injection entirely — use when only the size changed.
+    func refreshBoostZoom(profileId: UUID, host: String) {
+        guard let browserManager else { return }
+        let normalizedHost = host.lowercased()
+        forEachMatchingWebView(
+            browserManager: browserManager,
+            profileId: profileId,
+            host: normalizedHost
+        ) { tab, webView in
+            self.browserManager?.applyBoostAwareZoom(for: tab, webView: webView)
+        }
+    }
+
+    /// Expensive: rebuilds the managed user-script set (extensions +
+    /// userscripts + boost) and reinstalls every WKUserScript on each matching
+    /// tab's content controller. Required only when the *active boost set*
+    /// changes — so the `atDocumentStart` boost script matches reality on the
+    /// next navigation. Editor callers should invoke
+    /// `reinstallUserScriptsAfterEdit` on close so the edited boost takes
+    /// effect on future page loads.
+    func reinstallUserScripts(profileId: UUID, host: String) {
+        guard let browserManager else { return }
+        let normalizedHost = host.lowercased()
+        forEachMatchingWebView(
+            browserManager: browserManager,
+            profileId: profileId,
+            host: normalizedHost
+        ) { tab, webView in
             Task { @MainActor [weak tab, weak webView] in
                 guard let tab, let webView else { return }
                 await tab.replaceNormalTabUserScripts(
@@ -211,21 +277,49 @@ final class SumiBoostsModule: ObservableObject {
                 self.applyLiveBoostState(to: webView, tab: tab)
             }
         }
+    }
+
+    /// Called by the editor when it closes: re-syncs the WKUserScript set so
+    /// the final boost state is applied on the next navigation, and flushes
+    /// any debounced disk writes so the edit is durable immediately.
+    func reinstallUserScriptsAfterEdit(profileId: UUID, host: String) {
+        store.flushPendingWrites()
+        reinstallUserScripts(profileId: profileId, host: host)
+    }
+
+    private func forEachMatchingWebView(
+        browserManager: BrowserManager,
+        profileId: UUID,
+        host: String,
+        body: @escaping @MainActor (Tab, WKWebView) -> Void
+    ) {
+        // De-dupe by WebView identity so a tab surfaced through both the
+        // window registry and the tab manager is only visited once.
+        var visited = Set<ObjectIdentifier>()
+
+        func visit(_ tab: Tab, _ webView: WKWebView) {
+            let identifier = ObjectIdentifier(webView)
+            guard visited.insert(identifier).inserted else { return }
+            Task { @MainActor [weak tab, weak webView] in
+                guard let tab, let webView else { return }
+                body(tab, webView)
+            }
+        }
 
         for windowState in browserManager.windowRegistry?.allWindows ?? [] {
             for tab in browserManager.tabsForDisplay(in: windowState)
-                where tabMatches(tab, profileId: profileId, host: normalizedHost) {
+                where tabMatches(tab, profileId: profileId, host: host) {
                 if let webView = browserManager.getWebView(for: tab.id, in: windowState.id)
                     ?? tab.existingWebView {
-                    apply(to: tab, webView: webView)
+                    visit(tab, webView)
                 }
             }
         }
 
         for tab in browserManager.tabManager.allTabs()
-            where tabMatches(tab, profileId: profileId, host: normalizedHost) {
+            where tabMatches(tab, profileId: profileId, host: host) {
             if let webView = tab.existingWebView {
-                apply(to: tab, webView: webView)
+                visit(tab, webView)
             }
         }
     }

@@ -63,7 +63,7 @@ final class SumiBoostStoreTests: XCTestCase {
         let profileId = UUID()
         let url = URL(string: "https://example.test/")!
         let boost = try store.createDraft(for: url, profileId: profileId, isEphemeral: false)
-        let updated = try store.updateBoost(
+        _ = try store.updateBoost(
             id: boost.id,
             profileId: profileId,
             host: "example.test",
@@ -73,13 +73,17 @@ final class SumiBoostStoreTests: XCTestCase {
             }
         )
 
+        // updateBoost debounces disk writes (editor edits can fire many times
+        // per second); flush so the on-disk state is observable synchronously.
+        store.flushPendingWrites()
+
         let json = try String(
             contentsOf: directory.appendingPathComponent("boosts.json"),
             encoding: .utf8
         )
         let cssURL = directory
             .appendingPathComponent("css", isDirectory: true)
-            .appendingPathComponent("\(updated.id.uuidString.lowercased()).css")
+            .appendingPathComponent("\(boost.id.uuidString.lowercased()).css")
 
         XCTAssertFalse(json.contains(".hero { color: red; }"))
         XCTAssertEqual(try String(contentsOf: cssURL, encoding: .utf8), ".hero { color: red; }")

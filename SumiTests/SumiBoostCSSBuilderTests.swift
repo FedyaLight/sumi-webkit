@@ -46,7 +46,11 @@ final class SumiBoostCSSBuilderTests: XCTestCase {
 
         let css = SumiBoostCSSBuilder.filterCSS(for: data)
 
-        XCTAssertTrue(css.contains("hue-rotate(45.000deg)"))
+        // Color boost no longer applies a hue-rotate: a global hue-rotate would
+        // also shift the picked background color and break the match between
+        // the editor dots and the page. Only the smart-invert path keeps a
+        // hue-rotate(180deg) to neutralize images.
+        XCTAssertFalse(css.contains("hue-rotate(45.000deg)"))
         XCTAssertTrue(css.contains("brightness(1.000)"))
         XCTAssertTrue(css.contains("saturate(1.000)"))
         XCTAssertTrue(css.contains("contrast(1.250)"))
