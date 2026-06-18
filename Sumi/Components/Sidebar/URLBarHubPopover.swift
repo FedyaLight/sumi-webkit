@@ -437,22 +437,13 @@ struct URLBarHubPopover: View {
     private var topActionRow: some View {
         HStack(spacing: 8) {
             SumiHubHeaderButton(
-                iconName: "share",
-                fallbackSystemName: "square.and.arrow.up",
-                help: "Share"
+                iconName: isCurrentPageBookmarked ? "bookmark" : "bookmark-hollow",
+                fallbackSystemName: isCurrentPageBookmarked ? "bookmark.fill" : "bookmark",
+                help: isCurrentPageBookmarked ? "Bookmarked" : "Bookmark",
+                isEnabled: bookmarkManager.canBookmark(currentTab),
+                isActive: isCurrentPageBookmarked
             ) {
-                shareCurrentPage()
-            }
-            .background(URLBarHubShareAnchorView(anchor: shareButtonAnchor))
-
-            SumiHubHeaderButton(
-                iconName: "reader-mode",
-                fallbackSystemName: "doc.richtext",
-                help: readerModeIsActive ? "Hide Reader" : "Reader Mode",
-                isEnabled: snapshot.readerAvailability == .available,
-                isActive: readerModeIsActive
-            ) {
-                handleReaderMode()
+                showBookmarkEditor()
             }
 
             SumiHubHeaderButton(
@@ -468,14 +459,23 @@ struct URLBarHubPopover: View {
             }
 
             SumiHubHeaderButton(
-                iconName: isCurrentPageBookmarked ? "bookmark" : "bookmark-hollow",
-                fallbackSystemName: isCurrentPageBookmarked ? "bookmark.fill" : "bookmark",
-                help: isCurrentPageBookmarked ? "Bookmarked" : "Bookmark",
-                isEnabled: bookmarkManager.canBookmark(currentTab),
-                isActive: isCurrentPageBookmarked
+                iconName: "reader-mode",
+                fallbackSystemName: "doc.richtext",
+                help: readerModeIsActive ? "Hide Reader" : "Reader Mode",
+                isEnabled: snapshot.readerAvailability == .available,
+                isActive: readerModeIsActive
             ) {
-                showBookmarkEditor()
+                handleReaderMode()
             }
+
+            SumiHubHeaderButton(
+                iconName: "share",
+                fallbackSystemName: "square.and.arrow.up",
+                help: "Share"
+            ) {
+                shareCurrentPage()
+            }
+            .background(URLBarHubShareAnchorView(anchor: shareButtonAnchor))
         }
     }
 
