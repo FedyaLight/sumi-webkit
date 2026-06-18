@@ -793,20 +793,24 @@ private struct SpaceTransitionSnapshotPageView: View {
 private struct ExtensionActionSnapshotGrid: View {
     let snapshot: ExtensionActionGridSnapshot
     let tokens: ChromeThemeTokens
+    private static let gridSpacing: CGFloat = 8
 
-    private var columns: [GridItem] {
-        [
-            GridItem(
-                .adaptive(minimum: 32, maximum: .infinity),
-                spacing: 8,
+    private func columns(slotCount: Int) -> [GridItem] {
+        Array(
+            repeating: GridItem(
+                .flexible(minimum: 0, maximum: .infinity),
+                spacing: Self.gridSpacing,
                 alignment: .center
             ),
-        ]
+            count: max(slotCount, 1)
+        )
     }
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-            ForEach(snapshot.slots) { slot in
+        let slots = snapshot.slots
+
+        LazyVGrid(columns: columns(slotCount: slots.count), alignment: .leading, spacing: Self.gridSpacing) {
+            ForEach(slots) { slot in
                 ExtensionActionSnapshotButton(slot: slot, tokens: tokens)
             }
         }

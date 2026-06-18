@@ -174,11 +174,14 @@ struct ExtensionActionView: View {
 private struct SidebarExtensionActionGrid: View {
     let extensions: [InstalledExtension]
     let profileId: UUID?
+    private static let gridSpacing: CGFloat = 8
     @EnvironmentObject private var browserManager: BrowserManager
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
-            ForEach(pinnedSlots) { slot in
+        let slots = pinnedSlots
+
+        LazyVGrid(columns: columns(slotCount: slots.count), alignment: .leading, spacing: Self.gridSpacing) {
+            ForEach(slots) { slot in
                 switch slot {
                 case .sumiScriptsManager:
                     SumiScriptsToolbarControl(layout: .sidebarGrid)
@@ -197,14 +200,15 @@ private struct SidebarExtensionActionGrid: View {
         .accessibilityIdentifier("sidebar-extension-action-grid")
     }
 
-    private var columns: [GridItem] {
-        [
-            GridItem(
-                .adaptive(minimum: 32, maximum: .infinity),
-                spacing: 8,
+    private func columns(slotCount: Int) -> [GridItem] {
+        Array(
+            repeating: GridItem(
+                .flexible(minimum: 0, maximum: .infinity),
+                spacing: Self.gridSpacing,
                 alignment: .center
             ),
-        ]
+            count: max(slotCount, 1)
+        )
     }
 
     private var enabledExtensions: [InstalledExtension] {
