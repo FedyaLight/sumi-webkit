@@ -7,6 +7,7 @@ enum SumiFaviconResolver {
         SumiFaviconLookupKey.cacheKey(for: url)
     }
 
+    @MainActor
     static func menuImage(
         for url: URL?,
         partition: SumiFaviconPartition = .regular(nil)

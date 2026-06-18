@@ -24,6 +24,7 @@ enum SumiCommandMenuLabels {
         }
     }
 
+    @MainActor
     static func site(
         _ title: String,
         url: URL?,
@@ -36,6 +37,7 @@ enum SumiCommandMenuLabels {
         }
     }
 
+    @MainActor
     static func system(_ title: String, systemImage: String) -> some View {
         Label {
             Text(title)

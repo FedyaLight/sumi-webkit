@@ -10,6 +10,7 @@ enum TabFaviconStore {
         SumiFaviconLookupKey.documentURL(forReferenceKey: key)
     }
 
+    @MainActor
     static func getCachedImage(
         forDocumentURL url: URL,
         partition: SumiFaviconPartition,
@@ -98,10 +99,12 @@ enum TabFaviconStore {
         )
     }
 
+    @MainActor
     static func getCachedImage(for key: String) -> NSImage? {
         getCachedImage(forReferenceKey: key)
     }
 
+    @MainActor
     static func getCachedImage(
         forReferenceKey referenceKey: String,
         partition: SumiFaviconPartition,
@@ -115,39 +118,25 @@ enum TabFaviconStore {
         )
     }
 
+    @MainActor
     static func getCachedImage(forReferenceKey referenceKey: String) -> NSImage? {
         getCachedImage(forReferenceKey: referenceKey, partition: .regular(nil), context: .tabSidebar)
     }
 
+    @MainActor
     private static func cachedImage(
         forDocumentURL url: URL,
         partition: SumiFaviconPartition,
         context: SumiFaviconDisplayContext
     ) -> NSImage? {
-        withService { service in
-            service.cachedPreparedImage(
-                for: SumiPreparedFaviconRequest(
-                    pageURL: url,
-                    partition: partition,
-                    context: context,
-                    backingScale: SumiFaviconService.defaultBackingScale()
-                )
+        SumiFaviconSystem.shared.service.cachedPreparedImage(
+            for: SumiPreparedFaviconRequest(
+                pageURL: url,
+                partition: partition,
+                context: context,
+                backingScale: SumiFaviconService.defaultBackingScale()
             )
-        }
-    }
-
-    private static func withService<T: Sendable>(_ body: @MainActor (SumiFaviconService) -> T) -> T {
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated {
-                body(SumiFaviconSystem.shared.service)
-            }
-        }
-
-        var result: T!
-        DispatchQueue.main.sync {
-            result = body(SumiFaviconSystem.shared.service)
-        }
-        return result
+        )
     }
 
     private static func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
