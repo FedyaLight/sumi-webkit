@@ -121,9 +121,12 @@ final class FocusableWKWebView: WKWebView {
         webKitMouseTrackingLoadSheddingObserver?.invalidate()
         webKitMouseTrackingArea = trackingArea
         let trackingAreaID = ObjectIdentifier(trackingArea)
+        // WKWebView delivers KVO for its own properties on the main thread, so
+        // we can update the tracking area synchronously instead of allocating
+        // a fresh Task on every loading transition.
         webKitMouseTrackingLoadSheddingObserver = observe(\.isLoading, options: [.new]) { [weak self, trackingAreaID] _, change in
             guard let isLoading = change.newValue else { return }
-            Task { @MainActor [weak self, trackingAreaID] in
+            MainActor.assumeIsolated {
                 guard let self,
                       let trackingArea = self.webKitMouseTrackingArea,
                       ObjectIdentifier(trackingArea) == trackingAreaID

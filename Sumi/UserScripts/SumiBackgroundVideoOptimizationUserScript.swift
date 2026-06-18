@@ -36,6 +36,12 @@ final class SumiBackgroundVideoOptimizationUserScript: NSObject, SumiUserScript 
         const offscreenThreshold = 0.02;
         // Minimum area in CSS px^2; tiny decorative previews are ignored.
         const minVisibleArea = 48 * 48;
+        // Whether the document is known to contain at least one <video>. The
+        // viewport optimizer is only installed once this flips true, so pages
+        // without video (the overwhelming majority, incl. Speedometer) pay
+        // nothing beyond a single capture-phase play listener.
+        let viewportActivationListenerInstalled = false;
+        let fullscreenPiPListenersInstalled = false;
 
         function nextCommandId() {
             return `${Date.now()}:${Math.random()}`;
@@ -332,7 +338,38 @@ final class SumiBackgroundVideoOptimizationUserScript: NSObject, SumiUserScript 
             });
             viewportOptimizerInstalled = true;
             observeAllVideosForViewport();
+            installFullscreenAndPiPListeners();
             scheduleViewportReevaluate();
+        }
+
+        // Installed together with the viewport optimizer so pages without video
+        // never register these capture-phase listeners at all.
+        function installFullscreenAndPiPListeners() {
+            if (fullscreenPiPListenersInstalled) { return; }
+            fullscreenPiPListenersInstalled = true;
+
+            const fullScreenEvents = ["fullscreenchange", "webkitfullscreenchange"];
+            for (const evt of fullScreenEvents) {
+                document.addEventListener(evt, () => {
+                    if (!viewportOptimizationAllowed()) {
+                        for (const video of mediaElements()) {
+                            restoreVideoForViewport(video);
+                        }
+                    } else {
+                        scheduleViewportReevaluate();
+                    }
+                }, true);
+            }
+            document.addEventListener("enterpictureinpicture", () => {
+                if (!viewportOptimizationAllowed()) {
+                    for (const video of mediaElements()) {
+                        restoreVideoForViewport(video);
+                    }
+                }
+            }, true);
+            document.addEventListener("leavepictureinpicture", () => {
+                scheduleViewportReevaluate();
+            }, true);
         }
 
         function uninstallViewportOptimizer() {
@@ -404,44 +441,34 @@ final class SumiBackgroundVideoOptimizationUserScript: NSObject, SumiUserScript 
 
         document.addEventListener("visibilitychange", () => {
             applyEffectiveMode();
-            scheduleViewportReevaluate();
-        }, true);
-
-        document.addEventListener("play", (event) => {
-            if (event.target instanceof HTMLVideoElement) {
-                observeVideoForViewport(event.target);
-                if (effectiveMode() !== "visible") {
-                    scheduleHiddenApply();
-                } else {
-                    scheduleViewportReevaluate();
-                }
+            // Viewport reevaluate only matters when the optimizer is already
+            // running (i.e. the page has video). No-op on video-less pages.
+            if (viewportOptimizerInstalled) {
+                scheduleViewportReevaluate();
             }
         }, true);
 
-        // Catch videos that enter/leave element fullscreen or PiP on the page
-        // so we never disable tracks while the user is actively watching.
-        const fullScreenEvents = ["fullscreenchange", "webkitfullscreenchange"];
-        for (const evt of fullScreenEvents) {
-            document.addEventListener(evt, () => {
-                if (!viewportOptimizationAllowed()) {
-                    for (const video of mediaElements()) {
-                        restoreVideoForViewport(video);
-                    }
-                } else {
-                    scheduleViewportReevaluate();
-                }
-            }, true);
+        // Single lightweight entry point: on the first media "play" we lazily
+        // stand up the full viewport optimizer + fullscreen/PiP listeners.
+        // Pages without video (incl. Speedometer) never allocate the
+        // IntersectionObserver or these capture-phase listeners at all.
+        function handleVideoPlay(event) {
+            if (!(event.target instanceof HTMLVideoElement)) { return; }
+            if (!viewportOptimizerInstalled) {
+                installViewportOptimizer();
+            }
+            observeVideoForViewport(event.target);
+            if (effectiveMode() !== "visible") {
+                scheduleHiddenApply();
+            } else {
+                scheduleViewportReevaluate();
+            }
         }
-        document.addEventListener("enterpictureinpicture", () => {
-            if (!viewportOptimizationAllowed()) {
-                for (const video of mediaElements()) {
-                    restoreVideoForViewport(video);
-                }
-            }
-        }, true);
-        document.addEventListener("leavepictureinpicture", () => {
-            scheduleViewportReevaluate();
-        }, true);
+
+        if (!viewportActivationListenerInstalled) {
+            viewportActivationListenerInstalled = true;
+            document.addEventListener("play", handleVideoPlay, true);
+        }
 
         window[apiName] = {
             setNativeVisibility(mode, graceMs) {
@@ -450,10 +477,10 @@ final class SumiBackgroundVideoOptimizationUserScript: NSObject, SumiUserScript 
         };
 
         applyEffectiveMode();
-        // Viewport optimization is always safe to install in the foreground
-        // tab; it disables video tracks only while it is permitted by
-        // viewportOptimizationAllowed().
-        installViewportOptimizer();
+        // The viewport optimizer is NOT installed here. It is installed lazily
+        // on the first <video> play event (see handleVideoPlay), so video-less
+        // pages never pay for an IntersectionObserver or the fullscreen/PiP
+        // capture listeners.
     })();
     """
 }

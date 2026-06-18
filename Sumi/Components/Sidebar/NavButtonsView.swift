@@ -60,19 +60,16 @@ class ObservableTabWrapper: ObservableObject {
     }
 
     private func refreshNavigationState() {
+        // Tab already maintains canGoBack/canGoForward in sync with the
+        // underlying WKWebView via TabNavigationStateController (and posts
+        // .sumiTabNavigationStateDidChange only on real change). Reading the
+        // cached Tab values avoids a KVO round-trip into WebKit on every
+        // navigation notification while staying accurate in every case the
+        // notification covers.
+        canGoBack = tab?.canGoBack ?? false
+        canGoForward = tab?.canGoForward ?? false
+
         let webView = activeWebView()
-
-        if tab?.isFreezingNavigationStateDuringBackForwardGesture == true {
-            canGoBack = tab?.canGoBack ?? false
-            canGoForward = tab?.canGoForward ?? false
-        } else if let webView {
-            canGoBack = webView.canGoBack
-            canGoForward = webView.canGoForward
-        } else {
-            canGoBack = tab?.canGoBack ?? false
-            canGoForward = tab?.canGoForward ?? false
-        }
-
         isLoading = (tab?.loadingState.isLoading ?? false) || (webView?.isLoading ?? false)
         canReload = tab.map { !$0.representsSumiEmptySurface && !$0.representsSumiNativeSurface } ?? false
     }
