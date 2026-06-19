@@ -286,6 +286,10 @@ private struct SumiScriptsToolbarControl: View {
     @State private var isPressed = false
     @State private var showingPopup = false
 
+    private var hubTileCornerRadius: CGFloat {
+        sumiSettings.resolvedCornerRadius(12) * 2.0
+    }
+
     var body: some View {
         Button {
             showingPopup.toggle()
@@ -321,10 +325,10 @@ private struct SumiScriptsToolbarControl: View {
                     .frame(height: 36)
                     .background(hubBackgroundFill)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        RoundedRectangle(cornerRadius: hubTileCornerRadius, style: .continuous)
                             .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: hubTileCornerRadius, style: .continuous))
                     .scaleEffect(hubButtonScale)
             }
         }
@@ -445,6 +449,10 @@ struct ExtensionActionButton: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering: Bool = false
     @State private var isPressed = false
+
+    private var hubTileCornerRadius: CGFloat {
+        sumiSettings.resolvedCornerRadius(12) * 2.0
+    }
     
     var body: some View {
         Group {
@@ -538,7 +546,7 @@ struct ExtensionActionButton: View {
                         .allowsHitTesting(false)
                     )
                     .overlay {
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        RoundedRectangle(cornerRadius: hubTileCornerRadius, style: .continuous)
                             .stroke(URLBarHubNativeStyle.separator, lineWidth: 0.5)
                     }
                     .overlay(alignment: .topTrailing) {
@@ -547,7 +555,7 @@ struct ExtensionActionButton: View {
                                 .padding(3)
                         }
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: hubTileCornerRadius, style: .continuous))
                     .scaleEffect(hubButtonScale)
             }
         }
