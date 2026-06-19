@@ -822,6 +822,7 @@ private struct ExtensionActionSnapshotGrid: View {
 private struct ExtensionActionSnapshotButton: View {
     let slot: ExtensionActionSlotSnapshot
     let tokens: ChromeThemeTokens
+    @Environment(\.sumiSettings) private var sumiSettings
 
     var body: some View {
         iconView
@@ -829,7 +830,7 @@ private struct ExtensionActionSnapshotButton: View {
             .padding(5)
             .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
             .background(tokens.pinnedIdleBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
             .overlay(alignment: .topTrailing) {
                 if let badgeText = slot.badgeText {
                     Text(badgeText)

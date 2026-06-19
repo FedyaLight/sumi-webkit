@@ -315,8 +315,8 @@ private struct SumiScriptsToolbarControl: View {
                     .padding(5)
                     .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
                     .background(sidebarGridBackgroundFill)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
             case .hubTile:
                 Image(systemName: "curlybraces.square")
                     .font(.system(size: 18, weight: .medium))
@@ -525,8 +525,8 @@ struct ExtensionActionButton: View {
                         )
                         .allowsHitTesting(false)
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
                     .overlay(alignment: .topTrailing) {
                         if let badgeText = visibleBadgeText {
                             actionBadge(badgeText)
