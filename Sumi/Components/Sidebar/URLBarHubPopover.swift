@@ -82,6 +82,7 @@ struct URLBarHubPopover: View {
     @State private var scheduledPermissionsReloadTask: Task<Void, Never>?
     @State private var readerModeIsActive = false
     @State private var isCapturingScreenshot = false
+    @State private var isHoveringExtensions = false
     @StateObject private var shareButtonAnchor = URLBarHubShareAnchorStore()
     @AppStorage("URLBarHubScreenshotQualityScale") private var screenshotQualityScale = URLBarHubScreenshotQuality.twoX.rawValue
     @AppStorage("URLBarHubScreenshotCaptureTarget") private var screenshotCaptureTarget = URLBarHubScreenshotCaptureTarget.visiblePage.rawValue
@@ -422,7 +423,8 @@ struct URLBarHubPopover: View {
                 action: {
                     browserManager.openSettingsTab(selecting: .extensions, in: windowState)
                     onClose()
-                }
+                },
+                isSectionHovered: isHoveringExtensions
             )
 
             ExtensionActionView(
@@ -431,6 +433,10 @@ struct URLBarHubPopover: View {
             )
             .environmentObject(browserManager)
             .environment(windowState)
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            isHoveringExtensions = hovering
         }
     }
 
@@ -1026,6 +1032,7 @@ private struct HubSectionHeader: View {
     let title: String
     var actionTitle: String? = nil
     var action: (() -> Void)? = nil
+    var isSectionHovered: Bool = true
 
     @State private var isHovering = false
 
@@ -1040,6 +1047,9 @@ private struct HubSectionHeader: View {
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(isHovering ? URLBarHubNativeStyle.secondaryText : URLBarHubNativeStyle.tertiaryText)
+                    .opacity(isSectionHovered ? 1 : 0)
+                    .allowsHitTesting(isSectionHovered)
+                    .animation(.easeInOut(duration: 0.15), value: isSectionHovered)
             }
         }
         .onHover { isHovering = $0 }
