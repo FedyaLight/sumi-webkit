@@ -72,6 +72,7 @@ Current Alpha builds include:
 - Session restore setting for restoring the previous session or starting clean.
 - Mini Player at the bottom of the sidebar for jumping to playing media, pausing media, and muting media.
 - Memory modes and inactive tab unloading that preserve visible organization after a live WebView/runtime instance is unloaded.
+- Manual Tracking Protection and Adblock levels backed by prepared WebKit content-rule bundles from `sumi-protection-bundles`; the browser does not fetch raw filter lists or generate rules at runtime.
 - Automatic history/site-data cleanup modules.
 
 ## Extensions And Safari
@@ -159,6 +160,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 Sumi is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).
 
 The project is independent, but it was not written entirely from scratch. The codebase started from the open-source Nook browser and has been heavily reworked toward Sumi's goals. Sumi also includes vendored or adapted open-source components from DuckDuckGo's Apple browser projects, including BrowserServicesKit and URLPredictor, under their applicable licenses.
+
+Sumi's prepared protection bundles are generated outside the browser in [`FedyaLight/sumi-protection-bundles`](https://github.com/FedyaLight/sumi-protection-bundles). The tracking-protection group is derived from DuckDuckGo Tracker Radar / Tracker Data Set metadata under CC BY-NC-SA 4.0 terms. The adblock groups are generated from source lists such as AdGuard and uBlock filter lists; their upstream source-list terms remain separate and are tracked through bundle manifests/source metadata.
 
 The Arc/Zen migration work is compatible with [browser2zen](https://github.com/tarikbc/browser2zen) export data and was informed by that project's public MIT-licensed behavior and schema shape. Sumi does not vendor browser2zen or arc2zen code and does not add a Python/runtime dependency on them.
 

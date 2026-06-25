@@ -24,13 +24,17 @@ SumiAdblockBundle/
 
 `trackingNetwork` is generated in `sumi-protection-bundles` from DuckDuckGo Tracker Radar / Tracker Data Set (TDS) (`https://staticcdn.duckduckgo.com/trackerblocking/v6/current/macos-tds.json`). The generated tracking shards are CC BY-NC-SA 4.0 derived data for non-commercial Sumi bundle use, with share-alike terms preserved for derived `trackingNetwork` data. Bundle and release manifests must include `sourceName`, `sourceURL`, `sourceLicense`, `sourceLicenseURL`, `attribution`, `generatedAt`, `sourceSha256`, `ruleCount`, and `shardCount` for this group.
 
+`adblockAdsPrivacyNetwork` is generated outside the browser with the bundle generator's `adblock-rust` adapter. The current `adguardAdsPrivacy` profile records source-list metadata for AdGuard DNS filter, AdGuard Base, uBlock filters - Ads, uBlock filters - Badware risks, uBlock filters - Privacy, uBlock filters - Unbreak, and uBlock filters - Quick fixes. Bundle manifests must preserve the source-list ids, display names, URLs, hashes, byte sizes, categories, and rule counts. The combined adblock group reports `license: see source lists`; Sumi documentation and UI must not claim that this group has a single project-owned license.
+
+Cosmetic/scriptlet shards may be present in release assets for bundle completeness, but Sumi's native browser runtime attaches network content-rule lists only.
+
 ## Product contract
 
 The browser exposes only three product levels:
 
 - `Off`: no protection groups, no Tracking Protection, no Adblock, no bundle lookup, and no content-rule lists.
 - `Protection`: `trackingNetwork` only.
-- `Adblock`: `trackingNetwork` plus `adblockAdsPrivacyNetwork`, backed by the prepared `adguardAdsPrivacy` profile.
+- `Adblock`: `trackingNetwork` plus `adblockAdsPrivacyNetwork`, backed by the prepared `adguardAdsPrivacy` profile. Element zapper rules are user-authored site rules layered on top of this native blocker; they are not a separate blocker backend.
 
 Native CSS is not a normal product mode. Release bundles omit native-CSS shards by default, and the browser compiles and attaches network shards only. Native-CSS validation remains as a developer-only safety path so prepared bundles can be rejected safely if their manifest does not meet the accepted native-CSS safety policy.
 
@@ -73,7 +77,7 @@ The following are legacy/runtime-generation surfaces and should stay absent from
 - Automatic background bundle/list update timers.
 - Old debug-only adblock status/current-tab diagnostics and embedded catalog install APIs.
 
-Allowed DDG/TDS references are limited to prepared `trackingNetwork` source metadata: source name, source URL, license, attribution, generated timestamp, source hash, source rule count, and source shard count.
+Allowed DDG/TDS references are limited to prepared `trackingNetwork` source metadata: source name, source URL, license, attribution, generated timestamp, source hash, source rule count, and source shard count. Allowed adblock source-list references are limited to prepared bundle metadata and user-facing attribution: source-list names, URLs, hashes, byte sizes, categories, and rule counts.
 
 Run these checks after each protection-runtime cleanup pass:
 

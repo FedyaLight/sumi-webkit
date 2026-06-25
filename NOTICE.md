@@ -21,6 +21,27 @@ Some AppKit/WebKit helper code in the Sumi app is adapted from DuckDuckGo
 macOS browser code. Directly reused portions should retain their upstream
 copyright and SPDX headers.
 
+## Protection Bundle Sources
+
+Sumi consumes prepared protection bundles generated outside the browser in
+`FedyaLight/sumi-protection-bundles`. Sumi.app verifies release manifests,
+hashes, byte sizes, paths, and signatures, then compiles prepared WebKit rule
+shards. It does not fetch raw filter lists, parse ABP/uBO syntax, run
+`adblock-rust`, or convert DuckDuckGo Tracker Radar data at runtime.
+
+The `trackingNetwork` group is derived from DuckDuckGo Tracker Radar / Tracker
+Data Set (TDS). Bundle metadata identifies the source as DuckDuckGo Tracker
+Radar / TDS, records the TDS source URL and SHA-256 hash, and marks the
+generated tracking data as CC BY-NC-SA 4.0, non-commercial, and share-alike.
+Those terms apply to the generated tracking data in the protection bundles.
+
+The current `adguardAdsPrivacy` adblock profile is generated from source lists
+identified in the bundle manifest, including AdGuard DNS filter, AdGuard Base,
+and uBlock filters for ads, badware risks, privacy, unbreak, and quick fixes.
+Those source lists keep their own upstream terms. Sumi records source-list
+names, URLs, hashes, byte sizes, and rule counts in bundle metadata rather than
+claiming a single license for the combined adblock output.
+
 ## Browser Migration Compatibility
 
 Sumi's Data & Recovery import/export services are compatible with public
@@ -37,8 +58,8 @@ preserved in the affected source or distribution notices.
 
 ## Affiliation
 
-Sumi Browser is not affiliated with Apple, DuckDuckGo, Arc, Zen, Bitwarden,
-Proton, 1Password, browser2zen, or arc2zen.
+Sumi Browser is not affiliated with Apple, DuckDuckGo, AdGuard, uBlock Origin,
+Arc, Zen, Bitwarden, Proton, 1Password, browser2zen, or arc2zen.
 
 Product names and trademarks belong to their respective owners and are used in
 documentation only to describe compatibility goals, technical context, or user

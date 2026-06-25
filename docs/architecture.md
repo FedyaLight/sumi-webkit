@@ -57,6 +57,15 @@ preserve user organization while reducing unnecessary live runtime state.
 Extensions, userscripts, and privacy cleanup are feature areas that should
 remain optional. When disabled, they should avoid background runtime cost.
 
+## Protection
+
+Tracking Protection and Adblock are owned by the native content-blocking
+runtime under `Sumi/ContentBlocking`. Sumi consumes prepared bundles from
+`sumi-protection-bundles`, verifies their manifests and shard hashes, compiles
+the selected groups through WebKit, and keeps the previous generation available
+for rollback. The browser must not fetch raw filter lists, parse ABP/uBO syntax,
+run `adblock-rust`, or convert DuckDuckGo Tracker Radar data at runtime.
+
 ## Extensions
 
 Safari extension support is built around `WKWebExtensions`. The active milestone
