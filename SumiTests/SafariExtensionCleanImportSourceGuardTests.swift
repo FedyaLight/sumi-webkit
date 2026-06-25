@@ -192,6 +192,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             runtimeSources,
             [
                 "SafariExtensionURLSchemeCompatibility",
+                "webKitLoadableExtensionURL",
                 "installURLSchemeCompatibilityPreludes",
                 "runtime.getURL = wrapped",
                 "toInternalString",

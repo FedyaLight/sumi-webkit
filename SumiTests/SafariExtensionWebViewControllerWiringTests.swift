@@ -726,7 +726,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
-    func testExtensionRequestedSafariPublicURLUsesLoadableWebKitContext() async throws {
+    func testExtensionRequestedSafariURLUsesNativeWebKitContext() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Extension Page Profile")
         let browserConfiguration = BrowserConfiguration()
@@ -782,17 +782,12 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let controller = try XCTUnwrap(
             manager.extensionControllersByProfile[profile.id]
         )
-        let loadableURL = extensionContext.baseURL
+        XCTAssertEqual(extensionContext.baseURL.scheme, "safari-web-extension")
+        let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
-        let publicURL = try XCTUnwrap(
-            URL(string: loadableURL.absoluteString.replacingOccurrences(
-                of: "webkit-extension://",
-                with: "safari-web-extension://"
-            ))
-        )
 
         let tab = try manager.openExtensionRequestedTab(
-            url: publicURL,
+            url: extensionURL,
             shouldBeActive: true,
             shouldBePinned: false,
             requestedWindow: nil,
@@ -800,7 +795,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
 
-        XCTAssertEqual(tab.url, loadableURL)
+        XCTAssertEqual(tab.url, extensionURL)
         XCTAssertIdentical(controller.extensionContext(for: tab.url), extensionContext)
         XCTAssertIdentical(
             tab.webExtensionContextOverride,
@@ -869,14 +864,9 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let controller = try XCTUnwrap(
             manager.extensionControllersByProfile[profile.id]
         )
-        let loadableURL = extensionContext.baseURL
+        XCTAssertEqual(extensionContext.baseURL.scheme, "safari-web-extension")
+        let extensionURL = extensionContext.baseURL
             .appendingPathComponent("popup.html")
-        let publicURL = try XCTUnwrap(
-            URL(string: loadableURL.absoluteString.replacingOccurrences(
-                of: "webkit-extension://",
-                with: "safari-web-extension://"
-            ))
-        )
 
         var openedTabIDs: [UUID] = []
         manager.testHooks.didOpenTab = { openedTabIDs.append($0) }
@@ -885,7 +875,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         var completionError: (any Error)?
 
         manager.openExtensionWindowUsingTabURLs(
-            [publicURL],
+            [extensionURL],
             controller: controller,
             createWindow: {
                 let windowState = BrowserWindowState()
@@ -912,7 +902,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         let tab = try XCTUnwrap(
             browserManager.tabManager.tabsBySpace[space.id]?.first(where: {
-                $0.url == loadableURL
+                $0.url == extensionURL
             })
         )
         XCTAssertEqual(openedTabIDs.filter { $0 == tab.id }.count, 1)
@@ -2791,7 +2781,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
               document.querySelectorAll('body *').length,
               document.scripts.length,
               document.body ? (document.body.dataset.sumiRenderMarker || '') : '',
-              location.href.startsWith('webkit-extension://') || location.href.startsWith('safari-web-extension://')
+              location.href.startsWith('safari-web-extension://')
             ].join('|'))();
             """
         let rawValue = try await webView.evaluateJavaScript(script) as? String

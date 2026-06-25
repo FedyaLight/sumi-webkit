@@ -243,10 +243,9 @@ Evidence base:
 
 ### Fixed
 
-- Removed the bounded timer retry in `SafariExtensionURLSchemeCompatibility` and
-  replaced it with generic `browser` / `chrome` namespace assignment hooks. This
-  preserves Safari-style `safari-web-extension:` public URLs while avoiding a
-  user-script hot-path timer.
+- Switched extension-owned page URLs to WebKit's native registered
+  `safari-web-extension:` custom scheme via `WKWebExtensionContext.baseURL`,
+  removing the old public/internal URL rewriting path.
 - Updated the inline overlay runtime fixture to assert
   `"runtimeConnectWrapped":false` on the successful resize path.
 - Updated auxiliary-surface and modular-performance guards so they no longer keep
@@ -254,6 +253,9 @@ Evidence base:
 
 ### Deleted
 
+- `SafariExtensionURLSchemeCompatibility.swift`, including the private-SPI URL
+  rewriting prelude for translating between `safari-web-extension:` and
+  `webkit-extension:`.
 - `SafariExtensionRuntimeConnectCompatibility.swift`, including the private-SPI
   JavaScript `runtime.connect` / `runtime.onConnect` wrapper.
 - Dormant externally-connectable bridge code:
@@ -281,10 +283,6 @@ Evidence base:
 
 ### Suspicious Code Intentionally Kept
 
-- `SafariExtensionURLSchemeCompatibility` stays because Sumi uses WebKit's
-  internal `webkit-extension:` base URL while Safari Web Extension code expects
-  `safari-web-extension:` URLs at API and resource boundaries. The layer is
-  generic, source-guarded, and not a Chrome MV3 shim.
 - `SafariExtensionPermissionsOriginsCompatibility` stays because WebKit behavior
   around extension-origin permission checks with explicit ports is still covered
   by generic tests. It is scoped to extension worlds and does not patch
