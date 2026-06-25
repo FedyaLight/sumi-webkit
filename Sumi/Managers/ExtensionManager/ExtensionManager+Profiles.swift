@@ -171,6 +171,13 @@ extension ExtensionManager {
 
     @discardableResult
     func notifyTabOpened(_ tab: Tab) -> Bool {
+        func deferOpen(_ reason: String) -> Bool {
+            #if DEBUG
+                testHooks.didDeferOpenTab?(tab.id, reason)
+            #endif
+            return false
+        }
+
         guard let controller = extensionController(for: tab),
               let adapter = stableAdapter(for: tab)
         else {
@@ -180,7 +187,7 @@ extension ExtensionManager {
                 reason: "notifyTabOpenedMissingAdapterOrController",
                 pageURL: tab.url
             )
-            return false
+            return deferOpen("missingAdapterOrController")
         }
 
         guard let profileId = resolvedProfileId(for: tab) else {
@@ -190,10 +197,12 @@ extension ExtensionManager {
                 reason: "notifyTabOpenedMissingProfile",
                 pageURL: tab.url
             )
-            return false
+            return deferOpen("missingProfile")
         }
 
-        let contextsReady = profileNeedsInitialDocumentExtensionContextLoad(profileId: profileId) == false
+        let contextsReady = profileNeedsInitialDocumentExtensionContextLoad(
+            profileId: profileId
+        ) == false
         guard contextsReady else {
             SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
                 injected: false,
@@ -206,13 +215,14 @@ extension ExtensionManager {
                 profileId: profileId,
                 reason: "notifyTabOpened"
             )
-            return false
+            return deferOpen("initialDocumentContextsNotLoaded")
         }
 
         guard tabHasUsableWebViewForExtensionOpenNotification(
             tab,
             controller: controller,
-            profileId: profileId
+            profileId: profileId,
+            deferOpen: deferOpen
         ) else {
             SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
                 injected: false,
@@ -252,12 +262,14 @@ extension ExtensionManager {
     private func tabHasUsableWebViewForExtensionOpenNotification(
         _ tab: Tab,
         controller: WKWebExtensionController,
-        profileId: UUID
+        profileId: UUID,
+        deferOpen: (String) -> Bool
     ) -> Bool {
         guard let webView = resolvedLiveWebView(for: tab) else {
             extensionRuntimeTrace(
                 "didOpenTab deferred because=noLiveWebView profile=\(profileId.uuidString) \(extensionRuntimeTabDescription(tab))"
             )
+            _ = deferOpen("noLiveWebView")
             return false
         }
 
@@ -265,6 +277,7 @@ extension ExtensionManager {
             extensionRuntimeTrace(
                 "didOpenTab deferred because=controllerAttachFailed webView=\(extensionRuntimeWebViewDescription(webView)) profile=\(profileId.uuidString) \(extensionRuntimeTabDescription(tab))"
             )
+            _ = deferOpen("controllerAttachFailed")
             return false
         }
 
@@ -272,6 +285,7 @@ extension ExtensionManager {
             extensionRuntimeTrace(
                 "didOpenTab deferred because=controllerMismatch webView=\(extensionRuntimeWebViewDescription(webView)) profile=\(profileId.uuidString) \(extensionRuntimeTabDescription(tab))"
             )
+            _ = deferOpen("controllerMismatch")
             return false
         }
 
@@ -499,31 +513,15 @@ extension ExtensionManager {
             manifestDeclaresNativeMessaging: Self.manifestDeclaresNativeMessaging(
                 resolvedManifest
             ),
-            permissionGranted: {
-                if #available(macOS 15.4, *) {
-                    return isGrantedPermissionStatus(
-                        extensionContext.permissionStatus(for: .nativeMessaging)
-                    )
-                }
-                return false
-            }(),
+            permissionGranted: isGrantedPermissionStatus(
+                extensionContext.permissionStatus(for: .nativeMessaging)
+            ),
             unsupportedAPIsContainNativeMessaging: extensionContext.unsupportedAPIs
                 .contains { $0.localizedCaseInsensitiveContains("nativeMessaging") }
         )
 
         _ = extensionControllersByProfile[profileId]
             ?? ensureExtensionController(for: profileId)
-        if let extensionPageUserContentController =
-            extensionPageUserContentControllersByProfile[profileId]
-        {
-            installURLSchemeCompatibilityPreludes(
-                into: extensionPageUserContentController,
-                profileId: profileId,
-                extensionId: extensionId,
-                extensionContext: extensionContext,
-                scopes: [.extensionPage]
-            )
-        }
     }
 
     var hasEnabledInstalledExtensions: Bool {
@@ -839,10 +837,28 @@ extension ExtensionManager {
         backgroundRuntimeStateByExtensionID.removeAll()
         recentExtensionTabOpenRequests.removeAll()
         clearPermissionsOriginsCompatibilityInstallations()
-        clearURLSchemeCompatibilityInstallations()
         extensionPageUserContentControllersByProfile.removeAll()
         cancelNativeMessagingSessions(reason: "resetLoadedExtensionRuntimeStateForReload")
         pruneRuntimeAdapters()
+    }
+
+    var hasLoadedUserExtensionRuntime: Bool {
+        let loadedIDs = allLoadedExtensionIDs()
+            .union(loadedExtensionManifests.keys)
+            .union(cachedWebExtensionsByID.keys)
+            .union(optionsWindows.keys)
+            .union(nativeMessagePortExtensionIDs.values)
+            .union(extensionErrorObserverTokens.keys)
+
+        if loadedIDs.isEmpty == false {
+            return true
+        }
+
+        return hasEnabledInstalledExtensions
+            && (extensionsLoaded
+                || runtimeState == .loading
+                || runtimeState == .ready
+                || extensionControllersByProfile.isEmpty == false)
     }
 
     func tearDownExtensionRuntime(
@@ -864,10 +880,13 @@ extension ExtensionManager {
             "runtimeTeardown start reason=\(reason) removeUIState=\(removeUIState) releaseController=\(releaseController)"
         )
 
+        extensionLoadGeneration &+= 1
         runtimeInitializationTask?.cancel()
         runtimeInitializationTask = nil
         contentScriptContextLoadTasksByProfile.values.forEach { $0.cancel() }
         contentScriptContextLoadTasksByProfile.removeAll()
+        initialDocumentNativeMessagingWarmupTasksByProfile.values.forEach { $0.cancel() }
+        initialDocumentNativeMessagingWarmupTasksByProfile.removeAll()
         backgroundWakeTasks.values.forEach { $0.cancel() }
 
         let uiStateIDs = removeUIState ? Array(actionAnchors.keys) : []
@@ -912,7 +931,6 @@ extension ExtensionManager {
         lastLoggedExtensionErrorFingerprints.removeAll()
         recentExtensionTabOpenRequests.removeAll()
         clearPermissionsOriginsCompatibilityInstallations()
-        clearURLSchemeCompatibilityInstallations()
         extensionPageUserContentControllersByProfile.removeAll()
         tabAdapters.removeAll()
         windowAdapters.removeAll()
@@ -927,10 +945,73 @@ extension ExtensionManager {
             profileExtensionStoreOrder.removeAll()
             extensionRuntimeAllowsWithoutEnabledExtensions = false
             runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
-            extensionsLoaded = true
+            extensionsLoaded = false
         }
 
         extensionRuntimeTrace("runtimeTeardown complete reason=\(reason)")
+    }
+
+    func tabsAffectedByLoadedUserExtensionRuntime() -> [Tab] {
+        guard hasLoadedUserExtensionRuntime else { return [] }
+
+        let controllers = Array(extensionControllersByProfile.values)
+        var affectedTabs: [Tab] = []
+        var seenTabIds: Set<UUID> = []
+
+        for tab in allKnownTabs() {
+            guard seenTabIds.insert(tab.id).inserted else { continue }
+
+            if tab.webExtensionContextOverride != nil
+                || tab.webViewConfigurationOverride?.webExtensionController != nil
+            {
+                affectedTabs.append(tab)
+                continue
+            }
+
+            let liveWebViews = liveWebViews(for: tab)
+            if tab.isEphemeral == false,
+               liveWebViews.isEmpty == false
+            {
+                affectedTabs.append(tab)
+                continue
+            }
+
+            let hasAttachedController = liveWebViews.contains { webView in
+                guard let controller = webView.configuration.webExtensionController else {
+                    return false
+                }
+                guard controllers.isEmpty == false else { return true }
+                return controllers.contains { $0 === controller }
+            }
+
+            if hasAttachedController {
+                affectedTabs.append(tab)
+            }
+        }
+
+        return affectedTabs
+    }
+
+    func rebuildLiveWebViewsAfterUserExtensionRuntimeTeardown(
+        _ tabs: [Tab],
+        reason: String
+    ) {
+        guard tabs.isEmpty == false else { return }
+
+        var seenTabIds: Set<UUID> = []
+        for tab in tabs {
+            guard seenTabIds.insert(tab.id).inserted else { continue }
+
+            tab.webExtensionContextOverride = nil
+            tab.webViewConfigurationOverride = nil
+            tab.resetExtensionRuntimeDocumentBindingForContentScriptRebind()
+            tab.lastExtensionOpenNotificationGeneration = 0
+
+            extensionRuntimeTrace(
+                "runtimeTeardown rebuildLiveWebViews reason=\(reason) \(extensionRuntimeTabDescription(tab))"
+            )
+            browserManager?.webViewCoordinator?.rebuildLiveWebViews(for: tab)
+        }
     }
 
     func cancelNativeMessagingSessions(reason: String) {
@@ -1221,7 +1302,9 @@ extension ExtensionManager {
         ensureExtensionControllerAttachedForTab(tab, reason: reason)
 
         if let profileId = resolvedProfileId(for: tab),
-           profileNeedsInitialDocumentExtensionContextLoad(profileId: profileId)
+           profileNeedsInitialDocumentExtensionContextLoad(
+               profileId: profileId
+           )
         {
             scheduleDeferredTabNotificationAfterContextLoad(
                 tab,

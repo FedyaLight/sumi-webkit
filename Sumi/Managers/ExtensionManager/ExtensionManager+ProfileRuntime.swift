@@ -123,6 +123,11 @@ extension ExtensionManager {
         return UUID(uuid: uuid)
     }
 
+    func extensionsModuleEnabledForRuntimeBoundary() -> Bool {
+        guard let browserManager else { return true }
+        return browserManager.extensionsModule.isEnabled
+    }
+
     @discardableResult
     func ensureExtensionController(for profileId: UUID) -> WKWebExtensionController {
         if let existing = extensionControllersByProfile[profileId] {
@@ -339,6 +344,12 @@ extension ExtensionManager {
         profileId: UUID
     ) async throws -> WKWebExtensionContext? {
         guard isExtensionSupportAvailable else { return nil }
+        guard extensionsModuleEnabledForRuntimeBoundary() else {
+            extensionRuntimeTrace(
+                "ensureExtensionLoaded skip extensionId=\(extensionId) profileId=\(profileId.uuidString) because=extensionsModuleDisabled"
+            )
+            return nil
+        }
 
         _ = ensureExtensionController(for: profileId)
 
@@ -373,6 +384,8 @@ extension ExtensionManager {
     }
 
     func profileHasLoadedContentScriptContexts(profileId: UUID) -> Bool {
+        guard extensionsModuleEnabledForRuntimeBoundary() else { return true }
+
         let contentScriptEntities = enabledPersistedExtensionEntities().filter {
             $0.isEnabled && $0.hasContentScripts
         }
@@ -391,11 +404,12 @@ extension ExtensionManager {
     }
 
     func profileNeedsInitialDocumentExtensionContextLoad(profileId: UUID) -> Bool {
-        profileNeedsContentScriptContextLoad(profileId: profileId)
+        return profileNeedsContentScriptContextLoad(profileId: profileId)
             || profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profileId)
     }
 
     func ensureContentScriptContextsLoaded(for profileId: UUID) async {
+        guard extensionsModuleEnabledForRuntimeBoundary() else { return }
         guard profileNeedsContentScriptContextLoad(profileId: profileId) else { return }
 
         if let existingTask = contentScriptContextLoadTasksByProfile[profileId] {
@@ -431,6 +445,7 @@ extension ExtensionManager {
     /// background context, and WebKit exposes `loadBackgroundContent` for the same
     /// app-owned preflight without opening the action popup.
     func ensureInitialDocumentExtensionContextsLoaded(for profileId: UUID) async {
+        guard extensionsModuleEnabledForRuntimeBoundary() else { return }
         await ensureContentScriptContextsLoaded(for: profileId)
         await ensureInitialDocumentNativeMessagingBackgroundsLoaded(for: profileId)
     }
@@ -438,6 +453,7 @@ extension ExtensionManager {
     private func ensureInitialDocumentNativeMessagingBackgroundsLoaded(
         for profileId: UUID
     ) async {
+        guard extensionsModuleEnabledForRuntimeBoundary() else { return }
         guard profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profileId)
         else { return }
 
@@ -486,7 +502,9 @@ extension ExtensionManager {
     private func initialDocumentNativeMessagingWarmupEntities(
         profileId: UUID
     ) -> [ExtensionEntity] {
-        enabledPersistedExtensionEntities().filter { entity in
+        guard extensionsModuleEnabledForRuntimeBoundary() else { return [] }
+
+        return enabledPersistedExtensionEntities().filter { entity in
             entity.isEnabled
                 && entity.hasContentScripts
                 && entity.hasBackground
@@ -515,9 +533,12 @@ extension ExtensionManager {
         reason: String = #function
     ) {
         let tabId = tab.id
+        let scheduledGeneration = extensionLoadGeneration
         Task { @MainActor [weak self] in
             guard let self else { return }
+            guard self.extensionLoadGeneration == scheduledGeneration else { return }
             await self.ensureInitialDocumentExtensionContextsLoaded(for: profileId)
+            guard self.extensionLoadGeneration == scheduledGeneration else { return }
             guard let resolvedTab = self.browserManager?.tabManager.tab(for: tabId) else { return }
             self.reconcileTabAfterContentScriptContextsLoaded(
                 resolvedTab,

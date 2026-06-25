@@ -188,11 +188,13 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             return (nil, nil)
         }
 
-        let loadURL = ExtensionUtils.webKitLoadableExtensionURL(for: requestedURL)
-        guard Self.isExtensionOwnedURL(loadURL) else {
-            return (loadURL, nil)
+        guard Self.isExtensionOwnedURL(requestedURL) else {
+            return (requestedURL, nil)
         }
-        return (loadURL, controller.extensionContext(for: loadURL))
+        return (
+            requestedURL,
+            controller.extensionContext(for: requestedURL)
+        )
     }
 
     private struct ExtensionRequestedTabTarget {
@@ -216,7 +218,10 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
            let session = browserManager.auxiliaryWindowManager.session(for: miniWindowAdapter.sessionId)
         {
             return ExtensionRequestedTabTarget(
-                window: nil,
+                window: extensionRequestedNormalWindow(
+                    for: session.tab,
+                    extensionContext: extensionContext
+                ),
                 space: extensionRequestedTargetSpace(for: session.tab)
             )
         }
@@ -232,7 +237,10 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
            let session = browserManager.auxiliaryWindowManager.session(for: miniWindowAdapter.sessionId)
         {
             return ExtensionRequestedTabTarget(
-                window: nil,
+                window: extensionRequestedNormalWindow(
+                    for: session.tab,
+                    extensionContext: extensionContext
+                ),
                 space: extensionRequestedTargetSpace(for: session.tab)
             )
         }
@@ -247,6 +255,27 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             window: targetWindow,
             space: targetSpace
         )
+    }
+
+    private func extensionRequestedNormalWindow(
+        for openerTab: Tab,
+        extensionContext: WKWebExtensionContext?
+    ) -> BrowserWindowState? {
+        guard let browserManager else { return nil }
+        let targetProfileId =
+            resolvedProfileId(for: openerTab)
+                ?? extensionContext.flatMap { profileId(for: $0) }
+                ?? currentProfileId
+                ?? browserManager.currentProfile?.id
+
+        let candidates = [
+            browserManager.windowState(containing: openerTab),
+            browserManager.windowRegistry?.activeWindow
+        ]
+
+        return candidates.compactMap { $0 }.first { windowState in
+            targetProfileId.map { windowMatchesProfile(windowState, profileId: $0) } ?? true
+        }
     }
 
     private func extensionRequestedTargetSpace(for tab: Tab) -> Space? {
@@ -402,6 +431,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             )
         }
 
+        materializeExtensionRequestedNormalTabIfNeeded(
+            newTab,
+            isActive: shouldBeActive,
+            targetWindow: targetWindow
+        )
         if shouldBeActive, let targetWindow {
             browserManager.selectTab(newTab, in: targetWindow)
         }
@@ -447,6 +481,102 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             return false
         }
         return Self.isExtensionOwnedURL(loadURL)
+    }
+
+    func materializeExtensionRequestedNormalTabIfNeeded(
+        _ tab: Tab,
+        isActive: Bool,
+        targetWindow: BrowserWindowState?
+    ) {
+        guard isActive,
+              tab.webExtensionContextOverride == nil,
+              tab.requiresPrimaryWebView
+        else {
+            return
+        }
+
+        if let targetWindow, let browserManager {
+            browserManager.materializeVisibleTabWebViewIfNeeded(tab, in: targetWindow)
+        }
+        if tab.isUnloaded {
+            tab.loadWebViewIfNeeded()
+        }
+        prepareExtensionRequestedNormalTabWebViewForOpenNotification(
+            tab,
+            targetWindow: targetWindow
+        )
+    }
+
+    private func prepareExtensionRequestedNormalTabWebViewForOpenNotification(
+        _ tab: Tab,
+        targetWindow: BrowserWindowState?
+    ) {
+        if let webView = tab.assignedWebView ?? tab.existingWebView {
+            prepareWebViewForExtensionRuntime(
+                webView,
+                currentURL: tab.url,
+                reason: "ExtensionManager.extensionRequestedNormalTab"
+            )
+            if extensionRequestedNormalTabWebViewIsUsable(webView, for: tab) {
+                return
+            }
+        }
+
+        let replacementReason = "ExtensionManager.extensionRequestedNormalTab.replacement"
+        guard let replacementWebView = tab.makeNormalTabWebView(
+            reason: replacementReason,
+            prepareConfiguration: { [weak self, weak tab] configuration in
+                guard let self,
+                      let tab,
+                      let profileId = self.resolvedProfileId(for: tab)
+                else {
+                    return
+                }
+                self.prepareWebViewConfigurationForExtensionRuntime(
+                    configuration,
+                    profileId: profileId,
+                    reason: "\(replacementReason).configuration"
+                )
+            }
+        ) else {
+            return
+        }
+        prepareWebViewForExtensionRuntime(
+            replacementWebView,
+            currentURL: tab.url,
+            reason: replacementReason
+        )
+        guard extensionRequestedNormalTabWebViewIsUsable(replacementWebView, for: tab) else {
+            tab.cleanupCloneWebView(replacementWebView)
+            return
+        }
+
+        let previousWebView = tab.existingWebView
+        if let targetWindow {
+            tab.assignWebViewToWindow(replacementWebView, windowId: targetWindow.id)
+            browserManager?.webViewCoordinator?.setWebView(
+                replacementWebView,
+                for: tab.id,
+                in: targetWindow.id
+            )
+        } else {
+            tab._webView = replacementWebView
+        }
+        if let previousWebView, previousWebView !== replacementWebView {
+            tab.cleanupCloneWebView(previousWebView)
+        }
+    }
+
+    private func extensionRequestedNormalTabWebViewIsUsable(
+        _ webView: WKWebView,
+        for tab: Tab
+    ) -> Bool {
+        guard let expectedController = extensionController(for: tab),
+              attachExtensionControllerIfNeeded(to: webView, for: tab)
+        else {
+            return false
+        }
+        return webView.configuration.webExtensionController === expectedController
     }
 
     private func materializeExtensionOwnedTabIfNeeded(
@@ -805,7 +935,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
 
         let unresolvedPermissions = permissions.subtracting(policyDeniedPermissions).filter {
-            isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0)) == false
+            isGrantedPermissionStatus(
+                effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+            ) == false
         }
         let extensionId = extensionID(for: extensionContext)
         let profileId = profileId(for: extensionContext)
@@ -833,7 +965,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
         guard promptPermissions.isEmpty == false else {
             let grantedPermissions = permissions.filter {
-                isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                isGrantedPermissionStatus(
+                    effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+                )
             }
             completionHandler(grantedPermissions, nil)
             return
@@ -873,7 +1007,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     }
                 }
                 let grantedPermissions = permissions.filter {
-                    self.isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                    self.isGrantedPermissionStatus(
+                        self.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+                    )
                 }
                 completionHandler(grantedPermissions, expirationDate)
             case .deny:
@@ -895,7 +1031,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     }
                 }
                 let grantedPermissions = permissions.filter {
-                    self.isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                    self.isGrantedPermissionStatus(
+                        self.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+                    )
                 }
                 completionHandler(grantedPermissions, nil)
             }
@@ -910,7 +1048,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         completionHandler: @escaping (Set<WKWebExtension.MatchPattern>, Date?) -> Void
     ) {
         let unresolvedMatches = matchPatterns.filter {
-            isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0)) == false
+            isGrantedPermissionStatus(
+                effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+            ) == false
         }
         let extensionId = extensionID(for: extensionContext)
         let profileId = profileId(for: extensionContext)
@@ -944,7 +1084,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
         guard promptMatches.isEmpty == false else {
             let grantedMatches = matchPatterns.filter {
-                isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                isGrantedPermissionStatus(
+                    effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+                )
             }
             completionHandler(grantedMatches, nil)
             return
@@ -991,7 +1133,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     }
                 }
                 let grantedMatches = matchPatterns.filter {
-                    self.isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                    self.isGrantedPermissionStatus(
+                        self.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+                    )
                 }
                 completionHandler(grantedMatches, expirationDate)
             case .deny:
@@ -1019,7 +1163,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     }
                 }
                 let grantedMatches = matchPatterns.filter {
-                    self.isGrantedPermissionStatus(extensionContext.permissionStatus(for: $0))
+                    self.isGrantedPermissionStatus(
+                        self.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
+                    )
                 }
                 completionHandler(grantedMatches, nil)
             }
@@ -1039,7 +1185,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         let extensionId = extensionID(for: extensionContext)
         let profileId = profileId(for: extensionContext)
         for url in urls {
-            let status = extensionContext.permissionStatus(for: url)
+            let status = effectivePermissionStatus(for: url, in: extensionContext, tab: tab)
             if isGrantedPermissionStatus(status) {
                 autoGranted.insert(url)
                 SafariExtensionAutofillFillDiagnostics.recordHostPermission(
@@ -1055,7 +1201,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 )
             } else if explicitlyGrantURLIfCoveredByGrantedMatchPattern(
                 url,
-                in: extensionContext
+                in: extensionContext,
+                tab: tab
             ) {
                 autoGranted.insert(url)
                 SafariExtensionAutofillFillDiagnostics.recordHostPermission(
@@ -1125,7 +1272,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 if stored.state == .allowed,
                    explicitlyGrantURLIfCoveredByGrantedMatchPattern(
                        url,
-                       in: extensionContext
+                       in: extensionContext,
+                       tab: tab
                    )
                 {
                     autoGranted.insert(url)
@@ -1349,18 +1497,24 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
         _ = controller
-        SumiNativeMessagingRuntimeCounters.recordDelegateSendMessageInvoked()
         let extensionId = extensionID(for: extensionContext)
+        let extensionsModuleEnabled =
+            browserManager?.extensionsModule.isEnabled
+            ?? SumiModuleRegistry.shared.isEnabled(.extensions)
+
+        SumiNativeMessagingRuntimeCounters.recordDelegateSendMessageInvoked()
         SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
             extensionId: extensionId
         )
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            _ = try? await self.ensureBackgroundAvailableIfRequired(
-                for: extensionContext.webExtension,
-                context: extensionContext,
-                reason: .nativeMessaging
-            )
+        if extensionsModuleEnabled {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                _ = try? await self.ensureBackgroundAvailableIfRequired(
+                    for: extensionContext.webExtension,
+                    context: extensionContext,
+                    reason: .nativeMessaging
+                )
+            }
         }
         let profileId = profileId(for: extensionContext)
         let extensionDisplayName = ExtensionUtils.displayName(
@@ -1422,13 +1576,18 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
             extensionId: extensionId
         )
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            _ = try? await self.ensureBackgroundAvailableIfRequired(
-                for: extensionContext.webExtension,
-                context: extensionContext,
-                reason: .nativeMessaging
-            )
+        let extensionsModuleEnabled =
+            browserManager?.extensionsModule.isEnabled
+            ?? SumiModuleRegistry.shared.isEnabled(.extensions)
+        if extensionsModuleEnabled {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                _ = try? await self.ensureBackgroundAvailableIfRequired(
+                    for: extensionContext.webExtension,
+                    context: extensionContext,
+                    reason: .nativeMessaging
+                )
+            }
         }
 
         let profileId = profileId(for: extensionContext)

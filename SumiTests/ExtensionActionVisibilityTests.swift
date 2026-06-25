@@ -182,6 +182,13 @@ final class ExtensionActionVisibilityTests: XCTestCase {
         XCTAssertFalse(source.contains("notifyTabActivated(newTab: currentTab, previous: nil)"))
     }
 
+    func testURLBarDoesNotHostASeparateAdBlockerAction() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/URLBarTrailingActions.swift")
+
+        XCTAssertFalse(source.contains("urlbar-adblocker-action-button"))
+        XCTAssertFalse(source.contains("AdBlockerActionAnchorView"))
+    }
+
     private static func source(named relativePath: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let repositoryRoot = testFile.deletingLastPathComponent().deletingLastPathComponent()

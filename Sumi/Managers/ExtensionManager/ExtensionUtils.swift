@@ -239,6 +239,7 @@ struct ExtensionUtils {
         }
     }
 
+    @MainActor
     static func hostPatternMatchesURL(_ pattern: String, url: URL) -> Bool {
         UserScriptMatchEngine.matchPattern(pattern, matches: url)
     }

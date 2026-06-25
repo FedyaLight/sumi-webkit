@@ -2090,6 +2090,194 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
+    func testRuntimeTeardownInvalidatesLoadBeforeControllerLoad() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "TeardownRaceProbe"
+        )
+        let entity = try XCTUnwrap(try manager.extensionEntity(for: installed.id))
+        entity.isEnabled = true
+        try container.mainContext.save()
+        let controller = manager.ensureExtensionController(for: profile.id)
+
+        manager.testHooks.beforeControllerLoad = { _, _ in
+            manager.tearDownExtensionRuntime(
+                reason: "SafariExtensionWebViewControllerWiringTests",
+                removeUIState: true,
+                releaseController: true
+            )
+        }
+
+        do {
+            _ = try await manager.loadEnabledExtension(from: entity)
+            XCTFail("A load invalidated by runtime teardown must not reach WebKit")
+        } catch {
+            XCTAssertTrue(error is CancellationError, String(describing: error))
+        }
+
+        XCTAssertTrue(controller.extensionContexts.isEmpty)
+        XCTAssertTrue(manager.extensionContextsByProfile.isEmpty)
+        XCTAssertTrue(manager.extensionControllersByProfile.isEmpty)
+    }
+
+    func testRuntimeTeardownUnloadsLoadedContexts() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        let extensionContext = try await makeLoadedExtensionContext(
+            manager: manager,
+            profile: profile
+        )
+        let controller = try XCTUnwrap(extensionContext.webExtensionController)
+
+        XCTAssertTrue(extensionContext.isLoaded)
+        XCTAssertFalse(controller.extensionContexts.isEmpty)
+
+        manager.tearDownExtensionRuntime(
+            reason: "SafariExtensionWebViewControllerWiringTests",
+            removeUIState: true,
+            releaseController: true
+        )
+
+        XCTAssertFalse(extensionContext.isLoaded)
+        XCTAssertTrue(controller.extensionContexts.isEmpty)
+        XCTAssertTrue(manager.extensionContextsByProfile.isEmpty)
+        XCTAssertTrue(manager.extensionControllersByProfile.isEmpty)
+    }
+
+    func testUserExtensionRuntimeTeardownMarksAllLiveNormalTabsAffected()
+        async throws
+    {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        let browserManager = BrowserManager()
+        manager.attach(browserManager: browserManager)
+        browserManager.profileManager.profiles = [profile]
+        browserManager.currentProfile = profile
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installContentScriptProbeExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory
+        )
+        _ = try await manager.enableExtension(installed.id)
+        _ = try await manager.ensureExtensionLoaded(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        manager.extensionsLoaded = true
+
+        let tabWithController = browserManager.tabManager.createNewTab(
+            url: "https://example.com/with-controller",
+            in: space,
+            activate: false
+        )
+        tabWithController.profileId = profile.id
+        let controllerConfiguration = browserConfiguration
+            .auxiliaryWebViewConfiguration(surface: .extensionOptions)
+        manager.prepareWebViewConfigurationForExtensionRuntime(
+            controllerConfiguration,
+            profileId: profile.id,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+        let webViewWithController = FocusableWKWebView(
+            frame: .zero,
+            configuration: controllerConfiguration
+        )
+        webViewWithController.owningTab = tabWithController
+        tabWithController._webView = webViewWithController
+
+        let tabWithoutController = browserManager.tabManager.createNewTab(
+            url: "https://example.com/without-controller",
+            in: space,
+            activate: false
+        )
+        tabWithoutController.profileId = profile.id
+        let plainConfiguration = browserConfiguration
+            .auxiliaryWebViewConfiguration(surface: .extensionOptions)
+        let webViewWithoutController = FocusableWKWebView(
+            frame: .zero,
+            configuration: plainConfiguration
+        )
+        webViewWithoutController.owningTab = tabWithoutController
+        tabWithoutController._webView = webViewWithoutController
+
+        let affectedIDs = Set(
+            manager.tabsAffectedByLoadedUserExtensionRuntime().map(\.id)
+        )
+
+        XCTAssertTrue(manager.hasLoadedUserExtensionRuntime)
+        XCTAssertTrue(affectedIDs.contains(tabWithController.id))
+        XCTAssertTrue(affectedIDs.contains(tabWithoutController.id))
+    }
+
+    func testRuntimeTeardownClearsTabExtensionOverridesBeforeRebuild() throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true,
+            profileId: profile.id
+        )
+        manager.extensionsLoaded = true
+
+        let tab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "https://accounts.google.com/")!
+        )
+        let webView = attachUsableExtensionWebView(
+            to: tab,
+            manager: manager,
+            profile: profile
+        )
+        tab.webViewConfigurationOverride = webView.configuration
+        tab.extensionRuntimeOpenNotifiedDocumentSequence = 1
+        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 1
+        tab.extensionRuntimeOpenNotifiedWithLoadedContexts = true
+
+        XCTAssertNotNil(webView.configuration.webExtensionController)
+        XCTAssertNotNil(tab.webViewConfigurationOverride)
+
+        manager.rebuildLiveWebViewsAfterUserExtensionRuntimeTeardown(
+            [tab],
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+
+        XCTAssertNil(tab.webViewConfigurationOverride)
+        XCTAssertNil(tab.extensionRuntimeOpenNotifiedDocumentSequence)
+        XCTAssertNil(tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration)
+        XCTAssertNil(tab.extensionRuntimeOpenNotifiedWithLoadedContexts)
+    }
+
     func testTabNeedsExtensionContentScriptRebindWhenOpenNotifiedAfterCommit() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")

@@ -66,6 +66,8 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
         let relay = SumiNativeMessagingRelay(
             importStore: SafariExtensionImportStore(defaults: makeDefaults()),
             launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: []),
+            extensionsModuleEnabled: { true },
             logDiagnostic: { diagnostics.append($0) }
         )
 

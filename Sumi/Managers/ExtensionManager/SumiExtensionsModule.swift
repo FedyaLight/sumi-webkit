@@ -86,6 +86,8 @@ final class SumiExtensionsModule {
         guard isEnabled else { return nil }
 
         if let cachedManager {
+            transferPendingActionAnchors(to: cachedManager)
+            surfaceStore.bind(cachedManager)
             return cachedManager
         }
 
@@ -557,13 +559,18 @@ final class SumiExtensionsModule {
             return
         }
 
+        let tabsToRebuild = cachedManager.tabsAffectedByLoadedUserExtensionRuntime()
         cachedManager.tearDownExtensionRuntime(
             reason: reason,
             removeUIState: true,
             releaseController: true
         )
-        self.cachedManager = nil
         surfaceStore.bind(nil)
+        cachedManager.rebuildLiveWebViewsAfterUserExtensionRuntimeTeardown(
+            tabsToRebuild,
+            reason: reason
+        )
+        self.cachedManager = nil
     }
 
     #if DEBUG

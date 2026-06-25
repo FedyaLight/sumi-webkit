@@ -695,7 +695,9 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             return
         }
 
-        if tab.protectionAttachmentRequiresNormalWebViewRebuild(for: webView.url ?? tab.url) {
+        let reloadTargetURL = webView.url ?? tab.url
+        if tab.protectionAttachmentRequiresNormalWebViewRebuild(for: reloadTargetURL)
+            || tab.autoplayPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
             tab.refresh()
         } else if fromOrigin {
             webView.reloadFromOrigin()

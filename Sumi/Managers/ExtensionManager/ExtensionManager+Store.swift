@@ -356,6 +356,14 @@ extension ExtensionManager {
                 return match
             }
         }
+        for contexts in extensionContextsByProfile.values {
+            if let match = contexts.first(where: {
+                $0.value.webExtension === extensionContext.webExtension
+                    || $0.value.baseURL == extensionContext.baseURL
+            })?.key {
+                return match
+            }
+        }
         return nil
     }
 
