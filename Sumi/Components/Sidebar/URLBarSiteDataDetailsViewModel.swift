@@ -90,7 +90,7 @@ final class URLBarSiteDataDetailsViewModel: ObservableObject {
 
         await cleanupService.removeWebsiteDataForExactHost(
             host,
-            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+            ofTypes: WKWebsiteDataStore.sumiManualFullCleanupDataTypes,
             includingCookies: true,
             in: profile.dataStore
         )

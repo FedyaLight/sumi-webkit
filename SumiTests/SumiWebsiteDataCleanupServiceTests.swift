@@ -366,7 +366,10 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(cleanupService.removedExactHosts.count, 1)
         XCTAssertEqual(cleanupService.removedExactHosts[0].host, "youtube.com")
         XCTAssertTrue(cleanupService.removedExactHosts[0].includingCookies)
-        XCTAssertEqual(cleanupService.removedExactHosts[0].dataTypes, WKWebsiteDataStore.allWebsiteDataTypes())
+        XCTAssertEqual(
+            cleanupService.removedExactHosts[0].dataTypes,
+            WKWebsiteDataStore.sumiManualFullCleanupDataTypes
+        )
     }
 
     func testSiteDataDeleteWhenAllWindowsClosePolicyRunsDeferredCleanup() async {
@@ -404,7 +407,50 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(cleanupService.removedExactHosts.count, 1)
         XCTAssertEqual(cleanupService.removedExactHosts[0].host, "accounts.youtube.com")
         XCTAssertTrue(cleanupService.removedExactHosts[0].includingCookies)
-        XCTAssertEqual(cleanupService.removedExactHosts[0].dataTypes, WKWebsiteDataStore.allWebsiteDataTypes())
+        XCTAssertEqual(
+            cleanupService.removedExactHosts[0].dataTypes,
+            WKWebsiteDataStore.sumiManualFullCleanupDataTypes
+        )
+    }
+
+    func testURLBarSiteDataDeleteUsesManualFullExactHostCleanup() async {
+        let suiteName = "URLBarSiteDataDeleteTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let policyStore = SumiSiteDataPolicyStore(userDefaults: defaults)
+        let cleanupService = FakeCleanupService()
+        let enforcementService = SumiSiteDataPolicyEnforcementService(
+            policyStore: policyStore,
+            cleanupService: cleanupService
+        )
+        let viewModel = URLBarSiteDataDetailsViewModel(
+            cleanupService: cleanupService,
+            policyStore: policyStore,
+            enforcementService: enforcementService
+        )
+        let profile = Profile(
+            name: "Primary",
+            icon: "person",
+            dataStore: .nonPersistent()
+        )
+
+        await viewModel.delete(
+            entry: SumiSiteDataEntry(
+                domain: ".Accounts.YouTube.com",
+                cookieCount: 1,
+                recordCount: 1
+            ),
+            url: URL(string: "https://accounts.youtube.com/settings"),
+            profile: profile
+        )
+
+        XCTAssertEqual(cleanupService.removedExactHosts.count, 1)
+        XCTAssertEqual(cleanupService.removedExactHosts[0].host, "accounts.youtube.com")
+        XCTAssertTrue(cleanupService.removedExactHosts[0].includingCookies)
+        XCTAssertEqual(
+            cleanupService.removedExactHosts[0].dataTypes,
+            WKWebsiteDataStore.sumiManualFullCleanupDataTypes
+        )
     }
 
     func testNoSynchronousWaitsRemainInCleanupPaths() throws {

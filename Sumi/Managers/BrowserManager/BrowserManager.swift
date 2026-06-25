@@ -2557,12 +2557,14 @@ class BrowserManager: ObservableObject {
             return preferredRegularTabForWindow(windowState)
         }
 
-        let regularTabs = tabManager.tabs(in: space).filter { $0.id != tab.id }
+        let spaceTabs = tabManager.tabs(in: space)
+        let regularTabs = spaceTabs.filter { $0.id != tab.id }
+        let regularTabById = tabLookup(excluding: tab.id, in: spaceTabs)
         if let historyMatch = historicalFallbackTab(
             afterClosing: tab,
             in: windowState,
             targetSpaceId: targetSpaceId,
-            regularTabs: regularTabs
+            regularTabsById: regularTabById
         ) {
             return historyMatch
         }
@@ -2571,16 +2573,14 @@ class BrowserManager: ObservableObject {
             return nil
         }
 
-        if let historyMatch = windowState.recentRegularTabIdsBySpace[targetSpaceId]?.first(where: { historyId in
-            historyId != tab.id && regularTabs.contains(where: { $0.id == historyId })
-        }) {
-            if let matchedTab = regularTabs.first(where: { $0.id == historyMatch }) {
-                return matchedTab
-            }
+        if let historyMatch = firstTab(
+            matching: windowState.recentRegularTabIdsBySpace[targetSpaceId],
+            in: regularTabById
+        ) {
+            return historyMatch
         }
 
-        let currentRegularTabs = tabManager.tabs(in: space)
-        if let closingIndex = currentRegularTabs.firstIndex(where: { $0.id == tab.id }) {
+        if let closingIndex = spaceTabs.firstIndex(where: { $0.id == tab.id }) {
             if regularTabs.indices.contains(closingIndex) {
                 return regularTabs[closingIndex]
             }
@@ -2604,7 +2604,7 @@ class BrowserManager: ObservableObject {
             afterClosing: tab,
             in: windowState,
             targetSpaceId: targetSpaceId,
-            regularTabs: tabManager.tabs(in: space).filter { $0.id != tab.id }
+            regularTabsById: tabLookup(excluding: tab.id, in: tabManager.tabs(in: space))
         )
     }
 
@@ -2612,13 +2612,12 @@ class BrowserManager: ObservableObject {
         afterClosing tab: Tab,
         in windowState: BrowserWindowState,
         targetSpaceId: UUID,
-        regularTabs: [Tab]
+        regularTabsById: [Tab.ID: Tab]
     ) -> Tab? {
         for item in windowState.recentSelectionItemsBySpace[targetSpaceId] ?? [] {
             switch item {
             case let .regularTab(tabId):
-                if tabId != tab.id,
-                   let regularTab = regularTabs.first(where: { $0.id == tabId }) {
+                if let regularTab = regularTabsById[tabId] {
                     return regularTab
                 }
             case let .shortcutPin(pinId):
@@ -2630,6 +2629,23 @@ class BrowserManager: ObservableObject {
             }
         }
 
+        return nil
+    }
+
+    private func tabLookup(excluding excludedTabId: Tab.ID, in tabs: [Tab]) -> [Tab.ID: Tab] {
+        tabs.reduce(into: [:]) { lookup, tab in
+            guard tab.id != excludedTabId, lookup[tab.id] == nil else { return }
+            lookup[tab.id] = tab
+        }
+    }
+
+    private func firstTab(matching tabIds: [Tab.ID]?, in tabsById: [Tab.ID: Tab]) -> Tab? {
+        guard let tabIds else { return nil }
+        for tabId in tabIds {
+            if let tab = tabsById[tabId] {
+                return tab
+            }
+        }
         return nil
     }
 

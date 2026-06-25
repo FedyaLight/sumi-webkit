@@ -21,6 +21,8 @@ final class SumiNativeMessagingPortSession: NSObject {
     private let companionProtocolErrorProvider: () -> NSError
     private let portInactivityTimeout: Duration
     private var inactivityTask: Task<Void, Never>?
+    private let disconnectFinalizer: @MainActor (SumiNativeMessagingPortSession, (any Error)?) -> Void
+    private var didFinalizeDisconnect = false
 
     init(
         port: any SumiNativeMessagingPortControlling,
@@ -31,7 +33,11 @@ final class SumiNativeMessagingPortSession: NSObject {
         resolverBucket: SumiNativeMessagingResolverBucket,
         logDiagnostic: @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void,
         companionProtocolErrorProvider: @escaping () -> NSError,
-        portInactivityTimeout: Duration = SumiNativeMessagingConnection.defaultPortInactivityTimeout
+        portInactivityTimeout: Duration = SumiNativeMessagingConnection.defaultPortInactivityTimeout,
+        disconnectFinalizer: @escaping @MainActor (
+            SumiNativeMessagingPortSession,
+            (any Error)?
+        ) -> Void = { _, _ in }
     ) {
         self.port = port
         self.adapter = adapter
@@ -42,6 +48,7 @@ final class SumiNativeMessagingPortSession: NSObject {
         self.logDiagnostic = logDiagnostic
         self.companionProtocolErrorProvider = companionProtocolErrorProvider
         self.portInactivityTimeout = portInactivityTimeout
+        self.disconnectFinalizer = disconnectFinalizer
         super.init()
         wirePort()
         armPortInactivityTimeout()
@@ -53,8 +60,12 @@ final class SumiNativeMessagingPortSession: NSObject {
 
     func disconnect(throwing error: (any Error)?) {
         cancelPortInactivityTimeout()
-        guard port.isDisconnected == false else { return }
+        guard port.isDisconnected == false else {
+            finalizeDisconnect(throwing: error)
+            return
+        }
         port.disconnect(throwing: error)
+        finalizeDisconnect(throwing: error)
     }
 
     func touchPortActivity() {
@@ -62,8 +73,11 @@ final class SumiNativeMessagingPortSession: NSObject {
     }
 
     func disconnectDueToUnsupportedProtocol() {
-        guard port.isDisconnected == false else { return }
-        port.disconnect(throwing: companionProtocolErrorProvider())
+        guard port.isDisconnected == false else {
+            finalizeDisconnect(throwing: nil)
+            return
+        }
+        disconnect(throwing: companionProtocolErrorProvider())
     }
 
     func sendReplyToExtension(_ message: Any) {
@@ -145,6 +159,7 @@ final class SumiNativeMessagingPortSession: NSObject {
                     errorCode: nsError?.code
                 )
             )
+            self.finalizeDisconnect(throwing: error)
         }
     }
 
@@ -169,6 +184,13 @@ final class SumiNativeMessagingPortSession: NSObject {
     private func cancelPortInactivityTimeout() {
         inactivityTask?.cancel()
         inactivityTask = nil
+    }
+
+    private func finalizeDisconnect(throwing error: (any Error)?) {
+        cancelPortInactivityTimeout()
+        guard didFinalizeDisconnect == false else { return }
+        didFinalizeDisconnect = true
+        disconnectFinalizer(self, error)
     }
 
     private func makeDiagnostic(

@@ -1635,6 +1635,17 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     self.nativeMessagePortProfileIDs[portKey] = profileId
                 }
             },
+            unregisterHandler: { [weak self] handler in
+                guard let self else { return }
+                if let current = self.nativeMessagePortHandlers[portKey],
+                   current !== handler
+                {
+                    return
+                }
+                self.nativeMessagePortHandlers.removeValue(forKey: portKey)
+                self.nativeMessagePortExtensionIDs.removeValue(forKey: portKey)
+                self.nativeMessagePortProfileIDs.removeValue(forKey: portKey)
+            },
             completionHandler: SumiWebExtensionCallbackRelay.wrapCompletionHandler(
                 api: .connectNativePort,
                 extensionId: extensionId,

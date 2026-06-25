@@ -47,6 +47,7 @@ final class SumiNativeMessagingRelay {
     private let profileRuntimeLoaded: () -> Bool
     private let rawLogDiagnostic: @MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void
     private var trackedPortSessions: [ObjectIdentifier: SumiNativeMessagingPortSession] = [:]
+    private var disconnectingAdapterPortSessionIDs: Set<ObjectIdentifier> = []
     private var pendingOneShotRelays: [ObjectIdentifier: PendingOneShotRelay] = [:]
 
     private struct PendingOneShotRelay {
@@ -512,6 +513,7 @@ final class SumiNativeMessagingRelay {
         profileId: UUID? = nil,
         installedExtensions: [InstalledExtension],
         registerHandler: (SumiNativeMessagingPortSession) -> Void,
+        unregisterHandler: @escaping (SumiNativeMessagingPortSession) -> Void = { _ in },
         completionHandler: @escaping ((any Error)?) -> Void
     ) -> SumiNativeMessagingPortSession? {
         let applicationIdentifier = port.applicationIdentifier
@@ -777,6 +779,9 @@ final class SumiNativeMessagingRelay {
                         launchAllowed: detail.launchAllowed
                     )
                 )
+            },
+            disconnectFinalizer: { [weak self] session, _ in
+                self?.finalizePortSession(session, unregisterHandler: unregisterHandler)
             }
         )
         trackPortSession(session)
@@ -800,7 +805,6 @@ final class SumiNativeMessagingRelay {
                 hostBundleIdentifier: nil
             )
             teardownPortSession(session)
-            trackedPortSessions.removeValue(forKey: ObjectIdentifier(session))
             completionHandler(
                 SumiNativeMessagingErrorMapper.relayError(code: .hostNotFound, diagnostic: diagnostic)
             )
@@ -860,7 +864,6 @@ final class SumiNativeMessagingRelay {
                     hostBundleIdentifier: hostBundleIdentifier
                 )
                 self.teardownPortSession(session)
-                self.trackedPortSessions.removeValue(forKey: ObjectIdentifier(session))
                 completionHandler(error)
                 return
             }
@@ -1196,27 +1199,49 @@ final class SumiNativeMessagingRelay {
         forExtensionId extensionId: String,
         profileId: UUID?
     ) {
-        for (key, session) in trackedPortSessions {
-            guard session.extensionId == extensionId else { continue }
-            if let profileId, session.profileId != profileId { continue }
+        let sessions = trackedPortSessions.values.filter { session in
+            guard session.extensionId == extensionId else { return false }
+            if let profileId, session.profileId != profileId { return false }
+            return true
+        }
+
+        for session in sessions {
             teardownPortSession(session)
-            trackedPortSessions.removeValue(forKey: key)
         }
     }
 
     private func disconnectAllTrackedPortSessions() {
-        trackedPortSessions.values.forEach { teardownPortSession($0) }
-        trackedPortSessions.removeAll()
+        let sessions = Array(trackedPortSessions.values)
+        sessions.forEach { teardownPortSession($0) }
     }
 
     private func teardownPortSession(_ session: SumiNativeMessagingPortSession) {
+        disconnectAdapterPortIfNeeded(for: session)
+        session.disconnect()
+    }
+
+    private func finalizePortSession(
+        _ session: SumiNativeMessagingPortSession,
+        unregisterHandler: (SumiNativeMessagingPortSession) -> Void
+    ) {
+        let key = ObjectIdentifier(session)
+        let wasTracked = trackedPortSessions.removeValue(forKey: key) != nil
+        disconnectAdapterPortIfNeeded(for: session)
+        unregisterHandler(session)
+        disconnectingAdapterPortSessionIDs.remove(key)
+        if wasTracked {
+            SumiNativeMessagingRuntimeCounters.recordPortClosed()
+        }
+    }
+
+    private func disconnectAdapterPortIfNeeded(for session: SumiNativeMessagingPortSession) {
+        let key = ObjectIdentifier(session)
+        guard disconnectingAdapterPortSessionIDs.insert(key).inserted else { return }
         if let adapter = adapterRegistry.adapter(
             forHostBundleIdentifier: session.resolvedHostBundleIdentifier
         ) {
             adapter.disconnectPort(session: session)
         }
-        session.disconnect()
-        SumiNativeMessagingRuntimeCounters.recordPortClosed()
     }
 
     private struct RegisteredAdapterLookup {

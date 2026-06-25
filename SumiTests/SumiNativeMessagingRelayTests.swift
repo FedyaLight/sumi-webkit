@@ -346,6 +346,62 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         XCTAssertFalse(session.resolvedHostBundleIdentifier.isEmpty)
     }
 
+    func testPortDisconnectUnregistersRegisteredHandlerOnce() async throws {
+        SumiNativeMessagingRuntimeCounters.resetForTesting()
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+        let adapter = FakeProtocolAdapter(
+            supportedHosts: ["com.example.host"],
+            shouldLaunchOnConnect: false
+        )
+        let relay = makeRelay(launcher: launcher, adapters: [adapter])
+        let port = MockNativeMessagingPort()
+        port.applicationIdentifier = "com.example.host"
+        let portKey = ObjectIdentifier(port)
+        var registeredHandlers: [ObjectIdentifier: SumiNativeMessagingPortSession] = [:]
+        var unregisterCount = 0
+
+        let expectation = expectation(description: "nativeMessagingConnect")
+        var connectError: (any Error)?
+        _ = relay.handleConnect(
+            port: port,
+            extensionId: installed.id,
+            installedExtensions: [installed],
+            registerHandler: { handler in
+                registeredHandlers[portKey] = handler
+            },
+            unregisterHandler: { handler in
+                unregisterCount += 1
+                if let current = registeredHandlers[portKey], current === handler {
+                    registeredHandlers.removeValue(forKey: portKey)
+                }
+            },
+            completionHandler: { error in
+                connectError = error
+                expectation.fulfill()
+            }
+        )
+        await fulfillment(of: [expectation], timeout: 5)
+
+        XCTAssertNil(connectError)
+        XCTAssertEqual(registeredHandlers.count, 1)
+        XCTAssertEqual(SumiNativeMessagingRuntimeCounters.snapshot().liveRelayPortSessions, 1)
+
+        port.simulateDisconnect()
+        port.simulateDisconnect()
+
+        let snapshot = SumiNativeMessagingRuntimeCounters.snapshot()
+        XCTAssertTrue(registeredHandlers.isEmpty)
+        XCTAssertEqual(unregisterCount, 1)
+        XCTAssertEqual(snapshot.liveRelayPortSessions, 0)
+        XCTAssertEqual(snapshot.portCloseCount, 1)
+    }
+
     // 8. Port disconnect from extension/app side
     func testPortDisconnectFromExtensionSide() async throws {
         let port = MockNativeMessagingPort()
@@ -401,6 +457,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
     // 10. Disable/delete/module off closes ports
     func testPortSessionDisconnectIsIdempotent() {
         let port = MockNativeMessagingPort()
+        var finalizerCount = 0
         let session = SumiNativeMessagingPortSession(
             port: port,
             adapter: nil,
@@ -413,11 +470,16 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
                     code: .companionAppProtocolUnknown,
                     diagnostic: nil
                 )
+            },
+            disconnectFinalizer: { _, _ in
+                finalizerCount += 1
             }
         )
         session.disconnect()
         session.disconnect()
+        port.simulateDisconnect()
         XCTAssertTrue(port.isDisconnected)
+        XCTAssertEqual(finalizerCount, 1)
     }
 
     // 11. No payload logging

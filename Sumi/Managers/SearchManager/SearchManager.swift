@@ -49,6 +49,21 @@ class SearchManager {
     // Zen inherits Firefox's browser.urlbar.maxRichResults default.
     private let maxVisibleSuggestions = 10
 
+    private struct SuggestionStoreContext {
+        let bookmarkItems: [SumiSuggestionEngine.BookmarkItem]
+        let bookmarksByURL: [String: [SumiBookmark]]
+        let tabItems: [SumiSuggestionEngine.TabItem]
+        let tabsByID: [UUID: Tab]
+        let tabsByURL: [String: Tab]
+    }
+
+    private struct SuggestionQueryContext {
+        let historyEntries: [HistoryListItem]
+        let historyItems: [SumiSuggestionEngine.HistoryItem]
+        let historyByURL: [String: [HistoryListItem]]
+        let store: SuggestionStoreContext
+    }
+
     init(suggestionDataProvider: SearchSuggestionDataProviding = DuckDuckGoSearchSuggestionDataProvider()) {
         self.suggestionDataProvider = suggestionDataProvider
     }
@@ -156,8 +171,7 @@ class SearchManager {
             updateSuggestionsIfNeeded([directURLSuggestion])
         }
 
-        let tabItems = currentTabSuggestionItems()
-        let bookmarkItems = currentBookmarkSuggestionItems()
+        let storeContext = currentSuggestionStoreContext()
 
         historySuggestionTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -165,15 +179,19 @@ class SearchManager {
             guard !Task.isCancelled,
                   generation == self.activeWebSuggestionGeneration
             else { return }
+            let queryContext = self.suggestionQueryContext(
+                historyEntries: historyEntries,
+                storeContext: storeContext
+            )
 
             let localResult = self.suggestionEngine.result(
                 for: normalizedQuery,
-                history: historyEntries.map(Self.historyItem),
-                bookmarks: bookmarkItems,
-                openTabs: tabItems,
+                history: queryContext.historyItems,
+                bookmarks: queryContext.store.bookmarkItems,
+                openTabs: queryContext.store.tabItems,
                 apiSuggestions: []
             )
-            let localSuggestions = self.makeSuggestions(from: localResult, query: normalizedQuery, historyEntries: historyEntries)
+            let localSuggestions = self.makeSuggestions(from: localResult, query: normalizedQuery, context: queryContext)
 
             if !localSuggestions.isEmpty {
                 self.updateSuggestionsIfNeeded(localSuggestions)
@@ -182,12 +200,12 @@ class SearchManager {
             if let cachedSuggestions = self.cachedWebSuggestions[normalizedQuery] {
                 let combinedResult = self.suggestionEngine.result(
                     for: normalizedQuery,
-                    history: historyEntries.map(Self.historyItem),
-                    bookmarks: bookmarkItems,
-                    openTabs: tabItems,
+                    history: queryContext.historyItems,
+                    bookmarks: queryContext.store.bookmarkItems,
+                    openTabs: queryContext.store.tabItems,
                     apiSuggestions: cachedSuggestions
                 )
-                let combinedSuggestions = self.makeSuggestions(from: combinedResult, query: normalizedQuery, historyEntries: historyEntries)
+                let combinedSuggestions = self.makeSuggestions(from: combinedResult, query: normalizedQuery, context: queryContext)
                 self.updateSuggestionsIfNeeded(combinedSuggestions)
                 self.isLoadingSuggestions = false
                 return
@@ -195,27 +213,9 @@ class SearchManager {
 
             self.fetchWebSuggestions(
                 for: normalizedQuery,
-                historyEntries: historyEntries,
-                bookmarkItems: bookmarkItems,
-                tabItems: tabItems,
+                context: queryContext,
                 generation: generation
             )
-        }
-    }
-
-    @MainActor private func currentTabSuggestionItems() -> [SumiSuggestionEngine.TabItem] {
-        guard let tabManager else { return [] }
-
-        return tabManager.allTabsForCurrentProfile().map {
-            SumiSuggestionEngine.TabItem(id: $0.id, url: $0.url, title: $0.name)
-        }
-    }
-
-    @MainActor private func currentBookmarkSuggestionItems() -> [SumiSuggestionEngine.BookmarkItem] {
-        guard let bookmarkManager else { return [] }
-
-        return bookmarkManager.allBookmarks().map {
-            SumiSuggestionEngine.BookmarkItem(url: $0.url, title: $0.title, isFavorite: false)
         }
     }
 
@@ -264,9 +264,7 @@ class SearchManager {
     
     private func fetchWebSuggestions(
         for query: String,
-        historyEntries: [HistoryListItem],
-        bookmarkItems: [SumiSuggestionEngine.BookmarkItem],
-        tabItems: [SumiSuggestionEngine.TabItem],
+        context: SuggestionQueryContext,
         generation: UInt64
     ) {
         webSuggestionTask = Task { @MainActor [weak self] in
@@ -293,12 +291,12 @@ class SearchManager {
                 self.storeCachedWebSuggestions(webSuggestionItems, for: query)
                 let result = self.suggestionEngine.result(
                     for: query,
-                    history: historyEntries.map(Self.historyItem),
-                    bookmarks: bookmarkItems,
-                    openTabs: tabItems,
+                    history: context.historyItems,
+                    bookmarks: context.store.bookmarkItems,
+                    openTabs: context.store.tabItems,
                     apiSuggestions: webSuggestionItems
                 )
-                let combinedSuggestions = self.makeSuggestions(from: result, query: query, historyEntries: historyEntries)
+                let combinedSuggestions = self.makeSuggestions(from: result, query: query, context: context)
                 self.updateSuggestionsIfNeeded(combinedSuggestions)
             }
             self.isLoadingSuggestions = false
@@ -308,21 +306,17 @@ class SearchManager {
     private func makeSuggestions(
         from result: SumiSuggestionEngine.Result,
         query: String,
-        historyEntries: [HistoryListItem]
+        context: SuggestionQueryContext
     ) -> [SearchSuggestion] {
-        let historyByURL = Dictionary(grouping: historyEntries, by: { $0.url.absoluteString })
-        let bookmarksByURL = Dictionary(grouping: bookmarkManager?.allBookmarks() ?? [], by: { $0.url.absoluteString })
-        let tabLookup = currentTabSuggestionLookup()
-
         var suggestions: [SearchSuggestion] = []
         var seenKeys = Set<String>()
         for item in result.all {
             guard let suggestion = searchSuggestion(
                 from: item,
-                historyByURL: historyByURL,
-                bookmarksByURL: bookmarksByURL,
-                tabsByID: tabLookup.byID,
-                tabsByURL: tabLookup.byURL
+                historyByURL: context.historyByURL,
+                bookmarksByURL: context.store.bookmarksByURL,
+                tabsByID: context.store.tabsByID,
+                tabsByURL: context.store.tabsByURL
             ) else { continue }
 
             let key = deduplicationKey(for: suggestion)
@@ -335,7 +329,7 @@ class SearchManager {
         }
 
         appendURLMatchedHistorySuggestions(
-            from: historyEntries,
+            from: context.historyEntries,
             query: query,
             suggestions: &suggestions,
             seenKeys: &seenKeys
@@ -624,9 +618,17 @@ class SearchManager {
         }
     }
 
-    private func currentTabSuggestionLookup() -> (byID: [UUID: Tab], byURL: [String: Tab]) {
-        guard let tabManager else { return ([:], [:]) }
-        let tabs = tabManager.allTabsForCurrentProfile()
+    private func currentSuggestionStoreContext() -> SuggestionStoreContext {
+        let bookmarks = bookmarkManager?.allBookmarks() ?? []
+        let bookmarkItems = bookmarks.map {
+            SumiSuggestionEngine.BookmarkItem(url: $0.url, title: $0.title, isFavorite: false)
+        }
+        let bookmarksByURL = Dictionary(grouping: bookmarks, by: { $0.url.absoluteString })
+
+        let tabs = tabManager?.allTabsForCurrentProfile() ?? []
+        let tabItems = tabs.map {
+            SumiSuggestionEngine.TabItem(id: $0.id, url: $0.url, title: $0.name)
+        }
         var tabsByID: [UUID: Tab] = [:]
         var tabsByURL: [String: Tab] = [:]
 
@@ -640,7 +642,25 @@ class SearchManager {
             }
         }
 
-        return (tabsByID, tabsByURL)
+        return SuggestionStoreContext(
+            bookmarkItems: bookmarkItems,
+            bookmarksByURL: bookmarksByURL,
+            tabItems: tabItems,
+            tabsByID: tabsByID,
+            tabsByURL: tabsByURL
+        )
+    }
+
+    private func suggestionQueryContext(
+        historyEntries: [HistoryListItem],
+        storeContext: SuggestionStoreContext
+    ) -> SuggestionQueryContext {
+        SuggestionQueryContext(
+            historyEntries: historyEntries,
+            historyItems: historyEntries.map(Self.historyItem),
+            historyByURL: Dictionary(grouping: historyEntries, by: { $0.url.absoluteString }),
+            store: storeContext
+        )
     }
 
     private func storeCachedWebSuggestions(_ suggestions: [SumiSuggestionEngine.APISuggestion], for query: String) {

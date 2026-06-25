@@ -78,7 +78,7 @@ final class SumiSiteDataPolicyEnforcementService {
     private func removeAllData(forHost host: String, profile: Profile) async {
         await cleanupService.removeWebsiteDataForExactHost(
             host,
-            ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(),
+            ofTypes: WKWebsiteDataStore.sumiManualFullCleanupDataTypes,
             includingCookies: true,
             in: profile.dataStore
         )
