@@ -103,6 +103,14 @@ final class SumiExternalSchemePermissionBridge {
 
         switch result {
         case .opened:
+            guard request.isUserActivated else {
+                return finish(
+                    request,
+                    tabContext: tabContext,
+                    result: .blockedByDefault,
+                    reason: SumiPermissionPolicyReason.requiresUserActivation
+                )
+            }
             guard tabContext.isCurrentPage?() != false else {
                 return finish(
                     request,

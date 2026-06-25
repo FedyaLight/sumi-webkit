@@ -61,9 +61,56 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             reason: "SafariExtensionRuntimeDataStoreTests"
         )
 
-        XCTAssertEqual(
-            configuration.websiteDataStore.identifier,
-            profile.dataStore.identifier
+        XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
+        XCTAssertTrue(configuration.websiteDataStore.isPersistent)
+    }
+
+    func testPrepareWebViewConfigurationPreservesEphemeralProfileDataStore() throws {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let persistentProfile = Profile(name: "Regular Profile")
+        let ephemeralProfile = Profile.createEphemeral()
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let privateWindow = BrowserWindowState()
+        privateWindow.isIncognito = true
+        privateWindow.ephemeralProfile = ephemeralProfile
+        browserManager.windowRegistry = windowRegistry
+        browserManager.profileManager.profiles = [persistentProfile]
+        windowRegistry.register(privateWindow)
+        windowRegistry.setActive(privateWindow)
+
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: persistentProfile
+        )
+        manager.attach(browserManager: browserManager)
+
+        _ = manager.requestExtensionRuntime(
+            reason: .webViewConfiguration,
+            allowWithoutEnabledExtensions: true
+        )
+
+        let configuration = BrowserConfiguration.shared.normalTabWebViewConfiguration(
+            for: ephemeralProfile,
+            url: URL(string: "https://private.example")
+        )
+        XCTAssertFalse(configuration.websiteDataStore.isPersistent)
+        XCTAssertTrue(configuration.websiteDataStore === ephemeralProfile.dataStore)
+
+        manager.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            profileId: ephemeralProfile.id,
+            reason: "SafariExtensionRuntimeDataStoreTests.ephemeral"
+        )
+
+        XCTAssertTrue(configuration.websiteDataStore === ephemeralProfile.dataStore)
+        XCTAssertFalse(configuration.websiteDataStore.isPersistent)
+        XCTAssertTrue(
+            configuration.webExtensionController?.configuration.defaultWebsiteDataStore
+                === ephemeralProfile.dataStore
         )
     }
 }

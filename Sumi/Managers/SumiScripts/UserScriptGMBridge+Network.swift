@@ -20,16 +20,9 @@ extension UserScriptGMBridge {
             return
         }
 
-        if !script.metadata.connects.isEmpty {
-            let host = url.host ?? ""
-            let isAllowed = script.metadata.connects.contains { connectDomain in
-                if connectDomain == "*" { return true }
-                return host == connectDomain || host.hasSuffix(".\(connectDomain)")
-            }
-            if !isAllowed {
-                rejectCallback(callbackId, error: "Domain not in @connect whitelist: \(host)", webView: webView)
-                return
-            }
+        if let validationError = nativeNetworkDestinationValidationError(for: url) {
+            rejectCallback(callbackId, error: validationError, webView: webView)
+            return
         }
 
         var request = URLRequest(url: url)
@@ -156,6 +149,11 @@ extension UserScriptGMBridge {
             return
         }
 
+        if let validationError = nativeNetworkDestinationValidationError(for: url) {
+            rejectCallback(callbackId, error: validationError, webView: webView)
+            return
+        }
+
         let filename = (details["name"] as? String)
             ?? url.lastPathComponent.nonEmpty
             ?? "download"
@@ -224,5 +222,32 @@ extension UserScriptGMBridge {
             ],
             webView: webView
         )
+    }
+
+    private func nativeNetworkDestinationValidationError(for url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else {
+            return "Unsupported network URL scheme"
+        }
+
+        guard let host = url.host?.lowercased(), !host.isEmpty else {
+            return "Missing network URL host"
+        }
+
+        guard !script.metadata.connects.isEmpty else {
+            return nil
+        }
+
+        let isAllowed = script.metadata.connects.contains { connectDomain in
+            let allowedDomain = connectDomain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if allowedDomain == "*" { return true }
+            return host == allowedDomain || host.hasSuffix(".\(allowedDomain)")
+        }
+
+        if isAllowed {
+            return nil
+        }
+        return "Domain not in @connect whitelist: \(host)"
     }
 }

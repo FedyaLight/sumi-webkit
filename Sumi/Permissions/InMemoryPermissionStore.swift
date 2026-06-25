@@ -4,6 +4,7 @@ actor InMemoryPermissionStore: SumiPermissionStore {
     private struct MemoryKey: Hashable, Sendable {
         let ownerKind: OwnerKind
         let ownerId: String
+        let key: SumiPermissionKey
     }
 
     private enum OwnerKind: String, Sendable {
@@ -234,7 +235,8 @@ actor InMemoryPermissionStore: SumiPermissionStore {
         guard let transientPageId = key.transientPageId else { return nil }
         return MemoryKey(
             ownerKind: .page,
-            ownerId: normalizedOwnerId(transientPageId)
+            ownerId: normalizedOwnerId(transientPageId),
+            key: key
         )
     }
 
@@ -244,7 +246,8 @@ actor InMemoryPermissionStore: SumiPermissionStore {
     ) -> MemoryKey {
         MemoryKey(
             ownerKind: .session,
-            ownerId: normalizedOwnerId(sessionOwnerId ?? key.profilePartitionId)
+            ownerId: normalizedOwnerId(sessionOwnerId ?? key.profilePartitionId),
+            key: key
         )
     }
 

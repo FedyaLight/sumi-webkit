@@ -1154,7 +1154,7 @@ extension ExtensionManager {
     func getExtensionDataStore(
         for profileId: UUID
     ) -> WKWebsiteDataStore {
-        if let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
+        if let profile = activeProfile(for: profileId) {
             let store = profile.dataStore
             profileExtensionStores[profileId] = store
             touchProfileExtensionStore(profileId)
@@ -1176,6 +1176,16 @@ extension ExtensionManager {
         touchProfileExtensionStore(profileId)
         evictProfileExtensionStoresIfNeeded()
         return store
+    }
+
+    private func activeProfile(for profileId: UUID) -> Profile? {
+        if let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
+            return profile
+        }
+
+        return browserManager?.windowRegistry?.windows.values
+            .compactMap(\.ephemeralProfile)
+            .first(where: { $0.id == profileId })
     }
 
     private func touchProfileExtensionStore(_ profileId: UUID) {

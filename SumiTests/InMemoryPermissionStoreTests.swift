@@ -30,6 +30,56 @@ final class InMemoryPermissionStoreTests: XCTestCase {
         XCTAssertNil(otherWindow)
     }
 
+    func testOneTimeDecisionDoesNotMatchDifferentOriginForSamePageOwner() async throws {
+        let store = InMemoryPermissionStore()
+        let allowedKey = key(.camera, requestingOrigin: "https://example.com", pageId: "tab-a:1")
+        let otherOriginKey = key(.camera, requestingOrigin: "https://other.example", pageId: "tab-a:1")
+        try await store.setDecision(
+            for: allowedKey,
+            decision: decision(.allow, persistence: .oneTime)
+        )
+
+        let exactRecord = try await store.getDecision(for: allowedKey)
+        let otherOriginRecord = try await store.getDecision(for: otherOriginKey)
+
+        XCTAssertEqual(exactRecord?.key, allowedKey)
+        XCTAssertNil(otherOriginRecord)
+    }
+
+    func testSessionDecisionDoesNotMatchDifferentPermissionTypeForSameOwner() async throws {
+        let store = InMemoryPermissionStore()
+        let cameraKey = key(.camera)
+        let microphoneKey = key(.microphone)
+        try await store.setDecision(
+            for: cameraKey,
+            decision: decision(.allow, persistence: .session),
+            sessionOwnerId: "window-a"
+        )
+
+        let exactRecord = try await store.getDecision(for: cameraKey, sessionOwnerId: "window-a")
+        let otherPermissionRecord = try await store.getDecision(for: microphoneKey, sessionOwnerId: "window-a")
+
+        XCTAssertEqual(exactRecord?.key, cameraKey)
+        XCTAssertNil(otherPermissionRecord)
+    }
+
+    func testSessionDecisionDoesNotMatchDifferentProfileForSameOwner() async throws {
+        let store = InMemoryPermissionStore()
+        let profileAKey = key(.camera, profile: "profile-a")
+        let profileBKey = key(.camera, profile: "profile-b")
+        try await store.setDecision(
+            for: profileAKey,
+            decision: decision(.allow, persistence: .session),
+            sessionOwnerId: "window-a"
+        )
+
+        let exactRecord = try await store.getDecision(for: profileAKey, sessionOwnerId: "window-a")
+        let otherProfileRecord = try await store.getDecision(for: profileBKey, sessionOwnerId: "window-a")
+
+        XCTAssertEqual(exactRecord?.key, profileAKey)
+        XCTAssertNil(otherProfileRecord)
+    }
+
     func testExpiration() async throws {
         let store = InMemoryPermissionStore()
         let permissionKey = key(.camera)
@@ -135,11 +185,13 @@ final class InMemoryPermissionStoreTests: XCTestCase {
     private func key(
         _ type: SumiPermissionType,
         profile: String = "profile-a",
+        requestingOrigin: String = "https://example.com",
+        topOrigin: String? = nil,
         pageId: String? = nil
     ) -> SumiPermissionKey {
         SumiPermissionKey(
-            requestingOrigin: SumiPermissionOrigin(string: "https://example.com"),
-            topOrigin: SumiPermissionOrigin(string: "https://example.com"),
+            requestingOrigin: SumiPermissionOrigin(string: requestingOrigin),
+            topOrigin: SumiPermissionOrigin(string: topOrigin ?? requestingOrigin),
             permissionType: type,
             profilePartitionId: profile,
             transientPageId: pageId

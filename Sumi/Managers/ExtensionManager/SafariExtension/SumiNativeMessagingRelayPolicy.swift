@@ -86,10 +86,6 @@ enum SumiNativeMessagingRelayPolicy {
             return false
         }
 
-        if SumiCompanionAppIdentityMetadata.isRecognizedPublicIdentity(normalized) {
-            return false
-        }
-
         if let appexBundleID = SumiNativeMessagingAppResolver.appexBundleIdentifier(
             at: installed.sourceBundlePath
         ),

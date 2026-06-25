@@ -331,6 +331,12 @@ final class AuxiliaryWindowManager {
     ) async -> ExtensionMiniWindowAdapter? {
         guard let browserManager else { return nil }
 
+        let isPrivate = configuration.shouldBePrivate
+            || browserManager.windowRegistry?.activeWindow?.isIncognito == true
+        guard isPrivate == false else {
+            return nil
+        }
+
         let geometry = AuxiliaryWindowGeometryResolver.resolve(
             extensionFrame: configuration.frame,
             parentWindow: parentWindow
@@ -395,8 +401,6 @@ final class AuxiliaryWindowManager {
         )
 
         let shouldActivateApp = configuration.shouldBeFocused
-        let isPrivate = configuration.shouldBePrivate
-            || browserManager.windowRegistry?.activeWindow?.isIncognito == true
         let ownerExtensionID = resolveOwnerExtensionID(
             extensionManager: extensionManager,
             extensionContext: extensionContext,

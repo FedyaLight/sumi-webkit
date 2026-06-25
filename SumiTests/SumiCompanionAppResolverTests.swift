@@ -104,6 +104,52 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         XCTAssertFalse(identity?.isContainingApp == true)
     }
 
+    func testNativeMessagingPolicyAllowsPublicAliasForMatchingContainingApp() throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.bitwarden.desktop",
+            appexBundleID: "com.bitwarden.desktop.safari"
+        )
+        let installed = makeInstalledExtension(id: "ext-bw", sourceBundlePath: appexPath)
+
+        let result = SumiNativeMessagingRelayPolicy.evaluate(
+            SumiNativeMessagingRelayPolicyContext(
+                extensionsModuleEnabled: true,
+                extensionId: installed.id,
+                installedExtension: installed,
+                isPrivateBrowsing: false,
+                requestedApplicationIdentifier: "com.8bit.bitwarden"
+            )
+        )
+
+        if case .failure(let denial) = result {
+            XCTFail("Expected matching public alias to be allowed, got \(denial)")
+        }
+    }
+
+    func testNativeMessagingPolicyDeniesKnownPublicCompanionForUnrelatedExtension() throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.unrelated",
+            appexBundleID: "com.example.unrelated.extension"
+        )
+        let installed = makeInstalledExtension(id: "ext-unrelated", sourceBundlePath: appexPath)
+
+        let result = SumiNativeMessagingRelayPolicy.evaluate(
+            SumiNativeMessagingRelayPolicyContext(
+                extensionsModuleEnabled: true,
+                extensionId: installed.id,
+                installedExtension: installed,
+                isPrivateBrowsing: false,
+                requestedApplicationIdentifier: "com.bitwarden.desktop"
+            )
+        )
+
+        if case .failure(let denial) = result {
+            XCTAssertEqual(denial, .arbitraryNativeMessagingDenied)
+        } else {
+            XCTFail("Expected unrelated extension to be denied for known companion app")
+        }
+    }
+
     func testApplicationIdResolvesByExtensionContainingApp() throws {
         let appexA = try makeFixtureApp(
             appBundleID: "com.example.containing.a",

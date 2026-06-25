@@ -187,6 +187,47 @@ struct ExtensionUtils {
         return directory
     }
 
+    @discardableResult
+    static func validateExtensionIDPathComponent(_ extensionID: String) throws -> String {
+        let separatorCharacters = CharacterSet(charactersIn: "/\\:")
+        guard extensionID.isEmpty == false,
+              extensionID == extensionID.trimmingCharacters(in: .whitespacesAndNewlines),
+              extensionID != ".",
+              extensionID != "..",
+              extensionID.rangeOfCharacter(from: separatorCharacters) == nil,
+              extensionID.unicodeScalars.contains(where: {
+                  CharacterSet.controlCharacters.contains($0)
+              }) == false
+        else {
+            throw ExtensionError.installationFailed(
+                "Extension identifier is not a safe path component."
+            )
+        }
+
+        return extensionID
+    }
+
+    static func extensionDirectory(
+        forExtensionID extensionID: String,
+        under root: URL
+    ) throws -> URL {
+        let extensionID = try validateExtensionIDPathComponent(extensionID)
+        let standardizedRoot = root.standardizedFileURL
+        let directory = standardizedRoot
+            .appendingPathComponent(extensionID, isDirectory: true)
+            .standardizedFileURL
+
+        guard directory.deletingLastPathComponent().standardizedFileURL.path
+            == standardizedRoot.path
+        else {
+            throw ExtensionError.installationFailed(
+                "Extension directory escapes the expected storage root."
+            )
+        }
+
+        return directory
+    }
+
     static func validateManifest(
         at url: URL,
         policy: WebExtensionManifestValidationPolicy = .unpackedDirectory

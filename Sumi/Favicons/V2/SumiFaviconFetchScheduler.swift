@@ -19,19 +19,22 @@ struct SumiFaviconFetchContext: Sendable {
 
     let kind: Kind
     let webViewReference: SumiFaviconWebViewReference?
+    let sourceDocumentURL: URL?
 
-    static func session(webView: WKWebView?) -> SumiFaviconFetchContext {
+    static func session(webView: WKWebView?, sourceDocumentURL: URL) -> SumiFaviconFetchContext {
         MainActor.assumeIsolated {
             SumiFaviconFetchContext(
                 kind: .sessionProfileAware,
-                webViewReference: SumiFaviconWebViewReference(webView)
+                webViewReference: SumiFaviconWebViewReference(webView),
+                sourceDocumentURL: sourceDocumentURL
             )
         }
     }
 
     static let publicRootFallback = SumiFaviconFetchContext(
         kind: .publicRootFallback,
-        webViewReference: nil
+        webViewReference: nil,
+        sourceDocumentURL: nil
     )
 }
 
@@ -219,7 +222,11 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
             if let reference = context.webViewReference,
                let webView = await reference.webView
             {
-                let result = await fetchSessionAware(url: url, webView: webView)
+                let result = await fetchSessionAware(
+                    url: url,
+                    webView: webView,
+                    sourceDocumentURL: context.sourceDocumentURL
+                )
                 if case .success = result {
                     return result
                 }
@@ -234,10 +241,18 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
         return await perform(request: request)
     }
 
-    private func fetchSessionAware(url: URL, webView: WKWebView) async -> SumiFaviconFetchResult {
+    private func fetchSessionAware(
+        url: URL,
+        webView: WKWebView,
+        sourceDocumentURL: URL?
+    ) async -> SumiFaviconFetchResult {
         var request = baseRequest(url: url)
         let cookies = await sessionCookies(for: webView)
-        let matchingCookies = Self.cookies(cookies, matching: url)
+        let matchingCookies = Self.cookies(
+            cookies,
+            matching: url,
+            sourceDocumentURL: sourceDocumentURL
+        )
         if !matchingCookies.isEmpty {
             for (header, value) in HTTPCookie.requestHeaderFields(with: matchingCookies) {
                 request.setValue(value, forHTTPHeaderField: header)
@@ -287,7 +302,14 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
         }
     }
 
-    static func cookies(_ cookies: [HTTPCookie], matching url: URL) -> [HTTPCookie] {
+    static func cookies(
+        _ cookies: [HTTPCookie],
+        matching url: URL,
+        sourceDocumentURL: URL?
+    ) -> [HTTPCookie] {
+        guard shouldAttachSessionCookies(to: url, sourceDocumentURL: sourceDocumentURL) else {
+            return []
+        }
         guard let host = url.host?.lowercased() else { return [] }
         let requestPath = url.path.isEmpty ? "/" : url.path
         let isSecureRequest = url.scheme?.lowercased() == "https"
@@ -301,6 +323,32 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
             let secureMatches = !cookie.isSecure || isSecureRequest
             return domainMatches && pathMatches && secureMatches
         }
+    }
+
+    static func shouldAttachSessionCookies(to url: URL, sourceDocumentURL: URL?) -> Bool {
+        guard let sourceDocumentURL,
+              let targetSite = schemefulSite(for: url),
+              let sourceSite = schemefulSite(for: sourceDocumentURL)
+        else {
+            return false
+        }
+        return targetSite == sourceSite
+    }
+
+    private static func schemefulSite(for url: URL) -> String? {
+        guard let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let rawHost = url.host
+        else {
+            return nil
+        }
+        let host = rawHost
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        guard !host.isEmpty else { return nil }
+        let siteHost = SumiRegistrableDomainResolver().registrableDomain(forHost: host) ?? host
+        return "\(scheme)://\(siteHost)"
     }
 }
 

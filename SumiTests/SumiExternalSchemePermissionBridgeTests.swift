@@ -113,6 +113,29 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertTrue(resolver.openedURLs.isEmpty)
     }
 
+    func testStoredAllowWithoutUserActivationBlocksAndDoesNotOpen() async {
+        let store = ExternalSchemeBridgePermissionStore()
+        await store.seed(
+            externalKey(scheme: "mailto"),
+            decision: externalDecision(.allow, persistence: .persistent, reason: "stored-allow")
+        )
+        let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = realExternalBridge(store: store, resolver: resolver)
+        var willOpenCalled = false
+
+        let result = await bridge.evaluate(
+            externalRequest(targetURL: URL(string: "mailto:test@example.com")!, userActivation: .none),
+            tabContext: externalTabContext(),
+            willOpen: { willOpenCalled = true }
+        )
+
+        XCTAssertFalse(result.didOpen)
+        XCTAssertFalse(willOpenCalled)
+        XCTAssertEqual(result.record?.result, .blockedByDefault)
+        XCTAssertEqual(result.record?.reason, SumiPermissionPolicyReason.requiresUserActivation)
+        XCTAssertTrue(resolver.openedURLs.isEmpty)
+    }
+
     func testUserActivatedNoDecisionBlocksPromptPresenterUnavailableWithoutPersistingDeny() async {
         let store = ExternalSchemeBridgePermissionStore()
         let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
@@ -218,7 +241,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertEqual(setCount, 0)
     }
 
-    func testSessionAllowOpensBackgroundAttemptForCurrentSession() async throws {
+    func testSessionAllowWithoutUserActivationBlocksAndDoesNotOpen() async throws {
         let memoryStore = InMemoryPermissionStore()
         try await memoryStore.setDecision(
             for: externalKey(scheme: "mailto"),
@@ -239,14 +262,19 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
             now: { externalFixedDate }
         )
         let mailURL = URL(string: "mailto:test@example.com")!
+        var willOpenCalled = false
 
         let result = await bridge.evaluate(
             externalRequest(targetURL: mailURL, userActivation: .none),
-            tabContext: externalTabContext()
+            tabContext: externalTabContext(),
+            willOpen: { willOpenCalled = true }
         )
 
-        XCTAssertTrue(result.didOpen)
-        XCTAssertEqual(resolver.openedURLs, [mailURL])
+        XCTAssertFalse(result.didOpen)
+        XCTAssertFalse(willOpenCalled)
+        XCTAssertEqual(result.record?.result, .blockedByDefault)
+        XCTAssertEqual(result.record?.reason, SumiPermissionPolicyReason.requiresUserActivation)
+        XCTAssertTrue(resolver.openedURLs.isEmpty)
     }
 
     func testEphemeralProfileDoesNotReadOrWritePersistentExternalSchemeDecisions() async {

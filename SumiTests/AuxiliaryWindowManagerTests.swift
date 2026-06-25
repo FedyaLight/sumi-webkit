@@ -256,6 +256,114 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         XCTAssertEqual(mainWindow.frame, originalMainFrame)
     }
 
+    func testPrivateExtensionPopupWindowIsBlockedBeforeProfileRuntimeMaterializes() async throws {
+        let harness = try await makeExtensionHarness(ownerExtensionID: "private-popup-owner")
+        let configuration = AuxiliaryWindowConfigurationMock(
+            windowType: .popup,
+            tabURLs: [URL(string: "safari-web-extension://private-popup-owner/popup.html")!],
+            shouldBePrivate: true
+        ).windowConfiguration
+
+        XCTAssertNil(harness.extensionManager.extensionController)
+
+        let adapter = await harness.browserManager.auxiliaryWindowManager.presentExtensionPopupWindow(
+            configuration: configuration,
+            controller: harness.controller,
+            extensionContext: harness.extensionContext,
+            extensionManager: harness.extensionManager,
+            parentWindow: harness.windowState.window
+        )
+
+        XCTAssertNil(adapter)
+        XCTAssertTrue(harness.browserManager.tabManager.auxiliaryMiniWindowTabsByID.isEmpty)
+        XCTAssertTrue(harness.extensionManager.miniWindowAdapters.isEmpty)
+        XCTAssertNil(
+            harness.extensionManager.extensionController,
+            "Private extension popups must not create the normal profile-backed extension controller"
+        )
+    }
+
+    func testNonPrivateExtensionPopupWindowStillUsesProfileRuntime() async throws {
+        let harness = try await makeExtensionHarness(ownerExtensionID: "normal-popup-owner")
+        let configuration = AuxiliaryWindowConfigurationMock(
+            windowType: .popup,
+            tabURLs: [URL(string: "safari-web-extension://normal-popup-owner/popup.html")!],
+            shouldBePrivate: false
+        ).windowConfiguration
+
+        let maybeAdapter = await harness.browserManager.auxiliaryWindowManager
+            .presentExtensionPopupWindow(
+                configuration: configuration,
+                controller: harness.controller,
+                extensionContext: harness.extensionContext,
+                extensionManager: harness.extensionManager,
+                parentWindow: harness.windowState.window
+            )
+        let adapter = try XCTUnwrap(maybeAdapter)
+        let session = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindowManager.session(for: adapter.sessionId)
+        )
+        defer {
+            harness.browserManager.auxiliaryWindowManager.teardown(
+                for: session.webView,
+                reason: .managerCloseAll
+            )
+        }
+
+        XCTAssertFalse(session.isPrivate)
+        XCTAssertIdentical(
+            session.webView.configuration.websiteDataStore,
+            harness.extensionManager.getExtensionDataStore(for: harness.profile.id)
+        )
+        XCTAssertIdentical(
+            session.webView.configuration.webExtensionController,
+            harness.extensionManager.ensureExtensionController(for: harness.profile.id)
+        )
+    }
+
+    func testPrivateExtensionNormalWindowIsRejectedBeforeTabCreation() async throws {
+        let harness = try await makeExtensionHarness(ownerExtensionID: "private-window-owner")
+        let initialRegularTabCount = harness.browserManager.tabManager.tabsBySpace.values
+            .flatMap { $0 }
+            .filter { $0.isAuxiliaryMiniWindow == false }
+            .count
+        let openedWindow = expectation(description: "private extension window rejected")
+        var completionWindow: (any WKWebExtensionWindow)?
+        var completionError: (any Error)?
+        let configuration = AuxiliaryWindowConfigurationMock(
+            windowType: .normal,
+            tabURLs: [URL(string: "https://account.example.test/private")!],
+            shouldBePrivate: true
+        ).windowConfiguration
+
+        harness.extensionManager.webExtensionController(
+            harness.controller,
+            openNewWindowUsing: configuration,
+            for: harness.extensionContext
+        ) { window, error in
+            completionWindow = window
+            completionError = error
+            openedWindow.fulfill()
+        }
+
+        await fulfillment(of: [openedWindow], timeout: 2.0)
+
+        XCTAssertNil(completionWindow)
+        XCTAssertNotNil(completionError)
+        XCTAssertTrue(harness.browserManager.tabManager.auxiliaryMiniWindowTabsByID.isEmpty)
+        XCTAssertEqual(
+            harness.browserManager.tabManager.tabsBySpace.values
+                .flatMap { $0 }
+                .filter { $0.isAuxiliaryMiniWindow == false }
+                .count,
+            initialRegularTabCount
+        )
+        XCTAssertNil(
+            harness.extensionManager.extensionController,
+            "Private extension windows must not create the normal profile-backed extension controller"
+        )
+    }
+
     func testExtensionRequestedTeardownClosesAuxiliaryMiniWindowSession() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Auxiliary Owner")
@@ -1024,6 +1132,51 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
+private final class AuxiliaryWindowConfigurationMock: NSObject {
+    @objc var windowType: WKWebExtension.WindowType
+    @objc var windowState: WKWebExtension.WindowState
+    @objc var frame: CGRect
+    @objc var tabURLs: [URL]
+    @objc var tabs: [Any]
+    @objc var shouldBeFocused: Bool
+    @objc var shouldBePrivate: Bool
+
+    init(
+        windowType: WKWebExtension.WindowType,
+        windowState: WKWebExtension.WindowState = .normal,
+        frame: CGRect = CGRect(
+            x: CGFloat.nan,
+            y: CGFloat.nan,
+            width: CGFloat.nan,
+            height: CGFloat.nan
+        ),
+        tabURLs: [URL] = [],
+        tabs: [Any] = [],
+        shouldBeFocused: Bool = false,
+        shouldBePrivate: Bool
+    ) {
+        self.windowType = windowType
+        self.windowState = windowState
+        self.frame = frame
+        self.tabURLs = tabURLs
+        self.tabs = tabs
+        self.shouldBeFocused = shouldBeFocused
+        self.shouldBePrivate = shouldBePrivate
+        super.init()
+    }
+
+    var windowConfiguration: WKWebExtension.WindowConfiguration {
+        withUnsafePointer(to: self) {
+            $0.withMemoryRebound(
+                to: WKWebExtension.WindowConfiguration.self,
+                capacity: 1
+            ) { $0 }
+        }.pointee
     }
 }
 

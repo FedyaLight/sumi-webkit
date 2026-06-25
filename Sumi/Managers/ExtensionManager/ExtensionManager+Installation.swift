@@ -895,23 +895,26 @@ extension ExtensionManager {
             )
             try validateMV3Requirements(manifest: manifest, baseURL: temporaryDirectory)
 
-            let extensionId: String
+            let rawExtensionId: String
             let allEntities = try context.fetch(FetchDescriptor<ExtensionEntity>())
             if let existingEntity = allEntities.first(where: { $0.sourceBundlePath == resolvedSource.sourceBundlePath.path }) {
-                extensionId = existingEntity.id
+                rawExtensionId = existingEntity.id
             } else if let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any],
                       let gecko = browserSpecificSettings["gecko"] as? [String: Any],
                       let geckoId = gecko["id"] as? String {
-                extensionId = geckoId
+                rawExtensionId = geckoId
             } else {
-                extensionId = UUID().uuidString
+                rawExtensionId = UUID().uuidString
             }
-            
+            let extensionId = try ExtensionUtils.validateExtensionIDPathComponent(
+                rawExtensionId
+            )
+
             installedExtensionID = extensionId
 
-            let destinationDirectory = extensionsDirectory.appendingPathComponent(
-                extensionId,
-                isDirectory: true
+            let destinationDirectory = try ExtensionUtils.extensionDirectory(
+                forExtensionID: extensionId,
+                under: extensionsDirectory
             )
             finalDirectory = destinationDirectory
             existingEntitySnapshot = try extensionEntity(for: extensionId)
@@ -1198,21 +1201,24 @@ extension ExtensionManager {
             URL(fileURLWithPath: $0.sourceBundlePath, isDirectory: true)
                 .standardizedFileURL.path == resolvedSource.sourceBundlePath.standardizedFileURL.path
         }
-        let extensionId: String
+        let rawExtensionId: String
         if let existingEntityBySource {
-            extensionId = existingEntityBySource.id
+            rawExtensionId = existingEntityBySource.id
         } else if let bundleIdentifier = bundle.bundleIdentifier,
                   bundleIdentifier.isEmpty == false
         {
-            extensionId = bundleIdentifier
+            rawExtensionId = bundleIdentifier
         } else if let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any],
                   let gecko = browserSpecificSettings["gecko"] as? [String: Any],
                   let geckoId = gecko["id"] as? String
         {
-            extensionId = geckoId
+            rawExtensionId = geckoId
         } else {
-            extensionId = UUID().uuidString
+            rawExtensionId = UUID().uuidString
         }
+        let extensionId = try ExtensionUtils.validateExtensionIDPathComponent(
+            rawExtensionId
+        )
 
         let existingEntitySnapshot: ExtensionEntity?
         if let existingEntityBySource {
@@ -1623,12 +1629,15 @@ extension ExtensionManager {
         }
 
         let controllerStorageId = extensionControllerIdentifier(for: resolvedProfileId)
-        return libraryDirectory
+        let storageRoot = libraryDirectory
             .appendingPathComponent("WebKit", isDirectory: true)
             .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
             .appendingPathComponent("WebExtensions", isDirectory: true)
             .appendingPathComponent(controllerStorageId.uuidString.uppercased(), isDirectory: true)
-            .appendingPathComponent(extensionId, isDirectory: true)
+        return try? ExtensionUtils.extensionDirectory(
+            forExtensionID: extensionId,
+            under: storageRoot
+        )
     }
 
     @discardableResult
@@ -1837,9 +1846,12 @@ extension ExtensionManager {
         profileId: UUID? = nil,
         manifest: [String: Any]
     ) {
-        var permissions = RuntimeDiagnostics.isRunningTests
-            ? webExtension.requestedPermissions.union(webExtension.optionalPermissions)
-            : webExtension.requestedPermissions
+        var permissions = webExtension.requestedPermissions
+        if RuntimeDiagnostics.isRunningTests {
+            permissions.formUnion(
+                webExtension.optionalPermissions.filter { $0 != .nativeMessaging }
+            )
+        }
         permissions.formUnion(Self.requiredManifestWebExtensionPermissions(from: manifest))
         grantNativeMessagingPermissionIfDeclared(
             to: extensionContext,
@@ -1898,10 +1910,7 @@ extension ExtensionManager {
 
     static func manifestDeclaresNativeMessaging(_ manifest: [String: Any]) -> Bool {
         let permissions = installationManifestStringArray(from: manifest["permissions"])
-        let optionalPermissions = installationManifestStringArray(
-            from: manifest["optional_permissions"]
-        )
-        return (permissions + optionalPermissions).contains("nativeMessaging")
+        return permissions.contains("nativeMessaging")
     }
 
     private static func isManifestWebExtensionPermission(_ value: String) -> Bool {

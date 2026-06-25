@@ -795,11 +795,6 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             webExtension: extensionContext.webExtension
         )
         if let activeTab = browserManager?.currentTabForActiveWindow() {
-            grantActiveTabURLAccess(
-                for: extensionContext,
-                tab: activeTab,
-                manifest: manifest
-            )
             let seesCurrentTab =
                 stableAdapter(for: activeTab) != nil
                 && isTabEligibleForCurrentExtensionRuntime(activeTab)
@@ -1431,6 +1426,21 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
     ) {
+        guard configuration.shouldBePrivate == false else {
+            completionHandler(
+                nil,
+                NSError(
+                    domain: "ExtensionManager",
+                    code: 7,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Sumi does not support private extension windows without an isolated private extension runtime"
+                    ]
+                )
+            )
+            return
+        }
+
         if configuration.windowType == .popup {
             Task { @MainActor [weak self, weak browserManager] in
                 guard let self, let browserManager else {

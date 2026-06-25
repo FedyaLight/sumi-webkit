@@ -199,6 +199,51 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         XCTAssertNotEqual(blocker, BrowserExtensionActionPopupBlocker.contextUnavailable)
     }
 
+    func testURLHubActiveTabGrantUsesClickedTabBeforePopupDispatch() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "ActiveTab Popup Profile")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+
+        let scratchDirectory = try makeScratchDirectory()
+        let installed = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "ActiveTab Popup",
+            packageStyle: .raindropIframePopup
+        )
+        _ = try await manager.enableExtension(installed.id)
+
+        let clickedTab = Tab(url: URL(string: "https://clicked.example/path")!)
+        clickedTab.profileId = profile.id
+        let laterActiveURL = URL(string: "https://later.example/")!
+
+        let result = await manager.openActionPopupFromURLHub(
+            extensionId: installed.id,
+            currentTab: clickedTab
+        )
+
+        let extensionContext = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+        XCTAssertEqual(
+            extensionContext.permissionStatus(for: clickedTab.url),
+            .grantedExplicitly,
+            "The URL-hub click must grant activeTab access to the concrete clicked tab URL"
+        )
+        XCTAssertNotEqual(
+            extensionContext.permissionStatus(for: laterActiveURL),
+            .grantedExplicitly,
+            "A later active tab URL must not receive activeTab access from popup presentation"
+        )
+        XCTAssertNotEqual(
+            result.blocker,
+            BrowserExtensionActionPopupBlocker.currentPagePermissionMissing
+        )
+    }
+
     func testRaindropStyleIframePopupResourcesRenderInExtensionPageConfiguration() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Raindrop Iframe Resource Profile")
@@ -370,13 +415,15 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         manager: ExtensionManager,
         scratchDirectory: URL,
         name: String,
-        manifestVersion: Int = 3
+        manifestVersion: Int = 3,
+        packageStyle: TestPackageStyle = .simplePopup
     ) async throws -> InstalledExtension {
         let directoryURL = scratchDirectory.appendingPathComponent(name, isDirectory: true)
         try writeTestPackage(
             at: directoryURL,
             name: name,
-            manifestVersion: manifestVersion
+            manifestVersion: manifestVersion,
+            packageStyle: packageStyle
         )
         return try await manager.performInstallation(
             from: directoryURL,

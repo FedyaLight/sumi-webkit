@@ -133,6 +133,49 @@ final class UserScriptsRuntimeTests: XCTestCase {
         XCTAssertTrue(shim.contains("typeof ondone === 'function'"))
     }
 
+    func testGMDownloadRejectsURLOutsideConnectAllowlistBeforeStartingTask() throws {
+        let bridge = try makeDownloadBridge(connects: ["allowed.example.test"])
+
+        bridge.performDownload(
+            args: ["details": ["url": "https://blocked.example.test/file.txt"]],
+            callbackId: "blocked-download",
+            webView: nil
+        )
+
+        XCTAssertTrue(
+            bridge.activeTasks.isEmpty,
+            "GM_download must enforce @connect before creating a native URLSession task"
+        )
+        XCTAssertTrue(bridge.activeDownloadItems.isEmpty)
+    }
+
+    func testGMDownloadAllowsURLInsideConnectAllowlist() throws {
+        let bridge = try makeDownloadBridge(connects: ["allowed.example.test"])
+
+        bridge.performDownload(
+            args: ["details": ["url": "https://assets.allowed.example.test/file.txt"]],
+            callbackId: "allowed-download",
+            webView: nil
+        )
+
+        XCTAssertNotNil(bridge.activeTasks["allowed-download"])
+
+        bridge.performXMLHttpRequestAbort(args: ["requestId": "allowed-download"])
+        XCTAssertNil(bridge.activeTasks["allowed-download"])
+    }
+
+    func testGMDownloadRejectsUnsupportedNetworkSchemeBeforeStartingTask() throws {
+        let bridge = try makeDownloadBridge(connects: ["*"])
+
+        bridge.performDownload(
+            args: ["details": ["url": "file:///tmp/secret.txt"]],
+            callbackId: "file-download",
+            webView: nil
+        )
+
+        XCTAssertTrue(bridge.activeTasks.isEmpty)
+    }
+
     func testGMShimRunsBeforeRequireDependencies() throws {
         let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
         // ==UserScript==
@@ -251,5 +294,25 @@ final class UserScriptsRuntimeTests: XCTestCase {
         """))
         let unwrapped = SumiInstalledUserScript(filename: "unwrap.user.js", metadata: unwrappedMetadata)
         XCTAssertFalse(unwrapped.assembledCode(gmShim: "").contains("(async () => {"))
+    }
+
+    private func makeDownloadBridge(connects: [String]) throws -> UserScriptGMBridge {
+        let connectLines = connects.map { "// @connect \($0)" }.joined(separator: "\n")
+        let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
+        // ==UserScript==
+        // @name GM Download Connect Test
+        // @grant GM_download
+        \(connectLines)
+        // ==/UserScript==
+        console.log('ok');
+        """))
+        let script = SumiInstalledUserScript(filename: "gm-download.user.js", metadata: metadata)
+        return UserScriptGMBridge(
+            script: script,
+            profileId: nil,
+            contentWorld: .page,
+            tabOpenHandler: nil,
+            downloadManager: nil
+        )
     }
 }

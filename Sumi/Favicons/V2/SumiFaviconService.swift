@@ -84,7 +84,7 @@ final class SumiFaviconService: @unchecked Sendable {
         guard let selection = await resolveCandidates(
             candidates,
             pageURL: canonicalDocumentURL,
-            fetchContext: .session(webView: webView),
+            fetchContext: .session(webView: webView, sourceDocumentURL: canonicalDocumentURL),
             priority: .visibleActiveTab,
             aliasPageURLs: aliasPageURLs
         ) else {
@@ -295,7 +295,7 @@ final class SumiFaviconService: @unchecked Sendable {
             )
             let result = await fetchScheduler.fetch(
                 candidate: manifestCandidate,
-                context: .session(webView: webView),
+                context: .session(webView: webView, sourceDocumentURL: documentURL),
                 priority: .visibleSidebarOrTabStrip
             )
             if case .success(let response) = result,
