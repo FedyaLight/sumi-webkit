@@ -12,6 +12,8 @@ final class SumiTabNavigationDelegateBundle {
     private let glanceNavigationAdapter: SumiNavigationResponderAdapter
     private let installNavigation: SumiInstallNavigationResponder
     private let installNavigationAdapter: SumiNavigationResponderAdapter
+    private let internalSurfaceNavigation: SumiInternalSurfaceNavigationResponder
+    private let internalSurfaceNavigationAdapter: SumiNavigationResponderAdapter
     private let popupHandlingAdapter: SumiNavigationResponderAdapter
     private let externalScheme: SumiExternalSchemeNavigationResponder
     private let externalSchemeAdapter: SumiNavigationResponderAdapter
@@ -33,6 +35,8 @@ final class SumiTabNavigationDelegateBundle {
         self.glanceNavigationAdapter = SumiNavigationResponderAdapter(target: glanceNavigation)
         self.installNavigation = SumiInstallNavigationResponder(tab: tab)
         self.installNavigationAdapter = SumiNavigationResponderAdapter(target: installNavigation)
+        self.internalSurfaceNavigation = SumiInternalSurfaceNavigationResponder(tab: tab)
+        self.internalSurfaceNavigationAdapter = SumiNavigationResponderAdapter(target: internalSurfaceNavigation)
         self.popupHandling = SumiPopupHandlingNavigationResponder(tab: tab)
         self.popupHandlingAdapter = SumiNavigationResponderAdapter(target: popupHandling)
         self.externalScheme = SumiExternalSchemeNavigationResponder(
@@ -57,6 +61,7 @@ final class SumiTabNavigationDelegateBundle {
         distributedNavigationDelegate.setResponders(
             .strong(glanceNavigationAdapter),
             .strong(installNavigationAdapter),
+            .strong(internalSurfaceNavigationAdapter),
             .strong(popupHandlingAdapter),
             .strong(externalSchemeAdapter),
             .strong(downloadsAdapter),

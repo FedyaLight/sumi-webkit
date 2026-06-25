@@ -46,6 +46,48 @@ final class BasicAuthCredentialStoreTests: XCTestCase {
         XCTAssertNil(store.credential(for: otherRealmKey))
     }
 
+    func testDeleteCredentialsCanClearOnlyOneProfilePartition() throws {
+        let store = BasicAuthCredentialStore(service: "com.sumi.basicAuth.tests.\(UUID().uuidString)")
+        let profileId = try XCTUnwrap(UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
+        let otherProfileId = try XCTUnwrap(UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc"))
+        let dataStoreId = try XCTUnwrap(UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))
+        let key = try XCTUnwrap(makeKey(profileId: profileId, dataStoreId: dataStoreId))
+        let otherProfileKey = try XCTUnwrap(makeKey(profileId: otherProfileId, dataStoreId: dataStoreId))
+        defer {
+            _ = store.deleteCredential(for: key)
+            _ = store.deleteCredential(for: otherProfileKey)
+        }
+
+        XCTAssertTrue(store.saveCredential(.init(username: "alice", password: "secret"), for: key))
+        XCTAssertTrue(store.saveCredential(.init(username: "bob", password: "other"), for: otherProfileKey))
+
+        XCTAssertTrue(store.deleteCredentials(profilePartitionId: profileId, isEphemeralProfile: false))
+
+        XCTAssertNil(store.credential(for: key))
+        XCTAssertEqual(store.credential(for: otherProfileKey)?.username, "bob")
+    }
+
+    func testDeleteCredentialsCanClearEphemeralEntriesAcrossProfiles() throws {
+        let store = BasicAuthCredentialStore(service: "com.sumi.basicAuth.tests.\(UUID().uuidString)")
+        let profileId = try XCTUnwrap(UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"))
+        let privateProfileId = try XCTUnwrap(UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd"))
+        let dataStoreId = try XCTUnwrap(UUID(uuidString: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"))
+        let regularKey = try XCTUnwrap(makeKey(profileId: profileId, dataStoreId: dataStoreId))
+        let privateKey = try XCTUnwrap(makeKey(profileId: privateProfileId, isEphemeral: true, dataStoreId: dataStoreId))
+        defer {
+            _ = store.deleteCredential(for: regularKey)
+            _ = store.deleteCredential(for: privateKey)
+        }
+
+        XCTAssertTrue(store.saveCredential(.init(username: "alice", password: "secret"), for: regularKey))
+        XCTAssertTrue(store.saveCredential(.init(username: "private", password: "secret"), for: privateKey))
+
+        XCTAssertTrue(store.deleteCredentials(profilePartitionId: nil, isEphemeralProfile: true))
+
+        XCTAssertEqual(store.credential(for: regularKey)?.username, "alice")
+        XCTAssertNil(store.credential(for: privateKey))
+    }
+
     func testAuthenticationManagerDoesNotAutoReplayAcrossRealm() throws {
         let store = BasicAuthCredentialStore(service: "com.sumi.basicAuth.tests.\(UUID().uuidString)")
         let manager = AuthenticationManager(credentialStore: store)

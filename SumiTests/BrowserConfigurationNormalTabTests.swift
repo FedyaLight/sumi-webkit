@@ -47,7 +47,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(appName?.contains(" Safari/") ?? false)
         XCTAssertEqual(
             configuration.preferences.value(forKey: "developerExtrasEnabled") as? Bool,
-            true
+            RuntimeDiagnostics.isDeveloperInspectionEnabled
         )
 
         await controller.waitForContentBlockingAssetsInstalled()

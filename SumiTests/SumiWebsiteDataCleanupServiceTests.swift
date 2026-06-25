@@ -689,6 +689,52 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(appResidueCleaner.clearFaviconNegativeCacheCallCount, 1)
     }
 
+    func testBrowsingDataAllTimeAllCategoriesClearsSavedHTTPAuthForTargetProfile() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        let basicAuthStore = FakeBasicAuthCredentialStore()
+        let service = SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            basicAuthCredentialStore: basicAuthStore,
+            sharedWebsiteDataStoreProvider: { .nonPersistent() },
+            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
+        )
+
+        await service.clear(
+            range: .allTime,
+            categories: SumiBrowsingDataCategory.defaultSelection,
+            historyManager: harness.historyManager,
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
+        )
+
+        XCTAssertEqual(
+            basicAuthStore.deleteCalls,
+            [.init(profilePartitionId: harness.profileID, isEphemeralProfile: false)]
+        )
+    }
+
+    func testBrowsingDataPartialCleanupDoesNotClearSavedHTTPAuth() async throws {
+        let harness = try makeHistoryHarness()
+        let cleanupService = FakeCleanupService()
+        let basicAuthStore = FakeBasicAuthCredentialStore()
+        let service = SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: cleanupService,
+            basicAuthCredentialStore: basicAuthStore,
+            referenceDateProvider: { historyTestDate("2026-04-23T12:00:00Z") }
+        )
+
+        await service.clear(
+            range: .lastHour,
+            categories: SumiBrowsingDataCategory.defaultSelection,
+            historyManager: harness.historyManager,
+            profiles: [testProfile(id: harness.profileID)],
+            includeAllProfiles: false
+        )
+
+        XCTAssertTrue(basicAuthStore.deleteCalls.isEmpty)
+    }
+
     func testBrowsingDataAllProfilesClearsAllHistoryAndAllProfileStores() async throws {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
@@ -1326,6 +1372,31 @@ private final class FakeAppResidueCleaner: SumiBrowsingDataAppResidueCleaning {
 
     func clearFaviconNegativeCache() {
         clearFaviconNegativeCacheCallCount += 1
+    }
+}
+
+@MainActor
+private final class FakeBasicAuthCredentialStore: SumiBasicAuthCredentialCleaning {
+    struct DeleteCall: Equatable {
+        let profilePartitionId: UUID?
+        let isEphemeralProfile: Bool?
+    }
+
+    private(set) var deleteCalls: [DeleteCall] = []
+
+    func allCredentialHosts() -> Set<String> {
+        []
+    }
+
+    func deleteCredentials(
+        profilePartitionId: UUID?,
+        isEphemeralProfile: Bool?
+    ) -> Bool {
+        deleteCalls.append(.init(
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        ))
+        return true
     }
 }
 

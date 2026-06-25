@@ -39,6 +39,12 @@ enum SumiSurface {
             && url.host?.lowercased() == bookmarksURLHost.lowercased()
     }
 
+    static func isNativeSurfaceURL(_ url: URL) -> Bool {
+        isSettingsSurfaceURL(url)
+            || isHistorySurfaceURL(url)
+            || isBookmarksSurfaceURL(url)
+    }
+
     /// Stable `pane` query value for `sumi://settings?pane=…`.
     static func settingsSurfaceURL(
         paneQuery: String,

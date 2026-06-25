@@ -23,16 +23,7 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.bookmarkPage.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.copyPageAddress.rawValue))
         XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.printPage.rawValue))
-        XCTAssertTrue(menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue) === inspectElement)
-        XCTAssertEqual(
-            menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue)?.title,
-            "Inspect Element"
-        )
-        XCTAssertEqual(
-            menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue)?.action,
-            #selector(noop(_:))
-        )
-        XCTAssertNotNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue)?.image)
+        XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue))
     }
 
     func testInteractiveElementMenuKeepsNativePageItemsWithoutSumiPageSection() {
@@ -52,11 +43,7 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
         XCTAssertNil(menu.item(identifier: SumiWebPageMenuCommand.bookmarkPage.rawValue))
         XCTAssertNil(menu.item(identifier: SumiWebPageMenuCommand.copyPageAddress.rawValue))
         XCTAssertNil(menu.item(identifier: SumiWebPageMenuCommand.printPage.rawValue))
-        XCTAssertTrue(menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue) === inspectElement)
-        XCTAssertEqual(
-            menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue)?.title,
-            "Inspect Element"
-        )
+        XCTAssertNil(menu.item(identifier: SumiWebKitMenuItemIdentifier.inspectElement.rawValue))
     }
 
     func testLinkMenuRemovesCurrentOpenAndSplitsNewTabFromNewWindow() {

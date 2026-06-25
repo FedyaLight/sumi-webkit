@@ -127,16 +127,22 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
         let identity = responseIdentity.contentType == nil ? promptRequest.identity : responseIdentity
         let alert = NSAlert()
         alert.messageText = "What should Sumi do with this file?"
-        alert.informativeText = "\(filename)\nType: \(identity.displayName)"
-        alert.addButton(withTitle: "Open File")
-        alert.addButton(withTitle: "Save File")
-        alert.addButton(withTitle: "Cancel")
+        if identity.requiresOpeningConfirmation {
+            alert.informativeText = "\(filename)\nType: \(identity.displayName)\nThis file may run code or open active content. Sumi will save it instead of opening it automatically."
+            alert.addButton(withTitle: "Save File")
+            alert.addButton(withTitle: "Cancel")
+        } else {
+            alert.informativeText = "\(filename)\nType: \(identity.displayName)"
+            alert.addButton(withTitle: "Open File")
+            alert.addButton(withTitle: "Save File")
+            alert.addButton(withTitle: "Cancel")
+        }
         let checkbox = NSButton(
             checkboxWithTitle: "Do this automatically for files like this from now on",
             target: nil,
             action: nil
         )
-        checkbox.isEnabled = promptRequest.canPersistChoice
+        checkbox.isEnabled = promptRequest.canPersistChoice && !identity.requiresOpeningConfirmation
         alert.accessoryView = checkbox
 
         guard let window = download.targetWebView?.window
@@ -153,13 +159,22 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
         }
 
         let result: SumiDownloadResolvedAction
-        switch response {
-        case .alertFirstButtonReturn:
-            result = .downloadThenOpen(.systemDefault)
-        case .alertSecondButtonReturn:
-            result = .saveFile
-        default:
-            result = .cancel
+        if identity.requiresOpeningConfirmation {
+            switch response {
+            case .alertFirstButtonReturn:
+                result = .saveFile
+            default:
+                result = .cancel
+            }
+        } else {
+            switch response {
+            case .alertFirstButtonReturn:
+                result = .downloadThenOpen(.systemDefault)
+            case .alertSecondButtonReturn:
+                result = .saveFile
+            default:
+                result = .cancel
+            }
         }
 
         if checkbox.state == .on,

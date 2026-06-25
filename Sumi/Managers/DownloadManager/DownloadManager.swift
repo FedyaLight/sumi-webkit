@@ -93,6 +93,7 @@ final class DownloadManager: ObservableObject {
                     try FileManager.default.removeItem(at: destinationURL)
                 }
                 try FileManager.default.moveItem(at: tempURL, to: destinationURL)
+                try SumiDownloadSafety.applyQuarantine(to: destinationURL, sourceURL: originatingURL)
                 return Result<URL, Error>.success(destinationURL)
             } catch {
                 try? FileManager.default.removeItem(at: tempURL)
@@ -149,6 +150,7 @@ final class DownloadManager: ObservableObject {
     ) {
         let destinationURL = item.destinationURL ?? DownloadFileUtilities.uniqueDestination(for: item.fileName)
         let progress = item.progress
+        let sourceURL = item.downloadURL
         let moveTask = Task.detached(priority: .utility) {
             let finalURL = DownloadFileUtilities.uniqueURL(for: destinationURL)
             do {
@@ -160,6 +162,7 @@ final class DownloadManager: ObservableObject {
                     try FileManager.default.removeItem(at: finalURL)
                 }
                 try FileManager.default.moveItem(at: temporaryURL, to: finalURL)
+                try SumiDownloadSafety.applyQuarantine(to: finalURL, sourceURL: sourceURL)
                 return Result<URL, Error>.success(finalURL)
             } catch {
                 return Result<URL, Error>.failure(error)
@@ -232,6 +235,7 @@ final class DownloadManager: ObservableObject {
         guard let url = item.localURL,
               FileManager.default.fileExists(atPath: url.path)
         else { return }
+        guard SumiDownloadSafety.confirmOpeningIfNeeded(url: url, sourceURL: item.downloadURL) else { return }
         NSWorkspace.shared.open(url)
     }
 
@@ -265,7 +269,8 @@ final class DownloadManager: ObservableObject {
         guard let intent = item.openIntent,
               let url = item.localURL,
               FileManager.default.fileExists(atPath: url.path),
-              !isCurrentApplication(url)
+              !isCurrentApplication(url),
+              !SumiDownloadSafety.requiresOpeningConfirmation(forFileAt: url)
         else { return }
 
         switch intent {

@@ -63,12 +63,43 @@ struct BasicAuthCredentialKey: Hashable, Sendable {
             return host.isEmpty ? nil : host
         }
 
-        for component in account.split(separator: "|") {
-            guard component.hasPrefix("host=") else { continue }
-            return decode(String(component.dropFirst("host=".count))).flatMap {
-                let host = normalizedHost($0)
-                return host.isEmpty ? nil : host
+        return decodedComponent("host", fromAccount: account).flatMap {
+            let host = normalizedHost($0)
+            return host.isEmpty ? nil : host
+        }
+    }
+
+    static func matches(
+        account: String,
+        profilePartitionId: UUID? = nil,
+        isEphemeralProfile: Bool? = nil
+    ) -> Bool {
+        guard account.hasPrefix("\(accountPrefix)|") else { return false }
+
+        if let profilePartitionId {
+            guard decodedComponent("profile", fromAccount: account) == profilePartitionId.uuidString.lowercased() else {
+                return false
             }
+        }
+
+        if let isEphemeralProfile {
+            guard rawComponent("ephemeral", fromAccount: account) == (isEphemeralProfile ? "1" : "0") else {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private static func decodedComponent(_ name: String, fromAccount account: String) -> String? {
+        rawComponent(name, fromAccount: account).flatMap(decode)
+    }
+
+    private static func rawComponent(_ name: String, fromAccount account: String) -> String? {
+        let prefix = "\(name)="
+        for component in account.split(separator: "|") {
+            guard component.hasPrefix(prefix) else { continue }
+            return String(component.dropFirst(prefix.count))
         }
         return nil
     }
@@ -92,10 +123,22 @@ struct BasicAuthCredentialKey: Hashable, Sendable {
     }
 }
 
+/// Cleanup-facing subset of the HTTP basic-auth credential store.
+@MainActor
+protocol SumiBasicAuthCredentialCleaning: AnyObject {
+    func allCredentialHosts() -> Set<String>
+
+    @discardableResult
+    func deleteCredentials(
+        profilePartitionId: UUID?,
+        isEphemeralProfile: Bool?
+    ) -> Bool
+}
+
 /// Simple persistence layer for HTTP basic-auth credentials keyed by protection space.
 /// Uses the keychain to keep secrets off disk and available across launches.
 @MainActor
-final class BasicAuthCredentialStore {
+final class BasicAuthCredentialStore: SumiBasicAuthCredentialCleaning {
     struct StoredCredential {
         let username: String
         let password: String
@@ -193,8 +236,50 @@ final class BasicAuthCredentialStore {
         #endif
     }
 
+    @discardableResult
+    func deleteCredentials(
+        profilePartitionId: UUID? = nil,
+        isEphemeralProfile: Bool? = nil
+    ) -> Bool {
+        #if canImport(Security)
+        let accounts = credentialAccounts()
+            .filter {
+                BasicAuthCredentialKey.matches(
+                    account: $0,
+                    profilePartitionId: profilePartitionId,
+                    isEphemeralProfile: isEphemeralProfile
+                )
+            }
+        guard !accounts.isEmpty else { return true }
+
+        var didDeleteAll = true
+        for account in accounts {
+            let query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account
+            ]
+            let status = SecItemDelete(query as CFDictionary)
+            if status != errSecSuccess, status != errSecItemNotFound {
+                didDeleteAll = false
+            }
+        }
+        return didDeleteAll
+        #else
+        return false
+        #endif
+    }
+
     func allCredentialHosts() -> Set<String> {
         #if canImport(Security)
+        return Set(credentialAccounts().compactMap(BasicAuthCredentialKey.host(fromAccount:)))
+        #else
+        return []
+        #endif
+    }
+
+    #if canImport(Security)
+    private func credentialAccounts() -> [String] {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -206,14 +291,9 @@ final class BasicAuthCredentialStore {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess else { return [] }
         let attributes = item as? [[String: Any]] ?? []
-        return Set(attributes.compactMap {
-            guard let account = $0[kSecAttrAccount as String] as? String else { return nil }
-            return BasicAuthCredentialKey.host(fromAccount: account)
-        })
-        #else
-        return []
-        #endif
+        return attributes.compactMap { $0[kSecAttrAccount as String] as? String }
     }
+    #endif
 }
 
 private struct Payload: Codable {

@@ -6,13 +6,24 @@ final class BasicAuthDialogModel {
     var username: String
     var password: String
     var rememberCredential: Bool
+    let canRememberCredential: Bool
+    let warningText: String?
     let host: String
 
-    init(host: String, username: String = "", password: String = "", rememberCredential: Bool = false) {
+    init(
+        host: String,
+        username: String = "",
+        password: String = "",
+        rememberCredential: Bool = false,
+        canRememberCredential: Bool = true,
+        warningText: String? = nil
+    ) {
         self.host = host
         self.username = username
         self.password = password
         self.rememberCredential = rememberCredential
+        self.canRememberCredential = canRememberCredential
+        self.warningText = warningText
     }
 }
 
@@ -69,7 +80,9 @@ struct BasicAuthDialog: View {
             Form {
                 TextField("User name:", text: $model.username)
                 SecureField("Password:", text: $model.password)
-                Toggle("Remember for this site", isOn: $model.rememberCredential)
+                if model.canRememberCredential {
+                    Toggle("Remember for this site", isOn: $model.rememberCredential)
+                }
             }
 
             footer
@@ -88,6 +101,13 @@ struct BasicAuthDialog: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let warningText = model.warningText {
+                Text(warningText)
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

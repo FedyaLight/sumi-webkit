@@ -356,7 +356,11 @@ private struct SumiWebPageMenuComposer {
         removeOwnedPageItems()
         removeSuppressedWebKitItems(in: menu)
         removeContextuallyRedundantItems(for: context)
-        decorateNativeInspectElement(using: snapshot)
+        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
+            decorateNativeInspectElement(using: snapshot)
+        } else {
+            removeNativeInspectElement(using: snapshot)
+        }
 
         if context.isPageBackground {
             removeWebKitPageNavigation()
@@ -533,6 +537,15 @@ private struct SumiWebPageMenuComposer {
 
         nativeInspectItem.title = "Inspect Element"
         nativeInspectItem.image = SumiWebPageMenuIcon.make("hammer", title: nativeInspectItem.title)
+    }
+
+    private func removeNativeInspectElement(using snapshot: SumiWebPageMenuSnapshot) {
+        guard let nativeInspectItem = snapshot.item(for: .inspectElement),
+              menu.items.contains(where: { $0 === nativeInspectItem })
+        else {
+            return
+        }
+        menu.removeItem(nativeInspectItem)
     }
 
     private func replaceOpenItem(

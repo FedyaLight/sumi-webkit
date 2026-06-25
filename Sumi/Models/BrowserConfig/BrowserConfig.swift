@@ -98,9 +98,10 @@ class BrowserConfiguration {
         // Enable background media playback
         config.allowsAirPlayForMediaPlayback = true
 
-        // WebKit uses developer extras to expose its native "Inspect Element"
-        // context-menu item. The WKWebView itself still controls inspectability.
-        config.preferences.setValue(true, forKey: "developerExtrasEnabled")
+        config.preferences.setValue(
+            RuntimeDiagnostics.isDeveloperInspectionEnabled,
+            forKey: "developerExtrasEnabled"
+        )
 
         // Note: WebAuthn/Passkey support is enabled by default in WKWebView on macOS 13.3+
         // and requires only: entitlements, WKUIDelegate methods, and Info.plist descriptions

@@ -1,3 +1,5 @@
+import CoreServices
+import UniformTypeIdentifiers
 import XCTest
 
 @testable import Sumi
@@ -28,6 +30,48 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertNil(manager.combinedProgressFraction)
         XCTAssertTrue(FileManager.default.fileExists(atPath: try XCTUnwrap(item.destinationURL).path))
         XCTAssertNil(item.progress)
+    }
+
+    func testSaveDownloadedDataAppliesWebDownloadQuarantine() throws {
+        let manager = DownloadManager()
+        let sourceURL = URL(string: "https://example.com/report.txt")!
+
+        manager.saveDownloadedData(
+            Data("report".utf8),
+            suggestedFilename: "quarantine-\(UUID().uuidString).txt",
+            mimeType: "text/plain",
+            originatingURL: sourceURL
+        )
+
+        let item = try waitForCompletedItem(in: manager)
+        let destinationURL = try XCTUnwrap(item.destinationURL)
+        let properties = try destinationURL
+            .resourceValues(forKeys: [.quarantinePropertiesKey])
+            .quarantineProperties
+
+        XCTAssertEqual(properties?[kLSQuarantineTypeKey as String] as? String, kLSQuarantineTypeWebDownload as String)
+    }
+
+    func testDangerousDownloadTypesAreNotAutoOpenedByPolicy() {
+        let identity = SumiDownloadContentIdentity.resolve(
+            mimeType: nil,
+            filename: "Invoice.app"
+        )
+
+        let resolved = SumiDownloadPolicyResolver.resolve(
+            origin: .responseForcedDownload,
+            identity: identity,
+            handler: SumiContentHandlerRecord(
+                contentType: UTType.applicationBundle.identifier,
+                displayName: "Application",
+                handler: .useSystemDefault,
+                applicationURL: nil
+            ),
+            fallback: .ask
+        )
+
+        XCTAssertTrue(identity.requiresOpeningConfirmation)
+        XCTAssertEqual(resolved, .prompt(canPersistChoice: false))
     }
 
     func testNewManagerStartsWithEmptySessionAfterPreviousCompletedDownload() throws {

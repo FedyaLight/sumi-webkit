@@ -544,6 +544,7 @@ extension TabManager {
     }
 
     func shouldPersistRegularTab(_ tab: Tab) -> Bool {
+        guard tab.isEphemeral == false else { return false }
         guard tab.isShortcutLiveInstance == false else { return false }
         guard tab.isPinned == false, tab.isSpacePinned == false else { return false }
         guard tab.spaceId != nil else { return false }

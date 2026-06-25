@@ -83,6 +83,7 @@ struct SumiDownloadContentIdentity: Equatable, Sendable {
     let contentType: String?
     let displayName: String
     let isCoreWebDocument: Bool
+    let requiresOpeningConfirmation: Bool
 
     static func resolve(mimeType: String?, filename: String?) -> SumiDownloadContentIdentity {
         let normalizedMIME = mimeType?.split(separator: ";", maxSplits: 1).first
@@ -99,7 +100,11 @@ struct SumiDownloadContentIdentity: Equatable, Sendable {
         return SumiDownloadContentIdentity(
             contentType: contentType,
             displayName: displayName,
-            isCoreWebDocument: Self.isCoreWebDocument(mimeType: normalizedMIME, type: type)
+            isCoreWebDocument: Self.isCoreWebDocument(mimeType: normalizedMIME, type: type),
+            requiresOpeningConfirmation: SumiDownloadSafety.requiresOpeningConfirmation(
+                filename: filename,
+                mimeType: normalizedMIME
+            )
         )
     }
 
@@ -131,6 +136,9 @@ enum SumiDownloadPolicyResolver {
         }
         if identity.isCoreWebDocument {
             return .saveFile
+        }
+        if identity.requiresOpeningConfirmation {
+            return fallback == .ask ? .prompt(canPersistChoice: false) : .saveFile
         }
         guard origin.isEligibleForApplicationsHandling else {
             return .saveFile

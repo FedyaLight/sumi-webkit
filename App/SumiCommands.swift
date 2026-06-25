@@ -271,7 +271,10 @@ struct SumiCommands: Commands {
                 browserManager.openWebInspector()
             }
             .modifier(dynamicShortcut(.openDevTools))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil)
+            .disabled(
+                browserManager.activePageTabForActiveWindow() == nil
+                    || !RuntimeDiagnostics.isDeveloperInspectionEnabled
+            )
 
             Divider()
 

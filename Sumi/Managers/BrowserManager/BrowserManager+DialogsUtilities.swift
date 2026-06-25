@@ -381,6 +381,11 @@ extension BrowserManager {
     // MARK: - Web Inspector
 
     func openWebInspector() {
+        guard RuntimeDiagnostics.isDeveloperInspectionEnabled else {
+            RuntimeDiagnostics.emit("Developer inspection is disabled for this runtime.")
+            return
+        }
+
         guard let currentTab = activePageTabForActiveWindow() else {
             RuntimeDiagnostics.emit("No current tab to inspect")
             return

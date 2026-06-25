@@ -472,7 +472,9 @@ final class FocusableWKWebView: WKWebView {
 
     override func rightMouseDown(with event: NSEvent) {
         owningTab?.activate()
-        isInspectable = true
+        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
+            isInspectable = true
+        }
         super.rightMouseDown(with: event)
     }
 

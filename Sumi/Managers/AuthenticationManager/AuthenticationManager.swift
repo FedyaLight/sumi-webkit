@@ -33,6 +33,7 @@ final class AuthenticationManager: NSObject {
 
             if challenge.previousFailureCount == 0,
                let credentialKey,
+               !credentialKey.isEphemeralProfile,
                let stored = credentialStore.credential(for: credentialKey) {
                 completionHandler(.useCredential, stored.asURLCredential)
                 return true
@@ -81,8 +82,6 @@ final class AuthenticationManager: NSObject {
         let displayHost: String
         if !host.isEmpty {
             displayHost = host
-        } else if let realm = challenge.protectionSpace.realm, !realm.isEmpty {
-            displayHost = realm
         } else if !tab.url.absoluteString.isEmpty {
             let url = tab.url
             displayHost = url.host ?? url.absoluteString
@@ -90,12 +89,17 @@ final class AuthenticationManager: NSObject {
             displayHost = "this site"
         }
 
-        let prefilledCredential = credentialKey.flatMap { credentialStore.credential(for: $0) }
+        let canRememberCredential = credentialKey?.isEphemeralProfile == false
+        let prefilledCredential = canRememberCredential
+            ? credentialKey.flatMap { credentialStore.credential(for: $0) }
+            : nil
         let model = BasicAuthDialogModel(
             host: displayHost,
             username: prefilledCredential?.username ?? "",
             password: prefilledCredential?.password ?? "",
-            rememberCredential: prefilledCredential != nil
+            rememberCredential: prefilledCredential != nil,
+            canRememberCredential: canRememberCredential,
+            warningText: Self.warningText(for: challenge)
         )
 
         var didComplete = false
@@ -112,7 +116,7 @@ final class AuthenticationManager: NSObject {
                 NSApp.mainWindow?.makeFirstResponder(nil)
 
                 if let credentialKey {
-                    if remember {
+                    if remember, !credentialKey.isEphemeralProfile {
                         self.credentialStore.saveCredential(.init(username: username, password: password), for: credentialKey)
                     } else {
                         self.credentialStore.deleteCredential(for: credentialKey)
@@ -132,6 +136,13 @@ final class AuthenticationManager: NSObject {
         if manager.presentBasicAuthSheet(session, in: manager.windowState(containing: tab)) == false {
             session.cancel()
         }
+    }
+
+    private static func warningText(for challenge: URLAuthenticationChallenge) -> String? {
+        guard challenge.protectionSpace.protocol?.lowercased() == "http" else {
+            return nil
+        }
+        return "Credentials will be sent over an unencrypted HTTP connection."
     }
 
     private static func credentialKey(

@@ -2284,6 +2284,40 @@ final class SumiNavigationResponderTests: XCTestCase {
         return mock.navigationAction
     }
 
+    func testInternalSurfaceResponderCancelsRemoteWebNavigationToSumiSurface() async throws {
+        let responder = SumiInternalSurfaceNavigationResponder(tab: Tab(url: URL(string: "https://evil.example")!))
+        var preferences = sumiNavigationPreferences()
+        let action = SumiNavigationAction(navigationAction(
+            url: URL(string: "sumi://settings?pane=userScripts")!,
+            navigationType: .other,
+            sourceURL: URL(string: "https://evil.example/page")!,
+            isUserInitiated: false,
+            isMainFrame: true,
+            targetFrameIsMainFrame: true
+        ))
+
+        let policy = await responder.decidePolicy(for: action, preferences: &preferences)
+
+        XCTAssertEqual(policy, .cancel)
+    }
+
+    func testInternalSurfaceResponderAllowsUserEnteredSumiSurface() async throws {
+        let responder = SumiInternalSurfaceNavigationResponder(tab: Tab(url: URL(string: "about:blank")!))
+        var preferences = sumiNavigationPreferences()
+        let action = SumiNavigationAction(navigationAction(
+            url: URL(string: "sumi://settings?pane=privacy")!,
+            navigationType: .custom(.sumiUserEnteredURL),
+            sourceURL: URL(string: "about:blank")!,
+            isUserInitiated: true,
+            isMainFrame: true,
+            targetFrameIsMainFrame: true
+        ))
+
+        let policy = await responder.decidePolicy(for: action, preferences: &preferences)
+
+        XCTAssertNil(policy)
+    }
+
     private func navigationAction(
         url: URL,
         navigationType: NavigationType,
@@ -2337,6 +2371,16 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
         action.modifierFlags = modifierFlags
         return action
+    }
+
+    private func sumiNavigationPreferences() -> SumiNavigationPreferences {
+        SumiNavigationPreferences(
+            userAgent: nil,
+            contentMode: .recommended,
+            javaScriptEnabled: true,
+            autoplayPolicy: nil,
+            mustApplyAutoplayPolicy: false
+        )
     }
 
     private func mainFrameNavigation(receiving action: NavigationAction, isCurrent: Bool = false) -> Navigation {

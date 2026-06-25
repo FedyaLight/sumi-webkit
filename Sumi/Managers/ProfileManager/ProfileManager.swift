@@ -115,6 +115,12 @@ final class ProfileManager: ObservableObject {
     
     /// Create a new ephemeral profile for an incognito window
     func createEphemeralProfile(for windowId: UUID) -> Profile {
+        if ephemeralProfiles.isEmpty {
+            _ = BasicAuthCredentialStore().deleteCredentials(
+                profilePartitionId: nil,
+                isEphemeralProfile: true
+            )
+        }
         let profile = Profile.createEphemeral()
         ephemeralProfiles[windowId] = profile
         RuntimeDiagnostics.emit("🔒 [ProfileManager] Created ephemeral profile for window: \(windowId)")
@@ -131,6 +137,10 @@ final class ProfileManager: ObservableObject {
         // Remove from tracking immediately to stop tracking
         ephemeralProfiles.removeValue(forKey: windowId)
         SharedVisitedLinkStoreProvider.shared.discardStore(for: profile.id)
+        _ = BasicAuthCredentialStore().deleteCredentials(
+            profilePartitionId: profile.id,
+            isEphemeralProfile: true
+        )
 
         SumiFaviconSystem.shared.clearFaviconPartition(for: profile)
         profile.destroyEphemeralDataStore()

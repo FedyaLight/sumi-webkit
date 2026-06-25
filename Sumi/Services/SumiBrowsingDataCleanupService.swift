@@ -187,6 +187,7 @@ final class SumiBrowsingDataCleanupService {
     private let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
     private let faviconCacheCleaner: any SumiBrowsingDataFaviconCleaning
     private let appResidueCleaner: any SumiBrowsingDataAppResidueCleaning
+    private let basicAuthCredentialStore: any SumiBasicAuthCredentialCleaning
     private let sharedWebsiteDataStoreProvider: @MainActor () -> WKWebsiteDataStore
     private let referenceDateProvider: @MainActor () -> Date
     weak var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
@@ -195,6 +196,7 @@ final class SumiBrowsingDataCleanupService {
         websiteDataCleanupService: (any SumiWebsiteDataCleanupServicing)? = nil,
         faviconCacheCleaner: (any SumiBrowsingDataFaviconCleaning)? = nil,
         appResidueCleaner: (any SumiBrowsingDataAppResidueCleaning)? = nil,
+        basicAuthCredentialStore: (any SumiBasicAuthCredentialCleaning)? = nil,
         destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)? = nil,
         sharedWebsiteDataStoreProvider: @escaping @MainActor () -> WKWebsiteDataStore = {
             .default()
@@ -205,6 +207,7 @@ final class SumiBrowsingDataCleanupService {
             ?? SumiWebsiteDataCleanupService.shared
         self.faviconCacheCleaner = faviconCacheCleaner ?? SumiFaviconSystem.shared
         self.appResidueCleaner = appResidueCleaner ?? SumiBrowsingDataAppResidueCleaner.shared
+        self.basicAuthCredentialStore = basicAuthCredentialStore ?? BasicAuthCredentialStore()
         self.destructiveCleanupPreparer = destructiveCleanupPreparer
         self.sharedWebsiteDataStoreProvider = sharedWebsiteDataStoreProvider
         self.referenceDateProvider = referenceDateProvider
@@ -401,7 +404,29 @@ final class SumiBrowsingDataCleanupService {
             )
         }
 
+        clearSavedHTTPAuthCredentialsIfNeeded(
+            range: range,
+            categories: categories,
+            targetProfileIds: targetProfileIds
+        )
         await clearFaviconCacheIfNeeded(range: range, categories: categories, domains: domains)
+    }
+
+    private func clearSavedHTTPAuthCredentialsIfNeeded(
+        range: SumiBrowsingDataTimeRange,
+        categories: Set<SumiBrowsingDataCategory>,
+        targetProfileIds: Set<UUID>
+    ) {
+        guard range == .allTime,
+              categories == SumiBrowsingDataCategory.defaultSelection
+        else { return }
+
+        for profileId in targetProfileIds {
+            _ = basicAuthCredentialStore.deleteCredentials(
+                profilePartitionId: profileId,
+                isEphemeralProfile: false
+            )
+        }
     }
 
     private func clearAppLevelWebsiteResidueIfNeeded(
@@ -482,7 +507,7 @@ final class SumiBrowsingDataCleanupService {
         historyProfileId: UUID?,
         historyManager: HistoryManager
     ) async {
-        let savedLogins = BasicAuthCredentialStore().allCredentialHosts()
+        let savedLogins = basicAuthCredentialStore.allCredentialHosts()
 
         if range == .allTime {
             await faviconCacheCleaner.burnAfterHistoryClear(savedLogins: savedLogins)
@@ -632,7 +657,7 @@ final class SumiBrowsingDataCleanupService {
     ) async {
         guard categories.contains(.cache) else { return }
         guard !categories.contains(.history) else { return }
-        let savedLogins = BasicAuthCredentialStore().allCredentialHosts()
+        let savedLogins = basicAuthCredentialStore.allCredentialHosts()
 
         if range == .allTime {
             await faviconCacheCleaner.burnAfterHistoryClear(savedLogins: savedLogins)
