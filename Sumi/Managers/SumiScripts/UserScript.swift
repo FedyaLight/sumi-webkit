@@ -17,6 +17,7 @@ final class SumiInstalledUserScript: Identifiable {
     /// Source file for deferred body load (nil when body is stored in `metadata.code`).
     private(set) var sourceFileURL: URL?
     var isEnabled: Bool
+    var allowPrivateBrowsing: Bool
     /// Bundled Sumi compat preludes from `// @sumi-compat` (after GM shim, before @require).
     var compatPreludeFragments: [String]
     var requiredCode: [String]  // Contents of @require resources, in order
@@ -29,6 +30,7 @@ final class SumiInstalledUserScript: Identifiable {
         metadata: UserScriptMetadata,
         sourceFileURL: URL? = nil,
         isEnabled: Bool = true,
+        allowPrivateBrowsing: Bool = false,
         compatPreludeFragments: [String] = [],
         requiredCode: [String] = [],
         resourceData: [String: String] = [:]
@@ -38,6 +40,7 @@ final class SumiInstalledUserScript: Identifiable {
         self.metadata = metadata
         self.sourceFileURL = sourceFileURL
         self.isEnabled = isEnabled
+        self.allowPrivateBrowsing = allowPrivateBrowsing
         self.compatPreludeFragments = compatPreludeFragments
         self.requiredCode = requiredCode
         self.resourceData = resourceData
@@ -71,6 +74,10 @@ final class SumiInstalledUserScript: Identifiable {
 
     /// Whether this script uses any GM APIs that require content-world isolation.
     var requiresContentWorldIsolation: Bool {
+        hasNativeGMGrants
+    }
+
+    var hasNativeGMGrants: Bool {
         let grants = metadata.grants
         if grants.isEmpty || grants.contains("none") {
             return false

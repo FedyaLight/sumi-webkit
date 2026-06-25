@@ -310,6 +310,21 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         XCTAssertTrue(popupResponderSource.contains("createChildWebView("))
     }
 
+    func testAuxiliaryWindowNestedSizedPopupRoutesThroughPopupBridge() throws {
+        let source = try sourceFile("Sumi/Managers/AuxiliaryWindowManager/AuxiliaryWindowUIDelegate.swift")
+        let methodStart = try XCTUnwrap(source.range(of: "createWebViewWith configuration: WKWebViewConfiguration"))
+        let methodSource = String(source[methodStart.lowerBound...])
+
+        XCTAssertTrue(methodSource.contains("popupPermissionBridge"))
+        XCTAssertTrue(methodSource.contains("evaluateSynchronouslyForWebKitFallback("))
+        XCTAssertTrue(methodSource.contains("guard permissionResult.isAllowed else { return nil }"))
+        XCTAssertTrue(methodSource.contains("sourceTab.popupPermissionTabContext(for: webView)"))
+        XCTAssertLessThan(
+            try XCTUnwrap(methodSource.range(of: "evaluateSynchronouslyForWebKitFallback(")?.lowerBound),
+            try XCTUnwrap(methodSource.range(of: "presentWebPopup(")?.lowerBound)
+        )
+    }
+
     private func realCoordinatorBridge(
         store: PopupBridgePermissionStore,
         blockedPopupStore: SumiBlockedPopupStore? = nil,

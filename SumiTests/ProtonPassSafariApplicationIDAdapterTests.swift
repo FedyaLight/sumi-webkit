@@ -5,7 +5,7 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class ProtonPassSafariApplicationIDAdapterTests: XCTestCase {
-    func testSupportsObservedProtonSafariExtensionIdentity() throws {
+    func testRejectsUnsignedBundleWithProtonBundleIdentifiers() throws {
         let adapter = ProtonPassSafariApplicationIDAdapter(
             store: InMemoryProtonPassSafariCompanionStore()
         )
@@ -16,6 +16,42 @@ final class ProtonPassSafariApplicationIDAdapterTests: XCTestCase {
                 appexBundleID: ProtonNativeMessagingIdentifiers.safariExtensionBundleIdentifier
             ),
             name: "Not used for selection"
+        )
+        let context = makeContext(installed: installed)
+
+        XCTAssertFalse(adapter.supports(context: context))
+    }
+
+    func testRejectsSignedNonProtonIdentity() throws {
+        let adapter = ProtonPassSafariApplicationIDAdapter(
+            store: InMemoryProtonPassSafariCompanionStore()
+        )
+        let installed = try makeInstalledExtension(
+            id: "ext-non-proton-signed",
+            sourceBundlePath: Bundle.main.bundleURL.path,
+            name: "Signed Non Proton"
+        )
+        let context = makeContext(installed: installed)
+
+        XCTAssertFalse(adapter.supports(context: context))
+    }
+
+    func testSupportsInstalledSignedProtonSafariExtensionWhenPresent() throws {
+        let appexURL = URL(
+            fileURLWithPath: "/Applications/Proton Pass for Safari.app/Contents/PlugIns/Safari Extension.appex",
+            isDirectory: true
+        )
+        guard FileManager.default.fileExists(atPath: appexURL.path) else {
+            throw XCTSkip("Proton Pass for Safari is not installed")
+        }
+
+        let adapter = ProtonPassSafariApplicationIDAdapter(
+            store: InMemoryProtonPassSafariCompanionStore()
+        )
+        let installed = try makeInstalledExtension(
+            id: "ext-proton-installed",
+            sourceBundlePath: appexURL.path,
+            name: "Installed Proton"
         )
         let context = makeContext(installed: installed)
 

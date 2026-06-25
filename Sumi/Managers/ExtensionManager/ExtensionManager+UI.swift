@@ -314,11 +314,13 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "\(installedExtension.name) does not declare a Chrome action."
             )
         }
-        guard currentTab?.isEphemeral != true else {
-            return .blocked(
-                .noEligibleTab,
-                message: "Private tabs are not eligible for extension action popups."
-            )
+        if let currentTab {
+            guard currentTab.isEphemeral == false else {
+                return .blocked(
+                    .noEligibleTab,
+                    message: "Private tabs are not eligible for extension action popups."
+                )
+            }
         }
         guard isModuleWorkerUnsupported(installedExtension) == false else {
             return .blocked(

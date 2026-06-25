@@ -277,7 +277,9 @@ final class UserScriptStore {
         ensureDirectoryExists(scriptsDirectory)
         try content.write(to: localSourceURL, atomically: true, encoding: .utf8)
 
-        let scriptId = existingEntity(namespace: metadata.namespace ?? "", name: metadata.name)?.id ?? UUID()
+        let existingScriptEntity = existingEntity(namespace: metadata.namespace ?? "", name: metadata.name)
+            ?? contextEntity(filename: filename)
+        let scriptId = existingScriptEntity?.id ?? UUID()
         clearPersistedResources(for: scriptId)
         clearCachedResources(for: filename)
         let compatPreludes = UserScriptCompatAssembly.preludeFragments(for: metadata)
@@ -300,6 +302,7 @@ final class UserScriptStore {
             metadata: metadata,
             sourceFileURL: nil,
             isEnabled: true,
+            allowPrivateBrowsing: existingScriptEntity?.allowPrivateBrowsing ?? false,
             compatPreludeFragments: compatPreludes,
             requiredCode: requiredCode,
             resourceData: resourceData
@@ -380,7 +383,9 @@ final class UserScriptStore {
 
             // Load @resource resources
             let resourceData = loadResourceData(for: filename, resources: parsedMeta.resources)
-            let id = existingEntity(namespace: parsedMeta.namespace ?? "", name: parsedMeta.name)?.id ?? UUID()
+            let existingScriptEntity = existingEntity(namespace: parsedMeta.namespace ?? "", name: parsedMeta.name)
+                ?? contextEntity(filename: filename)
+            let id = existingScriptEntity?.id ?? UUID()
 
             let useLazyBody = lazyScriptBodyEnabled && parsedMeta.fileType == .javascript
             let storedMetadata = useLazyBody ? parsedMeta.replacingCode("") : parsedMeta
@@ -392,6 +397,7 @@ final class UserScriptStore {
                 metadata: storedMetadata,
                 sourceFileURL: deferredURL,
                 isEnabled: isEnabled,
+                allowPrivateBrowsing: existingScriptEntity?.allowPrivateBrowsing ?? false,
                 compatPreludeFragments: compatPreludes,
                 requiredCode: requiredCode,
                 resourceData: resourceData

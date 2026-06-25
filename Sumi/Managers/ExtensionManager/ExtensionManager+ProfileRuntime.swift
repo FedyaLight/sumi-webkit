@@ -110,6 +110,17 @@ extension ExtensionManager {
         return browserManager?.currentProfile?.id
     }
 
+    func rememberPrivateExtensionRuntimeProfileIfNeeded(_ profile: Profile) {
+        if profile.isEphemeral {
+            privateExtensionRuntimeProfileIDs.insert(profile.id)
+        }
+    }
+
+    func isPrivateExtensionRuntimeProfile(_ profileId: UUID?) -> Bool {
+        guard let profileId else { return false }
+        return privateExtensionRuntimeProfileIDs.contains(profileId)
+    }
+
     func windowMatchesProfile(
         _ windowState: BrowserWindowState,
         profileId: UUID

@@ -88,7 +88,7 @@ final class AuxiliaryWindowSessionDelegate: NSObject, NSWindowDelegate {
 final class AuxiliaryWindowManager {
     let maxNestedDepth = 3
 
-    private weak var browserManager: BrowserManager?
+    private(set) weak var browserManager: BrowserManager?
     private var sessionsByID: [UUID: AuxiliaryWindowSession] = [:]
     private var sessionIDsByWebViewObjectID: [ObjectIdentifier: UUID] = [:]
     private var recentAuxiliarySessionIDByOwnerExtensionID: [String: UUID] = [:]

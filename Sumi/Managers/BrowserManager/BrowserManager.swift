@@ -1413,9 +1413,34 @@ class BrowserManager: ObservableObject {
         from sourceTab: Tab,
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         activate: Bool = true
-    ) -> Tab {
+    ) -> Tab? {
+        let sourceWindowState = windowState(containing: sourceTab)
+        if sourceTab.isEphemeral || sourceWindowState?.isIncognito == true {
+            guard let sourceWindowState,
+                  let profile = sourceWindowState.ephemeralProfile,
+                  let blankURL = URL(string: "about:blank")
+            else {
+                return nil
+            }
+
+            let previousTabId = sourceWindowState.currentTabId
+            let popupTab = tabManager.createEphemeralTab(
+                url: blankURL,
+                in: sourceWindowState,
+                profile: profile
+            )
+            popupTab.isPopupHost = true
+            if let webViewConfigurationOverride {
+                popupTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
+            }
+            if activate == false {
+                sourceWindowState.currentTabId = previousTabId
+            }
+            return popupTab
+        }
+
         let context = TabOpenContext.background(
-            windowState: windowState(containing: sourceTab),
+            windowState: sourceWindowState,
             sourceTab: sourceTab,
             preferredSpaceId: sourceTab.spaceId
         )

@@ -50,7 +50,8 @@ extension UserScriptStore {
                     sourcePath: sourceURL.path,
                     contentHash: hash,
                     metadataJSON: metadataJSON,
-                    isEnabled: script.isEnabled
+                    isEnabled: script.isEnabled,
+                    allowPrivateBrowsing: script.allowPrivateBrowsing
                 )
             )
         }

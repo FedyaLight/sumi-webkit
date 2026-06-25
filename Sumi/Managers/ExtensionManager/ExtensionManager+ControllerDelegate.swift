@@ -1527,6 +1527,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             }
         }
         let profileId = profileId(for: extensionContext)
+        let isPrivateBrowsing = isPrivateExtensionRuntimeProfile(profileId)
         let extensionDisplayName = ExtensionUtils.displayName(
             forExtensionID: extensionId,
             installedExtensions: installedExtensions
@@ -1564,6 +1565,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             message: message,
             extensionId: extensionId,
             profileId: profileId,
+            isPrivateBrowsing: isPrivateBrowsing,
+            privateAccessAllowed: extensionContext.hasAccessToPrivateData,
             installedExtensions: installedExtensions,
             extensionDisplayName: extensionDisplayName,
             replyHandler: SumiWebExtensionCallbackRelay.wrapNativeMessagingReplyHandler(
@@ -1601,6 +1604,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
 
         let profileId = profileId(for: extensionContext)
+        let isPrivateBrowsing = isPrivateExtensionRuntimeProfile(profileId)
         let extensionDisplayName = ExtensionUtils.displayName(
             forExtensionID: extensionId,
             installedExtensions: installedExtensions
@@ -1634,6 +1638,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             port: port,
             extensionId: extensionId,
             profileId: profileId,
+            isPrivateBrowsing: isPrivateBrowsing,
+            privateAccessAllowed: extensionContext.hasAccessToPrivateData,
             installedExtensions: installedExtensions,
             registerHandler: { [weak self] handler in
                 guard let self else { return }

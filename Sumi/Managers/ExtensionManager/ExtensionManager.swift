@@ -177,11 +177,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         if let nativeMessagingRelayStorage {
             return nativeMessagingRelayStorage
         }
-        let relay = SumiNativeMessagingRelay(
-            isPrivateBrowsing: { [weak self] in
-                self?.browserManager?.windowRegistry?.activeWindow?.isIncognito ?? false
-            }
-        )
+        let relay = SumiNativeMessagingRelay()
         nativeMessagingRelayStorage = relay
         return relay
     }
@@ -193,6 +189,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
     var profileExtensionStores: [UUID: WKWebsiteDataStore] = [:]
     var profileExtensionStoreOrder: [UUID] = []
+    var privateExtensionRuntimeProfileIDs: Set<UUID> = []
     var recentExtensionTabOpenRequests = BoundedRecentDateTracker(
         ttl: ExtensionManager.recentExtensionTabOpenRequestTTL,
         maxKeys: 128,

@@ -943,6 +943,7 @@ extension ExtensionManager {
             extensionControllersByProfile.removeAll()
             profileExtensionStores.removeAll()
             profileExtensionStoreOrder.removeAll()
+            privateExtensionRuntimeProfileIDs.removeAll()
             extensionRuntimeAllowsWithoutEnabledExtensions = false
             runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
             extensionsLoaded = false
@@ -1155,6 +1156,7 @@ extension ExtensionManager {
         for profileId: UUID
     ) -> WKWebsiteDataStore {
         if let profile = activeProfile(for: profileId) {
+            rememberPrivateExtensionRuntimeProfileIfNeeded(profile)
             let store = profile.dataStore
             profileExtensionStores[profileId] = store
             touchProfileExtensionStore(profileId)

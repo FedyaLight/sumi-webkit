@@ -551,10 +551,10 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             to: configuration
         )
 
-        let childTab = browserManager.createPopupTab(
+        guard let childTab = browserManager.createPopupTab(
             from: tab,
             activate: policy.shouldActivateTab
-        )
+        ) else { return nil }
         let childWebView = childTab.createPopupWebViewFromWebKitConfiguration(
             configuration,
             currentURL: navigationAction.request.url,

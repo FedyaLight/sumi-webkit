@@ -109,6 +109,85 @@ final class UserScriptsRuntimeTests: XCTestCase {
         XCTAssertTrue(shim.contains("exclude:"))
     }
 
+    func testPageWorldUserscriptWithGMGrantDoesNotExposeNativeBridge() throws {
+        let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
+        // ==UserScript==
+        // @name Page World GM Test
+        // @inject-into page
+        // @grant GM_xmlhttpRequest
+        // ==/UserScript==
+        console.log('page-world');
+        """))
+        let script = SumiInstalledUserScript(filename: "page-world-gm.user.js", metadata: metadata)
+
+        let adapter = SumiInstalledUserScriptAdapter(
+            script: script,
+            profileId: nil,
+            isEphemeral: false,
+            tabHandler: nil,
+            downloadManager: nil,
+            notificationPermissionBridge: nil,
+            notificationTabContextProvider: nil
+        )
+
+        XCTAssertTrue(adapter.requiresRunInPageContentWorld)
+        XCTAssertNil(adapter.bridge)
+        XCTAssertTrue(adapter.messageNames.isEmpty)
+        XCTAssertFalse(adapter.source.contains("window.webkit.messageHandlers"))
+    }
+
+    func testGrantNoneDoesNotCreateNativeGMBridge() throws {
+        let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
+        // ==UserScript==
+        // @name Grant None Test
+        // @grant none
+        // ==/UserScript==
+        console.log('grant-none');
+        """))
+        let script = SumiInstalledUserScript(filename: "grant-none.user.js", metadata: metadata)
+
+        let adapter = SumiInstalledUserScriptAdapter(
+            script: script,
+            profileId: nil,
+            isEphemeral: false,
+            tabHandler: nil,
+            downloadManager: nil,
+            notificationPermissionBridge: nil,
+            notificationTabContextProvider: nil
+        )
+
+        XCTAssertNil(adapter.bridge)
+        XCTAssertTrue(adapter.messageNames.isEmpty)
+    }
+
+    func testNativeGMMethodsRequireMatchingGrant() throws {
+        let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
+        // ==UserScript==
+        // @name Grant Gate Test
+        // @grant GM_getValue
+        // @grant GM_download
+        // ==/UserScript==
+        console.log('ok');
+        """))
+        let script = SumiInstalledUserScript(filename: "grant-gate.user.js", metadata: metadata)
+        let bridge = UserScriptGMBridge(
+            script: script,
+            profileId: nil,
+            contentWorld: .defaultClient,
+            tabOpenHandler: nil,
+            downloadManager: nil
+        )
+
+        XCTAssertTrue(bridge.allowsNativeGMMethod("GM_getValue"))
+        XCTAssertTrue(bridge.allowsNativeGMMethod("GM.getValue"))
+        XCTAssertTrue(bridge.allowsNativeGMMethod("GM_download"))
+        XCTAssertTrue(bridge.allowsNativeGMMethod("GM_xmlhttpRequest_abort"))
+        XCTAssertTrue(bridge.allowsNativeGMMethod("__sumi_runtimeError"))
+        XCTAssertFalse(bridge.allowsNativeGMMethod("GM_setValue"))
+        XCTAssertFalse(bridge.allowsNativeGMMethod("GM_xmlhttpRequest"))
+        XCTAssertFalse(bridge.allowsNativeGMMethod("GM_setClipboard"))
+    }
+
     func testGMNotificationShimUsesPromiseBackedNativeCallback() throws {
         let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
         // ==UserScript==

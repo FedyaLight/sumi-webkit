@@ -87,6 +87,37 @@ final class CompanionApplicationMessageRouterTests: XCTestCase {
         XCTAssertTrue(backend.receivedContexts.isEmpty)
     }
 
+    func testUnsignedProtonBundleIdentifierSpoofDoesNotRouteToProtonBackend() async throws {
+        let router = CompanionApplicationMessageRouter(
+            registry: CompanionApplicationBackendRegistry(
+                backends: [ProtonPassSafariApplicationIDAdapter()]
+            )
+        )
+        let relay = makeRelay(router: router)
+        let installed = try makeInstalledExtension(
+            id: "ext-proton-spoof",
+            sourceBundlePath: try makeFixtureApp(
+                appBundleID: ProtonNativeMessagingIdentifiers.safariHostBundleIdentifier,
+                appexBundleID: ProtonNativeMessagingIdentifiers.safariExtensionBundleIdentifier
+            )
+        )
+
+        let reply = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "application.id",
+            message: #"{"readFromClipboard":{}}"#
+        )
+
+        XCTAssertNil(reply.value)
+        let error = try XCTUnwrap(reply.error as NSError?)
+        XCTAssertEqual(
+            error.code,
+            SumiNativeMessagingRelay.ErrorCode
+                .companionApplicationUnsupportedBackend.rawValue
+        )
+    }
+
     func testNonApplicationIdDoesNotRouteThroughCompanionRegistry() async throws {
         let backend = FakeBackend(supportedExtensionId: "ext-supported")
         let router = CompanionApplicationMessageRouter(

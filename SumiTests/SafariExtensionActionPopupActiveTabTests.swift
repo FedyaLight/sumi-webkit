@@ -60,6 +60,29 @@ final class SafariExtensionActionPopupActiveTabTests: XCTestCase {
         )
     }
 
+    func testExtensionActionClickResolvesTabOnlyFromClickedWindowState() throws {
+        let actionSource = try source(
+            named: "Sumi/Components/Extensions/ExtensionActionView.swift"
+        )
+        let clickResolver = try methodBody(
+            containing: "private var currentExtensionActionTab",
+            in: actionSource
+        )
+
+        XCTAssertTrue(clickResolver.contains("browserManager.currentTab(for: windowState)"))
+        XCTAssertTrue(clickResolver.contains("windowState.currentTabId.flatMap"))
+        XCTAssertTrue(clickResolver.contains("browserManager.shellSelectionService.currentTab"))
+        XCTAssertTrue(clickResolver.contains("for: windowState"))
+        XCTAssertFalse(
+            clickResolver.contains("windowRegistry?.activeWindow"),
+            "Extension action clicks must not fall back to another active window when resolving activeTab"
+        )
+        XCTAssertFalse(
+            clickResolver.contains("tabManager.currentTab"),
+            "Extension action clicks must not grant activeTab from global tab manager state"
+        )
+    }
+
     private func methodBody(containing needle: String, in source: String) throws -> String {
         guard let start = source.range(of: needle)?.lowerBound else {
             throw XCTSkip("Could not find method containing \(needle)")

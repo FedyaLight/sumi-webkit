@@ -151,7 +151,7 @@ extension Tab: WKUIDelegate {
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
         guard let browserManager,
-              let tabContext = filePickerTabContext(for: webView)
+              let tabContext = filePickerPermissionTabContext(for: webView)
         else {
             RuntimeDiagnostics.emit("📁 [Tab] Denying file picker because browser/profile context is unavailable.")
             completionHandler(nil)
@@ -484,7 +484,7 @@ extension Tab: WKUIDelegate {
         )
     }
 
-    private func filePickerTabContext(
+    func filePickerPermissionTabContext(
         for webView: WKWebView
     ) -> SumiFilePickerPermissionTabContext? {
         guard let profile = resolveProfile() else { return nil }

@@ -720,14 +720,6 @@ struct ExtensionActionButton: View {
                 for: windowState,
                 tabStore: browserManager.tabManager.runtimeStore
             )
-            ?? browserManager.windowRegistry?.activeWindow.flatMap {
-                browserManager.currentTab(for: $0)
-                    ?? browserManager.shellSelectionService.currentTab(
-                        for: $0,
-                        tabStore: browserManager.tabManager.runtimeStore
-                    )
-            }
-            ?? browserManager.tabManager.currentTab
     }
 
     private func extensionContextMenuEntries() -> [SidebarContextMenuEntry] {

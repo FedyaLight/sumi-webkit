@@ -684,8 +684,16 @@ extension ExtensionManager {
         sourceBundlePath: String,
         packageRoot: URL
     ) async throws -> (extension: WKWebExtension, loadSource: SafariAppExtensionRuntimeLoadSource) {
+        let runtimeSourceKind: WebExtensionSourceKind =
+            sourceKind == .safariAppExtension
+            && SafariAppExtensionResources.installedAppexBundleURL(
+                sourceKind: sourceKind,
+                sourceBundlePath: sourceBundlePath
+            ) == nil
+            ? .directory
+            : sourceKind
         let sourceKey = WebExtensionRuntimeSourceKey(
-            sourceKind: sourceKind,
+            sourceKind: runtimeSourceKind,
             sourceBundlePath: URL(fileURLWithPath: sourceBundlePath, isDirectory: true)
                 .standardizedFileURL.path,
             packageRootPath: packageRoot.standardizedFileURL.path
@@ -694,12 +702,12 @@ extension ExtensionManager {
            cachedWebExtensionRuntimeSourceKeysByID[extensionId] == sourceKey
         {
             let loadSource: SafariAppExtensionRuntimeLoadSource =
-                sourceKind == .safariAppExtension ? .originalAppexBundle : .copiedPackage
+                runtimeSourceKind == .safariAppExtension ? .originalAppexBundle : .copiedPackage
             return (cached, loadSource)
         }
 
         let created = try await SafariAppExtensionResources.makeWebExtension(
-            sourceKind: sourceKind,
+            sourceKind: runtimeSourceKind,
             sourceBundlePath: sourceBundlePath,
             packageRoot: packageRoot
         )

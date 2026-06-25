@@ -8,6 +8,70 @@
 
 import WebKit
 
+extension UserScriptGMBridge {
+    func allowsNativeGMMethod(_ method: String) -> Bool {
+        guard method != "__sumi_runtimeError" else { return true }
+
+        let grants = Set(script.metadata.grants)
+        guard !grants.isEmpty, !grants.contains("none") else {
+            return false
+        }
+
+        return Self.grants(forNativeGMMethod: method).contains { grants.contains($0) }
+    }
+
+    private static func grants(forNativeGMMethod method: String) -> [String] {
+        switch method {
+        case "GM_getValue", "GM.getValue":
+            return ["GM_getValue", "GM.getValue"]
+        case "GM_getValues", "GM.getValues":
+            return ["GM_getValues", "GM.getValues"]
+        case "GM_setValue", "GM.setValue":
+            return ["GM_setValue", "GM.setValue"]
+        case "GM_setValues", "GM.setValues":
+            return ["GM_setValues", "GM.setValues"]
+        case "GM_deleteValue", "GM.deleteValue":
+            return ["GM_deleteValue", "GM.deleteValue"]
+        case "GM_deleteValues", "GM.deleteValues":
+            return ["GM_deleteValues", "GM.deleteValues"]
+        case "GM_listValues", "GM.listValues":
+            return ["GM_listValues", "GM.listValues"]
+        case "GM.getTab":
+            return ["GM.getTab"]
+        case "GM.saveTab":
+            return ["GM.saveTab"]
+        case "GM_getResourceText", "GM.getResourceText":
+            return ["GM_getResourceText", "GM.getResourceText"]
+        case "GM_getResourceURL", "GM.getResourceUrl":
+            return ["GM_getResourceURL", "GM_getResourceUrl", "GM.getResourceURL", "GM.getResourceUrl"]
+        case "GM_xmlhttpRequest":
+            return ["GM_xmlhttpRequest", "GM.xmlHttpRequest", "GM.xmlhttpRequest"]
+        case "GM_xmlhttpRequest_abort":
+            return ["GM_xmlhttpRequest", "GM.xmlHttpRequest", "GM.xmlhttpRequest", "GM_download", "GM.download"]
+        case "GM_download":
+            return ["GM_download", "GM.download"]
+        case "GM_addStyle":
+            return ["GM_addStyle", "GM.addStyle"]
+        case "GM_notification":
+            return ["GM_notification", "GM.notification"]
+        case "GM_registerMenuCommand":
+            return ["GM_registerMenuCommand", "GM.registerMenuCommand"]
+        case "GM_unregisterMenuCommand":
+            return ["GM_unregisterMenuCommand", "GM.unregisterMenuCommand"]
+        case "GM_setClipboard", "GM.setClipboard":
+            return ["GM_setClipboard", "GM.setClipboard"]
+        case "GM_openInTab", "GM.openInTab":
+            return ["GM_openInTab", "GM.openInTab"]
+        case "window.close":
+            return ["window.close"]
+        case "window.focus":
+            return ["window.focus"]
+        default:
+            return []
+        }
+    }
+}
+
 /// Central entry: routes `method` from the JS shim to the appropriate handler on `UserScriptGMBridge`.
 @MainActor
 enum UserScriptGMDispatch {

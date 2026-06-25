@@ -78,9 +78,6 @@ final class SumiFilePickerPanelPresenter: SumiFilePickerPanelPresenting {
 
     func makeOpenPanel(for request: SumiFilePickerPanelPresentationRequest) -> NSOpenPanel {
         let openPanel = NSOpenPanel()
-        openPanel.allowsMultipleSelection = request.allowsMultipleSelection
-        openPanel.canChooseDirectories = request.allowsDirectories
-        openPanel.canChooseFiles = request.canChooseFiles
         openPanel.resolvesAliases = true
         openPanel.title = request.title
         openPanel.prompt = request.prompt
@@ -90,6 +87,9 @@ final class SumiFilePickerPanelPresenter: SumiFilePickerPanelPresenting {
             openPanel.allowedContentTypes = allowedContentTypes
         }
 
+        openPanel.canChooseDirectories = request.allowsDirectories
+        openPanel.canChooseFiles = request.canChooseFiles
+        openPanel.allowsMultipleSelection = request.allowsMultipleSelection
         return openPanel
     }
 }

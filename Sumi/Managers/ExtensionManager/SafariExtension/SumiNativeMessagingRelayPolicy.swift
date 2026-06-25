@@ -20,7 +20,24 @@ struct SumiNativeMessagingRelayPolicyContext {
     let extensionId: String
     let installedExtension: InstalledExtension?
     let isPrivateBrowsing: Bool
+    let privateAccessAllowed: Bool?
     let requestedApplicationIdentifier: String?
+
+    init(
+        extensionsModuleEnabled: Bool,
+        extensionId: String,
+        installedExtension: InstalledExtension?,
+        isPrivateBrowsing: Bool,
+        privateAccessAllowed: Bool? = nil,
+        requestedApplicationIdentifier: String?
+    ) {
+        self.extensionsModuleEnabled = extensionsModuleEnabled
+        self.extensionId = extensionId
+        self.installedExtension = installedExtension
+        self.isPrivateBrowsing = isPrivateBrowsing
+        self.privateAccessAllowed = privateAccessAllowed
+        self.requestedApplicationIdentifier = requestedApplicationIdentifier
+    }
 }
 
 enum SumiNativeMessagingRelayPolicy {
@@ -43,10 +60,12 @@ enum SumiNativeMessagingRelayPolicy {
             return .failure(.extensionNotSafariImport)
         }
 
-        if context.isPrivateBrowsing,
-           installed.incognitoMode.allowsPrivateAccess == false
-        {
-            return .failure(.privateBrowsingDenied)
+        if context.isPrivateBrowsing {
+            guard installed.incognitoMode.allowsPrivateAccess,
+                  context.privateAccessAllowed == true
+            else {
+                return .failure(.privateBrowsingDenied)
+            }
         }
 
         if isArbitraryNativeMessagingRequest(

@@ -133,14 +133,13 @@ final class SumiInstalledUserScriptAdapter: NSObject, SumiUserScript, @MainActor
         let context = "sumiGM_\(script.id.uuidString)"
         let injectInto = Self.effectiveInjectionScope(for: script)
         let requiresPageWorld = injectInto != .content
-        let contentWorld: WKContentWorld = requiresPageWorld ? .page : .defaultClient
         let bridge: UserScriptGMBridge?
 
-        if script.requiresContentWorldIsolation || !script.metadata.grants.isEmpty {
+        if !requiresPageWorld && script.hasNativeGMGrants {
             bridge = UserScriptGMBridge(
                 script: script,
                 profileId: isEphemeral ? nil : profileId,
-                contentWorld: contentWorld,
+                contentWorld: .defaultClient,
                 tabOpenHandler: tabHandler,
                 downloadManager: downloadManager,
                 notificationPermissionBridge: notificationPermissionBridge,
@@ -351,6 +350,10 @@ private final class SumiGMSubfeature: NSObject, @MainActor SumiUserScriptSubfeat
     }
 
     func handler(forMethodNamed methodName: String) -> SumiUserScriptSubfeature.Handler? {
+        guard bridge.allowsNativeGMMethod(methodName) else {
+            return nil
+        }
+
         switch methodName {
         case "GM.getValue", "GM.getValues", "GM.setValue", "GM.setValues",
              "GM.deleteValue", "GM.deleteValues", "GM.listValues",

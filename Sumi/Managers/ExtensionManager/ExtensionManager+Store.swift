@@ -49,15 +49,23 @@ extension ExtensionManager {
         sourceBundlePath: String
     ) throws -> URL {
         if sourceKind == .safariAppExtension {
-            guard let appexURL = SafariAppExtensionResources.installedAppexBundleURL(
+            if let appexURL = SafariAppExtensionResources.installedAppexBundleURL(
                 sourceKind: sourceKind,
                 sourceBundlePath: sourceBundlePath
-            ) else {
-                throw ExtensionError.installationFailed(
-                    "Installed Safari app extension bundle is unavailable"
-                )
+            ) {
+                return try SafariAppExtensionResources.resourcesRoot(in: appexURL)
             }
-            return try SafariAppExtensionResources.resourcesRoot(in: appexURL)
+
+            let packageURL = URL(fileURLWithPath: packagePath, isDirectory: true)
+            if FileManager.default.fileExists(
+                atPath: packageURL.appendingPathComponent("manifest.json").path
+            ) {
+                return packageURL
+            }
+
+            throw ExtensionError.installationFailed(
+                "Installed Safari app extension bundle is unavailable"
+            )
         }
 
         return URL(fileURLWithPath: packagePath, isDirectory: true)

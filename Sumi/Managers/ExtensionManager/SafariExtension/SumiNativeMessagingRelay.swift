@@ -43,7 +43,7 @@ final class SumiNativeMessagingRelay {
     private let loopGuard: SumiNativeMessagingRelayLoopGuard
     private let diagnosticCoalescer: SumiNativeMessagingDiagnosticCoalescer
     private let extensionsModuleEnabled: () -> Bool
-    private let isPrivateBrowsing: () -> Bool
+    private let fallbackIsPrivateBrowsing: () -> Bool
     private let profileRuntimeLoaded: () -> Bool
     private let rawLogDiagnostic: @MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void
     private var trackedPortSessions: [ObjectIdentifier: SumiNativeMessagingPortSession] = [:]
@@ -76,7 +76,7 @@ final class SumiNativeMessagingRelay {
         self.launchPolicy = launchPolicy
         self.loopGuard = loopGuard
         self.extensionsModuleEnabled = extensionsModuleEnabled
-        self.isPrivateBrowsing = isPrivateBrowsing
+        self.fallbackIsPrivateBrowsing = isPrivateBrowsing
         self.profileRuntimeLoaded = profileRuntimeLoaded
         let resolvedLogger = logDiagnostic ?? Self.defaultDiagnosticLogger
         self.rawLogDiagnostic = resolvedLogger
@@ -139,6 +139,8 @@ final class SumiNativeMessagingRelay {
         message: Any,
         extensionId: String?,
         profileId: UUID? = nil,
+        isPrivateBrowsing: Bool? = nil,
+        privateAccessAllowed: Bool? = nil,
         installedExtensions: [InstalledExtension],
         extensionDisplayName: String? = nil,
         replyHandler: @escaping (Any?, (any Error)?) -> Void
@@ -205,6 +207,8 @@ final class SumiNativeMessagingRelay {
         switch evaluatePolicy(
             extensionId: extensionId,
             installed: installed,
+            isPrivateBrowsing: isPrivateBrowsing,
+            privateAccessAllowed: privateAccessAllowed,
             requestedApplicationIdentifier: applicationIdentifier
         ) {
         case .failure(let denial):
@@ -511,6 +515,8 @@ final class SumiNativeMessagingRelay {
         port: any SumiNativeMessagingPortControlling,
         extensionId: String?,
         profileId: UUID? = nil,
+        isPrivateBrowsing: Bool? = nil,
+        privateAccessAllowed: Bool? = nil,
         installedExtensions: [InstalledExtension],
         registerHandler: (SumiNativeMessagingPortSession) -> Void,
         unregisterHandler: @escaping (SumiNativeMessagingPortSession) -> Void = { _ in },
@@ -567,6 +573,8 @@ final class SumiNativeMessagingRelay {
         switch evaluatePolicy(
             extensionId: extensionId,
             installed: installed,
+            isPrivateBrowsing: isPrivateBrowsing,
+            privateAccessAllowed: privateAccessAllowed,
             requestedApplicationIdentifier: applicationIdentifier
         ) {
         case .failure(let denial):
@@ -1032,6 +1040,8 @@ final class SumiNativeMessagingRelay {
     private func evaluatePolicy(
         extensionId: String,
         installed: InstalledExtension?,
+        isPrivateBrowsing: Bool?,
+        privateAccessAllowed: Bool?,
         requestedApplicationIdentifier: String?
     ) -> Result<Void, SumiNativeMessagingRelayPolicyDenial> {
         SumiNativeMessagingRelayPolicy.evaluate(
@@ -1039,7 +1049,8 @@ final class SumiNativeMessagingRelay {
                 extensionsModuleEnabled: extensionsModuleEnabled(),
                 extensionId: extensionId,
                 installedExtension: installed,
-                isPrivateBrowsing: isPrivateBrowsing(),
+                isPrivateBrowsing: isPrivateBrowsing ?? fallbackIsPrivateBrowsing(),
+                privateAccessAllowed: privateAccessAllowed,
                 requestedApplicationIdentifier: requestedApplicationIdentifier
             )
         )

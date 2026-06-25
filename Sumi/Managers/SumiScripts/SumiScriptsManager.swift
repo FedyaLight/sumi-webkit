@@ -385,22 +385,25 @@ final class SumiScriptsManager: ObservableObject {
         guard isEnabled, let store, let injector else { return [] }
 
         let matchingScripts = store.scriptsForURL(url)
-        guard !matchingScripts.isEmpty else {
+        let injectableScripts = isEphemeral
+            ? matchingScripts.filter(\.allowPrivateBrowsing)
+            : matchingScripts
+        guard !injectableScripts.isEmpty else {
             injector.cleanupBridges(for: webViewId)
             activeScriptCount = 0
             return []
         }
 
         let userScripts = injector.makeUserScripts(
-            scripts: matchingScripts,
+            scripts: injectableScripts,
             webViewId: webViewId,
             profileId: profileId,
             isEphemeral: isEphemeral
         )
-        activeScriptCount = matchingScripts.count
+        activeScriptCount = injectableScripts.count
 
         RuntimeDiagnostics.debug(
-            "Prepared \(matchingScripts.count) Sumi userscript(s) for \(url.host ?? url.absoluteString)",
+            "Prepared \(injectableScripts.count) Sumi userscript(s) for \(url.host ?? url.absoluteString)",
             category: "SumiScripts"
         )
         return userScripts

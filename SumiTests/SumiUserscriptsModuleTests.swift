@@ -1,3 +1,4 @@
+import SwiftData
 import WebKit
 import XCTest
 
@@ -134,6 +135,102 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         XCTAssertEqual(probe.injectorCount, 1)
     }
 
+    func testPrivateTabsSkipUserscriptsByDefault() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.userScripts)
+        let scriptsDirectory = try makeTemporaryScriptsDirectory()
+        try writeScript(
+            named: "private-default.user.js",
+            in: scriptsDirectory,
+            match: "https://www.example.test/*"
+        )
+        let probe = UserscriptsRuntimeProbe()
+        let module = makeModule(
+            registry: registry,
+            probe: probe,
+            scriptsDirectory: scriptsDirectory
+        )
+        let url = URL(string: "https://www.example.test/page")!
+
+        XCTAssertEqual(
+            module.normalTabUserScripts(
+                for: url,
+                webViewId: UUID(),
+                profileId: UUID(),
+                isEphemeral: false
+            )
+            .count,
+            1
+        )
+        XCTAssertTrue(
+            module.normalTabUserScripts(
+                for: url,
+                webViewId: UUID(),
+                profileId: UUID(),
+                isEphemeral: true
+            )
+            .isEmpty
+        )
+    }
+
+    func testPrivateTabsInjectUserscriptsOnlyWhenExplicitlyAllowed() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.userScripts)
+        let scriptsDirectory = try makeTemporaryScriptsDirectory()
+        let filename = "private-allowed.user.js"
+        try writeScript(
+            named: filename,
+            in: scriptsDirectory,
+            match: "https://www.example.test/*"
+        )
+        let container = try makeUserscriptContainer()
+        let context = ModelContext(container)
+        context.insert(
+            UserScriptEntity(
+                namespace: "https://example.test/module",
+                name: "Module Test",
+                version: nil,
+                scriptDescription: nil,
+                author: nil,
+                iconURLString: nil,
+                homepageURLString: nil,
+                supportURLString: nil,
+                downloadURLString: nil,
+                updateURLString: nil,
+                sourcePath: scriptsDirectory.appendingPathComponent(filename).path,
+                contentHash: "",
+                metadataJSON: "{}",
+                isEnabled: true,
+                allowPrivateBrowsing: true
+            )
+        )
+        try context.save()
+        let probe = UserscriptsRuntimeProbe()
+        let module = makeModule(
+            registry: registry,
+            probe: probe,
+            context: context,
+            scriptsDirectory: scriptsDirectory
+        )
+
+        let scripts = module.normalTabUserScripts(
+            for: URL(string: "https://www.example.test/page")!,
+            webViewId: UUID(),
+            profileId: UUID(),
+            isEphemeral: true
+        )
+
+        XCTAssertEqual(scripts.count, 1)
+    }
+
     func testDisablingModulePreventsFutureUserScriptContributions() throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -232,10 +329,12 @@ final class SumiUserscriptsModuleTests: XCTestCase {
     private func makeModule(
         registry: SumiModuleRegistry,
         probe: UserscriptsRuntimeProbe,
+        context: ModelContext? = nil,
         scriptsDirectory: URL? = nil
     ) -> SumiUserscriptsModule {
         SumiUserscriptsModule(
             moduleRegistry: registry,
+            context: context,
             managerFactory: { context in
                 probe.managerCount += 1
                 return SumiScriptsManager(
@@ -268,6 +367,13 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         )
         temporaryDirectories.append(directory)
         return directory
+    }
+
+    private func makeUserscriptContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: Schema([UserScriptEntity.self, UserScriptResourceEntity.self]),
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
     }
 
     private func writeScript(

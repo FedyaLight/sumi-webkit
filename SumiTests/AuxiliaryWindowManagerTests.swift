@@ -921,6 +921,50 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         XCTAssertEqual(recordingWebView.loadedRequestURLs, [targetURL])
     }
 
+    func testPrivatePopupTabStaysEphemeralAndOutOfRegularPersistence() throws {
+        let harness = makeHarness()
+        let privateProfile = Profile.createEphemeral()
+        let privateWindow = BrowserWindowState()
+        privateWindow.tabManager = harness.browserManager.tabManager
+        privateWindow.isIncognito = true
+        privateWindow.ephemeralProfile = privateProfile
+        privateWindow.window = NSWindow(
+            contentRect: NSRect(x: 160, y: 160, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        harness.windowRegistry.register(privateWindow)
+
+        let sourceTab = harness.browserManager.tabManager.createEphemeralTab(
+            url: URL(string: "https://private.example/source")!,
+            in: privateWindow,
+            profile: privateProfile
+        )
+        let regularTabCount = harness.browserManager.tabManager.tabsBySpace.values
+            .flatMap { $0 }
+            .count
+
+        let popupTab = try XCTUnwrap(
+            harness.browserManager.createPopupTab(
+                from: sourceTab,
+                activate: false
+            )
+        )
+
+        XCTAssertTrue(popupTab.isEphemeral)
+        XCTAssertTrue(popupTab.isPopupHost)
+        XCTAssertNil(popupTab.spaceId)
+        XCTAssertEqual(popupTab.profileId, privateProfile.id)
+        XCTAssertTrue(privateWindow.ephemeralTabs.contains { $0.id == popupTab.id })
+        XCTAssertEqual(privateWindow.currentTabId, sourceTab.id)
+        XCTAssertEqual(
+            harness.browserManager.tabManager.tabsBySpace.values.flatMap { $0 }.count,
+            regularTabCount
+        )
+        XCTAssertFalse(harness.browserManager.tabManager.shouldPersistRegularTab(popupTab))
+    }
+
     private func makeHarness() -> Harness {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = BrowserManager()
@@ -1186,17 +1230,20 @@ private final class AuxiliaryWindowNavigationActionMock: NSObject {
     @objc var targetFrame: WKFrameInfo?
     @objc var navigationType: WKNavigationType
     @objc var request: URLRequest
+    @objc var isUserInitiated: Bool
 
     init(
         sourceFrame: WKFrameInfo?,
         targetFrame: WKFrameInfo?,
         navigationType: WKNavigationType,
-        request: URLRequest
+        request: URLRequest,
+        isUserInitiated: Bool = false
     ) {
         self.sourceFrame = sourceFrame
         self.targetFrame = targetFrame
         self.navigationType = navigationType
         self.request = request
+        self.isUserInitiated = isUserInitiated
     }
 
     var navigationAction: WKNavigationAction {

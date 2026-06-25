@@ -31,7 +31,7 @@ final class ProtonPassSafariApplicationIDAdapter: CompanionApplicationMessageBac
             return false
         }
 
-        return ProtonNativeMessagingIdentifiers.isSafariExtensionIdentity(
+        return ProtonNativeMessagingIdentifiers.isTrustedSafariExtensionIdentity(
             sourceBundlePath: context.installedExtension.sourceBundlePath
         )
     }

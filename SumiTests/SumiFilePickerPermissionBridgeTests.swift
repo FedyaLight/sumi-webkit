@@ -241,6 +241,17 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         XCTAssertFalse(methodSource.contains("let openPanel = NSOpenPanel()"))
     }
 
+    func testAuxiliaryWindowRunOpenPanelRoutesThroughBridge() throws {
+        let source = try sourceFile("Sumi/Managers/AuxiliaryWindowManager/AuxiliaryWindowUIDelegate.swift")
+        let methodStart = try XCTUnwrap(source.range(of: "runOpenPanelWith parameters: WKOpenPanelParameters"))
+        let methodSource = String(source[methodStart.lowerBound...])
+
+        XCTAssertTrue(methodSource.contains("filePickerPermissionBridge.handleOpenPanel("))
+        XCTAssertTrue(methodSource.contains("tab.filePickerPermissionTabContext(for: webView)"))
+        XCTAssertTrue(methodSource.contains("currentPageId: { [weak tab] in tab?.currentPermissionPageId() }"))
+        XCTAssertFalse(methodSource.contains("NSOpenPanel()"))
+    }
+
     private func makeBridge(
         store: FilePickerPermissionStore = FilePickerPermissionStore(),
         presenter: FilePickerFakePanelPresenter

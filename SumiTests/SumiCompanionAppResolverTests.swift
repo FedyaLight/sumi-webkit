@@ -126,6 +126,54 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         }
     }
 
+    func testNativeMessagingPolicyDeniesPrivateOriginWithoutContextPrivateAccess() throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = makeInstalledExtension(id: "ext-private-denied", sourceBundlePath: appexPath)
+
+        let result = SumiNativeMessagingRelayPolicy.evaluate(
+            SumiNativeMessagingRelayPolicyContext(
+                extensionsModuleEnabled: true,
+                extensionId: installed.id,
+                installedExtension: installed,
+                isPrivateBrowsing: true,
+                privateAccessAllowed: false,
+                requestedApplicationIdentifier: "com.example.host"
+            )
+        )
+
+        if case .failure(let denial) = result {
+            XCTAssertEqual(denial, .privateBrowsingDenied)
+        } else {
+            XCTFail("Expected private-origin native messaging to require context private access")
+        }
+    }
+
+    func testNativeMessagingPolicyAllowsPrivateOriginWithContextPrivateAccess() throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = makeInstalledExtension(id: "ext-private-allowed", sourceBundlePath: appexPath)
+
+        let result = SumiNativeMessagingRelayPolicy.evaluate(
+            SumiNativeMessagingRelayPolicyContext(
+                extensionsModuleEnabled: true,
+                extensionId: installed.id,
+                installedExtension: installed,
+                isPrivateBrowsing: true,
+                privateAccessAllowed: true,
+                requestedApplicationIdentifier: "com.example.host"
+            )
+        )
+
+        if case .failure(let denial) = result {
+            XCTFail("Expected private-origin native messaging to be allowed, got \(denial)")
+        }
+    }
+
     func testNativeMessagingPolicyDeniesKnownPublicCompanionForUnrelatedExtension() throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.example.unrelated",
@@ -370,6 +418,25 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         XCTAssertFalse(policySource.contains("1password"))
         XCTAssertFalse(policySource.contains("proton"))
         XCTAssertFalse(policySource.contains("raindrop"))
+    }
+
+    func testNativeMessagingPrivateGateDoesNotUseActiveWindowFallback() throws {
+        let relaySource = try String(
+            contentsOf: sourceURL(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"),
+            encoding: .utf8
+        )
+        let delegateSource = try String(
+            contentsOf: sourceURL(named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"),
+            encoding: .utf8
+        )
+        let profileRuntimeSource = try String(
+            contentsOf: sourceURL(named: "Sumi/Managers/ExtensionManager/ExtensionManager+ProfileRuntime.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(relaySource.contains("activeWindow?.isIncognito"))
+        XCTAssertFalse(delegateSource.contains("activeWindow?.isIncognito"))
+        XCTAssertFalse(profileRuntimeSource.contains("windowRegistry?.windows.values.contains"))
     }
 
     func testDiagnosticsSanitized() async throws {

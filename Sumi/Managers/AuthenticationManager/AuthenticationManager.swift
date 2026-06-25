@@ -11,7 +11,12 @@ import WebKit
 @MainActor
 final class AuthenticationManager: NSObject {
     private weak var browserManager: BrowserManager?
-    private let credentialStore = BasicAuthCredentialStore()
+    private let credentialStore: BasicAuthCredentialStore
+
+    init(credentialStore: BasicAuthCredentialStore = BasicAuthCredentialStore()) {
+        self.credentialStore = credentialStore
+        super.init()
+    }
 
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
@@ -24,11 +29,11 @@ final class AuthenticationManager: NSObject {
     ) -> Bool {
         switch challenge.protectionSpace.authenticationMethod {
         case NSURLAuthenticationMethodDefault, NSURLAuthenticationMethodHTTPBasic, NSURLAuthenticationMethodHTTPDigest:
-            let host = challenge.protectionSpace.host
+            let credentialKey = Self.credentialKey(for: challenge, tab: tab)
 
-            if !host.isEmpty,
-               challenge.previousFailureCount == 0,
-               let stored = credentialStore.credential(for: host) {
+            if challenge.previousFailureCount == 0,
+               let credentialKey,
+               let stored = credentialStore.credential(for: credentialKey) {
                 completionHandler(.useCredential, stored.asURLCredential)
                 return true
             }
@@ -72,6 +77,7 @@ final class AuthenticationManager: NSObject {
         }
 
         let host = challenge.protectionSpace.host
+        let credentialKey = Self.credentialKey(for: challenge, tab: tab)
         let displayHost: String
         if !host.isEmpty {
             displayHost = host
@@ -84,7 +90,7 @@ final class AuthenticationManager: NSObject {
             displayHost = "this site"
         }
 
-        let prefilledCredential = !host.isEmpty ? credentialStore.credential(for: host) : nil
+        let prefilledCredential = credentialKey.flatMap { credentialStore.credential(for: $0) }
         let model = BasicAuthDialogModel(
             host: displayHost,
             username: prefilledCredential?.username ?? "",
@@ -105,11 +111,11 @@ final class AuthenticationManager: NSObject {
                 guard let self else { return }
                 NSApp.mainWindow?.makeFirstResponder(nil)
 
-                if !host.isEmpty {
+                if let credentialKey {
                     if remember {
-                        self.credentialStore.saveCredential(.init(username: username, password: password), for: host)
+                        self.credentialStore.saveCredential(.init(username: username, password: password), for: credentialKey)
                     } else {
-                        self.credentialStore.deleteCredential(for: host)
+                        self.credentialStore.deleteCredential(for: credentialKey)
                     }
                 }
 
@@ -126,5 +132,18 @@ final class AuthenticationManager: NSObject {
         if manager.presentBasicAuthSheet(session, in: manager.windowState(containing: tab)) == false {
             session.cancel()
         }
+    }
+
+    private static func credentialKey(
+        for challenge: URLAuthenticationChallenge,
+        tab: Tab
+    ) -> BasicAuthCredentialKey? {
+        let profile = tab.resolveProfile()
+        return BasicAuthCredentialKey(
+            protectionSpace: challenge.protectionSpace,
+            profileId: profile?.id ?? tab.profileId,
+            isEphemeralProfile: profile?.isEphemeral ?? tab.isEphemeral,
+            websiteDataStoreIdentifier: profile?.dataStore.identifier
+        )
     }
 }

@@ -113,4 +113,34 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
                 === ephemeralProfile.dataStore
         )
     }
+
+    func testPrivateRuntimeProfileMarkerSurvivesWindowRegistryLoss() throws {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let persistentProfile = Profile(name: "Regular Profile")
+        let ephemeralProfile = Profile.createEphemeral()
+        let browserManager = BrowserManager()
+        let windowRegistry = WindowRegistry()
+        let privateWindow = BrowserWindowState()
+        privateWindow.isIncognito = true
+        privateWindow.ephemeralProfile = ephemeralProfile
+        browserManager.windowRegistry = windowRegistry
+        browserManager.profileManager.profiles = [persistentProfile]
+        windowRegistry.register(privateWindow)
+
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: persistentProfile
+        )
+        manager.attach(browserManager: browserManager)
+
+        _ = manager.ensureExtensionController(for: ephemeralProfile.id)
+        XCTAssertTrue(manager.isPrivateExtensionRuntimeProfile(ephemeralProfile.id))
+
+        windowRegistry.unregister(privateWindow.id)
+
+        XCTAssertTrue(manager.isPrivateExtensionRuntimeProfile(ephemeralProfile.id))
+    }
 }
