@@ -488,6 +488,20 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertFalse(splitGroupSource.contains(".shadow("))
     }
 
+    func testUnloadedRegularTabIndicatorDoesNotReserveFaviconLayoutWidth() throws {
+        let faviconSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SidebarTabFaviconView.swift")
+        let indicatorStart = try XCTUnwrap(faviconSource.range(of: "struct SidebarUnloadedRegularTabFaviconIndicator"))
+        let indicatorSource = String(faviconSource[indicatorStart.lowerBound...])
+        let snapshotRowsSource = try Self.source(named: "Navigation/Sidebar/SpacesSideBarView.swift")
+
+        XCTAssertFalse(indicatorSource.contains("HStack("))
+        XCTAssertFalse(indicatorSource.contains(".fixedSize()"))
+        XCTAssertTrue(indicatorSource.contains(".overlay(alignment: .leading)"))
+        XCTAssertTrue(indicatorSource.contains(".frame(width: size, height: size)"))
+        XCTAssertTrue(indicatorSource.contains("indicatorLeadingOffset"))
+        XCTAssertTrue(snapshotRowsSource.contains("SidebarUnloadedRegularTabFaviconIndicator("))
+    }
+
     func testCollapsedSidebarHoverTrackingUsesActiveAppTrackingArea() throws {
         let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarDDGHover.swift")
 

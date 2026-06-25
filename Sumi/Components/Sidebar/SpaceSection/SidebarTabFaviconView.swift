@@ -65,22 +65,26 @@ struct SidebarUnloadedRegularTabFaviconIndicator<Icon: View>: View {
     }
 
     var body: some View {
-        HStack(spacing: max(3, size * 0.17)) {
-            Circle()
-                .fill(indicatorColor)
-                .frame(width: indicatorSize, height: indicatorSize)
-                .accessibilityHidden(true)
-
-            icon()
-                .saturation(0.0)
-                .opacity(0.8)
-                .frame(width: size, height: size)
-        }
-        .fixedSize()
+        icon()
+            .saturation(0.0)
+            .opacity(0.8)
+            .frame(width: size, height: size)
+            .overlay(alignment: .leading) {
+                Circle()
+                    .fill(indicatorColor)
+                    .frame(width: indicatorSize, height: indicatorSize)
+                    .offset(x: -indicatorLeadingOffset)
+                    .accessibilityHidden(true)
+            }
+            .frame(width: size, height: size)
     }
 
     private var indicatorSize: CGFloat {
         max(4, size * 0.24)
+    }
+
+    private var indicatorLeadingOffset: CGFloat {
+        indicatorSize + max(3, size * 0.17)
     }
 
     private var indicatorColor: Color {

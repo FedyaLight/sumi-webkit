@@ -291,6 +291,40 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(snapshot.source.regularTabs.map(\.isSelected), [false, true])
     }
 
+    func testSnapshotBuilderPreservesRegularTabUnloadedIndicator() throws {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let settings = makeIsolatedSettings()
+        let profileId = UUID()
+        let source = Space(name: "Source", profileId: profileId)
+        let destination = Space(name: "Destination", profileId: profileId)
+        let unloadedTab = Tab(
+            url: URL(string: "https://example.com/unloaded")!,
+            name: "Unloaded",
+            spaceId: source.id,
+            index: 0,
+            browserManager: browserManager
+        )
+
+        browserManager.tabManager.spaces = [source, destination]
+        browserManager.tabManager.addTab(unloadedTab)
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = source.id
+        windowState.currentTabId = unloadedTab.id
+
+        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+            sourceSpace: source,
+            destinationSpace: destination,
+            browserManager: browserManager,
+            windowState: windowState,
+            splitManager: browserManager.splitManager,
+            settings: settings
+        )
+
+        XCTAssertTrue(unloadedTab.showsWebViewUnloadedIndicator)
+        XCTAssertEqual(snapshot.source.regularTabs.map(\.showsUnloadedIndicator), [true])
+    }
+
     func testSnapshotFolderBodyKeepsLiveFolderLayoutMetrics() {
         XCTAssertEqual(SpaceSidebarSnapshotFolderLayout.contentLeadingPadding, 14)
         XCTAssertEqual(SpaceSidebarSnapshotFolderLayout.contentVerticalPadding, 4)
