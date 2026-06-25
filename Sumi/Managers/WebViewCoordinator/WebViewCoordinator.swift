@@ -2295,7 +2295,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     /// Reload a tab across all windows displaying it
     func reloadTab(_ tab: Tab) {
-        if tab.protectionAttachmentRequiresNormalWebViewRebuild(for: tab.existingWebView?.url ?? tab.url) {
+        let reloadTargetURL = tab.existingWebView?.url ?? tab.url
+        if tab.protectionAttachmentRequiresNormalWebViewRebuild(for: reloadTargetURL)
+            || tab.autoplayPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
             tab.refresh()
             return
         }

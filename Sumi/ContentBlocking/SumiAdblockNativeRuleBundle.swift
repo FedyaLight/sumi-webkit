@@ -209,13 +209,16 @@ struct SumiAdblockNativeRuleBundle: Sendable {
     }
 
     func stagedShardURLs(
+        includingRuleKinds ruleKinds: Set<AdblockCompiledRuleGroupKind> = [.network, .nativeCosmeticCSS],
         fileManager: FileManager = .default
     ) throws -> [String: URL] {
         try Dictionary(
-            uniqueKeysWithValues: manifest.shards.map { shard in
-                _ = try shardData(for: shard, fileManager: fileManager)
-                return (shardId(for: shard), try shardURL(for: shard))
-            }
+            uniqueKeysWithValues: manifest.shards
+                .filter { ruleKinds.contains($0.ruleGroupKind) }
+                .map { shard in
+                    _ = try shardData(for: shard, fileManager: fileManager)
+                    return (shardId(for: shard), try shardURL(for: shard))
+                }
         )
     }
 
@@ -692,10 +695,14 @@ enum SumiPreparedAdblockBundleResolver {
 private extension SumiAdblockNativeRuleBundleManifest.Shard {
     var ruleGroupKind: AdblockCompiledRuleGroupKind {
         switch kind {
+        case "network":
+            return .network
         case "nativeCSS":
             return .nativeCosmeticCSS
+        case "cosmeticJS":
+            return .cosmeticJS
         default:
-            return .network
+            return .unsupported
         }
     }
 

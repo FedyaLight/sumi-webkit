@@ -48,34 +48,6 @@ struct SumiAdblockSurfaceEligibility: Equatable, Sendable {
     }
 }
 
-struct SumiAdblockAttachmentState: Equatable, Sendable {
-    let siteHost: String?
-    let isEnabled: Bool
-    let attachedShardIdentifiers: [String]
-
-    init(
-        siteHost: String?,
-        isEnabled: Bool,
-        attachedShardIdentifiers: [String] = []
-    ) {
-        self.siteHost = siteHost
-        self.isEnabled = isEnabled
-        self.attachedShardIdentifiers = attachedShardIdentifiers.sorted()
-    }
-
-}
-
-extension SumiAdblockEffectivePolicy {
-    var attachmentState: SumiAdblockAttachmentState {
-        SumiAdblockAttachmentState(siteHost: host, isEnabled: isEnabled)
-    }
-}
-
-@MainActor
-final class AdblockSettingsStore: ObservableObject {
-    init(userDefaults: UserDefaults = .standard) { _ = userDefaults }
-}
-
 @MainActor
 final class AdblockSitePolicyStore: ObservableObject {
     private enum DefaultsKey {
@@ -168,7 +140,6 @@ final class AdblockWebKitRuleListStore {
     var activeManifest: AdblockCompiledGenerationManifest? { ruleListProvider.activeManifest }
 
     init(
-        settingsStore: AdblockSettingsStore,
         isAdblockEnabled: @escaping @Sendable () async -> Bool = { true },
         manifestStore: AdblockUpdateManifestStore = AdblockUpdateManifestStore(),
         compiler: SumiContentRuleListCompiling = SumiWKContentRuleListCompiler(),
@@ -177,7 +148,6 @@ final class AdblockWebKitRuleListStore {
             SumiAdblockNativeRuleBundle.bundledDirectoryURL(for: SumiProtectionBundleProfile.adblock)
         }
     ) {
-        _ = settingsStore
         self.manifestStore = manifestStore
         self.isAdblockEnabled = isAdblockEnabled
         self.embeddedBundleURLProvider = embeddedBundleURLProvider
@@ -561,44 +531,40 @@ final class AdblockRetainingCompiledRuleListCatalog: SumiCompiledContentRuleList
 final class SumiAdBlockingModule {
     static let shared = SumiAdBlockingModule()
 
-    private let moduleRegistry: SumiModuleRegistry
-    private let settingsFactory: @MainActor () -> AdblockSettingsStore
     private let sitePolicyFactory: @MainActor () -> AdblockSitePolicyStore
-    private let ruleListStoreFactory: @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore
+    private let ruleListStoreFactory: @MainActor (@escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore
     private let preparedBundleResourceURL: URL?
     private let preparedBundleRemoteRootURL: URL?
     private let preparedBundleGeneratedRootURL: URL?
-    private var cachedSettingsStore: AdblockSettingsStore?
     private var cachedSitePolicyStore: AdblockSitePolicyStore?
     private var cachedRuleListStore: AdblockWebKitRuleListStore?
+    private var runtimeEnabled = false
     private var preparedBundleRuntimeEnabled = false
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
-        settingsFactory: (@MainActor () -> AdblockSettingsStore)? = nil,
         sitePolicyFactory: (@MainActor () -> AdblockSitePolicyStore)? = nil,
         preparedBundleResourceURL: URL? = Bundle.main.resourceURL,
         preparedBundleRemoteRootURL: URL? = SumiRemoteAdblockBundleCache.defaultRootDirectory(),
         preparedBundleGeneratedRootURL: URL? = nil,
-        ruleListStoreFactory: @escaping @MainActor (AdblockSettingsStore, @escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore = {
-            AdblockWebKitRuleListStore(settingsStore: $0, isAdblockEnabled: $1)
+        ruleListStoreFactory: @escaping @MainActor (@escaping @Sendable () async -> Bool) -> AdblockWebKitRuleListStore = {
+            AdblockWebKitRuleListStore(isAdblockEnabled: $0)
         }
     ) {
-        self.moduleRegistry = moduleRegistry
-        self.settingsFactory = settingsFactory ?? { AdblockSettingsStore(userDefaults: moduleRegistry.userDefaults) }
-        self.sitePolicyFactory = sitePolicyFactory ?? { AdblockSitePolicyStore(userDefaults: moduleRegistry.userDefaults) }
+        let userDefaults = moduleRegistry.userDefaults
+        self.sitePolicyFactory = sitePolicyFactory ?? { AdblockSitePolicyStore(userDefaults: userDefaults) }
         self.ruleListStoreFactory = ruleListStoreFactory
         self.preparedBundleResourceURL = preparedBundleResourceURL
         self.preparedBundleRemoteRootURL = preparedBundleRemoteRootURL
         self.preparedBundleGeneratedRootURL = preparedBundleGeneratedRootURL
     }
 
-    var isEnabled: Bool { moduleRegistry.isEnabled(.adBlocking) }
+    var isEnabled: Bool { runtimeEnabled }
     var isPreparedBundleRuntimeEnabled: Bool { preparedBundleRuntimeEnabled || isEnabled }
     var hasLoadedRuntime: Bool { cachedRuleListStore != nil }
 
     func setEnabled(_ isEnabled: Bool) {
-        moduleRegistry.setEnabled(isEnabled, for: .adBlocking)
+        runtimeEnabled = isEnabled
         if !isEnabled && !isPreparedBundleRuntimeEnabled {
             cachedRuleListStore?.contentBlockingService.setPolicy(.disabled)
             cachedRuleListStore = nil
@@ -684,19 +650,6 @@ final class SumiAdBlockingModule {
         return store.effectivePolicy(for: url, globalEnabled: true)
     }
 
-    func desiredAttachmentState(for url: URL?) -> SumiAdblockAttachmentState {
-        let policy = effectivePolicy(for: url)
-        guard isEnabled, policy.isEnabled, surfaceEligibility(for: url).isEligible else {
-            return policy.attachmentState
-        }
-        let identifiers = cachedRuleListStore?.activeManifest?.networkShards.map(\.webKitIdentifier) ?? []
-        return SumiAdblockAttachmentState(
-            siteHost: policy.host,
-            isEnabled: !identifiers.isEmpty,
-            attachedShardIdentifiers: identifiers
-        )
-    }
-
     func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {
         sitePolicyStoreIfEnabled().override(for: url)
     }
@@ -707,14 +660,6 @@ final class SumiAdBlockingModule {
 
     func sitePolicyChangesPublisher() -> AnyPublisher<Void, Never> {
         sitePolicyStoreIfEnabled().changesPublisher
-    }
-
-    func settingsIfEnabled() -> AdblockSettingsStore? {
-        guard isEnabled else { return nil }
-        if let cachedSettingsStore { return cachedSettingsStore }
-        let settings = settingsFactory()
-        cachedSettingsStore = settings
-        return settings
     }
 
     func sitePolicyStoreIfEnabled() -> AdblockSitePolicyStore {
@@ -730,8 +675,7 @@ final class SumiAdBlockingModule {
 
     private func ruleListStore() -> AdblockWebKitRuleListStore {
         if let cachedRuleListStore { return cachedRuleListStore }
-        let settings = settingsIfEnabled() ?? settingsFactory()
-        let store = ruleListStoreFactory(settings, { [weak self] in
+        let store = ruleListStoreFactory({ [weak self] in
             await MainActor.run { self?.isPreparedBundleRuntimeEnabled == true }
         })
         cachedRuleListStore = store

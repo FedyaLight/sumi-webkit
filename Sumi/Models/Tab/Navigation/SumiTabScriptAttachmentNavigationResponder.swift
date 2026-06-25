@@ -12,7 +12,7 @@ final class SumiTabScriptAttachmentNavigationResponder: SumiNavigationActionWebV
     func decidePolicy(
         for navigationAction: SumiNavigationAction,
         webView: WKWebView?,
-        preferences _: inout SumiNavigationPreferences
+        preferences: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
         guard navigationAction.isForMainFrame,
               let tab,

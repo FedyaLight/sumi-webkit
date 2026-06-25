@@ -30,20 +30,19 @@ extension Tab {
         beginLoadingPresentationIfNeeded()
         let targetURL = _webView?.url ?? url
         let protectionReloadWasRequired = isProtectionReloadRequired
-        let rebuiltWebView = rebuildNormalWebViewForProtectionIfNeeded(
-            targetURL: targetURL,
-            reason: "Tab.refresh.protectionPolicy"
-        )
-        if protectionReloadWasRequired {
-            didManualReloadRebuildProtectionWebView = rebuiltWebView
-            appliedProtectionAfterManualReload =
-                protectionAppliedAttachmentState == protectionDesiredAttachmentState(for: targetURL)
-        }
-        let rebuiltForConfigurationPolicy = rebuiltWebView
+        let rebuiltForConfigurationPolicy = rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
+                targetURL: targetURL,
+                reason: "Tab.refresh.contentBlockingPolicy"
+            )
             || rebuildNormalWebViewForAutoplayIfNeeded(
                 targetURL: targetURL,
                 reason: "Tab.refresh.autoplayPolicy"
             )
+        if protectionReloadWasRequired {
+            didManualReloadRebuildProtectionWebView = rebuiltForConfigurationPolicy
+            appliedProtectionAfterManualReload =
+                protectionAppliedAttachmentState == protectionDesiredAttachmentState(for: targetURL)
+        }
         if let webView = _webView
         {
             if rebuiltForConfigurationPolicy {

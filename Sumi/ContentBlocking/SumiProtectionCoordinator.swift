@@ -70,6 +70,7 @@ enum SumiProtectionLevel: String, Codable, CaseIterable, Identifiable, Sendable 
 enum SumiProtectionGroupKind: String, Codable, CaseIterable, Hashable, Sendable {
     case trackingNetwork
     case adblockAdsPrivacyNetwork
+    case cosmetic
 }
 
 struct SumiProtectionAttachmentState: Equatable, Sendable {
@@ -400,9 +401,6 @@ final class SumiProtectionSettings: ObservableObject {
         static let level = "settings.protection.level"
         static let appliedLevel = "settings.protection.appliedLevel"
         static let browserRestartRequired = "settings.protection.browserRestartRequired"
-        static let legacyAdblockEnabled = "settings.modules.adBlocking.enabled"
-        static let legacyTrackingEnabled = "settings.modules.trackingProtection.enabled"
-        static let legacyTrackingGlobalMode = "settings.trackingProtection.globalMode"
     }
 
     @Published private(set) var level: SumiProtectionLevel {
@@ -435,37 +433,19 @@ final class SumiProtectionSettings: ObservableObject {
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
-        let resolvedLevel: SumiProtectionLevel
-        if let rawLevel = userDefaults.string(forKey: DefaultsKey.level) {
-            if rawLevel == "extreme" {
-                resolvedLevel = .adblock
-                userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.level)
-            } else if let decodedLevel = SumiProtectionLevel(rawValue: rawLevel) {
-                resolvedLevel = decodedLevel
-            } else {
-                resolvedLevel = Self.migratedLevel(from: userDefaults)
-                userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.level)
-            }
-        } else {
-            resolvedLevel = Self.migratedLevel(from: userDefaults)
+        let rawLevel = userDefaults.string(forKey: DefaultsKey.level)
+        let resolvedLevel = rawLevel.flatMap(SumiProtectionLevel.init(rawValue:)) ?? .off
+        if rawLevel != resolvedLevel.rawValue {
             userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.level)
         }
         level = resolvedLevel
         browserRestartRequired = userDefaults.bool(forKey: DefaultsKey.browserRestartRequired)
 
-        if let rawAppliedLevel = userDefaults.string(forKey: DefaultsKey.appliedLevel) {
-            if rawAppliedLevel == "extreme" {
-                appliedLevel = .adblock
-                userDefaults.set(SumiProtectionLevel.adblock.rawValue, forKey: DefaultsKey.appliedLevel)
-            } else if let decodedAppliedLevel = SumiProtectionLevel(rawValue: rawAppliedLevel) {
-                appliedLevel = decodedAppliedLevel
-            } else {
-                appliedLevel = resolvedLevel
-                userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
-            }
-        } else {
-            appliedLevel = resolvedLevel
-            userDefaults.set(resolvedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
+        let rawAppliedLevel = userDefaults.string(forKey: DefaultsKey.appliedLevel)
+        let resolvedAppliedLevel = rawAppliedLevel.flatMap(SumiProtectionLevel.init(rawValue:)) ?? resolvedLevel
+        appliedLevel = resolvedAppliedLevel
+        if rawAppliedLevel != resolvedAppliedLevel.rawValue {
+            userDefaults.set(resolvedAppliedLevel.rawValue, forKey: DefaultsKey.appliedLevel)
         }
     }
 
@@ -483,17 +463,6 @@ final class SumiProtectionSettings: ObservableObject {
         guard browserRestartRequired != isRequired else { return }
         browserRestartRequired = isRequired
     }
-
-    private static func migratedLevel(from userDefaults: UserDefaults) -> SumiProtectionLevel {
-        if userDefaults.bool(forKey: DefaultsKey.legacyAdblockEnabled) {
-            return .adblock
-        }
-        if userDefaults.bool(forKey: DefaultsKey.legacyTrackingEnabled)
-            || userDefaults.string(forKey: DefaultsKey.legacyTrackingGlobalMode) == "enabled" {
-            return .protection
-        }
-        return .off
-    }
 }
 
 @MainActor
@@ -502,7 +471,6 @@ final class SumiProtectionCoordinator {
 
     let settings: SumiProtectionSettings
     private let adBlockingModule: SumiAdBlockingModule
-    private let moduleRegistry: SumiModuleRegistry
     private let siteNormalizer: SumiProtectionSiteNormalizer
     private let bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating
     let bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore
@@ -521,19 +489,17 @@ final class SumiProtectionCoordinator {
     init(
         settings: SumiProtectionSettings = .shared,
         adBlockingModule: SumiAdBlockingModule = .shared,
-        moduleRegistry: SumiModuleRegistry = .shared,
         siteNormalizer: SumiProtectionSiteNormalizer = SumiProtectionSiteNormalizer(),
         bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating = SumiProtectionBundleRemoteUpdater(),
         bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore = .shared
     ) {
         self.settings = settings
         self.adBlockingModule = adBlockingModule
-        self.moduleRegistry = moduleRegistry
         self.siteNormalizer = siteNormalizer
         self.bundleRemoteUpdater = bundleRemoteUpdater
         self.bundleUpdateStatusStore = bundleUpdateStatusStore
         self.runtimeAppliedLevel = settings.appliedLevel
-        syncLegacyModuleGates(for: runtimeAppliedLevel)
+        syncProtectionRuntime(for: runtimeAppliedLevel)
     }
 
     func setLevel(_ level: SumiProtectionLevel) {
@@ -558,7 +524,7 @@ final class SumiProtectionCoordinator {
         let selectedLevel = settings.level
         let previousAppliedLevel = settings.appliedLevel
         let wasApplyNeeded = applyNeeded
-        syncLegacyModuleGates(for: selectedLevel)
+        syncProtectionRuntime(for: selectedLevel)
 
         do {
             var installedBundleProfileId: String?
@@ -620,7 +586,7 @@ final class SumiProtectionCoordinator {
             if wasApplyNeeded || selectedLevel != previousAppliedLevel {
                 settings.setBrowserRestartRequired(true)
             }
-            syncLegacyModuleGates(for: runtimeAppliedLevel)
+            syncProtectionRuntime(for: runtimeAppliedLevel)
             let summary = applySummary(
                 selectedLevel: selectedLevel,
                 installedBundleProfileId: installedBundleProfileId
@@ -635,7 +601,7 @@ final class SumiProtectionCoordinator {
                 summary: summary
             )
         } catch {
-            syncLegacyModuleGates(for: runtimeAppliedLevel)
+            syncProtectionRuntime(for: runtimeAppliedLevel)
             let message: String
             if let applyError = error as? SumiProtectionApplyError {
                 message = applyError.localizedDescription
@@ -655,7 +621,7 @@ final class SumiProtectionCoordinator {
     func updatePreparedBundlesManually() async throws -> SumiProtectionBundleManualUpdateOutcome {
         let profileId = SumiProtectionBundleProfile.adblock
         let appliedLevel = settings.appliedLevel
-        syncLegacyModuleGates(for: appliedLevel)
+        syncProtectionRuntime(for: appliedLevel)
         do {
             let remote = try await bundleRemoteUpdater.fetchLatestApprovedBundle(profileId: profileId)
             let activeManifest = adBlockingModule.activeManifestIfLoaded()
@@ -726,7 +692,7 @@ final class SumiProtectionCoordinator {
         }
 #endif
         runtimeAppliedLevel = appliedLevel
-        syncLegacyModuleGates(for: appliedLevel)
+        syncProtectionRuntime(for: appliedLevel)
         guard let requiredBundleProfileId = appliedLevel.preferredBundleProfileId else {
             clearPreparedBundleLookupDiagnostics()
             try await prepareCachedAttachmentService(for: appliedLevel)
@@ -1508,7 +1474,7 @@ final class SumiProtectionCoordinator {
         return manifest.flatMap { Self.preparedBundleProfileId(in: $0) }
     }
 
-    private func syncLegacyModuleGates(for level: SumiProtectionLevel) {
+    private func syncProtectionRuntime(for level: SumiProtectionLevel) {
         switch level {
         case .off:
             adBlockingModule.setEnabled(false)
@@ -1787,6 +1753,8 @@ final class SumiProtectionCoordinator {
                 identifiers = plan.expectedRuleListIdentifiers.filter {
                     $0.hasPrefix("sumi.adblock.network.")
                 }
+            case .cosmetic:
+                identifiers = []
             }
             samples[group] = identifiers
                 .prefix(4)

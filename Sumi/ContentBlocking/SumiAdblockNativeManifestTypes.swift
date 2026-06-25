@@ -3,6 +3,8 @@ import Foundation
 enum AdblockCompiledRuleGroupKind: String, Codable, CaseIterable, Hashable, Sendable {
     case network
     case nativeCosmeticCSS
+    case cosmeticJS
+    case unsupported
 }
 
 struct NativeContentBlockingCompilerIdentity: Codable, Equatable, Sendable {

@@ -124,6 +124,7 @@ final class SumiTabLifecycleNavigationResponder:
                 tab.handleNormalTabPermissionNavigation(to: newURL)
             }
             tab.noteCommittedMainDocumentNavigation(to: newURL)
+            tab.clearSafariContentBlockerReloadRequirementIfResolved(for: newURL)
             tab.clearProtectionReloadRequirementIfResolved(for: newURL)
             tab.clearAutoplayReloadRequirementIfResolved(for: newURL)
             tab.historyRecorder.didCommitMainFrameNavigation(
@@ -173,6 +174,13 @@ final class SumiTabLifecycleNavigationResponder:
             tab.url = newURL
             tab.browserManager?.loadZoomForTab(tab.id)
             tab.faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
+            if let policy = tab.browserManager?.adBlockingModule.effectivePolicy(for: newURL),
+               let host = policy.host,
+               policy.isEnabled {
+                SumiAdblockZapperInjector.applySavedRules(to: webView, host: host)
+            } else {
+                SumiAdblockZapperInjector.clearAppliedRules(to: webView)
+            }
         }
 
         tab.updateNavigationState()

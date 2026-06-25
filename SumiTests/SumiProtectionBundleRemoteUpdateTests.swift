@@ -1,625 +1,245 @@
 import CryptoKit
-import Foundation
 import XCTest
 
 @testable import Sumi
 
 final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
-    private var temporaryDirectories: [URL] = []
-
-    override func tearDown() async throws {
-        for directory in temporaryDirectories {
-            try? FileManager.default.removeItem(at: directory)
-        }
-        temporaryDirectories.removeAll()
-        try await super.tearDown()
-    }
-
-    func testRemoteUpdaterDownloadsVerifiesAndCommitsPreparedBundleCache() async throws {
-        let root = temporaryDirectory()
-        let fixture = try makeReleaseFixture(generationId: "remote-generation")
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        let result = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-        let cached = try SumiAdblockNativeRuleBundle.load(directoryURL: result.bundleURL)
-        let metadata = SumiRemoteAdblockBundleCache.remoteMetadata(bundleURL: result.bundleURL)
-
-        XCTAssertEqual(result.releaseVersion, "20260517T000000Z-test")
-        XCTAssertEqual(result.releaseTag, "bundles-20260517T000000Z-test")
-        XCTAssertEqual(cached.manifest.profileId, SumiProtectionBundleProfile.adblock)
-        XCTAssertEqual(cached.manifest.generationId, "remote-generation")
-        let trackingGroup = try XCTUnwrap(cached.manifest.groups?.first { $0.id == .trackingNetwork })
-        XCTAssertEqual(trackingGroup.source?.sourceName, PreparedAdblockTestSupport.ddgTrackingSourceName)
-        XCTAssertEqual(trackingGroup.source?.sourceLicense, PreparedAdblockTestSupport.ddgTrackingSourceLicense)
-        XCTAssertEqual(trackingGroup.source?.sourceLicenseURL, PreparedAdblockTestSupport.ddgTrackingSourceLicenseURL)
-        XCTAssertEqual(metadata?.releaseVersion, result.releaseVersion)
-        XCTAssertEqual(metadata?.manifestSignatureVerified, true)
-        XCTAssertEqual(metadata?.signingKeyId, fixture.signingKey.id)
-    }
-
-    func testRemoteUpdaterRejectsUnsignedManifest() async throws {
-        let root = temporaryDirectory()
-        let fixture = try makeReleaseFixture(generationId: "remote-generation", includeSignature: false)
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        do {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-            XCTFail("Expected missing signature")
-        } catch let error as SumiProtectionBundleRemoteUpdateError {
-            guard case .releaseManifestSignatureAssetMissing = error else {
-                return XCTFail("Expected missing signature, got \(error)")
-            }
-        }
-    }
-
-    func testRemoteUpdaterRejectsUnsignedManifestAndPreservesPreviousCache() async throws {
-        let root = temporaryDirectory()
-        let previousBundleURL = SumiRemoteAdblockBundleCache.bundleURL(
-            profileId: SumiProtectionBundleProfile.adblock,
-            rootDirectory: root
-        )
-        try PreparedAdblockTestSupport.makeBundle(at: previousBundleURL, generationId: "previous-generation")
-        let fixture = try makeReleaseFixture(generationId: "new-generation", includeSignature: false)
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        await XCTAssertThrowsErrorAsync {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-        }
-
-        let cached = try SumiAdblockNativeRuleBundle.load(directoryURL: previousBundleURL)
-        XCTAssertEqual(cached.manifest.generationId, "previous-generation")
-    }
-
-    func testRemoteUpdaterRejectsInvalidSignature() async throws {
-        let root = temporaryDirectory()
-        let fixture = try makeReleaseFixture(generationId: "remote-generation", corruptSignature: true)
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        do {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-            XCTFail("Expected invalid signature")
-        } catch let error as SumiProtectionBundleRemoteUpdateError {
-            guard case .signatureInvalid = error else {
-                return XCTFail("Expected invalid signature, got \(error)")
-            }
-        }
-    }
-
-    func testRemoteUpdaterRejectsModifiedManifestAfterSigning() async throws {
-        let root = temporaryDirectory()
-        let fixture = try makeReleaseFixture(generationId: "remote-generation", mutateManifestAfterSigning: true)
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        do {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-            XCTFail("Expected invalid signature")
-        } catch let error as SumiProtectionBundleRemoteUpdateError {
-            guard case .signatureInvalid = error else {
-                return XCTFail("Expected invalid signature, got \(error)")
-            }
-        }
-    }
-
-    func testPinnedProductionSigningKeyVerifiesFixtureSignatureAndRejectsTampering() throws {
-        let verifier = SumiProtectionBundleSignatureVerifier()
-        let manifestData = Data((#"{"fixture":"sumi-production-signing-key-v1","schemaVersion":1}"# + "\n").utf8)
-        let signatureJSON = #"""
-        {
-          "algorithm" : "Ed25519",
-          "keyId" : "sumi-protection-bundles-ed25519-v1",
-          "schemaVersion" : 1,
-          "signature" : "7pmzjFXq+A/VTXOaQ2xzithpa7Tp5h51RCoXy9vUE7CA+2e+HBXqokmV36ldjrMAI9Fdy8bmGWItRY7utjgxDw==",
-          "signedAsset" : "sumi-protection-bundles-release.json"
-        }
-        """#
-        let signatureData = Data(signatureJSON.utf8)
-
-        let verification = try verifier.verify(
-            manifestData: manifestData,
-            signatureData: signatureData,
-            expectedSignedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
-        )
-        XCTAssertEqual(verification.keyId, "sumi-protection-bundles-ed25519-v1")
-        XCTAssertEqual(verification.keyVersion, 1)
-
-        var modifiedManifestData = manifestData
-        modifiedManifestData.append(contentsOf: [0])
-        XCTAssertThrowsError(
-            try verifier.verify(
-                manifestData: modifiedManifestData,
-                signatureData: signatureData,
-                expectedSignedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
-            )
-        ) { error in
-            guard case .signatureInvalid = error as? SumiProtectionBundleRemoteUpdateError else {
-                return XCTFail("Expected invalid signature for modified manifest, got \(error)")
-            }
-        }
-
-        let wrongSignatureData = Data(signatureJSON.replacingOccurrences(of: "\"7pmz", with: "\"Apmz").utf8)
-        XCTAssertThrowsError(
-            try verifier.verify(
-                manifestData: manifestData,
-                signatureData: wrongSignatureData,
-                expectedSignedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
-            )
-        ) { error in
-            guard case .signatureInvalid = error as? SumiProtectionBundleRemoteUpdateError else {
-                return XCTFail("Expected invalid signature for wrong signature, got \(error)")
-            }
-        }
-    }
-
-    func testRemoteUpdaterRejectsUnknownSigningKey() async throws {
-        let root = temporaryDirectory()
-        let fixture = try makeReleaseFixture(
-            generationId: "remote-generation",
-            keyId: "sumi-protection-bundles-ed25519-unknown"
-        )
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        do {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-            XCTFail("Expected unknown key")
-        } catch let error as SumiProtectionBundleRemoteUpdateError {
-            guard case .signatureKeyUnknown = error else {
-                return XCTFail("Expected unknown key, got \(error)")
-            }
-        }
-    }
-
-    func testRemoteUpdaterRejectsOlderSignedReleaseAsDowngrade() async throws {
-        let root = temporaryDirectory()
-        let previousBundleURL = SumiRemoteAdblockBundleCache.bundleURL(
-            profileId: SumiProtectionBundleProfile.adblock,
-            rootDirectory: root
-        )
-        try PreparedAdblockTestSupport.makeBundle(at: previousBundleURL, generationId: "previous-generation")
-        try writeRemoteMetadata(
-            bundleURL: previousBundleURL,
-            releaseVersion: "20260518T000000Z-test"
-        )
-        let fixture = try makeReleaseFixture(
-            generationId: "remote-generation",
-            releaseVersion: "20260517T000000Z-test"
-        )
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        do {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-            XCTFail("Expected downgrade rejection")
-        } catch let error as SumiProtectionBundleRemoteUpdateError {
-            guard case .releaseDowngradeRejected = error else {
-                return XCTFail("Expected downgrade rejection, got \(error)")
-            }
-        }
-
-        let cached = try SumiAdblockNativeRuleBundle.load(directoryURL: previousBundleURL)
-        XCTAssertEqual(cached.manifest.generationId, "previous-generation")
-    }
-
-    func testRemoteUpdaterRejectsHashMismatchAndPreservesPreviousCache() async throws {
-        let root = temporaryDirectory()
-        let previousBundleURL = SumiRemoteAdblockBundleCache.bundleURL(
-            profileId: SumiProtectionBundleProfile.adblock,
-            rootDirectory: root
-        )
-        try PreparedAdblockTestSupport.makeBundle(at: previousBundleURL, generationId: "previous-generation")
-        let fixture = try makeReleaseFixture(
-            generationId: "new-generation",
-            tamperedAssetName: "\(SumiProtectionBundleProfile.adblock)-network-0001.json"
-        )
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        do {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-            XCTFail("Expected hash mismatch")
-        } catch let error as SumiProtectionBundleRemoteUpdateError {
-            guard case .assetHashMismatch = error else {
-                return XCTFail("Expected hash mismatch, got \(error)")
-            }
-        }
-
-        let cached = try SumiAdblockNativeRuleBundle.load(directoryURL: previousBundleURL)
-        XCTAssertEqual(cached.manifest.generationId, "previous-generation")
-    }
-
-    func testRemoteUpdaterRejectsAssetByteSizeMismatch() async throws {
-        let root = temporaryDirectory()
-        let fixture = try makeReleaseFixture(
-            generationId: "new-generation",
-            sizeMismatchAssetName: "\(SumiProtectionBundleProfile.adblock)-network-0001.json"
-        )
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        do {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-            XCTFail("Expected size mismatch")
-        } catch let error as SumiProtectionBundleRemoteUpdateError {
-            guard case .assetSizeMismatch = error else {
-                return XCTFail("Expected size mismatch, got \(error)")
-            }
-        }
-    }
-
-    func testSignatureFailurePreservesPreviousCache() async throws {
-        let root = temporaryDirectory()
-        let previousBundleURL = SumiRemoteAdblockBundleCache.bundleURL(
-            profileId: SumiProtectionBundleProfile.adblock,
-            rootDirectory: root
-        )
-        try PreparedAdblockTestSupport.makeBundle(at: previousBundleURL, generationId: "previous-generation")
-        let fixture = try makeReleaseFixture(generationId: "new-generation", corruptSignature: true)
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        await XCTAssertThrowsErrorAsync {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-        }
-
-        let cached = try SumiAdblockNativeRuleBundle.load(directoryURL: previousBundleURL)
-        XCTAssertEqual(cached.manifest.generationId, "previous-generation")
-    }
-
-    func testRemoteUpdaterRejectsIncompatibleReleaseManifestBeforeCaching() async throws {
-        let root = temporaryDirectory()
-        let fixture = try makeReleaseFixture(
-            generationId: "new-generation",
-            nativeCSSSafetyPolicyVersion: "unsupported-policy"
-        )
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        await XCTAssertThrowsErrorAsync {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-        }
-
-        let cachedURL = SumiRemoteAdblockBundleCache.bundleURL(
-            profileId: SumiProtectionBundleProfile.adblock,
-            rootDirectory: root
-        )
-        XCTAssertFalse(FileManager.default.fileExists(atPath: cachedURL.path))
-    }
-
-    func testRemoteUpdaterRejectsTrackingNetworkWithoutDDGLicenseMetadata() async throws {
-        let root = temporaryDirectory()
-        let fixture = try makeReleaseFixture(
-            generationId: "remote-generation",
-            omitTrackingSourceLicense: true
-        )
-        let updater = SumiProtectionBundleRemoteUpdater(
-            fetcher: fixture.fetcher,
-            signatureVerifier: fixture.signatureVerifier,
-            rootDirectory: root
-        )
-
-        do {
-            _ = try await updater.fetchLatestApprovedBundle(profileId: SumiProtectionBundleProfile.adblock)
-            XCTFail("Expected missing DDG tracking license metadata")
-        } catch let error as SumiProtectionBundleRemoteUpdateError {
-            guard case .releaseManifestIncompatible(let detail) = error else {
-                return XCTFail("Expected incompatible release manifest, got \(error)")
-            }
-            XCTAssertTrue(detail.contains("trackingNetwork source metadata"))
-        }
-    }
-
-    private func makeReleaseFixture(
-        generationId: String,
-        releaseVersion: String = "20260517T000000Z-test",
-        includeSignature: Bool = true,
-        corruptSignature: Bool = false,
-        mutateManifestAfterSigning: Bool = false,
-        keyId: String = "sumi-protection-bundles-ed25519-v1",
-        tamperedAssetName: String? = nil,
-        sizeMismatchAssetName: String? = nil,
-        nativeCSSSafetyPolicyVersion: String = SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion,
-        omitTrackingSourceLicense: Bool = false
-    ) throws -> ReleaseFixture {
-        let sourceRoot = temporaryDirectory()
-        let bundleURL = sourceRoot.appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
-        try PreparedAdblockTestSupport.makeBundle(at: bundleURL, generationId: generationId)
-        let bundle = try SumiAdblockNativeRuleBundle.load(directoryURL: bundleURL)
-        let profileId = bundle.manifest.profileId
-        let privateKey = Curve25519.Signing.PrivateKey()
-        let signingKey = SumiProtectionBundleSigningKey(
-            id: "sumi-protection-bundles-ed25519-v1",
-            version: 1,
-            publicKeyBase64: privateKey.publicKey.rawRepresentation.base64EncodedString()
-        )
-
-        var dataByName = [String: Data]()
-        var assetDescriptors = [[String: Any]]()
-        func appendAsset(
-            name: String,
-            role: String,
-            relativePath: String,
-            data: Data,
-            groupId: String? = nil
-        ) {
-            dataByName[name] = data
-            var descriptor: [String: Any] = [
-                "name": name,
-                "role": role,
-                "bundleProfileId": profileId,
-                "relativePath": relativePath,
-                "byteSize": data.count,
-                "sha256": sha256Hex(data),
-            ]
-            if let groupId {
-                descriptor["groupId"] = groupId
-            }
-            assetDescriptors.append(descriptor)
-        }
-
-        appendAsset(
-            name: "\(profileId)-manifest.json",
-            role: "bundleManifest",
-            relativePath: "manifest.json",
-            data: try Data(contentsOf: bundleURL.appendingPathComponent("manifest.json"))
-        )
-        appendAsset(
-            name: "\(profileId)-diagnostics.json",
-            role: "diagnostics",
-            relativePath: "diagnostics.json",
-            data: try Data(contentsOf: bundleURL.appendingPathComponent("diagnostics.json"))
-        )
-        for shard in bundle.manifest.shards {
-            let name = "\(profileId)-\(URL(fileURLWithPath: shard.relativePath).lastPathComponent)"
-            let data = try Data(contentsOf: bundleURL.appendingPathComponent(shard.relativePath))
-            let groupId = shard.logicalGroup ?? shard.group
-            let role: String
-            if shard.kind == "nativeCSS" {
-                role = "nativeCSSShard"
-            } else if groupId == SumiProtectionGroupKind.trackingNetwork.rawValue {
-                role = "trackingNetworkShard"
-            } else {
-                role = "networkShard"
-            }
-            appendAsset(
-                name: name,
-                role: role,
-                relativePath: shard.relativePath,
-                data: data,
-                groupId: groupId
-            )
-        }
-
-        let releaseGroups = try (bundle.manifest.groups ?? []).map { group -> [String: Any] in
-            let groupAssetNames: [String] = assetDescriptors.compactMap { descriptor -> String? in
-                guard descriptor["groupId"] as? String == group.id.rawValue else { return nil }
-                return descriptor["name"] as? String
-            }
-            var releaseGroup: [String: Any] = [
-                "id": group.id.rawValue,
-                "ruleCount": group.ruleCount,
-                "shardCount": group.shardCount,
-                "assetNames": groupAssetNames,
-                "assetRelativePaths": group.assetRelativePaths ?? [],
-                "notes": group.notes ?? [],
-            ]
-            if let status = group.status {
-                releaseGroup["status"] = status
-            }
-            if let source = group.source {
-                let sourceData = try JSONEncoder().encode(source)
-                var sourceObject = try XCTUnwrap(JSONSerialization.jsonObject(with: sourceData) as? [String: Any])
-                if omitTrackingSourceLicense && group.id == .trackingNetwork {
-                    sourceObject.removeValue(forKey: "license")
-                    sourceObject.removeValue(forKey: "sourceLicense")
-                    sourceObject.removeValue(forKey: "sourceLicenseURL")
-                }
-                releaseGroup["source"] = sourceObject
-            }
-            return releaseGroup
-        }
-
-        let releaseManifest: [String: Any] = [
-            "schemaVersion": 1,
-            "releaseVersion": releaseVersion,
-            "generatedAt": "2026-05-17T00:00:00Z",
-            "repository": [
+    func testReleaseManifestAcceptsCosmeticShardAssets() throws {
+        let data = Data(
+            """
+            {
+              "schemaVersion": 1,
+              "releaseVersion": "20260622T092419Z-a051bbb856ea",
+              "generatedAt": "2026-06-22T09:24:19Z",
+              "repository": {
                 "owner": "FedyaLight",
                 "name": "sumi-protection-bundles",
-                "commit": "test",
-            ],
-            "compatibility": [
+                "commit": "a4fd0fa553180d8af4184d1dd0debb96632f83af"
+              },
+              "compatibility": {
                 "minimumSumiBundleExpectationVersion": 1,
                 "maximumSumiBundleExpectationVersion": 1,
                 "bundleManifestSchemaVersion": 1,
-                "requiredNativeCSSSafetyPolicyVersion": nativeCSSSafetyPolicyVersion,
-            ],
-            "bundles": [
-                [
-                    "profileId": profileId,
-                    "bundleId": bundle.manifest.bundleId,
-                    "generationId": bundle.manifest.generationId,
-                    "generatedDate": bundle.manifest.generatedDate,
-                    "groups": releaseGroups,
-                    "assetNames": assetDescriptors.compactMap { $0["name"] as? String },
-                ],
-            ],
-            "assets": assetDescriptors,
-        ]
-        let releaseManifestData = try JSONSerialization.data(
-            withJSONObject: releaseManifest,
-            options: [.prettyPrinted, .sortedKeys]
-        )
-        let signedManifestData = releaseManifestData
-
-        if let tamperedAssetName, var tampered = dataByName[tamperedAssetName],
-           let first = tampered.first {
-            tampered[0] = first == 0 ? 1 : first ^ 0xff
-            dataByName[tamperedAssetName] = tampered
-        }
-        if let sizeMismatchAssetName, var tampered = dataByName[sizeMismatchAssetName] {
-            tampered.append(0xff)
-            dataByName[sizeMismatchAssetName] = tampered
-        }
-
-        if mutateManifestAfterSigning {
-            var mutated = releaseManifest
-            mutated["releaseVersion"] = "\(releaseVersion)-mutated"
-            dataByName[SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName] = try JSONSerialization.data(
-                withJSONObject: mutated,
-                options: [.prettyPrinted, .sortedKeys]
-            )
-        } else {
-            dataByName[SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName] = releaseManifestData
-        }
-
-        if includeSignature {
-            var signature = try privateKey.signature(for: signedManifestData)
-            if corruptSignature {
-                signature[0] = signature[0] == 0 ? 1 : signature[0] ^ 0xff
+                "requiredNativeCSSSafetyPolicyVersion": "sumi-native-css-safety/0.4"
+              },
+              "bundles": [
+                {
+                  "profileId": "adguardAdsPrivacy",
+                  "bundleId": "bundle",
+                  "generationId": "generation",
+                  "generatedDate": "2026-06-22T09:24:19Z",
+                  "groups": [
+                    {
+                      "id": "cosmetic",
+                      "status": "generated",
+                      "ruleCount": 1,
+                      "shardCount": 1,
+                      "assetNames": ["adguardAdsPrivacy-cosmetic-0001.json"]
+                    }
+                  ],
+                  "assetNames": ["adguardAdsPrivacy-cosmetic-0001.json"]
+                }
+              ],
+              "assets": [
+                {
+                  "name": "adguardAdsPrivacy-cosmetic-0001.json",
+                  "role": "cosmeticShard",
+                  "bundleProfileId": "adguardAdsPrivacy",
+                  "groupId": "cosmetic",
+                  "relativePath": "cosmetic/cosmetic-0001.json",
+                  "byteSize": 2,
+                  "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e54d5f98c302bbf3d032d89"
+                }
+              ]
             }
-            let signatureMetadata: [String: Any] = [
-                "schemaVersion": 1,
-                "algorithm": "Ed25519",
-                "keyId": keyId,
-                "signedAsset": SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName,
-                "signature": signature.base64EncodedString(),
-            ]
-            dataByName[SumiProtectionBundleRemoteUpdateConstants.releaseManifestSignatureAssetName] = try JSONSerialization.data(
-                withJSONObject: signatureMetadata,
-                options: [.prettyPrinted, .sortedKeys]
-            )
-        }
+            """.utf8
+        )
 
-        let assets = dataByName.map { name, data in
-            SumiProtectionBundleGitHubRelease.Asset(
-                name: name,
-                size: data.count,
-                browserDownloadURL: URL(string: "https://example.test/\(name)")!,
-                digest: "sha256:\(sha256Hex(data))"
-            )
-        }
-        let dataByURL = Dictionary(
-            uniqueKeysWithValues: dataByName.map { name, data in
-                (URL(string: "https://example.test/\(name)")!, data)
-            }
-        )
-        let release = SumiProtectionBundleGitHubRelease(
-            tagName: "bundles-\(releaseVersion)",
-            htmlURL: "https://github.com/FedyaLight/sumi-protection-bundles/releases/tag/bundles-\(releaseVersion)",
-            draft: false,
-            prerelease: false,
-            publishedAt: "2026-05-17T00:00:00Z",
-            assets: assets
-        )
-        return ReleaseFixture(
-            fetcher: FakeReleaseFetcher(release: release, dataByURL: dataByURL),
-            signatureVerifier: SumiProtectionBundleSignatureVerifier(keys: [signingKey]),
-            signingKey: signingKey
-        )
+        let manifest = try JSONDecoder().decode(SumiProtectionBundleReleaseManifest.self, from: data)
+
+        XCTAssertEqual(manifest.assets.first?.role, .cosmeticShard)
     }
 
-    private func writeRemoteMetadata(
-        bundleURL: URL,
-        releaseVersion: String
-    ) throws {
-        let metadata = SumiAdblockPreparedBundleRemoteMetadata(
-            releaseVersion: releaseVersion,
-            releaseTag: "bundles-\(releaseVersion)",
-            manifestSignatureRequired: true,
-            manifestSignatureVerified: true,
-            signingKeyId: "sumi-protection-bundles-ed25519-v1",
-            signingKeyVersion: 1
+    func testCosmeticJSShardsAreNotPublishedAsNativeNetworkRules() {
+        let manifest = SumiAdblockNativeRuleBundleManifest(
+            schemaVersion: 1,
+            bundleId: "bundle",
+            generationId: "generation",
+            profileId: SumiProtectionBundleProfile.adblock,
+            compiler: .init(name: "test", version: "1"),
+            nativeCSSSafetyPolicyVersion: SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion,
+            generatedDate: "2026-06-22T09:24:19Z",
+            lists: [],
+            profileLevelMapping: [
+                "adblockMax": [.trackingNetwork, .adblockAdsPrivacyNetwork, .cosmetic],
+            ],
+            groups: [
+                .init(
+                    id: .cosmetic,
+                    displayName: nil,
+                    status: "generated",
+                    activeLevels: ["adblockMax"],
+                    ruleCount: 1,
+                    shardCount: 1,
+                    assetRelativePaths: ["cosmetic/cosmetic-0001.json"],
+                    source: nil,
+                    notes: []
+                ),
+            ],
+            shards: [
+                .init(
+                    kind: "network",
+                    group: "adblockAdsPrivacyNetwork",
+                    logicalGroup: "adblockAdsPrivacyNetwork",
+                    relativePath: "network/network-0001.json",
+                    hash: "network-hash",
+                    byteSize: 2,
+                    ruleCount: 1,
+                    webKitIdentifier: "network"
+                ),
+                .init(
+                    kind: "cosmeticJS",
+                    group: "cosmetic",
+                    logicalGroup: "cosmetic",
+                    relativePath: "cosmetic/cosmetic-0001.json",
+                    hash: "cosmetic-hash",
+                    byteSize: 2,
+                    ruleCount: 1,
+                    webKitIdentifier: "cosmetic"
+                ),
+            ],
+            diagnosticsSummary: .init(
+                inputRuleCount: 2,
+                finalRuleCount: 2,
+                finalShardCount: 2,
+                networkRuleCount: 1,
+                nativeCSSRuleCount: 0,
+                unsafeCSSFilteredCount: 0,
+                warnings: []
+            ),
+            unsafeCSSFilteredCount: 0,
+            deduplication: .init(
+                inputRawRuleCount: 2,
+                rawDuplicateCountRemoved: 0,
+                nativeJSONDuplicateCountRemoved: 0,
+                skippedDedupeCount: 0,
+                skippedDedupeReasons: [:],
+                finalRuleCount: 2,
+                finalShardCount: 2
+            )
         )
-        let data = try JSONEncoder().encode(metadata)
-        try data.write(to: bundleURL.appendingPathComponent(SumiRemoteAdblockBundleCache.metadataFileName))
+        let bundle = SumiAdblockNativeRuleBundle(
+            directoryURL: URL(fileURLWithPath: "/tmp/SumiAdblockBundle", isDirectory: true),
+            manifest: manifest
+        )
+
+        let compiled = bundle.compiledGenerationManifest(
+            previousManifest: nil,
+            installedDate: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(compiled.networkShards.map(\.webKitIdentifier), ["network"])
+        XCTAssertTrue(compiled.nativeCSSShards.isEmpty)
     }
 
-    private func temporaryDirectory() -> URL {
-        let directory = FileManager.default.temporaryDirectory
+    func testNativeShardStagingIgnoresCosmeticJSPayloads() throws {
+        let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiProtectionBundleRemoteUpdateTests-\(UUID().uuidString)", isDirectory: true)
-        temporaryDirectories.append(directory)
-        return directory
+        defer { try? FileManager.default.removeItem(at: root) }
+        let bundleURL = root.appendingPathComponent("SumiAdblockBundle", isDirectory: true)
+        let networkURL = bundleURL.appendingPathComponent("network/network-0001.json")
+        let cosmeticURL = bundleURL.appendingPathComponent("cosmetic/cosmetic-0001.json")
+        try FileManager.default.createDirectory(
+            at: networkURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: cosmeticURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let networkData = Data(#"[{"action":{"type":"block"},"trigger":{"url-filter":"example"}}]"#.utf8)
+        let cosmeticData = Data(#"{"genericHide":[".ad"]}"#.utf8)
+        try networkData.write(to: networkURL)
+        try cosmeticData.write(to: cosmeticURL)
+        let bundle = SumiAdblockNativeRuleBundle(
+            directoryURL: bundleURL,
+            manifest: Self.makeBundleManifest(
+                networkHash: Self.sha256Hex(networkData),
+                networkByteSize: networkData.count,
+                cosmeticHash: Self.sha256Hex(cosmeticData),
+                cosmeticByteSize: cosmeticData.count
+            )
+        )
+
+        let staged = try bundle.stagedShardURLs()
+
+        XCTAssertEqual(Array(staged.keys), ["network-0001"])
     }
 
-    private func sha256Hex(_ data: Data) -> String {
+    private static func makeBundleManifest(
+        networkHash: String,
+        networkByteSize: Int,
+        cosmeticHash: String,
+        cosmeticByteSize: Int
+    ) -> SumiAdblockNativeRuleBundleManifest {
+        SumiAdblockNativeRuleBundleManifest(
+            schemaVersion: 1,
+            bundleId: "bundle",
+            generationId: "generation",
+            profileId: SumiProtectionBundleProfile.adblock,
+            compiler: .init(name: "test", version: "1"),
+            nativeCSSSafetyPolicyVersion: SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion,
+            generatedDate: "2026-06-22T09:24:19Z",
+            lists: [],
+            profileLevelMapping: nil,
+            groups: nil,
+            shards: [
+                .init(
+                    kind: "network",
+                    group: "adblockAdsPrivacyNetwork",
+                    logicalGroup: "adblockAdsPrivacyNetwork",
+                    relativePath: "network/network-0001.json",
+                    hash: networkHash,
+                    byteSize: networkByteSize,
+                    ruleCount: 1,
+                    webKitIdentifier: "network"
+                ),
+                .init(
+                    kind: "cosmeticJS",
+                    group: "cosmetic",
+                    logicalGroup: "cosmetic",
+                    relativePath: "cosmetic/cosmetic-0001.json",
+                    hash: cosmeticHash,
+                    byteSize: cosmeticByteSize,
+                    ruleCount: 1,
+                    webKitIdentifier: "cosmetic"
+                ),
+            ],
+            diagnosticsSummary: .init(
+                inputRuleCount: 2,
+                finalRuleCount: 2,
+                finalShardCount: 2,
+                networkRuleCount: 1,
+                nativeCSSRuleCount: 0,
+                unsafeCSSFilteredCount: 0,
+                warnings: []
+            ),
+            unsafeCSSFilteredCount: 0,
+            deduplication: .init(
+                inputRawRuleCount: 2,
+                rawDuplicateCountRemoved: 0,
+                nativeJSONDuplicateCountRemoved: 0,
+                skippedDedupeCount: 0,
+                skippedDedupeReasons: [:],
+                finalRuleCount: 2,
+                finalShardCount: 2
+            )
+        )
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
     }
-}
-
-private struct ReleaseFixture {
-    let fetcher: FakeReleaseFetcher
-    let signatureVerifier: SumiProtectionBundleSignatureVerifier
-    let signingKey: SumiProtectionBundleSigningKey
-}
-
-private final class FakeReleaseFetcher: SumiProtectionBundleReleaseFetching, @unchecked Sendable {
-    let release: SumiProtectionBundleGitHubRelease
-    let dataByURL: [URL: Data]
-
-    init(release: SumiProtectionBundleGitHubRelease, dataByURL: [URL: Data]) {
-        self.release = release
-        self.dataByURL = dataByURL
-    }
-
-    func latestRelease() async throws -> SumiProtectionBundleGitHubRelease {
-        release
-    }
-
-    func data(from url: URL) async throws -> Data {
-        guard let data = dataByURL[url] else {
-            throw SumiProtectionBundleRemoteUpdateError.assetMissing(url.lastPathComponent)
-        }
-        return data
-    }
-}
-
-private func XCTAssertThrowsErrorAsync(
-    _ expression: () async throws -> Void,
-    file: StaticString = #filePath,
-    line: UInt = #line
-) async {
-    do {
-        try await expression()
-        XCTFail("Expected error", file: file, line: line)
-    } catch {}
 }

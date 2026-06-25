@@ -2287,6 +2287,8 @@ final class SumiNavigationResponderTests: XCTestCase {
         navigationType: NavigationType,
         shouldDownload: Bool = false,
         requestCachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy,
+        httpMethod: String? = nil,
+        httpBody: Data? = nil,
         webView: WKWebView? = nil,
         sourceURL: URL? = nil,
         sourceSecurityOrigin: SumiSecurityOrigin? = nil,
@@ -2317,7 +2319,9 @@ final class SumiNavigationResponderTests: XCTestCase {
             isMainFrame: targetFrameIsMainFrame ?? isMainFrame,
             url: frameURL
         )
-        let request = URLRequest(url: url, cachePolicy: requestCachePolicy)
+        var request = URLRequest(url: url, cachePolicy: requestCachePolicy)
+        request.httpMethod = httpMethod
+        request.httpBody = httpBody
         var action = NavigationAction(
             request: request,
             navigationType: navigationType,

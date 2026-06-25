@@ -229,6 +229,7 @@ struct SumiProtectionBundleReleaseManifest: Decodable, Sendable {
         case diagnostics
         case trackingNetworkShard
         case networkShard
+        case cosmeticShard
         case nativeCSSShard
     }
 

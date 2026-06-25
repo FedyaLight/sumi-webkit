@@ -4,10 +4,6 @@ private struct SumiModuleRegistryEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiModuleRegistry.shared }
 }
 
-private struct SumiAdBlockingModuleEnvironmentKey: EnvironmentKey {
-    static let defaultValue = MainActor.assumeIsolated { SumiAdBlockingModule.shared }
-}
-
 private struct SumiProtectionCoordinatorEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiProtectionCoordinator.shared }
 }
@@ -24,11 +20,6 @@ extension EnvironmentValues {
     var sumiModuleRegistry: SumiModuleRegistry {
         get { self[SumiModuleRegistryEnvironmentKey.self] }
         set { self[SumiModuleRegistryEnvironmentKey.self] = newValue }
-    }
-
-    var sumiAdBlockingModule: SumiAdBlockingModule {
-        get { self[SumiAdBlockingModuleEnvironmentKey.self] }
-        set { self[SumiAdBlockingModuleEnvironmentKey.self] = newValue }
     }
 
     var sumiProtectionCoordinator: SumiProtectionCoordinator {
@@ -54,13 +45,6 @@ struct SumiSettingsModuleToggleDescriptor: Identifiable, Equatable {
     let detail: String
 
     var id: SumiModuleID { moduleID }
-
-    static let adBlocking = SumiSettingsModuleToggleDescriptor(
-        moduleID: .adBlocking,
-        title: "Ad Blocking",
-        toggleTitle: "Enable Ad Blocking",
-        detail: "This legacy runtime gate is controlled by Adblock & Protection. While off, Sumi does not load prepared bundle shards, prepare WebKit rule lists, schedule updates, or attach blocking."
-    )
 
     static let extensions = SumiSettingsModuleToggleDescriptor(
         moduleID: .extensions,

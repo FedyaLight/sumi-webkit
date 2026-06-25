@@ -261,7 +261,7 @@ class BrowserManager: ObservableObject {
     let startupSessionCoordinator = SumiStartupSessionCoordinator()
 
     var auxiliaryWindowManager = AuxiliaryWindowManager()
-    @Published var glanceManager = GlanceManager()
+    let glanceManager = GlanceManager()
 
     /// Shared with app shell / `ContentView` via `.environment`; retained strongly so routing never sees a dangling coordinator.
     /// After `SumiApp.setupApplicationLifecycle` runs, this must be set before any WebView routing or coordinator cleanup.
@@ -403,8 +403,7 @@ class BrowserManager: ObservableObject {
         self.protectionCoordinator = protectionCoordinator
             ?? SumiProtectionCoordinator(
                 settings: SumiProtectionSettings(userDefaults: moduleRegistry.userDefaults),
-                adBlockingModule: resolvedAdBlockingModule,
-                moduleRegistry: moduleRegistry
+                adBlockingModule: resolvedAdBlockingModule
             )
         self.userscriptsModule = userscriptsModule
             ?? SumiUserscriptsModule(
@@ -1661,71 +1660,6 @@ class BrowserManager: ObservableObject {
         )
     }
 
-#if DEBUG
-    func lastActiveProtectionEligibleNormalWebTab(
-        in windowState: BrowserWindowState?,
-        excluding excludedTab: Tab? = nil
-    ) -> Tab? {
-        lastActiveAdblockEligibleNormalWebTab(
-            in: windowState,
-            excluding: excludedTab
-        )
-    }
-
-    func lastActiveAdblockEligibleNormalWebTab(
-        in windowState: BrowserWindowState?,
-        excluding excludedTab: Tab? = nil
-    ) -> Tab? {
-        var seen = Set<UUID>()
-        var candidates = [Tab]()
-
-        func append(_ tab: Tab?) {
-            guard let tab else { return }
-            guard seen.insert(tab.id).inserted else { return }
-            candidates.append(tab)
-        }
-
-        if let windowState {
-            append(currentTab(for: windowState))
-
-            if windowState.isIncognito {
-                windowState.ephemeralTabs
-                    .sorted { ($0.lastSelectedAt ?? .distantPast) > ($1.lastSelectedAt ?? .distantPast) }
-                    .forEach { append($0) }
-            } else {
-                if let currentSpaceId = windowState.currentSpaceId {
-                    windowState.recentRegularTabIdsBySpace[currentSpaceId]?
-                        .compactMap { tabManager.tab(for: $0) }
-                        .forEach { append($0) }
-                    (tabManager.tabsBySpace[currentSpaceId] ?? [])
-                        .sorted { ($0.lastSelectedAt ?? .distantPast) > ($1.lastSelectedAt ?? .distantPast) }
-                        .forEach { append($0) }
-                }
-
-                windowState.recentRegularTabIdsBySpace.values
-                    .flatMap { $0 }
-                    .compactMap { tabManager.tab(for: $0) }
-                    .forEach { append($0) }
-                windowState.activeTabForSpace.values
-                    .compactMap { tabManager.tab(for: $0) }
-                    .forEach { append($0) }
-            }
-        }
-
-        append(tabManager.currentTab)
-        tabManager.tabsBySpace.values
-            .flatMap { $0 }
-            .sorted { ($0.lastSelectedAt ?? .distantPast) > ($1.lastSelectedAt ?? .distantPast) }
-            .forEach { append($0) }
-
-        return candidates.first { tab in
-            guard tab.id != excludedTab?.id else { return false }
-            guard tab.requiresPrimaryWebView, !tab.isPopupHost else { return false }
-            return protectionCoordinator.surfaceEligibility(for: tab.url).isEligible
-        }
-    }
-#endif
-
     @MainActor
     private func reconcilePermissionSidebarPins(reason: String) async {
         let state = await permissionCoordinator.stateSnapshot()
@@ -1974,7 +1908,7 @@ class BrowserManager: ObservableObject {
             tabManager.tab(for: previousId)
         }
         extensionsModule.notifyTabActivatedIfLoaded(newTab: tab, previous: previousTab)
-        tabSuspensionService.reconcileProactiveTimers(reason: "tab-selection-changed")
+        tabSuspensionService.scheduleProactiveTimerReconcile(reason: "tab-selection-changed")
         backgroundMediaOptimizationService.scheduleReconcile(reason: "tab-selection-changed")
 
         // Update global tab state for the active window

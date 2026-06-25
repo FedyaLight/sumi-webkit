@@ -373,6 +373,7 @@ private struct SumiImportPreviewSheet: View {
     }
 }
 
+
 struct SumiExtensionsSettingsPane: View {
     @Environment(\.sumiSettings) private var sumiSettingsModel
     @EnvironmentObject private var browserManager: BrowserManager

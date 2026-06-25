@@ -48,6 +48,7 @@ struct URLBarHubPopover: View {
 
     private enum Mode: Equatable {
         case controls
+        case protectionDetails
         case siteDataDetails
         case bookmark(SumiBookmarkEditorState)
 
@@ -55,7 +56,8 @@ struct URLBarHubPopover: View {
             switch self {
             case .controls:
                 return 234
-            case .siteDataDetails,
+            case .protectionDetails,
+                 .siteDataDetails,
                  .bookmark:
                 return 392
             }
@@ -92,16 +94,15 @@ struct URLBarHubPopover: View {
 
     private var snapshot: SiteControlsSnapshot {
         _ = refreshNonce
-        let start = Date()
-        let resolved = SiteControlsSnapshot.resolve(
+        return SiteControlsSnapshot.resolve(
             url: currentTab?.url,
             profile: activeProfile,
             protectionCoordinator: browserManager.protectionCoordinator,
             protectionBrowserRestartRequired: browserManager.protectionCoordinator.settings.browserRestartRequired,
-            protectionReloadRequired: currentTab?.isProtectionReloadRequired == true
+            protectionReloadRequired: currentTab?.isProtectionReloadRequired == true,
+            extensionsModule: browserManager.extensionsModule,
+            safariContentBlockerReloadRequired: currentTab?.isSafariContentBlockerReloadRequired == true
         )
-        currentTab?.lastProtectionURLHubSummaryDuration = Date().timeIntervalSince(start)
-        return resolved
     }
 
     private var showsExtensionSection: Bool {
@@ -260,6 +261,28 @@ struct URLBarHubPopover: View {
         switch mode {
         case .controls:
             controlsContent
+        case .protectionDetails:
+            URLBarHubProtectionSection(
+                coordinator: browserManager.protectionCoordinator,
+                currentTab: currentTab,
+                webViewProvider: {
+                    guard let currentTab else { return nil }
+                    return browserManager.getWebView(
+                        for: currentTab.id,
+                        in: windowState.id
+                    )
+                },
+                onBack: {
+                    setMode(.controls, direction: .backward)
+                },
+                onClose: onClose,
+                onDidMutate: {
+                    currentTab?.markProtectionReloadRequiredIfNeeded(
+                        afterChangingPolicyFor: currentTab?.url
+                    )
+                    scheduleCoalescedRefresh()
+                }
+            )
         case .siteDataDetails:
             URLBarSiteDataDetailsView(
                 model: siteDataDetailsModel,
@@ -339,6 +362,8 @@ struct URLBarHubPopover: View {
         switch mode {
         case .controls:
             return "controls"
+        case .protectionDetails:
+            return "protection-details"
         case .siteDataDetails:
             return "site-data-details"
         case .bookmark(let state):
@@ -723,10 +748,13 @@ struct URLBarHubPopover: View {
 
     private func handleSettingAction(_ row: SiteControlsSettingRowModel) {
         switch row.kind {
-        case .protection(let plan, _):
-            guard plan.requestedLevel != .off else { return }
-            setProtectionOverride(
-                plan.siteOverride == .disabled ? .inherit : .disabled
+        case .protection:
+            guard row.isInteractive else { return }
+            setMode(.protectionDetails, direction: .forward)
+        case .safariContentBlockers(let state, _):
+            guard state.isInteractive else { return }
+            setSafariContentBlockerSiteOverride(
+                state.isEnabledForSite ? .disabled : .inherit
             )
         case .cookies:
             setMode(.siteDataDetails, direction: .forward)
@@ -742,12 +770,15 @@ struct URLBarHubPopover: View {
         return nil
     }
 
-    private func setProtectionOverride(
-        _ override: SumiAdblockSiteOverride
+    private func setSafariContentBlockerSiteOverride(
+        _ override: SumiSafariContentBlockerSiteOverride
     ) {
         guard let currentTab else { return }
-        browserManager.protectionCoordinator.setSiteOverride(override, for: currentTab.url)
-        currentTab.markProtectionReloadRequiredIfNeeded(
+        browserManager.extensionsModule.setSafariContentBlockerSiteOverride(
+            override,
+            for: currentTab.url
+        )
+        currentTab.markSafariContentBlockerReloadRequiredIfNeeded(
             afterChangingPolicyFor: currentTab.url
         )
         scheduleCoalescedRefresh()

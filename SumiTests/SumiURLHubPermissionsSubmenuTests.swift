@@ -33,10 +33,100 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
 
         XCTAssertTrue(source.contains("kind: .cookies"))
         XCTAssertTrue(source.contains("kind: .protection("))
+        XCTAssertTrue(source.contains("protectionCoordinator: browserManager.protectionCoordinator"))
+        XCTAssertTrue(source.contains("protectionBrowserRestartRequired: browserManager.protectionCoordinator.settings.browserRestartRequired"))
+        XCTAssertTrue(source.contains("protectionReloadRequired: currentTab?.isProtectionReloadRequired == true"))
+        XCTAssertTrue(source.contains("case protectionDetails"))
+        XCTAssertTrue(source.contains("setMode(.protectionDetails, direction: .forward)"))
+        XCTAssertTrue(source.contains("setMode(.siteDataDetails, direction: .forward)"))
         XCTAssertFalse(source.contains("kind: .tracking("))
         XCTAssertFalse(source.contains("kind: .adBlocking("))
-        XCTAssertTrue(source.contains("setMode(.siteDataDetails, direction: .forward)"))
+        XCTAssertFalse(source.contains("elementZap"))
+        XCTAssertFalse(source.contains("startElementZap"))
+        XCTAssertFalse(source.contains("boostsModule.startZapSelection"))
         XCTAssertFalse(source.contains("setMode(.permissions"))
+    }
+
+    func testProtectionRowShowsCurrentSiteStateAndDisclosure() {
+        let row = SiteControlsSettingRowModel(
+            id: "adblock-protection",
+            chromeIconName: nil,
+            fallbackSystemName: "shield.lefthalf.filled",
+            title: "Adblock & Protection",
+            subtitle: "Adblock on for this site",
+            kind: .protection(
+                plan: SumiProtectionRulePlan(
+                    requestedLevel: .adblock,
+                    effectiveLevel: .adblock,
+                    siteHost: "example.com",
+                    siteOverride: .inherit,
+                    sitePolicyAllowsProtection: true,
+                    activeGroups: [.trackingNetwork, .adblockAdsPrivacyNetwork],
+                    inactiveGroups: [],
+                    bundleSource: nil,
+                    nativeRuleBundleId: "bundle",
+                    bundleProfileId: SumiProtectionBundleProfile.adblock,
+                    requiredBundleProfileId: SumiProtectionBundleProfile.adblock,
+                    activeGenerationId: "generation",
+                    previousGenerationId: nil,
+                    previousGenerationRetained: false,
+                    ruleCountsByGroup: [:],
+                    shardCountsByGroup: [:],
+                    expectedRuleListIdentifiers: ["sumi.adblock.network.1"],
+                    dedupeSummary: .empty,
+                    overlapSummary: .deferred,
+                    ineligibleSurfaceReason: nil,
+                    planningErrors: [],
+                    ruleDefinitions: []
+                ),
+                reloadRequired: false
+            )
+        )
+
+        XCTAssertTrue(row.isInteractive)
+        XCTAssertFalse(row.isDisabled)
+        XCTAssertTrue(row.showsDisclosure)
+    }
+
+    func testProtectionDetailsUsesNativeRulesAndEyedropper() throws {
+        let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubProtectionSection.swift")
+        let zapperSource = try sourceFile("Sumi/ContentBlocking/SumiAdblockZapperStore.swift")
+
+        XCTAssertTrue(source.contains("Image(systemName: \"eyedropper\")"))
+        XCTAssertTrue(source.contains("SumiAdblockZapperStore.shared.state(forHost: host)"))
+        XCTAssertTrue(source.contains("SumiAdblockZapperStore.shared.setRules("))
+        XCTAssertTrue(source.contains("SumiAdblockZapperStore.shared.setEnabled("))
+        XCTAssertTrue(source.contains("SumiAdblockZapperInjector.activateElementPicker("))
+        XCTAssertTrue(zapperSource.contains("Sumi Element Zapper"))
+        XCTAssertTrue(zapperSource.contains("data-sumi-zapper-selector"))
+        XCTAssertTrue(zapperSource.contains("data-sumi-zapper-preview"))
+        XCTAssertTrue(zapperSource.contains("data-sumi-zapper-create"))
+        XCTAssertTrue(zapperSource.contains("restorePreview()"))
+        XCTAssertTrue(zapperSource.contains("clearAppliedRules(to webView: WKWebView)"))
+        XCTAssertTrue(zapperSource.contains("data-sumi-adblock-zapper-hidden"))
+        XCTAssertTrue(source.contains("coordinator.setSiteOverride("))
+        XCTAssertTrue(source.contains("if didActivate {\n                onClose()"))
+        XCTAssertTrue(source.contains("Text(\"\\(savedRules.count) saved\")"))
+        let popoverSource = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let lifecycleSource = try sourceFile("Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift")
+        XCTAssertTrue(popoverSource.contains("currentTab?.markProtectionReloadRequiredIfNeeded("))
+        XCTAssertTrue(lifecycleSource.contains("policy.isEnabled"))
+        XCTAssertTrue(lifecycleSource.contains("SumiAdblockZapperInjector.clearAppliedRules(to: webView)"))
+        XCTAssertFalse(source.contains("Image(systemName: \"scope\")"))
+        XCTAssertFalse(source.contains("Timer"))
+        XCTAssertFalse(source.contains(".onReceive("))
+    }
+
+    func testNormalTabProtectionAttachmentUsesBundlePath() throws {
+        let runtime = try sourceFile("Sumi/Models/Tab/Tab+WebViewRuntime.swift")
+        let tabLifecycle = try sourceFile("Sumi/Models/Tab/Tab.swift")
+        let adapter = try sourceFile("Sumi/UserScripts/SumiNormalTabBrowserServicesKitUserContentControllerAdapter.swift")
+
+        XCTAssertTrue(runtime.contains("contentBlockingService: protectionDecision?.contentBlockingService"))
+        XCTAssertTrue(adapter.contains("profileId: profileId"))
+        XCTAssertFalse(runtime.contains("enabledSafariContentBlockingServices(for: url"))
+        XCTAssertFalse(runtime.contains("additionalContentBlockingServices: safariContentBlockerServices"))
+        XCTAssertFalse(tabLifecycle.contains("safariContentBlockerAttachmentRequiresNormalWebViewRebuild"))
     }
 
     func testURLHubInlinePermissionsUseNonLiveSystemSnapshotModeAndIdentifiers() throws {

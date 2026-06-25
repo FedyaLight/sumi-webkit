@@ -50,7 +50,9 @@ final class BrowserPrivacyService {
     }
 
     private func reloadFromOrigin(_ tab: Tab, webView: WKWebView) {
-        if tab.protectionAttachmentRequiresNormalWebViewRebuild(for: webView.url ?? tab.url) {
+        let targetURL = webView.url ?? tab.url
+        if tab.protectionAttachmentRequiresNormalWebViewRebuild(for: targetURL)
+            || tab.autoplayPolicyRequiresNormalWebViewRebuild(for: targetURL) {
             tab.refresh()
             return
         }

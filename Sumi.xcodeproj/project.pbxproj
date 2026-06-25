@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3ABB06E087FC4AB7B21B2B6B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3E692AE1701C49119B0EB052 /* Sparkle */; };
 		A11DD020B11D000100000002 /* Bookmarks in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000002 /* Bookmarks */; };
 		A11DD020B11D000100000005 /* Navigation in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000005 /* Navigation */; };
 		A11DD020B11D000100000006 /* Persistence in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000006 /* Persistence */; };
 		A11DD020B11D000100000007 /* PrivacyConfig in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000007 /* PrivacyConfig */; };
 		A11DD020B11D000100000008 /* URLPredictor in Frameworks */ = {isa = PBXBuildFile; productRef = A11DD010B11D000100000008 /* URLPredictor */; };
-		3ABB06E087FC4AB7B21B2B6B /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 3E692AE1701C49119B0EB052 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -762,18 +762,22 @@
 		};
 		A11DD010B11D000100000002 /* Bookmarks */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */;
 			productName = Bookmarks;
 		};
 		A11DD010B11D000100000005 /* Navigation */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */;
 			productName = Navigation;
 		};
 		A11DD010B11D000100000006 /* Persistence */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */;
 			productName = Persistence;
 		};
 		A11DD010B11D000100000007 /* PrivacyConfig */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = A11DD000B11D000100000001 /* XCLocalSwiftPackageReference "Vendor/DDG/BrowserServicesKit" */;
 			productName = PrivacyConfig;
 		};
 		A11DD010B11D000100000008 /* URLPredictor */ = {

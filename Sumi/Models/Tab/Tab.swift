@@ -206,6 +206,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             let oldIsLoading = navigationRuntime.loadingState.isLoading
             objectWillChange.send()
             navigationRuntime.loadingState = newValue
+            if !newValue.isLoading {
+                self.estimatedProgress = 1.0
+            }
             guard oldIsLoading != newValue.isLoading else { return }
             NotificationCenter.default.post(
                 name: .sumiTabLoadingStateDidChange,
@@ -217,11 +220,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func beginLoadingPresentationIfNeeded() {
         guard !loadingState.isLoading else { return }
+        estimatedProgress = 0.05
         loadingState = .didStartProvisionalNavigation
     }
 
     @Published var canGoBack: Bool = false
     @Published var canGoForward: Bool = false
+    @Published var estimatedProgress: Double = 0.0
 
     // Restored navigation state from undo/session restoration (applied when web view is created)
     var restoredCanGoBack: Bool? {
@@ -309,9 +314,20 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set { webViewRuntime.webExtensionContextOverride = newValue }
     }
 
+    var safariContentBlockerAppliedAttachmentState: SumiSafariContentBlockerAttachmentState? {
+        get { webViewRuntime.safariContentBlockerAppliedAttachmentState }
+        set { webViewRuntime.safariContentBlockerAppliedAttachmentState = newValue }
+    }
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState? {
         get { webViewRuntime.protectionAppliedAttachmentState }
         set { webViewRuntime.protectionAppliedAttachmentState = newValue }
+    }
+    var safariContentBlockerReloadRequirement: SumiSafariContentBlockerReloadRequirement? {
+        get { webViewRuntime.safariContentBlockerReloadRequirement }
+        set { webViewRuntime.safariContentBlockerReloadRequirement = newValue }
+    }
+    var isSafariContentBlockerReloadRequired: Bool {
+        safariContentBlockerReloadRequirement != nil
     }
     var protectionReloadRequirement: SumiProtectionReloadRequirement? {
         get { webViewRuntime.protectionReloadRequirement }
@@ -821,11 +837,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             return
         }
 
-        let rebuiltWebView = rebuildNormalWebViewForProtectionIfNeeded(
+        let rebuiltForConfigurationPolicy = rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
             targetURL: newURL,
-            reason: "Tab.loadURL.protectionPolicy"
+            reason: "Tab.loadURL.contentBlockingPolicy"
         )
-        let rebuiltForConfigurationPolicy = rebuiltWebView
             || rebuildNormalWebViewForAutoplayIfNeeded(
                 targetURL: newURL,
                 reason: "Tab.loadURL.autoplayPolicy"
@@ -969,6 +984,19 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
 
 
+    func safariContentBlockerDesiredAttachmentState(
+        for targetURL: URL?
+    ) -> SumiSafariContentBlockerAttachmentState {
+        browserManager?.extensionsModule.safariContentBlockerAttachmentState(for: targetURL)
+            ?? .disabled(siteHost: nil)
+    }
+
+    func noteSafariContentBlockerAttachmentApplied(
+        _ state: SumiSafariContentBlockerAttachmentState
+    ) {
+        safariContentBlockerAppliedAttachmentState = state
+    }
+
     func protectionDesiredAttachmentState(
         for targetURL: URL?
     ) -> SumiProtectionAttachmentState {
@@ -993,6 +1021,51 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         else { return }
 
         updateProtectionReloadRequirementForCurrentSite()
+    }
+
+    func markSafariContentBlockerReloadRequiredIfNeeded(
+        afterChangingPolicyFor changedURL: URL?
+    ) {
+        let changedState = safariContentBlockerDesiredAttachmentState(for: changedURL)
+        let currentState = safariContentBlockerDesiredAttachmentState(for: url)
+        guard changedState.siteHost != nil,
+              changedState.siteHost == currentState.siteHost
+        else { return }
+
+        updateSafariContentBlockerReloadRequirementForCurrentSite()
+    }
+
+    func updateSafariContentBlockerReloadRequirementForCurrentSite() {
+        guard existingWebView != nil else {
+            clearSafariContentBlockerReloadRequirement()
+            return
+        }
+
+        let desiredState = safariContentBlockerDesiredAttachmentState(for: url)
+        guard desiredState.siteHost != nil,
+              let appliedState = safariContentBlockerAppliedAttachmentState,
+              appliedState != desiredState
+        else {
+            clearSafariContentBlockerReloadRequirement()
+            return
+        }
+
+        setSafariContentBlockerReloadRequirement(
+            SumiSafariContentBlockerReloadRequirement(
+                siteHost: desiredState.siteHost,
+                desiredAttachmentState: desiredState
+            )
+        )
+    }
+
+    func clearSafariContentBlockerReloadRequirementIfResolved(for committedURL: URL) {
+        guard let requirement = safariContentBlockerReloadRequirement else { return }
+
+        let committedState = safariContentBlockerDesiredAttachmentState(for: committedURL)
+        if committedState.siteHost != requirement.siteHost
+            || safariContentBlockerAppliedAttachmentState == committedState {
+            clearSafariContentBlockerReloadRequirement()
+        }
     }
 
     func updateProtectionReloadRequirementForCurrentSite() {
@@ -1121,7 +1194,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
 
     @discardableResult
-    func rebuildNormalWebViewForProtectionIfNeeded(
+    func rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
         targetURL: URL?,
         reason: String
     ) -> Bool {
@@ -1162,6 +1235,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             _webView = replacementWebView
         }
 
+        updateSafariContentBlockerReloadRequirementForCurrentSite()
+        updateProtectionReloadRequirementForCurrentSite()
         lastProtectionWebViewRebuildDuration = Date().timeIntervalSince(rebuildStart)
         updateAutoplayReloadRequirementForCurrentSite()
         return true
@@ -1218,6 +1293,29 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
 
+    private func notifyContentBlockingReloadRequirementChanged() {
+        objectWillChange.send()
+        NotificationCenter.default.post(
+            name: .sumiTabNavigationStateDidChange,
+            object: self,
+            userInfo: ["tabId": id]
+        )
+    }
+
+    private func setSafariContentBlockerReloadRequirement(
+        _ requirement: SumiSafariContentBlockerReloadRequirement
+    ) {
+        guard safariContentBlockerReloadRequirement != requirement else { return }
+        safariContentBlockerReloadRequirement = requirement
+        notifyContentBlockingReloadRequirementChanged()
+    }
+
+    private func clearSafariContentBlockerReloadRequirement() {
+        guard safariContentBlockerReloadRequirement != nil else { return }
+        safariContentBlockerReloadRequirement = nil
+        notifyContentBlockingReloadRequirementChanged()
+    }
+
     private func setProtectionReloadRequirement(
         _ requirement: SumiProtectionReloadRequirement
     ) {
@@ -1226,22 +1324,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         appliedProtectionAfterManualReload = false
         lastProtectionWebViewRebuildDuration = nil
         protectionReloadRequirement = requirement
-        notifyProtectionReloadRequirementChanged()
+        notifyContentBlockingReloadRequirementChanged()
     }
 
     private func clearProtectionReloadRequirement() {
         guard protectionReloadRequirement != nil else { return }
         protectionReloadRequirement = nil
-        notifyProtectionReloadRequirementChanged()
-    }
-
-    private func notifyProtectionReloadRequirementChanged() {
-        objectWillChange.send()
-        NotificationCenter.default.post(
-            name: .sumiTabNavigationStateDidChange,
-            object: self,
-            userInfo: ["tabId": id]
-        )
+        notifyContentBlockingReloadRequirementChanged()
     }
 
     private func setAutoplayReloadRequirement(

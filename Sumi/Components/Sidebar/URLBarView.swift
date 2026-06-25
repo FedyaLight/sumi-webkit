@@ -199,7 +199,12 @@ struct URLBarView: View {
     var siteControlsSnapshot: SiteControlsSnapshot {
         SiteControlsSnapshot.resolve(
             url: activePageURL,
-            profile: effectiveProfile
+            profile: effectiveProfile,
+            protectionCoordinator: browserManager.protectionCoordinator,
+            protectionBrowserRestartRequired: browserManager.protectionCoordinator.settings.browserRestartRequired,
+            protectionReloadRequired: currentTab?.isProtectionReloadRequired == true,
+            extensionsModule: browserManager.extensionsModule,
+            safariContentBlockerReloadRequired: currentTab?.isSafariContentBlockerReloadRequired == true
         )
     }
 

@@ -6,6 +6,10 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
             plan: SumiProtectionRulePlan,
             reloadRequired: Bool
         )
+        case safariContentBlockers(
+            state: SumiSafariContentBlockerSiteState,
+            reloadRequired: Bool
+        )
         case cookies
         case localPage
     }
@@ -21,6 +25,8 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
         switch kind {
         case .protection(let plan, _):
             return plan.requestedLevel == .off || plan.siteHost == nil
+        case .safariContentBlockers(let state, _):
+            return !state.isInteractive
         case .cookies,
              .localPage:
             return false
@@ -31,6 +37,8 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
         switch kind {
         case .protection(let plan, _):
             return plan.requestedLevel != .off && plan.siteHost != nil
+        case .safariContentBlockers(let state, _):
+            return state.isInteractive
         case .cookies:
             return true
         default:
@@ -40,6 +48,8 @@ struct SiteControlsSettingRowModel: Equatable, Identifiable {
 
     var showsDisclosure: Bool {
         switch kind {
+        case .protection(let plan, _):
+            return plan.requestedLevel != .off && plan.siteHost != nil
         case .cookies:
             return true
         default:
@@ -111,7 +121,9 @@ struct SiteControlsSnapshot: Equatable {
         profile: Profile?,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         protectionBrowserRestartRequired: Bool = false,
-        protectionReloadRequired: Bool = false
+        protectionReloadRequired: Bool = false,
+        extensionsModule: SumiExtensionsModule? = nil,
+        safariContentBlockerReloadRequired: Bool = false
     ) -> SiteControlsSnapshot {
         guard let url else {
             return SiteControlsSnapshot(
@@ -177,6 +189,34 @@ struct SiteControlsSnapshot: Equatable {
                         )
                     )
                 )
+            }
+            if let extensionsModule {
+                let state = extensionsModule.safariContentBlockerSiteState(for: url)
+                if state.isGloballyAvailable {
+                    let subtitle: String
+                    if safariContentBlockerReloadRequired {
+                        subtitle = "Reload required"
+                    } else if !state.isEnabledForSite {
+                        subtitle = "Content blockers off for this site"
+                    } else {
+                        subtitle = state.enabledContentBlockerCount == 1
+                            ? "1 content blocker on for this site"
+                            : "\(state.enabledContentBlockerCount) content blockers on for this site"
+                    }
+                    rows.append(
+                        .init(
+                            id: "safari-content-blockers",
+                            chromeIconName: state.isEnabledForSite ? nil : "shield-off",
+                            fallbackSystemName: state.isEnabledForSite ? "shield.checkered" : "shield.slash",
+                            title: "Content Blockers",
+                            subtitle: subtitle,
+                            kind: .safariContentBlockers(
+                                state: state,
+                                reloadRequired: safariContentBlockerReloadRequired
+                            )
+                        )
+                    )
+                }
             }
             rows.append(
                 .init(

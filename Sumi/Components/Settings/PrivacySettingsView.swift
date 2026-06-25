@@ -4,7 +4,6 @@
 //
 //
 
-import AppKit
 import SwiftUI
 
 struct PrivacySettingsView: View {
@@ -39,13 +38,8 @@ struct PrivacySettingsView: View {
                     }
 
                     AdblockProtectionSettingsView(
-                        coordinator: protectionCoordinator,
-                        browserManager: browserManager,
-                        windowState: windowState,
-                        currentTab: currentTab
+                        coordinator: protectionCoordinator
                     )
-
-
 
                     Spacer()
                 }
@@ -71,49 +65,25 @@ struct PrivacySettingsView: View {
         return browserManager.currentProfile
     }
 
-    private var currentTab: Tab? {
-        guard let windowState else { return nil }
-        return browserManager.currentTab(for: windowState)
-    }
 }
 
 private struct AdblockProtectionSettingsView: View {
     let coordinator: SumiProtectionCoordinator
-    let browserManager: BrowserManager
-    let windowState: BrowserWindowState?
-    let currentTab: Tab?
     @ObservedObject private var settings: SumiProtectionSettings
     @ObservedObject private var bundleUpdateStatus: SumiProtectionBundleUpdateStatusStore
     @State private var isApplying = false
     @State private var isUpdatingBundles = false
-    #if DEBUG
-    @State private var copyDiagnosticsStatus: String?
-    #endif
 
     init(
-        coordinator: SumiProtectionCoordinator,
-        browserManager: BrowserManager,
-        windowState: BrowserWindowState?,
-        currentTab: Tab?
+        coordinator: SumiProtectionCoordinator
     ) {
         self.coordinator = coordinator
-        self.browserManager = browserManager
-        self.windowState = windowState
-        self.currentTab = currentTab
         _settings = ObservedObject(wrappedValue: coordinator.settings)
         _bundleUpdateStatus = ObservedObject(wrappedValue: coordinator.bundleUpdateStatusStore)
     }
 
-    @ViewBuilder
     var body: some View {
-        #if DEBUG
         protectionSettingsSection
-            .contextMenu {
-                debugDiagnosticsContextMenu
-            }
-        #else
-        protectionSettingsSection
-        #endif
     }
 
     private var protectionSettingsSection: some View {
@@ -278,78 +248,6 @@ private struct AdblockProtectionSettingsView: View {
         Self.settingsDateFormatter.string(from: date)
     }
 
-    private var diagnosticsTarget: DebugProtectionDiagnosticsTarget {
-        let currentEligibility = coordinator.surfaceEligibility(for: currentTab?.url)
-        if let currentTab, currentEligibility.isEligible {
-            return DebugProtectionDiagnosticsTarget(
-                tab: currentTab,
-                url: currentTab.url,
-                source: "current tab"
-            )
-        }
-
-        #if DEBUG
-        if let fallback = browserManager.lastActiveProtectionEligibleNormalWebTab(
-            in: windowState,
-            excluding: currentTab
-        ) {
-            let source: String
-            if let reason = currentEligibility.ineligibleReason {
-                source = "last eligible web tab (current tab ineligible: \(reason))"
-            } else {
-                source = "last eligible web tab"
-            }
-            return DebugProtectionDiagnosticsTarget(
-                tab: fallback,
-                url: fallback.url,
-                source: source
-            )
-        }
-        #endif
-
-        return DebugProtectionDiagnosticsTarget(
-            tab: currentTab,
-            url: currentTab?.url,
-            source: currentEligibility.ineligibleReason.map {
-                "current tab (ineligible: \($0))"
-            } ?? "current tab"
-        )
-    }
-
-    #if DEBUG
-    private var debugDiagnosticsContextMenu: some View {
-        Button("Copy Protection Diagnostics") {
-            copyUnifiedProtectionDiagnostics()
-        }
-    }
-
-    private func copyUnifiedProtectionDiagnostics() {
-        let target = diagnosticsTarget
-        let report = coordinator.copyDiagnosticsReport(
-            for: target.url,
-            currentTabDiagnostics: target.tab?.protectionCurrentTabDiagnostics(),
-            targetDescription: target.source,
-            requestingURL: currentTab?.url
-        )
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(report, forType: .string)
-        copyDiagnosticsStatus = "Copied \(debugDateString(Date())) for \(target.url?.absoluteString ?? target.source)."
-    }
-
-    private func debugDateString(_ date: Date?) -> String {
-        guard let date else { return "nil" }
-        return Self.debugDateFormatter.string(from: date)
-    }
-
-    private static let debugDateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .medium
-        return formatter
-    }()
-    #endif
-
     private static let settingsDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
@@ -366,10 +264,4 @@ private struct AdblockProtectionSettingsView: View {
         guard singleLine.count > limit else { return singleLine }
         return "\(singleLine.prefix(limit))..."
     }
-}
-
-private struct DebugProtectionDiagnosticsTarget {
-    let tab: Tab?
-    let url: URL?
-    let source: String
 }
