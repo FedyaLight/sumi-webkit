@@ -552,6 +552,7 @@ extension ExtensionManager: NSPopoverDelegate {
             return true
         }
 
+        let adapter = stableAdapter(for: tab)
         let manifest = installedExtension.manifest
         let permissions = stringArray(from: manifest["permissions"])
         let optionalPermissions = stringArray(from: manifest["optional_permissions"])
@@ -564,13 +565,22 @@ extension ExtensionManager: NSPopoverDelegate {
             return true
         }
 
-        if isGrantedPermissionStatus(extensionContext.permissionStatus(for: currentURL)) {
+        let status = effectivePermissionStatus(
+            for: currentURL,
+            in: extensionContext,
+            tab: adapter
+        )
+        if isGrantedPermissionStatus(status) {
             return true
         }
-        if extensionContext.permissionStatus(for: currentURL) == .deniedExplicitly {
+        if status == .deniedExplicitly {
             return false
         }
-        if explicitlyGrantURLIfCoveredByGrantedMatchPattern(currentURL, in: extensionContext) {
+        if explicitlyGrantURLIfCoveredByGrantedMatchPattern(
+            currentURL,
+            in: extensionContext,
+            tab: adapter
+        ) {
             return true
         }
 
@@ -751,12 +761,6 @@ extension ExtensionManager: NSPopoverDelegate {
         )
         configuration.websiteDataStore = getExtensionDataStore(for: resolvedProfileId)
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        installURLSchemeCompatibilityPreludes(
-            into: configuration.userContentController,
-            profileId: resolvedProfileId,
-            requireLoadedContext: true,
-            scopes: [.contentScript, .extensionPage]
-        )
         installPermissionsOriginsCompatibilityPreludes(
             into: configuration.userContentController,
             profileId: resolvedProfileId
@@ -905,12 +909,6 @@ extension ExtensionManager: NSPopoverDelegate {
         if let owningTab,
            let profileId = resolvedProfileId(for: owningTab)
         {
-            installURLSchemeCompatibilityPreludes(
-                into: webView.configuration.userContentController,
-                profileId: profileId,
-                requireLoadedContext: true,
-                scopes: [.contentScript, .extensionPage]
-            )
             installPermissionsOriginsCompatibilityPreludes(
                 into: webView.configuration.userContentController,
                 profileId: profileId
@@ -1068,6 +1066,11 @@ extension ExtensionManager: NSPopoverDelegate {
                 )
             }
 
+            self.materializeExtensionRequestedNormalTabIfNeeded(
+                createdTab,
+                isActive: true,
+                targetWindow: windowState
+            )
             browserManager.selectTab(createdTab, in: windowState)
             self.registerExtensionCreatedTabWithExtensionRuntime(
                 createdTab,
@@ -1110,14 +1113,12 @@ extension ExtensionManager: NSPopoverDelegate {
 
         let sdkURL = extensionContext.optionsPageURL
         let manifestURL = computeOptionsPageURL(for: extensionContext)
-            .map(ExtensionUtils.webKitLoadableExtensionURL)
         let sdkResolvedURL = (try? ExtensionUtils.resolvedOptionsPageURL(
             sdkURL: sdkURL,
             persistedPath: nil,
             manifest: manifest,
             extensionRoot: extensionRoot
         ))
-            .map(ExtensionUtils.webKitLoadableExtensionURL)
         let diskResolvedURL = try? ExtensionUtils.resolvedOptionsPageURL(
             sdkURL: nil,
             persistedPath: installedExtension.optionsPagePath,

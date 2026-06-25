@@ -1,8 +1,6 @@
 import Foundation
 
 enum SumiModuleID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-    case trackingProtection
-    case adBlocking
     case extensions
     case userScripts
 

@@ -502,6 +502,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertEqual(results["allHosts"], true)
         XCTAssertEqual(results["account"], true)
         XCTAssertEqual(results["pass"], true)
+        XCTAssertEqual(results["protonWildcard"], true)
     }
 
     func testConfiguredAllSitesAllowMakesBroadHostGrantVisibleToPermissionsContains()
@@ -540,6 +541,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertEqual(results["allHosts"], true)
         XCTAssertEqual(results["account"], true)
         XCTAssertEqual(results["pass"], true)
+        XCTAssertEqual(results["protonWildcard"], true)
     }
 
     func testExternallyConnectableMatchesAreNotDeclaredSiteAccess() async throws {
@@ -765,7 +767,8 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             const allHosts = await api.permissions.contains({ origins: ["*://*/*"] });
             const account = await api.permissions.contains({ origins: ["https://account.proton.me/*"] });
             const pass = await api.permissions.contains({ origins: ["https://pass.proton.me/*"] });
-            document.body.dataset.result = JSON.stringify({ allHosts, account, pass });
+            const protonWildcard = await api.permissions.contains({ origins: ["https://*.proton.me/*"] });
+            document.body.dataset.result = JSON.stringify({ allHosts, account, pass, protonWildcard });
           } catch (error) {
             document.body.dataset.error = String(error && (error.message || error));
           }

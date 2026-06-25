@@ -30,6 +30,7 @@ final class SumiStartupPersistence {
         HistoryEntryEntity.self,
         HistoryVisitEntity.self,
         ExtensionEntity.self,
+        SafariContentBlockerEntity.self,
         UserScriptEntity.self,
         UserScriptResourceEntity.self,
         PermissionDecisionEntity.self,

@@ -653,12 +653,6 @@ extension ExtensionManager {
 
         if let existingController = webView.configuration.webExtensionController {
             if existingController === expectedController {
-                installURLSchemeCompatibilityPreludes(
-                    into: webView.configuration.userContentController,
-                    profileId: profileId,
-                    requireLoadedContext: true,
-                    scopes: [.contentScript, .extensionPage]
-                )
                 installPermissionsOriginsCompatibilityPreludes(
                     into: webView.configuration.userContentController,
                     profileId: profileId
@@ -672,12 +666,6 @@ extension ExtensionManager {
 
         webView.configuration.webExtensionController = expectedController
         webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        installURLSchemeCompatibilityPreludes(
-            into: webView.configuration.userContentController,
-            profileId: profileId,
-            requireLoadedContext: true,
-            scopes: [.contentScript, .extensionPage]
-        )
         installPermissionsOriginsCompatibilityPreludes(
             into: webView.configuration.userContentController,
             profileId: profileId

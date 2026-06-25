@@ -20,7 +20,6 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingAdapterTransport.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingProtocolAdapter.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppResolver.swift",
-        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionURLSchemeCompatibility.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionsOriginsCompatibility.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift",
@@ -118,7 +117,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
     }
 
     func testPermissionsOriginsCompatibilityLayerIsNarrowAndExtensionScoped() throws {
-        let permissionsCompatibilitySource = try source(named: extensionManagerPaths[16])
+        let permissionsCompatibilitySource = try source(named: extensionManagerPaths[15])
 
         XCTAssertTrue(
             permissionsCompatibilitySource.contains(
@@ -128,6 +127,11 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         XCTAssertTrue(
             permissionsCompatibilitySource.contains(
                 "location.protocol !== \"webkit-extension:\""
+            )
+        )
+        XCTAssertTrue(
+            permissionsCompatibilitySource.contains(
+                "location.protocol !== \"safari-web-extension:\""
             )
         )
         XCTAssertTrue(
@@ -147,42 +151,58 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         )
     }
 
-    func testURLSchemeCompatibilityLayerIsNarrowAndSafariScoped() throws {
-        let urlSchemeCompatibilitySource = try source(named: extensionManagerPaths[15])
+    func testSafariURLSchemeUsesNativeWebKitRegistration() throws {
+        let managerSource = try source(named: extensionManagerPaths[3])
+        let installationSource = try source(named: extensionManagerPaths[0])
+        let runtimeSources = try [
+            managerSource,
+            installationSource,
+            source(named: extensionManagerPaths[4]),
+            source(named: extensionManagerPaths[5]),
+            source(named: extensionManagerPaths[7]),
+            source(
+                named: "Sumi/Managers/ExtensionManager/ExtensionManager+ProfileRuntime.swift"
+            ),
+            source(named: "Sumi/Managers/ExtensionManager/ExtensionUtils.swift"),
+        ].joined()
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let deletedURLShim = repoRoot.appendingPathComponent(
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionURLSchemeCompatibility.swift"
+        )
 
         XCTAssertTrue(
-            urlSchemeCompatibilitySource.contains(
-                "SafariExtensionURLSchemeCompatibility"
-            )
+            managerSource.contains(
+                "WKWebExtension.MatchPattern.registerCustomURLScheme"
+            ),
+            "The Safari-shaped scheme must be registered with WebKit before contexts are created"
         )
         XCTAssertTrue(
-            urlSchemeCompatibilitySource.contains("safari-web-extension://")
+            managerSource.contains("safari-web-extension")
+                && installationSource.contains("Self.safariWebExtensionURLScheme")
+                && installationSource.contains("extensionContext.baseURL = baseURL"),
+            "Extension contexts should use the registered Safari-shaped base URL directly"
         )
-        XCTAssertTrue(
-            urlSchemeCompatibilitySource.contains("runtime.getURL = wrapped")
-        )
-        XCTAssertTrue(
-            urlSchemeCompatibilitySource.contains("toInternalString")
-        )
-        XCTAssertTrue(
-            urlSchemeCompatibilitySource.contains("Reflect.get(target, property, target)"),
-            "Wrapped iframe WindowProxy access must preserve native DOM accessor receivers"
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: deletedURLShim.path),
+            "Native custom-scheme support should replace the URL rewriting shim"
         )
         assertExcludes(
-            urlSchemeCompatibilitySource,
+            runtimeSources,
             [
-                "patchManifestForWebKit",
-                "ExtensionRuntimeResources",
-                "sumi_webkit_runtime_compat",
-                "selective_content_script_guard",
+                "SafariExtensionURLSchemeCompatibility",
+                "installURLSchemeCompatibilityPreludes",
+                "runtime.getURL = wrapped",
+                "toInternalString",
             ],
-            context: "URL scheme compatibility"
+            context: "native Safari extension URL scheme"
         )
     }
 
     func testExternallyConnectableIsNotIntroducedAsSiteAccessSurface() throws {
-        let storeSource = try source(named: extensionManagerPaths[18])
-        let diagnosticsSource = try source(named: extensionManagerPaths[17])
+        let storeSource = try source(named: extensionManagerPaths[17])
+        let diagnosticsSource = try source(named: extensionManagerPaths[16])
 
         XCTAssertTrue(
             diagnosticsSource.contains("externallyConnectableReportedSeparately"),
@@ -315,7 +335,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let managerSource = try source(named: extensionManagerPaths[3])
         let installationSource = try source(named: extensionManagerPaths[0])
         let controllerDelegateSource = try source(named: extensionManagerPaths[7])
-        let storeSource = try source(named: extensionManagerPaths[18])
+        let storeSource = try source(named: extensionManagerPaths[17])
 
         XCTAssertTrue(profilesSource.contains("if forceReload {"))
         XCTAssertFalse(
@@ -483,24 +503,34 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         )
     }
 
-    func testTabAwarePermissionAPIsAreAvailableButNotYetPreferred() throws {
+    func testTabAwarePermissionAPIsArePreferredWhenTabIsKnown() throws {
         let installationSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+Installation.swift"
         )
         let controllerSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
         )
+        let uiSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
+        )
 
         XCTAssertTrue(controllerSource.contains("in tab: (any WKWebExtensionTab)?"))
-        XCTExpectFailure(
-            "Current permission decisions still use mostly global WebKit permission APIs. Goal 2 should prefer permissionStatus(for:in:) when tab context is known."
-        ) {
-            XCTAssertTrue(
-                installationSource.contains("permissionStatus(for: url, in:")
-                    || installationSource.contains("setPermissionStatus(.grantedExplicitly, for: url, in:"),
-                "Known-tab permission decisions should use/pass tab context"
-            )
-        }
+        XCTAssertTrue(
+            installationSource.contains("permissionStatus(for: permission, in: tab)")
+                && installationSource.contains("permissionStatus(for: matchPattern, in: tab)")
+                && installationSource.contains("permissionStatus(for: url, in: tab)"),
+            "The shared permission status helper must evaluate permissions, match patterns, and URLs in the supplied tab context"
+        )
+        XCTAssertTrue(
+            controllerSource.contains("effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)")
+                && controllerSource.contains("effectivePermissionStatus(for: url, in: extensionContext, tab: tab)")
+                && uiSource.contains("effectivePermissionStatus("),
+            "WebKit permission prompts and action access checks must fall back to global grants when tab-aware status is unknown"
+        )
+        XCTAssertTrue(
+            installationSource.contains("permissionStatus(for: pattern, in: tab)"),
+            "Common host-permission helpers must preserve tab-aware granted match patterns"
+        )
     }
 
     func testRaindropAndRescanPathsDoNotRestoreMV3Shims() throws {

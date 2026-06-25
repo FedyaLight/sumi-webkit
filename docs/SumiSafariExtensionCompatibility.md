@@ -215,8 +215,9 @@ Evidence base:
   and [Safari optimization / MV3 guidance](https://developer.apple.com/documentation/safariservices/optimizing-your-web-extension-for-safari).
 - Public architecture references only:
   [Bitwarden browser native-messaging `desktop_proxy` documentation](https://contributing.bitwarden.com/getting-started/clients/browser/biometric/)
-  and [DuckDuckGo `apple-browsers`](https://github.com/duckduckgo/apple-browsers);
-  no code copied and no product-specific runtime branch added.
+  and [DuckDuckGo `apple-browsers`](https://github.com/duckduckgo/apple-browsers)
+  for the bounded Bitwarden desktop-integration path only; Safari-like extension
+  import / popup / autofill readiness does not depend on `desktop_proxy`.
 
 ### Already Correct
 
@@ -400,7 +401,7 @@ Source guards: `SafariExtensionCleanImportSourceGuardTests`, `scripts/check_safa
 | Component | Status |
 |-----------|--------|
 | Per-profile extension runtime | **Fixed** — `WKWebExtensionController` + `WKWebExtensionContext` + `WKWebsiteDataStore` per Sumi profile |
-| Profile-scoped context identity | **Added** — scoped `uniqueIdentifier` / `baseURL` prevent cross-profile context collision |
+| Profile-scoped context identity | **Updated** — stable public `uniqueIdentifier` preserves `runtime.id` / website messaging; scoped `baseURL` prevents cross-profile extension-page collision |
 | Tab/window bridge filtering | **Updated** — adapters expose only same-profile tabs/windows |
 | Native messaging relay scope | **Updated** — ports associated with `(profileID, extensionID)` |
 | Private tab popup guard | **Preserved** — ephemeral tabs remain ineligible for action popups |
@@ -649,7 +650,7 @@ Generic fix (public WebKit APIs only):
 
 - One persistent `WKWebsiteDataStore(forIdentifier: profileId)` per Sumi profile (unchanged).
 - One `WKWebExtensionController.Configuration(identifier:)` per profile (distinct from profile store ID).
-- One loaded `WKWebExtensionContext` per `(profileId, extensionId)` with profile-scoped identity.
+- One loaded `WKWebExtensionContext` per `(profileId, extensionId)` with stable public `uniqueIdentifier` and a profile-scoped `baseURL`.
 - Tab WebViews late-bind the controller for their tab's profile.
 - Action popup resolves profile from active tab before loading context.
 - Native messaging ports record owning profile ID.

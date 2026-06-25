@@ -40,6 +40,7 @@ extension ExtensionManager {
             (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
         var webExtensionDataCleanup: (@MainActor (String) async -> Bool)?
         var didOpenTab: ((UUID) -> Void)?
+        var didDeferOpenTab: ((UUID, String) -> Void)?
         var didCloseTab: ((UUID) -> Void)?
         var didChangeTabProperties:
             ((UUID, WKWebExtension.TabChangedProperties) -> Void)?

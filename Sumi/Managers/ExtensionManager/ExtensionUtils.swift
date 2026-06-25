@@ -162,19 +162,6 @@ struct ExtensionUtils {
         return iconPath(in: extensionRoot, manifest: installedExtension.manifest)
     }
 
-    static func webKitLoadableExtensionURL(for url: URL) -> URL {
-        guard url.scheme?.lowercased() == "safari-web-extension",
-              var components = URLComponents(
-                  url: url,
-                  resolvingAgainstBaseURL: false
-              )
-        else {
-            return url
-        }
-        components.scheme = "webkit-extension"
-        return components.url ?? url
-    }
-
     static func applicationSupportRoot() -> URL {
         let root = FileManager.default.urls(
             for: .applicationSupportDirectory,

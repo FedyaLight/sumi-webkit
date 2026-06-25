@@ -49,6 +49,103 @@ final class SafariExtensionScannerTests: XCTestCase {
         XCTAssertNotNil(candidates[0].manifestURL)
     }
 
+    func testDiscoversSafariContentBlockerInsideAppBundle() throws {
+        let appURL = try SafariExtensionScannerTestSupport.makeContainingAppBundle(
+            in: scratchDirectory,
+            appName: "Content Shield",
+            appBundleIdentifier: "com.example.contentshield",
+            extensions: [
+                .init(
+                    name: "General Blocker",
+                    bundleIdentifier: "com.example.contentshield.general",
+                    displayName: "General",
+                    extensionPointIdentifier: SafariExtensionScanner.safariContentBlockerExtensionPointIdentifier,
+                    includeManifest: false,
+                    includeExtensionAttributes: false
+                ),
+            ]
+        )
+
+        let scanner = SafariExtensionScanner()
+        var issues: [SafariExtensionScannerIssue] = []
+        let candidates = scanner.inspectContainingAppBundle(at: appURL, issues: &issues)
+
+        XCTAssertTrue(issues.isEmpty)
+        XCTAssertEqual(candidates.count, 1)
+        XCTAssertEqual(candidates[0].extensionBundleIdentifier, "com.example.contentshield.general")
+        XCTAssertEqual(candidates[0].bundleKind, .contentBlocker)
+        XCTAssertEqual(candidates[0].runtimeStatus, .contentBlockerImportable)
+        XCTAssertNil(candidates[0].manifestURL)
+    }
+
+    func testDiscoversLegacySafariAppExtensionAsUnsupportedCandidate() throws {
+        let appexURL = try SafariExtensionScannerTestSupport.makeStandaloneAppex(
+            in: scratchDirectory,
+            specification: .init(
+                name: "PopupExtension",
+                bundleIdentifier: "com.example.legacy.popup",
+                displayName: "Popup Extension",
+                extensionPointIdentifier: SafariExtensionScanner.legacySafariExtensionPointIdentifier,
+                includeManifest: false,
+                includeExtensionAttributes: false
+            )
+        )
+
+        let scanner = SafariExtensionScanner()
+        var issues: [SafariExtensionScannerIssue] = []
+        let candidate = scanner.inspectAppexBundle(at: appexURL, issues: &issues)
+
+        XCTAssertTrue(issues.isEmpty)
+        XCTAssertEqual(candidate?.bundleKind, .legacySafariAppExtension)
+        XCTAssertEqual(candidate?.runtimeStatus, .unsupportedLegacySafariAppExtension)
+        XCTAssertNil(candidate?.manifestURL)
+    }
+
+    func testDiscoversMultipleSafariAppexKindsInsideSameAppBundle() throws {
+        let appsDirectory = scratchDirectory.appendingPathComponent("Applications", isDirectory: true)
+        try FileManager.default.createDirectory(at: appsDirectory, withIntermediateDirectories: true)
+
+        _ = try SafariExtensionScannerTestSupport.makeContainingAppBundle(
+            in: appsDirectory,
+            appName: "Mixed",
+            appBundleIdentifier: "com.example.mixed",
+            extensions: [
+                .init(
+                    name: "Mixed Web",
+                    bundleIdentifier: "com.example.mixed.web",
+                    displayName: "Mixed Web"
+                ),
+                .init(
+                    name: "Mixed Blocker",
+                    bundleIdentifier: "com.example.mixed.blocker",
+                    displayName: "Mixed Blocker",
+                    extensionPointIdentifier: SafariExtensionScanner.safariContentBlockerExtensionPointIdentifier,
+                    includeManifest: false,
+                    includeExtensionAttributes: false
+                ),
+                .init(
+                    name: "Mixed Legacy",
+                    bundleIdentifier: "com.example.mixed.legacy",
+                    displayName: "Mixed Legacy",
+                    extensionPointIdentifier: SafariExtensionScanner.legacySafariExtensionPointIdentifier,
+                    includeManifest: false,
+                    includeExtensionAttributes: false
+                ),
+            ]
+        )
+
+        let scanner = SafariExtensionScanner()
+        var issues: [SafariExtensionScannerIssue] = []
+        let candidates = scanner.scanInstalledExtensions(
+            applicationSearchRoots: [appsDirectory],
+            issues: &issues
+        )
+
+        XCTAssertTrue(issues.isEmpty)
+        XCTAssertEqual(Set(candidates.map(\.bundleKind)), [.webExtension, .contentBlocker, .legacySafariAppExtension])
+        XCTAssertEqual(candidates.count, 3)
+    }
+
     func testRejectsNonSafariAppex() throws {
         let appexURL = try SafariExtensionScannerTestSupport.makeStandaloneAppex(
             in: scratchDirectory,

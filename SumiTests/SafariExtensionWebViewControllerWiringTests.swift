@@ -1671,6 +1671,14 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertEqual(preparedProfileId, profile.id)
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
 
+        var openedTabIDs: [UUID] = []
+        var deferredOpenReasons: [String] = []
+        manager.testHooks.didOpenTab = { openedTabIDs.append($0) }
+        manager.testHooks.didDeferOpenTab = { _, reason in
+            deferredOpenReasons.append(reason)
+        }
+        defer { manager.clearDebugState() }
+
         let tab = try manager.openExtensionRequestedTab(
             url: pageURL,
             shouldBeActive: true,
@@ -1683,18 +1691,17 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertEqual(tab.url, pageURL)
         XCTAssertEqual(tab.spaceId, space.id)
         XCTAssertNil(tab.webViewConfigurationOverride)
-        if tab.extensionRuntimeOpenNotifiedWithLoadedContexts != true {
-            attachUsableExtensionWebView(
-                to: tab,
-                manager: manager,
-                profile: profile
-            )
-            manager.registerExtensionCreatedTabWithExtensionRuntime(
-                tab,
-                reason: "SafariExtensionWebViewControllerWiringTests.lazyMaterialization"
-            )
-        }
-        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+        XCTAssertNotNil(tab.assignedWebView ?? tab.existingWebView)
+        XCTAssertEqual(
+            openedTabIDs.filter { $0 == tab.id }.count,
+            1,
+            "deferredOpenReasons=\(deferredOpenReasons)"
+        )
+        XCTAssertEqual(
+            tab.extensionRuntimeOpenNotifiedWithLoadedContexts,
+            true,
+            "deferredOpenReasons=\(deferredOpenReasons)"
+        )
         XCTAssertTrue(tab.didNotifyOpenToExtensions)
     }
 
@@ -1832,7 +1839,12 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
 
         var openedTabIDs: [UUID] = []
+        var deferredOpenReasons: [String] = []
         manager.testHooks.didOpenTab = { openedTabIDs.append($0) }
+        manager.testHooks.didDeferOpenTab = { _, reason in
+            deferredOpenReasons.append(reason)
+        }
+        defer { manager.clearDebugState() }
         let openedWindow = expectation(description: "extension normal window opened")
         var completionWindow: (any WKWebExtensionWindow)?
         var completionError: (any Error)?
@@ -1867,19 +1879,17 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let tab = try XCTUnwrap(
             browserManager.tabManager.allTabs().first { $0.url == pageURL }
         )
-        if openedTabIDs.isEmpty {
-            attachUsableExtensionWebView(
-                to: tab,
-                manager: manager,
-                profile: profile
-            )
-            manager.registerExtensionCreatedTabWithExtensionRuntime(
-                tab,
-                reason: "SafariExtensionWebViewControllerWiringTests.lazyMaterialization"
-            )
-        }
-        XCTAssertEqual(openedTabIDs.count, 1)
-        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+        XCTAssertNotNil(tab.assignedWebView ?? tab.existingWebView)
+        XCTAssertEqual(
+            openedTabIDs.count,
+            1,
+            "deferredOpenReasons=\(deferredOpenReasons)"
+        )
+        XCTAssertEqual(
+            tab.extensionRuntimeOpenNotifiedWithLoadedContexts,
+            true,
+            "deferredOpenReasons=\(deferredOpenReasons)"
+        )
         XCTAssertTrue(tab.didNotifyOpenToExtensions)
     }
 
@@ -2620,9 +2630,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
-    func testConfigureContextIdentitySetsWebkitExtensionBaseURL() async throws {
+    func testConfigureContextIdentityKeepsPublicIdentifierAndScopesBaseURL() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
+        let otherProfile = Profile(name: "Profile B")
         let manager = makeManager(
             context: container.mainContext,
             profile: profile
@@ -2645,15 +2656,25 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         let webExtension = try await WKWebExtension(resourceBaseURL: directoryURL)
         let extensionContext = WKWebExtensionContext(for: webExtension)
+        let otherExtensionContext = WKWebExtensionContext(for: webExtension)
         manager.configureContextIdentity(
             extensionContext,
             extensionId: extensionId,
             profileId: profile.id
         )
+        manager.configureContextIdentity(
+            otherExtensionContext,
+            extensionId: extensionId,
+            profileId: otherProfile.id
+        )
 
         let baseURL = try XCTUnwrap(extensionContext.baseURL)
-        XCTAssertEqual(baseURL.scheme, "webkit-extension")
+        let otherBaseURL = try XCTUnwrap(otherExtensionContext.baseURL)
+        XCTAssertEqual(extensionContext.uniqueIdentifier, extensionId)
+        XCTAssertEqual(otherExtensionContext.uniqueIdentifier, extensionId)
+        XCTAssertEqual(baseURL.scheme, "safari-web-extension")
         XCTAssertTrue(baseURL.host?.hasPrefix("ext-") == true)
+        XCTAssertNotEqual(baseURL.host, otherBaseURL.host)
     }
 
     func testPrepareWebViewForExtensionRuntimeAttachesControllerOnBlankWebView() throws {

@@ -183,7 +183,7 @@ final class ProtonPassSafariApplicationIDAdapterTests: XCTestCase {
     }
 
     func testReadFromClipboardReturnsRawStringFromClipboardReader() async throws {
-        let clipboard = FakeProtonPassSafariClipboardReader(value: "copied-secret")
+        let clipboard = FakeProtonPassSafariClipboard(value: "copied-secret")
         let adapter = ProtonPassSafariApplicationIDAdapter(
             store: InMemoryProtonPassSafariCompanionStore(),
             clipboard: clipboard
@@ -204,7 +204,7 @@ final class ProtonPassSafariApplicationIDAdapterTests: XCTestCase {
     func testReadFromClipboardEmptyPasteboardReturnsEmptyString() async throws {
         let adapter = ProtonPassSafariApplicationIDAdapter(
             store: InMemoryProtonPassSafariCompanionStore(),
-            clipboard: FakeProtonPassSafariClipboardReader(value: nil)
+            clipboard: FakeProtonPassSafariClipboard(value: nil)
         )
         let context = try makeProtonContext(profileId: UUID())
 
@@ -221,7 +221,7 @@ final class ProtonPassSafariApplicationIDAdapterTests: XCTestCase {
     func testReadFromClipboardRequiresObjectPayload() async throws {
         let adapter = ProtonPassSafariApplicationIDAdapter(
             store: InMemoryProtonPassSafariCompanionStore(),
-            clipboard: FakeProtonPassSafariClipboardReader(value: "copied-secret")
+            clipboard: FakeProtonPassSafariClipboard(value: "copied-secret")
         )
         let context = try makeProtonContext(profileId: UUID())
 
@@ -245,7 +245,7 @@ final class ProtonPassSafariApplicationIDAdapterTests: XCTestCase {
     func testReadFromClipboardHandledDiagnosticsDoNotExposeClipboardContent() async throws {
         let adapter = ProtonPassSafariApplicationIDAdapter(
             store: InMemoryProtonPassSafariCompanionStore(),
-            clipboard: FakeProtonPassSafariClipboardReader(value: "copied-secret")
+            clipboard: FakeProtonPassSafariClipboard(value: "copied-secret")
         )
         let context = try makeProtonContext(profileId: UUID())
 
@@ -270,10 +270,11 @@ final class ProtonPassSafariApplicationIDAdapterTests: XCTestCase {
         XCTAssertFalse(handledLine.contains("copied-secret"))
     }
 
-    func testWriteToClipboardRemainsUnsupported() async throws {
+    func testWriteToClipboardWritesContentWithoutReturningIt() async throws {
+        let clipboard = FakeProtonPassSafariClipboard(value: nil)
         let adapter = ProtonPassSafariApplicationIDAdapter(
             store: InMemoryProtonPassSafariCompanionStore(),
-            clipboard: FakeProtonPassSafariClipboardReader(value: nil)
+            clipboard: clipboard
         )
         let context = try makeProtonContext(profileId: UUID())
 
@@ -284,14 +285,32 @@ final class ProtonPassSafariApplicationIDAdapterTests: XCTestCase {
         )
 
         XCTAssertNil(reply.value)
+        XCTAssertNil(reply.error)
+        XCTAssertEqual(clipboard.writtenStrings, ["copied-secret"])
+    }
+
+    func testWriteToClipboardRequiresContentString() async throws {
+        let adapter = ProtonPassSafariApplicationIDAdapter(
+            store: InMemoryProtonPassSafariCompanionStore(),
+            clipboard: FakeProtonPassSafariClipboard(value: nil)
+        )
+        let context = try makeProtonContext(profileId: UUID())
+
+        let reply = await handle(
+            adapter: adapter,
+            context: context,
+            message: #"{"writeToClipboard":{"Content":42}}"#
+        )
+
+        XCTAssertNil(reply.value)
         let error = try XCTUnwrap(reply.error as NSError?)
         XCTAssertEqual(
             error.code,
             SumiNativeMessagingRelay.ErrorCode
-                .companionApplicationUnsupportedMessageType.rawValue
+                .companionApplicationInvalidPayload.rawValue
         )
         XCTAssertEqual(error.userInfo["SumiCompanionSelectedType"] as? String, "writeToClipboard")
-        XCTAssertFalse(String(describing: error.userInfo).contains("copied-secret"))
+        assertNoSensitiveMetadata(in: error.userInfo)
     }
 
     func testMalformedJSONFailsWithoutExposingPayload() async throws {
@@ -552,9 +571,10 @@ final class ProtonPassSafariApplicationIDAdapterTests: XCTestCase {
 
 @available(macOS 15.5, *)
 @MainActor
-private final class FakeProtonPassSafariClipboardReader: ProtonPassSafariClipboardReading {
+private final class FakeProtonPassSafariClipboard: ProtonPassSafariClipboardAccessing {
     private let value: String?
     private(set) var readCount = 0
+    private(set) var writtenStrings: [String] = []
 
     init(value: String?) {
         self.value = value
@@ -563,5 +583,10 @@ private final class FakeProtonPassSafariClipboardReader: ProtonPassSafariClipboa
     func readString() -> String? {
         readCount += 1
         return value
+    }
+
+    func writeString(_ string: String) -> Bool {
+        writtenStrings.append(string)
+        return true
     }
 }

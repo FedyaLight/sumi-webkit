@@ -137,6 +137,60 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertTrue(report.globalSuppressionReport.repeatedCallSuppressionEnabled)
     }
 
+    func testRuntimeDiagnosticReportIncludesSafariBundleKindSummary() {
+        let contentBlocker = makeCandidate(
+            bundleIdentifier: "com.example.blocker",
+            displayName: "Blocker",
+            extensionPointIdentifier: SafariExtensionScanner.safariContentBlockerExtensionPointIdentifier,
+            bundleKind: .contentBlocker,
+            runtimeStatus: .contentBlockerImportable
+        )
+        let legacy = makeCandidate(
+            bundleIdentifier: "com.example.legacy",
+            displayName: "Legacy",
+            extensionPointIdentifier: SafariExtensionScanner.legacySafariExtensionPointIdentifier,
+            bundleKind: .legacySafariAppExtension,
+            runtimeStatus: .unsupportedLegacySafariAppExtension
+        )
+
+        let report = SafariExtensionRuntimeDiagnosticsBuilder.build(
+            targets: [],
+            discovered: [contentBlocker, legacy],
+            importStore: importStore,
+            contentBlockerRecords: [
+                InstalledSafariContentBlockerRecord(
+                    id: "com.example.blocker",
+                    extensionBundleIdentifier: "com.example.blocker",
+                    displayName: "Blocker",
+                    version: "1",
+                    containingAppName: "Example",
+                    containingAppBundleIdentifier: "com.example.app",
+                    appexPath: "/tmp/Blocker.appex",
+                    containingAppPath: "/tmp/Example.app",
+                    resourceFingerprint: "fingerprint",
+                    isEnabled: true,
+                    installDate: Date(timeIntervalSince1970: 0),
+                    lastUpdateDate: Date(timeIntervalSince1970: 1),
+                    compileStatus: .available,
+                    lastError: nil,
+                    ruleListCount: 1,
+                    ignoredEmptyRuleListCount: 0
+                ),
+            ],
+            attachedSafariContentRuleListIdentifiers: ["sumi.safariContentBlocker.example"]
+        )
+
+        XCTAssertEqual(report.discoveredBundleKindCounts["contentBlocker"], 1)
+        XCTAssertEqual(report.discoveredBundleKindCounts["legacySafariAppExtension"], 1)
+        XCTAssertEqual(report.contentBlockers.first?.compileStatus, .available)
+        XCTAssertEqual(report.contentBlockers.first?.ruleListCount, 1)
+        XCTAssertEqual(report.attachedSafariContentRuleListIdentifiers, ["sumi.safariContentBlocker.example"])
+        XCTAssertEqual(report.unsupportedLegacyCandidates.first?.extensionBundleIdentifier, "com.example.legacy")
+        XCTAssertTrue(
+            report.unsupportedLegacyCandidates.first?.reason.contains("public WebKit APIs") == true
+        )
+    }
+
     func testAcceptanceMatrixIncludesGlobalProbes() {
         let matrix = SafariExtensionAcceptanceMatrixBuilder.build(
             targets: [SafariExtensionCompatibilityTargets.all[0]],
@@ -207,5 +261,28 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
 
         XCTAssertEqual(report.entries[0].manualVerification.importEnable, .yes)
         XCTAssertEqual(report.entries[0].manualVerification.saveFlow, .yes)
+    }
+
+    private func makeCandidate(
+        bundleIdentifier: String,
+        displayName: String,
+        extensionPointIdentifier: String,
+        bundleKind: SafariExtensionBundleKind,
+        runtimeStatus: SafariExtensionRuntimeStatus
+    ) -> DiscoveredSafariExtensionCandidate {
+        DiscoveredSafariExtensionCandidate(
+            extensionBundleIdentifier: bundleIdentifier,
+            displayName: displayName,
+            version: "1",
+            extensionPointIdentifier: extensionPointIdentifier,
+            bundleKind: bundleKind,
+            runtimeStatus: runtimeStatus,
+            containingAppName: "Example",
+            containingAppBundleIdentifier: "com.example.app",
+            containingAppURL: URL(fileURLWithPath: "/tmp/Example.app"),
+            appexURL: URL(fileURLWithPath: "/tmp/\(displayName).appex"),
+            manifestURL: nil,
+            isReadable: true
+        )
     }
 }

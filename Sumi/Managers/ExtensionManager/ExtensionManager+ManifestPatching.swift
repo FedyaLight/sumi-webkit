@@ -107,6 +107,11 @@ extension ExtensionManager {
                 "The selected bundle is not a Safari Web Extension"
             )
         }
+        guard candidate.bundleKind == .webExtension else {
+            throw ExtensionError.installationFailed(
+                "The selected bundle is a \(candidate.bundleKind.title), not a Safari Web Extension"
+            )
+        }
 
         let resourcesURL = try SafariAppExtensionResources.resourcesRoot(in: appexURL)
         return ResolvedInstallSource(
@@ -122,6 +127,7 @@ extension ExtensionManager {
         var issues: [SafariExtensionScannerIssue] = []
         let scanner = SafariExtensionScanner()
         let candidates = scanner.inspectContainingAppBundle(at: appURL, issues: &issues)
+            .filter { $0.bundleKind == .webExtension }
 
         guard candidates.isEmpty == false else {
             if let issue = issues.first {

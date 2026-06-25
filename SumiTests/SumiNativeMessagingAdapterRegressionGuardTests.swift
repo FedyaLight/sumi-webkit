@@ -145,6 +145,7 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
     func testProtonSpecificLogicIsIsolatedToCompanionBackendLayer() throws {
         let allowedFiles = Set([
             "Sumi/Managers/ExtensionManager/SafariExtension/ProtonNativeMessagingIdentifiers.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppIdentityMetadata.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/CompanionApplicationMessageRouter.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariApplicationIDAdapter.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariCompanionStore.swift",
@@ -222,10 +223,7 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         XCTAssertEqual(report.adapterCompatibility.count, SafariExtensionCompatibilityTargets.all.count)
         XCTAssertEqual(
             report.registeredAdapterIdentifiers,
-            [
-                BitwardenNativeMessagingIdentifiers.protocolIdentifier,
-                StandardNativeMessagingHostBackend.backendIdentifier,
-            ].sorted()
+            [BitwardenNativeMessagingIdentifiers.protocolIdentifier]
         )
         let bitwarden = report.adapterCompatibility.first { $0.targetKey == "bitwarden" }
         XCTAssertEqual(bitwarden?.adapterSelected, true)

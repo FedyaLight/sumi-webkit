@@ -39,7 +39,7 @@ final class SafariExtensionImportStore: @unchecked Sendable {
 
     func refreshDiscoveredCandidates(_ candidates: [DiscoveredSafariExtensionCandidate]) {
         let now = Date()
-        let records = candidates.map {
+        let records = candidates.filter { $0.bundleKind == .webExtension }.map {
             SafariExtensionImportCandidateRecord(
                 extensionBundleIdentifier: $0.extensionBundleIdentifier,
                 appexPath: $0.appexURL.path,

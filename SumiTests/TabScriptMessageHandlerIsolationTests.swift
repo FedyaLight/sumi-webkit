@@ -229,7 +229,6 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         XCTAssertTrue(source.contains("method: \"canBeSuspended\""))
 
         for forbiddenConstructor in [
-            "SumiTrackingProtection(",
             "SumiContentBlockingService(",
             "ExtensionManager(",
             "SumiExtensionsModule",
@@ -242,6 +241,18 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         ] {
             XCTAssertFalse(source.contains(forbiddenConstructor))
         }
+    }
+
+    func testLinkInteractionSourceCachesHoveredAnchorFastPaths() throws {
+        let source = try Self.source(named: "Sumi/Models/Tab/Tab+ScriptMessageHandler.swift")
+
+        XCTAssertTrue(source.contains("let currentHoveredLinkElement = null;"))
+        XCTAssertTrue(source.contains("currentHoveredLinkElement.contains(event.target)"))
+        XCTAssertTrue(source.contains("currentHoveredLinkElement.contains(event.relatedTarget)"))
+        XCTAssertTrue(source.contains("currentHoveredLinkElement = nextTarget;"))
+        XCTAssertTrue(source.contains("if (currentHoveredLink === href)"))
+        XCTAssertTrue(source.contains("sendHover(\"linkHover\", href);"))
+        XCTAssertTrue(source.contains("}, { passive: true, capture: true });"))
     }
 
     private func linkContext(for tab: Tab) -> String {

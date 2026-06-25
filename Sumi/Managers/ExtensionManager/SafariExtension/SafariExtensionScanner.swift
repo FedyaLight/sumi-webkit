@@ -17,12 +17,42 @@ struct DiscoveredSafariExtensionCandidate: Identifiable, Equatable, Sendable {
     let displayName: String
     let version: String?
     let extensionPointIdentifier: String
+    let bundleKind: SafariExtensionBundleKind
+    let runtimeStatus: SafariExtensionRuntimeStatus
     let containingAppName: String
     let containingAppBundleIdentifier: String?
     let containingAppURL: URL
     let appexURL: URL
     let manifestURL: URL?
     let isReadable: Bool
+
+    init(
+        extensionBundleIdentifier: String,
+        displayName: String,
+        version: String?,
+        extensionPointIdentifier: String,
+        bundleKind: SafariExtensionBundleKind = .webExtension,
+        runtimeStatus: SafariExtensionRuntimeStatus = .webExtensionImportable,
+        containingAppName: String,
+        containingAppBundleIdentifier: String?,
+        containingAppURL: URL,
+        appexURL: URL,
+        manifestURL: URL?,
+        isReadable: Bool
+    ) {
+        self.extensionBundleIdentifier = extensionBundleIdentifier
+        self.displayName = displayName
+        self.version = version
+        self.extensionPointIdentifier = extensionPointIdentifier
+        self.bundleKind = bundleKind
+        self.runtimeStatus = runtimeStatus
+        self.containingAppName = containingAppName
+        self.containingAppBundleIdentifier = containingAppBundleIdentifier
+        self.containingAppURL = containingAppURL
+        self.appexURL = appexURL
+        self.manifestURL = manifestURL
+        self.isReadable = isReadable
+    }
 }
 
 enum SafariExtensionScannerIssue: Equatable, Sendable {
@@ -35,6 +65,8 @@ enum SafariExtensionScannerIssue: Equatable, Sendable {
 /// Filesystem scanner for installed Safari Web Extensions.
 struct SafariExtensionScanner {
     static let safariWebExtensionPointIdentifier = "com.apple.Safari.web-extension"
+    static let safariContentBlockerExtensionPointIdentifier = "com.apple.Safari.content-blocker"
+    static let legacySafariExtensionPointIdentifier = "com.apple.Safari.extension"
 
     private static let manifestRelativeCandidates = [
         "manifest.json",
@@ -68,6 +100,7 @@ struct SafariExtensionScanner {
     /// Scans application directories for Safari Web Extension `.appex` bundles.
     func scanInstalledExtensions(
         applicationSearchRoots: [URL]? = nil,
+        includeUnsupported: Bool = false,
         issues: inout [SafariExtensionScannerIssue]
     ) -> [DiscoveredSafariExtensionCandidate] {
         let roots = applicationSearchRoots ?? Self.defaultApplicationSearchRoots(
@@ -86,7 +119,11 @@ struct SafariExtensionScanner {
             }
 
             for appURL in appURLs where appURL.pathExtension == "app" {
-                let discovered = inspectContainingAppBundle(at: appURL, issues: &issues)
+                let discovered = inspectContainingAppBundle(
+                    at: appURL,
+                    includeUnsupported: includeUnsupported,
+                    issues: &issues
+                )
                 for candidate in discovered {
                     if let previous = seenExtensionIDs[candidate.extensionBundleIdentifier],
                        previous != candidate.appexURL
@@ -116,6 +153,7 @@ struct SafariExtensionScanner {
     /// Inspects a containing `.app` bundle for Safari Web Extension plug-ins.
     func inspectContainingAppBundle(
         at appURL: URL,
+        includeUnsupported: Bool = false,
         issues: inout [SafariExtensionScannerIssue]
     ) -> [DiscoveredSafariExtensionCandidate] {
         let pluginsURL = appURL
@@ -145,6 +183,7 @@ struct SafariExtensionScanner {
                 containingAppURL: appURL,
                 containingAppName: containingAppName,
                 containingAppBundleIdentifier: containingAppBundleID,
+                includeUnsupported: includeUnsupported,
                 issues: &issues
             )
         }
@@ -156,6 +195,7 @@ struct SafariExtensionScanner {
         containingAppURL: URL? = nil,
         containingAppName: String? = nil,
         containingAppBundleIdentifier: String? = nil,
+        includeUnsupported: Bool = false,
         issues: inout [SafariExtensionScannerIssue]
     ) -> DiscoveredSafariExtensionCandidate? {
         guard fileManager.isReadableFile(atPath: appexURL.path) else {
@@ -168,13 +208,14 @@ struct SafariExtensionScanner {
             return nil
         }
 
-        guard extensionPoint == Self.safariWebExtensionPointIdentifier else {
+        let bundleKind = Self.bundleKind(forExtensionPointIdentifier: extensionPoint)
+        guard bundleKind != .unsupported || includeUnsupported else {
             issues.append(.invalidExtensionPoint(appexURL, found: extensionPoint))
             return nil
         }
 
         let manifestURL = locateManifest(in: appexURL)
-        if manifestURL == nil {
+        if bundleKind == .webExtension, manifestURL == nil {
             issues.append(.missingManifest(appexURL))
         }
 
@@ -188,6 +229,11 @@ struct SafariExtensionScanner {
             displayName: bundleDisplayName(at: appexURL) ?? appexURL.deletingPathExtension().lastPathComponent,
             version: bundleShortVersion(at: appexURL),
             extensionPointIdentifier: extensionPoint,
+            bundleKind: bundleKind,
+            runtimeStatus: Self.runtimeStatus(
+                for: bundleKind,
+                isReadable: fileManager.isReadableFile(atPath: appexURL.path)
+            ),
             containingAppName: resolvedContainingName,
             containingAppBundleIdentifier: containingAppBundleIdentifier
                 ?? bundleIdentifier(at: resolvedContainingAppURL),
@@ -201,6 +247,38 @@ struct SafariExtensionScanner {
     func inspectAppexBundle(at appexURL: URL) -> DiscoveredSafariExtensionCandidate? {
         var issues: [SafariExtensionScannerIssue] = []
         return inspectAppexBundle(at: appexURL, issues: &issues)
+    }
+
+    static func bundleKind(
+        forExtensionPointIdentifier extensionPointIdentifier: String
+    ) -> SafariExtensionBundleKind {
+        switch extensionPointIdentifier {
+        case safariWebExtensionPointIdentifier:
+            return .webExtension
+        case safariContentBlockerExtensionPointIdentifier:
+            return .contentBlocker
+        case legacySafariExtensionPointIdentifier:
+            return .legacySafariAppExtension
+        default:
+            return .unsupported
+        }
+    }
+
+    private static func runtimeStatus(
+        for bundleKind: SafariExtensionBundleKind,
+        isReadable: Bool
+    ) -> SafariExtensionRuntimeStatus {
+        guard isReadable else { return .unreadable }
+        switch bundleKind {
+        case .webExtension:
+            return .webExtensionImportable
+        case .contentBlocker:
+            return .contentBlockerImportable
+        case .legacySafariAppExtension:
+            return .unsupportedLegacySafariAppExtension
+        case .unsupported:
+            return .unsupportedExtensionPoint
+        }
     }
 
     // MARK: - Bundle helpers

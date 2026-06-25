@@ -104,6 +104,16 @@ enum SafariExtensionScannerTestSupport {
             }
         }
 
+        let resourcesURL = contentsURL.appendingPathComponent("Resources", isDirectory: true)
+        for resource in specification.resourceFiles {
+            let resourceURL = resourcesURL.appendingPathComponent(resource.relativePath)
+            try FileManager.default.createDirectory(
+                at: resourceURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try resource.data.write(to: resourceURL, options: [.atomic])
+        }
+
         return appexURL
     }
 
@@ -151,5 +161,11 @@ enum SafariExtensionScannerTestSupport {
         var manifestVersion: Int = 3
         var includeActionPopup: Bool = false
         var hostPermissions: [String] = []
+        var resourceFiles: [SyntheticResourceFile] = []
+    }
+
+    struct SyntheticResourceFile {
+        var relativePath: String
+        var data: Data
     }
 }

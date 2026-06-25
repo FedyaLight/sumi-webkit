@@ -29,9 +29,11 @@ and DuckDuckGo [`apple-browsers`](https://github.com/duckduckgo/apple-browsers).
   `sendMessage` and `connectUsing` callbacks, backed by `WKWebExtension.MessagePort`.
 - The deleted externally-connectable bridge is not part of native messaging,
   popup lifecycle, or manual password-manager verification.
-- Bitwarden has a protocol adapter because its public desktop proxy protocol is
-  documented and test-covered. 1Password and Proton Pass intentionally remain
-  adapter-unavailable / protocol-unknown until a documented generic adapter exists.
+- Bitwarden's `desktop_proxy` adapter is a bounded desktop-integration path for
+  native messaging / biometrics probes. It is not required for base Safari-like
+  extension import, popup, or autofill UI readiness. 1Password and Proton Pass
+  intentionally remain adapter-unavailable / protocol-unknown until a documented
+  companion-app protocol exists.
 - Diagnostics may record identifiers, routing buckets, launch/suppression flags,
   retry buckets, and session state. They must not record credentials, tokens,
   cookies, form values, or native-message payload bodies.

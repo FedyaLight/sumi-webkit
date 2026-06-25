@@ -215,8 +215,6 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         for forbiddenPattern in [
             "ExtensionManager(",
             "NativeMessagingHandler(",
-            "SumiTrackingProtectionModule",
-            "SumiTrackingRuleListPipeline",
             "SumiContentBlockingService",
         ] {
             XCTAssertFalse(source.contains(forbiddenPattern), forbiddenPattern)

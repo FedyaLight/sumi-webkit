@@ -1287,7 +1287,9 @@ extension SumiExtensionsModule {
     func safariExtensionNativeMessagingProbe() -> SafariExtensionNativeMessagingProbeReport {
         var issues: [SafariExtensionScannerIssue] = []
         let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-        SafariExtensionImportStore.shared.refreshDiscoveredCandidates(discovered)
+        SafariExtensionImportStore.shared.refreshDiscoveredCandidates(
+            discovered.filter { $0.bundleKind == .webExtension }
+        )
 
         let manager = managerIfLoadedAndEnabled()
         let report = SafariExtensionNativeMessagingProbeBuilder.build(

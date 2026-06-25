@@ -54,8 +54,32 @@ struct SafariExtensionRuntimeDiagnosticEntry: Codable, Equatable, Sendable, Iden
 struct SafariExtensionRuntimeDiagnosticReport: Codable, Equatable, Sendable {
     let generatedAt: Date
     let entries: [SafariExtensionRuntimeDiagnosticEntry]
+    let discoveredBundleKindCounts: [String: Int]
+    let contentBlockers: [SafariContentBlockerRuntimeDiagnosticRecord]
+    let attachedSafariContentRuleListIdentifiers: [String]
+    let unsupportedLegacyCandidates: [UnsupportedSafariExtensionDiagnosticCandidate]
     let globalSuppressionReport: SafariExtensionNativeMessagingSuppressionReport
     let sdkProbeNote: String
+}
+
+struct SafariContentBlockerRuntimeDiagnosticRecord: Codable, Equatable, Sendable {
+    let extensionBundleIdentifier: String
+    let displayName: String
+    let containingAppName: String
+    let resourceFingerprint: String
+    let isEnabled: Bool
+    let compileStatus: SafariContentBlockerCompileStatus
+    let lastError: String?
+    let ruleListCount: Int
+    let ignoredEmptyRuleListCount: Int
+}
+
+struct UnsupportedSafariExtensionDiagnosticCandidate: Codable, Equatable, Sendable {
+    let extensionBundleIdentifier: String
+    let displayName: String
+    let containingAppName: String
+    let extensionPointIdentifier: String
+    let reason: String
 }
 
 @MainActor
@@ -65,6 +89,8 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         discovered: [DiscoveredSafariExtensionCandidate],
         importStore: SafariExtensionImportStore = .shared,
         installedExtensions: [InstalledExtension] = [],
+        contentBlockerRecords: [InstalledSafariContentBlockerRecord] = [],
+        attachedSafariContentRuleListIdentifiers: [String] = [],
         extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true
     ) -> SafariExtensionRuntimeDiagnosticReport {
@@ -113,6 +139,12 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         return SafariExtensionRuntimeDiagnosticReport(
             generatedAt: Date(),
             entries: entries,
+            discoveredBundleKindCounts: discoveredBundleKindCounts(discovered),
+            contentBlockers: contentBlockerRecords.map {
+                SafariContentBlockerRuntimeDiagnosticRecord(record: $0)
+            },
+            attachedSafariContentRuleListIdentifiers: attachedSafariContentRuleListIdentifiers.sorted(),
+            unsupportedLegacyCandidates: unsupportedLegacyCandidates(discovered),
             globalSuppressionReport: suppressionReport,
             sdkProbeNote: SafariExtensionHostRelayAPIProbe.sdkProbeNote
         )
@@ -279,6 +311,51 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
 
     private static func stringArray(from value: Any?) -> [String] {
         value as? [String] ?? []
+    }
+
+    private static func discoveredBundleKindCounts(
+        _ candidates: [DiscoveredSafariExtensionCandidate]
+    ) -> [String: Int] {
+        var counts = Dictionary(
+            uniqueKeysWithValues: SafariExtensionBundleKind.allCases.map { ($0.rawValue, 0) }
+        )
+        for candidate in candidates {
+            counts[candidate.bundleKind.rawValue, default: 0] += 1
+        }
+        return counts
+    }
+
+    private static func unsupportedLegacyCandidates(
+        _ candidates: [DiscoveredSafariExtensionCandidate]
+    ) -> [UnsupportedSafariExtensionDiagnosticCandidate] {
+        candidates
+            .filter { $0.bundleKind == .legacySafariAppExtension }
+            .map {
+                UnsupportedSafariExtensionDiagnosticCandidate(
+                    extensionBundleIdentifier: $0.extensionBundleIdentifier,
+                    displayName: $0.displayName,
+                    containingAppName: $0.containingAppName,
+                    extensionPointIdentifier: $0.extensionPointIdentifier,
+                    reason: "Legacy Safari App Extensions are hosted by Safari.app and cannot run inside Sumi through public WebKit APIs."
+                )
+            }
+            .sorted {
+                $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+            }
+    }
+}
+
+extension SafariContentBlockerRuntimeDiagnosticRecord {
+    init(record: InstalledSafariContentBlockerRecord) {
+        self.extensionBundleIdentifier = record.extensionBundleIdentifier
+        self.displayName = record.displayName
+        self.containingAppName = record.containingAppName
+        self.resourceFingerprint = record.resourceFingerprint
+        self.isEnabled = record.isEnabled
+        self.compileStatus = record.compileStatus
+        self.lastError = record.lastError
+        self.ruleListCount = record.ruleListCount
+        self.ignoredEmptyRuleListCount = record.ignoredEmptyRuleListCount
     }
 }
 
@@ -504,6 +581,8 @@ extension SumiExtensionsModule {
         let report = SafariExtensionRuntimeDiagnosticsBuilder.build(
             discovered: discovered,
             installedExtensions: manager?.installedExtensions ?? [],
+            contentBlockerRecords: installedSafariContentBlockers(),
+            attachedSafariContentRuleListIdentifiers: safariContentBlockerAttachedRuleListIdentifiers(),
             extensionManager: manager,
             extensionsModuleEnabled: isEnabled
         )

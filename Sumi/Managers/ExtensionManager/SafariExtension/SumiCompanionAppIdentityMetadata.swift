@@ -11,22 +11,12 @@ import Foundation
 enum SumiCompanionAppIdentityMetadata {
     /// Extension-requested identifiers that differ from the containing `.app` bundle ID.
     static var publicHostBundleIdentifierAliases: [String: String] {
-        var aliases = [
+        [
             "com.8bit.bitwarden": "com.bitwarden.desktop",
             "com.8bit.bitwarden.desktop": "com.bitwarden.desktop",
+            ProtonNativeMessagingIdentifiers.requestedApplicationIdentifier:
+                ProtonNativeMessagingIdentifiers.safariHostBundleIdentifier,
         ]
-
-        for mapping in StandardNativeMessagingHostCompatibilityRecords.all {
-            guard let resolvedIdentifier = mapping.registryHostBundleIdentifiers.first else {
-                continue
-            }
-            for requestedIdentifier in mapping.requestedApplicationIdentifiers
-            where requestedIdentifier != resolvedIdentifier {
-                aliases[requestedIdentifier] = resolvedIdentifier
-            }
-        }
-
-        return aliases
     }
 
     /// Stable public host bundle identifiers (diagnostics / resolution tables only).
@@ -34,8 +24,9 @@ enum SumiCompanionAppIdentityMetadata {
         Set([
             "com.bitwarden.desktop",
             "com.1password.safari",
+            ProtonNativeMessagingIdentifiers.safariHostBundleIdentifier,
             "io.raindrop.safari",
-        ]).union(StandardNativeMessagingHostCompatibilityRecords.registryHostBundleKeys)
+        ])
     }
 
     static func normalizedHostBundleIdentifier(_ identifier: String) -> String {

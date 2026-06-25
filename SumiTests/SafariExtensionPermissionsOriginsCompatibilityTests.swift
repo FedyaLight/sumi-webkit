@@ -7,6 +7,36 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
+    func testSDK27MatchPatternValidatorStillRejectsExplicitPorts() {
+        let validPatterns = [
+            "<all_urls>",
+            "http://localhost/*",
+            "http://127.0.0.1/*",
+            "https://example.com/*",
+            "*://*.example.com/*",
+        ]
+        for pattern in validPatterns {
+            XCTAssertNoThrow(
+                try WKWebExtension.MatchPattern(string: pattern),
+                "Expected WebKit to accept \(pattern)"
+            )
+        }
+
+        let portPatterns = [
+            "http://localhost:8080/*",
+            "http://127.0.0.1:8765/*",
+            "https://example.com:8443/*",
+            "http://*.example.com:8080/*",
+            "https://[::1]:8443/*",
+        ]
+        for pattern in portPatterns {
+            XCTAssertThrowsError(
+                try WKWebExtension.MatchPattern(string: pattern),
+                "Expected WebKit SDK 27 match-pattern validation to reject \(pattern)"
+            )
+        }
+    }
+
     func testNormalizesHTTPURLOriginWithPortToHostPattern() {
         XCTAssertEqual(
             SafariExtensionPermissionsOriginsCompatibility

@@ -60,6 +60,7 @@ final class ExtensionIconCache {
     private struct Entry {
         let modificationDate: Date?
         let image: NSImage
+        var lastChecked: Double
     }
 
     private static let maxEntries = 128
@@ -72,15 +73,24 @@ final class ExtensionIconCache {
 
     func image(extensionId: String, iconPath: String) -> NSImage? {
         let key = Self.cacheKey(extensionId: extensionId, iconPath: iconPath)
-        let modificationDate = Self.modificationDate(for: iconPath)
+        let now = Date.timeIntervalSinceReferenceDate
 
-        if let entry = entries[key],
-           entry.modificationDate == modificationDate
-        {
-            touch(key)
-            return entry.image
+        if var entry = entries[key] {
+            if now - entry.lastChecked < 5.0 {
+                touch(key)
+                return entry.image
+            }
+
+            let modificationDate = Self.modificationDate(for: iconPath)
+            if entry.modificationDate == modificationDate {
+                entry.lastChecked = now
+                entries[key] = entry
+                touch(key)
+                return entry.image
+            }
         }
 
+        let modificationDate = Self.modificationDate(for: iconPath)
         guard let image = imageLoader(iconPath) else {
             entries.removeValue(forKey: key)
             entryOrder.removeAll { $0 == key }
@@ -89,7 +99,8 @@ final class ExtensionIconCache {
 
         entries[key] = Entry(
             modificationDate: modificationDate,
-            image: image
+            image: image,
+            lastChecked: now
         )
         touch(key)
         evictIfNeeded()

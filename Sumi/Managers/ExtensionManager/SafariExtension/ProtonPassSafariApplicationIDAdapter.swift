@@ -14,11 +14,11 @@ final class ProtonPassSafariApplicationIDAdapter: CompanionApplicationMessageBac
     let backendIdentifier = "sumi.proton-pass-safari.application-id"
 
     private let store: ProtonPassSafariCompanionStore
-    private let clipboard: ProtonPassSafariClipboardReading
+    private let clipboard: ProtonPassSafariClipboardAccessing
 
     init(
         store: ProtonPassSafariCompanionStore = KeychainProtonPassSafariCompanionStore(),
-        clipboard: ProtonPassSafariClipboardReading = AppKitProtonPassSafariClipboardReader()
+        clipboard: ProtonPassSafariClipboardAccessing = AppKitProtonPassSafariClipboard()
     ) {
         self.store = store
         self.clipboard = clipboard
@@ -131,6 +131,18 @@ final class ProtonPassSafariApplicationIDAdapter: CompanionApplicationMessageBac
                 throw CompanionApplicationMessageError.invalidPayload(messageShape)
             }
             return clipboard.readString() ?? ""
+        }
+
+        if payload.keys.contains("writeToClipboard") {
+            guard let rawWrite = payload["writeToClipboard"] as? [String: Any],
+                  let content = rawWrite["Content"] as? String
+            else {
+                throw CompanionApplicationMessageError.invalidPayload(messageShape)
+            }
+            guard clipboard.writeString(content) else {
+                throw CompanionApplicationMessageError.secureStoreFailure
+            }
+            return nil
         }
 
         Self.logUnsupportedMessageShape(context: context, shape: messageShape)
@@ -442,14 +454,21 @@ final class ProtonPassSafariApplicationIDAdapter: CompanionApplicationMessageBac
 }
 
 @MainActor
-protocol ProtonPassSafariClipboardReading: AnyObject {
+protocol ProtonPassSafariClipboardAccessing: AnyObject {
     func readString() -> String?
+    func writeString(_ string: String) -> Bool
 }
 
 @MainActor
-final class AppKitProtonPassSafariClipboardReader: ProtonPassSafariClipboardReading {
+final class AppKitProtonPassSafariClipboard: ProtonPassSafariClipboardAccessing {
     func readString() -> String? {
         NSPasteboard.general.string(forType: .string)
+    }
+
+    func writeString(_ string: String) -> Bool {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        return pasteboard.setString(string, forType: .string)
     }
 }
 

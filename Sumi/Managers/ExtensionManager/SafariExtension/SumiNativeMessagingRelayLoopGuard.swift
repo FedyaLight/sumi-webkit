@@ -38,7 +38,7 @@ final class SumiNativeMessagingRelayLoopGuard {
     /// Public host bundle IDs with a documented Sumi relay implementation.
     nonisolated static let supportedRelayProtocolHostBundleIdentifiers: Set<String> = Set(
         [BitwardenNativeMessagingIdentifiers.hostBundleIdentifier]
-    ).union(StandardNativeMessagingHostCompatibilityRecords.registryHostBundleKeys)
+    )
 
     private static let baseCooldown: TimeInterval = 30
     private static let maxCooldown: TimeInterval = 300

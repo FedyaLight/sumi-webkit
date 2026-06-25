@@ -16,6 +16,12 @@ import WebKit
 @MainActor
 final class ExtensionManager: NSObject, ObservableObject {
     static let logger = Logger.sumi(category: "Extensions")
+    static let safariWebExtensionURLScheme = "safari-web-extension"
+    static let registerSafariWebExtensionURLScheme: Void = {
+        WKWebExtension.MatchPattern.registerCustomURLScheme(
+            safariWebExtensionURLScheme
+        )
+    }()
     static let controllerIdentifierKey =
         "\(SumiAppIdentity.bundleIdentifier).WKWebExtensionController.Identifier"
     nonisolated static let orphanedExtensionCleanupDefaultsKey =
@@ -203,8 +209,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         [String: [CheckedContinuation<ExtensionPermissionPromptDecision, Never>]] = [:]
     var permissionsOriginsCompatibilityInstallations:
         [ObjectIdentifier: Set<String>] = [:]
-    var urlSchemeCompatibilityInstallations:
-        [ObjectIdentifier: Set<String>] = [:]
     var extensionPageUserContentControllersByProfile:
         [UUID: WKUserContentController] = [:]
 
@@ -225,6 +229,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             PerformanceTrace.endInterval("ExtensionManager.init", signpostState)
         }
 
+        _ = Self.registerSafariWebExtensionURLScheme
         self.context = context
         self.browserConfiguration = browserConfiguration ?? .shared
         self.currentProfileId = initialProfile?.id

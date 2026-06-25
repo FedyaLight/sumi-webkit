@@ -473,6 +473,7 @@ extension ExtensionManager {
         expectedLoadGeneration: UInt64? = nil,
         postLoadBackgroundWakeReason: ExtensionBackgroundWakeReason? = nil
     ) async throws -> InstalledExtension {
+        let loadGeneration = expectedLoadGeneration ?? extensionLoadGeneration
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.loadEnabledExtension")
         defer {
             PerformanceTrace.endInterval("ExtensionManager.loadEnabledExtension", signpostState)
@@ -499,7 +500,7 @@ extension ExtensionManager {
             )
             let manifestURL = extensionRoot.appendingPathComponent("manifest.json")
             extensionRuntimeTrace(
-                "loadEnabledExtension start extensionId=\(entity.id) profileId=\(resolvedProfileId.uuidString) expectedGeneration=\(expectedLoadGeneration.map(String.init) ?? "nil") currentGeneration=\(extensionLoadGeneration) packagePath=\(extensionRoot.path)"
+                "loadEnabledExtension start extensionId=\(entity.id) profileId=\(resolvedProfileId.uuidString) expectedGeneration=\(loadGeneration) currentGeneration=\(extensionLoadGeneration) packagePath=\(extensionRoot.path)"
             )
             let validationStart = CFAbsoluteTimeGetCurrent()
             let manifest = try ExtensionUtils.validateManifest(
@@ -531,7 +532,7 @@ extension ExtensionManager {
                 $0.webExtensionCreationDuration =
                     CFAbsoluteTimeGetCurrent() - webExtensionStart
             }
-            try validateExpectedExtensionLoadGeneration(expectedLoadGeneration)
+            try validateExpectedExtensionLoadGeneration(loadGeneration)
             let extensionContext = WKWebExtensionContext(for: webExtension)
             configureContextIdentity(
                 extensionContext,
@@ -607,6 +608,7 @@ extension ExtensionManager {
                         webExtensionStorageSnapshot(for: entity.id)
                     )
                 #endif
+                try validateExpectedExtensionLoadGeneration(loadGeneration)
                 let contextLoadStart = CFAbsoluteTimeGetCurrent()
                 try extensionController.load(extensionContext)
                 recordRuntimeMetric(for: entity.id) {
@@ -1819,11 +1821,11 @@ extension ExtensionManager {
         profileId: UUID
     ) {
         let scopedIdentifier = "\(profileId.uuidString):\(extensionId)"
-        extensionContext.uniqueIdentifier = scopedIdentifier
+        extensionContext.uniqueIdentifier = extensionId
         let host =
             "ext-"
             + scopedIdentifier.utf8.map { String(format: "%02x", $0) }.joined()
-        if let baseURL = URL(string: "webkit-extension://\(host)") {
+        if let baseURL = URL(string: "\(Self.safariWebExtensionURLScheme)://\(host)") {
             extensionContext.baseURL = baseURL
         }
     }
@@ -1865,21 +1867,19 @@ extension ExtensionManager {
     ) {
         guard Self.manifestDeclaresNativeMessaging(manifest) else { return }
 
-        if #available(macOS 15.4, *) {
-            permissions.insert(.nativeMessaging)
-            extensionContext.setPermissionStatus(
-                .grantedExplicitly,
-                for: .nativeMessaging
+        permissions.insert(.nativeMessaging)
+        extensionContext.setPermissionStatus(
+            .grantedExplicitly,
+            for: .nativeMessaging
+        )
+        SafariExtensionNativeMessagingPermissionDiagnostics.logGrant(
+            extensionId: extensionId,
+            profileId: profileId,
+            manifestDeclaresNativeMessaging: true,
+            permissionGranted: isGrantedPermissionStatus(
+                extensionContext.permissionStatus(for: .nativeMessaging)
             )
-            SafariExtensionNativeMessagingPermissionDiagnostics.logGrant(
-                extensionId: extensionId,
-                profileId: profileId,
-                manifestDeclaresNativeMessaging: true,
-                permissionGranted: isGrantedPermissionStatus(
-                    extensionContext.permissionStatus(for: .nativeMessaging)
-                )
-            )
-        }
+        )
     }
 
     private static func requiredManifestWebExtensionPermissions(
@@ -2031,29 +2031,77 @@ extension ExtensionManager {
         status == .grantedExplicitly || status == .grantedImplicitly
     }
 
+    func effectivePermissionStatus(
+        for permission: WKWebExtension.Permission,
+        in extensionContext: WKWebExtensionContext,
+        tab: (any WKWebExtensionTab)?
+    ) -> WKWebExtensionContext.PermissionStatus {
+        guard let tab else {
+            return extensionContext.permissionStatus(for: permission)
+        }
+        let tabStatus = extensionContext.permissionStatus(for: permission, in: tab)
+        guard tabStatus == .unknown else { return tabStatus }
+        return extensionContext.permissionStatus(for: permission)
+    }
+
+    func effectivePermissionStatus(
+        for matchPattern: WKWebExtension.MatchPattern,
+        in extensionContext: WKWebExtensionContext,
+        tab: (any WKWebExtensionTab)?
+    ) -> WKWebExtensionContext.PermissionStatus {
+        guard let tab else {
+            return extensionContext.permissionStatus(for: matchPattern)
+        }
+        let tabStatus = extensionContext.permissionStatus(for: matchPattern, in: tab)
+        guard tabStatus == .unknown else { return tabStatus }
+        return extensionContext.permissionStatus(for: matchPattern)
+    }
+
+    func effectivePermissionStatus(
+        for url: URL,
+        in extensionContext: WKWebExtensionContext,
+        tab: (any WKWebExtensionTab)?
+    ) -> WKWebExtensionContext.PermissionStatus {
+        guard let tab else {
+            return extensionContext.permissionStatus(for: url)
+        }
+        let tabStatus = extensionContext.permissionStatus(for: url, in: tab)
+        guard tabStatus == .unknown else { return tabStatus }
+        return extensionContext.permissionStatus(for: url)
+    }
+
     func explicitlyGrantURLIfCoveredByGrantedMatchPattern(
         _ url: URL,
-        in extensionContext: WKWebExtensionContext
+        in extensionContext: WKWebExtensionContext,
+        tab: (any WKWebExtensionTab)? = nil
     ) -> Bool {
         var grantedPatterns = Set(extensionContext.grantedPermissionMatchPatterns.keys)
         let declaredPatterns = extensionContext.webExtension
             .allRequestedMatchPatterns
             .union(extensionContext.webExtension.optionalPermissionMatchPatterns)
 
-        for pattern in declaredPatterns where isGrantedPermissionStatus(
-            extensionContext.permissionStatus(for: pattern)
-        ) {
-            grantedPatterns.insert(pattern)
+        var tabScopedGrantedPatterns = Set<WKWebExtension.MatchPattern>()
+        for pattern in declaredPatterns {
+            if isGrantedPermissionStatus(extensionContext.permissionStatus(for: pattern)) {
+                grantedPatterns.insert(pattern)
+            } else if let tab,
+                      isGrantedPermissionStatus(extensionContext.permissionStatus(for: pattern, in: tab))
+            {
+                tabScopedGrantedPatterns.insert(pattern)
+            }
         }
 
-        guard let matchingPattern = grantedPatterns.first(where: { $0.matches(url) }) else {
+        if let matchingPattern = grantedPatterns.first(where: { $0.matches(url) }) {
+            extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
+            RuntimeDiagnostics.debug(category: "Extensions") {
+                let host = url.host ?? url.scheme ?? "unknown"
+                return "Auto-granted URL access for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier): host=\(host) via \(matchingPattern.string)"
+            }
+            return true
+        }
+
+        guard tabScopedGrantedPatterns.contains(where: { $0.matches(url) }) else {
             return false
-        }
-
-        extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
-        RuntimeDiagnostics.debug(category: "Extensions") {
-            let host = url.host ?? url.scheme ?? "unknown"
-            return "Auto-granted URL access for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier): host=\(host) via \(matchingPattern.string)"
         }
         return true
     }
