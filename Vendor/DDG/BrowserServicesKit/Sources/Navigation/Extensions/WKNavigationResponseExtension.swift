@@ -20,6 +20,13 @@ import WebKit
 
 extension WKNavigationResponse {
 
+    @nonobjc public var webKitMainFrameNavigation: WKNavigation? {
+        if #available(macOS 27.0, *) {
+            return mainFrameNavigation
+        }
+        return nil
+    }
+
     // associated NavigationResponse wrapper for the WKNavigationResponse
     private static let navigationResponseKey = UnsafeRawPointer(bitPattern: "navigationResponseKey".hashValue)!
     internal var navigationResponse: NavigationResponse? {

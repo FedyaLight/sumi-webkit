@@ -9,7 +9,9 @@
 //
 
 import Foundation
+import WebKit
 
+@MainActor
 enum UserScriptMatchEngine {
 
     // MARK: - Public API
@@ -69,97 +71,15 @@ enum UserScriptMatchEngine {
         return false
     }
 
-    // MARK: - Match Pattern (MDN spec)
+    // MARK: - Match Pattern
 
-    /// Cache for compiled match pattern regexes.
-    private static let matchPatternCache = UserScriptRegexCache()
-
-    /// Matches a URL against an MDN match pattern.
-    /// Format: <scheme>://<host>/<path>
-    /// Special: <all_urls>
+    /// Matches a URL against a WebExtension match pattern using WebKit's SDK implementation.
     static func matchPattern(_ pattern: String, matches url: URL) -> Bool {
-        let trimmed = pattern.trimmingCharacters(in: .whitespaces)
-
-        if trimmed == "<all_urls>" {
-            let scheme = url.scheme ?? ""
-            return scheme == "http" || scheme == "https"
-        }
-
-        guard let regex = compiledMatchPattern(trimmed) else {
+        let trimmed = pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let matchPattern = try? WKWebExtension.MatchPattern(string: trimmed) else {
             return false
         }
-
-        let urlString = url.absoluteString
-        let range = NSRange(location: 0, length: (urlString as NSString).length)
-        return regex.firstMatch(in: urlString, options: [], range: range) != nil
-    }
-
-    private static func compiledMatchPattern(_ pattern: String) -> NSRegularExpression? {
-        if let cached = matchPatternCache[pattern] {
-            return cached
-        }
-
-        guard let regex = convertMatchPatternToRegex(pattern) else {
-            return nil
-        }
-
-        matchPatternCache[pattern] = regex
-        return regex
-    }
-
-    /// Converts an MDN match pattern to a regex.
-    /// *://  matches http or https
-    /// *.example.com matches example.com and all subdomains
-    /// /path/* matches /path/ and all sub-paths
-    private static func convertMatchPatternToRegex(_ pattern: String) -> NSRegularExpression? {
-        // Split into scheme://host/path
-        guard let schemeEnd = pattern.range(of: "://") else {
-            return nil
-        }
-
-        let scheme = String(pattern[pattern.startIndex..<schemeEnd.lowerBound])
-        let rest = String(pattern[schemeEnd.upperBound...])
-
-        // Split host and path
-        let slashIndex = rest.firstIndex(of: "/") ?? rest.endIndex
-        let host = String(rest[rest.startIndex..<slashIndex])
-        let path = slashIndex < rest.endIndex ? String(rest[slashIndex...]) : "/"
-
-        // Build regex
-        var regexParts: [String] = ["^"]
-
-        // Scheme
-        if scheme == "*" {
-            regexParts.append("https?")
-        } else {
-            regexParts.append(NSRegularExpression.escapedPattern(for: scheme))
-        }
-        regexParts.append("://")
-
-        // Host
-        if host == "*" {
-            // Match any host
-            regexParts.append("[^/]*")
-        } else if host.hasPrefix("*.") {
-            // Match domain and all subdomains
-            let domain = NSRegularExpression.escapedPattern(for: String(host.dropFirst(2)))
-            regexParts.append("([^/]*\\.)?")
-            regexParts.append(domain)
-        } else {
-            regexParts.append(NSRegularExpression.escapedPattern(for: host))
-        }
-
-        // Path
-        let pathRegex = path
-            .split(separator: "*", omittingEmptySubsequences: false)
-            .map { NSRegularExpression.escapedPattern(for: String($0)) }
-            .joined(separator: ".*")
-        regexParts.append(pathRegex)
-
-        regexParts.append("$")
-
-        let regexString = regexParts.joined()
-        return try? NSRegularExpression(pattern: regexString, options: [.caseInsensitive])
+        return matchPattern.matches(url)
     }
 
     // MARK: - Include/Exclude Pattern (Greasemonkey glob/regex)

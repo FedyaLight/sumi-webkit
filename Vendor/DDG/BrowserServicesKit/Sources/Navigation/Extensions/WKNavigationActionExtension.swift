@@ -17,6 +17,7 @@
 //
 
 import Common
+import Foundation
 import WebKit
 
 extension WKNavigationAction: WebViewNavigationAction {
@@ -25,9 +26,17 @@ extension WKNavigationAction: WebViewNavigationAction {
     /// In this cruel reality the source frame IS Nullable for Developer-initiated load API calls (WKWebView.loadRequest or for a initial WebView navigation)
     /// https://github.com/WebKit/WebKit/blob/c39358705b79ccf2da3b76a8be6334e7e3dfcfa6/Source/WebKit/UIProcess/WebPageProxy.cpp#L5708
     public var safeSourceFrame: WKFrameInfo? {
+#if DEBUG
+        guard Self.isSafeSourceFrameUsageCheckEnabled else {
+            guard self.perform(#selector(getter: sourceFrame)) != nil else { return nil }
+            return sourceFrame
+        }
         _=WKNavigationAction.addSafetyCheckForSafeSourceFrameUsageOnce
+        return self.swizzledSourceFrame()
+#else
         guard self.perform(#selector(getter: sourceFrame)) != nil else { return nil }
         return sourceFrame
+#endif
     }
 
     /// Make an empty URLRequest if `WKNavigationAction.request` returns nil
@@ -53,10 +62,12 @@ extension WKNavigationAction: WebViewNavigationAction {
 
 #if DEBUG
 
+    private static let isSafeSourceFrameUsageCheckEnabled = ProcessInfo.processInfo.environment["DDG_ENABLE_WEBKIT_NULLABILITY_GUARDS"] == "1"
     private static var ignoredSourceFrameUsageSymbols = Set<String>()
 
     // ensure `.safeSourceFrame` is used and not `.sourceFrame`
     static var addSafetyCheckForSafeSourceFrameUsageOnce: Void = {
+        guard isSafeSourceFrameUsageCheckEnabled else { return }
         let originalSourceFrameMethod = class_getInstanceMethod(WKNavigationAction.self, #selector(getter: WKNavigationAction.sourceFrame))!
         let swizzledSourceFrameMethod = class_getInstanceMethod(WKNavigationAction.self, #selector(WKNavigationAction.swizzledSourceFrame))!
         method_exchangeImplementations(originalSourceFrameMethod, swizzledSourceFrameMethod)
@@ -120,11 +131,14 @@ extension WKNavigationAction: WebViewNavigationAction {
 #endif
 
 #if _MAIN_FRAME_NAVIGATION_ENABLED
-    @nonobjc public var mainFrameNavigation: WKNavigation? {
-        return self.value(forKey: "mainFrameNavigation") as? WKNavigation
+    @nonobjc public var webKitMainFrameNavigation: WKNavigation? {
+        if #available(macOS 27.0, *) {
+            return mainFrameNavigation
+        }
+        return nil
     }
 #else
-    public var mainFrameNavigation: WKNavigation? {
+    public var webKitMainFrameNavigation: WKNavigation? {
         return nil
     }
 #endif

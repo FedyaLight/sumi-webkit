@@ -264,7 +264,7 @@ private extension DistributedNavigationDelegate {
         // get WKNavigation associated with the WKNavigationAction
         // it is not `current` yet, unless it‘s a server-redirect
 #if _MAIN_FRAME_NAVIGATION_ENABLED
-        let wkNavigation = wkNavigationAction.mainFrameNavigation
+        let wkNavigation = wkNavigationAction.webKitMainFrameNavigation
 #else
         let wkNavigation = webView.expectedMainFrameNavigation(for: wkNavigationAction)
 #endif
@@ -367,7 +367,7 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
         }
 
         assert(navigationAction.mainFrameNavigation != nil || !navigationAction.isForMainFrame)
-        NavigationLogPolicy.verbose("decidePolicyFor: \(navigationAction.debugDescription) \(wkNavigationAction.mainFrameNavigation?.debugDescription ?? "")")
+        NavigationLogPolicy.verbose("decidePolicyFor: \(navigationAction.debugDescription) \(wkNavigationAction.webKitMainFrameNavigation?.debugDescription ?? "")")
 
         // initial `about:` scheme navigation doesn‘t wait for decision
         if (navigationAction.url.scheme.map(URL.NavigationalScheme.init) == .about
@@ -624,16 +624,17 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
 
     @MainActor
     public func webView(_ webView: WKWebView, decidePolicyFor wkNavigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-        let navigationResponse = NavigationResponse(navigationResponse: wkNavigationResponse, mainFrameNavigation: startedNavigation)
+        let mainFrameNavigation = wkNavigationResponse.webKitMainFrameNavigation?.navigation ?? startedNavigation
+        let navigationResponse = NavigationResponse(navigationResponse: wkNavigationResponse, mainFrameNavigation: mainFrameNavigation)
         wkNavigationResponse.navigationResponse = navigationResponse
         if wkNavigationResponse.isForMainFrame {
-            assert(startedNavigation != nil)
-            startedNavigation?.receivedResponse(navigationResponse)
+            assert(mainFrameNavigation != nil)
+            mainFrameNavigation?.receivedResponse(navigationResponse)
         }
 
         NavigationLogPolicy.verboseDebug("decidePolicyFor: \(navigationResponse.debugDescription)")
 
-        let responders = (navigationResponse.isForMainFrame ? startedNavigation?.navigationResponders : nil) ?? responders
+        let responders = (navigationResponse.isForMainFrame ? mainFrameNavigation?.navigationResponders : nil) ?? responders
         makeAsyncDecision(for: navigationResponse.debugDescription, boundToLifetimeOf: webView, with: responders) { @MainActor responder in
             dispatchPrecondition(condition: .onQueue(.main))
 
@@ -1076,7 +1077,8 @@ extension DistributedNavigationDelegate: WKNavigationDelegate {
     public func webView(_ webView: WKWebView, navigationResponse wkNavigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         let navigationResponse = wkNavigationResponse.navigationResponse ?? {
             assertionFailure("WKNavigationResponse has no associated NavigationResponse")
-            return NavigationResponse(navigationResponse: wkNavigationResponse, mainFrameNavigation: startedNavigation)
+            let mainFrameNavigation = wkNavigationResponse.webKitMainFrameNavigation?.navigation ?? startedNavigation
+            return NavigationResponse(navigationResponse: wkNavigationResponse, mainFrameNavigation: mainFrameNavigation)
         }()
         NavigationLogPolicy.verbose("navigationResponseDidBecomeDownload: \(navigationResponse.debugDescription)")
 

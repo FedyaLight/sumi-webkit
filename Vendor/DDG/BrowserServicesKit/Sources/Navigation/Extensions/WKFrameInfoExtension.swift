@@ -17,6 +17,7 @@
 //
 
 import Common
+import Foundation
 import WebKit
 
 public extension WKFrameInfo {
@@ -44,15 +45,24 @@ public extension WKFrameInfo {
     /// Safe Optional `request: URLRequest` getter:
     /// .request of a new Frame can be `null`, see https://app.asana.com/0/0/1203965979591356/f
     var safeRequest: URLRequest? {
+#if DEBUG
+        guard Self.isSafeRequestUsageCheckEnabled else {
+            return self.perform(#selector(getter: request))?.takeUnretainedValue() as? URLRequest
+        }
         _=WKFrameInfo.addSafetyCheckForSafeRequestUsageOnce
+        return self.swizzledRequest()
+#else
         return self.perform(#selector(getter: request))?.takeUnretainedValue() as? URLRequest
+#endif
     }
 
 #if DEBUG
+    private static let isSafeRequestUsageCheckEnabled = ProcessInfo.processInfo.environment["DDG_ENABLE_WEBKIT_NULLABILITY_GUARDS"] == "1"
     private static var ignoredRequestUsageSymbols = Set<String>()
 
     // ensure `.safeRequest` is used and not `.request`
     static var addSafetyCheckForSafeRequestUsageOnce: Void = {
+        guard isSafeRequestUsageCheckEnabled else { return }
         let originalRequestMethod = class_getInstanceMethod(WKFrameInfo.self, #selector(getter: WKFrameInfo.request))!
         let swizzledRequestMethod = class_getInstanceMethod(WKFrameInfo.self, #selector(WKFrameInfo.swizzledRequest))!
         method_exchangeImplementations(originalRequestMethod, swizzledRequestMethod)
