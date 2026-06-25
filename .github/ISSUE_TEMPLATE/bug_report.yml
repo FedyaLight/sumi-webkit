@@ -42,7 +42,7 @@ body:
         Number of tabs, windows, or splits:
         Active Space or Profile, if relevant:
         Features involved, such as Glance, Split View, pinned items, Essentials, folders, Mini Player, or floating bar:
-        Settings involved, such as memory unloading, tracking protection, adblock, cleanup, or extensions:
+        Settings involved, such as memory unloading, cleanup, extensions, permissions, or site settings:
         Did it happen after restart, session restore, moving tabs, switching spaces, unloading, or opening from a launcher, pinned item, or essential item?
     validations:
       required: true
@@ -95,8 +95,6 @@ body:
         - Themes
         - Mini Player / Media
         - Memory modes / Tab unloading
-        - Tracking protection
-        - Adblock
         - Extensions / Safari
         - Password-manager extension compatibility
         - Backup / Restore

@@ -40,8 +40,6 @@ struct SumiApp: App {
                 .environment(webViewCoordinator)
                 .environment(\.sumiSettings, settingsManager)
                 .environment(\.sumiModuleRegistry, browserManager.moduleRegistry)
-                .environment(\.sumiAdBlockingModule, browserManager.adBlockingModule)
-                .environment(\.sumiProtectionCoordinator, browserManager.protectionCoordinator)
                 .environment(\.sumiExtensionsModule, browserManager.extensionsModule)
                 .environment(\.sumiUserscriptsModule, browserManager.userscriptsModule)
                 .environment(keyboardShortcutManager)

@@ -19,9 +19,8 @@ This is a draft 60-90 second demo outline for the Alpha.
     split slot.
 11. Show bookmarks, history, and settings search briefly.
 12. Show memory modes and inactive tab unloading settings.
-13. Show tracking/adblock modules as optional settings.
-14. If safe, show the extension UI and Safari compatibility report.
-15. End with the remaining Alpha hardening work: Safari password-manager
+13. If safe, show the extension UI and Safari compatibility report.
+14. End with the remaining Alpha hardening work: Safari password-manager
     support and published update validation.
 
 ## Do Not Show

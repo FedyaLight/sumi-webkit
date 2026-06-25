@@ -60,10 +60,9 @@ final class SumiBoostsModule: ObservableObject {
     }
 
     @discardableResult
-    func createBoostAndOpenEditor(
+    func createBoost(
         tab: Tab,
-        profile: Profile?,
-        windowState: BrowserWindowState
+        profile: Profile?
     ) throws -> SumiBoost {
         let profile = profile ?? tab.resolveProfile()
         let boost = try store.createDraft(
@@ -74,10 +73,21 @@ final class SumiBoostsModule: ObservableObject {
         // A new active draft may need to take effect on the next navigation,
         // so reinstall the managed user-script set on matching tabs.
         reinstallUserScripts(profileId: boost.profileId, host: boost.host)
+        return boost
+    }
+
+    @discardableResult
+    func createBoostAndOpenEditor(
+        tab: Tab,
+        profile: Profile?,
+        windowState: BrowserWindowState
+    ) throws -> SumiBoost {
+        let resolvedProfile = profile ?? tab.resolveProfile()
+        let boost = try createBoost(tab: tab, profile: resolvedProfile)
         presentEditor(
             boost: boost,
             tab: tab,
-            profile: profile,
+            profile: resolvedProfile,
             windowState: windowState
         )
         return boost

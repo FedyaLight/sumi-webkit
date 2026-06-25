@@ -232,12 +232,16 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         XCTAssertEqual(decisions, [.deny])
     }
 
-    func testNormalTabUIDelegateRoutesPrivateGeolocationSelectorsThroughBridge() throws {
+    func testNormalTabUIDelegateRoutesNativeAndLegacyGeolocationSelectorsThroughBridge() throws {
         let source = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
 
         XCTAssertTrue(
             source.contains("requestGeolocationPermissionFor origin: WKSecurityOrigin")
                 && source.contains("initiatedByFrame frame: WKFrameInfo")
+        )
+        XCTAssertTrue(source.contains("@available(macOS 27.0, *)"))
+        XCTAssertFalse(
+            source.contains("@objc(_webView:requestGeolocationPermissionForOrigin")
         )
         XCTAssertTrue(source.contains("_webView:requestGeolocationPermissionForFrame:decisionHandler:"))
         XCTAssertTrue(source.contains("webKitGeolocationBridge.handleGeolocationAuthorization("))

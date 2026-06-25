@@ -21,11 +21,6 @@ Some AppKit/WebKit helper code in the Sumi app is adapted from DuckDuckGo
 macOS browser code. Directly reused portions should retain their upstream
 copyright and SPDX headers.
 
-Prepared tracking-protection data may be derived from DuckDuckGo Tracker Radar
-or DuckDuckGo Tracker Data Set releases in the external protection-bundle
-generation pipeline. Those data sources carry their own license terms and
-attribution requirements.
-
 ## Browser Migration Compatibility
 
 Sumi's Data & Recovery import/export services are compatible with public

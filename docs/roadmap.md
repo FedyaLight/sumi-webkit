@@ -39,8 +39,6 @@ Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in S
 - Session restore setting.
 - Mini Player jump-to-media / pause / mute.
 - Memory modes and inactive tab unloading.
-- Optional tracking protection module.
-- Optional adblock module.
 - Automatic cleanup settings.
 - Extension manager UI.
 - Safari extension compatibility report UI.
@@ -53,8 +51,6 @@ Sumi now has first-class Arc/Zen migration and Sumi backup/restore surfaces in S
 - Safari extension scripting API.
 - Safari extension service-worker lifecycle.
 - Native messaging.
-- Tracking protection behavior and protection-bundle workflow.
-- Adblock behavior and validation.
 - Automatic history and site-data cleanup.
 - Extension compatibility reporting.
 

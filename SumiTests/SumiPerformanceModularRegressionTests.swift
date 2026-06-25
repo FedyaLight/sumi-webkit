@@ -77,6 +77,16 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let suspensionSource = try Self.source(named: "Sumi/Managers/TabSuspensionService.swift")
         XCTAssertTrue(suspensionSource.contains("proactiveTimers"))
         XCTAssertTrue(suspensionSource.contains("armProactiveTimer"))
+        XCTAssertTrue(suspensionSource.contains("proactiveTimerSchedulerTask"))
+        XCTAssertTrue(suspensionSource.contains("nextProactiveTimerDeadline"))
+        XCTAssertTrue(suspensionSource.contains("handleDueProactiveTimers"))
+        XCTAssertTrue(suspensionSource.contains("ProactiveTimerState(requestedDelay: requestedDelay)"))
+        XCTAssertEqual(
+            suspensionSource.components(separatedBy: "try await self.timerSleep").count - 1,
+            1
+        )
+        XCTAssertFalse(suspensionSource.contains("let task: Task<Void, Never>"))
+        XCTAssertFalse(suspensionSource.contains("ProactiveTimerState(task:"))
         XCTAssertTrue(suspensionSource.contains("SumiSuspensionClock"))
         XCTAssertTrue(suspensionSource.contains("revisitCounts"))
         XCTAssertTrue(suspensionSource.contains("defaultMinimumInactiveInterval"))
@@ -112,11 +122,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             registry: registry,
             probe: extensionsProbe
         )
-        let adBlockingModule = SumiAdBlockingModule(moduleRegistry: registry)
 
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            adBlockingModule: adBlockingModule,
             extensionsModule: extensionsModule,
             userscriptsModule: userscriptsModule
         )
@@ -126,7 +134,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertEqual(userscriptsProbe.storeCount, 0)
         XCTAssertEqual(userscriptsProbe.injectorCount, 0)
         XCTAssertEqual(extensionsProbe.managerCount, 0)
-        XCTAssertFalse(adBlockingModule.hasLoadedRuntime)
         XCTAssertFalse(userscriptsModule.hasLoadedRuntime)
         XCTAssertFalse(extensionsModule.hasLoadedRuntime)
 
@@ -135,18 +142,13 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let settingsSource = try Self.source(named: "Sumi/Components/Settings/SettingsView.swift")
 
         XCTAssertTrue(togglesSource.contains("SumiSettingsModuleToggleGate"))
-        XCTAssertFalse(privacySource.contains("SumiSettingsModuleToggleGate(descriptor: .trackingProtection)"))
-        XCTAssertFalse(privacySource.contains("SumiSettingsModuleToggleGate(descriptor: .adBlocking)"))
         XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .extensions)"))
         XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .userScripts)"))
 
         assertSourceExcludes(
             togglesSource + privacySource + settingsSource,
             [
-                "SumiTrackingProtectionSettings.shared",
-                "SumiTrackingProtectionDataStore.shared",
                 "SumiContentBlockingService(",
-                "SumiAdBlockingModule(",
                 "ExtensionManager(",
                 "BrowserExtensionSurfaceStore(",
                 "NativeMessagingHandler(",
@@ -295,46 +297,30 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(systemSource.contains("FaviconManager"))
     }
 
-    func testCachedProtectionAttachmentPlanDropsEncodedRuleListsAfterPreparation() throws {
-        let source = try Self.source(named: "Sumi/ContentBlocking/SumiProtectionCoordinator.swift")
-
-        XCTAssertTrue(source.contains("retainEncodedRuleListsInPreparedPolicy: false"))
-        XCTAssertFalse(source.contains("cachedAttachmentPlan = plan"))
-        XCTAssertEqual(
-            source.components(separatedBy: "cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(plan)").count - 1,
-            2
+    func testWorkerEPerformancePolicySourceGuards() throws {
+        let meshGradientSource = try Self.source(named: "Sumi/Utils/SpaceMeshGradientView.swift")
+        XCTAssertTrue(meshGradientSource.contains("SRGBColorComponents"))
+        XCTAssertFalse(meshGradientSource.contains("getRed("))
+        XCTAssertFalse(meshGradientSource.contains("NSColor("))
+        let spaceGradientBackgroundSource = try Self.source(
+            named: "Sumi/Components/Browser/Window/SpaceGradientBackgroundView.swift"
         )
-    }
+        XCTAssertTrue(spaceGradientBackgroundSource.contains("private func meshGradientLayer"))
+        XCTAssertTrue(spaceGradientBackgroundSource.contains("abs(clampedSaturation - 1) < 0.001"))
 
-    func testOffProtectionDecisionDoesNotInitializeSiteOverrideStore() {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
+        let nativeMaterialSource = try Self.source(named: "Sumi/Theme/NativeChromeMaterialBackground.swift")
+        XCTAssertTrue(nativeMaterialSource.contains("@Environment(\\.accessibilityReduceTransparency)"))
+        XCTAssertTrue(nativeMaterialSource.contains("accessibilityReduceTransparency || sumiSettings.shouldUseOpaqueChromeSurfaces"))
 
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
-        )
-        let settings = SumiProtectionSettings(userDefaults: harness.defaults)
-        settings.setAppliedLevel(.off)
-        var sitePolicyFactoryCalls = 0
-        let adBlockingModule = SumiAdBlockingModule(
-            moduleRegistry: registry,
-            sitePolicyFactory: {
-                sitePolicyFactoryCalls += 1
-                return AdblockSitePolicyStore(userDefaults: harness.defaults)
-            }
-        )
-        let coordinator = SumiProtectionCoordinator(
-            settings: settings,
-            adBlockingModule: adBlockingModule,
-            moduleRegistry: registry
-        )
+        let downloadRingSource = try Self.source(named: "Sumi/Components/Downloads/DownloadProgressRing.swift")
+        XCTAssertTrue(downloadRingSource.contains("@Environment(\\.accessibilityReduceMotion)"))
+        XCTAssertTrue(downloadRingSource.contains("shouldAnimateIndeterminate"))
+        XCTAssertTrue(downloadRingSource.contains(".repeatForever(autoreverses: false)"))
+        XCTAssertTrue(downloadRingSource.contains(".onDisappear(perform: resetIndeterminateRotation)"))
 
-        _ = coordinator.normalTabDecision(
-            for: URL(string: "https://example.com/path"),
-            profileId: nil
-        )
-
-        XCTAssertEqual(sitePolicyFactoryCalls, 0)
+        let floatingBarMotionSource = try Self.source(named: "FloatingBar/FloatingBarMotionPolicy.swift")
+        XCTAssertTrue(floatingBarMotionSource.contains(".shadow(color: Color.black.opacity(0.16), radius: 23, x: 0, y: 10)"))
+        XCTAssertFalse(floatingBarMotionSource.contains("Color.black.opacity(0.05)"))
     }
 
     func testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets() async throws {
@@ -345,10 +331,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
         let userscriptsProbe = UserscriptsRuntimeProbe()
         let extensionsProbe = ExtensionsRuntimeProbe()
-        let adBlockingModule = SumiAdBlockingModule(moduleRegistry: registry)
         let browserManager = BrowserManager(
             moduleRegistry: registry,
-            adBlockingModule: adBlockingModule,
             extensionsModule: try makeExtensionsModule(
                 registry: registry,
                 probe: extensionsProbe
@@ -378,7 +362,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(sources.contains("__sumiTabSuspension"))
         assertNoOptionalModuleScriptsOrHandlers(in: webView.configuration.userContentController)
         XCTAssertNil(webView.configuration.webExtensionController)
-        XCTAssertFalse(adBlockingModule.hasLoadedRuntime)
 
         let suspensionScript = try XCTUnwrap(
             tab.normalTabCoreUserScripts().first { $0.source.contains("__sumiTabSuspension") }
@@ -397,16 +380,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
         )
 
-        registry.enable(.trackingProtection)
-        XCTAssertTrue(registry.isEnabled(.trackingProtection))
-        XCTAssertFalse(registry.isEnabled(.adBlocking))
-
-        let adBlockingModule = SumiAdBlockingModule(moduleRegistry: registry)
-        adBlockingModule.setEnabled(true)
-        XCTAssertTrue(registry.isEnabled(.trackingProtection))
-        XCTAssertTrue(registry.isEnabled(.adBlocking))
-        XCTAssertFalse(adBlockingModule.hasLoadedRuntime)
-
         registry.enable(.userScripts)
         XCTAssertTrue(registry.isEnabled(.userScripts))
         XCTAssertFalse(registry.isEnabled(.extensions))
@@ -415,19 +388,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         registry.enable(.extensions)
         XCTAssertTrue(registry.isEnabled(.extensions))
         XCTAssertFalse(registry.isEnabled(.userScripts))
-
-        let protectionSettings = SumiProtectionSettings(userDefaults: harness.defaults)
-        let url = URL(string: "https://www.example.com/path")!
-        protectionSettings.setLevel(.protection)
-        protectionSettings.setAppliedLevel(.protection)
-        adBlockingModule.setSiteOverride(.disabled, for: url)
-        adBlockingModule.setEnabled(false)
-
-        XCTAssertEqual(protectionSettings.level, .protection)
-        XCTAssertEqual(protectionSettings.appliedLevel, .protection)
-        XCTAssertEqual(adBlockingModule.siteOverride(for: url), .disabled)
-        XCTAssertFalse(registry.isEnabled(.adBlocking))
-        XCTAssertTrue(registry.isEnabled(.trackingProtection))
     }
 
     func testAuxiliaryConfigurationsStayLightweight() throws {
@@ -500,7 +460,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             context: "normal WebView ownership"
         )
 
-        XCTAssertTrue(tabRuntimeSource.contains("func makeNormalTabWebView(reason: String)"))
+        XCTAssertTrue(tabRuntimeSource.contains("func makeNormalTabWebView("))
+        XCTAssertTrue(tabRuntimeSource.contains("reason: String"))
         XCTAssertTrue(tabRuntimeSource.contains("func ensureWebView()"))
         XCTAssertTrue(tabRuntimeSource.contains("normalTabWebViewConfiguration(reason:"))
         XCTAssertTrue(coordinatorSource.contains("tab.ensureWebView()"))
@@ -509,49 +470,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(coordinatorSource.contains("auxiliaryWebViewConfiguration"))
         XCTAssertFalse(coordinatorSource.contains("surface: .glance"))
         XCTAssertFalse(coordinatorSource.contains("FocusableWKWebView(frame: .zero"))
-    }
-
-    func testTrackingProtectionManualEnabledOnlySourceGuards() throws {
-        for relativePath in [
-            "Sumi/Components/Settings/PrivacySettingsView.swift",
-            "Sumi/Components/Sidebar/URLBarView.swift",
-            "Sumi/Components/Sidebar/URLBarHubPopover.swift",
-            "Sumi/UserScripts/SumiNormalTabBrowserServicesKitUserContentControllerAdapter.swift",
-            "Sumi/UserScripts/SumiNormalTabUserScripts.swift",
-            "Sumi/Managers/BrowserManager/BrowserManager.swift",
-            "Sumi/Models/BrowserConfig/BrowserConfig.swift",
-            "Sumi/Models/Tab/Tab+WebViewRuntime.swift",
-        ] {
-            let source = try Self.source(named: relativePath)
-            XCTAssertFalse(source.contains("SumiContentBlockingService.shared"), relativePath)
-        }
-
-        let settingsSource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
-        let trackingSettingsSource = settingsSource
-
-        XCTAssertFalse(settingsSource.contains("LegacyTrackingProtectionRuntimeSettingsView"))
-        XCTAssertFalse(settingsSource.contains(".accessibilityLabel(\"Update tracker data\")"))
-        XCTAssertFalse(settingsSource.contains("await trackingProtectionModule.updateTrackerDataManually()"))
-        XCTAssertFalse(settingsSource.contains(".accessibilityLabel(\"Reset to bundled tracker data\")"))
-        XCTAssertFalse(trackingSettingsSource.contains(".task"))
-        XCTAssertFalse(trackingSettingsSource.contains(".onAppear"))
-        XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("stale"))
-        XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("automatic update"))
-        XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("browser update"))
-        XCTAssertFalse(trackingSettingsSource.localizedCaseInsensitiveContains("app update"))
-
-        for source in [
-            try Self.source(named: "Sumi/ContentBlocking/SumiProtectionCoordinator.swift"),
-            try Self.source(named: "Sumi/ContentBlocking/SumiContentBlockingService.swift"),
-        ] {
-            XCTAssertFalse(source.contains("Timer"))
-            XCTAssertFalse(source.contains("scheduledTimer"))
-            XCTAssertFalse(source.localizedCaseInsensitiveContains("stale"))
-        }
-
-        let urlHubTests = try Self.source(named: "SumiTests/URLBarTrackingProtectionPresenterTests.swift")
-        XCTAssertTrue(urlHubTests.contains("testPresenterForEnabledPolicyUsesFilledShieldToggle"))
-        XCTAssertTrue(urlHubTests.contains("testToggleOverrideSemanticsUseCurrentEffectivePolicyOnly"))
     }
 
     func testUserscriptsEnabledOnlySourceGuards() throws {
@@ -658,8 +576,10 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
         XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
         XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
-        XCTAssertFalse(delegateSource.contains("sendMessage message: Any"))
-        XCTAssertFalse(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
+        XCTAssertTrue(delegateSource.contains("sendMessage message: Any"))
+        XCTAssertTrue(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleSendMessage"))
+        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleConnect"))
         XCTAssertTrue(portSessionSource.contains("WKWebExtension.MessagePort"))
         XCTAssertTrue(relaySource.contains("SumiNativeMessagingRelay"))
         XCTAssertFalse(
@@ -685,77 +605,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             ],
             context: "Safari native messaging foundation"
         )
-    }
-
-    func testAdBlockingPreparedBundleBoundaryStaysInertUntilNeeded() throws {
-        let harness = TestDefaultsHarness()
-        defer { harness.reset() }
-        let registry = SumiModuleRegistry(
-            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
-        )
-        let module = SumiAdBlockingModule(moduleRegistry: registry)
-
-        XCTAssertFalse(module.isEnabled)
-        XCTAssertFalse(module.hasLoadedRuntime)
-
-        module.setEnabled(true)
-
-        XCTAssertTrue(module.isEnabled)
-        XCTAssertFalse(module.hasLoadedRuntime)
-
-        let adBlockingSource = try Self.source(named: "Sumi/ContentBlocking/SumiAdBlockingModule.swift")
-        assertSourceExcludes(
-            adBlockingSource,
-            [
-                "adblock_rust",
-                "adblock-rust",
-                "EasyList",
-                "EasyPrivacy",
-                "SumiTrackingProtectionModule",
-                "SumiTrackingRuleListProvider",
-                "SumiTrackingRuleListPipeline",
-                "SumiAdBlockingModuleStatus",
-                "SumiAdblockCurrentTabDiagnostics",
-                "SumiAdblockAttachmentDiagnostics",
-                "embeddedAdblockBundleSnapshot",
-                "installEmbeddedAdblockBundle",
-                "SumiEmbeddedAdblockBundleCatalog",
-                "requestEmbeddedBundleInstall",
-                "contentRuleListDefinitions(for allowedKinds",
-                "runtimeGenerated",
-                "ContentBlockerRulesBuilder",
-                "TrackerRadarKit",
-                "WKUserScript",
-                "addUserScript",
-                "addScriptMessageHandler",
-                "URLSession",
-                "Timer",
-                "scheduledTimer",
-                "download",
-                "filterList",
-                "filter list",
-            ],
-            context: "SumiAdBlockingModule"
-        )
-
-        for relativePath in [
-            "Vendor/DDG/BrowserServicesKit/Package.swift",
-            "Vendor/DDG/URLPredictor/Package.swift",
-        ] {
-            let source = try Self.source(named: relativePath)
-            assertSourceExcludes(
-                source,
-                [
-                    "Cargo.toml",
-                    "cargo",
-                    "adblock_rust",
-                    "adblock-rust",
-                    "EasyList",
-                    "EasyPrivacy",
-                ],
-                context: relativePath
-            )
-        }
     }
 
     func testHistoryQueriesStayBounded() throws {
@@ -931,11 +780,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             "SUMI_USER_SCRIPT_RUNTIME",
             "data-sumi-userscript",
             "sumiGM_",
-            "SumiAdBlocking",
-            "sumiAdBlocking",
-            "adBlocking",
-            "ad-block",
-            "adblock",
         ] {
             XCTAssertFalse(combined.contains(marker), marker, file: file, line: line)
         }

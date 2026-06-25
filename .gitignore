@@ -72,7 +72,6 @@ telemetry-id
 !.github/pull_request_template.md
 !.github/workflows/
 .github/workflows/*
-!.github/workflows/build-adblock-bundle.yml
 !.github/workflows/alpha-release.yml
 !.github/workflows/publish-appcast-pages.yml
 .vscode/
@@ -92,7 +91,6 @@ docs/*
 !docs/SumiSafariExtensionCompatibility.md
 !docs/SafariExtensionNativeMessagingAdapterAcceptance.md
 !docs/demo-script.md
-!docs/adblock-native-rule-bundle-v1.md
 !docs/UPDATES.md
 !docs/RELEASES.md
 !docs/appcast-alpha.xml

@@ -49,7 +49,7 @@ The project focuses on:
 - Native macOS behavior through Swift, SwiftUI, AppKit where appropriate, and system WebKit.
 - Arc/Zen-style organization without cloning either project.
 - A performance-first browser shell with tabs, spaces, profiles, Glance, split view, and sidebar organization.
-- Optional privacy, adblock, and extension modules that should not impose background runtime cost when disabled.
+- Optional extension, userscript, and privacy-cleanup modules that should not impose background runtime cost when disabled.
 - User-controlled features instead of always-on product surfaces.
 
 ## Working Browser Features
@@ -72,9 +72,7 @@ Current Alpha builds include:
 - Session restore setting for restoring the previous session or starting clean.
 - Mini Player at the bottom of the sidebar for jumping to playing media, pausing media, and muting media.
 - Memory modes and inactive tab unloading that preserve visible organization after a live WebView/runtime instance is unloaded.
-- Optional tracking protection, adblock, and automatic history/site-data cleanup modules.
-
-Privacy tools are available as optional modules, not mandatory background systems. Tracking protection and adblock are implemented and being validated; the public docs avoid benchmark-style blocking claims until there is documented methodology.
+- Automatic history/site-data cleanup modules.
 
 ## Extensions And Safari
 
@@ -88,7 +86,7 @@ The current direction is:
 
 Sumi does not currently claim that Bitwarden, Proton Pass, 1Password, or other password managers work. The near-term target is that a user can import Safari password-manager extensions and use them from the browser UI.
 
-See [docs/SumiSafariExtensionCompatibility.md](docs/SumiSafariExtensionCompatibility.md) for the current capability and blocker summary.
+See [docs/SumiSafariExtensionCompatibility.md](docs/SumiSafariExtensionCompatibility.md) for the current capability and status summary.
 
 ## Architecture Principles
 

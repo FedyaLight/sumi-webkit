@@ -25,7 +25,6 @@ enum SumiEnergySaverMode: String, CaseIterable, Codable, Hashable, Identifiable,
 enum SumiEnergySaverFeature: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case reduceInterfaceAnimations
     case useOpaqueChromeSurfaces
-    case disableDecorativeLoadingEffects
     case deactivateInactiveTabsSooner
 
     var id: String { rawValue }
@@ -36,8 +35,6 @@ enum SumiEnergySaverFeature: String, CaseIterable, Codable, Hashable, Identifiab
             return "Reduce interface animations"
         case .useOpaqueChromeSurfaces:
             return "Use opaque browser chrome"
-        case .disableDecorativeLoadingEffects:
-            return "Pause decorative loading waves"
         case .deactivateInactiveTabsSooner:
             return "Deactivate inactive tabs sooner"
         }
@@ -49,8 +46,6 @@ enum SumiEnergySaverFeature: String, CaseIterable, Codable, Hashable, Identifiab
             return "Keeps direct manipulation responsive while removing non-essential transitions."
         case .useOpaqueChromeSurfaces:
             return "Replaces translucent native materials with solid theme surfaces."
-        case .disableDecorativeLoadingEffects:
-            return "Stops repeating shimmer-style effects in tab chrome."
         case .deactivateInactiveTabsSooner:
             return "Caps hidden-tab deactivation delay at one hour to reduce background page work."
         }

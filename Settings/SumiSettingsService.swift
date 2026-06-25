@@ -28,6 +28,7 @@ class SumiSettingsService {
     private let tabListNewTabButtonPositionKey = "settings.tabListNewTabButtonPosition"
     private let showLinkStatusBarKey = "settings.showLinkStatusBar"
     private let showBrowserToastsKey = "settings.showBrowserToasts"
+    private let framelessChromeKey = "settings.framelessChrome"
     private let searchEnginesKey = "settings.searchEngines"
     private let floatingBarEmptyStateModeKey = "settings.floatingBar.emptyStateMode"
     private let newTabModeKey = "settings.newTabMode"
@@ -193,6 +194,14 @@ class SumiSettingsService {
         }
     }
 
+    /// Removes the side and bottom window frame around web content, extending
+    /// it edge-to-edge while keeping the top bar gap and the sidebar.
+    var framelessChrome: Bool {
+        didSet {
+            userDefaults.set(framelessChrome, forKey: framelessChromeKey)
+        }
+    }
+
     var floatingBarEmptyStateMode: FloatingBarEmptyStateMode {
         didSet {
             userDefaults.set(floatingBarEmptyStateMode.rawValue, forKey: floatingBarEmptyStateModeKey)
@@ -296,10 +305,6 @@ class SumiSettingsService {
 
     var shouldUseOpaqueChromeSurfaces: Bool {
         energySaverApplies(.useOpaqueChromeSurfaces)
-    }
-
-    var shouldDisableDecorativeLoadingEffects: Bool {
-        energySaverApplies(.disableDecorativeLoadingEffects)
     }
 
     var startupMode: SumiStartupMode {
@@ -428,6 +433,7 @@ class SumiSettingsService {
             tabListNewTabButtonPositionKey: TabListNewTabButtonPosition.bottom.rawValue,
             showLinkStatusBarKey: true,
             showBrowserToastsKey: true,
+            framelessChromeKey: false,
             floatingBarEmptyStateModeKey: FloatingBarEmptyStateMode.compact.rawValue,
             newTabModeKey: SumiNewTabMode.floatingBar.rawValue,
             newTabPageURLStringKey: SumiNewTabPageURL.defaultURLString,
@@ -489,6 +495,7 @@ class SumiSettingsService {
         ) ?? .bottom
         self.showLinkStatusBar = userDefaults.bool(forKey: showLinkStatusBarKey)
         self.showBrowserToasts = userDefaults.bool(forKey: showBrowserToastsKey)
+        self.framelessChrome = userDefaults.bool(forKey: framelessChromeKey)
         self.didFinishOnboarding = userDefaults.bool(forKey: didFinishOnboardingKey)
         let storedMemoryMode = userDefaults.string(forKey: memoryModeKey)
         let resolvedMemoryMode = SumiMemoryMode.persistedValue(storedMemoryMode)

@@ -54,13 +54,8 @@ preserve user organization while reducing unnecessary live runtime state.
 
 ## Optional Modules
 
-Tracking protection, adblock, privacy cleanup, and extensions are feature
-areas that should remain optional. When disabled, they should avoid background
-runtime cost.
-
-Tracking protection and adblock are implemented and being validated. Public
-documentation should not make blocking-percentage claims until methodology is
-documented.
+Extensions, userscripts, and privacy cleanup are feature areas that should
+remain optional. When disabled, they should avoid background runtime cost.
 
 ## Extensions
 

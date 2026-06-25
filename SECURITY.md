@@ -25,6 +25,6 @@ Security-sensitive areas include:
 - Safari extension compatibility
 - Native messaging
 - Content script, MAIN world, and isolated world boundaries
-- Privacy and adblock modules
+- Privacy cleanup and site-permission modules
 - Backup and restore
 - Sparkle update mechanism and update notifications

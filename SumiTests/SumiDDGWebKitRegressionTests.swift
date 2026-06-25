@@ -521,7 +521,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             .deletingLastPathComponent()
         let source = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
-                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+                "Sumi/Managers/WebViewCoordinator/SumiWebViewContainerView.swift"
             ),
             encoding: .utf8
         )
@@ -591,6 +591,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             "Sumi/Components/WebsiteView/WebsiteView.swift",
             "Sumi/Components/WebsiteView/WebsiteCompositorView.swift",
             "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift",
+            "Sumi/Managers/WebViewCoordinator/SumiWebViewContainerView.swift",
         ]
         let featureSource = try featurePaths.map {
             try String(
@@ -603,8 +604,9 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(featureSource.contains("shadowSurfaceLayer.shadowPath"))
         XCTAssertTrue(featureSource.contains("containsPointInsideRoundedViewport"))
         XCTAssertTrue(featureSource.contains("override func hitTest"))
-        XCTAssertTrue(featureSource.contains("layer.masksToBounds = radius > 0"))
-        XCTAssertTrue(featureSource.contains("layer.cornerRadius = radius"))
+        XCTAssertTrue(featureSource.contains("layer.masksToBounds = maxRadius > 0"))
+        XCTAssertTrue(featureSource.contains("layer.cornerRadius = maxRadius"))
+        XCTAssertTrue(featureSource.contains("layer.maskedCorners = radii.caCornerMask"))
         XCTAssertTrue(featureSource.contains("setAccessibilityElement(false)"))
         XCTAssertTrue(featureSource.contains("setAccessibilityHidden(true)"))
         XCTAssertTrue(featureSource.contains("updateDisplayedHostViewportStyles()"))
@@ -621,7 +623,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             "bitmapImageRepForCachingDisplay",
             "cacheDisplay",
             "masksToBounds = true",
-            "layer?.mask",
+            "layer?.mask =",
             ".mask(",
         ]
 

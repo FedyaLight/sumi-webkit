@@ -2125,6 +2125,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertFalse(openedTab.isPopupHost)
         XCTAssertNil(openedTab.webViewConfigurationOverride)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
+        XCTAssertNotNil(openedTab.assignedWebView ?? openedTab.existingWebView)
     }
 
     func testExtensionPopupExternalCreateWebViewUsesTabURLWhenSourceFrameMissing()
@@ -2159,6 +2160,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertFalse(openedTab.isPopupHost)
         XCTAssertNil(openedTab.webViewConfigurationOverride)
         XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
+        XCTAssertNotNil(openedTab.assignedWebView ?? openedTab.existingWebView)
     }
 
     func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() {
