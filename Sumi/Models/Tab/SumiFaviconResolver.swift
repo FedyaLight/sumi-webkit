@@ -3,6 +3,8 @@ import Foundation
 import WebKit
 
 enum SumiFaviconResolver {
+    @MainActor private static var menuSystemImageCache: [String: NSImage] = [:]
+
     static func cacheKey(for url: URL) -> String? {
         SumiFaviconLookupKey.cacheKey(for: url)
     }
@@ -31,9 +33,15 @@ enum SumiFaviconResolver {
         return menuSystemImage("globe")
     }
 
+    @MainActor
     static func menuSystemImage(_ systemName: String) -> NSImage {
+        if let cached = menuSystemImageCache[systemName] {
+            return cached
+        }
+
         let image = NSImage(systemSymbolName: systemName, accessibilityDescription: nil) ?? NSImage(size: .zero)
         image.size = NSSize(width: 16, height: 16)
+        menuSystemImageCache[systemName] = image
         return image
     }
 

@@ -511,13 +511,17 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                 in: targetSpace,
                 activate: true
             )
+            if let windowState = browserManager.windowState(containing: tab) {
+                browserManager.materializeVisibleTabWebViewIfNeeded(childTab, in: windowState)
+                browserManager.selectTab(childTab, in: windowState, loadPolicy: .immediate)
+            }
+            if childTab.isUnloaded {
+                childTab.loadWebViewIfNeeded()
+            }
             browserManager.extensionsModule.registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
                 childTab,
                 reason: "SumiPopupHandlingNavigationResponder.extensionExternalTab"
             )
-            if let windowState = browserManager.windowState(containing: tab) {
-                browserManager.selectTab(childTab, in: windowState)
-            }
             resetLinkGestureModifierState(for: tab)
             return nil
         }

@@ -6,6 +6,32 @@ import XCTest
 
 @MainActor
 final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
+    func testSDK27CleanupDataTypesDoNotRequestDeprecatedWebApplicationCacheOnSupportedSystems() {
+        if #available(macOS 26.2, *) {
+            XCTAssertFalse(
+                WKWebsiteDataStore.sumiCacheDataTypes.contains(
+                    WKWebsiteDataTypeOfflineWebApplicationCache
+                )
+            )
+            XCTAssertFalse(
+                WKWebsiteDataStore.sumiAutomaticCleanupDataTypes.contains(
+                    WKWebsiteDataTypeOfflineWebApplicationCache
+                )
+            )
+        } else {
+            XCTAssertTrue(
+                WKWebsiteDataStore.sumiCacheDataTypes.contains(
+                    WKWebsiteDataTypeOfflineWebApplicationCache
+                )
+            )
+            XCTAssertTrue(
+                WKWebsiteDataStore.sumiAutomaticCleanupDataTypes.contains(
+                    WKWebsiteDataTypeOfflineWebApplicationCache
+                )
+            )
+        }
+    }
+
     func testClearAllProfileWebsiteDataUsesDDGOrderedAsyncCleanup() async {
         let cookieStore = FakeDDGCookieStore(cookies: [
             .make(domain: "example.com")

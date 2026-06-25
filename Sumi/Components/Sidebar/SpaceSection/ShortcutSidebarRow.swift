@@ -256,7 +256,9 @@ private struct ShortcutSidebarRowChrome: View {
         .task(id: storedFaviconLoadKey) {
             await loadStoredFavicon()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .faviconCacheUpdated)) { notification in
+            guard pin.iconAsset == nil else { return }
+            guard PinnedTileAccentResolver.faviconUpdate(notification, matches: pin.launchURL) else { return }
             loadedStoredFaviconURL = nil
             loadedStoredFavicon = nil
             faviconCacheRefreshID = UUID()
@@ -393,9 +395,8 @@ private struct ShortcutSidebarRowChrome: View {
             title: resolvedTitle,
             font: .systemFont(ofSize: 13, weight: .medium),
             textColor: textColor,
-            trailingFadePadding: titleTrailingFadePadding,
-            animated: liveTab != nil,
-            isLoading: liveTab?.isLoading ?? false
+            trailingPadding: titleTrailingPadding,
+            animated: liveTab != nil
         )
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
     }
@@ -501,12 +502,12 @@ private struct ShortcutSidebarRowChrome: View {
         activeGlanceSessionForRow != nil && displayIsHovering
     }
 
-    private var titleTrailingFadePadding: CGFloat {
+    private var titleTrailingPadding: CGFloat {
         if activeGlanceSessionForRow != nil {
             return SidebarRowLayout.trailingActionSize
                 + (showsGlanceCloseButton ? SidebarRowLayout.trailingActionSize + SidebarRowLayout.trailingActionGap : 0)
         }
-        return SidebarHoverChrome.trailingFadePadding(showsTrailingAction: showsActionButton)
+        return SidebarHoverChrome.trailingPadding(showsTrailingAction: showsActionButton)
     }
 
     private var trailingActivationExclusionWidth: CGFloat {

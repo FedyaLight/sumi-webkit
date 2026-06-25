@@ -1,5 +1,17 @@
 import SwiftUI
 
+extension ChromeCornerRadii {
+    /// Maps the radii to SwiftUI's y-down `RectangleCornerRadii`.
+    var rectangleCornerRadii: RectangleCornerRadii {
+        RectangleCornerRadii(
+            topLeading: topLeading,
+            bottomLeading: bottomLeading,
+            bottomTrailing: bottomTrailing,
+            topTrailing: topTrailing
+        )
+    }
+}
+
 enum BrowserContentViewportVisuals {
     static let shadowOpacity: Double = 0.3
     static let shadowRadius: CGFloat = 4
@@ -15,8 +27,8 @@ struct BrowserContentSurfaceModifier: ViewModifier {
         content
             .background(background)
             .clipShape(
-                RoundedRectangle(
-                    cornerRadius: geometry.contentRadius,
+                UnevenRoundedRectangle(
+                    cornerRadii: geometry.contentCornerRadii.rectangleCornerRadii,
                     style: .continuous
                 )
             )

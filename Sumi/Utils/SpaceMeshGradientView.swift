@@ -1,7 +1,5 @@
+import Foundation
 import SwiftUI
-#if canImport(AppKit)
-import AppKit
-#endif
 
 // MARK: - SpaceMeshGradientView
 // SwiftUI-native workspace gradient. This replaces the inherited stitchable
@@ -55,8 +53,8 @@ struct SpaceMeshGradientView: View {
     }
 
     private static func twoColorColors(stops: [WorkspaceGradientStop], angle: Double) -> [Color] {
-        let start = color(for: stops[0])
-        let end = color(for: stops[1])
+        let start = components(for: stops[0])
+        let end = components(for: stops[1])
         let theta = Angle(degrees: angle).radians
         let direction = SIMD2<Double>(cos(theta), sin(theta))
         let corners = [
@@ -75,7 +73,7 @@ struct SpaceMeshGradientView: View {
         let span = max(maxProjection - minProjection, 0.0001)
 
         return projections.map { projection in
-            blend(start, end, amount: (projection - minProjection) / span)
+            blend(start, end, amount: (projection - minProjection) / span).color
         }
     }
 
@@ -103,70 +101,98 @@ struct SpaceMeshGradientView: View {
     }
 
     private static func threeColorColors(stops: [WorkspaceGradientStop]) -> [Color] {
-        let first = color(for: stops[0])
-        let second = color(for: stops[1])
-        let third = color(for: stops[2])
+        let first = components(for: stops[0])
+        let second = components(for: stops[1])
+        let third = components(for: stops[2])
 
         return [
-            first,
-            blend(first, second, amount: 0.5),
-            second,
-            blend(first, third, amount: 0.45),
-            blend(blend(first, second, amount: 0.5), third, amount: 0.35),
-            blend(second, third, amount: 0.45),
-            third,
-            blend(third, first, amount: 0.25),
-            blend(third, second, amount: 0.35)
+            first.color,
+            blend(first, second, amount: 0.5).color,
+            second.color,
+            blend(first, third, amount: 0.45).color,
+            blend(blend(first, second, amount: 0.5), third, amount: 0.35).color,
+            blend(second, third, amount: 0.45).color,
+            third.color,
+            blend(third, first, amount: 0.25).color,
+            blend(third, second, amount: 0.35).color
         ]
     }
 
     private static func color(for stop: WorkspaceGradientStop?) -> Color {
-        guard let stop else {
-            return Color(hex: WorkspaceResolvedGradient.default.primaryColorHex)
-        }
-        #if canImport(AppKit)
-        return Color(nsColor: cachedSRGBColor(for: stop.hex))
-        #else
-        return Color(hex: stop.hex)
-        #endif
+        components(for: stop).color
     }
 
-    private static func blend(_ first: Color, _ second: Color, amount: Double) -> Color {
+    private static func components(for stop: WorkspaceGradientStop?) -> SRGBColorComponents {
+        SRGBColorComponents(hex: stop?.hex ?? WorkspaceResolvedGradient.default.primaryColorHex)
+    }
+
+    private static func blend(
+        _ first: SRGBColorComponents,
+        _ second: SRGBColorComponents,
+        amount: Double
+    ) -> SRGBColorComponents {
         let clampedAmount = min(max(amount, 0), 1)
-        #if canImport(AppKit)
-        let firstColor = cachedSRGBColor(for: first)
-        let secondColor = cachedSRGBColor(for: second)
-        var r1: CGFloat = 0
-        var g1: CGFloat = 0
-        var b1: CGFloat = 0
-        var a1: CGFloat = 0
-        var r2: CGFloat = 0
-        var g2: CGFloat = 0
-        var b2: CGFloat = 0
-        var a2: CGFloat = 0
-        firstColor.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
-        secondColor.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
-
-        return Color(
-            nsColor: NSColor(
-                srgbRed: r1 + (r2 - r1) * clampedAmount,
-                green: g1 + (g2 - g1) * clampedAmount,
-                blue: b1 + (b2 - b1) * clampedAmount,
-                alpha: a1 + (a2 - a1) * clampedAmount
-            )
+        return SRGBColorComponents(
+            red: first.red + (second.red - first.red) * clampedAmount,
+            green: first.green + (second.green - first.green) * clampedAmount,
+            blue: first.blue + (second.blue - first.blue) * clampedAmount,
+            alpha: first.alpha + (second.alpha - first.alpha) * clampedAmount
         )
-        #else
-        return clampedAmount < 0.5 ? first : second
-        #endif
     }
 }
 
-#if canImport(AppKit)
-private func cachedSRGBColor(for hex: String) -> NSColor {
-    NSColor(Color(hex: hex)).usingColorSpace(.sRGB) ?? .black
-}
+private struct SRGBColorComponents {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double
 
-private func cachedSRGBColor(for color: Color) -> NSColor {
-    NSColor(color).usingColorSpace(.sRGB) ?? .black
+    init(red: Double, green: Double, blue: Double, alpha: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+
+        let a: UInt64
+        let r: UInt64
+        let g: UInt64
+        let b: UInt64
+        switch hex.count {
+        case 3:
+            (a, r, g, b) = (
+                255,
+                (int >> 8) * 17,
+                (int >> 4 & 0xF) * 17,
+                (int & 0xF) * 17
+            )
+        case 6:
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8:
+            (a, r, g, b) = (
+                int >> 24,
+                int >> 16 & 0xFF,
+                int >> 8 & 0xFF,
+                int & 0xFF
+            )
+        default:
+            (a, r, g, b) = (1, 1, 1, 0)
+        }
+
+        self.init(
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            alpha: Double(a) / 255
+        )
+    }
+
+    var color: Color {
+        Color(.sRGB, red: red, green: green, blue: blue, opacity: alpha)
+    }
 }
-#endif

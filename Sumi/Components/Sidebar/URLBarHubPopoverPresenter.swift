@@ -7,7 +7,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     private enum Metrics {
         static let fallbackControlsSize = NSSize(width: 234, height: 250)
         static let maximumHeight: CGFloat = 560
-        static let resizeAnimationDuration = PopoverPresenterMetrics.resizeAnimationDuration
     }
 
     private final class AnchorRegistration {
@@ -49,7 +48,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         weak var transientCoordinator: SidebarTransientSessionCoordinator?
         let transientSessionToken: SidebarTransientSessionToken?
         var contentSize: NSSize
-        var resizeAnimationTask: Task<Void, Never>?
         var closeFallbackTask: Task<Void, Never>?
         var isClosing = false
 
@@ -72,7 +70,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         }
 
         deinit {
-            resizeAnimationTask?.cancel()
             closeFallbackTask?.cancel()
         }
     }
@@ -383,7 +380,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         session.hostingController.view.frame.size = targetSize
 
         guard animated else {
-            session.resizeAnimationTask?.cancel()
             session.popover.contentSize = targetSize
             return
         }
@@ -424,10 +420,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
         PopoverPresenterChromeSupport.animateContentSize(
             popover: popover,
-            from: popover.contentSize,
-            to: targetSize,
-            duration: Metrics.resizeAnimationDuration,
-            animationTask: &session.resizeAnimationTask
+            to: targetSize
         )
     }
 

@@ -74,33 +74,54 @@ class GlanceSession: ObservableObject, Identifiable {
         observations.forEach { $0.invalidate() }
         observations.removeAll()
 
+        applyCurrentState(from: webView)
+
         observations.append(
-            webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, _ in
-                Task { @MainActor [weak self, weak webView] in
+            webView.observe(\.url, options: [.new]) { [weak self, weak webView] _, _ in
+                Self.applyObservedStateOnMainThread {
                     self?.updateNavigationState(url: webView?.url, title: nil)
                 }
             }
         )
         observations.append(
-            webView.observe(\.title, options: [.initial, .new]) { [weak self] webView, _ in
-                Task { @MainActor [weak self, weak webView] in
+            webView.observe(\.title, options: [.new]) { [weak self, weak webView] _, _ in
+                Self.applyObservedStateOnMainThread {
                     self?.updateNavigationState(url: nil, title: webView?.title)
                 }
             }
         )
         observations.append(
-            webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] webView, _ in
-                Task { @MainActor [weak self, weak webView] in
+            webView.observe(\.estimatedProgress, options: [.new]) { [weak self, weak webView] _, _ in
+                Self.applyObservedStateOnMainThread {
                     self?.updateProgress(webView?.estimatedProgress ?? 0)
                 }
             }
         )
         observations.append(
-            webView.observe(\.isLoading, options: [.initial, .new]) { [weak self] webView, _ in
-                Task { @MainActor [weak self, weak webView] in
+            webView.observe(\.isLoading, options: [.new]) { [weak self, weak webView] _, _ in
+                Self.applyObservedStateOnMainThread {
                     self?.updateLoading(isLoading: webView?.isLoading ?? false)
                 }
             }
         )
+    }
+
+    private func applyCurrentState(from webView: WKWebView) {
+        updateNavigationState(url: webView.url, title: webView.title)
+        updateProgress(webView.estimatedProgress)
+        updateLoading(isLoading: webView.isLoading)
+    }
+
+    nonisolated private static func applyObservedStateOnMainThread(
+        _ update: @MainActor () -> Void
+    ) {
+        guard Thread.isMainThread else {
+            assertionFailure("GlanceSession received WKWebView KVO off the main thread")
+            return
+        }
+
+        MainActor.assumeIsolated {
+            update()
+        }
     }
 }

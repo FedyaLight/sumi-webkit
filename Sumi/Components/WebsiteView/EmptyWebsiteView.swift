@@ -22,7 +22,12 @@ struct EmptyWebsiteView: View {
         backgroundColor
             .opacity(0.2)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: chromeGeometry.contentRadius, style: .continuous))
+            .clipShape(
+                UnevenRoundedRectangle(
+                    cornerRadii: chromeGeometry.contentCornerRadii.rectangleCornerRadii,
+                    style: .continuous
+                )
+            )
             .browserContentViewportShadow()
             .accessibilityHidden(true)
     }

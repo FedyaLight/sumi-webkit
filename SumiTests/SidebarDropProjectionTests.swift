@@ -1,5 +1,7 @@
 import XCTest
+import AppKit
 import CoreGraphics
+import Foundation
 
 @testable import Sumi
 
@@ -76,6 +78,67 @@ final class SidebarDropProjectionTests: XCTestCase {
         XCTAssertGreaterThan(nearEdgeStep, fartherFromEdgeStep)
         XCTAssertGreaterThanOrEqual(fartherFromEdgeStep, SidebarTabListAutoscrollPolicy.minimumStep)
         XCTAssertLessThanOrEqual(nearEdgeStep, SidebarTabListAutoscrollPolicy.maximumStep)
+    }
+
+    @MainActor
+    func testRegisteredScrollViewPrefersSmallestViewportContainingPoint() {
+        let registry = SidebarTabListDragAutoscrollRegistry.shared
+        registry.stop()
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 320),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        let rootView = NSView(frame: window.contentView?.bounds ?? .zero)
+        window.contentView = rootView
+
+        let largeScrollView = makeScrollView(frame: NSRect(x: 20, y: 20, width: 260, height: 260))
+        let smallScrollView = makeScrollView(frame: NSRect(x: 80, y: 80, width: 90, height: 90))
+
+        rootView.addSubview(largeScrollView)
+        rootView.addSubview(smallScrollView)
+        registry.register(largeScrollView)
+        registry.register(smallScrollView)
+
+        defer {
+            registry.unregister(largeScrollView)
+            registry.unregister(smallScrollView)
+            registry.stop()
+            window.close()
+        }
+
+        let smallViewport = smallScrollView.contentView.convert(smallScrollView.contentView.bounds, to: nil)
+        let largeViewport = largeScrollView.contentView.convert(largeScrollView.contentView.bounds, to: nil)
+        let overlappingPoint = CGPoint(x: smallViewport.midX, y: smallViewport.midY)
+
+        XCTAssertTrue(largeViewport.contains(overlappingPoint))
+        XCTAssertTrue(smallViewport.contains(overlappingPoint))
+        XCTAssertTrue(
+            registry.registeredScrollView(
+                containingWindowPoint: overlappingPoint,
+                in: window
+            ) === smallScrollView
+        )
+    }
+
+    func testAutoscrollRegistryAvoidsHighFrequencyAllocationPatterns() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sumi/Components/DragDrop/SidebarGlobalDragOverlay.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let registryRange = try XCTUnwrap(
+            source.range(of: "final class SidebarTabListDragAutoscrollRegistry")
+        )
+        let registrySource = source[registryRange.lowerBound...]
+
+        XCTAssertTrue(registrySource.contains("1.0 / 60.0"))
+        XCTAssertFalse(registrySource.contains("1.0 / 120.0"))
+        XCTAssertFalse(registrySource.contains("Task { @MainActor"))
+        XCTAssertFalse(registrySource.contains(".sorted {"))
+        XCTAssertFalse(registrySource.contains(".sorted("))
     }
 
     func testProjectedIndexBeforeSourceMapsDirectlyToModelIndex() {
@@ -187,5 +250,21 @@ final class SidebarDropProjectionTests: XCTestCase {
             ),
             [.item("A"), .item("B"), .placeholder]
         )
+    }
+
+    private func makeScrollView(frame: NSRect) -> NSScrollView {
+        let scrollView = NSScrollView(frame: frame)
+        scrollView.borderType = .noBorder
+        scrollView.hasHorizontalScroller = false
+        scrollView.hasVerticalScroller = false
+        scrollView.documentView = NSView(
+            frame: NSRect(
+                x: 0,
+                y: 0,
+                width: frame.width,
+                height: frame.height
+            )
+        )
+        return scrollView
     }
 }

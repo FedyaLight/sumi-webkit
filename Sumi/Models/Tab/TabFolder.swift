@@ -4,20 +4,21 @@
 //
 //
 
+import AppKit
 import Foundation
-import SwiftUI
-import Combine
+import Observation
 
 @MainActor
-public class TabFolder: NSObject, Identifiable, ObservableObject {
+@Observable
+public class TabFolder: NSObject, Identifiable {
     public let id: UUID
-    @Published var name: String
+    var name: String
     var spaceId: UUID
-    @Published var parentFolderId: UUID?
-    @Published var isOpen: Bool = false
-    @Published var icon: String = ""
-    @Published var index: Int
-    @Published var color: NSColor
+    var parentFolderId: UUID?
+    var isOpen: Bool = false
+    var icon: String = ""
+    var index: Int
+    var color: NSColor
 
     init(
         id: UUID = UUID(),

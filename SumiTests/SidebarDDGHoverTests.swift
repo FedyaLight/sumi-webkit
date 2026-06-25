@@ -324,14 +324,14 @@ final class SidebarDDGHoverTests: XCTestCase {
         )
     }
 
-    func testActionVisibilityDoesNotChangeTrailingFadeReservation() {
-        let reservedPadding = SidebarHoverChrome.trailingFadePadding(showsTrailingAction: true)
+    func testActionVisibilityDoesNotChangeTrailingPaddingReservation() {
+        let reservedPadding = SidebarHoverChrome.trailingPadding(showsTrailingAction: true)
 
-        XCTAssertEqual(reservedPadding, SidebarRowLayout.trailingActionFadePadding)
+        XCTAssertEqual(reservedPadding, SidebarRowLayout.trailingActionPadding)
         XCTAssertFalse(SidebarHoverChrome.showsTrailingAction(isHovered: false, isSelected: false))
         XCTAssertTrue(SidebarHoverChrome.showsTrailingAction(isHovered: true, isSelected: false))
         XCTAssertTrue(SidebarHoverChrome.showsTrailingAction(isHovered: false, isSelected: true))
-        XCTAssertEqual(reservedPadding, SidebarHoverChrome.trailingFadePadding(showsTrailingAction: true))
+        XCTAssertEqual(reservedPadding, SidebarHoverChrome.trailingPadding(showsTrailingAction: true))
     }
 
     func testSelectedRowShadowBleedIsAppliedToOuterRowWrapper() throws {
@@ -578,7 +578,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         XCTAssertFalse(transitionPinnedTileSource.contains("showsSplitBadge"))
         XCTAssertFalse(transitionPinnedTileSource.contains("splitBadge"))
         XCTAssertTrue(transitionPinnedTileSource.contains("showsSplitOutline"))
-        XCTAssertTrue(transitionPinnedTileSource.contains("PinnedTileSplitGroupOutlineMask"))
+        XCTAssertTrue(transitionPinnedTileSource.contains("PinnedTileVisual"))
 
         XCTAssertTrue(pinnedTileSource.contains("PinnedTileSplitGroupOutlineMask"))
         XCTAssertTrue(pinnedTileSource.contains("dash: [dash, gap]"))

@@ -12,12 +12,18 @@ protocol TabNavigationStateControllerDelegate: AnyObject {
         _ controller: TabNavigationStateController,
         didObserveTitleChangeFor webView: WKWebView
     )
+
+    func tabNavigationStateController(
+        _ controller: TabNavigationStateController,
+        didObserveProgressChange progress: Double,
+        for webView: WKWebView
+    )
 }
 
 @MainActor
 final class TabNavigationStateController {
     private struct WebViewObservation {
-        var cancellables: Set<AnyCancellable> = []
+        var observations: [NSKeyValueObservation] = []
     }
 
     private var observations: [ObjectIdentifier: WebViewObservation] = [:]
@@ -28,9 +34,10 @@ final class TabNavigationStateController {
         guard observations[identifier] == nil else { return }
 
         var observation = WebViewObservation()
-        installNavigationPublisher(for: webView, keyPath: \.canGoBack, storingIn: &observation)
-        installNavigationPublisher(for: webView, keyPath: \.canGoForward, storingIn: &observation)
-        installTitlePublisher(for: webView, storingIn: &observation)
+        installNavigationObserver(for: webView, keyPath: \.canGoBack, storingIn: &observation)
+        installNavigationObserver(for: webView, keyPath: \.canGoForward, storingIn: &observation)
+        installTitleObserver(for: webView, storingIn: &observation)
+        installProgressObserver(for: webView, storingIn: &observation)
         observations[identifier] = observation
     }
 
@@ -38,37 +45,44 @@ final class TabNavigationStateController {
         observations.removeValue(forKey: ObjectIdentifier(webView))
     }
 
-    private func installNavigationPublisher<Value>(
+    private func installNavigationObserver<Value>(
         for webView: WKWebView,
         keyPath: KeyPath<WKWebView, Value>,
         storingIn observation: inout WebViewObservation
     ) {
-        webView.publisher(for: keyPath, options: [.new])
-            .sink { [weak self, weak webView] _ in
-                precondition(
-                    Thread.isMainThread,
-                    "WKWebView back/forward KVO must be delivered on the main thread"
-                )
-                guard let self, let webView else { return }
+        let obs = webView.observe(keyPath, options: [.new]) { [weak self, weak webView] _, _ in
+            guard let self, let webView else { return }
+            MainActor.assumeIsolated {
                 self.emitNavigationStateChange(for: webView)
             }
-            .store(in: &observation.cancellables)
+        }
+        observation.observations.append(obs)
     }
 
-    private func installTitlePublisher(
+    private func installTitleObserver(
         for webView: WKWebView,
         storingIn observation: inout WebViewObservation
     ) {
-        webView.publisher(for: \.title, options: [.new])
-            .sink { [weak self, weak webView] _ in
-                precondition(
-                    Thread.isMainThread,
-                    "WKWebView title KVO must be delivered on the main thread"
-                )
-                guard let self, let webView else { return }
+        let obs = webView.observe(\.title, options: [.new]) { [weak self, weak webView] _, _ in
+            guard let self, let webView else { return }
+            MainActor.assumeIsolated {
                 self.emitTitleChange(for: webView)
             }
-            .store(in: &observation.cancellables)
+        }
+        observation.observations.append(obs)
+    }
+
+    private func installProgressObserver(
+        for webView: WKWebView,
+        storingIn observation: inout WebViewObservation
+    ) {
+        let obs = webView.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self, weak webView] _, _ in
+            guard let self, let webView else { return }
+            MainActor.assumeIsolated {
+                self.emitProgressChange(for: webView)
+            }
+        }
+        observation.observations.append(obs)
     }
 
     private func emitNavigationStateChange(for webView: WKWebView) {
@@ -79,6 +93,15 @@ final class TabNavigationStateController {
     private func emitTitleChange(for webView: WKWebView) {
         guard observations[ObjectIdentifier(webView)] != nil else { return }
         delegate?.tabNavigationStateController(self, didObserveTitleChangeFor: webView)
+    }
+
+    private func emitProgressChange(for webView: WKWebView) {
+        guard observations[ObjectIdentifier(webView)] != nil else { return }
+        delegate?.tabNavigationStateController(
+            self,
+            didObserveProgressChange: webView.estimatedProgress,
+            for: webView
+        )
     }
 }
 
@@ -94,5 +117,14 @@ extension Tab: TabNavigationStateControllerDelegate {
         didObserveTitleChangeFor webView: WKWebView
     ) {
         updateTitle(from: webView)
+    }
+
+    func tabNavigationStateController(
+        _ controller: TabNavigationStateController,
+        didObserveProgressChange progress: Double,
+        for webView: WKWebView
+    ) {
+        guard webView === _webView else { return }
+        self.estimatedProgress = progress
     }
 }

@@ -502,8 +502,7 @@ private struct SplitGroupSegment: View {
                     title: item.title,
                     font: .systemFont(ofSize: 12, weight: isActive ? .semibold : .regular),
                     textColor: tokens.primaryText,
-                    trailingFadePadding: showsActionControls ? 2 : 0,
-                    isLoading: item.tab?.isLoading ?? false
+                    trailingPadding: showsActionControls ? 2 : 0
                 )
                 .lineLimit(1)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)

@@ -27,6 +27,103 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
+    func testPassiveScrollIndicatorIsHiddenWhenContentFits() {
+        XCTAssertNil(
+            SidebarPassiveScrollIndicatorLayout.metrics(
+                viewportHeight: 120,
+                contentHeight: 120,
+                contentOffset: 0
+            )
+        )
+    }
+
+    func testPassiveScrollIndicatorTracksScrollProgress() throws {
+        let metrics = try XCTUnwrap(
+            SidebarPassiveScrollIndicatorLayout.metrics(
+                viewportHeight: 100,
+                contentHeight: 200,
+                contentOffset: 50
+            )
+        )
+
+        XCTAssertEqual(metrics.thumbHeight, 50, accuracy: 0.001)
+        XCTAssertEqual(metrics.thumbOffsetY, 25, accuracy: 0.001)
+    }
+
+    func testPassiveScrollIndicatorClampsElasticOffsets() throws {
+        let topMetrics = try XCTUnwrap(
+            SidebarPassiveScrollIndicatorLayout.metrics(
+                viewportHeight: 100,
+                contentHeight: 500,
+                contentOffset: -40
+            )
+        )
+        let bottomMetrics = try XCTUnwrap(
+            SidebarPassiveScrollIndicatorLayout.metrics(
+                viewportHeight: 100,
+                contentHeight: 500,
+                contentOffset: 999
+            )
+        )
+
+        XCTAssertEqual(topMetrics.thumbOffsetY, 0, accuracy: 0.001)
+        XCTAssertEqual(bottomMetrics.thumbOffsetY, 72, accuracy: 0.001)
+    }
+
+    func testPassiveScrollIndicatorFrameUsesViewportCoordinates() {
+        let metrics = SidebarPassiveScrollIndicatorMetrics(
+            thumbOffsetY: 10,
+            thumbHeight: 30
+        )
+        let viewport = CGRect(x: 0, y: 0, width: 120, height: 100)
+
+        let flippedFrame = SidebarPassiveScrollIndicatorLayout.frame(
+            for: metrics,
+            in: viewport,
+            isFlipped: true
+        )
+        let unflippedFrame = SidebarPassiveScrollIndicatorLayout.frame(
+            for: metrics,
+            in: viewport,
+            isFlipped: false
+        )
+
+        XCTAssertEqual(flippedFrame, CGRect(x: 115, y: 10, width: 3, height: 30))
+        XCTAssertEqual(unflippedFrame, CGRect(x: 115, y: 60, width: 3, height: 30))
+    }
+
+    func testNativeScrollBoundariesTrackVisibleRect() {
+        let top = SidebarScrollBoundaryState(
+            visibleRect: CGRect(x: 0, y: 0, width: 100, height: 100),
+            contentHeight: 300
+        )
+        let middle = SidebarScrollBoundaryState(
+            visibleRect: CGRect(x: 0, y: 100, width: 100, height: 100),
+            contentHeight: 300
+        )
+        let bottom = SidebarScrollBoundaryState(
+            visibleRect: CGRect(x: 0, y: 200, width: 100, height: 100),
+            contentHeight: 300
+        )
+
+        XCTAssertFalse(top.hasContentAbove)
+        XCTAssertTrue(top.hasContentBelow)
+        XCTAssertTrue(middle.hasContentAbove)
+        XCTAssertTrue(middle.hasContentBelow)
+        XCTAssertTrue(bottom.hasContentAbove)
+        XCTAssertFalse(bottom.hasContentBelow)
+    }
+
+    func testNativeScrollBoundariesAreClearWhenContentFits() {
+        let state = SidebarScrollBoundaryState(
+            visibleRect: CGRect(x: 0, y: 0, width: 100, height: 100),
+            contentHeight: 100
+        )
+
+        XCTAssertFalse(state.hasContentAbove)
+        XCTAssertFalse(state.hasContentBelow)
+    }
+
     func testSameSpaceClickIsNoOp() {
         let ids = [UUID(), UUID()]
         var state = SpaceSidebarTransitionState()

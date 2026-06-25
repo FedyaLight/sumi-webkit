@@ -301,8 +301,7 @@ struct SpaceGradientBackgroundView: View {
             : max(0, min(1, gradient.texture * clampedIntensity))
 
         return ZStack {
-            SpaceMeshGradientView(gradient: gradient)
-                .saturation(max(0, min(1, plan.saturation)))
+            meshGradientLayer(for: gradient, saturation: plan.saturation)
                 .opacity(max(0, min(1, plan.colorOpacity)))
                 .frame(width: fieldSize.width, height: fieldSize.height)
                 .clipped()
@@ -318,6 +317,20 @@ struct SpaceGradientBackgroundView: View {
         .offset(x: -fieldOffset.width, y: -fieldOffset.height)
         .frame(width: localSize.width, height: localSize.height, alignment: .topLeading)
         .clipped()
+    }
+
+    @ViewBuilder
+    private func meshGradientLayer(
+        for gradient: WorkspaceResolvedGradient,
+        saturation: Double
+    ) -> some View {
+        let clampedSaturation = max(0, min(1, saturation))
+        let base = SpaceMeshGradientView(gradient: gradient)
+        if abs(clampedSaturation - 1) < 0.001 {
+            base
+        } else {
+            base.saturation(clampedSaturation)
+        }
     }
 
     private func resolvedTheme(_ theme: WorkspaceTheme) -> ZenWorkspaceThemeResolution {

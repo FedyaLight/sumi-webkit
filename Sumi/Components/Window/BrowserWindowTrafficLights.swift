@@ -195,10 +195,17 @@ private struct BrowserWindowStandardTrafficLightCluster: NSViewRepresentable {
 // behave identically — close, minimize and zoom are no longer asymmetric.
 @MainActor
 private final class BrowserWindowStandardTrafficLightClusterView: NSView {
+    private static let reclamationNotificationNames = [
+        NSWindow.didResignKeyNotification,
+        NSWindow.didBecomeKeyNotification,
+        NSWindow.didEndSheetNotification,
+    ]
+
     private var buttonsByAction: [BrowserWindowTrafficLightAction: NSButton] = [:]
     private var actionProvider: BrowserWindowTrafficLightActionProvider?
     private var isClusterVisible = false
-    private var reclamationObservers: [NSObjectProtocol] = []
+    private weak var observedReclamationWindow: NSWindow?
+    private var isObservingReclamationWindow = false
 
     override var isOpaque: Bool { false }
     override var mouseDownCanMoveWindow: Bool { false }
@@ -213,13 +220,7 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
     }
 
     isolated deinit {
-        if reclamationObservers.isEmpty == false {
-            let center = NotificationCenter.default
-            for observer in reclamationObservers {
-                center.removeObserver(observer)
-            }
-            reclamationObservers.removeAll()
-        }
+        removeReclamationObservers()
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -228,8 +229,10 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        installReclamationObserversIfNeeded()
-        configure()
+        syncReclamationObservers()
+        if window != nil, isClusterVisible {
+            configure()
+        }
         updateButtonStates()
     }
 
@@ -242,26 +245,56 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
     // notifications cover activation transitions. Main/occlusion overlap with key for a browser
     // window and were trimmed to avoid redundant fires.
     private func installReclamationObserversIfNeeded() {
-        guard reclamationObservers.isEmpty, let window else { return }
-        let center = NotificationCenter.default
-        let handler: (Notification) -> Void = { [weak self] _ in
-            MainActor.assumeIsolated {
-                self?.reclaimButtonsIfNeeded()
-            }
+        guard let window else {
+            removeReclamationObservers()
+            return
         }
-        for name in [
-            NSWindow.didResignKeyNotification,
-            NSWindow.didBecomeKeyNotification,
-            NSWindow.didEndSheetNotification,
-        ] {
-            reclamationObservers.append(
-                center.addObserver(forName: name, object: window, queue: .main, using: handler)
+        guard isObservingReclamationWindow == false || observedReclamationWindow !== window else {
+            return
+        }
+
+        removeReclamationObservers()
+        let center = NotificationCenter.default
+        for name in Self.reclamationNotificationNames {
+            center.addObserver(
+                self,
+                selector: #selector(handleWindowReclamationNotification(_:)),
+                name: name,
+                object: window
             )
         }
+        observedReclamationWindow = window
+        isObservingReclamationWindow = true
+    }
+
+    private func syncReclamationObservers() {
+        guard isClusterVisible else {
+            removeReclamationObservers()
+            return
+        }
+
+        installReclamationObserversIfNeeded()
+    }
+
+    private func removeReclamationObservers() {
+        guard isObservingReclamationWindow else { return }
+
+        let center = NotificationCenter.default
+        for name in Self.reclamationNotificationNames {
+            center.removeObserver(self, name: name, object: observedReclamationWindow)
+        }
+        self.observedReclamationWindow = nil
+        isObservingReclamationWindow = false
+    }
+
+    @objc private func handleWindowReclamationNotification(_ notification: Notification) {
+        reclaimButtonsIfNeeded()
     }
 
     private func reclaimButtonsIfNeeded() {
-        guard buttonsByAction.isEmpty == false,
+        guard isClusterVisible,
+              window != nil,
+              buttonsByAction.isEmpty == false,
               buttonsByAction.values.contains(where: { $0.isDescendant(of: self) == false })
         else { return }
         configure()
@@ -317,13 +350,7 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
         // (e.g. when the titlebar buttons resurface during fullscreen). Stripping their wiring
         // would leave dead buttons until the cluster is recreated. deinit owns observer removal.
         isClusterVisible = false
-        if reclamationObservers.isEmpty == false {
-            let center = NotificationCenter.default
-            for observer in reclamationObservers {
-                center.removeObserver(observer)
-            }
-            reclamationObservers.removeAll()
-        }
+        removeReclamationObservers()
     }
 
     func update(actionProvider: BrowserWindowTrafficLightActionProvider, isVisible: Bool) {
@@ -331,11 +358,16 @@ private final class BrowserWindowStandardTrafficLightClusterView: NSView {
         isHidden = !isVisible
         setAccessibilityElement(isVisible)
         isClusterVisible = isVisible
-        // Re-grab in case AppKit reclaimed the live instances (sheet/key transition) since the
-        // last update; configure() is cheap when the buttons are already in the cluster.
-        configure()
+        syncReclamationObservers()
+        if isVisible {
+            // Re-grab in case AppKit reclaimed the live instances (sheet/key transition) since the
+            // last update; configure() is cheap when the buttons are already in the cluster.
+            configure()
+        }
         updateButtonStates()
-        needsLayout = true
+        if isVisible {
+            needsLayout = true
+        }
     }
 
     override func layout() {

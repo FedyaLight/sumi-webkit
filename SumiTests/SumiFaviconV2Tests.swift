@@ -293,16 +293,16 @@ final class SumiFaviconV2PayloadTests: XCTestCase {
         XCTAssertEqual(failure, .unsafeSVG)
     }
 
-    func testValidatorAcceptsAdblockStyleSVGWithInternalStyleOnly() throws {
-        let candidate = try candidate(url: "https://adblock.turtlecute.org/assets/adblock/icon.svg", type: "image/svg+xml")
+    func testValidatorAcceptsStyledSVGWithInternalStyleOnly() throws {
+        let candidate = try candidate(url: "https://shield.turtlecute.org/assets/styled/icon.svg", type: "image/svg+xml")
         let result = SumiFaviconPayloadValidator.validate(
-            data: SumiFaviconTestImages.adblockStyleSVGData(),
+            data: SumiFaviconTestImages.styledSVGData(),
             responseMimeType: "image/svg+xml",
             candidate: candidate
         )
 
         guard case .valid(let payload) = result else {
-            return XCTFail("Expected adblock-style SVG favicon to validate")
+            return XCTFail("Expected styled SVG favicon to validate")
         }
         XCTAssertEqual(payload.payloadKind, .svg)
     }
@@ -521,6 +521,91 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         XCTAssertNotNil(cache.image(for: second))
     }
 
+    func testPreparedCacheEvictsOldestEntryWhenIdentityIndexExceedsImageCountLimit() throws {
+        let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
+        let request = SumiPreparedFaviconRequest(
+            pageURL: try XCTUnwrap(URL(string: "https://example.com/")),
+            partition: .regular(nil),
+            context: .tabSidebar,
+            backingScale: 2
+        )
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        var identities: [SumiPreparedFaviconIdentity] = []
+
+        for index in 0..<513 {
+            let identity = SumiPreparedFaviconIdentity(
+                partition: .regular(nil),
+                blobID: "blob-\(index)",
+                revision: "revision-\(index)",
+                sourceURL: try XCTUnwrap(URL(string: "https://example.com/icon-\(index).png")),
+                request: request
+            )
+            identities.append(identity)
+            cache.setImage(image, for: identity)
+        }
+        let lastIdentity = try XCTUnwrap(identities.last)
+
+        XCTAssertNil(cache.image(for: identities[0]))
+        XCTAssertNotNil(cache.image(for: identities[1]))
+        XCTAssertNotNil(cache.image(for: lastIdentity))
+
+        cache.invalidate(partition: .regular(nil), blobID: "blob-1", revision: "revision-1")
+
+        XCTAssertNil(cache.image(for: identities[1]))
+        XCTAssertNotNil(cache.image(for: lastIdentity))
+    }
+
+    func testPreparedCacheSeparatesContextAndScaleKeys() throws {
+        let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
+        let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
+        let sourceURL = try XCTUnwrap(URL(string: "https://example.com/icon.png"))
+        let sidebarRequest = SumiPreparedFaviconRequest(
+            pageURL: pageURL,
+            partition: .regular(nil),
+            context: .tabSidebar,
+            backingScale: 2
+        )
+        let launcherRequest = SumiPreparedFaviconRequest(
+            pageURL: pageURL,
+            partition: .regular(nil),
+            context: .pinnedLauncher,
+            backingScale: 2
+        )
+        let retinaRequest = SumiPreparedFaviconRequest(
+            pageURL: pageURL,
+            partition: .regular(nil),
+            context: .tabSidebar,
+            backingScale: 3
+        )
+        let sidebarIdentity = SumiPreparedFaviconIdentity(
+            partition: .regular(nil),
+            blobID: "a",
+            revision: "ra",
+            sourceURL: sourceURL,
+            request: sidebarRequest
+        )
+        let launcherIdentity = SumiPreparedFaviconIdentity(
+            partition: .regular(nil),
+            blobID: "a",
+            revision: "ra",
+            sourceURL: sourceURL,
+            request: launcherRequest
+        )
+        let retinaIdentity = SumiPreparedFaviconIdentity(
+            partition: .regular(nil),
+            blobID: "a",
+            revision: "ra",
+            sourceURL: sourceURL,
+            request: retinaRequest
+        )
+
+        cache.setImage(NSImage(size: NSSize(width: 18, height: 18)), for: sidebarIdentity)
+
+        XCTAssertNotNil(cache.image(for: sidebarIdentity))
+        XCTAssertNil(cache.image(for: launcherIdentity))
+        XCTAssertNil(cache.image(for: retinaIdentity))
+    }
+
     func testBlobStoreSeparatesRegularProfilesAndPrivatePartitions() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiFaviconV2Isolation-\(UUID().uuidString)", isDirectory: true)
@@ -563,16 +648,16 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = SumiFaviconBlobStore(rootDirectory: directory)
-        let pageURL = try XCTUnwrap(URL(string: "https://adblock.turtlecute.org/"))
-        let iconURL = try XCTUnwrap(URL(string: "https://adblock.turtlecute.org/assets/adblock/icon.svg"))
+        let pageURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/"))
+        let iconURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/assets/styled/icon.svg"))
         let partition = SumiFaviconPartition.regular(nil)
         let payload = SumiFaviconValidatedPayload(
-            data: SumiFaviconTestImages.adblockStyleSVGData(),
+            data: SumiFaviconTestImages.styledSVGData(),
             payloadKind: .svg,
             mimeType: "image/svg+xml",
             pixelWidth: nil,
             pixelHeight: nil,
-            byteCount: SumiFaviconTestImages.adblockStyleSVGData().count
+            byteCount: SumiFaviconTestImages.styledSVGData().count
         )
 
         _ = try store.storeValidatedPayload(
@@ -1456,18 +1541,18 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         XCTAssertTrue(privateEntries.isEmpty)
     }
 
-    func testAdblockDocumentSVGIconPersistsForColdCacheBackedLookup() async throws {
+    func testStyledDocumentSVGIconPersistsForColdCacheBackedLookup() async throws {
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SumiFaviconV2Adblock-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("SumiFaviconV2StyledSVG-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let pageURL = try XCTUnwrap(URL(string: "https://adblock.turtlecute.org/"))
-        let iconURL = try XCTUnwrap(URL(string: "https://adblock.turtlecute.org/assets/adblock/icon.svg"))
+        let pageURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/"))
+        let iconURL = try XCTUnwrap(URL(string: "https://shield.turtlecute.org/assets/styled/icon.svg"))
         let fetcher = RoutingFaviconNetworkFetcher(
             responses: [
                 iconURL.absoluteString: .success(
                     SumiFaviconFetchResponse(
-                        data: SumiFaviconTestImages.adblockStyleSVGData(),
+                        data: SumiFaviconTestImages.styledSVGData(),
                         mimeType: "image/svg+xml",
                         statusCode: 200
                     )
@@ -1480,7 +1565,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
         let visibleImage = await service.ingestVisibleTabDiscovery(
             links: [
                 SumiFaviconDiscoveredLink(
-                    href: "/assets/adblock/icon.svg",
+                    href: "/assets/styled/icon.svg",
                     rel: "icon",
                     type: "image/svg+xml"
                 ),
@@ -1675,7 +1760,7 @@ final class SumiFaviconV2SourceGuardTests: XCTestCase {
 }
 
 private enum SumiFaviconTestImages {
-    static func adblockStyleSVGData() -> Data {
+    static func styledSVGData() -> Data {
         Data(
             """
             <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" fill="#0074D8" version="1.1">

@@ -492,6 +492,70 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         .map(\.1)
     }
 
+    private static func doesFolderContainActiveSelection(
+        folderId: UUID,
+        childFoldersByParentId: [UUID: [TabFolder]],
+        folderPinsByFolderId: [UUID: [ShortcutPin]],
+        liveTabsByPinId: [UUID: Tab],
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState
+    ) -> Bool {
+        if let currentShortcutPinId = windowState.currentShortcutPinId {
+            if doesFolderContainPin(folderId: folderId, pinId: currentShortcutPinId, childFoldersByParentId: childFoldersByParentId, folderPinsByFolderId: folderPinsByFolderId) {
+                return true
+            }
+        }
+        if let currentTabId = windowState.currentTabId {
+            if doesFolderContainLiveTab(folderId: folderId, tabId: currentTabId, childFoldersByParentId: childFoldersByParentId, folderPinsByFolderId: folderPinsByFolderId, liveTabsByPinId: liveTabsByPinId) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func doesFolderContainPin(
+        folderId: UUID,
+        pinId: UUID,
+        childFoldersByParentId: [UUID: [TabFolder]],
+        folderPinsByFolderId: [UUID: [ShortcutPin]]
+    ) -> Bool {
+        if let pins = folderPinsByFolderId[folderId], pins.contains(where: { $0.id == pinId }) {
+            return true
+        }
+        if let children = childFoldersByParentId[folderId] {
+            for child in children {
+                if doesFolderContainPin(folderId: child.id, pinId: pinId, childFoldersByParentId: childFoldersByParentId, folderPinsByFolderId: folderPinsByFolderId) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private static func doesFolderContainLiveTab(
+        folderId: UUID,
+        tabId: UUID,
+        childFoldersByParentId: [UUID: [TabFolder]],
+        folderPinsByFolderId: [UUID: [ShortcutPin]],
+        liveTabsByPinId: [UUID: Tab]
+    ) -> Bool {
+        if let pins = folderPinsByFolderId[folderId] {
+            for pin in pins {
+                if liveTabsByPinId[pin.id]?.id == tabId {
+                    return true
+                }
+            }
+        }
+        if let children = childFoldersByParentId[folderId] {
+            for child in children {
+                if doesFolderContainLiveTab(folderId: child.id, tabId: tabId, childFoldersByParentId: childFoldersByParentId, folderPinsByFolderId: folderPinsByFolderId, liveTabsByPinId: liveTabsByPinId) {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     private static func folderSnapshot(
         for folder: TabFolder,
         childFoldersByParentId: [UUID: [TabFolder]],
@@ -507,22 +571,52 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let directChildFolders = (childFoldersByParentId[folder.id] ?? [])
             .filter { nextVisited.contains($0.id) == false }
         let directShortcutPins = folderPinsByFolderId[folder.id] ?? []
-        let childSnapshots = folderBodyChildSnapshots(
-            childFolders: directChildFolders,
-            shortcutPins: directShortcutPins,
-            childFoldersByParentId: childFoldersByParentId,
-            folderPinsByFolderId: folderPinsByFolderId,
-            liveTabsByPinId: liveTabsByPinId,
-            browserManager: browserManager,
-            windowState: windowState,
-            splitManager: splitManager,
-            visitedFolderIds: nextVisited
-        )
+
+        let projectionState = windowState.sidebarFolderProjection(for: folder.id)
+
+        let childSnapshots: [SpacePinnedItemSnapshot]
+        let hasActiveSelection: Bool
+
+        if folder.isOpen || projectionState.hasActiveProjection {
+            childSnapshots = folderBodyChildSnapshots(
+                childFolders: directChildFolders,
+                shortcutPins: directShortcutPins,
+                childFoldersByParentId: childFoldersByParentId,
+                folderPinsByFolderId: folderPinsByFolderId,
+                liveTabsByPinId: liveTabsByPinId,
+                browserManager: browserManager,
+                windowState: windowState,
+                splitManager: splitManager,
+                visitedFolderIds: nextVisited
+            )
+            hasActiveSelection = projectionState.hasActiveProjection || childSnapshots.containsActiveSelection
+        } else {
+            let livePins = directShortcutPins.filter { liveTabsByPinId[$0.id] != nil }
+            childSnapshots = livePins.map { pin in
+                SpacePinnedItemSnapshot.shortcut(
+                    shortcutSnapshot(
+                        for: pin,
+                        liveTab: liveTabsByPinId[pin.id],
+                        browserManager: browserManager,
+                        windowState: windowState,
+                        splitManager: splitManager
+                    )
+                )
+            }
+            hasActiveSelection = projectionState.hasActiveProjection || doesFolderContainActiveSelection(
+                folderId: folder.id,
+                childFoldersByParentId: childFoldersByParentId,
+                folderPinsByFolderId: folderPinsByFolderId,
+                liveTabsByPinId: liveTabsByPinId,
+                browserManager: browserManager,
+                windowState: windowState
+            )
+        }
+
         let childSnapshotsById = Dictionary(
             childSnapshots.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        let projectionState = windowState.sidebarFolderProjection(for: folder.id)
         let collapsedProjectedChildSnapshots = collapsedProjectedShortcutPins(
             directShortcutPins,
             liveTabsByPinId: liveTabsByPinId,
@@ -535,9 +629,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             title: folder.name,
             iconValue: folder.icon,
             isOpen: folder.isOpen,
-            hasActiveSelection: projectionState.hasActiveProjection
-                || childSnapshots.containsActiveSelection
-                || (!folder.isOpen && !bodyChildren.isEmpty),
+            hasActiveSelection: hasActiveSelection || (!folder.isOpen && !bodyChildren.isEmpty),
             bodyChildren: bodyChildren
         )
     }
@@ -733,12 +825,21 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     }
 }
 
-private struct SpaceTransitionSnapshotPageView: View {
+@MainActor
+private struct SpaceTransitionSnapshotPageView: View, @preconcurrency Equatable {
     let snapshot: SpaceSidebarPageSnapshot
     let includesEssentials: Bool
     let width: CGFloat
     let tokens: ChromeThemeTokens
     let themeContext: ResolvedThemeContext
+
+    static func == (lhs: SpaceTransitionSnapshotPageView, rhs: SpaceTransitionSnapshotPageView) -> Bool {
+        return lhs.snapshot.spaceId == rhs.snapshot.spaceId &&
+               lhs.snapshot.title == rhs.snapshot.title &&
+               lhs.includesEssentials == rhs.includesEssentials &&
+               lhs.width == rhs.width &&
+               lhs.themeContext.chromeColorScheme == rhs.themeContext.chromeColorScheme
+    }
 
     private var innerWidth: CGFloat {
         max(width - BrowserWindowState.sidebarHorizontalPadding, 0)
@@ -882,29 +983,25 @@ private struct SpaceSnapshotContentView: View {
     let themeContext: ResolvedThemeContext
 
     var body: some View {
-        GeometryReader { _ in
-            ZStack {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 8) {
-                        SpaceSnapshotPinnedSectionView(
-                            items: snapshot.pinnedItems,
-                            rowCornerRadius: snapshot.rowCornerRadius,
-                            tokens: tokens,
-                            themeContext: themeContext
-                        )
+        ScrollView(.vertical, showsIndicators: false) {
+            LazyVStack(spacing: 8) {
+                SpaceSnapshotPinnedSectionView(
+                    items: snapshot.pinnedItems,
+                    rowCornerRadius: snapshot.rowCornerRadius,
+                    tokens: tokens,
+                    themeContext: themeContext
+                )
 
-                        SpaceSnapshotRegularTabsSectionView(
-                            snapshot: snapshot,
-                            innerWidth: innerWidth,
-                            tokens: tokens
-                        )
-                    }
-                    .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
-                }
-                .scrollIndicators(.hidden)
-                .accessibilityIdentifier("space-transition-snapshot-scroll-\(snapshot.spaceId.uuidString)")
+                SpaceSnapshotRegularTabsSectionView(
+                    snapshot: snapshot,
+                    innerWidth: innerWidth,
+                    tokens: tokens
+                )
             }
+            .frame(minWidth: 0, maxWidth: innerWidth, alignment: .leading)
         }
+        .scrollIndicators(.hidden)
+        .accessibilityIdentifier("space-transition-snapshot-scroll-\(snapshot.spaceId.uuidString)")
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
@@ -1038,7 +1135,7 @@ private struct SpaceSnapshotPinnedSectionView: View {
                     .frame(height: 6)
                     .frame(maxWidth: .infinity)
             } else {
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     Color.clear
                         .frame(height: SidebarInsertionGuide.visualCenterY)
 
@@ -1219,7 +1316,7 @@ private struct SpaceSnapshotShortcutRowView: View {
                     .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
             }
 
-            SpaceSnapshotFadingTitleLabel(
+            SpaceSnapshotTitleLabel(
                 title: shortcut.title,
                 font: .system(size: 13, weight: .medium),
                 color: tokens.primaryText
@@ -1262,7 +1359,7 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
                         .padding(.top, 4)
                 }
 
-                VStack(spacing: 2) {
+                LazyVStack(spacing: 2) {
                     ForEach(snapshot.regularItems) { tab in
                         SpaceSnapshotRegularTabRowView(
                             tab: tab,
@@ -1315,7 +1412,7 @@ private struct SpaceSnapshotRegularTabRowView: View {
                     .frame(width: 22, height: 22)
             }
 
-            SpaceSnapshotFadingTitleLabel(
+            SpaceSnapshotTitleLabel(
                 title: tab.title,
                 font: .system(size: 13, weight: .medium),
                 color: tokens.primaryText
@@ -1357,63 +1454,22 @@ private struct SpaceSnapshotRegularTabRowView: View {
     }
 }
 
-private struct SpaceSnapshotFadingTitleLabel: View {
+private struct SpaceSnapshotTitleLabel: View {
     let title: String
     let font: Font
     let color: Color
-    var fadeWidth: CGFloat = 32
-    var trailingFadePadding: CGFloat = 0
+    var trailingPadding: CGFloat = 0
     var height: CGFloat = SidebarRowLayout.titleHeight
 
     var body: some View {
-        GeometryReader { proxy in
-            Text(title)
-                .font(font)
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .allowsTightening(false)
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
-                .clipped()
-                .mask(
-                    SpaceSnapshotTrailingFadeMask(
-                        fadeWidth: fadeWidth,
-                        trailingPadding: trailingFadePadding
-                    )
-                )
-        }
-        .frame(height: height, alignment: .center)
-        .accessibilityLabel(title)
-    }
-}
-
-private struct SpaceSnapshotTrailingFadeMask: View {
-    let fadeWidth: CGFloat
-    let trailingPadding: CGFloat
-
-    var body: some View {
-        GeometryReader { proxy in
-            let width = proxy.size.width
-            let availableWidth = max(width - trailingPadding, 0)
-            let safeFadeWidth = min(fadeWidth, availableWidth)
-            let start = width > 0
-                ? (width - (trailingPadding + safeFadeWidth)) / width
-                : 1
-            let end = width > 0
-                ? (width - trailingPadding) / width
-                : 1
-
-            LinearGradient(
-                stops: [
-                    .init(color: .white, location: 0),
-                    .init(color: .white, location: max(0, min(start, 1))),
-                    .init(color: .clear, location: max(0, min(end, 1))),
-                    .init(color: .clear, location: 1)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        }
+        Text(title)
+            .font(font)
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.trailing, trailingPadding)
+            .frame(height: height, alignment: .leading)
+            .accessibilityLabel(title)
     }
 }
 
@@ -1478,6 +1534,7 @@ struct SpacesSideBarView: View {
     @ObservedObject private var dragState = SidebarDragState.shared
     @ObservedObject private var nowPlayingController = SumiNativeNowPlayingController.shared
     @ObservedObject private var updaterService = SumiUpdaterService.shared
+    @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
 
     private var shouldMountMiniPlayer: Bool {
         guard sumiSettings.sidebarMiniPlayerEnabled else { return false }
@@ -1492,6 +1549,7 @@ struct SpacesSideBarView: View {
             .contentShape(Rectangle())
             .onDisappear {
                 cancelLocalSpaceTransitionIfNeeded(cancelTheme: true)
+                scrollHoverCoordinator.reset()
             }
             .onHover { state in
                 isSidebarHovered = allowsSidebarInteractiveWork ? state : false
@@ -1849,7 +1907,7 @@ struct SpacesSideBarView: View {
         if pageRenderMode == .transitionSnapshot,
            let pageSnapshot = transitionSnapshot?.page(for: space.id)
         {
-            SpaceTransitionSnapshotPageView(
+            EquatableView(content: SpaceTransitionSnapshotPageView(
                 snapshot: pageSnapshot,
                 includesEssentials: includesPinnedGrid,
                 width: width,
@@ -1860,7 +1918,7 @@ struct SpacesSideBarView: View {
                     settings: sumiSettings,
                     isIncognito: windowState.isIncognito
                 )
-            )
+            ))
         } else {
             makeSidebarPage(
                 for: space,
@@ -2348,6 +2406,7 @@ struct SpacesSideBarView: View {
             space: space,
             renderMode: renderMode,
             allowsInteraction: allowsInteraction,
+            scrollHoverCoordinator: scrollHoverCoordinator,
             isSidebarHovered: $isSidebarHovered,
             onActivateTab: {
                 browserManager.requestUserTabActivation(

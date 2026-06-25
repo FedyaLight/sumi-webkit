@@ -126,9 +126,7 @@ actor RuntimeStateCoalescer {
         scheduledFlushTask?.cancel()
         scheduledFlushTask = nil
 
-        let batch = pendingByTabID.values.sorted {
-            $0.id.uuidString < $1.id.uuidString
-        }
+        let batch = Array(pendingByTabID.values)
         pendingByTabID.removeAll(keepingCapacity: true)
 
         let signpostState = PerformanceTrace.beginInterval(signpostName)

@@ -1378,11 +1378,7 @@ final class PaneContainerView: NSView {
             width: bounds.width,
             height: bounds.height
         )
-        chromeShadowView.cornerRadius = min(
-            max(0, chromeGeometry.contentRadius),
-            max(0, bounds.width / 2),
-            max(0, bounds.height / 2)
-        )
+        chromeShadowView.cornerRadii = chromeGeometry.contentCornerRadii
     }
 
     private func layoutSplitControls() {

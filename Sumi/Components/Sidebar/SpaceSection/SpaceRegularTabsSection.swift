@@ -610,7 +610,7 @@ extension SpaceView {
         guard dragState.isDragging,
               case .spaceRegular(let hoveredSpaceId, let slot) = dragState.hoveredSlot,
               hoveredSpaceId == space.id,
-              let location = dragState.dragLocation,
+              let location = locationTracker.location,
               let listMetrics = dragState.regularListHitTargets[space.id] else {
             return nil
         }

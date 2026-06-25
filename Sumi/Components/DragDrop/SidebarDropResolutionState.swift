@@ -59,9 +59,6 @@ enum SidebarDropResolver {
             at: location,
             matching: activeScope
         )
-        if hoveredPage == nil {
-            state.requestGeometryRefresh()
-        }
         return resolve(
             location: location,
             state: state,

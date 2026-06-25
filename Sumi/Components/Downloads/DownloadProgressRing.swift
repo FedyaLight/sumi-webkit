@@ -6,10 +6,15 @@ struct DownloadProgressRing: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var rotation: Double = 0
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
+    }
+
+    private var shouldAnimateIndeterminate: Bool {
+        !reduceMotion && !sumiSettings.shouldReduceChromeMotion
     }
 
     var body: some View {
@@ -33,16 +38,40 @@ struct DownloadProgressRing: View {
                         tokens.primaryText,
                         style: StrokeStyle(lineWidth: 2.25, lineCap: .round)
                     )
-                    .rotationEffect(.degrees(rotation))
-                    .onAppear {
-                        withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
-                            rotation = 360
+                    .rotationEffect(.degrees(shouldAnimateIndeterminate ? rotation : 0))
+                    .onAppear(perform: startIndeterminateAnimationIfNeeded)
+                    .onChange(of: shouldAnimateIndeterminate) { _, shouldAnimate in
+                        if shouldAnimate {
+                            startIndeterminateAnimationIfNeeded()
+                        } else {
+                            resetIndeterminateRotation()
                         }
                     }
+                    .onDisappear(perform: resetIndeterminateRotation)
             }
         }
         .frame(width: size, height: size)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+    }
+
+    private func startIndeterminateAnimationIfNeeded() {
+        guard shouldAnimateIndeterminate else {
+            resetIndeterminateRotation()
+            return
+        }
+
+        resetIndeterminateRotation()
+        withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+            rotation = 360
+        }
+    }
+
+    private func resetIndeterminateRotation() {
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            rotation = 0
+        }
     }
 }

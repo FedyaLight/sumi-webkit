@@ -59,6 +59,17 @@ struct SettingsAppearanceTab: View {
                 SettingsDivider()
 
                 SettingsRow(
+                    title: "Frameless chrome",
+                    subtitle: "Extend web content to the side and bottom window edges, keeping the top bar and sidebar."
+                ) {
+                    Toggle("", isOn: $settings.framelessChrome)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                SettingsDivider()
+
+                SettingsRow(
                     title: "Preview link URL",
                     subtitle: "Show the hovered link target in the status area."
                 ) {

@@ -312,6 +312,7 @@ class SearchManager {
     ) -> [SearchSuggestion] {
         let historyByURL = Dictionary(grouping: historyEntries, by: { $0.url.absoluteString })
         let bookmarksByURL = Dictionary(grouping: bookmarkManager?.allBookmarks() ?? [], by: { $0.url.absoluteString })
+        let tabLookup = currentTabSuggestionLookup()
 
         var suggestions: [SearchSuggestion] = []
         var seenKeys = Set<String>()
@@ -319,7 +320,9 @@ class SearchManager {
             guard let suggestion = searchSuggestion(
                 from: item,
                 historyByURL: historyByURL,
-                bookmarksByURL: bookmarksByURL
+                bookmarksByURL: bookmarksByURL,
+                tabsByID: tabLookup.byID,
+                tabsByURL: tabLookup.byURL
             ) else { continue }
 
             let key = deduplicationKey(for: suggestion)
@@ -593,7 +596,9 @@ class SearchManager {
     private func searchSuggestion(
         from item: SumiSuggestionEngine.Item,
         historyByURL: [String: [HistoryListItem]],
-        bookmarksByURL: [String: [SumiBookmark]]
+        bookmarksByURL: [String: [SumiBookmark]],
+        tabsByID: [UUID: Tab],
+        tabsByURL: [String: Tab]
     ) -> SearchSuggestion? {
         switch item {
         case .phrase(let phrase):
@@ -611,20 +616,31 @@ class SearchManager {
             }
             return SearchSuggestion(text: url.absoluteString, type: .url)
         case .openTab(_, let url, let tabId, _):
-            guard let tab = tabForSuggestion(id: tabId, url: url) else {
+            let tab = tabId.flatMap { tabsByID[$0] } ?? tabsByURL[url.absoluteString]
+            guard let tab else {
                 return SearchSuggestion(text: url.absoluteString, type: .url)
             }
             return SearchSuggestion(text: tab.name, type: .tab(tab))
         }
     }
 
-    private func tabForSuggestion(id: UUID?, url: URL) -> Tab? {
-        guard let tabManager else { return nil }
+    private func currentTabSuggestionLookup() -> (byID: [UUID: Tab], byURL: [String: Tab]) {
+        guard let tabManager else { return ([:], [:]) }
         let tabs = tabManager.allTabsForCurrentProfile()
-        if let id, let tab = tabs.first(where: { $0.id == id }) {
-            return tab
+        var tabsByID: [UUID: Tab] = [:]
+        var tabsByURL: [String: Tab] = [:]
+
+        for tab in tabs {
+            if tabsByID[tab.id] == nil {
+                tabsByID[tab.id] = tab
+            }
+            let urlKey = tab.url.absoluteString
+            if tabsByURL[urlKey] == nil {
+                tabsByURL[urlKey] = tab
+            }
         }
-        return tabs.first { $0.url == url }
+
+        return (tabsByID, tabsByURL)
     }
 
     private func storeCachedWebSuggestions(_ suggestions: [SumiSuggestionEngine.APISuggestion], for query: String) {

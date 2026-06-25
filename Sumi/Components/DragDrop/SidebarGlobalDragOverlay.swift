@@ -110,6 +110,7 @@ class SidebarDragNSView: NSView {
             state.resetInteractionState()
         }
         cachedDragContext = nil
+        SidebarTabListDragAutoscrollRegistry.shared.stop()
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
@@ -121,6 +122,7 @@ class SidebarDragNSView: NSView {
                 state.resetInteractionState()
             }
             cachedDragContext = nil
+            SidebarTabListDragAutoscrollRegistry.shared.stop()
         }
 
         guard let resolution,
@@ -262,9 +264,11 @@ enum SidebarTabListAutoscrollPolicy {
 @MainActor
 final class SidebarTabListDragAutoscrollRegistry {
     static let shared = SidebarTabListDragAutoscrollRegistry()
+    private static let autoscrollTimerInterval: TimeInterval = 1.0 / 60.0
 
     private final class WeakScrollView {
         weak var scrollView: NSScrollView?
+        var lastReportedBoundaries: (hasContentAbove: Bool, hasContentBelow: Bool)?
 
         init(_ scrollView: NSScrollView) {
             self.scrollView = scrollView
@@ -272,6 +276,8 @@ final class SidebarTabListDragAutoscrollRegistry {
     }
 
     private var scrollViewsByIdentifier: [ObjectIdentifier: WeakScrollView] = [:]
+    private var autoscrollTimer: Timer?
+    private weak var activeDragWindow: NSWindow?
 
     func register(_ scrollView: NSScrollView) {
         cleanupReleasedScrollViews()
@@ -282,25 +288,47 @@ final class SidebarTabListDragAutoscrollRegistry {
         scrollViewsByIdentifier[ObjectIdentifier(scrollView)] = nil
     }
 
+    func updateBoundaries(
+        for scrollView: NSScrollView,
+        hasContentAbove: Bool,
+        hasContentBelow: Bool
+    ) {
+        cleanupReleasedScrollViews()
+        scrollViewsByIdentifier[ObjectIdentifier(scrollView)]?.lastReportedBoundaries = (
+            hasContentAbove: hasContentAbove,
+            hasContentBelow: hasContentBelow
+        )
+    }
+
+    func stop() {
+        stopAutoscrollTimer()
+        activeDragWindow = nil
+    }
+
     func registeredScrollView(
         containingWindowPoint locationInWindow: CGPoint,
         in window: NSWindow?
     ) -> NSScrollView? {
         cleanupReleasedScrollViews()
 
-        return scrollViewsByIdentifier.values
-            .compactMap(\.scrollView)
-            .filter { $0.window === window }
-            .filter { scrollView in
-                let viewport = scrollView.contentView.convert(scrollView.contentView.bounds, to: nil)
-                return viewport.contains(locationInWindow)
-            }
-            .sorted { lhs, rhs in
-                let lhsViewport = lhs.contentView.convert(lhs.contentView.bounds, to: nil)
-                let rhsViewport = rhs.contentView.convert(rhs.contentView.bounds, to: nil)
-                return (lhsViewport.width * lhsViewport.height) < (rhsViewport.width * rhsViewport.height)
-            }
-            .first
+        var selectedScrollView: NSScrollView?
+        var selectedViewportArea = CGFloat.greatestFiniteMagnitude
+
+        for weakScrollView in scrollViewsByIdentifier.values {
+            guard let scrollView = weakScrollView.scrollView,
+                  scrollView.window === window else { continue }
+
+            let viewport = scrollView.contentView.convert(scrollView.contentView.bounds, to: nil)
+            guard viewport.contains(locationInWindow) else { continue }
+
+            let viewportArea = viewport.width * viewport.height
+            guard viewportArea < selectedViewportArea else { continue }
+
+            selectedScrollView = scrollView
+            selectedViewportArea = viewportArea
+        }
+
+        return selectedScrollView
     }
 
     @discardableResult
@@ -311,26 +339,85 @@ final class SidebarTabListDragAutoscrollRegistry {
         cleanupReleasedScrollViews()
 
         let locationInWindow = sender.draggingLocation
-        let candidates = scrollViewsByIdentifier.values
-            .compactMap(\.scrollView)
-            .filter { $0.window === destinationView.window }
-            .compactMap { scrollView -> (scrollView: NSScrollView, viewport: CGRect, direction: SidebarTabListAutoscrollDirection)? in
-                let viewport = scrollView.contentView.convert(scrollView.contentView.bounds, to: nil)
-                guard let direction = SidebarTabListAutoscrollPolicy.direction(
-                    for: locationInWindow,
-                    in: viewport
-                ) else {
-                    return nil
-                }
-                return (scrollView, viewport, direction)
+        let window = destinationView.window
+        activeDragWindow = window
+
+        let hasAutoscrolled = performAutoscrollStep(locationInWindow: locationInWindow, window: window)
+
+        if hasAutoscrolled {
+            startAutoscrollTimer(window: window)
+        } else {
+            stopAutoscrollTimer()
+        }
+
+        return hasAutoscrolled
+    }
+
+    private func startAutoscrollTimer(window: NSWindow?) {
+        guard window != nil else { return }
+        guard autoscrollTimer == nil else { return }
+
+        let timer = Timer(timeInterval: Self.autoscrollTimerInterval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                self.performAutoscrollTimerStep()
             }
-            .sorted { lhs, rhs in
-                let lhsArea = lhs.viewport.width * lhs.viewport.height
-                let rhsArea = rhs.viewport.width * rhs.viewport.height
-                return lhsArea < rhsArea
+        }
+        autoscrollTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func performAutoscrollTimerStep() {
+        guard let window = activeDragWindow else {
+            stopAutoscrollTimer()
+            return
+        }
+        let mouseLocation = window.mouseLocationOutsideOfEventStream
+        let scrolled = performAutoscrollStep(locationInWindow: mouseLocation, window: window)
+        if !scrolled {
+            stopAutoscrollTimer()
+        }
+    }
+
+    private func stopAutoscrollTimer() {
+        autoscrollTimer?.invalidate()
+        autoscrollTimer = nil
+    }
+
+    private func performAutoscrollStep(
+        locationInWindow: CGPoint,
+        window: NSWindow?
+    ) -> Bool {
+        var selectedCandidate: (
+            scrollView: NSScrollView,
+            viewport: CGRect,
+            direction: SidebarTabListAutoscrollDirection
+        )?
+        var selectedViewportArea = CGFloat.greatestFiniteMagnitude
+
+        for weakScrollView in scrollViewsByIdentifier.values {
+            guard let scrollView = weakScrollView.scrollView,
+                  scrollView.window === window else { continue }
+
+            let viewport = scrollView.contentView.convert(scrollView.contentView.bounds, to: nil)
+            guard let direction = SidebarTabListAutoscrollPolicy.direction(
+                for: locationInWindow,
+                in: viewport
+            ) else {
+                continue
             }
 
-        guard let candidate = candidates.first else { return false }
+            let viewportArea = viewport.width * viewport.height
+            guard viewportArea < selectedViewportArea else { continue }
+
+            selectedCandidate = (scrollView, viewport, direction)
+            selectedViewportArea = viewportArea
+        }
+
+        guard let candidate = selectedCandidate else { return false }
+        if isPinned(candidate.scrollView, in: candidate.direction) {
+            return false
+        }
         return autoscroll(
             candidate.scrollView,
             locationInWindow: locationInWindow,
@@ -347,6 +434,10 @@ final class SidebarTabListDragAutoscrollRegistry {
     ) -> Bool {
         let contentView = scrollView.contentView
         guard let documentView = scrollView.documentView else { return false }
+
+        if isPinned(scrollView, in: direction) {
+            return false
+        }
 
         let step = SidebarTabListAutoscrollPolicy.step(
             for: locationInWindow,
@@ -372,15 +463,57 @@ final class SidebarTabListDragAutoscrollRegistry {
             in: contentView
         )
 
-        guard abs(constrainedOrigin.y - currentOrigin.y) > 0.5 else {
+        let actualDeltaY = constrainedOrigin.y - currentOrigin.y
+        guard abs(actualDeltaY) > 0.5 else {
             return false
         }
 
         contentView.scroll(to: constrainedOrigin)
         scrollView.reflectScrolledClipView(contentView)
         scrollView.flashScrollers()
+
+        let geometryDelta = documentView.isFlipped ? actualDeltaY : -actualDeltaY
+        SidebarDragState.shared.adjustGeometryStoreScrollDelta(deltaY: geometryDelta)
+
         SidebarDragState.shared.requestGeometryRefresh()
         return true
+    }
+
+    private func isPinned(
+        _ scrollView: NSScrollView,
+        in direction: SidebarTabListAutoscrollDirection,
+        tolerance: CGFloat = 1.0
+    ) -> Bool {
+        if let boundaries = scrollViewsByIdentifier[ObjectIdentifier(scrollView)]?.lastReportedBoundaries {
+            switch direction {
+            case .up:
+                if !boundaries.hasContentAbove { return true }
+            case .down:
+                if !boundaries.hasContentBelow { return true }
+            }
+        }
+
+        let contentView = scrollView.contentView
+        guard let documentView = scrollView.documentView else { return true }
+
+        let documentRect = contentView.documentRect
+        let visibleHeight = contentView.bounds.height
+        let minimumOriginY = documentRect.minY
+        let maximumOriginY = max(documentRect.minY, documentRect.maxY - visibleHeight)
+        guard maximumOriginY - minimumOriginY > tolerance else { return true }
+
+        let originY = contentView.bounds.origin.y
+
+        switch direction {
+        case .up:
+            return documentView.isFlipped
+                ? originY <= minimumOriginY + tolerance
+                : originY >= maximumOriginY - tolerance
+        case .down:
+            return documentView.isFlipped
+                ? originY >= maximumOriginY - tolerance
+                : originY <= minimumOriginY + tolerance
+        }
     }
 
     private func constrainedScrollOrigin(

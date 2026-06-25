@@ -332,6 +332,7 @@ private struct SidebarDDGHoverModifier: ViewModifier {
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarPresentationContext) private var presentationContext
+    @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var nativeSurfaceHoverUpdatesEnabled
     @ObservedObject private var dragState = SidebarDragState.shared
 
     private var effectiveIsEnabled: Bool {
@@ -339,6 +340,7 @@ private struct SidebarDDGHoverModifier: ViewModifier {
             && presentationContext.allowsInteractiveWork
             && !dragState.isDragging
             && !windowState.sidebarInteractionState.freezesSidebarHoverState
+            && nativeSurfaceHoverUpdatesEnabled
     }
 
     @ViewBuilder
@@ -402,8 +404,8 @@ enum SidebarHoverChrome {
         isHovered || isSelected
     }
 
-    static func trailingFadePadding(showsTrailingAction: Bool) -> CGFloat {
-        showsTrailingAction ? SidebarRowLayout.trailingActionFadePadding : 0
+    static func trailingPadding(showsTrailingAction: Bool) -> CGFloat {
+        showsTrailingAction ? SidebarRowLayout.trailingActionPadding : 0
     }
 
 }

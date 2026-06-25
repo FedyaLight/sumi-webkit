@@ -258,10 +258,12 @@ actor TabSnapshotRepository {
             )
         }
 
-        let latestByTabID = Dictionary(runtimeStates.map { ($0.id, $0) }) { _, latest in latest }
-        let deduplicatedStates = latestByTabID.values.sorted {
-            $0.id.uuidString < $1.id.uuidString
+        var latestByTabID: [UUID: RuntimeTabState] = [:]
+        latestByTabID.reserveCapacity(runtimeStates.count)
+        for runtimeState in runtimeStates {
+            latestByTabID[runtimeState.id] = runtimeState
         }
+        let deduplicatedStates = Array(latestByTabID.values)
         guard deduplicatedStates.isEmpty == false else { return }
 
         let ctx = ModelContext(container)

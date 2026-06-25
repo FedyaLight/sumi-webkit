@@ -5,37 +5,44 @@ import XCTest
 
 @MainActor
 final class SumiTabTitleViewTests: XCTestCase {
-    func testTitleViewUsesClippingInsteadOfTailTruncation() {
+    func testTitleViewUsesClipping() {
         let view = makeView(width: 180)
         let fields = titleFields(in: view)
 
         XCTAssertEqual(fields.current.lineBreakMode, .byClipping)
         XCTAssertEqual(fields.previous.lineBreakMode, .byClipping)
+        if let currentCell = fields.current.cell as? NSTextFieldCell,
+           let previousCell = fields.previous.cell as? NSTextFieldCell {
+            XCTAssertFalse(currentCell.truncatesLastVisibleLine)
+            XCTAssertFalse(previousCell.truncatesLastVisibleLine)
+        } else {
+            XCTFail("NSTextField cells must be NSTextFieldCell instances")
+        }
     }
 
-    func testTitleViewAppliesTrailingFadeMask() throws {
+    func testTitleViewAppliesTrailingPaddingConstraint() throws {
         let view = makeView(width: 160)
 
         view.apply(
             title: "A long tab title",
             font: .systemFont(ofSize: 13, weight: .medium),
             textColor: .labelColor,
-            fadeWidth: 32,
-            trailingFadePadding: 20,
+            trailingPadding: 20,
             animated: false
         )
 
-        let maskLayer = try XCTUnwrap(fadeMaskLayer(in: view))
-        XCTAssertEqual(maskLayer.frame.width, 160, accuracy: 0.01)
-        XCTAssertEqual(maskLayer.startPoint.x, 0.675, accuracy: 0.001)
-        XCTAssertEqual(maskLayer.endPoint.x, 0.875, accuracy: 0.001)
+        let fields = titleFields(in: view)
+        let trailingConstraint = try XCTUnwrap(view.constraints.first {
+            $0.firstItem === fields.current && $0.firstAttribute == .trailing
+        })
+        XCTAssertEqual(trailingConstraint.constant, -20, accuracy: 0.001)
     }
 
-    func testHoverChromeOnlyReservesFadePaddingWhenTrailingActionShows() {
-        XCTAssertEqual(SidebarHoverChrome.trailingFadePadding(showsTrailingAction: false), 0)
+    func testHoverChromeOnlyReservesPaddingWhenTrailingActionShows() {
+        XCTAssertEqual(SidebarHoverChrome.trailingPadding(showsTrailingAction: false), 0)
         XCTAssertEqual(
-            SidebarHoverChrome.trailingFadePadding(showsTrailingAction: true),
-            SidebarRowLayout.trailingActionFadePadding
+            SidebarHoverChrome.trailingPadding(showsTrailingAction: true),
+            SidebarRowLayout.trailingActionPadding
         )
     }
 
@@ -50,8 +57,7 @@ final class SumiTabTitleViewTests: XCTestCase {
             title: "Old Title",
             font: .systemFont(ofSize: 13, weight: .medium),
             textColor: .labelColor,
-            fadeWidth: 32,
-            trailingFadePadding: 0,
+            trailingPadding: 0,
             animated: false
         )
 
@@ -59,8 +65,7 @@ final class SumiTabTitleViewTests: XCTestCase {
             title: "New Title",
             font: .systemFont(ofSize: 13, weight: .medium),
             textColor: .labelColor,
-            fadeWidth: 32,
-            trailingFadePadding: 0,
+            trailingPadding: 0,
             animated: true
         )
         let fields = titleFields(in: view)
@@ -78,8 +83,7 @@ final class SumiTabTitleViewTests: XCTestCase {
             title: "Old Title",
             font: .systemFont(ofSize: 13, weight: .medium),
             textColor: .labelColor,
-            fadeWidth: 32,
-            trailingFadePadding: 0,
+            trailingPadding: 0,
             animated: false
         )
 
@@ -87,8 +91,7 @@ final class SumiTabTitleViewTests: XCTestCase {
             title: "New Title",
             font: .systemFont(ofSize: 13, weight: .medium),
             textColor: .labelColor,
-            fadeWidth: 32,
-            trailingFadePadding: 0,
+            trailingPadding: 0,
             animated: false
         )
 
@@ -105,67 +108,6 @@ final class SumiTabTitleViewTests: XCTestCase {
         XCTAssertNil(currentLayer.animation(forKey: SumiTabTitleAnimation.alphaKey))
     }
 
-    func testTitleViewStartsLoadingAlphaWaveAnimation() throws {
-        let view = makeView(width: 200)
-
-        view.apply(
-            title: "Loading Title",
-            font: .systemFont(ofSize: 13, weight: .medium),
-            textColor: .labelColor,
-            fadeWidth: 32,
-            trailingFadePadding: 0,
-            animated: false,
-            isLoading: true
-        )
-        view.layoutSubtreeIfNeeded()
-
-        let maskLayer = try XCTUnwrap(loadingAlphaWaveMaskLayer(in: view))
-        let animation = try XCTUnwrap(maskLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey))
-
-        XCTAssertEqual(
-            maskLayer.bounds.width,
-            200,
-            accuracy: 0.001
-        )
-        XCTAssertEqual(animation.duration, SumiTabTitleAnimation.loadingAlphaWaveCycleDuration, accuracy: 0.001)
-        let locationsAnimation = try XCTUnwrap(animation as? CABasicAnimation)
-        XCTAssertEqual(locationsAnimation.keyPath, "locations")
-        XCTAssertEqual(maskLayer.colors?.count, 5)
-        assertDoubles(maskLayer.locations?.map(\.doubleValue), equalTo: [-0.72, -0.5616, -0.36, -0.1584, 0])
-        assertDoubles(
-            (locationsAnimation.toValue as? [NSNumber])?.map(\.doubleValue),
-            equalTo: [1, 1.1584, 1.36, 1.5616, 1.72]
-        )
-    }
-
-    func testTitleViewStopsLoadingAlphaWaveAnimation() throws {
-        let view = makeView(width: 200)
-
-        view.apply(
-            title: "Loading Title",
-            font: .systemFont(ofSize: 13, weight: .medium),
-            textColor: .labelColor,
-            fadeWidth: 32,
-            trailingFadePadding: 0,
-            animated: false,
-            isLoading: true
-        )
-        view.layoutSubtreeIfNeeded()
-        XCTAssertNotNil(loadingAlphaWaveMaskLayer(in: view)?.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey))
-
-        view.apply(
-            title: "Loading Title",
-            font: .systemFont(ofSize: 13, weight: .medium),
-            textColor: .labelColor,
-            fadeWidth: 32,
-            trailingFadePadding: 0,
-            animated: false,
-            isLoading: false
-        )
-
-        XCTAssertNil(loadingAlphaWaveMaskLayer(in: view))
-    }
-
     func testSwiftUIHostedLabelKeepsFullWidthWithOverlaidAction() throws {
         let host = NSHostingView(
             rootView: ZStack(alignment: .trailing) {
@@ -173,8 +115,7 @@ final class SumiTabTitleViewTests: XCTestCase {
                     title: "A very long hosted tab title",
                     font: .systemFont(ofSize: 13, weight: .medium),
                     textColor: .primary,
-                    fadeWidth: 32,
-                    trailingFadePadding: SidebarRowLayout.trailingActionFadePadding,
+                    trailingPadding: SidebarRowLayout.trailingActionPadding,
                     animated: false,
                     height: SidebarRowLayout.titleHeight
                 )
@@ -192,13 +133,11 @@ final class SumiTabTitleViewTests: XCTestCase {
         let titleView = try XCTUnwrap(findSubview(ofType: SumiTabTitleView.self, in: host))
         XCTAssertEqual(titleView.frame.width, 120, accuracy: 1.0)
 
-        let maskLayer = try XCTUnwrap(fadeMaskLayer(in: titleView))
-        XCTAssertEqual(maskLayer.frame.width, titleView.bounds.width, accuracy: 0.5)
-        XCTAssertEqual(
-            maskLayer.endPoint.x,
-            (titleView.bounds.width - SidebarRowLayout.trailingActionFadePadding) / titleView.bounds.width,
-            accuracy: 0.001
-        )
+        let fields = titleFields(in: titleView)
+        let trailingConstraint = try XCTUnwrap(titleView.constraints.first {
+            $0.firstItem === fields.current && $0.firstAttribute == .trailing
+        })
+        XCTAssertEqual(trailingConstraint.constant, -SidebarRowLayout.trailingActionPadding, accuracy: 0.001)
     }
 
     func testSwiftUIHostedLabelStaysVerticallyCenteredInSidebarRow() throws {
@@ -253,31 +192,5 @@ final class SumiTabTitleViewTests: XCTestCase {
 
     private func textFields(in view: SumiTabTitleView) -> [NSTextField] {
         view.subviews.compactMap { $0 as? NSTextField }
-    }
-
-    private func fadeMaskLayer(in view: SumiTabTitleView) -> CAGradientLayer? {
-        view.layer?.mask as? CAGradientLayer
-    }
-
-    private func loadingAlphaWaveMaskLayer(in view: SumiTabTitleView) -> CAGradientLayer? {
-        titleFields(in: view).current.layer?.mask as? CAGradientLayer
-    }
-
-    private func assertDoubles(
-        _ actual: [Double]?,
-        equalTo expected: [Double],
-        accuracy: Double = 0.001,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        guard let actual else {
-            XCTFail("Expected non-nil values", file: file, line: line)
-            return
-        }
-
-        XCTAssertEqual(actual.count, expected.count, file: file, line: line)
-        for (actualValue, expectedValue) in zip(actual, expected) {
-            XCTAssertEqual(actualValue, expectedValue, accuracy: accuracy, file: file, line: line)
-        }
     }
 }

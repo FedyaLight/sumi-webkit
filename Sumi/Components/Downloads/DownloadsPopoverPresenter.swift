@@ -13,7 +13,6 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         static let maximumRowsHeight: CGFloat = 330
         static let footerHeight: CGFloat = 52
         static let maximumHeight: CGFloat = 390
-        static let resizeAnimationDuration = PopoverPresenterMetrics.resizeAnimationDuration
     }
 
     private final class AnchorRegistration {
@@ -45,7 +44,6 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         weak var transientCoordinator: SidebarTransientSessionCoordinator?
         let transientSessionToken: SidebarTransientSessionToken?
         var cancellables = Set<AnyCancellable>()
-        var resizeAnimationTask: Task<Void, Never>?
         var closeFallbackTask: Task<Void, Never>?
         var isClosing = false
 
@@ -64,7 +62,6 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         }
 
         deinit {
-            resizeAnimationTask?.cancel()
             closeFallbackTask?.cancel()
         }
     }
@@ -340,10 +337,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
     private func animateContentSizeIfNeeded(_ session: ActiveSession, to targetSize: NSSize) {
         PopoverPresenterChromeSupport.animateContentSize(
             popover: session.popover,
-            from: session.popover.contentSize,
-            to: targetSize,
-            duration: Metrics.resizeAnimationDuration,
-            animationTask: &session.resizeAnimationTask
+            to: targetSize
         )
     }
 

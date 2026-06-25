@@ -348,6 +348,47 @@ final class GlanceManagerTests: XCTestCase {
         withExtendedLifetime(windowRegistry) {}
     }
 
+    func testGlanceSessionObserveAppliesInitialWebViewStateSynchronously() {
+        let browserManager = BrowserManager()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let targetURL = URL(string: "https://destination.example/page")!
+        let previewTab = Tab(url: targetURL, name: "Destination", browserManager: browserManager)
+        let session = GlanceSession(
+            targetURL: targetURL,
+            windowId: UUID(),
+            sourceTab: sourceTab,
+            previewTab: previewTab,
+            originRectInWindow: .zero
+        )
+        let webView = WKWebView()
+
+        XCTAssertTrue(session.isLoading)
+
+        session.observe(webView)
+
+        XCTAssertFalse(session.isLoading)
+        XCTAssertEqual(session.estimatedProgress, webView.estimatedProgress)
+    }
+
+    func testGlanceSessionObserveAvoidsInitialKVOAndPerEventMainActorTasks() throws {
+        let source = try glanceSessionSource()
+        let observeStart = try XCTUnwrap(
+            source.range(of: "func observe(_ webView: WKWebView) {")?.lowerBound
+        )
+        let observeEnd = try XCTUnwrap(
+            source.range(
+                of: "private func applyCurrentState",
+                range: observeStart..<source.endIndex
+            )?.lowerBound
+        )
+        let observeSource = String(source[observeStart..<observeEnd])
+
+        XCTAssertTrue(observeSource.contains("applyCurrentState(from: webView)"))
+        XCTAssertEqual(observeSource.components(separatedBy: "options: [.new]").count - 1, 4)
+        XCTAssertFalse(observeSource.contains(".initial"))
+        XCTAssertFalse(observeSource.contains("Task { @MainActor"))
+    }
+
     func testGlanceSessionSnapshotRestoresPreviewForWindow() throws {
         let browserManager = BrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
@@ -460,5 +501,17 @@ final class GlanceManagerTests: XCTestCase {
             await Task.yield()
         }
         return try XCTUnwrap(session.previewTab.existingWebView, file: file, line: line)
+    }
+
+    private func glanceSessionSource() throws -> String {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/GlanceManager/GlanceSession.swift"
+            ),
+            encoding: .utf8
+        )
     }
 }

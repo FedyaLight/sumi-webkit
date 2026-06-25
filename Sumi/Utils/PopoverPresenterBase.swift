@@ -3,7 +3,6 @@ import SwiftUI
 
 enum PopoverPresenterMetrics {
     static let closeAnimationFallbackDelay: UInt64 = 350_000_000
-    static let resizeAnimationDuration: TimeInterval = 0.18
 }
 
 @MainActor
@@ -36,20 +35,10 @@ enum PopoverPresenterChromeSupport {
 
     static func animateContentSize(
         popover: NSPopover,
-        from startSize: NSSize,
-        to targetSize: NSSize,
-        duration: TimeInterval = PopoverPresenterMetrics.resizeAnimationDuration,
-        animationTask: inout Task<Void, Never>?
+        to targetSize: NSSize
     ) {
         guard popover.contentSize != targetSize else { return }
-        animationTask?.cancel()
-        PopoverContentSizeAnimator.animate(
-            popover: popover,
-            from: startSize,
-            to: targetSize,
-            duration: duration,
-            animationTask: &animationTask
-        )
+        popover.contentSize = targetSize
     }
 
     static func isAnchorViewReady(

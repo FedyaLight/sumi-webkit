@@ -151,7 +151,7 @@ final class TabSuspensionService {
     }
 
     private struct ProactiveTimerState {
-        let task: Task<Void, Never>
+        let requestedDelay: TimeInterval
     }
 
     private weak var browserManager: BrowserManager?
@@ -163,6 +163,9 @@ final class TabSuspensionService {
     private var energySaverPolicyObserver: NSObjectProtocol?
     private var hiddenTabStates: [UUID: HiddenTabState] = [:]
     private var proactiveTimers: [UUID: ProactiveTimerState] = [:]
+    private var proactiveTimerSchedulerTask: Task<Void, Never>?
+    private var proactiveTimerSchedulerDeadlineLiveUptime: TimeInterval?
+    private var proactiveTimerSchedulerGeneration = 0
     private var revisitCounts: [UUID: Int] = [:]
     private var scheduledProactiveTimerReconcileTask: Task<Void, Never>?
     private var pendingProactiveTimerReconcileReasons: Set<String> = []
@@ -475,8 +478,7 @@ final class TabSuspensionService {
         armProactiveTimer(
             for: tab.id,
             hiddenStartedAtLiveUptime: hiddenState.hiddenStartedAtLiveUptime,
-            requestedDelay: context.policy.proactiveDeactivationDelay,
-            sleepDelay: context.policy.proactiveDeactivationDelay
+            requestedDelay: context.policy.proactiveDeactivationDelay
         )
     }
 
@@ -501,26 +503,83 @@ final class TabSuspensionService {
     private func armProactiveTimer(
         for tabID: UUID,
         hiddenStartedAtLiveUptime: TimeInterval,
-        requestedDelay: TimeInterval,
-        sleepDelay: TimeInterval
+        requestedDelay: TimeInterval
     ) {
         cancelProactiveTimer(for: tabID)
+        hiddenTabStates[tabID] = HiddenTabState(
+            hiddenStartedAtLiveUptime: hiddenStartedAtLiveUptime
+        )
         proactiveTimerStartCountForTesting += 1
-        let task = Task { @MainActor [weak self] in
+        proactiveTimers[tabID] = ProactiveTimerState(requestedDelay: requestedDelay)
+        scheduleProactiveTimerScheduler()
+    }
+
+    private func scheduleProactiveTimerScheduler() {
+        guard let nextDeadline = nextProactiveTimerDeadline() else {
+            cancelProactiveTimerScheduler()
+            return
+        }
+
+        if proactiveTimerSchedulerTask != nil,
+           proactiveTimerSchedulerDeadlineLiveUptime == nextDeadline {
+            return
+        }
+
+        proactiveTimerSchedulerTask?.cancel()
+        proactiveTimerSchedulerGeneration += 1
+        proactiveTimerSchedulerDeadlineLiveUptime = nextDeadline
+
+        let generation = proactiveTimerSchedulerGeneration
+        let sleepDelay = max(0, nextDeadline - suspensionClock.liveUptime)
+        proactiveTimerSchedulerTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
                 try await self.timerSleep(sleepDelay)
             } catch {
                 return
             }
-            guard !Task.isCancelled else { return }
-            self.handleProactiveTimerFired(
+            guard !Task.isCancelled,
+                  self.proactiveTimerSchedulerGeneration == generation
+            else { return }
+
+            self.proactiveTimerSchedulerTask = nil
+            self.proactiveTimerSchedulerDeadlineLiveUptime = nil
+            self.handleDueProactiveTimers()
+        }
+    }
+
+    private func nextProactiveTimerDeadline() -> TimeInterval? {
+        proactiveTimers.compactMap { tabID, timerState in
+            guard let hiddenState = hiddenTabStates[tabID] else { return nil }
+            return hiddenState.hiddenStartedAtLiveUptime + timerState.requestedDelay
+        }
+        .min()
+    }
+
+    private func handleDueProactiveTimers() {
+        let orphanedTimerIDs = proactiveTimers.keys.filter { hiddenTabStates[$0] == nil }
+        for tabID in orphanedTimerIDs {
+            proactiveTimers.removeValue(forKey: tabID)
+        }
+
+        let now = suspensionClock.liveUptime
+        let dueTimers = proactiveTimers.compactMap {
+            tabID, timerState -> (UUID, HiddenTabState, ProactiveTimerState)? in
+            guard let hiddenState = hiddenTabStates[tabID] else { return nil }
+            let deadline = hiddenState.hiddenStartedAtLiveUptime + timerState.requestedDelay
+            guard now + 0.001 >= deadline else { return nil }
+            return (tabID, hiddenState, timerState)
+        }
+
+        for (tabID, hiddenState, timerState) in dueTimers {
+            handleProactiveTimerFired(
                 tabID: tabID,
-                hiddenStartedAtLiveUptime: hiddenStartedAtLiveUptime,
-                requestedDelay: requestedDelay
+                hiddenStartedAtLiveUptime: hiddenState.hiddenStartedAtLiveUptime,
+                requestedDelay: timerState.requestedDelay
             )
         }
-        proactiveTimers[tabID] = ProactiveTimerState(task: task)
+
+        scheduleProactiveTimerScheduler()
     }
 
     private func handleProactiveTimerFired(
@@ -535,8 +594,7 @@ final class TabSuspensionService {
             armProactiveTimer(
                 for: tabID,
                 hiddenStartedAtLiveUptime: hiddenStartedAtLiveUptime,
-                requestedDelay: requestedDelay,
-                sleepDelay: requestedDelay - elapsed
+                requestedDelay: requestedDelay
             )
             return
         }
@@ -567,14 +625,20 @@ final class TabSuspensionService {
     }
 
     private func cancelProactiveTimer(for tabID: UUID) {
-        proactiveTimers.removeValue(forKey: tabID)?.task.cancel()
+        guard proactiveTimers.removeValue(forKey: tabID) != nil else { return }
+        scheduleProactiveTimerScheduler()
     }
 
     private func cancelAllProactiveTimers() {
-        for timer in proactiveTimers.values {
-            timer.task.cancel()
-        }
         proactiveTimers.removeAll()
+        cancelProactiveTimerScheduler()
+    }
+
+    private func cancelProactiveTimerScheduler() {
+        proactiveTimerSchedulerTask?.cancel()
+        proactiveTimerSchedulerTask = nil
+        proactiveTimerSchedulerDeadlineLiveUptime = nil
+        proactiveTimerSchedulerGeneration += 1
     }
 
     private func suspensionCandidates(

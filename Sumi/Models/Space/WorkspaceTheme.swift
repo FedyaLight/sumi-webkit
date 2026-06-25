@@ -643,7 +643,7 @@ private extension String {
 }
 
 #if canImport(AppKit)
-private extension NSColor {
+extension NSColor {
     var themePerceivedLightness: Double {
         let rgb = usingColorSpace(.sRGB) ?? self
         var red: CGFloat = 0

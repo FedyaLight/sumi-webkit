@@ -36,12 +36,13 @@ enum NativeChromeMaterialRole {
 struct NativeChromeMaterialBackground: View {
     let role: NativeChromeMaterialRole
     var colorScheme: ColorScheme? = nil
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
     @ViewBuilder
     var body: some View {
-        if sumiSettings.shouldUseOpaqueChromeSurfaces {
+        if accessibilityReduceTransparency || sumiSettings.shouldUseOpaqueChromeSurfaces {
             opaqueFallbackColor
         } else {
             NativeChromeVisualEffectBackground(
@@ -70,23 +71,40 @@ private struct NativeChromeVisualEffectBackground: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = role.material
-        view.blendingMode = role.blendingMode
-        view.state = .followsWindowActiveState
-        let scheme = colorScheme ?? themeContext.nativeSurfaceColorScheme
-        view.appearance = NSAppearance.sumiChromeAppearance(for: scheme)
+        applyConfiguration(to: view)
         return view
     }
 
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = role.material
-        nsView.blendingMode = role.blendingMode
-        nsView.state = .followsWindowActiveState
+        applyConfiguration(to: nsView, fallbackAppearance: nsView.window?.effectiveAppearance)
+    }
+
+    private func applyConfiguration(
+        to view: NSVisualEffectView,
+        fallbackAppearance: NSAppearance? = nil
+    ) {
+        let material = role.material
+        if view.material != material {
+            view.material = material
+        }
+
+        let blendingMode = role.blendingMode
+        if view.blendingMode != blendingMode {
+            view.blendingMode = blendingMode
+        }
+
+        if view.state != .followsWindowActiveState {
+            view.state = .followsWindowActiveState
+        }
+
         let scheme = colorScheme ?? themeContext.nativeSurfaceColorScheme
-        nsView.appearance = NSAppearance.sumiChromeAppearance(
+        let appearance = NSAppearance.sumiChromeAppearance(
             for: scheme,
-            fallback: nsView.window?.effectiveAppearance
+            fallback: fallbackAppearance
         )
+        if view.appearance?.name != appearance.name {
+            view.appearance = appearance
+        }
     }
 }
 

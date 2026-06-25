@@ -256,7 +256,7 @@ struct WindowView: View {
     @ViewBuilder
     private func SidebarWebViewStack(windowChromeSize: CGSize) -> some View {
         let sidebarVisible = windowState.isSidebarVisible
-        let elementSeparation = BrowserChromeGeometry.elementSeparation
+        let horizontalInsets = chromeGeometry.contentEdgeInsets
         let sidebarPosition = sumiSettings.sidebarPosition
         let shellEdge = sidebarPosition.shellEdge
         let rendersDockedSidebar = sidebarVisible || shouldRenderDockedSidebar
@@ -294,8 +294,8 @@ struct WindowView: View {
                 )
             }
         }
-        .padding(.leading, elementSeparation * (1 - leftLayoutProgress))
-        .padding(.trailing, elementSeparation * (1 - rightLayoutProgress))
+        .padding(.leading, horizontalInsets.leading * (1 - leftLayoutProgress))
+        .padding(.trailing, horizontalInsets.trailing * (1 - rightLayoutProgress))
     }
 
     @ViewBuilder
@@ -375,6 +375,17 @@ struct WindowView: View {
             WebsiteView()
                 .zIndex(2000)
 
+            if let currentTab = browserManager.currentTab(for: windowState) {
+                HStack {
+                    Spacer()
+                    SumiWindowProgressBar(tab: currentTab)
+                    .frame(width: 200, height: 12)
+                    .offset(y: -BrowserChromeGeometry.elementSeparation / 2 - 6)
+                    Spacer()
+                }
+                .zIndex(2010)
+            }
+
             // Find-in-page stays in the browser window's responder chain so window controls keep active appearance.
             FindInPageChromeHost(
                 browserManager: browserManager,
@@ -389,8 +400,8 @@ struct WindowView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .zIndex(WindowTransientChromeZIndex.findInPage)
         }
-        .padding(.top, BrowserChromeGeometry.elementSeparation)
-        .padding(.bottom, BrowserChromeGeometry.elementSeparation)
+        .padding(.top, chromeGeometry.contentEdgeInsets.top)
+        .padding(.bottom, chromeGeometry.contentEdgeInsets.bottom)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -543,6 +554,10 @@ struct WindowView: View {
 
     private var nativeSurfaceColorScheme: ColorScheme {
         resolvedThemeContext.nativeSurfaceColorScheme
+    }
+
+    private var chromeGeometry: BrowserChromeGeometry {
+        BrowserChromeGeometry(settings: sumiSettings)
     }
 
     @ViewBuilder

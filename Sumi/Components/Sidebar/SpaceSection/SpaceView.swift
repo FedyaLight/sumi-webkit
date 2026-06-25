@@ -31,17 +31,18 @@ struct SpaceView: View {
     let space: Space
     let renderMode: SpaceViewRenderMode
     let allowsInteraction: Bool
+    let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     @Binding var isSidebarHovered: Bool
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @ObservedObject var dragState = SidebarDragState.shared
+    @ObservedObject var locationTracker = SidebarDragState.shared.locationTracker
     @State var isNewTabHovered = false
     @State var regularTabsListAnimation = RegularTabsListAnimationState()
     @State var regularSplitSegmentRemovalIds = Set<UUID>()
     @State var shortcutRestoreGaps: [ShortcutRestoreGap] = []
     @State var shortcutRestoreAppearingGapIds = Set<UUID>()
-    @State var tabListVerticalScrollOffset: CGFloat = 0
     @Environment(\.resolvedThemeContext) var themeContext
     @Environment(\.accessibilityReduceMotion) var reduceMotion
 
@@ -52,7 +53,7 @@ struct SpaceView: View {
     let onMuteTab: (Tab) -> Void
     @EnvironmentObject var splitManager: SplitViewManager
 
-    private var outerWidth: CGFloat {
+    var outerWidth: CGFloat {
         let visibleWidth = windowState.sidebarWidth
         if visibleWidth > 0 {
             return visibleWidth
@@ -198,5 +199,52 @@ extension SpaceView {
             return group.member(for: tab.id)
         }
         return nil
+    }
+
+    var elevatedFolderIds: Set<UUID> {
+        var elevated = Set<UUID>()
+        let tabManager = browserManager.tabManager
+
+        // 1. If a shortcut pin is selected
+        if let currentShortcutPinId = windowState.currentShortcutPinId {
+            if let pin = tabManager.shortcutPin(by: currentShortcutPinId), pin.spaceId == space.id {
+                var currentFolderId = pin.folderId
+                while let folderId = currentFolderId {
+                    if !elevated.insert(folderId).inserted { break }
+                    currentFolderId = tabManager.folder(by: folderId)?.parentFolderId
+                }
+            }
+        }
+
+        // 2. If a regular tab is selected
+        if let currentTabId = windowState.currentTabId {
+            // Check if it's the live tab of a shortcut pin
+            let allPins = tabManager.spacePinnedPins(for: space.id)
+            for pin in allPins {
+                if tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)?.id == currentTabId {
+                    var currentFolderId = pin.folderId
+                    while let folderId = currentFolderId {
+                        if !elevated.insert(folderId).inserted { break }
+                        currentFolderId = tabManager.folder(by: folderId)?.parentFolderId
+                    }
+                }
+            }
+
+            // Check if it's in a hosted split group
+            let allSplitGroups = tabManager.shortcutHostedSplitGroups(for: space.id)
+            for group in allSplitGroups {
+                if group.contains(currentTabId) {
+                    if let folderId = tabManager.shortcutHostedSplitGroupFolderId(group, in: space.id) {
+                        var currentFolderId: UUID? = folderId
+                        while let fid = currentFolderId {
+                            if !elevated.insert(fid).inserted { break }
+                            currentFolderId = tabManager.folder(by: fid)?.parentFolderId
+                        }
+                    }
+                }
+            }
+        }
+
+        return elevated
     }
 }

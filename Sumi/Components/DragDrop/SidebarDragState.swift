@@ -41,8 +41,16 @@ final class SidebarDragState: ObservableObject {
     @Published var activeHoveredFolderId: UUID? = nil
     @Published var activeSplitTarget: SplitDropSide? = nil
     @Published var activeDragItemId: UUID? = nil
-    @Published var dragLocation: CGPoint? = nil
-    @Published var previewDragLocation: CGPoint? = nil
+    let locationTracker = SidebarDragLocationTracker()
+
+    var dragLocation: CGPoint? {
+        get { locationTracker.location }
+        set { locationTracker.location = newValue }
+    }
+    var previewDragLocation: CGPoint? {
+        get { locationTracker.previewLocation }
+        set { locationTracker.previewLocation = newValue }
+    }
     @Published var previewKind: SidebarDragPreviewKind? = nil
     @Published var previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [:]
     @Published var previewModel: SidebarDragPreviewModel? = nil
@@ -631,7 +639,7 @@ final class SidebarDragState: ObservableObject {
             return !isInternalDragSession
         }
 
-        return true
+        return false
     }
 
     func updateDragLocation(
@@ -1012,4 +1020,79 @@ final class SidebarDragState: ObservableObject {
             return true
         }
     }
+
+    func adjustGeometryStoreScrollDelta(deltaY: CGFloat) {
+        guard abs(deltaY) > 0.5 else { return }
+
+        for (id, metrics) in activeGeometryStore.topLevelPinnedItemTargets {
+            var updated = metrics
+            updated.frame.origin.y -= deltaY
+            activeGeometryStore.topLevelPinnedItemTargets[id] = updated
+        }
+        
+        for (id, metrics) in activeGeometryStore.folderDropTargets {
+            var updated = metrics
+            if let h = updated.headerFrame {
+                var newH = h
+                newH.origin.y -= deltaY
+                updated.headerFrame = newH
+            }
+            if let b = updated.bodyFrame {
+                var newB = b
+                newB.origin.y -= deltaY
+                updated.bodyFrame = newB
+            }
+            if let a = updated.afterFrame {
+                var newA = a
+                newA.origin.y -= deltaY
+                updated.afterFrame = newA
+            }
+            activeGeometryStore.folderDropTargets[id] = updated
+        }
+        
+        for (id, metrics) in activeGeometryStore.folderChildDropTargets {
+            var updated = metrics
+            updated.frame.origin.y -= deltaY
+            activeGeometryStore.folderChildDropTargets[id] = updated
+        }
+        
+        for (key, rect) in activeGeometryStore.sectionFramesBySpace {
+            var updated = rect
+            updated.origin.y -= deltaY
+            activeGeometryStore.sectionFramesBySpace[key] = updated
+        }
+        
+        for (id, metrics) in activeGeometryStore.regularListHitTargets {
+            var updated = metrics
+            updated.frame.origin.y -= deltaY
+            activeGeometryStore.regularListHitTargets[id] = updated
+        }
+        
+        for (spaceId, metrics) in activeGeometryStore.essentialsLayoutMetricsBySpace {
+            var updated = metrics
+            updated.frame.origin.y -= deltaY
+            updated.dropFrame.origin.y -= deltaY
+            updated.dropSlotFrames = updated.dropSlotFrames.map { slot in
+                var s = slot
+                s.frame.origin.y -= deltaY
+                return s
+            }
+            activeGeometryStore.essentialsLayoutMetricsBySpace[spaceId] = updated
+        }
+        
+        for (key, metrics) in activeGeometryStore.pageGeometryByKey {
+            var updated = metrics
+            updated.frame.origin.y -= deltaY
+            activeGeometryStore.pageGeometryByKey[key] = updated
+        }
+        
+        geometrySnapshot = snapshot(from: activeGeometryStore)
+        geometryRevision &+= 1
+    }
+}
+
+@MainActor
+final class SidebarDragLocationTracker: ObservableObject {
+    @Published var location: CGPoint? = nil
+    @Published var previewLocation: CGPoint? = nil
 }

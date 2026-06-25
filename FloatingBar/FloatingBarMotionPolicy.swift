@@ -72,8 +72,7 @@ struct FloatingBarLocalVignetteModifier: ViewModifier {
             switch chromeScheme {
             case .light:
                 content
-                    .shadow(color: Color.black.opacity(0.14), radius: 22, x: 0, y: 10)
-                    .shadow(color: Color.black.opacity(0.05), radius: 7, x: 0, y: 2)
+                    .shadow(color: Color.black.opacity(0.16), radius: 23, x: 0, y: 10)
             case .dark:
                 content
                     .shadow(color: Color.black.opacity(0.30), radius: 22, x: 0, y: 10)

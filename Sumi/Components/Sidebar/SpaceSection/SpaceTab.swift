@@ -106,8 +106,7 @@ struct SpaceTab: View {
                         title: tab.name,
                         font: .systemFont(ofSize: 13, weight: .medium),
                         textColor: textTab,
-                        trailingFadePadding: titleTrailingFadePadding,
-                        isLoading: tab.isLoading
+                        trailingPadding: titleTrailingPadding
                     )
                     .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                     .textSelection(.disabled) // Make text non-selectable
@@ -265,12 +264,12 @@ struct SpaceTab: View {
         activeGlanceSessionForRow != nil && displayIsHovering
     }
 
-    private var titleTrailingFadePadding: CGFloat {
+    private var titleTrailingPadding: CGFloat {
         if activeGlanceSessionForRow != nil {
             return SidebarRowLayout.trailingActionSize
                 + (showsGlanceCloseButton ? SidebarRowLayout.trailingActionSize + SidebarRowLayout.trailingActionGap : 0)
         }
-        return SidebarHoverChrome.trailingFadePadding(showsTrailingAction: showsCloseButton)
+        return SidebarHoverChrome.trailingPadding(showsTrailingAction: showsCloseButton)
     }
 
     private var trailingActivationExclusionWidth: CGFloat {

@@ -148,6 +148,7 @@ private final class SumiLinkInteractionUserScript: NSObject, SumiUserScript, @Ma
             if (!handler) { return; }
 
             let currentHoveredLink = null;
+            let currentHoveredLinkElement = null;
 
             function post(method, params) {
                 handler.postMessage({
@@ -175,6 +176,7 @@ private final class SumiLinkInteractionUserScript: NSObject, SumiUserScript, @Ma
 
             function updateHoveredLink(link) {
                 const href = link && link.href ? link.href : null;
+                currentHoveredLinkElement = link || null;
                 if (currentHoveredLink === href) {
                     return;
                 }
@@ -184,6 +186,10 @@ private final class SumiLinkInteractionUserScript: NSObject, SumiUserScript, @Ma
             }
 
             document.addEventListener("mouseover", function(event) {
+                if (currentHoveredLinkElement && currentHoveredLinkElement.contains(event.target)) {
+                    return;
+                }
+
                 updateHoveredLink(findLinkTarget(event.target));
             }, { passive: true, capture: true });
 
@@ -192,8 +198,13 @@ private final class SumiLinkInteractionUserScript: NSObject, SumiUserScript, @Ma
                     return;
                 }
 
+                if (currentHoveredLinkElement && event.relatedTarget && currentHoveredLinkElement.contains(event.relatedTarget)) {
+                    return;
+                }
+
                 const nextTarget = findLinkTarget(event.relatedTarget);
                 if (nextTarget && nextTarget.href === currentHoveredLink) {
+                    currentHoveredLinkElement = nextTarget;
                     return;
                 }
 

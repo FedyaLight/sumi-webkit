@@ -45,9 +45,9 @@ extension WKWebView: SumiNowPlayingWebViewAdapter {
 
     private func sumiRequestBackgroundMediaPlaybackState() async -> SumiBackgroundMediaPlaybackState {
         let playbackState = await withCheckedContinuation { continuation in
-            requestMediaPlaybackState { state in
+            requestMediaPlaybackState(completionHandler: { state in
                 continuation.resume(returning: state)
-            }
+            })
         }
 
         switch playbackState {

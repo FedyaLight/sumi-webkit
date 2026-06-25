@@ -53,7 +53,6 @@ struct PinnedTabView: View {
                 chromeTemplateSystemImageName: chromeTemplateSystemImageName,
                 presentationState: presentationState,
                 isHovered: displayIsHovered,
-                isLoading: liveTab?.isLoading ?? false,
                 showsSplitGroupOutline: showsSplitGroupOutline,
                 configuration: pinnedTabsConfiguration,
                 accentSourceURL: accentSourceURL ?? liveTab?.url,
@@ -227,7 +226,6 @@ struct PinnedTileVisual: View {
     var chromeTemplateSystemImageName: String? = nil
     var presentationState: ShortcutPresentationState
     var isHovered: Bool = false
-    var isLoading: Bool = false
     var showsSplitGroupOutline: Bool = false
     var faviconOpacity: Double = 1
     var configuration: PinnedTabsConfiguration? = nil
@@ -286,15 +284,6 @@ struct PinnedTileVisual: View {
                     thickness: max(1.25, pinnedTabsConfiguration.strokeWidth * 0.7),
                     strokeColor: selectionAccentColor
                 )
-                .conditionally(
-                    if: isLoading && !reduceMotion
-                        && !sumiSettings.shouldDisableDecorativeLoadingEffects
-                ) { view in
-                    view.mask {
-                        PinnedTileLoadingAlphaWaveLayerMask()
-                            .padding(-pinnedTabsConfiguration.outlineMaskBleed)
-                    }
-                }
                 .allowsHitTesting(false)
             } else if presentationState.isSelected {
                 accentSelectionRingOverlay(
@@ -302,15 +291,6 @@ struct PinnedTileVisual: View {
                     thickness: pinnedTabsConfiguration.strokeWidth,
                     color: selectionAccentColor
                 )
-                .conditionally(
-                    if: isLoading && !reduceMotion
-                        && !sumiSettings.shouldDisableDecorativeLoadingEffects
-                ) { view in
-                    view.mask {
-                        PinnedTileLoadingAlphaWaveLayerMask()
-                            .padding(-pinnedTabsConfiguration.outlineMaskBleed)
-                    }
-                }
                 .allowsHitTesting(false)
             }
         }
@@ -508,140 +488,7 @@ struct PinnedTileSplitGroupOutlineMask: View {
     }
 }
 
-private struct PinnedTileLoadingAlphaWaveLayerMask: View {
-    var body: some View {
-        GeometryReader { proxy in
-            PinnedTileLoadingAlphaWaveMaskRepresentable()
-                .frame(width: proxy.size.width, height: proxy.size.height)
-        }
-    }
-}
 
-private struct PinnedTileLoadingAlphaWaveMaskRepresentable: NSViewRepresentable {
-    func makeNSView(context _: Context) -> PinnedTileLoadingAlphaWaveMaskView {
-        PinnedTileLoadingAlphaWaveMaskView()
-    }
-
-    func updateNSView(_ nsView: PinnedTileLoadingAlphaWaveMaskView, context _: Context) {
-        nsView.updateAnimation()
-    }
-
-    func sizeThatFits(
-        _ proposal: ProposedViewSize,
-        nsView: PinnedTileLoadingAlphaWaveMaskView,
-        context _: Context
-    ) -> CGSize? {
-        CGSize(
-            width: proposal.width ?? nsView.fittingSize.width,
-            height: proposal.height ?? nsView.fittingSize.height
-        )
-    }
-}
-
-private final class PinnedTileLoadingAlphaWaveMaskView: NSView {
-    private let gradientLayer = CAGradientLayer()
-    private var lastConfiguredSize: CGSize = .zero
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.addSublayer(gradientLayer)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func hitTest(_: NSPoint) -> NSView? {
-        nil
-    }
-
-    override func layout() {
-        super.layout()
-        updateAnimation()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window == nil {
-            stopAnimation()
-        } else {
-            updateAnimation()
-        }
-    }
-
-    func updateAnimation() {
-        guard bounds.width > 1,
-              bounds.height > 1,
-              LoadingWaveController.shared.shouldStartAnimation(
-                reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
-                energySaverDisablesDecorativeEffects: false
-              )
-        else {
-            stopAnimation()
-            return
-        }
-
-        guard lastConfiguredSize != bounds.size
-                || gradientLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey) == nil
-        else {
-            return
-        }
-
-        if gradientLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey) == nil {
-            LoadingWaveController.shared.beginAnimation()
-        }
-
-        lastConfiguredSize = bounds.size
-        configureGradientLayer()
-        gradientLayer.add(buildAnimation(), forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
-    }
-
-    private func stopAnimation() {
-        if gradientLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey) != nil {
-            LoadingWaveController.shared.endAnimation()
-        }
-        gradientLayer.removeAnimation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
-        lastConfiguredSize = .zero
-    }
-
-    private func configureGradientLayer() {
-        let halfWidth = SumiTabTitleAnimation.loadingAlphaWaveRelativeHalfWidth(for: bounds.width)
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-
-        gradientLayer.frame = bounds
-        gradientLayer.startPoint = CGPoint(x: 0, y: 0.5)
-        gradientLayer.endPoint = CGPoint(x: 1, y: 0.5)
-        gradientLayer.colors = SumiTabTitleAnimation.loadingAlphaWaveMaskColors
-        gradientLayer.locations = SumiTabTitleAnimation.loadingAlphaWaveLocations(
-            centerX: -halfWidth,
-            width: bounds.width
-        )
-        gradientLayer.opacity = 1
-
-        CATransaction.commit()
-    }
-
-    private func buildAnimation() -> CABasicAnimation {
-        let halfWidth = SumiTabTitleAnimation.loadingAlphaWaveRelativeHalfWidth(for: bounds.width)
-        let animation = CABasicAnimation(keyPath: "locations")
-        animation.fromValue = SumiTabTitleAnimation.loadingAlphaWaveLocations(
-            centerX: -halfWidth,
-            width: bounds.width
-        )
-        animation.toValue = SumiTabTitleAnimation.loadingAlphaWaveLocations(
-            centerX: 1 + halfWidth,
-            width: bounds.width
-        )
-        animation.duration = SumiTabTitleAnimation.loadingAlphaWaveCycleDuration
-        animation.timingFunction = CAMediaTimingFunction(name: .linear)
-        animation.repeatCount = .infinity
-        animation.isRemovedOnCompletion = false
-        return animation
-    }
-}
 
 private struct PinnedTileAudioButton: View {
     @ObservedObject var tab: Tab

@@ -116,6 +116,80 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertEqual(geometry.contentRadius, 14)
     }
 
+    func testBrowserChromeGeometryDefaultsExposeUniformInsetsAndCornerRadii() {
+        let geometry = BrowserChromeGeometry()
+        let separation = geometry.elementSeparation
+
+        XCTAssertEqual(geometry.contentEdgeInsets, .uniform(separation))
+        XCTAssertEqual(geometry.contentCornerRadii, .uniform(geometry.contentRadius))
+        XCTAssertTrue(geometry.contentCornerRadii.isUniform)
+    }
+
+    func testBrowserChromeGeometrySettingsKeepUniformChromeWhenFramelessDisabled() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.framelessChrome = false
+        let geometry = BrowserChromeGeometry(settings: settings)
+
+        let separation = geometry.elementSeparation
+        XCTAssertEqual(geometry.contentEdgeInsets, .uniform(separation))
+        XCTAssertEqual(geometry.contentCornerRadii, .uniform(geometry.contentRadius))
+        XCTAssertTrue(geometry.contentCornerRadii.isUniform)
+        XCTAssertEqual(geometry.contentCornerRadii.bottomLeading, geometry.contentRadius)
+        XCTAssertEqual(geometry.contentCornerRadii.bottomTrailing, geometry.contentRadius)
+    }
+
+    func testBrowserChromeGeometrySettingsUseTopOnlyChromeWhenFramelessEnabled() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.framelessChrome = true
+        let geometry = BrowserChromeGeometry(settings: settings)
+
+        let separation = geometry.elementSeparation
+        // Only the top inset survives; sides and bottom are flush.
+        XCTAssertEqual(geometry.contentEdgeInsets, .topOnly(separation))
+        XCTAssertEqual(geometry.contentEdgeInsets.top, separation)
+        XCTAssertEqual(geometry.contentEdgeInsets.bottom, 0)
+        XCTAssertEqual(geometry.contentEdgeInsets.leading, 0)
+        XCTAssertEqual(geometry.contentEdgeInsets.trailing, 0)
+        // Only top corners are rounded; bottom corners are square.
+        XCTAssertEqual(geometry.contentCornerRadii, .topOnly(geometry.contentRadius))
+        XCTAssertEqual(geometry.contentCornerRadii.topLeading, geometry.contentRadius)
+        XCTAssertEqual(geometry.contentCornerRadii.topTrailing, geometry.contentRadius)
+        XCTAssertEqual(geometry.contentCornerRadii.bottomLeading, 0)
+        XCTAssertEqual(geometry.contentCornerRadii.bottomTrailing, 0)
+        // Legacy uniform `contentRadius` is preserved for existing consumers.
+        XCTAssertEqual(geometry.contentRadius, geometry.contentCornerRadii.maxRadius)
+    }
+
+    func testChromeCornerRadiiMapsToTopOnlyAppKitCornerMask() {
+        let radii = ChromeCornerRadii.topOnly(10)
+        let mask = radii.caCornerMask
+
+        XCTAssertTrue(mask.contains(.layerMinXMaxYCorner))
+        XCTAssertTrue(mask.contains(.layerMaxXMaxYCorner))
+        XCTAssertFalse(mask.contains(.layerMinXMinYCorner))
+        XCTAssertFalse(mask.contains(.layerMaxXMinYCorner))
+    }
+
+    func testChromeCornerRadiiUniformMaskCoversAllCorners() {
+        let mask = ChromeCornerRadii.uniform(10).caCornerMask
+
+        XCTAssertTrue(mask.contains(.layerMinXMaxYCorner))
+        XCTAssertTrue(mask.contains(.layerMaxXMaxYCorner))
+        XCTAssertTrue(mask.contains(.layerMinXMinYCorner))
+        XCTAssertTrue(mask.contains(.layerMaxXMinYCorner))
+    }
+
+    func testChromeCornerRadiiZeroRadiusProducesEmptyMask() {
+        XCTAssertTrue(ChromeCornerRadii.uniform(0).caCornerMask.isEmpty)
+        XCTAssertTrue(ChromeCornerRadii.topOnly(0).caCornerMask.isEmpty)
+    }
+
     private func assertMinimumWindowConstraints(
         _ window: NSWindow,
         file: StaticString = #filePath,

@@ -97,7 +97,10 @@ extension Tab {
 
     /// Creates a fully configured normal-tab WebView. This is the single
     /// construction path for primary and clone normal-tab runtimes.
-    func makeNormalTabWebView(reason: String) -> WKWebView? {
+    func makeNormalTabWebView(
+        reason: String,
+        prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil
+    ) -> WKWebView? {
         let startupTrace = StartupPerformanceTrace.firstWebViewCreationStarted()
         defer {
             StartupPerformanceTrace.firstWebViewCreationFinished(startupTrace)
@@ -112,6 +115,7 @@ extension Tab {
             profileId: resolveProfile()?.id ?? profileId,
             reason: "\(reason).configuration"
         )
+        prepareConfiguration?(configuration)
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         configureNormalTabWebView(webView, reason: reason)
@@ -480,7 +484,6 @@ extension Tab {
         )
         let userScriptsProvider = normalTabUserScriptsProvider(for: url)
 
-
         return BrowserConfiguration.shared.normalTabWebViewConfiguration(
             for: profile,
             url: url,
@@ -489,7 +492,6 @@ extension Tab {
             contentBlockingService: protectionDecision?.contentBlockingService
         )
     }
-
 
 
     private func deferNormalTabWebViewCreationUntilProfileAvailable() {

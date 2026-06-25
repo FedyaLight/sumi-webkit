@@ -654,9 +654,10 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             initialRegularTabCount + 1
         )
         XCTAssertNil(harness.browserManager.auxiliaryWindowManager.session(for: authTab))
+        XCTAssertEqual(harness.windowState.currentTabId, authTab.id)
 
         harness.extensionManager.extensionRuntimeAllowsWithoutEnabledExtensions = true
-        let webView = try XCTUnwrap(authTab.ensureWebView())
+        let webView = try XCTUnwrap(authTab.assignedWebView ?? authTab.existingWebView)
         harness.extensionManager.prepareWebViewForExtensionRuntime(
             webView,
             currentURL: nil,

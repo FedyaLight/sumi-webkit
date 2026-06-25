@@ -644,7 +644,15 @@ final class SumiWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
 }
 
 extension WKWebsiteDataStore {
-    static var sumiSupplementalWebsiteDataTypes: Set<String> {
+    private static let sumiOfflineWebApplicationCacheDataTypes: Set<String> = {
+        if #available(macOS 26.2, *) {
+            return []
+        } else {
+            return [WKWebsiteDataTypeOfflineWebApplicationCache]
+        }
+    }()
+
+    static let sumiSupplementalWebsiteDataTypes: Set<String> = {
         [
             WKWebsiteDataTypeSearchFieldRecentSearches,
             WKWebsiteDataTypeMediaKeys,
@@ -656,32 +664,32 @@ extension WKWebsiteDataStore {
             "_WKWebsiteDataTypePrivateClickMeasurements",
             "_WKWebsiteDataTypeAlternativeServices"
         ]
-    }
+    }()
 
-    static var sumiManualFullCleanupDataTypes: Set<String> {
-        Self.allWebsiteDataTypes().union(sumiSupplementalWebsiteDataTypes)
-    }
+    static let sumiManualFullCleanupDataTypes: Set<String> = {
+        WKWebsiteDataStore.allWebsiteDataTypes()
+            .union(WKWebsiteDataStore.sumiSupplementalWebsiteDataTypes)
+    }()
 
-    static var allWebsiteDataTypesExceptCookies: Set<String> {
-        var types = Self.sumiManualFullCleanupDataTypes
+    static let allWebsiteDataTypesExceptCookies: Set<String> = {
+        var types = WKWebsiteDataStore.sumiManualFullCleanupDataTypes
 
         types.remove(WKWebsiteDataTypeCookies)
         return types
-    }
+    }()
 
-    static var sumiCacheDataTypes: Set<String> {
-        [
+    static let sumiCacheDataTypes: Set<String> = {
+        Set([
             WKWebsiteDataTypeDiskCache,
             WKWebsiteDataTypeMemoryCache,
-            WKWebsiteDataTypeOfflineWebApplicationCache,
             WKWebsiteDataTypeFetchCache,
             WKWebsiteDataTypeServiceWorkerRegistrations,
             "_WKWebsiteDataTypeAlternativeServices",
             "_WKWebsiteDataTypeHSTSCache"
-        ]
-    }
+        ]).union(sumiOfflineWebApplicationCacheDataTypes)
+    }()
 
-    static var sumiSiteDataTypes: Set<String> {
+    static let sumiSiteDataTypes: Set<String> = {
         [
             WKWebsiteDataTypeCookies,
             WKWebsiteDataTypeLocalStorage,
@@ -695,22 +703,21 @@ extension WKWebsiteDataStore {
             WKWebsiteDataTypeHashSalt,
             "_WKWebsiteDataTypeCredentials"
         ]
-    }
+    }()
 
-    static var sumiHistoryDataTypes: Set<String> {
+    static let sumiHistoryDataTypes: Set<String> = {
         [
             WKWebsiteDataTypeSearchFieldRecentSearches,
             "_WKWebsiteDataTypeResourceLoadStatistics",
             "_WKWebsiteDataTypeAdClickAttributions",
             "_WKWebsiteDataTypePrivateClickMeasurements"
         ]
-    }
+    }()
 
-    static var sumiAutomaticCleanupDataTypes: Set<String> {
-        [
+    static let sumiAutomaticCleanupDataTypes: Set<String> = {
+        Set([
             WKWebsiteDataTypeDiskCache,
             WKWebsiteDataTypeMemoryCache,
-            WKWebsiteDataTypeOfflineWebApplicationCache,
             WKWebsiteDataTypeFetchCache,
             WKWebsiteDataTypeServiceWorkerRegistrations,
             WKWebsiteDataTypeSearchFieldRecentSearches,
@@ -720,8 +727,8 @@ extension WKWebsiteDataStore {
             "_WKWebsiteDataTypeAlternativeServices",
             "_WKWebsiteDataTypeHSTSCache",
             "_WKWebsiteDataTypeResourceLoadStatistics"
-        ]
-    }
+        ]).union(sumiOfflineWebApplicationCacheDataTypes)
+    }()
 
 }
 

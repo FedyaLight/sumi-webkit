@@ -8,10 +8,8 @@ struct SumiTabTitleLabel: View {
     let title: String
     var font: NSFont = .systemFont(ofSize: 13, weight: .medium)
     var textColor: Color = .primary
-    var fadeWidth: CGFloat = 32
-    var trailingFadePadding: CGFloat = 0
+    var trailingPadding: CGFloat = 0
     var animated: Bool = true
-    var isLoading: Bool = false
     var height: CGFloat = 16
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -22,12 +20,8 @@ struct SumiTabTitleLabel: View {
             title: title,
             font: font,
             textColor: textColor,
-            fadeWidth: fadeWidth,
-            trailingFadePadding: trailingFadePadding,
+            trailingPadding: trailingPadding,
             animated: animated && !effectiveReduceMotion,
-            isLoading: isLoading,
-            allowsDecorativeLoadingEffect:
-                !effectiveReduceMotion && !sumiSettings.shouldDisableDecorativeLoadingEffects,
             height: height
         )
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .leading)
@@ -44,11 +38,8 @@ private struct SumiTabTitleRepresentable: NSViewRepresentable {
     let title: String
     let font: NSFont
     let textColor: Color
-    let fadeWidth: CGFloat
-    let trailingFadePadding: CGFloat
+    let trailingPadding: CGFloat
     let animated: Bool
-    let isLoading: Bool
-    let allowsDecorativeLoadingEffect: Bool
     let height: CGFloat
 
     func makeNSView(context _: Context) -> SumiTabTitleView {
@@ -63,8 +54,9 @@ private struct SumiTabTitleRepresentable: NSViewRepresentable {
         nsView: SumiTabTitleView,
         context _: Context
     ) -> CGSize? {
-        CGSize(
-            width: proposal.width ?? nsView.fittingSize.width,
+        let textWidth = title.size(withAttributes: [.font: font]).width
+        return CGSize(
+            width: proposal.width ?? (textWidth + trailingPadding),
             height: proposal.height ?? height
         )
     }
@@ -74,11 +66,8 @@ private struct SumiTabTitleRepresentable: NSViewRepresentable {
             title: title,
             font: font,
             textColor: NSColor(textColor),
-            fadeWidth: fadeWidth,
-            trailingFadePadding: trailingFadePadding,
-            animated: animated,
-            isLoading: isLoading,
-            allowsDecorativeLoadingEffect: allowsDecorativeLoadingEffect
+            trailingPadding: trailingPadding,
+            animated: animated
         )
     }
 }
@@ -93,58 +82,15 @@ enum SumiTabTitleAnimation {
     static let slidingOutLastX = CGFloat(-4)
     static let slidingInStartX = CGFloat(-4)
     static let slidingInLastX = CGFloat(0)
-
-    static let loadingAlphaWaveKey = "loadingTitleAlphaWave"
-    static let loadingAlphaWaveCycleDuration: TimeInterval = 1.1
-    static let loadingAlphaWaveMinimumBandWidth = CGFloat(96)
-    static let loadingAlphaWaveMaximumBandWidth = CGFloat(180)
-    static let loadingAlphaWaveRelativeBandWidth = CGFloat(0.72)
-    static let loadingAlphaWaveShoulderAlpha = CGFloat(0.55)
-    static let loadingAlphaWaveMinimumAlpha = CGFloat(0.04)
-
-    static var loadingAlphaWaveMaskColors: [CGColor] {
-        [
-            NSColor.white.cgColor,
-            NSColor.white.withAlphaComponent(loadingAlphaWaveShoulderAlpha).cgColor,
-            NSColor.white.withAlphaComponent(loadingAlphaWaveMinimumAlpha).cgColor,
-            NSColor.white.withAlphaComponent(loadingAlphaWaveShoulderAlpha).cgColor,
-            NSColor.white.cgColor
-        ]
-    }
-
-    static func loadingAlphaWaveRelativeHalfWidth(for width: CGFloat) -> CGFloat {
-        guard width > 0 else { return 0 }
-        let bandWidth = min(
-            max(
-                width * loadingAlphaWaveRelativeBandWidth,
-                loadingAlphaWaveMinimumBandWidth
-            ),
-            loadingAlphaWaveMaximumBandWidth
-        )
-        return (bandWidth / width) / 2
-    }
-
-    static func loadingAlphaWaveLocations(centerX: CGFloat, width: CGFloat) -> [NSNumber] {
-        let halfWidth = loadingAlphaWaveRelativeHalfWidth(for: width)
-        let leadingShoulder = halfWidth * 0.56
-        let trailingShoulder = halfWidth * 0.56
-        return [
-            NSNumber(value: Double(centerX - halfWidth)),
-            NSNumber(value: Double(centerX - leadingShoulder)),
-            NSNumber(value: Double(centerX)),
-            NSNumber(value: Double(centerX + trailingShoulder)),
-            NSNumber(value: Double(centerX + halfWidth))
-        ]
-    }
 }
 
 final class SumiTabTitleView: NSView {
     private lazy var titleTextField: NSTextField = buildTitleTextField()
     private lazy var previousTextField: NSTextField = buildTitleTextField()
+    private var titleTrailingConstraint: NSLayoutConstraint?
+    private var previousTrailingConstraint: NSLayoutConstraint?
     private var fadeWidth: CGFloat = 32
-    private var trailingFadePadding: CGFloat = 0
-    private var isLoadingAlphaWaveRequested = false
-    private var lastLoadingAlphaWaveBoundsSize: CGSize = .zero
+    private var trailingPadding: CGFloat = 0
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: 16)
@@ -166,35 +112,38 @@ final class SumiTabTitleView: NSView {
         nil
     }
 
-    override func layout() {
-        super.layout()
-        applyTrailingFadeMask(width: fadeWidth, trailingPadding: trailingFadePadding)
-        if isLoadingAlphaWaveRequested {
-            startLoadingAlphaWaveIfNeeded()
-        }
-    }
-
     func apply(
         title: String,
         font: NSFont,
         textColor: NSColor,
-        fadeWidth: CGFloat,
-        trailingFadePadding: CGFloat,
-        animated: Bool,
-        isLoading: Bool = false,
-        allowsDecorativeLoadingEffect: Bool = true
+        trailingPadding: CGFloat,
+        animated: Bool
     ) {
-        self.fadeWidth = fadeWidth
-        self.trailingFadePadding = trailingFadePadding
-        titleTextField.font = font
-        previousTextField.font = font
-        titleTextField.textColor = textColor
-        previousTextField.textColor = textColor
-        applyTrailingFadeMask(width: fadeWidth, trailingPadding: trailingFadePadding)
+        self.trailingPadding = trailingPadding
+
+        // Value comparison guards to avoid redundant CPU text layout invalidations in AppKit
+        if titleTextField.font != font {
+            titleTextField.font = font
+            previousTextField.font = font
+        }
+        if titleTextField.textColor != textColor {
+            titleTextField.textColor = textColor
+            previousTextField.textColor = textColor
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        titleTrailingConstraint?.constant = -trailingPadding
+        previousTrailingConstraint?.constant = -trailingPadding
+        CATransaction.commit()
+
+        applyTrailingFadeMask()
         displayTitleIfNeeded(title: title, animated: animated)
-        updateLoadingAlphaWave(
-            isLoading && title.isEmpty == false && allowsDecorativeLoadingEffect
-        )
+    }
+
+    override func layout() {
+        super.layout()
+        applyTrailingFadeMask()
     }
 }
 
@@ -234,21 +183,24 @@ private extension SumiTabTitleView {
 
     func setupConstraints() {
         titleTextField.translatesAutoresizingMaskIntoConstraints = false
+        let titleTrailing = titleTextField.trailingAnchor.constraint(equalTo: trailingAnchor)
+        self.titleTrailingConstraint = titleTrailing
         NSLayoutConstraint.activate([
             titleTextField.topAnchor.constraint(equalTo: topAnchor),
             titleTextField.bottomAnchor.constraint(equalTo: bottomAnchor),
             titleTextField.leadingAnchor.constraint(equalTo: leadingAnchor),
-            titleTextField.trailingAnchor.constraint(equalTo: trailingAnchor)
+            titleTrailing
         ])
 
         previousTextField.translatesAutoresizingMaskIntoConstraints = false
+        let previousTrailing = previousTextField.trailingAnchor.constraint(equalTo: trailingAnchor)
+        self.previousTrailingConstraint = previousTrailing
         NSLayoutConstraint.activate([
             previousTextField.topAnchor.constraint(equalTo: topAnchor),
             previousTextField.bottomAnchor.constraint(equalTo: bottomAnchor),
             previousTextField.leadingAnchor.constraint(equalTo: leadingAnchor),
-            previousTextField.trailingAnchor.constraint(equalTo: trailingAnchor)
+            previousTrailing
         ])
-
     }
 
     func setupTextFields() {
@@ -288,91 +240,6 @@ private extension SumiTabTitleView {
         previousTextField.layer?.removeAnimation(forKey: SumiTabTitleAnimation.fadeAndSlideOutKey)
         titleTextField.layer?.removeAnimation(forKey: SumiTabTitleAnimation.slideInKey)
         titleTextField.layer?.removeAnimation(forKey: SumiTabTitleAnimation.alphaKey)
-    }
-}
-
-private extension SumiTabTitleView {
-    func updateLoadingAlphaWave(_ isLoading: Bool) {
-        isLoadingAlphaWaveRequested = isLoading
-
-        if isLoading {
-            startLoadingAlphaWaveIfNeeded()
-        } else {
-            stopLoadingAlphaWave()
-        }
-    }
-
-    func startLoadingAlphaWaveIfNeeded() {
-        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
-            stopLoadingAlphaWave()
-            return
-        }
-
-        guard bounds.width > 1, bounds.height > 1 else {
-            return
-        }
-
-        let titleLayer = titleTextField.layer
-        let maskLayer = loadingAlphaWaveMaskLayer(for: titleLayer)
-        guard lastLoadingAlphaWaveBoundsSize != bounds.size
-                || maskLayer.animation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey) == nil
-        else {
-            return
-        }
-
-        lastLoadingAlphaWaveBoundsSize = bounds.size
-        configureLoadingAlphaWaveMask(maskLayer)
-
-        maskLayer.add(buildLoadingAlphaWaveAnimation(), forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
-    }
-
-    func stopLoadingAlphaWave() {
-        titleTextField.layer?.mask?.removeAnimation(forKey: SumiTabTitleAnimation.loadingAlphaWaveKey)
-        titleTextField.layer?.mask = nil
-        lastLoadingAlphaWaveBoundsSize = .zero
-    }
-
-    func loadingAlphaWaveMaskLayer(for layer: CALayer?) -> CAGradientLayer {
-        if let mask = layer?.mask as? CAGradientLayer {
-            return mask
-        }
-
-        let mask = CAGradientLayer()
-        layer?.mask = mask
-        return mask
-    }
-
-    func configureLoadingAlphaWaveMask(_ mask: CAGradientLayer) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-
-        mask.frame = bounds
-        mask.startPoint = CGPoint(x: 0, y: 0.5)
-        mask.endPoint = CGPoint(x: 1, y: 0.5)
-        mask.colors = SumiTabTitleAnimation.loadingAlphaWaveMaskColors
-        mask.locations = loadingAlphaWaveLocations(centerX: -loadingAlphaWaveRelativeHalfWidth)
-        mask.opacity = 1
-
-        CATransaction.commit()
-    }
-
-    func buildLoadingAlphaWaveAnimation() -> CABasicAnimation {
-        let animation = CABasicAnimation(keyPath: "locations")
-        animation.fromValue = loadingAlphaWaveLocations(centerX: -loadingAlphaWaveRelativeHalfWidth)
-        animation.toValue = loadingAlphaWaveLocations(centerX: 1 + loadingAlphaWaveRelativeHalfWidth)
-        animation.duration = SumiTabTitleAnimation.loadingAlphaWaveCycleDuration
-        animation.timingFunction = CAMediaTimingFunction(name: .linear)
-        animation.repeatCount = .infinity
-        animation.isRemovedOnCompletion = false
-        return animation
-    }
-
-    var loadingAlphaWaveRelativeHalfWidth: CGFloat {
-        SumiTabTitleAnimation.loadingAlphaWaveRelativeHalfWidth(for: bounds.width)
-    }
-
-    func loadingAlphaWaveLocations(centerX: CGFloat) -> [NSNumber] {
-        SumiTabTitleAnimation.loadingAlphaWaveLocations(centerX: centerX, width: bounds.width)
     }
 }
 
@@ -439,47 +306,6 @@ private extension SumiTabTitleView {
     }
 }
 
-private extension NSView {
-    func applyTrailingFadeMask(width: CGFloat, trailingPadding: CGFloat) {
-        guard let layer else {
-            return
-        }
-
-        guard layer.bounds.width > 0 else {
-            return
-        }
-
-        if layer.mask == nil {
-            let maskGradientLayer = CAGradientLayer()
-            layer.mask = maskGradientLayer
-            maskGradientLayer.colors = [NSColor.white.cgColor, NSColor.clear.cgColor]
-        }
-
-        guard let mask = layer.mask as? CAGradientLayer else {
-            return
-        }
-
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(0)
-
-        mask.frame = layer.bounds
-
-        let availableWidth = max(mask.bounds.width - trailingPadding, 0)
-        let safeWidth = min(width, availableWidth)
-        let startPointX = mask.bounds.width > 0
-            ? (mask.bounds.width - (trailingPadding + safeWidth)) / mask.bounds.width
-            : 1
-        let endPointX = mask.bounds.width > 0
-            ? (mask.bounds.width - trailingPadding) / mask.bounds.width
-            : 1
-
-        mask.startPoint = CGPoint(x: startPointX, y: 0.5)
-        mask.endPoint = CGPoint(x: endPointX, y: 0.5)
-
-        CATransaction.commit()
-    }
-}
-
 private extension CABasicAnimation {
     static func buildFadeOutAnimation(
         duration: TimeInterval,
@@ -522,5 +348,46 @@ private extension CASpringAnimation {
         animation.duration = duration
         animation.timingFunction = CAMediaTimingFunction(name: timingFunctionName)
         return animation
+    }
+}
+
+private extension SumiTabTitleView {
+    func applyTrailingFadeMask() {
+        guard let layer = self.layer else {
+            return
+        }
+
+        guard bounds.width > 0 else {
+            return
+        }
+
+        if layer.mask == nil {
+            let maskGradientLayer = CAGradientLayer()
+            layer.mask = maskGradientLayer
+            maskGradientLayer.colors = [NSColor.white.cgColor, NSColor.clear.cgColor]
+        }
+
+        guard let mask = layer.mask as? CAGradientLayer else {
+            return
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+
+        mask.frame = bounds
+
+        let availableWidth = max(bounds.width - trailingPadding, 0)
+        let safeWidth = min(fadeWidth, availableWidth)
+        let startPointX = bounds.width > 0
+            ? (bounds.width - (trailingPadding + safeWidth)) / bounds.width
+            : 1
+        let endPointX = bounds.width > 0
+            ? (bounds.width - trailingPadding) / bounds.width
+            : 1
+
+        mask.startPoint = CGPoint(x: startPointX, y: 0.5)
+        mask.endPoint = CGPoint(x: endPointX, y: 0.5)
+
+        CATransaction.commit()
     }
 }

@@ -66,9 +66,8 @@ struct SumiLiveFolderItemRow: View {
                 title: item.title,
                 font: .systemFont(ofSize: 13, weight: .medium),
                 textColor: textColor,
-                trailingFadePadding: SidebarHoverChrome.trailingFadePadding(showsTrailingAction: showsDismissButton),
-                animated: false,
-                isLoading: false
+                trailingPadding: SidebarHoverChrome.trailingPadding(showsTrailingAction: showsDismissButton),
+                animated: false
             )
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 

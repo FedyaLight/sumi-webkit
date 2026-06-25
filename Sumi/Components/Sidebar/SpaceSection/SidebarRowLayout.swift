@@ -19,7 +19,7 @@ enum SidebarRowLayout {
     static let trailingInset: CGFloat = 10
     static let trailingActionSize: CGFloat = 24
     static let trailingActionGap: CGFloat = 4
-    static let trailingActionFadePadding: CGFloat = trailingActionSize + trailingActionGap
+    static let trailingActionPadding: CGFloat = trailingActionSize + trailingActionGap
     static let folderGlyphSize: CGFloat = 28
     /// Centers the 28pt folder glyph on the 18pt favicon column (layout width before title stays `folderTitleLeading`).
     static let folderHeaderGlyphCenteringOffset: CGFloat = (faviconSize - folderGlyphSize) * 0.5

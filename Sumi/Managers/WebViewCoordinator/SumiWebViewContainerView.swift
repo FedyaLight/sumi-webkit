@@ -6,7 +6,7 @@ final class SumiWebViewContainerView: NSView {
     let tabID: UUID
     let webView: WKWebView
 
-    private var viewportCornerRadius: CGFloat = 0
+    private var viewportCornerRadii: ChromeCornerRadii = .uniform(0)
     private var preservesDisplayedContentOnNextRemoval = false
 
     override var constraints: [NSLayoutConstraint] { [] }
@@ -38,10 +38,9 @@ final class SumiWebViewContainerView: NSView {
     }
 
     func setBrowserContentViewport(geometry: BrowserChromeGeometry) {
-        let radiusChanged = abs(viewportCornerRadius - geometry.contentRadius) > 0.000_1
-        guard radiusChanged else { return }
+        guard viewportCornerRadii != geometry.contentCornerRadii else { return }
 
-        viewportCornerRadius = geometry.contentRadius
+        viewportCornerRadii = geometry.contentCornerRadii
 
         updateViewportMask()
         needsLayout = true
@@ -98,33 +97,27 @@ final class SumiWebViewContainerView: NSView {
         super.removeFromSuperview()
     }
 
-    private var effectiveViewportCornerRadius: CGFloat {
-        min(
-            max(0, viewportCornerRadius),
-            max(0, bounds.width / 2),
-            max(0, bounds.height / 2)
-        )
-    }
-
     private func recordInlineUIContainerClippingIfNeeded() {
         SafariExtensionAutofillFillDiagnostics.recordAppKitContainerClipping(
             clipsToBounds: clipsToBounds,
             masksToBounds: layer?.masksToBounds == true,
-            inRoundedViewportContainer: effectiveViewportCornerRadius > 0
+            inRoundedViewportContainer: clampedViewportCornerRadii.maxRadius > 0
         )
     }
 
     private func updateViewportMask() {
         guard let layer else { return }
 
-        let radius = effectiveViewportCornerRadius
+        let radii = clampedViewportCornerRadii
+        let maxRadius = radii.maxRadius
         let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         layer.contentsScale = scale
-        layer.masksToBounds = radius > 0
-        layer.cornerRadius = radius
+        layer.masksToBounds = maxRadius > 0
+        layer.cornerRadius = maxRadius
+        layer.maskedCorners = radii.caCornerMask
         if #available(macOS 10.15, *) {
             layer.cornerCurve = .continuous
         }
@@ -134,36 +127,72 @@ final class SumiWebViewContainerView: NSView {
     private func containsPointInsideRoundedViewport(_ point: NSPoint) -> Bool {
         guard bounds.contains(point) else { return false }
 
-        let radius = effectiveViewportCornerRadius
-        guard radius > 0 else { return true }
+        let radii = clampedViewportCornerRadii
+        guard radii.maxRadius > 0 else { return true }
 
         let minX = bounds.minX
         let maxX = bounds.maxX
         let minY = bounds.minY
         let maxY = bounds.maxY
 
-        if point.x >= minX + radius && point.x <= maxX - radius {
-            return true
+        // AppKit content layers default to isFlipped == false → Core Animation
+        // y-up, so visually-top corners live at maxY. A point outside every
+        // corner zone is inside the viewport; a point inside a corner zone must
+        // also lie within that corner's quarter-circle. A zero-radius corner
+        // never enters its zone (the bound check is strict against the edge),
+        // so square corners never clip pointer hits.
+        func insideQuarterCircle(centerX: CGFloat, centerY: CGFloat, radius: CGFloat) -> Bool {
+            let dx = point.x - centerX
+            let dy = point.y - centerY
+            return dx * dx + dy * dy <= radius * radius
         }
 
-        if point.y >= minY + radius && point.y <= maxY - radius {
-            return true
+        if point.x < minX + radii.topLeading && point.y > maxY - radii.topLeading {
+            return insideQuarterCircle(
+                centerX: minX + radii.topLeading,
+                centerY: maxY - radii.topLeading,
+                radius: radii.topLeading
+            )
+        }
+        if point.x > maxX - radii.topTrailing && point.y > maxY - radii.topTrailing {
+            return insideQuarterCircle(
+                centerX: maxX - radii.topTrailing,
+                centerY: maxY - radii.topTrailing,
+                radius: radii.topTrailing
+            )
+        }
+        if point.x < minX + radii.bottomLeading && point.y < minY + radii.bottomLeading {
+            return insideQuarterCircle(
+                centerX: minX + radii.bottomLeading,
+                centerY: minY + radii.bottomLeading,
+                radius: radii.bottomLeading
+            )
+        }
+        if point.x > maxX - radii.bottomTrailing && point.y < minY + radii.bottomTrailing {
+            return insideQuarterCircle(
+                centerX: maxX - radii.bottomTrailing,
+                centerY: minY + radii.bottomTrailing,
+                radius: radii.bottomTrailing
+            )
         }
 
-        let center: NSPoint
-        if point.x < minX + radius {
-            center = point.y < minY + radius
-                ? NSPoint(x: minX + radius, y: minY + radius)
-                : NSPoint(x: minX + radius, y: maxY - radius)
-        } else {
-            center = point.y < minY + radius
-                ? NSPoint(x: maxX - radius, y: minY + radius)
-                : NSPoint(x: maxX - radius, y: maxY - radius)
-        }
+        return true
+    }
 
-        let dx = point.x - center.x
-        let dy = point.y - center.y
-        return dx * dx + dy * dy <= radius * radius
+    /// `viewportCornerRadii` clamped so no radius exceeds the viewport's
+    /// half-extents (matches the prior uniform clamping in `effectiveViewportCornerRadius`).
+    private var clampedViewportCornerRadii: ChromeCornerRadii {
+        let maxHorizontal = max(0, bounds.width / 2)
+        let maxVertical = max(0, bounds.height / 2)
+        func clamp(_ value: CGFloat) -> CGFloat {
+            min(max(0, value), maxHorizontal, maxVertical)
+        }
+        return ChromeCornerRadii(
+            topLeading: clamp(viewportCornerRadii.topLeading),
+            topTrailing: clamp(viewportCornerRadii.topTrailing),
+            bottomLeading: clamp(viewportCornerRadii.bottomLeading),
+            bottomTrailing: clamp(viewportCornerRadii.bottomTrailing)
+        )
     }
 
 }

@@ -332,6 +332,8 @@ extension SpaceView {
 
     private var pinnedTabsList: some View {
         let allItems = projectedSpacePinnedDisplayEntries
+        let foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
+        let pinsById = Dictionary(uniqueKeysWithValues: topLevelPinnedPins.map { ($0.id, $0) })
         
         return LazyVStack(spacing: 0) {
             Color.clear
@@ -342,11 +344,11 @@ extension SpaceView {
                 VStack(spacing: 0) {
                     switch entry.item {
                     case .item(.folder(let folderId)):
-                        if let folder = folders.first(where: { $0.id == folderId }) {
+                        if let folder = foldersById[folderId] {
                             mixedFolderView(folder, topLevelPinnedIndex: entry.dropIndex)
                         }
                     case .item(.shortcut(let pinId)):
-                        if let pin = topLevelPinnedPins.first(where: { $0.id == pinId }) {
+                        if let pin = pinsById[pinId] {
                             pinnedShortcutView(pin, topLevelPinnedIndex: entry.dropIndex)
                         }
                     case .item(.splitGroup(let groupId)):
@@ -415,21 +417,8 @@ extension SpaceView {
         )
     }
 
-    private func folderContainsElevatedSelection(_ folderId: UUID, visited: Set<UUID> = []) -> Bool {
-        SidebarSelectionElevation.folderContainsSelection(
-            folderId: folderId,
-            visited: visited,
-            folderPins: { launcherProjection?.folderPins[$0] ?? [] },
-            childFolders: { launcherProjection?.childFolders[$0] ?? [] },
-            splitGroups: {
-                browserManager.tabManager.shortcutHostedSplitGroups(
-                    for: space.id,
-                    inFolder: $0
-                )
-            },
-            isShortcutElevated: shortcutPinIsElevated,
-            isSplitGroupElevated: splitGroupIsElevated
-        )
+    private func folderContainsElevatedSelection(_ folderId: UUID) -> Bool {
+        elevatedFolderIds.contains(folderId)
     }
 
     private var pinnedDropGap: some View {
@@ -486,6 +475,7 @@ extension SpaceView {
             folderPinsByFolderId: launcherProjection?.folderPins ?? [:],
             shortcutRestoreGaps: $shortcutRestoreGaps,
             shortcutRestoreAppearingGapIds: $shortcutRestoreAppearingGapIds,
+            elevatedFolderIds: elevatedFolderIds,
             renderMode: renderMode,
             parentFolderId: nil,
             containerIndex: topLevelPinnedIndex,
@@ -873,9 +863,8 @@ struct ShortcutSplitPlaceholderRow: View {
                 title: pin.preferredDisplayTitle,
                 font: .systemFont(ofSize: 13, weight: .medium),
                 textColor: tokens.primaryText,
-                trailingFadePadding: 0,
-                animated: false,
-                isLoading: false
+                trailingPadding: 0,
+                animated: false
             )
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         }

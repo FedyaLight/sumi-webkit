@@ -57,6 +57,7 @@ enum SidebarFloatingDragPreviewPolicy {
 
 struct SidebarFloatingDragPreview: View {
     @ObservedObject private var dragState = SidebarDragState.shared
+    @ObservedObject private var locationTracker = SidebarDragState.shared.locationTracker
     @EnvironmentObject private var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
 
@@ -165,7 +166,7 @@ struct SidebarFloatingDragPreview: View {
 
     private func resolvedEssentialsTileSize(model: SidebarDragPreviewModel) -> CGSize {
         guard case .essentials(let slot) = dragState.hoveredSlot,
-              let location = dragState.dragLocation,
+              let location = locationTracker.location,
               let hoveredPage = dragState.hoveredInteractivePage(at: location),
               let metrics = dragState.essentialsLayoutMetricsBySpace[hoveredPage.spaceId]
         else {
@@ -240,7 +241,7 @@ struct SidebarFloatingDragPreview: View {
     }
 
     private var currentDragLocation: CGPoint? {
-        dragState.previewDragLocation ?? dragState.dragLocation
+        locationTracker.previewLocation ?? locationTracker.location
     }
 
     private var shouldRenderPreview: Bool {
