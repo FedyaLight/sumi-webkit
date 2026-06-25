@@ -209,6 +209,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         [String: [CheckedContinuation<ExtensionPermissionPromptDecision, Never>]] = [:]
     var permissionsOriginsCompatibilityInstallations:
         [ObjectIdentifier: Set<String>] = [:]
+    var urlSchemeCompatibilityInstallations:
+        [ObjectIdentifier: Set<String>] = [:]
     var extensionPageUserContentControllersByProfile:
         [UUID: WKUserContentController] = [:]
 
