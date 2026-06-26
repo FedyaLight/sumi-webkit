@@ -42,7 +42,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private final class ActiveSession {
         let popover: NSPopover
-        let hostingController: NSHostingController<AnyView>
+        let hostingController: NSHostingController<URLBarHubPopoverRootView>
         weak var windowState: BrowserWindowState?
         weak var browserManager: BrowserManager?
         weak var transientCoordinator: SidebarTransientSessionCoordinator?
@@ -53,7 +53,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
         init(
             popover: NSPopover,
-            hostingController: NSHostingController<AnyView>,
+            hostingController: NSHostingController<URLBarHubPopoverRootView>,
             windowState: BrowserWindowState,
             browserManager: BrowserManager,
             transientCoordinator: SidebarTransientSessionCoordinator?,
@@ -307,7 +307,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     private func makeHostingController(
         registration: AnchorRegistration,
         windowID: UUID
-    ) -> NSHostingController<AnyView> {
+    ) -> NSHostingController<URLBarHubPopoverRootView> {
         NSHostingController(
             rootView: rootView(
                 registration: registration,
@@ -319,18 +319,14 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     private func rootView(
         registration: AnchorRegistration,
         windowID: UUID?
-    ) -> AnyView {
-        guard let browserManager = registration.browserManager,
-              let windowState = registration.windowState
-        else {
-            return AnyView(EmptyView())
-        }
-
-        let settings = registration.settings ?? SumiSettingsService()
+    ) -> URLBarHubPopoverRootView {
         let colorScheme = popoverColorScheme(for: registration)
-        let view = URLBarHubPopover(
-            bookmarkManager: browserManager.bookmarkManager,
-            bookmarkPresentationRequest: browserManager.bookmarkEditorPresentationRequest,
+        return URLBarHubPopoverRootView(
+            browserManager: registration.browserManager,
+            windowState: registration.windowState,
+            settings: registration.settings ?? SumiSettingsService(),
+            themeContext: popoverThemeContext(for: registration, colorScheme: colorScheme),
+            colorScheme: colorScheme,
             currentTab: registration.currentTab,
             profile: registration.profile,
             profileId: registration.profileId,
@@ -343,14 +339,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
                 self?.handleContentSizeChange(size, windowID: windowID)
             }
         )
-        .environmentObject(browserManager)
-        .environmentObject(browserManager.extensionSurfaceStore)
-        .environment(windowState)
-        .environment(\.sumiSettings, settings)
-        .environment(\.resolvedThemeContext, popoverThemeContext(for: registration, colorScheme: colorScheme))
-        .environment(\.colorScheme, colorScheme)
-        .preferredColorScheme(colorScheme)
-        return AnyView(view)
     }
 
     private func handleContentSizeChange(_ size: CGSize, windowID: UUID) {
@@ -388,7 +376,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     }
 
     private func measuredContentSize(
-        for controller: NSHostingController<AnyView>,
+        for controller: NSHostingController<URLBarHubPopoverRootView>,
         fallback: NSSize
     ) -> NSSize {
         let fittingSize = controller.view.fittingSize
@@ -500,6 +488,42 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             pendingSession.token,
             reason: reason
         )
+    }
+}
+
+private struct URLBarHubPopoverRootView: View {
+    let browserManager: BrowserManager?
+    let windowState: BrowserWindowState?
+    let settings: SumiSettingsService
+    let themeContext: ResolvedThemeContext
+    let colorScheme: ColorScheme
+    let currentTab: Tab?
+    let profile: Profile?
+    let profileId: UUID?
+    let onClose: () -> Void
+    let onContentSizeChange: (CGSize) -> Void
+
+    var body: some View {
+        if let browserManager, let windowState {
+            URLBarHubPopover(
+                bookmarkManager: browserManager.bookmarkManager,
+                bookmarkPresentationRequest: browserManager.bookmarkEditorPresentationRequest,
+                currentTab: currentTab,
+                profile: profile,
+                profileId: profileId,
+                onClose: onClose,
+                onContentSizeChange: onContentSizeChange
+            )
+            .environmentObject(browserManager)
+            .environmentObject(browserManager.extensionSurfaceStore)
+            .environment(windowState)
+            .environment(\.sumiSettings, settings)
+            .environment(\.resolvedThemeContext, themeContext)
+            .environment(\.colorScheme, colorScheme)
+            .preferredColorScheme(colorScheme)
+        } else {
+            EmptyView()
+        }
     }
 }
 

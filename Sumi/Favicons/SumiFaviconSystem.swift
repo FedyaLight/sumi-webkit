@@ -57,18 +57,7 @@ private enum SumiFaviconPersistence {
             return testURL
         }
 
-        if let overridePath = ProcessInfo.processInfo.environment["SUMI_APP_SUPPORT_OVERRIDE"],
-           !overridePath.isEmpty
-        {
-            let overrideURL = URL(fileURLWithPath: overridePath, isDirectory: true)
-            try? FileManager.default.createDirectory(at: overrideURL, withIntermediateDirectories: true)
-            return overrideURL
-        }
-
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let bundleDirectory = appSupport.appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
-        try? FileManager.default.createDirectory(at: bundleDirectory, withIntermediateDirectories: true)
-        return bundleDirectory
+        return SumiApplicationSupportDirectory.appRootURL()
     }
 
     static func directory(named component: String) -> URL {

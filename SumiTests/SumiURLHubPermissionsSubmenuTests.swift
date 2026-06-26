@@ -133,6 +133,8 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         let urlBar = try [
             sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift"),
             sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift"),
+            sourceFile("Sumi/Components/Sidebar/URLBarHubPermissionsSection.swift"),
+            sourceFile("Sumi/Components/Sidebar/URLBarHubFooterSection.swift"),
         ].joined(separator: "\n")
 
         XCTAssertTrue(urlBar.contains(".accessibilityIdentifier(\"urlbar-site-controls-button\")"))
@@ -202,45 +204,48 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     }
 
     func testURLHubPermissionRowsUseClickCycleAndContextMenu() throws {
-        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let popover = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let permissionsSection = try sourceFile("Sumi/Components/Sidebar/URLBarHubPermissionsSection.swift")
 
-        XCTAssertTrue(urlBar.contains("cyclePermission(row)"))
-        XCTAssertTrue(urlBar.contains("nextInlineOption("))
-        XCTAssertTrue(urlBar.contains(".contextMenu"))
-        XCTAssertTrue(urlBar.contains("onSelect(option)"))
-        XCTAssertTrue(urlBar.contains("filledIconVisual"))
-        XCTAssertTrue(urlBar.contains("blockedIconVisual"))
-        XCTAssertTrue(urlBar.contains("showsSlash"))
-        XCTAssertFalse(urlBar.contains("inlineStateTitle"))
-        XCTAssertFalse(urlBar.contains("proposed = .default"))
-        XCTAssertFalse(urlBar.contains("proposed = .ask"))
+        XCTAssertTrue(popover.contains("cyclePermission(row)"))
+        XCTAssertTrue(popover.contains("nextInlineOption("))
+        XCTAssertTrue(permissionsSection.contains(".contextMenu"))
+        XCTAssertTrue(permissionsSection.contains("onSelect(option)"))
+        XCTAssertTrue(permissionsSection.contains("filledIconVisual"))
+        XCTAssertTrue(permissionsSection.contains("blockedIconVisual"))
+        XCTAssertTrue(permissionsSection.contains("showsSlash"))
+        XCTAssertFalse(permissionsSection.contains("inlineStateTitle"))
+        XCTAssertFalse(popover.contains("proposed = .default"))
+        XCTAssertFalse(popover.contains("proposed = .ask"))
     }
 
     func testURLHubPermissionIconsUseSingleSlashAndStableLocationGlyph() throws {
-        let urlBar = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let permissionsSection = try sourceFile("Sumi/Components/Sidebar/URLBarHubPermissionsSection.swift")
 
-        XCTAssertTrue(urlBar.contains("return IconVisual(iconName: \"autoplay-media\", fallbackSystemName: \"play.rectangle\", showsSlash: true)"))
-        XCTAssertFalse(urlBar.contains("IconVisual(iconName: \"autoplay-media-blocked\", fallbackSystemName: \"play.rectangle\", showsSlash: true)"))
-        XCTAssertTrue(urlBar.contains("return IconVisual(iconName: \"location\", fallbackSystemName: \"location.fill\", showsSlash: false)"))
-        XCTAssertTrue(urlBar.contains("return IconVisual(iconName: \"location\", fallbackSystemName: \"location.fill\", showsSlash: true)"))
-        XCTAssertFalse(urlBar.contains("location-solid"))
+        XCTAssertTrue(permissionsSection.contains("return IconVisual(iconName: \"autoplay-media\", fallbackSystemName: \"play.rectangle\", showsSlash: true)"))
+        XCTAssertFalse(permissionsSection.contains("IconVisual(iconName: \"autoplay-media-blocked\", fallbackSystemName: \"play.rectangle\", showsSlash: true)"))
+        XCTAssertTrue(permissionsSection.contains("return IconVisual(iconName: \"location\", fallbackSystemName: \"location.fill\", showsSlash: false)"))
+        XCTAssertTrue(permissionsSection.contains("return IconVisual(iconName: \"location\", fallbackSystemName: \"location.fill\", showsSlash: true)"))
+        XCTAssertFalse(permissionsSection.contains("location-solid"))
     }
 
     func testURLHubFooterUsesGearMenuForSiteActions() throws {
-        let source = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let popover = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let footerSection = try sourceFile("Sumi/Components/Sidebar/URLBarHubFooterSection.swift")
+        let source = [popover, footerSection].joined(separator: "\n")
 
         XCTAssertFalse(source.contains("actionTitle: \"More\""))
         XCTAssertFalse(source.contains("fallbackSystemName: \"ellipsis\""))
         XCTAssertFalse(source.contains("iconName: \"menu\""))
-        XCTAssertTrue(source.contains("Image(systemName: \"gearshape\")"))
-        XCTAssertTrue(source.contains(".lineLimit(1)"))
-        XCTAssertTrue(source.contains(".minimumScaleFactor(0.86)"))
-        XCTAssertTrue(source.contains("openSiteSettings"))
-        XCTAssertTrue(source.contains("openSiteDataDetails"))
-        XCTAssertTrue(source.contains("resetPermissionsToDefault"))
-        XCTAssertTrue(source.contains("Button(\"Site Settings\", action: siteSettingsAction)"))
-        XCTAssertTrue(source.contains("Button(\"Clear Site Data\", action: clearSiteDataAction)"))
-        XCTAssertTrue(source.contains("Button(\"Reset Permissions to Default\", action: resetPermissionsAction)"))
+        XCTAssertTrue(footerSection.contains("Image(systemName: \"gearshape\")"))
+        XCTAssertTrue(footerSection.contains(".lineLimit(1)"))
+        XCTAssertTrue(footerSection.contains(".minimumScaleFactor(0.86)"))
+        XCTAssertTrue(popover.contains("siteSettingsAction: openSiteSettings"))
+        XCTAssertTrue(popover.contains("clearSiteDataAction: openSiteDataDetails"))
+        XCTAssertTrue(popover.contains("resetPermissionsAction: resetPermissionsToDefault"))
+        XCTAssertTrue(footerSection.contains("Button(\"Site Settings\", action: siteSettingsAction)"))
+        XCTAssertTrue(footerSection.contains("Button(\"Clear Site Data\", action: clearSiteDataAction)"))
+        XCTAssertTrue(footerSection.contains("Button(\"Reset Permissions to Default\", action: resetPermissionsAction)"))
     }
 
     func testURLHubPermissionRowsUseCompactPolicySubtitles() throws {

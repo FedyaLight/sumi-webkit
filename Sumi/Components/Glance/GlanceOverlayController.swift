@@ -171,6 +171,7 @@ final class GlanceOverlayController: NSObject {
     private var isCompletingPromotionHandoff = false
     private var isPresentationVisible = false
     private var closeConfirmationWorkItem: DispatchWorkItem?
+    private var postAnimationCompletionTask: Task<Void, Never>?
     private var pendingPresentation: (session: GlanceSession, configuration: GlanceOverlayConfiguration)?
     private weak var previewWebView: FocusableWKWebView?
     private var previewHostView: SumiWebViewContainerView?
@@ -253,7 +254,9 @@ final class GlanceOverlayController: NSObject {
         splitButton.isEnabled = manager.canEnterSplitView
 
         guard let session else {
+            cancelPostAnimationCompletion()
             pendingPresentation = nil
+            isAnimatingClose = false
             isPresentationVisible = false
             uninstallKeyMonitor()
             tearDownPresentedViews(preservingPromotionHandoff: isCompletingPromotionHandoff)
@@ -303,9 +306,11 @@ final class GlanceOverlayController: NSObject {
     }
 
     func tearDown() {
+        cancelPostAnimationCompletion()
         closeConfirmationWorkItem?.cancel()
         closeConfirmationWorkItem = nil
         pendingPresentation = nil
+        isAnimatingClose = false
         isAnimatingPromotion = false
         isCompletingPromotionHandoff = false
         uninstallKeyMonitor()
@@ -532,6 +537,8 @@ final class GlanceOverlayController: NSObject {
     ) {
         guard let rootView else { return }
 
+        cancelPostAnimationCompletion()
+        isAnimatingClose = false
         installViewsIfNeeded()
         isPresentationVisible = true
         rootView.acceptsBackgroundMouseEvents = true
@@ -568,12 +575,12 @@ final class GlanceOverlayController: NSObject {
         }
 
         guard !configuration.reduceMotion else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    self.finishOpening(sessionID: session.id, targetFrame: targetFrame, configuration: configuration)
-                }
-            }
+            scheduleOpeningCompletion(
+                sessionID: session.id,
+                targetFrame: targetFrame,
+                configuration: configuration,
+                after: duration
+            )
             return
         }
 
@@ -634,6 +641,7 @@ final class GlanceOverlayController: NSObject {
             manager?.finishAnimatedDismissal(sessionID: session.id)
             return
         }
+        cancelPostAnimationCompletion()
         isAnimatingClose = true
         resetCloseConfirmation()
 
@@ -655,11 +663,7 @@ final class GlanceOverlayController: NSObject {
         }
 
         guard !configuration.reduceMotion else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
-                Task { @MainActor [weak self] in
-                    self?.finishClosing(sessionID: session.id)
-                }
-            }
+            scheduleClosingCompletion(sessionID: session.id, after: duration)
             return
         }
 
@@ -674,9 +678,56 @@ final class GlanceOverlayController: NSObject {
     }
 
     private func finishClosing(sessionID: UUID) {
+        guard session?.id == sessionID else { return }
         isAnimatingClose = false
         tearDownPresentedViews()
         manager?.finishAnimatedDismissal(sessionID: sessionID)
+    }
+
+    private func scheduleOpeningCompletion(
+        sessionID: UUID,
+        targetFrame: CGRect,
+        configuration: GlanceOverlayConfiguration,
+        after duration: TimeInterval
+    ) {
+        cancelPostAnimationCompletion()
+        postAnimationCompletionTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.nanoseconds(for: duration))
+            guard !Task.isCancelled,
+                  let self,
+                  self.session?.id == sessionID
+            else { return }
+
+            self.finishOpening(
+                sessionID: sessionID,
+                targetFrame: targetFrame,
+                configuration: configuration
+            )
+            self.postAnimationCompletionTask = nil
+        }
+    }
+
+    private func scheduleClosingCompletion(sessionID: UUID, after duration: TimeInterval) {
+        cancelPostAnimationCompletion()
+        postAnimationCompletionTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.nanoseconds(for: duration))
+            guard !Task.isCancelled,
+                  let self,
+                  self.session?.id == sessionID
+            else { return }
+
+            self.finishClosing(sessionID: sessionID)
+            self.postAnimationCompletionTask = nil
+        }
+    }
+
+    private func cancelPostAnimationCompletion() {
+        postAnimationCompletionTask?.cancel()
+        postAnimationCompletionTask = nil
+    }
+
+    private static func nanoseconds(for duration: TimeInterval) -> UInt64 {
+        UInt64(max(0, duration) * 1_000_000_000)
     }
 
     private func animateContentFrame(
@@ -771,6 +822,8 @@ final class GlanceOverlayController: NSObject {
             contentShadowView.alphaValue = 1
             buttonStack.alphaValue = 1
         } else {
+            cancelPostAnimationCompletion()
+            isAnimatingClose = false
             uninstallKeyMonitor()
             publishContentFrame(nil, in: rootView)
             WebContentMouseTrackingShield.unregister(webContentShieldAnchorView)

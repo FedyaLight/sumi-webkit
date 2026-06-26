@@ -18,7 +18,11 @@ final class SumiBookmarkManager: ObservableObject {
         database: SumiBookmarkDatabase = SumiBookmarkDatabase(),
         syncFavicons: Bool = true
     ) {
-        self.repository = SumiDDGBookmarkRepository(database: database)
+        if let unavailableReason = database.unavailableReason {
+            self.repository = SumiUnavailableBookmarkRepository(reason: unavailableReason.description)
+        } else {
+            self.repository = SumiDDGBookmarkRepository(database: database)
+        }
         self.syncFavicons = syncFavicons
         reload(notify: false)
         installSaveObserver()

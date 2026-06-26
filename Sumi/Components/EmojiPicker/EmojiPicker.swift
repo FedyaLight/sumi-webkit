@@ -28,7 +28,7 @@ class EmojiPickerManager: NSObject, ObservableObject {
     @Published var committedEmoji: String = ""
 
     private let pickerViewModel = EmojiPickerViewModel()
-    private var emojiHostingController: NSHostingController<AnyView>?
+    private var emojiHostingController: NSHostingController<EmojiPickerPanelHost>?
     private var activePresentationSource: SidebarTransientPresentationSource?
     private var transientSessionToken: SidebarTransientSessionToken?
     private var activeCommitHandler: ((String) -> Void)?
@@ -142,9 +142,11 @@ class EmojiPickerManager: NSObject, ObservableObject {
         emojiHostingController = hosting
     }
 
-    private func makePanel() -> AnyView {
-        let panel = SumiEmojiPickerPanel(
+    private func makePanel() -> EmojiPickerPanelHost {
+        EmojiPickerPanelHost(
             model: pickerViewModel,
+            settings: activeSettings,
+            themeContext: activeThemeContext,
             onEmojiSelected: { [weak self] emoji in
                 DispatchQueue.main.async { [weak self] in
                     self?.didSelectGlyph = true
@@ -152,22 +154,6 @@ class EmojiPickerManager: NSObject, ObservableObject {
                 }
             }
         )
-
-        if let activeSettings, let activeThemeContext {
-            return AnyView(
-                panel
-                    .environment(\.sumiSettings, activeSettings)
-                    .environment(\.resolvedThemeContext, activeThemeContext)
-                    .environment(\.colorScheme, activeThemeContext.nativeSurfaceColorScheme)
-                    .preferredColorScheme(activeThemeContext.nativeSurfaceColorScheme)
-            )
-        }
-
-        if let activeSettings {
-            return AnyView(panel.environment(\.sumiSettings, activeSettings))
-        }
-
-        return AnyView(panel)
     }
 
     private func popoverColorScheme(anchorView: NSView) -> ColorScheme {
@@ -178,6 +164,34 @@ class EmojiPickerManager: NSObject, ObservableObject {
         return ColorScheme(
             sumiChromeAppearance: anchorView.window?.effectiveAppearance
                 ?? NSApplication.shared.effectiveAppearance
+        )
+    }
+}
+
+private struct EmojiPickerPanelHost: View {
+    let model: EmojiPickerViewModel
+    let settings: SumiSettingsService?
+    let themeContext: ResolvedThemeContext?
+    let onEmojiSelected: (String) -> Void
+
+    var body: some View {
+        if let settings, let themeContext {
+            panel
+                .environment(\.sumiSettings, settings)
+                .environment(\.resolvedThemeContext, themeContext)
+                .environment(\.colorScheme, themeContext.nativeSurfaceColorScheme)
+                .preferredColorScheme(themeContext.nativeSurfaceColorScheme)
+        } else if let settings {
+            panel.environment(\.sumiSettings, settings)
+        } else {
+            panel
+        }
+    }
+
+    private var panel: some View {
+        SumiEmojiPickerPanel(
+            model: model,
+            onEmojiSelected: onEmojiSelected
         )
     }
 }

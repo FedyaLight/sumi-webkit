@@ -85,12 +85,38 @@ final class SumiStartupPersistenceTests: XCTestCase {
         XCTAssertTrue(source.contains("func modelContainer() throws -> ModelContainer"))
     }
 
+    func testDataLayerApplicationSupportLookupsDoNotForceUnwrap() throws {
+        let sourcePaths = [
+            "Sumi/Services/SumiStartupPersistence.swift",
+            "Sumi/Bookmarks/SumiBookmarkDatabase.swift",
+            "Sumi/Favicons/SumiFaviconSystem.swift",
+            "Sumi/Services/SumiApplicationSupportDirectory.swift",
+        ]
+
+        for sourcePath in sourcePaths {
+            let source = try source(named: sourcePath)
+            let collapsedSource = source.components(separatedBy: .whitespacesAndNewlines)
+                .joined()
+            XCTAssertFalse(
+                collapsedSource.contains(".applicationSupportDirectory,in:.userDomainMask).first!"),
+                "\(sourcePath) still force unwraps Application Support"
+            )
+        }
+
+        let resolverSource = try source(named: "Sumi/Services/SumiApplicationSupportDirectory.swift")
+        XCTAssertTrue(resolverSource.contains("temporaryDirectory"))
+        XCTAssertTrue(resolverSource.contains("Application Support directory is unavailable"))
+        XCTAssertTrue(resolverSource.contains("log.fault"))
+    }
+
     private func startupPersistenceSource() throws -> String {
+        try source(named: "Sumi/Services/SumiStartupPersistence.swift")
+    }
+
+    private func source(named relativePath: String) throws -> String {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let sourceURL = repoRoot
-            .appendingPathComponent("Sumi/Services/SumiStartupPersistence.swift")
-        return try String(contentsOf: sourceURL, encoding: .utf8)
+        return try String(contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 }

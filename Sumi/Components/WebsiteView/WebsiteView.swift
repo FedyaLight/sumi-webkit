@@ -287,6 +287,7 @@ private struct SplitPreviewOverlay: View {
     @State private var renderedZone: SplitPreviewZone?
     @State private var renderedOpacity: Double = 0
     @State private var renderGeneration: UInt = 0
+    @State private var fadeOutCleanupTask: Task<Void, Never>?
     
     var body: some View {
         GeometryReader { geometry in
@@ -318,6 +319,10 @@ private struct SplitPreviewOverlay: View {
                 syncRenderedZone(to: newZone)
             }
         }
+        .onDisappear {
+            fadeOutCleanupTask?.cancel()
+            fadeOutCleanupTask = nil
+        }
         .allowsHitTesting(false)
     }
 
@@ -332,15 +337,22 @@ private struct SplitPreviewOverlay: View {
     private func syncRenderedZone(to requestedZone: SplitPreviewZone?) {
         renderGeneration &+= 1
         let generation = renderGeneration
+        fadeOutCleanupTask?.cancel()
+        fadeOutCleanupTask = nil
         guard let requestedZone else {
             guard renderedZone != nil else { return }
             withAnimation(previewAnimation) {
                 renderedOpacity = 0
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                if generation == renderGeneration, renderedOpacity == 0 {
-                    renderedZone = nil
-                }
+            fadeOutCleanupTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                guard !Task.isCancelled,
+                      generation == renderGeneration,
+                      renderedOpacity == 0
+                else { return }
+
+                renderedZone = nil
+                fadeOutCleanupTask = nil
             }
             return
         }

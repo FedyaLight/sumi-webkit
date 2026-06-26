@@ -150,6 +150,7 @@ enum SumiBookmarkError: LocalizedError, Equatable {
     case cannotMoveFolderIntoDescendant
     case duplicateURL
     case missingRootFolder
+    case storageUnavailable(String)
     case saveFailed(String)
     case importFailed(String)
     case exportFailed(String)
@@ -174,6 +175,8 @@ enum SumiBookmarkError: LocalizedError, Equatable {
             return "That URL is already bookmarked."
         case .missingRootFolder:
             return "Bookmarks storage is not ready."
+        case .storageUnavailable(let message):
+            return message
         case .saveFailed(let message):
             return message
         case .importFailed(let message):

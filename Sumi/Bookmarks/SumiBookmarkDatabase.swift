@@ -6,27 +6,51 @@ import OSLog
 final class SumiBookmarkDatabase {
     private static let log = Logger.sumi(category: "BookmarkDatabase")
 
-    private let database: any SumiCoreDataDatabase
+    private let database: (any SumiCoreDataDatabase)?
+    let unavailableReason: SumiBookmarkDatabaseUnavailableReason?
+
+    var isAvailable: Bool {
+        unavailableReason == nil
+    }
 
     init(directory: URL? = nil) {
         let directory = directory ?? Self.defaultDirectoryURL()
         guard let model = Self.loadBookmarksModel() else {
-            fatalError("Failed to load BookmarksModel")
+            let reason = SumiBookmarkDatabaseUnavailableReason.missingModel("BookmarksModel")
+            Self.log.fault("\(reason.description, privacy: .public)")
+            self.database = nil
+            self.unavailableReason = reason
+            return
         }
 
-        database = SumiDDGCoreDataDatabase(
+        let database = SumiDDGCoreDataDatabase(
             name: "SumiBookmarks",
             containerLocation: directory,
             model: model
         )
+        self.database = database
+        self.unavailableReason = nil
         database.loadStore()
         prepareFolderStructure()
     }
+
+    #if DEBUG
+        init(unavailableReason: SumiBookmarkDatabaseUnavailableReason) {
+            self.database = nil
+            self.unavailableReason = unavailableReason
+        }
+    #endif
 
     func makeContext(
         concurrencyType: NSManagedObjectContextConcurrencyType,
         name: String
     ) -> NSManagedObjectContext {
+        guard let database else {
+            preconditionFailure(
+                "Sumi bookmarks database context requested while unavailable: \(unavailableReason?.description ?? "unknown reason")"
+            )
+        }
+
         let context = database.makeContext(
             concurrencyType: concurrencyType,
             name: name
@@ -69,29 +93,18 @@ final class SumiBookmarkDatabase {
             return directory
         }
 
-        if let overridePath = ProcessInfo.processInfo.environment["SUMI_APP_SUPPORT_OVERRIDE"],
-           !overridePath.isEmpty
-        {
-            let overrideURL = URL(fileURLWithPath: overridePath, isDirectory: true)
-                .appendingPathComponent("Bookmarks", isDirectory: true)
-            try? FileManager.default.createDirectory(
-                at: overrideURL,
+        let directory = SumiApplicationSupportDirectory.appRootURL()
+            .appendingPathComponent("Bookmarks", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
                 withIntermediateDirectories: true
             )
-            return overrideURL
+        } catch {
+            log.error(
+                "Failed to create bookmarks directory: \(String(describing: error), privacy: .public)"
+            )
         }
-
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first!
-        let directory = appSupport
-            .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
-            .appendingPathComponent("Bookmarks", isDirectory: true)
-        try? FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
         return directory
     }
 
@@ -109,5 +122,16 @@ final class SumiBookmarkDatabase {
             }
         }
         return nil
+    }
+}
+
+enum SumiBookmarkDatabaseUnavailableReason: Error, CustomStringConvertible, Equatable, Sendable {
+    case missingModel(String)
+
+    var description: String {
+        switch self {
+        case .missingModel(let name):
+            return "Sumi bookmarks database is unavailable because \(name) could not be loaded."
+        }
     }
 }

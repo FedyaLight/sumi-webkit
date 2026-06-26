@@ -47,35 +47,7 @@ final class SumiStartupPersistence {
 
     // MARK: - URLs
     nonisolated private static var appSupportURL: URL {
-        if let overridePath = ProcessInfo.processInfo.environment["SUMI_APP_SUPPORT_OVERRIDE"],
-           !overridePath.isEmpty
-        {
-            let overrideURL = URL(fileURLWithPath: overridePath, isDirectory: true)
-            do {
-                try FileManager.default.createDirectory(
-                    at: overrideURL,
-                    withIntermediateDirectories: true
-                )
-            } catch {
-                log.error(
-                    "Failed to create overridden Application Support directory: \(String(describing: error), privacy: .public)"
-                )
-            }
-            return overrideURL
-        }
-
-        let fm = FileManager.default
-        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let bundleID = SumiAppIdentity.runtimeBundleIdentifier
-        let dir = base.appendingPathComponent(bundleID, isDirectory: true)
-        do {
-            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        } catch {
-            log.error(
-                "Failed to create Application Support directory: \(String(describing: error), privacy: .public)"
-            )
-        }
-        return dir
+        SumiApplicationSupportDirectory.appRootURL()
     }
 
     nonisolated private static var storeURL: URL {

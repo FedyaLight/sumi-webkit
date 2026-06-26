@@ -16,7 +16,7 @@ final class FolderGlyphPickerManager: NSObject, ObservableObject {
     @Published var committedIcon: String = ""
 
     private let pickerViewModel = FolderGlyphPickerViewModel()
-    private var hostingController: NSHostingController<AnyView>?
+    private var hostingController: NSHostingController<FolderGlyphPickerPanelHost>?
     private var activeCommitHandler: ((String) -> Void)?
     private var activeSettings: SumiSettingsService?
     private var activeThemeContext: ResolvedThemeContext?
@@ -119,9 +119,11 @@ final class FolderGlyphPickerManager: NSObject, ObservableObject {
         hostingController = hosting
     }
 
-    private func makePanel() -> AnyView {
-        let panel = FolderGlyphPickerPanel(
+    private func makePanel() -> FolderGlyphPickerPanelHost {
+        FolderGlyphPickerPanelHost(
             model: pickerViewModel,
+            settings: activeSettings,
+            themeContext: activeThemeContext,
             onIconSelected: { [weak self] icon in
                 DispatchQueue.main.async { [weak self] in
                     self?.didSelectIcon = true
@@ -129,22 +131,6 @@ final class FolderGlyphPickerManager: NSObject, ObservableObject {
                 }
             }
         )
-
-        if let activeSettings, let activeThemeContext {
-            return AnyView(
-                panel
-                    .environment(\.sumiSettings, activeSettings)
-                    .environment(\.resolvedThemeContext, activeThemeContext)
-                    .environment(\.colorScheme, activeThemeContext.nativeSurfaceColorScheme)
-                    .preferredColorScheme(activeThemeContext.nativeSurfaceColorScheme)
-            )
-        }
-
-        if let activeSettings {
-            return AnyView(panel.environment(\.sumiSettings, activeSettings))
-        }
-
-        return AnyView(panel)
     }
 
     private func popoverColorScheme(anchorView: NSView) -> ColorScheme {
@@ -191,6 +177,34 @@ struct FolderGlyphPickerAnchor: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {}
+}
+
+private struct FolderGlyphPickerPanelHost: View {
+    let model: FolderGlyphPickerViewModel
+    let settings: SumiSettingsService?
+    let themeContext: ResolvedThemeContext?
+    let onIconSelected: (String) -> Void
+
+    var body: some View {
+        if let settings, let themeContext {
+            panel
+                .environment(\.sumiSettings, settings)
+                .environment(\.resolvedThemeContext, themeContext)
+                .environment(\.colorScheme, themeContext.nativeSurfaceColorScheme)
+                .preferredColorScheme(themeContext.nativeSurfaceColorScheme)
+        } else if let settings {
+            panel.environment(\.sumiSettings, settings)
+        } else {
+            panel
+        }
+    }
+
+    private var panel: some View {
+        FolderGlyphPickerPanel(
+            model: model,
+            onIconSelected: onIconSelected
+        )
+    }
 }
 
 @MainActor

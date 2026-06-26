@@ -72,12 +72,12 @@ struct SpaceView: View {
 
 
     var body: some View {
-        let _ = browserManager.tabStructuralRevision
+        SidebarTabStructuralRevisionReader(browserManager: browserManager) { _ in
+            VStack(spacing: 4) {
+                SpaceTitle(space: space, isAppKitInteractionEnabled: isInteractive)
 
-        VStack(spacing: 4) {
-            SpaceTitle(space: space, isAppKitInteractionEnabled: isInteractive)
-
-            mainContentContainer
+                mainContentContainer
+            }
         }
         .padding(.horizontal, 8)
         .frame(minWidth: 0, maxWidth: outerWidth, alignment: .leading)
@@ -90,6 +90,15 @@ struct SpaceView: View {
                 transaction.disablesAnimations = true
             }
         }
+    }
+}
+
+private struct SidebarTabStructuralRevisionReader<Content: View>: View {
+    @ObservedObject var browserManager: BrowserManager
+    @ViewBuilder let content: (UInt) -> Content
+
+    var body: some View {
+        content(browserManager.tabStructuralRevision)
     }
 }
 

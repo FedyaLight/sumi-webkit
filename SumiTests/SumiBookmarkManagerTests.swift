@@ -276,7 +276,8 @@ final class SumiBookmarkManagerTests: XCTestCase {
         XCTAssertEqual(secondContext.name, "SumiBookmarkCoordinatorParitySecond")
         XCTAssertEqual(storeURL.standardizedFileURL, directory.appendingPathComponent("SumiBookmarks.sqlite").standardizedFileURL)
         XCTAssertTrue(storeURL.path.hasPrefix(directory.path))
-        XCTAssertFalse(storeURL.path.hasPrefix(applicationSupportDirectory().path))
+        let appSupportDirectory = try applicationSupportDirectory()
+        XCTAssertFalse(storeURL.path.hasPrefix(appSupportDirectory.path))
     }
 
     func testBookmarkContextSavePostsSynchronousDidSaveNotificationFromSavingContext() throws {
@@ -329,6 +330,56 @@ final class SumiBookmarkManagerTests: XCTestCase {
         XCTAssertFalse(source.contains("try? context.save()"))
         XCTAssertTrue(source.contains("context.rollback()"))
         XCTAssertTrue(source.contains("Failed to save bookmark bootstrap folder structure"))
+    }
+
+    func testBookmarkDatabaseMissingModelFailureIsExplicitAndDoesNotUseRawFatalError() throws {
+        let source = try source(named: "Sumi/Bookmarks/SumiBookmarkDatabase.swift")
+
+        XCTAssertFalse(source.contains("fatalError(\"Failed to load BookmarksModel\")"))
+        XCTAssertFalse(source.contains("fatalError("))
+        XCTAssertTrue(source.contains("SumiBookmarkDatabaseUnavailableReason"))
+        XCTAssertTrue(source.contains("let unavailableReason: SumiBookmarkDatabaseUnavailableReason?"))
+        XCTAssertTrue(source.contains("var isAvailable: Bool"))
+        XCTAssertTrue(source.contains("log.fault"))
+    }
+
+    func testUnavailableBookmarkDatabaseUsesManagerBoundaryFallbackRepository() throws {
+        let reason = SumiBookmarkDatabaseUnavailableReason.missingModel("BookmarksModel")
+        let database = SumiBookmarkDatabase(unavailableReason: reason)
+
+        XCTAssertFalse(database.isAvailable)
+        XCTAssertEqual(database.unavailableReason, reason)
+
+        let manager = SumiBookmarkManager(database: database, syncFavicons: false)
+        let snapshot = manager.snapshot()
+
+        XCTAssertEqual(manager.allBookmarks(), [])
+        XCTAssertEqual(manager.folders(), [.init(id: SumiBookmarkConstants.rootFolderID, title: "Bookmarks", depth: 0)])
+        XCTAssertEqual(snapshot.root.id, SumiBookmarkConstants.rootFolderID)
+        XCTAssertEqual(snapshot.root.childBookmarkCount, 0)
+        XCTAssertEqual(snapshot.entitiesByID.keys.sorted(), [SumiBookmarkConstants.rootFolderID])
+
+        XCTAssertThrowsError(
+            try manager.createBookmark(
+                url: try XCTUnwrap(URL(string: "https://unavailable.example")),
+                title: "Unavailable"
+            )
+        ) { error in
+            XCTAssertEqual(error as? SumiBookmarkError, .storageUnavailable(reason.description))
+        }
+    }
+
+    func testUnavailableBookmarkDatabaseDoesNotUseDDGRepositoryNormalPath() throws {
+        let managerSource = try source(named: "Sumi/Bookmarks/SumiBookmarkManager.swift")
+        let databaseSource = try source(named: "Sumi/Bookmarks/SumiBookmarkDatabase.swift")
+        let repositorySource = try source(named: "Sumi/Bookmarks/SumiBookmarkRepository.swift")
+
+        XCTAssertTrue(managerSource.contains("if let unavailableReason = database.unavailableReason"))
+        XCTAssertTrue(managerSource.contains("SumiUnavailableBookmarkRepository"))
+        XCTAssertTrue(managerSource.contains("SumiDDGBookmarkRepository(database: database)"))
+        XCTAssertFalse(databaseSource.contains("SumiUnavailableCoreDataDatabase"))
+        XCTAssertTrue(repositorySource.contains("final class SumiUnavailableBookmarkRepository"))
+        XCTAssertTrue(repositorySource.contains("throw unavailableError"))
     }
 
     func testMoveOrderingAndDeletionSurviveStoreReopen() throws {
@@ -455,8 +506,10 @@ final class SumiBookmarkManagerTests: XCTestCase {
         }
     }
 
-    private func applicationSupportDirectory() -> URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+    private func applicationSupportDirectory() throws -> URL {
+        try XCTUnwrap(
+            FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        )
     }
 
     private func source(named relativePath: String) throws -> String {
