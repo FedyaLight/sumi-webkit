@@ -73,6 +73,184 @@ final class ShellSelectionServiceTests: XCTestCase {
         XCTAssertEqual(resolved?.id, second.id)
     }
 
+    func testSelectionTargetForSpaceActivationPreservesCurrentEssentialShortcutAcrossSpaceChange() {
+        let service = ShellSelectionService { _ in [] }
+        let currentSpace = Space(name: "Current")
+        let targetSpace = Space(name: "Target")
+        let essentialPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            index: 0,
+            launchURL: URL(string: "https://essential.example")!,
+            title: "Essential"
+        )
+        let essentialLiveTab = Tab(
+            url: essentialPin.launchURL,
+            name: essentialPin.title,
+            index: 0
+        )
+        essentialLiveTab.bindToShortcutPin(essentialPin)
+        let targetPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: targetSpace.id,
+            index: 1,
+            launchURL: URL(string: "https://selected-shortcut.example")!,
+            title: "Selected Shortcut"
+        )
+        let targetShortcut = Tab(
+            url: targetPin.launchURL,
+            name: targetPin.title,
+            spaceId: targetSpace.id,
+            index: 0
+        )
+        targetShortcut.bindToShortcutPin(targetPin)
+        let recentRegular = Tab(
+            url: URL(string: "https://recent.example")!,
+            name: "Recent",
+            spaceId: targetSpace.id,
+            index: 1
+        )
+        let store = FakeShellSelectionTabStore(
+            spaces: [currentSpace, targetSpace],
+            allTabs: [essentialLiveTab, targetShortcut, recentRegular],
+            tabsBySpace: [targetSpace.id: [recentRegular]],
+            shortcutPins: [essentialPin.id: essentialPin, targetPin.id: targetPin],
+            liveShortcutTabsByPin: [
+                essentialPin.id: essentialLiveTab,
+                targetPin.id: targetShortcut,
+            ]
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = currentSpace.id
+        windowState.currentTabId = essentialLiveTab.id
+        windowState.selectedShortcutPinForSpace[targetSpace.id] = targetPin.id
+        windowState.recentRegularTabIdsBySpace[targetSpace.id] = [recentRegular.id]
+
+        let resolved = service.selectionTargetForSpaceActivation(
+            in: targetSpace,
+            windowState: windowState,
+            tabStore: store
+        )
+
+        XCTAssertEqual(resolved?.id, essentialLiveTab.id)
+    }
+
+    func testSelectionTargetForSpaceActivationUsesPreferredSpaceOrderingAfterCurrentSelectionGuards() {
+        let service = ShellSelectionService { _ in [] }
+        let currentSpace = Space(name: "Current")
+        let targetSpace = Space(name: "Target")
+        let staleCurrent = Tab(
+            url: URL(string: "https://stale-current.example")!,
+            name: "Stale Current",
+            spaceId: currentSpace.id,
+            index: 0
+        )
+        let targetPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: targetSpace.id,
+            index: 0,
+            launchURL: URL(string: "https://selected-shortcut.example")!,
+            title: "Selected Shortcut"
+        )
+        let targetShortcut = Tab(
+            url: targetPin.launchURL,
+            name: targetPin.title,
+            spaceId: targetSpace.id,
+            index: 0
+        )
+        targetShortcut.bindToShortcutPin(targetPin)
+        let recentRegular = Tab(
+            url: URL(string: "https://recent.example")!,
+            name: "Recent",
+            spaceId: targetSpace.id,
+            index: 1
+        )
+        let rememberedRegular = Tab(
+            url: URL(string: "https://remembered.example")!,
+            name: "Remembered",
+            spaceId: targetSpace.id,
+            index: 2
+        )
+        let store = FakeShellSelectionTabStore(
+            spaces: [currentSpace, targetSpace],
+            allTabs: [staleCurrent, targetShortcut, recentRegular, rememberedRegular],
+            tabsBySpace: [targetSpace.id: [rememberedRegular, recentRegular]],
+            shortcutPins: [targetPin.id: targetPin],
+            liveShortcutTabsByPin: [targetPin.id: targetShortcut]
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = currentSpace.id
+        windowState.currentTabId = staleCurrent.id
+        windowState.selectedShortcutPinForSpace[targetSpace.id] = targetPin.id
+        windowState.recentRegularTabIdsBySpace[targetSpace.id] = [recentRegular.id]
+        windowState.activeTabForSpace[targetSpace.id] = rememberedRegular.id
+
+        let selectedShortcut = service.selectionTargetForSpaceActivation(
+            in: targetSpace,
+            windowState: windowState,
+            tabStore: store
+        )
+        XCTAssertEqual(selectedShortcut?.id, targetShortcut.id)
+
+        windowState.selectedShortcutPinForSpace[targetSpace.id] = nil
+
+        let recentFallback = service.selectionTargetForSpaceActivation(
+            in: targetSpace,
+            windowState: windowState,
+            tabStore: store
+        )
+        XCTAssertEqual(recentFallback?.id, recentRegular.id)
+    }
+
+    func testSelectionTargetForSpaceActivationSkipsSameSpaceCurrentTabDuringInitialSessionResolution() {
+        let service = ShellSelectionService { _ in [] }
+        let space = Space(name: "Startup")
+        let staleCurrent = Tab(
+            url: URL(string: "https://stale-current.example")!,
+            name: "Stale Current",
+            spaceId: space.id,
+            index: 0
+        )
+        let recentRegular = Tab(
+            url: URL(string: "https://recent.example")!,
+            name: "Recent",
+            spaceId: space.id,
+            index: 1
+        )
+        let rememberedRegular = Tab(
+            url: URL(string: "https://remembered.example")!,
+            name: "Remembered",
+            spaceId: space.id,
+            index: 2
+        )
+        let store = FakeShellSelectionTabStore(
+            spaces: [space],
+            allTabs: [staleCurrent, recentRegular, rememberedRegular],
+            tabsBySpace: [space.id: [staleCurrent, rememberedRegular, recentRegular]]
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = staleCurrent.id
+        windowState.isAwaitingInitialSessionResolution = true
+        windowState.recentRegularTabIdsBySpace[space.id] = [recentRegular.id]
+        windowState.activeTabForSpace[space.id] = rememberedRegular.id
+
+        XCTAssertTrue(service.hasValidCurrentSelection(in: windowState, tabStore: store))
+
+        let resolved = service.selectionTargetForSpaceActivation(
+            in: space,
+            windowState: windowState,
+            tabStore: store
+        )
+
+        XCTAssertEqual(resolved?.id, recentRegular.id)
+    }
+
     func testTabsForDisplayExcludesLegacyPinnedTabs() {
         let service = ShellSelectionService { _ in [] }
         let space = Space(name: "Docs")

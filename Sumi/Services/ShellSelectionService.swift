@@ -45,6 +45,30 @@ final class ShellSelectionService {
         return preferredTabForWindow(windowState, tabStore: tabStore)
     }
 
+    func selectionTargetForSpaceActivation(
+        in space: Space,
+        windowState: BrowserWindowState,
+        tabStore: ShellSelectionTabStore
+    ) -> Tab? {
+        if !windowState.isAwaitingInitialSessionResolution,
+           windowState.currentSpaceId == space.id,
+           hasValidCurrentSelection(in: windowState, tabStore: tabStore),
+           let currentTab = currentTab(for: windowState, tabStore: tabStore)
+        {
+            return currentTab
+        }
+
+        if let currentTabId = windowState.currentTabId,
+           let currentTab = tabStore.tab(for: currentTabId),
+           currentTab.isShortcutLiveInstance,
+           currentTab.shortcutPinRole == .essential
+        {
+            return currentTab
+        }
+
+        return preferredTabForSpace(space, in: windowState, tabStore: tabStore)
+    }
+
     func preferredTabForWindow(
         _ windowState: BrowserWindowState,
         tabStore: ShellSelectionTabStore

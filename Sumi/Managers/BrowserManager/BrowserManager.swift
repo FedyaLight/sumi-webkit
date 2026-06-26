@@ -2251,47 +2251,11 @@ class BrowserManager: ObservableObject {
         in space: Space,
         windowState: BrowserWindowState
     ) -> Tab? {
-        if windowState.currentSpaceId == space.id,
-           hasValidCurrentSelection(in: windowState),
-           let currentTab = currentTab(for: windowState) {
-            return currentTab
-        }
-
-        if let currentTabId = windowState.currentTabId,
-           let currentTab = tabManager.tab(for: currentTabId),
-           currentTab.isShortcutLiveInstance,
-           currentTab.shortcutPinRole == .essential {
-            return currentTab
-        }
-
-        if let shortcutPinId = windowState.selectedShortcutPinForSpace[space.id],
-           let liveShortcut = tabManager.shortcutLiveTab(for: shortcutPinId, in: windowState.id) {
-            return liveShortcut
-        }
-
-        let regularTabs = tabManager.tabs(in: space)
-        if let historyMatch = windowState.recentRegularTabIdsBySpace[space.id]?
-            .compactMap({ tabId in regularTabs.first(where: { $0.id == tabId }) })
-            .first {
-            return historyMatch
-        }
-
-        if let rememberedId = windowState.activeTabForSpace[space.id],
-           let remembered = regularTabs.first(where: { $0.id == rememberedId }) {
-            return remembered
-        }
-
-        if let activeId = space.activeTabId,
-           let active = regularTabs.first(where: { $0.id == activeId }) {
-            return active
-        }
-
-        if let backgroundShortcut = tabManager.liveShortcutTabs(in: windowState.id)
-            .first(where: { $0.shortcutPinRole != .essential && $0.spaceId == space.id }) {
-            return backgroundShortcut
-        }
-
-        return regularTabs.first
+        shellSelectionService.selectionTargetForSpaceActivation(
+            in: space,
+            windowState: windowState,
+            tabStore: tabManager.runtimeStore
+        )
     }
 
     private func applySpaceContext(

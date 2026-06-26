@@ -273,23 +273,11 @@ struct DeferredProtectedCommandBuffer {
 
 }
 
-private struct TrackedWebViewOwner: Equatable {
-    let tabID: UUID
-    let windowID: UUID
-}
-
 @MainActor
 @Observable
 class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
-    /// Window-specific web views: tabId -> windowId -> WKWebView
     @ObservationIgnored
-    private var webViewsByTabAndWindow: [UUID: [UUID: WKWebView]] = [:]
-
-    @ObservationIgnored
-    private var webViewOwnersByIdentifier: [ObjectIdentifier: TrackedWebViewOwner] = [:]
-
-    @ObservationIgnored
-    private var recentlyVisibleTabIDsByWindow: [UUID: [UUID]] = [:]
+    private let webViewRegistry = WindowWebViewRegistry()
 
     @ObservationIgnored
     private var promotedHostsByTabAndWindow: [UUID: [UUID: SumiWebViewContainerView]] = [:]
@@ -380,7 +368,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         compositorContainerViews.removeValue(forKey: windowId)
         immediateVisualHandoffHandlersByWindow.removeValue(forKey: windowId)
         scheduledPrepareWindowIds.remove(windowId)
-        recentlyVisibleTabIDsByWindow.removeValue(forKey: windowId)
+        webViewRegistry.removeVisibilityHistory(for: windowId)
         pruneInvalidDeferredProtectedCommands(reason: "removeCompositorContainerView")
     }
 
@@ -404,12 +392,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     // MARK: - WebView Pool Management
 
     func getWebView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
-        webViewsByTabAndWindow[tabId]?[windowId]
+        webViewRegistry.webView(for: tabId, in: windowId)
     }
 
     func getAllWebViews(for tabId: UUID) -> [WKWebView] {
-        guard let windowWebViews = webViewsByTabAndWindow[tabId] else { return [] }
-        return Array(windowWebViews.values)
+        webViewRegistry.webViews(for: tabId)
     }
 
     func liveWebViews(for tab: Tab) -> [WKWebView] {
@@ -422,7 +409,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 result.append(webView)
             }
         }
-        if let windowWebViews = webViewsByTabAndWindow[tab.id] {
+        let windowWebViews = webViewRegistry.windowWebViews(for: tab.id)
+        if windowWebViews.isEmpty == false {
             result.reserveCapacity(windowWebViews.count + 2)
             for webView in windowWebViews.values {
                 appendUnique(webView)
@@ -485,8 +473,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     func windowIDs(for tabId: UUID) -> [UUID] {
-        guard let windowWebViews = webViewsByTabAndWindow[tabId] else { return [] }
-        return Array(windowWebViews.keys)
+        webViewRegistry.windowIDs(for: tabId)
     }
 
     func setWebView(_ webView: WKWebView, for tabId: UUID, in windowId: UUID) {
@@ -572,7 +559,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
 
         let visibleTabIDs = visibleTabIDs(for: windowState, browserManager: browserManager)
-        noteVisibleTabs(visibleTabIDs, in: windowState.id)
+        webViewRegistry.noteVisibleTabs(visibleTabIDs, in: windowState.id)
         var didCreateWebView = false
         for tabId in visibleTabIDs {
             guard let tab = resolveTab(for: tabId, in: windowState, browserManager: browserManager) else {
@@ -639,7 +626,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
 
         scheduledPrepareWindowIds.remove(windowId)
-        let webViewsToCleanup = trackedWebViews(in: windowId)
+        let webViewsToCleanup = webViewRegistry.trackedWebViews(in: windowId)
 
         RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
             "Cleaning up \(webViewsToCleanup.count) WebViews for window \(windowId.uuidString)."
@@ -678,16 +665,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     func cleanupAllWebViews(tabManager: TabManager) {
-        let totalWebViews = webViewsByTabAndWindow.values.flatMap { $0.values }.count
+        let totalWebViews = webViewRegistry.totalTrackedWebViewCount
         RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
             "Starting full WebView cleanup for \(totalWebViews) tracked views."
         }
 
-        let trackedEntries = webViewsByTabAndWindow.flatMap { tabId, windowWebViews in
-            windowWebViews.map { windowId, webView in
-                (TrackedWebViewOwner(tabID: tabId, windowID: windowId), webView)
-            }
-        }
+        let trackedEntries = webViewRegistry.trackedWebViews()
 
         for (owner, webView) in trackedEntries {
             if isWebViewProtectedFromCompositorMutation(webView) {
@@ -718,9 +701,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             }
         }
 
-        if webViewsByTabAndWindow.isEmpty {
-            webViewOwnersByIdentifier.removeAll()
-            recentlyVisibleTabIDsByWindow.removeAll()
+        if webViewRegistry.isEmpty {
+            webViewRegistry.removeAll()
             compositorContainerViews.removeAll()
             immediateVisualHandoffHandlersByWindow.removeAll()
             scheduledPrepareWindowIds.removeAll()
@@ -1003,7 +985,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
         
         // Check if another window already has this tab displayed
-        let allWindowsForTab = webViewsByTabAndWindow[tabId] ?? [:]
+        let allWindowsForTab = webViewRegistry.windowWebViews(for: tabId)
         let otherWindows = allWindowsForTab.filter { $0.key != windowId }
         
         if otherWindows.isEmpty {
@@ -1181,7 +1163,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         for tab: Tab,
         closeActiveFullscreenMedia: Bool = false
     ) -> Bool {
-        let currentEntries = webViewsByTabAndWindow[tab.id] ?? [:]
+        let currentEntries = webViewRegistry.windowWebViews(for: tab.id)
         let protectedCandidateWebViews = uniqueWebViews(
             Array(currentEntries.values)
                 + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
@@ -1257,9 +1239,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return false
         }
 
-        let trackedEntries = (webViewsByTabAndWindow[tab.id] ?? [:]).map { windowId, webView in
-            (TrackedWebViewOwner(tabID: tab.id, windowID: windowId), webView)
-        }
+        let trackedEntries = webViewRegistry.trackedWebViews(for: tab.id)
         var cleanedIdentifiers: Set<ObjectIdentifier> = []
 
         func cleanup(_ webView: WKWebView) {
@@ -1350,7 +1330,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
         guard let primaryWindowId else { return }
 
-        let protectedCandidateWebViews = Array((webViewsByTabAndWindow[tab.id] ?? [:]).values)
+        let protectedCandidateWebViews = Array(webViewRegistry.windowWebViews(for: tab.id).values)
             + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
         if protectedCandidateWebViews.contains(where: isWebViewProtectedFromCompositorMutation) {
             let deferredWebViews = protectedCandidateWebViews.filter(isWebViewProtectedFromCompositorMutation)
@@ -1367,7 +1347,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return
         }
 
-        let oldEntries = webViewsByTabAndWindow[tab.id] ?? [:]
+        let oldEntries = webViewRegistry.windowWebViews(for: tab.id)
         var cleanedIdentifiers: Set<ObjectIdentifier> = []
 
         func cleanup(_ webView: WKWebView?) {
@@ -1549,17 +1529,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func uninstallFullscreenStateObservationIfUntracked(_ webView: WKWebView) {
-        let webViewID = ObjectIdentifier(webView)
         fullscreenProtection.uninstallObservationIfUntracked(
             webView,
-            isTracked: webViewOwnersByIdentifier[webViewID] != nil
+            isTracked: webViewRegistry.isIndexed(webView)
         )
     }
 
     private func uninstallNowPlayingSessionObservationIfUntracked(_ webView: WKWebView) {
-        let webViewID = ObjectIdentifier(webView)
-        guard webViewOwnersByIdentifier[webViewID] == nil else { return }
-        nowPlayingSessionCancellablesByWebViewID.removeValue(forKey: webViewID)?.cancel()
+        guard webViewRegistry.isIndexed(webView) == false else { return }
+        nowPlayingSessionCancellablesByWebViewID.removeValue(forKey: ObjectIdentifier(webView))?.cancel()
     }
 
     private func resolveWeakWebView(
@@ -1575,10 +1553,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private func resolveWebView(
         with identifier: ObjectIdentifier
     ) -> WKWebView? {
-        if let owner = webViewOwnersByIdentifier[identifier],
-           let webView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID],
-           ObjectIdentifier(webView) == identifier
-        {
+        if let webView = webViewRegistry.trackedWebView(with: identifier) {
             noteWeakWebView(webView)
             return webView
         }
@@ -1674,12 +1649,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         case .cleanupWindow(let windowID):
             return browserManager?.tabManager != nil
                 && (
-                    trackedWebViews(in: windowID).isEmpty == false
+                    webViewRegistry.trackedWebViews(in: windowID).isEmpty == false
                         || compositorContainerView(for: windowID) != nil
                 )
         case .cleanupAllWebViews:
             return browserManager?.tabManager != nil
-                && webViewsByTabAndWindow.isEmpty == false
+                && webViewRegistry.isEmpty == false
         case .rebuildLiveWebViews(let tabID, _):
             return resolvedTab(with: tabID) != nil
         case .evictHiddenWebViews(let windowID):
@@ -1914,39 +1889,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         return Set(visibleTabIDs(for: windowState, browserManager: browserManager))
     }
 
-    private func noteVisibleTabs(_ tabIDs: [UUID], in windowId: UUID) {
-        guard tabIDs.isEmpty == false else { return }
-        var mru = recentlyVisibleTabIDsByWindow[windowId] ?? []
-        for tabId in tabIDs.reversed() {
-            mru.removeAll { $0 == tabId }
-            mru.insert(tabId, at: 0)
-        }
-        if mru.count > 32 {
-            mru = Array(mru.prefix(32))
-        }
-        recentlyVisibleTabIDsByWindow[windowId] = mru
-    }
-
-    private func removeTabFromVisibilityHistory(_ tabId: UUID, in windowId: UUID) {
-        guard var mru = recentlyVisibleTabIDsByWindow[windowId] else { return }
-        mru.removeAll { $0 == tabId }
-        if mru.isEmpty {
-            recentlyVisibleTabIDsByWindow.removeValue(forKey: windowId)
-        } else {
-            recentlyVisibleTabIDsByWindow[windowId] = mru
-        }
-    }
-
     private func registerTrackedWebView(
         _ webView: WKWebView,
         for tabId: UUID,
         in windowId: UUID
     ) {
         let owner = TrackedWebViewOwner(tabID: tabId, windowID: windowId)
-        let webViewID = ObjectIdentifier(webView)
         noteWeakWebView(webView)
 
-        if let existingOwner = webViewOwnersByIdentifier[webViewID],
+        if let existingOwner = webViewRegistry.indexedOwner(containing: webView),
            existingOwner != owner
         {
             _ = unregisterTrackedWebViewSlot(
@@ -1956,7 +1907,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             )
         }
 
-        if let existingWebView = webViewsByTabAndWindow[tabId]?[windowId],
+        if let existingWebView = webViewRegistry.webView(for: owner),
            existingWebView !== webView
         {
             _ = unregisterTrackedWebViewSlot(
@@ -1967,14 +1918,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             )
         }
 
-        if webViewsByTabAndWindow[tabId] == nil {
-            webViewsByTabAndWindow[tabId] = [:]
-        }
-        webViewsByTabAndWindow[tabId]?[windowId] = webView
-        webViewOwnersByIdentifier[webViewID] = owner
+        webViewRegistry.setWebView(webView, for: owner)
         installFullscreenStateObservationIfNeeded(on: webView)
         installNowPlayingSessionObservationIfNeeded(on: webView)
-        assertTrackingConsistency("registerTrackedWebView")
+        webViewRegistry.assertTrackingConsistency("registerTrackedWebView")
     }
 
     @discardableResult
@@ -1984,20 +1931,16 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         removeFromSuperview: Bool = false,
         removeRecentVisibility: Bool = true
     ) -> WKWebView? {
-        let trackedWebView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID]
+        let trackedWebView = webViewRegistry.webView(for: owner)
         if let expectedWebView,
            let trackedWebView,
            trackedWebView !== expectedWebView
         {
-            let expectedIdentifier = ObjectIdentifier(expectedWebView)
-            if webViewOwnersByIdentifier[expectedIdentifier] == owner {
-                webViewOwnersByIdentifier.removeValue(forKey: expectedIdentifier)
-            }
+            webViewRegistry.removeReverseIndex(for: expectedWebView, ifOwnedBy: owner)
             return nil
         }
 
         let resolvedWebView = trackedWebView ?? expectedWebView
-        let resolvedIdentifier = resolvedWebView.map(ObjectIdentifier.init)
 
         if removeFromSuperview,
            let resolvedWebView
@@ -2005,49 +1948,22 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             removeWebViewFromContainers(resolvedWebView)
         }
 
-        webViewsByTabAndWindow[owner.tabID]?[owner.windowID] = nil
-        if let resolvedIdentifier,
-           webViewOwnersByIdentifier[resolvedIdentifier] == owner
-        {
-            webViewOwnersByIdentifier.removeValue(forKey: resolvedIdentifier)
-        }
+        webViewRegistry.removeWebView(
+            owner: owner,
+            resolvedWebView: resolvedWebView,
+            removeRecentVisibility: removeRecentVisibility
+        )
         if let resolvedWebView {
             uninstallFullscreenStateObservationIfUntracked(resolvedWebView)
             uninstallNowPlayingSessionObservationIfUntracked(resolvedWebView)
         }
-        if removeRecentVisibility {
-            removeTabFromVisibilityHistory(owner.tabID, in: owner.windowID)
-        }
-        cleanupEmptyTrackingBuckets(for: owner.tabID)
         pruneInvalidDeferredProtectedCommands(reason: "unregisterTrackedWebViewSlot")
-        assertTrackingConsistency("unregisterTrackedWebViewSlot")
+        webViewRegistry.assertTrackingConsistency("unregisterTrackedWebViewSlot")
         return resolvedWebView
     }
 
-    private func cleanupEmptyTrackingBuckets(for tabId: UUID) {
-        if webViewsByTabAndWindow[tabId]?.isEmpty == true {
-            webViewsByTabAndWindow.removeValue(forKey: tabId)
-        }
-    }
-
     private func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
-        let webViewID = ObjectIdentifier(webView)
-        guard let owner = webViewOwnersByIdentifier[webViewID] else { return nil }
-        guard let trackedWebView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID],
-              trackedWebView === webView
-        else {
-            webViewOwnersByIdentifier.removeValue(forKey: webViewID)
-            assertTrackingConsistency("trackedOwner.stale")
-            return nil
-        }
-        return owner
-    }
-
-    private func trackedWebViews(in windowId: UUID) -> [(TrackedWebViewOwner, WKWebView)] {
-        webViewsByTabAndWindow.compactMap { tabId, windowWebViews in
-            guard let webView = windowWebViews[windowId] else { return nil }
-            return (TrackedWebViewOwner(tabID: tabId, windowID: windowId), webView)
-        }
+        webViewRegistry.trackedOwner(containing: webView)
     }
 
     private func uniqueWebViews(_ webViews: [WKWebView]) -> [WKWebView] {
@@ -2088,13 +2004,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         for tabId: UUID,
         browserManager: BrowserManager?
     ) -> (owner: TrackedWebViewOwner, webView: WKWebView)? {
-        guard let windowWebViews = webViewsByTabAndWindow[tabId], windowWebViews.isEmpty == false else {
-            return nil
-        }
-
-        let candidates = windowWebViews.map { windowId, webView in
-            (TrackedWebViewOwner(tabID: tabId, windowID: windowId), webView)
-        }
+        let candidates = webViewRegistry.trackedWebViews(for: tabId)
+        guard candidates.isEmpty == false else { return nil }
 
         return candidates.min { lhs, rhs in
             candidatePriority(for: lhs.0, browserManager: browserManager)
@@ -2116,8 +2027,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             visibleRank = 1
         }
 
-        let mruRank = recentlyVisibleTabIDsByWindow[owner.windowID]?
-            .firstIndex(of: owner.tabID) ?? Int.max
+        let mruRank = webViewRegistry.recentVisibilityRank(for: owner)
         return (visibleRank, mruRank, owner.windowID.uuidString)
     }
 
@@ -2131,7 +2041,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             PerformanceTrace.endInterval("WebViewCoordinator.evictHiddenWebViews", signpostState)
         }
 
-        let trackedEntries = trackedWebViews(in: windowId)
+        let trackedEntries = webViewRegistry.trackedWebViews(in: windowId)
         let hiddenEntries = trackedEntries.filter { owner, _ in
             visibleTabIDs.contains(owner.tabID) == false
         }
@@ -2171,42 +2081,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 "Cleaned hidden clone for visible tab=\(owner.tabID.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))."
             }
         }
-    }
-
-    private func assertTrackingConsistency(_ context: StaticString) {
-#if DEBUG
-        var indexedWebViewIDs: Set<ObjectIdentifier> = []
-
-        for (tabId, windowWebViews) in webViewsByTabAndWindow {
-            for (windowId, webView) in windowWebViews {
-                let identifier = ObjectIdentifier(webView)
-                assert(
-                    indexedWebViewIDs.insert(identifier).inserted,
-                    "Duplicate tracked WKWebView \(identifier) during \(context)"
-                )
-                assert(
-                    webViewOwnersByIdentifier[identifier] == TrackedWebViewOwner(
-                        tabID: tabId,
-                        windowID: windowId
-                    ),
-                    "Missing reverse index for WKWebView \(identifier) during \(context)"
-                )
-            }
-        }
-
-        for (identifier, owner) in webViewOwnersByIdentifier {
-            guard let webView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID] else {
-                assertionFailure("Stale reverse index \(identifier) during \(context)")
-                continue
-            }
-            assert(
-                ObjectIdentifier(webView) == identifier,
-                "Reverse index mismatch for WKWebView \(identifier) during \(context)"
-            )
-        }
-#else
-        _ = context
-#endif
     }
 
     private func notifyTabActivatedIfCurrent(_ tab: Tab, in windowId: UUID) {
@@ -2320,7 +2194,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     /// Set mute state for a tab across all windows
     func setMuteState(_ muted: Bool, for tabId: UUID) {
-        guard let windowWebViews = webViewsByTabAndWindow[tabId] else { return }
+        let windowWebViews = webViewRegistry.windowWebViews(for: tabId)
+        guard windowWebViews.isEmpty == false else { return }
 
         for (_, webView) in windowWebViews {
             webView.sumiSetAudioMuted(muted)
