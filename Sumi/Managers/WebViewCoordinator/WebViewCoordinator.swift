@@ -406,6 +406,27 @@ private struct DeferredProtectedWebViewCommandStore {
 }
 
 @MainActor
+struct DestructiveCleanupNavigationSuppression {
+    private var blankingWebViewIDs: Set<ObjectIdentifier> = []
+
+    mutating func begin(on webView: WKWebView) {
+        blankingWebViewIDs.insert(ObjectIdentifier(webView))
+    }
+
+    func isPreparing(on webView: WKWebView) -> Bool {
+        blankingWebViewIDs.contains(ObjectIdentifier(webView))
+    }
+
+    mutating func finish(on webView: WKWebView) {
+        blankingWebViewIDs.remove(ObjectIdentifier(webView))
+    }
+
+    mutating func finish(webViewID: ObjectIdentifier) {
+        blankingWebViewIDs.remove(webViewID)
+    }
+}
+
+@MainActor
 @Observable
 class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     @ObservationIgnored
@@ -460,7 +481,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
 
     @ObservationIgnored
-    private var destructiveCleanupBlankingWebViewIDs: Set<ObjectIdentifier> = []
+    private var destructiveCleanupNavigationSuppression = DestructiveCleanupNavigationSuppression()
 
     // MARK: - Compositor Container Management
 
@@ -553,11 +574,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     func isPreparingForDestructiveDataCleanupNavigation(on webView: WKWebView) -> Bool {
-        destructiveCleanupBlankingWebViewIDs.contains(ObjectIdentifier(webView))
+        destructiveCleanupNavigationSuppression.isPreparing(on: webView)
     }
 
     func finishDestructiveDataCleanupNavigation(on webView: WKWebView) {
-        destructiveCleanupBlankingWebViewIDs.remove(ObjectIdentifier(webView))
+        destructiveCleanupNavigationSuppression.finish(on: webView)
     }
 
     func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async {
@@ -625,10 +646,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return
         }
 
-        let webViewID = ObjectIdentifier(webView)
-        destructiveCleanupBlankingWebViewIDs.insert(webViewID)
+        destructiveCleanupNavigationSuppression.begin(on: webView)
         if webView.load(URLRequest(url: SumiSurface.emptyTabURL)) == nil {
-            destructiveCleanupBlankingWebViewIDs.remove(webViewID)
+            finishDestructiveDataCleanupNavigation(on: webView)
         }
     }
 
@@ -1708,6 +1728,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             visualHandoffProtectedWebViewIDs.remove(id)
             fullscreenProtection.remove(id)
             deferredProtectedWebViewCommands.removeAllCommands(for: id)
+            destructiveCleanupNavigationSuppression.finish(webViewID: id)
         }
         RuntimeDiagnostics.protectedWebViewTrace(
             "pruneStaleWebViewBookkeeping reason=\(reason) count=\(staleIDs.count)"
@@ -1889,7 +1910,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         _ webView: WKWebView,
         owner: TrackedWebViewOwner
     ) {
-        finishDestructiveDataCleanupNavigation(on: webView)
         let tab = resolvedTab(with: owner.tabID)
         let cleanupBrowserManager = tab?.browserManager ?? browserManager
         cleanupUnprotectedTrackedWebView(
@@ -1909,6 +1929,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         tab: Tab?,
         browserManager: BrowserManager?
     ) {
+        finishDestructiveDataCleanupNavigation(on: webView)
         removeWebViewFromContainers(webView)
         _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
 

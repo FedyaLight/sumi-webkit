@@ -747,11 +747,11 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         try assertTokenOrder(
             deferredWrapper,
             [
-                "finishDestructiveDataCleanupNavigation(on: webView)",
                 "cleanupUnprotectedTrackedWebView(",
                 "refreshPrimaryTrackedWebView"
             ]
         )
+        XCTAssertFalse(deferredWrapper.contains("finishDestructiveDataCleanupNavigation"))
 
         let unprotectedHelper = try sourceSlice(
             source,
@@ -761,6 +761,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         try assertTokenOrder(
             unprotectedHelper,
             [
+                "finishDestructiveDataCleanupNavigation(on: webView)",
                 "removeWebViewFromContainers(webView)",
                 "unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)",
                 "tab.cleanupCloneWebView(webView)"
@@ -773,7 +774,6 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "performFallbackWebViewCleanup("
             ]
         )
-        XCTAssertFalse(unprotectedHelper.contains("finishDestructiveDataCleanupNavigation"))
         XCTAssertFalse(unprotectedHelper.contains("refreshPrimaryTrackedWebView"))
     }
 
@@ -1044,6 +1044,75 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ]
         )
         XCTAssertFalse(pruneSource.contains("webViewsByIdentifier"))
+    }
+
+    func testDestructiveCleanupNavigationSuppressionTracksWebViewIdentity() {
+        let firstWebView = WKWebView()
+        let secondWebView = WKWebView()
+        var suppression = DestructiveCleanupNavigationSuppression()
+
+        XCTAssertFalse(suppression.isPreparing(on: firstWebView))
+        XCTAssertFalse(suppression.isPreparing(on: secondWebView))
+
+        suppression.begin(on: firstWebView)
+        XCTAssertTrue(suppression.isPreparing(on: firstWebView))
+        XCTAssertFalse(suppression.isPreparing(on: secondWebView))
+
+        suppression.finish(on: firstWebView)
+        XCTAssertFalse(suppression.isPreparing(on: firstWebView))
+
+        suppression.begin(on: firstWebView)
+        suppression.finish(webViewID: ObjectIdentifier(firstWebView))
+        XCTAssertFalse(suppression.isPreparing(on: firstWebView))
+    }
+
+    func testWebViewCoordinatorReleasesDestructiveCleanupSuppressionWithTrackedCleanup() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let suppressionSource = try sourceSlice(
+            source,
+            from: "struct DestructiveCleanupNavigationSuppression",
+            to: "@MainActor\n@Observable\nclass WebViewCoordinator"
+        )
+        XCTAssertTrue(suppressionSource.contains("private var blankingWebViewIDs"))
+        XCTAssertFalse(suppressionSource.contains("WKNavigation"))
+        XCTAssertFalse(suppressionSource.contains("load("))
+
+        let cleanupSource = try sourceSlice(
+            source,
+            from: "private func cleanupUnprotectedTrackedWebView(",
+            to: "@discardableResult\n    private func closeTrackedWebViewFromWebKit"
+        )
+        try assertTokenOrder(
+            cleanupSource,
+            [
+                "finishDestructiveDataCleanupNavigation(on: webView)",
+                "removeWebViewFromContainers(webView)",
+                "unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)"
+            ]
+        )
+
+        let stalePruneSource = try sourceSlice(
+            source,
+            from: "private func pruneStaleWebViewBookkeeping",
+            to: "private func pruneInvalidDeferredProtectedCommands"
+        )
+        try assertTokenOrder(
+            stalePruneSource,
+            [
+                "weakWebViewRegistry.pruneStaleIdentifiers()",
+                "deferredProtectedWebViewCommands.removeAllCommands(for: id)",
+                "destructiveCleanupNavigationSuppression.finish(webViewID: id)"
+            ]
+        )
     }
 
     func testWebViewContainerLayoutDoesNotReparentDisplayedContent() throws {
