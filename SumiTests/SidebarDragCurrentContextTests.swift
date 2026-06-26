@@ -227,6 +227,37 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(pin.launchURL, tab.url)
     }
 
+    func testRegularTabDropIntoClosedFolderKeepsFolderClosed() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let tab = tabManager.createNewTab(url: "https://example.com/closed-folder", in: space)
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(tab)
+        )
+
+        XCTAssertFalse(folder.isOpen)
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(tab),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .folder(folder.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        XCTAssertFalse(folder.isOpen)
+        let pin = try XCTUnwrap(tabManager.folderPinnedPins(for: folder.id, in: space.id).first)
+        XCTAssertEqual(pin.folderId, folder.id)
+    }
+
     func testRegularTabDropIntoEssentialsCreatesProfileLauncher() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
