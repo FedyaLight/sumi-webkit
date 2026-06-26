@@ -80,12 +80,6 @@ final class SumiWebKitGeolocationOnce<Decision> {
 @available(macOS 12.0, *)
 @MainActor
 final class SumiWebKitGeolocationBridge {
-    private enum CoordinatorRaceResult: Sendable {
-        case coordinator(SumiPermissionCoordinatorDecision)
-        case pendingStrategy(SumiPermissionCoordinatorDecision)
-        case timeout(SumiPermissionCoordinatorDecision)
-    }
-
     private let coordinator: any SumiPermissionCoordinating
     private weak var geolocationProvider: (any SumiGeolocationProviding)?
     private let pendingStrategy: SumiWebKitGeolocationPendingStrategy
@@ -219,76 +213,28 @@ final class SumiWebKitGeolocationBridge {
     private func coordinatorDecision(
         for context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision {
-        if pendingStrategy.waitsForPromptUI,
-           context.surface == .normalTab {
-            return await coordinator.requestPermission(context)
-        }
-
-        let coordinator = coordinator
-        let pendingStrategy = pendingStrategy
-        let pollInterval = pendingPollIntervalNanoseconds
-        let timeout = coordinatorTimeoutNanoseconds
-        let pageId = context.request.pageBucketId
-        let requestId = context.request.id
-
-        return await withTaskGroup(of: CoordinatorRaceResult.self) { group in
-            group.addTask {
-                .coordinator(await coordinator.requestPermission(context))
-            }
-            group.addTask {
-                var elapsed: UInt64 = 0
-                while elapsed < timeout {
-                    let sleepNanoseconds = min(pollInterval, timeout - elapsed)
-                    try? await Task.sleep(nanoseconds: sleepNanoseconds)
-                    if Task.isCancelled {
-                        return .timeout(
-                            SumiWebKitGeolocationDecisionMapper.failClosedDecision(
-                                for: context,
-                                reason: "webkit-geolocation-permission-task-cancelled"
-                            )
-                        )
-                    }
-                    elapsed += sleepNanoseconds
-                    if await coordinator.activeQuery(forPageId: pageId) != nil {
-                        await coordinator.cancel(
-                            requestId: requestId,
-                            reason: pendingStrategy.reason
-                        )
-                        return .pendingStrategy(
-                            SumiWebKitGeolocationDecisionMapper.temporaryPendingDecision(
-                                for: context,
-                                reason: pendingStrategy.reason
-                            )
-                        )
-                    }
-                }
-
-                await coordinator.cancel(
-                    requestId: requestId,
-                    reason: "webkit-geolocation-permission-coordinator-timeout"
-                )
-                return .timeout(
-                    SumiWebKitGeolocationDecisionMapper.failClosedDecision(
-                        for: context,
-                        reason: "webkit-geolocation-permission-coordinator-timeout"
-                    )
-                )
-            }
-
-            guard let result = await group.next() else {
-                return SumiWebKitGeolocationDecisionMapper.failClosedDecision(
+        await SumiWebKitPermissionPendingCoordinatorRace.resolve(
+            coordinator: coordinator,
+            context: context,
+            shouldWaitForPromptUI: pendingStrategy.waitsForPromptUI,
+            pendingReason: pendingStrategy.reason,
+            timeoutReason: "webkit-geolocation-permission-coordinator-timeout",
+            taskCancelledReason: "webkit-geolocation-permission-task-cancelled",
+            noCoordinatorResultReason: "webkit-geolocation-permission-no-coordinator-result",
+            pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
+            coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds,
+            temporaryPendingDecision: { context, reason in
+                SumiWebKitGeolocationDecisionMapper.temporaryPendingDecision(
                     for: context,
-                    reason: "webkit-geolocation-permission-no-coordinator-result"
+                    reason: reason
+                )
+            },
+            failClosedDecision: { context, reason in
+                SumiWebKitGeolocationDecisionMapper.failClosedDecision(
+                    for: context,
+                    reason: reason
                 )
             }
-            group.cancelAll()
-
-            switch result {
-            case .coordinator(let decision),
-                 .pendingStrategy(let decision),
-                 .timeout(let decision):
-                return decision
-            }
-        }
+        )
     }
 }

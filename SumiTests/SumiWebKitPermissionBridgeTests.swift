@@ -245,6 +245,44 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(cancelledReasons, ["webkit-screen-capture-prompt-presenter-unavailable-deny"])
     }
 
+    func testDisplayCaptureTimeoutPreservesScreenCaptureReason() async {
+        let coordinator = FakePermissionCoordinator(mode: .neverCompletesWithoutQuery)
+        let bridge = makeBridge(
+            coordinator: coordinator,
+            pendingPollIntervalNanoseconds: 1_000_000,
+            coordinatorTimeoutNanoseconds: 5_000_000
+        )
+
+        let decisions = await resolveDisplay(
+            bridge: bridge,
+            request: displayRequest(permissionTypes: [.screenCapture])
+        )
+
+        XCTAssertEqual(decisions, [SumiWebKitDisplayCapturePermissionDecision.deny.rawValue])
+        let cancelledReasons = await coordinator.cancelledReasons()
+        XCTAssertEqual(cancelledReasons, ["webkit-screen-capture-permission-coordinator-timeout"])
+    }
+
+    func testMediaWaitForPromptUIPollsPendingQueryOutsideNormalTabs() async {
+        let coordinator = FakePermissionCoordinator(mode: .pending)
+        let bridge = makeBridge(
+            coordinator: coordinator,
+            pendingStrategy: .waitForPromptUI,
+            pendingPollIntervalNanoseconds: 1_000_000,
+            coordinatorTimeoutNanoseconds: 50_000_000
+        )
+
+        let decisions = await resolve(
+            bridge: bridge,
+            request: mediaRequest(permissionTypes: [.camera]),
+            tabContext: tabContext(surface: .glance)
+        )
+
+        XCTAssertEqual(decisions, [.deny])
+        let cancelledReasons = await coordinator.cancelledReasons()
+        XCTAssertEqual(cancelledReasons, ["webkit-media-prompt-ui-wait"])
+    }
+
     func testExactlyOnceCallbackForImmediateGrantDenySystemBlockedAndTimeout() async {
         let grantBridge = makeBridge(
             coordinator: FakePermissionCoordinator(mode: .immediate(decision(.granted, reason: "stored-allow")))
@@ -582,6 +620,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
     private func tabContext(
         tabId: String = "tab-a",
         pageId: String = "tab-a:1",
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String = "profile-a",
         isEphemeralProfile: Bool = false,
         committedURL: URL? = URL(string: "https://example.com"),
@@ -594,6 +633,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         SumiWebKitMediaCaptureTabContext(
             tabId: tabId,
             pageId: pageId,
+            surface: surface,
             profilePartitionId: profilePartitionId,
             isEphemeralProfile: isEphemeralProfile,
             committedURL: committedURL,
