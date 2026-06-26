@@ -373,6 +373,142 @@ struct TabStructuralDirtySet: Sendable {
 }
 
 @MainActor
+private struct TabRestoreRuntimeState {
+    let spaces: [Space]
+    let tabsBySpace: [UUID: [Tab]]
+    let foldersBySpace: [UUID: [TabFolder]]
+    let pinnedByProfile: [UUID: [ShortcutPin]]
+    let pendingPinnedWithoutProfile: [ShortcutPin]
+    let spacePinnedShortcuts: [UUID: [ShortcutPin]]
+    let repairReasons: [String]
+}
+
+@MainActor
+private struct TabRestoreRuntimeStateBuilder {
+    let browserManager: BrowserManager?
+
+    func makeState(from payload: TabRestorePayload) -> TabRestoreRuntimeState {
+        var repairReasons = payload.repairReasons
+        let restoredSpaces = payload.spaces.map { dto in
+            let space = Space(
+                id: dto.id,
+                name: dto.name,
+                icon: dto.icon,
+                workspaceTheme: dto.workspaceTheme,
+                profileId: dto.profileId
+            )
+            if space.icon != dto.icon {
+                repairReasons.append("normalized space icon")
+            }
+            return space
+        }
+
+        var restoredTabsBySpace: [UUID: [Tab]] = [:]
+        for space in restoredSpaces {
+            restoredTabsBySpace[space.id] = []
+        }
+        for (spaceId, tabDTOs) in payload.regularTabsBySpace {
+            restoredTabsBySpace[spaceId] = tabDTOs.map(makeRestoredTab)
+        }
+
+        var restoredFoldersBySpace: [UUID: [TabFolder]] = [:]
+        for (spaceId, folderDTOs) in payload.foldersBySpace {
+            restoredFoldersBySpace[spaceId] = folderDTOs.map { dto in
+                let folder = TabFolder(
+                    id: dto.id,
+                    name: dto.name,
+                    spaceId: dto.spaceId,
+                    parentFolderId: dto.parentFolderId,
+                    icon: dto.icon,
+                    color: NSColor(hex: dto.color) ?? .controlAccentColor,
+                    index: dto.index
+                )
+                folder.isOpen = dto.isOpen
+                if folder.icon != dto.icon {
+                    repairReasons.append("normalized folder icon")
+                }
+                return folder
+            }
+        }
+
+        var restoredPinnedByProfile: [UUID: [ShortcutPin]] = [:]
+        for (profileId, shortcutDTOs) in payload.pinnedShortcutsByProfile {
+            restoredPinnedByProfile[profileId] = shortcutDTOs.map { dto in
+                let pin = makeRestoredShortcut(dto)
+                if pin.iconAsset != dto.iconAsset {
+                    repairReasons.append("normalized launcher icon")
+                }
+                return pin
+            }
+        }
+
+        let restoredPendingPinned = payload.pendingPinnedShortcuts.map { dto in
+            let pin = makeRestoredShortcut(dto)
+            if pin.iconAsset != dto.iconAsset {
+                repairReasons.append("normalized launcher icon")
+            }
+            return pin
+        }
+
+        var restoredSpacePinnedShortcuts: [UUID: [ShortcutPin]] = [:]
+        for (spaceId, shortcutDTOs) in payload.spacePinnedShortcutsBySpace {
+            restoredSpacePinnedShortcuts[spaceId] = shortcutDTOs.map { dto in
+                let pin = makeRestoredShortcut(dto)
+                if pin.iconAsset != dto.iconAsset {
+                    repairReasons.append("normalized launcher icon")
+                }
+                return pin
+            }
+        }
+
+        return TabRestoreRuntimeState(
+            spaces: restoredSpaces,
+            tabsBySpace: restoredTabsBySpace,
+            foldersBySpace: restoredFoldersBySpace,
+            pinnedByProfile: restoredPinnedByProfile,
+            pendingPinnedWithoutProfile: restoredPendingPinned,
+            spacePinnedShortcuts: restoredSpacePinnedShortcuts,
+            repairReasons: repairReasons
+        )
+    }
+
+    private func makeRestoredTab(_ dto: TabRestoreTabDTO) -> Tab {
+        let tab = Tab(
+            id: dto.id,
+            url: dto.url,
+            name: dto.name,
+            favicon: "globe",
+            spaceId: dto.spaceId,
+            index: dto.index,
+            browserManager: browserManager,
+            loadsCachedFaviconOnInit: false
+        )
+        tab.folderId = dto.folderId
+        tab.profileId = dto.profileId
+        tab.isPinned = false
+        tab.isSpacePinned = false
+        tab.canGoBack = dto.canGoBack
+        tab.canGoForward = dto.canGoForward
+        return tab
+    }
+
+    private func makeRestoredShortcut(_ dto: TabRestoreShortcutDTO) -> ShortcutPin {
+        ShortcutPin(
+            id: dto.id,
+            role: dto.role,
+            profileId: dto.profileId,
+            executionProfileId: dto.executionProfileId,
+            spaceId: dto.spaceId,
+            index: dto.index,
+            folderId: dto.folderId,
+            launchURL: dto.launchURL,
+            title: dto.title,
+            iconAsset: dto.iconAsset
+        )
+    }
+}
+
+@MainActor
 extension TabManager {
     private enum StructuralPersistencePayload: Sendable {
         case incremental(TabSnapshotRepository.StructuralDelta, TabStructuralDirtySet, Int)
@@ -863,96 +999,26 @@ extension TabManager {
             category: "TabManager"
         )
 
-        var mainRepairReasons = payload.repairReasons
-        let restoredSpaces = payload.spaces.map { dto in
-            let space = Space(
-                id: dto.id,
-                name: dto.name,
-                icon: dto.icon,
-                workspaceTheme: dto.workspaceTheme,
-                profileId: dto.profileId
-            )
-            if space.icon != dto.icon {
-                mainRepairReasons.append("normalized space icon")
-            }
-            return space
-        }
+        let restoredState = TabRestoreRuntimeStateBuilder(browserManager: browserManager)
+            .makeState(from: payload)
 
-        var restoredTabsBySpace: [UUID: [Tab]] = [:]
-        for space in restoredSpaces {
-            restoredTabsBySpace[space.id] = []
-        }
-        for (spaceId, tabDTOs) in payload.regularTabsBySpace {
-            restoredTabsBySpace[spaceId] = tabDTOs.map(makeRestoredTab)
-        }
-
-        var restoredFoldersBySpace: [UUID: [TabFolder]] = [:]
-        for (spaceId, folderDTOs) in payload.foldersBySpace {
-            restoredFoldersBySpace[spaceId] = folderDTOs.map { dto in
-                let folder = TabFolder(
-                    id: dto.id,
-                    name: dto.name,
-                    spaceId: dto.spaceId,
-                    parentFolderId: dto.parentFolderId,
-                    icon: dto.icon,
-                    color: NSColor(hex: dto.color) ?? .controlAccentColor,
-                    index: dto.index
-                )
-                folder.isOpen = dto.isOpen
-                if folder.icon != dto.icon {
-                    mainRepairReasons.append("normalized folder icon")
-                }
-                return folder
-            }
-        }
-
-        var restoredPinnedByProfile: [UUID: [ShortcutPin]] = [:]
-        for (profileId, shortcutDTOs) in payload.pinnedShortcutsByProfile {
-            restoredPinnedByProfile[profileId] = shortcutDTOs.map { dto in
-                let pin = makeRestoredShortcut(dto)
-                if pin.iconAsset != dto.iconAsset {
-                    mainRepairReasons.append("normalized launcher icon")
-                }
-                return pin
-            }
-        }
-
-        let restoredPendingPinned = payload.pendingPinnedShortcuts.map { dto in
-            let pin = makeRestoredShortcut(dto)
-            if pin.iconAsset != dto.iconAsset {
-                mainRepairReasons.append("normalized launcher icon")
-            }
-            return pin
-        }
-
-        var restoredSpacePinnedShortcuts: [UUID: [ShortcutPin]] = [:]
-        for (spaceId, shortcutDTOs) in payload.spacePinnedShortcutsBySpace {
-            restoredSpacePinnedShortcuts[spaceId] = shortcutDTOs.map { dto in
-                let pin = makeRestoredShortcut(dto)
-                if pin.iconAsset != dto.iconAsset {
-                    mainRepairReasons.append("normalized launcher icon")
-                }
-                return pin
-            }
-        }
-
-        spaces = restoredSpaces
-        tabsBySpace = restoredTabsBySpace
-        foldersBySpace = restoredFoldersBySpace
-        pinnedByProfile = restoredPinnedByProfile
-        pendingPinnedWithoutProfile = restoredPendingPinned
-        spacePinnedShortcuts = restoredSpacePinnedShortcuts
+        spaces = restoredState.spaces
+        tabsBySpace = restoredState.tabsBySpace
+        foldersBySpace = restoredState.foldersBySpace
+        pinnedByProfile = restoredState.pinnedByProfile
+        pendingPinnedWithoutProfile = restoredState.pendingPinnedWithoutProfile
+        spacePinnedShortcuts = restoredState.spacePinnedShortcuts
         splitGroups = sanitizedRepairedSplitGroups(payload.splitGroups)
 
-        for tab in restoredTabsBySpace.values.flatMap(\.self) {
+        for tab in restoredState.tabsBySpace.values.flatMap(\.self) {
             tab.browserManager = browserManager
         }
 
         currentSpace = payload.currentSpaceId.flatMap { currentSpaceId in
-            restoredSpaces.first(where: { $0.id == currentSpaceId })
-        } ?? restoredSpaces.first
+            restoredState.spaces.first(where: { $0.id == currentSpaceId })
+        } ?? restoredState.spaces.first
 
-        let selectionTabs = currentSpace.flatMap { restoredTabsBySpace[$0.id] } ?? []
+        let selectionTabs = currentSpace.flatMap { restoredState.tabsBySpace[$0.id] } ?? []
         if let selectedTabId = payload.currentTabId,
            let match = selectionTabs.first(where: { $0.id == selectedTabId }) {
             currentTab = match
@@ -962,7 +1028,7 @@ extension TabManager {
 
         rebuildTabLookupForRestore()
         lazyRestoreCoordinator.reset(
-            restoredTabIDs: Set(restoredTabsBySpace.values.flatMap { $0.map(\.id) })
+            restoredTabIDs: Set(restoredState.tabsBySpace.values.flatMap { $0.map(\.id) })
         )
         markSnapshotCacheDirty()
         resetStructuralDirtySet()
@@ -980,7 +1046,7 @@ extension TabManager {
             browserManager.syncWorkspaceThemeAcrossWindows(for: currentSpace, animate: false)
         }
 
-        let uniqueRepairReasons = Array(Set(mainRepairReasons)).sorted()
+        let uniqueRepairReasons = Array(Set(restoredState.repairReasons)).sorted()
         guard uniqueRepairReasons.isEmpty == false else {
             return RestoreApplyResult(snapshot: nil, reasons: [])
         }
@@ -1013,38 +1079,4 @@ extension TabManager {
         }
     }
 
-    private func makeRestoredTab(_ dto: TabRestoreTabDTO) -> Tab {
-        let tab = Tab(
-            id: dto.id,
-            url: dto.url,
-            name: dto.name,
-            favicon: "globe",
-            spaceId: dto.spaceId,
-            index: dto.index,
-            browserManager: browserManager,
-            loadsCachedFaviconOnInit: false
-        )
-        tab.folderId = dto.folderId
-        tab.profileId = dto.profileId
-        tab.isPinned = false
-        tab.isSpacePinned = false
-        tab.canGoBack = dto.canGoBack
-        tab.canGoForward = dto.canGoForward
-        return tab
-    }
-
-    private func makeRestoredShortcut(_ dto: TabRestoreShortcutDTO) -> ShortcutPin {
-        ShortcutPin(
-            id: dto.id,
-            role: dto.role,
-            profileId: dto.profileId,
-            executionProfileId: dto.executionProfileId,
-            spaceId: dto.spaceId,
-            index: dto.index,
-            folderId: dto.folderId,
-            launchURL: dto.launchURL,
-            title: dto.title,
-            iconAsset: dto.iconAsset
-        )
-    }
 }

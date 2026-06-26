@@ -939,6 +939,65 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         }
     }
 
+    func testStartupRestoreNormalizesLauncherIconAssetsAndPersistsRepair() async throws {
+        let container = try makeInMemoryContainer()
+        let profileId = UUID()
+        let spaceId = UUID()
+        let pinnedId = UUID()
+        let spacePinnedId = UUID()
+
+        let mutationContext = ModelContext(container)
+        mutationContext.insert(
+            SpaceEntity(
+                id: spaceId,
+                name: "Work",
+                icon: "square.grid.2x2",
+                index: 0,
+                profileId: profileId
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: pinnedId,
+                urlString: "https://example.com/pinned",
+                name: "Pinned",
+                isPinned: true,
+                index: 0,
+                spaceId: nil,
+                profileId: profileId,
+                iconAsset: "   "
+            )
+        )
+        mutationContext.insert(
+            TabEntity(
+                id: spacePinnedId,
+                urlString: "https://example.com/space-pinned",
+                name: "Space Pinned",
+                isPinned: false,
+                isSpacePinned: true,
+                index: 0,
+                spaceId: spaceId,
+                iconAsset: "   "
+            )
+        )
+        mutationContext.insert(TabsStateEntity(currentTabID: nil, currentSpaceID: spaceId))
+        try mutationContext.save()
+
+        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let didLoad = await tabManager.loadFromStoreAwaitingResult()
+
+        XCTAssertTrue(didLoad)
+        XCTAssertNil(tabManager.pinnedByProfile[profileId]?.first?.iconAsset)
+        XCTAssertNil(tabManager.spacePinnedShortcuts[spaceId]?.first?.iconAsset)
+        XCTAssertTrue(tabManager.structuralDirtySet.isEmpty)
+        XCTAssertNil(tabManager.scheduledStructuralPersistTask)
+
+        try await waitForStore(in: container) { context in
+            try fetchTab(pinnedId, in: context)?.iconAsset == nil
+                && fetchTab(spacePinnedId, in: context)?.iconAsset == nil
+        }
+    }
+
     func testStartupRestoreCurrentFormatDoesNotDuplicateAcrossRepeatedLoads() async throws {
         let container = try makeInMemoryContainer()
         let fixture = try insertCurrentFormatRestoreFixture(in: container)
