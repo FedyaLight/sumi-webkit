@@ -107,6 +107,121 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
         )
     }
 
+    func testProactiveTimerSchedulerDoesNotStartTaskWithoutTimers() {
+        var didFire = false
+        let scheduler = ProactiveTabSuspensionTimerScheduler(
+            suspensionClock: TabSuspensionTimerSchedulerClock(liveUptime: 100),
+            timerSleep: { _ in
+                XCTFail("Scheduler should not sleep without a timer deadline")
+            },
+            handleDueTimers: {
+                didFire = true
+            }
+        )
+
+        scheduler.schedule { _ in nil }
+
+        XCTAssertEqual(scheduler.activeTimerCount, 0)
+        XCTAssertFalse(scheduler.hasScheduledTaskForTesting)
+        XCTAssertTrue(scheduler.isIdle)
+        XCTAssertFalse(didFire)
+    }
+
+    func testProactiveTimerSchedulerUsesEarliestDeadlineAndCancelsWhenEmpty() {
+        let firstTabID = UUID()
+        let secondTabID = UUID()
+        let hiddenStarts = [
+            firstTabID: TimeInterval(10),
+            secondTabID: TimeInterval(20),
+        ]
+        let scheduler = ProactiveTabSuspensionTimerScheduler(
+            suspensionClock: TabSuspensionTimerSchedulerClock(liveUptime: 15),
+            timerSleep: { _ in
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            },
+            handleDueTimers: {}
+        )
+
+        scheduler.armTimer(
+            for: firstTabID,
+            requestedDelay: 30,
+            hiddenStartedAtLiveUptime: { hiddenStarts[$0] }
+        )
+        XCTAssertEqual(scheduler.scheduledDeadlineLiveUptimeForTesting, 40)
+        XCTAssertTrue(scheduler.hasScheduledTaskForTesting)
+
+        scheduler.armTimer(
+            for: secondTabID,
+            requestedDelay: 5,
+            hiddenStartedAtLiveUptime: { hiddenStarts[$0] }
+        )
+        XCTAssertEqual(scheduler.scheduledDeadlineLiveUptimeForTesting, 25)
+        XCTAssertEqual(scheduler.activeTimerCount, 2)
+
+        XCTAssertTrue(
+            scheduler.cancelTimer(
+                for: secondTabID,
+                hiddenStartedAtLiveUptime: { hiddenStarts[$0] }
+            )
+        )
+        XCTAssertEqual(scheduler.scheduledDeadlineLiveUptimeForTesting, 40)
+        XCTAssertTrue(scheduler.hasScheduledTaskForTesting)
+
+        XCTAssertTrue(
+            scheduler.cancelTimer(
+                for: firstTabID,
+                hiddenStartedAtLiveUptime: { hiddenStarts[$0] }
+            )
+        )
+        XCTAssertEqual(scheduler.activeTimerCount, 0)
+        XCTAssertFalse(scheduler.hasScheduledTaskForTesting)
+        XCTAssertTrue(scheduler.isIdle)
+    }
+
+    func testProactiveTimerSchedulerDueTimersRemoveOrphanedHiddenState() {
+        let dueTabID = UUID()
+        let orphanedTabID = UUID()
+        let futureTabID = UUID()
+        var hiddenStarts: [UUID: TimeInterval] = [
+            dueTabID: 10,
+            orphanedTabID: 10,
+            futureTabID: 19,
+        ]
+        let scheduler = ProactiveTabSuspensionTimerScheduler(
+            suspensionClock: TabSuspensionTimerSchedulerClock(liveUptime: 20),
+            timerSleep: { _ in
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            },
+            handleDueTimers: {}
+        )
+
+        scheduler.armTimer(
+            for: dueTabID,
+            requestedDelay: 10,
+            hiddenStartedAtLiveUptime: { hiddenStarts[$0] }
+        )
+        scheduler.armTimer(
+            for: orphanedTabID,
+            requestedDelay: 10,
+            hiddenStartedAtLiveUptime: { hiddenStarts[$0] }
+        )
+        scheduler.armTimer(
+            for: futureTabID,
+            requestedDelay: 10,
+            hiddenStartedAtLiveUptime: { hiddenStarts[$0] }
+        )
+
+        hiddenStarts.removeValue(forKey: orphanedTabID)
+        let dueTimers = scheduler.dueTimers {
+            hiddenStarts[$0]
+        }
+
+        XCTAssertEqual(dueTimers.map(\.tabID), [dueTabID])
+        XCTAssertTrue(scheduler.containsTimer(for: dueTabID))
+        XCTAssertFalse(scheduler.containsTimer(for: orphanedTabID))
+        XCTAssertTrue(scheduler.containsTimer(for: futureTabID))
+    }
+
     private func activation(
         mode: SumiEnergySaverMode = .automatic,
         snapshot: SumiEnergySaverSystemSnapshot
@@ -131,6 +246,10 @@ final class SumiEnergySaverPolicyTests: XCTestCase {
             thermalState: thermalState
         )
     }
+}
+
+private struct TabSuspensionTimerSchedulerClock: SumiSuspensionClock {
+    let liveUptime: TimeInterval
 }
 
 @MainActor
