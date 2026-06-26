@@ -59,6 +59,67 @@ enum VisibleTabPreparationPlan {
     }
 }
 
+private enum InitialDocumentWarmupDeferral {
+    case waitForInFlight
+    case start(profileId: UUID, browserManager: BrowserManager, windowId: UUID)
+}
+
+@MainActor
+private struct InitialDocumentWarmupGate {
+    private var inFlightProfileIds: Set<UUID> = []
+    private var attemptedProfileIds: Set<UUID> = []
+
+    mutating func deferralIfNeeded(
+        for tab: Tab,
+        in windowId: UUID,
+        browserManager coordinatorBrowserManager: BrowserManager?
+    ) -> InitialDocumentWarmupDeferral? {
+        guard tab.isEphemeral == false,
+              Self.isWarmupURL(tab.url),
+              let profileId = tab.resolveProfile()?.id ?? tab.profileId,
+              let browserManager = tab.browserManager ?? coordinatorBrowserManager
+        else {
+            return nil
+        }
+
+        if inFlightProfileIds.contains(profileId) {
+            return .waitForInFlight
+        }
+
+        guard attemptedProfileIds.contains(profileId) == false,
+              browserManager.extensionsModule
+                .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
+        else {
+            return nil
+        }
+
+        attemptedProfileIds.insert(profileId)
+        inFlightProfileIds.insert(profileId)
+        return .start(
+            profileId: profileId,
+            browserManager: browserManager,
+            windowId: windowId
+        )
+    }
+
+    mutating func finish(profileId: UUID) {
+        inFlightProfileIds.remove(profileId)
+    }
+
+    private static func isWarmupURL(_ url: URL) -> Bool {
+        let scheme = url.scheme?.lowercased()
+        return scheme == "http" || scheme == "https"
+    }
+}
+
+private enum NormalTabWebViewCreationPlan {
+    case useExisting(WKWebView)
+    case adoptExistingPrimary(WKWebView)
+    case deferForInitialDocumentWarmup(InitialDocumentWarmupDeferral)
+    case createPrimary
+    case createClone(primaryWindowId: UUID)
+}
+
 
 private struct HistorySwipeProtectionContext {
     let windowID: UUID?
@@ -375,10 +436,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private var scheduledPrepareWindowIds: Set<UUID> = []
 
     @ObservationIgnored
-    private var initialDocumentWarmupInFlightProfileIds: Set<UUID> = []
-
-    @ObservationIgnored
-    private var initialDocumentWarmupAttemptedProfileIds: Set<UUID> = []
+    private var initialDocumentWarmupGate = InitialDocumentWarmupGate()
 
     @ObservationIgnored
     weak var browserManager: BrowserManager?
@@ -1030,48 +1088,61 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     /// - If another window is already displaying this tab, creates a "clone" WebView
     /// - Returns existing WebView if this window already has one
     func getOrCreateWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
-        let tabId = tab.id
-
-        // Check if this window already has a WebView for this tab
-        if let existing = getWebView(for: tabId, in: windowId) {
+        switch normalTabWebViewCreationPlan(for: tab, in: windowId) {
+        case .useExisting(let existing):
             return existing
-        }
-
-        if let adoptedWebView = adoptExistingPrimaryWebViewIfNeeded(for: tab, in: windowId) {
+        case .adoptExistingPrimary(let adoptedWebView):
+            adoptExistingPrimaryWebView(adoptedWebView, for: tab, in: windowId)
             return adoptedWebView
-        }
-
-        if deferWebViewCreationForInitialDocumentWarmupIfNeeded(
-            tab,
-            windowId: windowId
-        ) {
+        case .deferForInitialDocumentWarmup(let deferral):
+            startInitialDocumentWarmupIfNeeded(deferral)
             return nil
-        }
-        
-        // Check if another window already has this tab displayed
-        let allWindowsForTab = webViewRegistry.windowWebViews(for: tabId)
-        let otherWindows = allWindowsForTab.filter { $0.key != windowId }
-        
-        if otherWindows.isEmpty {
-            // This is the FIRST window to display this tab
-            // Create the "primary" WebView and assign it to this tab
-            let primaryWebView = createPrimaryWebView(for: tab, in: windowId)
-            return primaryWebView
-        } else {
-            // Another window is already displaying this tab
-            // Create a "clone" WebView for this window
-            let primaryWindowId = primaryWindowIdForClone(
-                of: tab,
-                otherWindows: otherWindows
-            )
-            let cloneWebView = createCloneWebView(
+        case .createPrimary:
+            return createPrimaryWebView(for: tab, in: windowId)
+        case .createClone(let primaryWindowId):
+            return createCloneWebView(
                 for: tab,
                 in: windowId,
                 primaryWindowId: primaryWindowId
             )
-            
-            return cloneWebView
         }
+    }
+
+    private func normalTabWebViewCreationPlan(
+        for tab: Tab,
+        in windowId: UUID
+    ) -> NormalTabWebViewCreationPlan {
+        let tabId = tab.id
+
+        if let existing = getWebView(for: tabId, in: windowId) {
+            return .useExisting(existing)
+        }
+
+        if let adoptableWebView = adoptableExistingPrimaryWebView(for: tab, in: windowId) {
+            return .adoptExistingPrimary(adoptableWebView)
+        }
+
+        if let deferral = initialDocumentWarmupGate.deferralIfNeeded(
+            for: tab,
+            in: windowId,
+            browserManager: browserManager
+        ) {
+            return .deferForInitialDocumentWarmup(deferral)
+        }
+
+        let allWindowsForTab = webViewRegistry.windowWebViews(for: tabId)
+        let otherWindows = allWindowsForTab.filter { $0.key != windowId }
+
+        if otherWindows.isEmpty {
+            return .createPrimary
+        }
+
+        return .createClone(
+            primaryWindowId: primaryWindowIdForClone(
+                of: tab,
+                otherWindows: otherWindows
+            )
+        )
     }
 
     private func primaryWindowIdForClone(
@@ -1087,61 +1158,30 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         return otherWindows.keys.min { $0.uuidString < $1.uuidString }!
     }
 
-    private func deferWebViewCreationForInitialDocumentWarmupIfNeeded(
-        _ tab: Tab,
-        windowId: UUID
-    ) -> Bool {
-        guard tab.isEphemeral == false,
-              isInitialDocumentExtensionWarmupURL(tab.url),
-              let profileId = tab.resolveProfile()?.id ?? tab.profileId,
-              let browserManager = tab.browserManager ?? self.browserManager
-        else {
-            return false
+    private func startInitialDocumentWarmupIfNeeded(
+        _ deferral: InitialDocumentWarmupDeferral
+    ) {
+        guard case let .start(profileId, browserManager, windowId) = deferral else {
+            return
         }
-
-        if initialDocumentWarmupInFlightProfileIds.contains(profileId) {
-            return true
-        }
-
-        guard initialDocumentWarmupAttemptedProfileIds.contains(profileId) == false,
-              browserManager.extensionsModule
-                .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
-        else {
-            return false
-        }
-
-        initialDocumentWarmupAttemptedProfileIds.insert(profileId)
-        initialDocumentWarmupInFlightProfileIds.insert(profileId)
-
         Task { @MainActor [weak self, weak browserManager] in
             await browserManager?.extensionsModule
                 .ensureInitialDocumentExtensionContextsLoadedIfNeeded(
                     profileId: profileId
                 )
             guard let self else { return }
-            self.initialDocumentWarmupInFlightProfileIds.remove(profileId)
+            self.initialDocumentWarmupGate.finish(profileId: profileId)
 
             guard let browserManager,
                   let windowState = browserManager.windowRegistry?.windows[windowId]
             else { return }
             browserManager.refreshCompositor(for: windowState)
         }
-
-        return true
-    }
-
-    private func isInitialDocumentExtensionWarmupURL(_ url: URL) -> Bool {
-        let scheme = url.scheme?.lowercased()
-        return scheme == "http" || scheme == "https"
     }
     
     /// Creates the "primary" WebView - the first WebView for a tab
     /// This WebView is owned by the tab and is the "source of truth"
     private func createPrimaryWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
-        if let adoptedWebView = adoptExistingPrimaryWebViewIfNeeded(for: tab, in: windowId) {
-            return adoptedWebView
-        }
-
         guard let webView = tab.ensureWebView() else {
             assertionFailure("Unable to create normal tab WebView without a resolved profile")
             return nil
@@ -1360,18 +1400,23 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     // MARK: - WebView Creation & Cross-Window Sync
 
-    private func adoptExistingPrimaryWebViewIfNeeded(
+    private func adoptableExistingPrimaryWebView(
         for tab: Tab,
         in windowId: UUID
     ) -> WKWebView? {
         guard let existingWebView = tab.existingWebView else { return nil }
         guard getAllWebViews(for: tab.id).isEmpty else { return nil }
         guard tab.primaryWindowId == nil || tab.primaryWindowId == windowId else { return nil }
-
-        setWebView(existingWebView, for: tab.id, in: windowId)
-        tab.assignWebViewToWindow(existingWebView, windowId: windowId)
-
         return existingWebView
+    }
+
+    private func adoptExistingPrimaryWebView(
+        _ webView: WKWebView,
+        for tab: Tab,
+        in windowId: UUID
+    ) {
+        setWebView(webView, for: tab.id, in: windowId)
+        tab.assignWebViewToWindow(webView, windowId: windowId)
     }
 
     @available(macOS 15.5, *)

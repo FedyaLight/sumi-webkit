@@ -417,9 +417,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let creationSlice = try sourceSlice(
             source,
             from: "func getOrCreateWebView",
-            to: "private func deferWebViewCreationForInitialDocumentWarmupIfNeeded"
+            to: "private func primaryWindowIdForClone"
         )
 
+        XCTAssertTrue(creationSlice.contains("normalTabWebViewCreationPlan"))
+        XCTAssertTrue(creationSlice.contains(".deferForInitialDocumentWarmup"))
+        XCTAssertTrue(creationSlice.contains("startInitialDocumentWarmupIfNeeded"))
         XCTAssertTrue(creationSlice.contains("primaryWindowIdForClone"))
         XCTAssertFalse(creationSlice.contains("otherWindows.first"))
         XCTAssertFalse(creationSlice.contains("first!.key"))
@@ -427,13 +430,23 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let policySlice = try sourceSlice(
             source,
             from: "private func primaryWindowIdForClone",
-            to: "private func deferWebViewCreationForInitialDocumentWarmupIfNeeded"
+            to: "private func startInitialDocumentWarmupIfNeeded"
         )
 
         XCTAssertTrue(policySlice.contains("tab.primaryWindowId"))
         XCTAssertTrue(policySlice.contains("otherWindows[primaryWindowId] != nil"))
         XCTAssertTrue(policySlice.contains("otherWindows.keys.min"))
         XCTAssertTrue(policySlice.contains("uuidString <"))
+
+        let warmupGateSlice = try sourceSlice(
+            source,
+            from: "private enum InitialDocumentWarmupDeferral",
+            to: "private enum NormalTabWebViewCreationPlan"
+        )
+        XCTAssertTrue(warmupGateSlice.contains("private var inFlightProfileIds"))
+        XCTAssertTrue(warmupGateSlice.contains("private var attemptedProfileIds"))
+        XCTAssertTrue(warmupGateSlice.contains("needsInitialDocumentExtensionContextLoadIfNeeded"))
+        XCTAssertTrue(warmupGateSlice.contains("case waitForInFlight"))
     }
 
     func testClosingAndSpaceSwitchPathsPerformVisualHandoffBeforeRuntimeCleanup() throws {
