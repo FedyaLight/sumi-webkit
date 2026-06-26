@@ -511,17 +511,17 @@ final class SumiProtectionCoordinator {
     let settings: SumiProtectionSettings
     private let adBlockingModule: SumiAdBlockingModule
     private let siteNormalizer: SumiProtectionSiteNormalizer
-    private let bundleRemoteUpdater: any SumiProtectionBundleRemoteUpdating
-    let bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore
+    private let bundleLifecycle: SumiProtectionBundleLifecycle
+
+    var bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore {
+        bundleLifecycle.statusStore
+    }
 
     private var cancellables = Set<AnyCancellable>()
     private(set) var lastApplySummary: String?
     private(set) var lastApplyError: String?
     private let attachmentServiceCache = SumiProtectionAttachmentServiceCache()
     private var runtimeAppliedLevel: SumiProtectionLevel
-    private var lastBundleLookupDuration: TimeInterval?
-    private var lastPreparedBundleDiscoveryProfileId: String?
-    private var lastPreparedBundleDiscovery: SumiPreparedAdblockBundleDiscovery?
 
     init(
         settings: SumiProtectionSettings = .shared,
@@ -533,8 +533,11 @@ final class SumiProtectionCoordinator {
         self.settings = settings
         self.adBlockingModule = adBlockingModule
         self.siteNormalizer = siteNormalizer
-        self.bundleRemoteUpdater = bundleRemoteUpdater
-        self.bundleUpdateStatusStore = bundleUpdateStatusStore
+        self.bundleLifecycle = SumiProtectionBundleLifecycle(
+            preparedBundleManager: adBlockingModule,
+            remoteUpdater: bundleRemoteUpdater,
+            statusStore: bundleUpdateStatusStore
+        )
         self.runtimeAppliedLevel = settings.appliedLevel
         syncProtectionRuntime(for: runtimeAppliedLevel)
     }
@@ -566,55 +569,15 @@ final class SumiProtectionCoordinator {
         do {
             var installedBundleProfileId: String?
             if let requiredBundleProfileId = selectedLevel.preferredBundleProfileId {
-                let discoveryStart = Date()
-                let discovery = adBlockingModule.preparedNativeRuleBundleDiscovery(
+                installedBundleProfileId = try await bundleLifecycle.ensurePreparedBundleInstalled(
                     profileId: requiredBundleProfileId
                 )
-                lastBundleLookupDuration = Date().timeIntervalSince(discoveryStart)
-                lastPreparedBundleDiscoveryProfileId = requiredBundleProfileId
-                lastPreparedBundleDiscovery = discovery
-                let shouldInstallDiscoveredRemoteBundle = discovery.resolvedBundle?.source == .remoteReleaseBundle
-                    && discovery.resolvedBundle?.bundleId != adBlockingModule.activeManifestIfLoaded()?.nativeRuleBundleId
-                if activePreparedBundleProfileId != requiredBundleProfileId || shouldInstallDiscoveredRemoteBundle {
-                    guard discovery.resolvedBundle != nil else {
-                        throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
-                            profileId: requiredBundleProfileId,
-                            detail: discovery.failureSummary
-                        )
-                    }
-                    let manifest: AdblockCompiledGenerationManifest?
-                    do {
-                        manifest = try await adBlockingModule.installPreparedNativeRuleBundle(
-                            profileId: requiredBundleProfileId
-                        )
-                    } catch {
-                        throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
-                            profileId: requiredBundleProfileId,
-                            detail: error.localizedDescription
-                        )
-                    }
-                    guard let manifest,
-                          Self.preparedBundleProfileId(in: manifest) == requiredBundleProfileId
-                    else {
-                        throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
-                            profileId: requiredBundleProfileId,
-                            detail: "The installer did not publish the requested prepared bundle."
-                        )
-                    }
-                }
-                guard activePreparedBundleProfileId == requiredBundleProfileId else {
-                    throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
-                        profileId: requiredBundleProfileId,
-                        detail: "The active prepared bundle after install is \(activePreparedBundleProfileId ?? "nil")."
-                    )
-                }
                 let readinessPlan = globalAttachmentPlan(
                     for: selectedLevel,
                     includeExpensiveDiagnostics: false,
                     loadRuleDefinitions: false
                 )
                 try validateRequiredGroupsReady(in: readinessPlan)
-                installedBundleProfileId = requiredBundleProfileId
             } else {
                 clearPreparedBundleLookupDiagnostics()
             }
@@ -656,65 +619,16 @@ final class SumiProtectionCoordinator {
     }
 
     func updatePreparedBundlesManually() async throws -> SumiProtectionBundleManualUpdateOutcome {
-        let profileId = SumiProtectionBundleProfile.adblock
         let appliedLevel = settings.appliedLevel
         syncProtectionRuntime(for: appliedLevel)
-        do {
-            let remote = try await bundleRemoteUpdater.fetchLatestApprovedBundle(profileId: profileId)
-            let activeManifest = adBlockingModule.activeManifestIfLoaded()
-            let activation: SumiProtectionBundleManualUpdateActivation
-            let restartRequired: Bool
-            let summary: String
-
-            if appliedLevel != .off {
-                if activeManifest?.nativeRuleBundleId == remote.bundleId
-                    || activeManifest?.activeGenerationId == remote.generationId {
-                    activation = .alreadyCurrent
-                    restartRequired = settings.browserRestartRequired
-                    summary = "Prepared bundles are already current: \(remote.releaseVersion)."
-                } else {
-                    let manifest = try await adBlockingModule.installPreparedNativeRuleBundle(profileId: profileId)
-                    guard manifest?.nativeRuleBundleId == remote.bundleId,
-                          manifest?.activeGenerationId == remote.generationId
-                    else {
-                        throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
-                            profileId: profileId,
-                            detail: "The remote bundle was cached but did not become the active prepared bundle."
-                        )
-                    }
-                    try await prepareCachedAttachmentService(for: appliedLevel)
-                    settings.setBrowserRestartRequired(true)
-                    activation = .installedRestartRequired
-                    restartRequired = true
-                    summary = "Updated prepared bundles to \(remote.releaseVersion). Restart Sumi or reload open pages before relying on the new rules."
-                    lastApplySummary = summary
-                    lastApplyError = nil
-                }
-            } else {
-                activation = .cachedOnly
-                restartRequired = settings.browserRestartRequired
-                summary = "Downloaded prepared bundles \(remote.releaseVersion). They will be used after Protection or Adblock is selected and applied."
-            }
-
-            let outcome = SumiProtectionBundleManualUpdateOutcome(
-                profileId: profileId,
-                releaseVersion: remote.releaseVersion,
-                releaseTag: remote.releaseTag,
-                bundleId: remote.bundleId,
-                generationId: remote.generationId,
-                manifestSignatureRequired: remote.manifestSignatureRequired,
-                manifestSignatureVerified: remote.manifestSignatureVerified,
-                signingKeyId: remote.signingKeyId,
-                signingKeyVersion: remote.signingKeyVersion,
-                activation: activation,
-                browserRestartRequired: restartRequired,
-                summary: summary
-            )
-            bundleUpdateStatusStore.recordSuccess(outcome)
-            return outcome
-        } catch {
-            bundleUpdateStatusStore.recordFailure(error)
-            throw error
+        return try await bundleLifecycle.updatePreparedBundlesManually(
+            appliedLevel: appliedLevel,
+            currentBrowserRestartRequired: settings.browserRestartRequired
+        ) { summary in
+            try await prepareCachedAttachmentService(for: appliedLevel)
+            settings.setBrowserRestartRequired(true)
+            lastApplySummary = summary
+            lastApplyError = nil
         }
     }
 
@@ -739,17 +653,9 @@ final class SumiProtectionCoordinator {
         }
 
         do {
-            let manifest = try await adBlockingModule.restorePreparedNativeRuleBundleForStartup(
+            let manifest = try await bundleLifecycle.restorePreparedBundleForStartup(
                 profileId: requiredBundleProfileId
             )
-            guard let manifest,
-                  Self.preparedBundleProfileId(in: manifest) == requiredBundleProfileId
-            else {
-                throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
-                    profileId: requiredBundleProfileId,
-                    detail: "Startup restore did not publish the requested prepared bundle."
-                )
-            }
             try await prepareCachedAttachmentService(for: appliedLevel)
             settings.setBrowserRestartRequired(false)
             lastApplySummary = "Restored \(appliedLevel.displayTitle) using prepared bundle \(requiredBundleProfileId)."
@@ -1224,9 +1130,7 @@ final class SumiProtectionCoordinator {
     }
 
     private func clearPreparedBundleLookupDiagnostics() {
-        lastBundleLookupDuration = nil
-        lastPreparedBundleDiscoveryProfileId = nil
-        lastPreparedBundleDiscovery = nil
+        bundleLifecycle.clearPreparedBundleLookupDiagnostics()
     }
 
     func currentTabDiagnostics(
@@ -1309,7 +1213,7 @@ final class SumiProtectionCoordinator {
             ineligibleSurfaceReason: plan.ineligibleSurfaceReason,
             currentProcessResidentMemoryBytes: Self.currentProcessResidentMemoryBytes(),
             planComputeDuration: planComputeDuration,
-            bundleLookupDuration: lastBundleLookupDuration,
+            bundleLookupDuration: bundleLifecycle.lastBundleLookupDuration,
             ruleListLookupDuration: contentBlockingAssetSummary?.ruleListLookupDuration,
             tabAttachmentDuration: contentBlockingAssetSummary?.tabAttachmentDuration,
             webViewRebuildDuration: webViewRebuildDuration,
@@ -1327,9 +1231,11 @@ final class SumiProtectionCoordinator {
         let installedBundleProfileId = Self.installedBundleProfileId(from: manifest)
         let activePreparedProfileId = manifest.flatMap { Self.preparedBundleProfileId(in: $0) }
         let requiredBundleProfileId = selectedLevel.preferredBundleProfileId
-        let preparedBundleDiscovery = requiredBundleProfileId == lastPreparedBundleDiscoveryProfileId
-            ? lastPreparedBundleDiscovery
-            : nil
+        let bundleDiagnostics = bundleLifecycle.diagnostics(
+            manifest: manifest,
+            requiredBundleProfileId: requiredBundleProfileId,
+            activePreparedBundleProfileId: activePreparedProfileId
+        )
         let trackingSourceAvailable = cachedTrackingSourceAvailable()
         let availableGroups = globallyAvailableGroups(
             manifest: manifest,
@@ -1350,26 +1256,19 @@ final class SumiProtectionCoordinator {
             remoteReleaseVersion: manifest?.remoteReleaseVersion,
             remoteReleaseTag: manifest?.remoteReleaseTag,
             remoteReleaseURL: manifest?.remoteReleaseURL,
-            remoteManifestSignatureRequired: SumiProtectionBundleTrust.remoteManifestSignatureRequired,
-            remoteManifestSignatureVerified: manifest?.remoteManifestSignatureVerified
-                ?? bundleUpdateStatusStore.lastSignatureVerified,
-            remoteSigningKeyId: manifest?.remoteSigningKeyId
-                ?? bundleUpdateStatusStore.lastSigningKeyId,
-            remoteSigningKeyVersion: manifest?.remoteSigningKeyVersion
-                ?? bundleUpdateStatusStore.lastSigningKeyVersion,
-            lastRemoteUpdateError: bundleUpdateStatusStore.lastFailureReason,
-            lastSignatureError: bundleUpdateStatusStore.lastSignatureError,
-            downgradeRejected: bundleUpdateStatusStore.lastDowngradeRejected ?? false,
+            remoteManifestSignatureRequired: bundleDiagnostics.remoteManifestSignatureRequired,
+            remoteManifestSignatureVerified: bundleDiagnostics.remoteManifestSignatureVerified,
+            remoteSigningKeyId: bundleDiagnostics.remoteSigningKeyId,
+            remoteSigningKeyVersion: bundleDiagnostics.remoteSigningKeyVersion,
+            lastRemoteUpdateError: bundleDiagnostics.lastRemoteUpdateError,
+            lastSignatureError: bundleDiagnostics.lastSignatureError,
+            downgradeRejected: bundleDiagnostics.downgradeRejected,
             bundleGeneratedDate: manifest?.createdDate,
-            lastSuccessfulBundleInstallDate: manifest?.lastSuccessfulUpdateDate,
+            lastSuccessfulBundleInstallDate: bundleDiagnostics.lastSuccessfulBundleInstallDate,
             requiredBundleProfileId: requiredBundleProfileId,
-            preparedBundleAvailable: preparedBundleDiscovery?.isAvailable ?? (requiredBundleProfileId.map { activePreparedProfileId == $0 } ?? true),
-            preparedBundleSource: preparedBundleDiscovery?.source ?? (
-                requiredBundleProfileId != nil && activePreparedProfileId == requiredBundleProfileId
-                    ? manifest?.generationSource.sumiBundleInstallSource
-                    : nil
-            ),
-            searchedBundlePaths: preparedBundleDiscovery?.searchedPaths ?? [],
+            preparedBundleAvailable: bundleDiagnostics.preparedBundleAvailable,
+            preparedBundleSource: bundleDiagnostics.preparedBundleSource,
+            searchedBundlePaths: bundleDiagnostics.searchedBundlePaths,
             applyNeeded: applyNeeded,
             lastApplySummary: lastApplySummary,
             lastApplyError: lastApplyError,
@@ -1473,7 +1372,7 @@ final class SumiProtectionCoordinator {
             "manualReloadMatchedDesiredState=\(appliedAfterManualReload)",
             "contentBlockingServiceGenerationId=\(attachmentServiceCache.generationId)",
             "planComputeDuration=\(currentTabDiagnostics.map { SumiProtectionCurrentTabDiagnostics.renderDuration($0.planComputeDuration) } ?? "nil")",
-            "bundleLookupDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(lastBundleLookupDuration))",
+            "bundleLookupDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(bundleLifecycle.lastBundleLookupDuration))",
             "ruleListLookupDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.ruleListLookupDuration))",
             "tabAttachmentDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.tabAttachmentDuration))",
             "webViewRebuildDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.webViewRebuildDuration))",
@@ -1635,30 +1534,13 @@ final class SumiProtectionCoordinator {
     private static func preparedBundleProfileId(
         in manifest: AdblockCompiledGenerationManifest
     ) -> String? {
-        guard !manifest.activeGenerationId.isEmpty,
-              manifest.generationSource.isPreparedBundleSource
-        else { return nil }
-        return installedBundleProfileId(from: manifest)
+        SumiProtectionPreparedBundleIdentity.preparedBundleProfileId(in: manifest)
     }
 
     private static func installedBundleProfileId(
         from manifest: AdblockCompiledGenerationManifest?
     ) -> String? {
-        guard let manifest else { return nil }
-        if let bundleProfileId = manifest.bundleProfileId, !bundleProfileId.isEmpty {
-            return bundleProfileId
-        }
-        return inferredBundleProfileId(from: manifest.nativeRuleBundleId)
-    }
-
-    private static func inferredBundleProfileId(from nativeRuleBundleId: String?) -> String? {
-        guard let nativeRuleBundleId else { return nil }
-        for profileId in [SumiProtectionBundleProfile.adblock] {
-            if nativeRuleBundleId.contains(profileId) {
-                return profileId
-            }
-        }
-        return nil
+        SumiProtectionPreparedBundleIdentity.installedBundleProfileId(from: manifest)
     }
 
     private static func effectiveLevel(
@@ -1883,7 +1765,7 @@ final class SumiProtectionCoordinator {
     }
 }
 
-private enum SumiProtectionApplyError: LocalizedError {
+enum SumiProtectionApplyError: LocalizedError {
     case requiredPreparedBundleUnavailable(profileId: String, detail: String)
     case applyFailed(String)
 
@@ -1937,23 +1819,6 @@ private struct CachedAdblockGroup: Equatable, Sendable {
     let identifiers: [String]
     let shardCount: Int
     let ruleCount: Int
-}
-
-private extension AdblockRuleGenerationSource {
-    var isPreparedBundleSource: Bool {
-        true
-    }
-
-    var sumiBundleInstallSource: SumiAdblockBundleInstallSource? {
-        switch self {
-        case .embeddedBundle:
-            return .appResource
-        case .developmentBundle:
-            return .developmentBundle
-        case .remoteReleaseBundle:
-            return .remoteReleaseBundle
-        }
-    }
 }
 
 private extension Array where Element == SumiProtectionGroupKind {

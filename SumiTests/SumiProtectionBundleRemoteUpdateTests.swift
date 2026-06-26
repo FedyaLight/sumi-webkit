@@ -4,6 +4,197 @@ import XCTest
 @testable import Sumi
 
 final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
+    func testSignatureVerifierAcceptsValidEd25519Envelope() throws {
+        let privateKey = Curve25519.Signing.PrivateKey()
+        let keyId = "test-key"
+        let manifestData = Data(#"{"releaseVersion":"test"}"#.utf8)
+        let signature = try privateKey.signature(for: manifestData)
+        let envelope = try Self.signatureEnvelopeData(
+            keyId: keyId,
+            signedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName,
+            signature: signature
+        )
+        let verifier = SumiProtectionBundleSignatureVerifier(
+            keys: [
+                SumiProtectionBundleSigningKey(
+                    id: keyId,
+                    version: 7,
+                    publicKeyBase64: privateKey.publicKey.rawRepresentation.base64EncodedString()
+                ),
+            ]
+        )
+
+        let result = try verifier.verify(
+            manifestData: manifestData,
+            signatureData: envelope,
+            expectedSignedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
+        )
+
+        XCTAssertEqual(result, SumiProtectionBundleSignatureVerification(keyId: keyId, keyVersion: 7))
+    }
+
+    func testSignatureVerifierRejectsEnvelopeForWrongAsset() throws {
+        let privateKey = Curve25519.Signing.PrivateKey()
+        let manifestData = Data("manifest".utf8)
+        let envelope = try Self.signatureEnvelopeData(
+            keyId: "test-key",
+            signedAsset: "other.json",
+            signature: privateKey.signature(for: manifestData)
+        )
+        let verifier = SumiProtectionBundleSignatureVerifier(
+            keys: [
+                SumiProtectionBundleSigningKey(
+                    id: "test-key",
+                    version: 1,
+                    publicKeyBase64: privateKey.publicKey.rawRepresentation.base64EncodedString()
+                ),
+            ]
+        )
+
+        XCTAssertThrowsError(
+            try verifier.verify(
+                manifestData: manifestData,
+                signatureData: envelope,
+                expectedSignedAsset: SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? SumiProtectionBundleRemoteUpdateError,
+                .signatureMetadataMalformed(
+                    "signature covers other.json, expected \(SumiProtectionBundleRemoteUpdateConstants.releaseManifestAssetName)"
+                )
+            )
+        }
+    }
+
+    @MainActor
+    func testBundleUpdateStatusStoreClassifiesTrustFailuresAndDowngrades() throws {
+        let suiteName = "SumiProtectionBundleRemoteUpdateTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = SumiProtectionBundleUpdateStatusStore(userDefaults: defaults)
+
+        store.recordFailure(SumiProtectionBundleRemoteUpdateError.signatureInvalid("test-key"))
+
+        XCTAssertEqual(store.lastFailureReason, SumiProtectionBundleRemoteUpdateError.signatureInvalid("test-key").localizedDescription)
+        XCTAssertEqual(store.lastSignatureError, SumiProtectionBundleRemoteUpdateError.signatureInvalid("test-key").localizedDescription)
+        XCTAssertEqual(store.lastSignatureVerified, false)
+        XCTAssertEqual(store.lastDowngradeRejected, false)
+
+        store.recordFailure(
+            SumiProtectionBundleRemoteUpdateError.releaseDowngradeRejected(
+                current: "20260626",
+                incoming: "20260625"
+            )
+        )
+
+        XCTAssertEqual(store.lastDowngradeRejected, true)
+    }
+
+    @MainActor
+    func testBundleLifecycleRecordsSuccessAfterManualUpdateActivation() async throws {
+        let suiteName = "SumiProtectionBundleLifecycleTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.removePersistentDomain(forName: suiteName)
+        let statusStore = SumiProtectionBundleUpdateStatusStore(userDefaults: defaults)
+        let profileId = SumiProtectionBundleProfile.adblock
+        let manager = FakePreparedBundleManager(
+            activeManifest: Self.makeCompiledManifest(
+                bundleId: "old-bundle",
+                generationId: "old-generation",
+                profileId: profileId
+            ),
+            installManifest: Self.makeCompiledManifest(
+                bundleId: "new-bundle",
+                generationId: "new-generation",
+                profileId: profileId
+            )
+        )
+        let updater = FakeBundleRemoteUpdater(
+            result: .success(
+                Self.makeRemoteFetchResult(
+                    profileId: profileId,
+                    bundleId: "new-bundle",
+                    generationId: "new-generation"
+                )
+            )
+        )
+        let lifecycle = SumiProtectionBundleLifecycle(
+            preparedBundleManager: manager,
+            remoteUpdater: updater,
+            statusStore: statusStore
+        )
+        var activationCount = 0
+
+        let outcome = try await lifecycle.updatePreparedBundlesManually(
+            appliedLevel: .adblock,
+            currentBrowserRestartRequired: false
+        ) { _ in
+            activationCount += 1
+        }
+
+        XCTAssertEqual(outcome.activation, .installedRestartRequired)
+        XCTAssertEqual(outcome.browserRestartRequired, true)
+        XCTAssertEqual(manager.installProfileIds, [profileId])
+        XCTAssertEqual(activationCount, 1)
+        XCTAssertEqual(statusStore.lastReleaseVersion, "20260626T120000Z")
+        XCTAssertNil(statusStore.lastFailureReason)
+    }
+
+    @MainActor
+    func testBundleLifecycleRecordsFailureWhenManualUpdateActivationFails() async throws {
+        let suiteName = "SumiProtectionBundleLifecycleTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.removePersistentDomain(forName: suiteName)
+        let statusStore = SumiProtectionBundleUpdateStatusStore(userDefaults: defaults)
+        let profileId = SumiProtectionBundleProfile.adblock
+        let manager = FakePreparedBundleManager(
+            activeManifest: Self.makeCompiledManifest(
+                bundleId: "old-bundle",
+                generationId: "old-generation",
+                profileId: profileId
+            ),
+            installManifest: Self.makeCompiledManifest(
+                bundleId: "new-bundle",
+                generationId: "new-generation",
+                profileId: profileId
+            )
+        )
+        let updater = FakeBundleRemoteUpdater(
+            result: .success(
+                Self.makeRemoteFetchResult(
+                    profileId: profileId,
+                    bundleId: "new-bundle",
+                    generationId: "new-generation"
+                )
+            )
+        )
+        let lifecycle = SumiProtectionBundleLifecycle(
+            preparedBundleManager: manager,
+            remoteUpdater: updater,
+            statusStore: statusStore
+        )
+
+        do {
+            _ = try await lifecycle.updatePreparedBundlesManually(
+                appliedLevel: .adblock,
+                currentBrowserRestartRequired: false
+            ) { _ in
+                throw TestActivationError.failed
+            }
+            XCTFail("Expected activation failure")
+        } catch {
+            XCTAssertEqual(error as? TestActivationError, .failed)
+        }
+
+        XCTAssertEqual(manager.installProfileIds, [profileId])
+        XCTAssertNil(statusStore.lastSuccessDate)
+        XCTAssertEqual(statusStore.lastFailureReason, TestActivationError.failed.localizedDescription)
+    }
+
     func testReleaseManifestAcceptsCosmeticShardAssets() throws {
         let data = Data(
             """
@@ -241,5 +432,146 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    private static func signatureEnvelopeData(
+        keyId: String,
+        signedAsset: String,
+        signature: Data
+    ) throws -> Data {
+        try JSONSerialization.data(
+            withJSONObject: [
+                "schemaVersion": 1,
+                "algorithm": "Ed25519",
+                "keyId": keyId,
+                "signedAsset": signedAsset,
+                "signature": signature.base64EncodedString(),
+            ],
+            options: [.sortedKeys]
+        )
+    }
+
+    private static func makeRemoteFetchResult(
+        profileId: String,
+        bundleId: String,
+        generationId: String
+    ) -> SumiProtectionRemoteBundleFetchResult {
+        SumiProtectionRemoteBundleFetchResult(
+            profileId: profileId,
+            releaseVersion: "20260626T120000Z",
+            releaseTag: "20260626T120000Z",
+            releaseURL: "https://example.com/release",
+            publishedDate: Date(timeIntervalSince1970: 1),
+            manifestSignatureRequired: true,
+            manifestSignatureVerified: true,
+            signingKeyId: "test-key",
+            signingKeyVersion: 1,
+            bundleId: bundleId,
+            generationId: generationId,
+            bundleURL: URL(fileURLWithPath: "/tmp/SumiProtectionBundleLifecycleTests", isDirectory: true)
+        )
+    }
+
+    private static func makeCompiledManifest(
+        bundleId: String,
+        generationId: String,
+        profileId: String
+    ) -> AdblockCompiledGenerationManifest {
+        AdblockCompiledGenerationManifest(
+            schemaVersion: 1,
+            activeGenerationId: generationId,
+            createdDate: Date(timeIntervalSince1970: 0),
+            selectedFilterLists: [],
+            networkShards: [],
+            nativeCSSShards: [],
+            nativeCompiler: nil,
+            nativeCompilerSourceLists: nil,
+            nativeLogicalGroups: nil,
+            nativeCompilationSummary: nil,
+            compilerDiagnosticsSummary: "test",
+            lastSuccessfulUpdateDate: Date(timeIntervalSince1970: 1),
+            previousGenerationId: nil,
+            generationSource: .remoteReleaseBundle,
+            nativeRuleBundleId: bundleId,
+            bundleProfileId: profileId,
+            remoteMetadata: nil
+        )
+    }
+}
+
+@MainActor
+private final class FakePreparedBundleManager: SumiProtectionPreparedBundleManaging {
+    var activeManifest: AdblockCompiledGenerationManifest?
+    var installManifest: AdblockCompiledGenerationManifest?
+    var discovery: SumiPreparedAdblockBundleDiscovery
+    private(set) var installProfileIds: [String] = []
+    private(set) var restoreProfileIds: [String] = []
+
+    init(
+        activeManifest: AdblockCompiledGenerationManifest?,
+        installManifest: AdblockCompiledGenerationManifest?
+    ) {
+        self.activeManifest = activeManifest
+        self.installManifest = installManifest
+        let profileId = installManifest?.bundleProfileId ?? SumiProtectionBundleProfile.adblock
+        self.discovery = SumiPreparedAdblockBundleDiscovery(
+            requiredProfileId: profileId,
+            resolvedBundle: SumiPreparedAdblockBundleDiscovery.ResolvedBundle(
+                source: .remoteReleaseBundle,
+                bundleURL: URL(fileURLWithPath: "/tmp/SumiProtectionBundleLifecycleTests", isDirectory: true),
+                profileId: profileId,
+                bundleId: installManifest?.nativeRuleBundleId,
+                generationId: installManifest?.activeGenerationId,
+                remoteMetadata: nil
+            ),
+            searchedPaths: [
+                SumiPreparedAdblockBundleSearchPath(
+                    source: .remoteReleaseBundle,
+                    path: "/tmp/SumiProtectionBundleLifecycleTests",
+                    exists: true,
+                    rejectionReason: nil
+                ),
+            ]
+        )
+    }
+
+    func activeManifestIfLoaded() -> AdblockCompiledGenerationManifest? {
+        activeManifest
+    }
+
+    func preparedNativeRuleBundleDiscovery(profileId: String) -> SumiPreparedAdblockBundleDiscovery {
+        discovery
+    }
+
+    func installPreparedNativeRuleBundle(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
+        installProfileIds.append(profileId)
+        activeManifest = installManifest
+        return installManifest
+    }
+
+    func restorePreparedNativeRuleBundleForStartup(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
+        restoreProfileIds.append(profileId)
+        activeManifest = installManifest
+        return installManifest
+    }
+}
+
+private final class FakeBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating, @unchecked Sendable {
+    let result: Result<SumiProtectionRemoteBundleFetchResult, Error>
+
+    init(result: Result<SumiProtectionRemoteBundleFetchResult, Error>) {
+        self.result = result
+    }
+
+    func fetchLatestApprovedBundle(profileId: String) async throws -> SumiProtectionRemoteBundleFetchResult {
+        try result.get()
+    }
+}
+
+private enum TestActivationError: LocalizedError, Equatable {
+    case failed
+
+    var errorDescription: String? {
+        "activation failed"
     }
 }
