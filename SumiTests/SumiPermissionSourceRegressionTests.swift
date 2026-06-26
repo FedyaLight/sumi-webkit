@@ -167,6 +167,16 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
         XCTAssertFalse(cleanup.contains("cookie"))
     }
 
+    func testBrowserManagerDelegatesPermissionEventSubscriptionOwnership() throws {
+        let browserManager = try sourceFile("Sumi/Managers/BrowserManager/BrowserManager.swift")
+
+        XCTAssertTrue(browserManager.contains("private var permissionEventOwner: SumiPermissionEventOwner?"))
+        XCTAssertTrue(browserManager.contains("self.permissionEventOwner = SumiPermissionEventOwner("))
+        XCTAssertFalse(browserManager.contains("permissionCoordinator.events()"))
+        XCTAssertFalse(browserManager.contains("permissionRecentActivityTask"))
+        XCTAssertFalse(browserManager.contains("permissionSidebarPinningTask"))
+    }
+
     private func sourceFile(_ relativePath: String) throws -> String {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

@@ -222,8 +222,7 @@ class BrowserManager: ObservableObject {
     let externalSchemePermissionBridge: SumiExternalSchemePermissionBridge
     let permissionLifecycleController: SumiPermissionGrantLifecycleController
     let permissionSidebarPinningController = SumiPermissionSidebarPinningController()
-    private var permissionRecentActivityTask: Task<Void, Never>?
-    private var permissionSidebarPinningTask: Task<Void, Never>?
+    private var permissionEventOwner: SumiPermissionEventOwner?
     private var didPauseGeolocationForApplicationBackground = false
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
@@ -512,20 +511,14 @@ class BrowserManager: ObservableObject {
             blockedPopupStore: blockedPopupStore,
             externalSchemeSessionStore: externalSchemeSessionStore
         )
-        self.permissionRecentActivityTask = Task {
-            @MainActor [permissionCoordinator, permissionRecentActivityStore, permissionSiteActivityStore] in
-            let events = await permissionCoordinator.events()
-            for await event in events {
-                permissionRecentActivityStore.record(event)
-                permissionSiteActivityStore.record(event: event)
-            }
-        }
-        self.permissionSidebarPinningTask = Task { @MainActor [weak self, permissionCoordinator] in
-            let events = await permissionCoordinator.events()
-            for await _ in events {
+        self.permissionEventOwner = SumiPermissionEventOwner(
+            coordinator: permissionCoordinator,
+            recentActivityStore: permissionRecentActivityStore,
+            siteActivityStore: permissionSiteActivityStore,
+            onEvent: { [weak self] _ in
                 await self?.reconcilePermissionSidebarPins(reason: "permission-event")
             }
-        }
+        )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
         self.compositorManager.browserManager = self
@@ -1617,8 +1610,7 @@ class BrowserManager: ObservableObject {
         }
     }
     isolated deinit {
-        permissionRecentActivityTask?.cancel()
-        permissionSidebarPinningTask?.cancel()
+        permissionEventOwner?.cancel()
         startupProtectionRestoreTask?.cancel()
         startupProtectionRestoreTask = nil
         windowSessionService.cancelPendingWindowSessionPersistence()
