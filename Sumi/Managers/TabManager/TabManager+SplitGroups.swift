@@ -45,17 +45,17 @@ extension TabManager {
         splitGroupIndexStore.groups.first { splitGroup($0, containsShortcutPinId: pinId) }
     }
 
+    func splitGroupVisualOrderingResolver(for spaceId: UUID) -> SplitGroupVisualOrderingResolver {
+        SplitGroupVisualOrderingResolver(
+            spaceId: spaceId,
+            splitGroups: splitGroups,
+            folders: foldersBySpace[spaceId] ?? [],
+            spacePinnedPins: spacePinnedPins(for: spaceId)
+        )
+    }
+
     func shortcutHostedSplitGroups(for spaceId: UUID) -> [SplitGroup] {
-        splitGroups.filter { group in
-            guard case .shortcutPinned(let hostSpaceId, _, _) = group.host else { return false }
-            return hostSpaceId == spaceId
-        }
-        .sorted { lhs, rhs in
-            let lhsIndex = shortcutHostedSplitGroupVisualIndex(lhs, in: spaceId)
-            let rhsIndex = shortcutHostedSplitGroupVisualIndex(rhs, in: spaceId)
-            if lhsIndex != rhsIndex { return lhsIndex < rhsIndex }
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
+        splitGroupVisualOrderingResolver(for: spaceId).shortcutHostedGroups()
     }
 
     func shortcutHostedSplitGroup(containingPinId pinId: UUID, in spaceId: UUID? = nil) -> SplitGroup? {
@@ -80,136 +80,32 @@ extension TabManager {
     }
 
     func shortcutHostedSplitGroupVisualIndex(_ group: SplitGroup, in spaceId: UUID) -> Int {
-        if let index = group.shortcutPinnedIndex {
-            return index
-        }
-
-        let memberIndexes = group.members.compactMap { member -> Int? in
-            if let pinId = member.pinId,
-               let pin = shortcutPin(by: pinId),
-               pin.role == .spacePinned,
-               pin.spaceId == spaceId {
-                return pin.index
-            }
-
-            switch member.origin {
-            case .spacePinned(let originSpaceId, _, let index) where originSpaceId == spaceId:
-                return index
-            case .generatedSpacePinnedFromRegular(let originSpaceId, let index) where originSpaceId == spaceId:
-                return index
-            default:
-                return nil
-            }
-        }
-
-        return memberIndexes.min() ?? 0
+        splitGroupVisualOrderingResolver(for: spaceId).visualIndex(for: group)
     }
 
     func shortcutHostedSplitGroupFolderId(_ group: SplitGroup, in spaceId: UUID) -> UUID? {
-        guard group.isShortcutHosted, group.hostSpaceId == spaceId else { return nil }
-
-        if let hostIndex = group.shortcutPinnedIndex {
-            let hostTopLevelMemberExists = group.members.contains { member in
-                if let pinId = member.pinId,
-                   let pin = shortcutPin(by: pinId),
-                   pin.role == .spacePinned,
-                   pin.spaceId == spaceId,
-                   pin.folderId == nil,
-                   pin.index == hostIndex {
-                    return true
-                }
-
-                switch member.origin {
-                case .spacePinned(let originSpaceId, nil, let index):
-                    return originSpaceId == spaceId && index == hostIndex
-                default:
-                    return false
-                }
-            }
-            if hostTopLevelMemberExists {
-                return nil
-            }
-
-            let hostFolderMembers = group.members.compactMap { member -> UUID? in
-                if let pinId = member.pinId,
-                   let pin = shortcutPin(by: pinId),
-                   pin.role == .spacePinned,
-                   pin.spaceId == spaceId,
-                   let folderId = pin.folderId,
-                   pin.index == hostIndex {
-                    return folderId
-                }
-
-                switch member.origin {
-                case .spacePinned(let originSpaceId, let folderId, let index) where originSpaceId == spaceId && index == hostIndex:
-                    return folderId
-                default:
-                    return nil
-                }
-            }
-            if let folderId = hostFolderMembers.sorted(by: { $0.uuidString < $1.uuidString }).first {
-                return folderId
-            }
-        }
-
-        let memberFolders = group.members.compactMap { member -> (Int, UUID)? in
-            if let pinId = member.pinId,
-               let pin = shortcutPin(by: pinId),
-               pin.role == .spacePinned,
-               pin.spaceId == spaceId,
-               let folderId = pin.folderId {
-                return (pin.index, folderId)
-            }
-
-            switch member.origin {
-            case .spacePinned(let originSpaceId, let folderId, let index) where originSpaceId == spaceId:
-                return folderId.map { (index, $0) }
-            default:
-                return nil
-            }
-        }
-
-        return memberFolders
-            .sorted { lhs, rhs in
-                if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
-                return lhs.1.uuidString < rhs.1.uuidString
-            }
-            .first?.1
+        splitGroupVisualOrderingResolver(for: spaceId).folderId(for: group)
     }
 
     func shortcutHostedSplitGroups(for spaceId: UUID, inFolder folderId: UUID?) -> [SplitGroup] {
-        shortcutHostedSplitGroups(for: spaceId)
-            .filter { shortcutHostedSplitGroupFolderId($0, in: spaceId) == folderId }
+        splitGroupVisualOrderingResolver(for: spaceId).shortcutHostedGroups(inFolder: folderId)
     }
 
     func shortcutHostedSplitHiddenPinIds(for spaceId: UUID) -> Set<UUID> {
-        Set(shortcutHostedSplitGroups(for: spaceId).flatMap(\.shortcutPinIds))
+        splitGroupVisualOrderingResolver(for: spaceId).hiddenPinIds()
     }
 
     func topLevelSpacePinnedVisualItems(for spaceId: UUID) -> [SpacePinnedVisualItem] {
-        let topLevelShortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId, inFolder: nil)
-        let hiddenPinIds = shortcutHostedSplitHiddenPinIds(for: spaceId)
-        let folderItems = (foldersBySpace[spaceId] ?? [])
-            .filter { $0.parentFolderId == nil }
-            .map { folder in
-                (folder.index, 1, SpacePinnedVisualItem.folder(folder.id))
+        splitGroupVisualOrderingResolver(for: spaceId).topLevelItems().map { item in
+            switch item {
+            case .folder(let id):
+                return .folder(id)
+            case .shortcut(let id):
+                return .shortcut(id)
+            case .splitGroup(let id):
+                return .splitGroup(id)
             }
-        let shortcutItems = spacePinnedPins(for: spaceId)
-            .filter { $0.folderId == nil && !hiddenPinIds.contains($0.id) }
-            .map { pin in
-                (pin.index, 2, SpacePinnedVisualItem.shortcut(pin.id))
-            }
-        let splitItems = topLevelShortcutHostedGroups.map { group in
-            (shortcutHostedSplitGroupVisualIndex(group, in: spaceId), 0, SpacePinnedVisualItem.splitGroup(group.id))
         }
-
-        return (folderItems + shortcutItems + splitItems)
-            .sorted { lhs, rhs in
-                if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
-                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
-                return lhs.2.id.uuidString < rhs.2.id.uuidString
-            }
-            .map(\.2)
     }
 
     @discardableResult

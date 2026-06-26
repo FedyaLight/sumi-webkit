@@ -512,23 +512,16 @@ class TabManager: ObservableObject {
     }
 
     func folderChildVisualItems(for folderId: UUID, in spaceId: UUID) -> [FolderChildVisualItem] {
-        let folderShortcutHostedGroups = shortcutHostedSplitGroups(for: spaceId, inFolder: folderId)
-        let hiddenPinIds = shortcutHostedSplitHiddenPinIds(for: spaceId)
-        let folders = childFolders(of: folderId, in: spaceId)
-            .map { ($0.index, 0, FolderChildVisualItem.folder($0.id)) }
-        let pins = folderPinnedPins(for: folderId, in: spaceId)
-            .filter { !hiddenPinIds.contains($0.id) }
-            .map { ($0.index, 1, FolderChildVisualItem.shortcut($0.id)) }
-        let splitGroups = folderShortcutHostedGroups
-            .map { (shortcutHostedSplitGroupVisualIndex($0, in: spaceId), 0, FolderChildVisualItem.splitGroup($0.id)) }
-
-        return (folders + pins + splitGroups)
-            .sorted { lhs, rhs in
-                if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
-                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
-                return lhs.2.id.uuidString < rhs.2.id.uuidString
+        splitGroupVisualOrderingResolver(for: spaceId).folderItems(for: folderId).map { item in
+            switch item {
+            case .folder(let id):
+                return .folder(id)
+            case .shortcut(let id):
+                return .shortcut(id)
+            case .splitGroup(let id):
+                return .splitGroup(id)
             }
-            .map(\.2)
+        }
     }
 
     func folderDirectChildCount(for folderId: UUID, in spaceId: UUID) -> Int {

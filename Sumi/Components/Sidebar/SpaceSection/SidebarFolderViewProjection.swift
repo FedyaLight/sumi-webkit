@@ -350,7 +350,6 @@ struct SidebarFolderViewProjection {
             for: space.id,
             inFolder: folder.id
         )
-        let hiddenPinIds = tabManager.shortcutHostedSplitHiddenPinIds(for: space.id)
         let restorePins = shortcutRestoreGaps
             .filter { $0.container == .folder(folder.id) }
             .compactMap { tabManager.shortcutPin(by: $0.pinId) }
@@ -365,12 +364,7 @@ struct SidebarFolderViewProjection {
         self.baseItems = Self.makeBaseItems(
             liveFolderItems: liveFolderItems,
             isLiveFolder: liveFolderSource != nil,
-            childFolders: childFolders,
-            shortcutPins: shortcutPins,
-            shortcutHostedGroups: shortcutHostedGroups,
-            hiddenPinIds: hiddenPinIds,
-            spaceId: space.id,
-            tabManager: tabManager
+            visualItems: tabManager.folderChildVisualItems(for: folder.id, in: space.id)
         )
         self.splitGroupsById = Dictionary(
             uniqueKeysWithValues: shortcutHostedGroups.map { ($0.id, $0) }
@@ -438,49 +432,22 @@ struct SidebarFolderViewProjection {
     private static func makeBaseItems(
         liveFolderItems: [SumiLiveFolderItem],
         isLiveFolder: Bool,
-        childFolders: [TabFolder],
-        shortcutPins: [ShortcutPin],
-        shortcutHostedGroups: [SplitGroup],
-        hiddenPinIds: Set<UUID>,
-        spaceId: UUID,
-        tabManager: TabManager
+        visualItems: [TabManager.FolderChildVisualItem]
     ) -> [SidebarFolderListItem] {
         if isLiveFolder {
             return liveFolderItems.map { .liveItem($0.id) }
         }
 
-        let folders = childFolders.map { ($0.index, 0, SidebarFolderListItem.folder($0.id)) }
-        let pins = shortcutPins
-            .filter { !hiddenPinIds.contains($0.id) }
-            .map { ($0.index, 1, SidebarFolderListItem.shortcut($0.id)) }
-        let splitGroups = shortcutHostedGroups
-            .map { (tabManager.shortcutHostedSplitGroupVisualIndex($0, in: spaceId), 0, SidebarFolderListItem.splitGroup($0.id)) }
-
-        return (folders + pins + splitGroups)
-            .sorted { lhs, rhs in
-                if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
-                if lhs.1 != rhs.1 { return lhs.1 < rhs.1 }
-                switch (lhs.2, rhs.2) {
-                case (.folder(let left), .folder(let right)),
-                     (.shortcut(let left), .shortcut(let right)),
-                     (.splitGroup(let left), .splitGroup(let right)):
-                    return left.uuidString < right.uuidString
-                case (.liveItem(let left), .liveItem(let right)):
-                    return left < right
-                case (.splitGroup, .folder), (.splitGroup, .shortcut),
-                     (.folder, .shortcut):
-                    return true
-                case (.folder, .splitGroup), (.shortcut, .splitGroup),
-                     (.shortcut, .folder):
-                    return false
-                case (.liveItem, _), (_, .liveItem):
-                    return false
-                case (.restoreGap, _), (_, .restoreGap),
-                     (.placeholder, _), (_, .placeholder):
-                    return false
-                }
+        return visualItems.map { item in
+            switch item {
+            case .folder(let id):
+                return .folder(id)
+            case .shortcut(let id):
+                return .shortcut(id)
+            case .splitGroup(let id):
+                return .splitGroup(id)
             }
-            .map(\.2)
+        }
     }
 }
 

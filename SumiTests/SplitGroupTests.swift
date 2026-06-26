@@ -264,6 +264,84 @@ final class SplitGroupTests: XCTestCase {
         )
     }
 
+    func testSplitGroupVisualOrderingResolverProjectsTopLevelAndFolderItems() throws {
+        let spaceId = UUID()
+        let folder = TabFolder(name: "Docs", spaceId: spaceId, index: 1)
+        let childFolder = TabFolder(
+            name: "Nested",
+            spaceId: spaceId,
+            parentFolderId: folder.id,
+            index: 0
+        )
+        let visibleTopLevelPin = makeSpacePin(spaceId: spaceId, index: 2, title: "Visible")
+        let visibleFolderPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: spaceId,
+            index: 0,
+            folderId: folder.id,
+            launchURL: URL(string: "https://folder-visible.example")!,
+            title: "FolderVisible"
+        )
+        let groupedTopLevelPin = makeSpacePin(spaceId: spaceId, index: 0, title: "GroupedTop")
+        let groupedFolderPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: spaceId,
+            index: 0,
+            folderId: folder.id,
+            launchURL: URL(string: "https://folder-grouped.example")!,
+            title: "FolderGrouped"
+        )
+
+        let topLevelGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [groupedTopLevelPin.id, UUID()],
+            layoutKind: .vertical,
+            host: .shortcutPinned(spaceId: spaceId, profileId: nil, index: groupedTopLevelPin.index),
+            members: [
+                SplitGroupMember(
+                    tabId: groupedTopLevelPin.id,
+                    pinId: groupedTopLevelPin.id,
+                    origin: .spacePinned(spaceId: spaceId, folderId: nil, index: groupedTopLevelPin.index)
+                )
+            ]
+        ))
+        let folderGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [groupedFolderPin.id, UUID()],
+            layoutKind: .horizontal,
+            host: .shortcutPinned(spaceId: spaceId, profileId: nil, index: groupedFolderPin.index),
+            members: [
+                SplitGroupMember(
+                    tabId: groupedFolderPin.id,
+                    pinId: groupedFolderPin.id,
+                    origin: .spacePinned(spaceId: spaceId, folderId: folder.id, index: groupedFolderPin.index)
+                )
+            ]
+        ))
+
+        let resolver = SplitGroupVisualOrderingResolver(
+            spaceId: spaceId,
+            splitGroups: [folderGroup, topLevelGroup],
+            folders: [folder, childFolder],
+            spacePinnedPins: [
+                visibleTopLevelPin,
+                visibleFolderPin,
+                groupedTopLevelPin,
+                groupedFolderPin
+            ]
+        )
+
+        XCTAssertEqual(
+            resolver.topLevelItems(),
+            [.splitGroup(topLevelGroup.id), .folder(folder.id), .shortcut(visibleTopLevelPin.id)]
+        )
+        XCTAssertEqual(
+            resolver.folderItems(for: folder.id),
+            [.splitGroup(folderGroup.id), .folder(childFolder.id), .shortcut(visibleFolderPin.id)]
+        )
+        XCTAssertEqual(resolver.hiddenPinIds(), Set([groupedTopLevelPin.id, groupedFolderPin.id]))
+    }
+
     func testEssentialOnlyShortcutHostedSplitStartsBeforePinnedRows() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")
