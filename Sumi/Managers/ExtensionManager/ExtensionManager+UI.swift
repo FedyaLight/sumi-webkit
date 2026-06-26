@@ -342,7 +342,7 @@ extension ExtensionManager: NSPopoverDelegate {
                 message: "No profile is available for the extension action."
             )
         }
-        if latestActionPopupAnchorSessionByExtensionID[extensionId] == nil {
+        if actionPopupAnchorStore.latestSessionToken(for: extensionId) == nil {
             let windowId =
                 currentTab?.primaryWindowId
                 ?? browserManager?.windowRegistry?.activeWindow?.id

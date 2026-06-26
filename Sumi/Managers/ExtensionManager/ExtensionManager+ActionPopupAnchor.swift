@@ -5,16 +5,11 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager {
-    private static let actionPopupAnchorSessionTTL: TimeInterval = 30
-    private static let maxPendingActionPopupAnchors = 16
-
     func captureActionPopupAnchor(
         extensionId: String,
         windowId: UUID,
         profileId: UUID?
     ) -> UUID {
-        pruneExpiredActionPopupAnchors()
-
         let captureProfileId =
             profileId
             ?? browserManager?.windowRegistry?.windows[windowId].flatMap {
@@ -45,9 +40,7 @@ extension ExtensionManager {
             validatedRectInWindow: validatedRectInWindow
         )
 
-        pendingActionPopupAnchors[anchor.sessionToken] = anchor
-        latestActionPopupAnchorSessionByExtensionID[extensionId] = anchor.sessionToken
-        enforcePendingActionPopupAnchorLimit()
+        actionPopupAnchorStore.store(anchor)
 
         extensionRuntimeTrace(
             "actionPopupAnchor captured extensionId=\(extensionId) profileId=\(captureProfileId.uuidString) windowId=\(windowId.uuidString) sessionToken=\(anchor.sessionToken.uuidString) hasButtonView=\(buttonView != nil) hasRect=\(validatedRectInWindow != nil)"
@@ -64,15 +57,12 @@ extension ExtensionManager {
         source: ExtensionActionPopupAnchorSource,
         resolution: ExtensionActionPopupAnchorResolution
     )? {
-        pruneExpiredActionPopupAnchors()
-
         let presentationProfileId =
             profileId
             ?? currentProfileId
             ?? browserManager?.currentProfile?.id
 
-        let sessionToken = latestActionPopupAnchorSessionByExtensionID[extensionId]
-        let pendingAnchor = sessionToken.flatMap { pendingActionPopupAnchors[$0] }
+        let pendingAnchor = actionPopupAnchorStore.latestAnchor(for: extensionId)
 
         let targetWindowId =
             pendingAnchor?.windowID
@@ -84,7 +74,7 @@ extension ExtensionManager {
            let presentationProfileId,
            pendingAnchor.profileID != presentationProfileId
         {
-            clearPendingActionPopupAnchor(sessionToken: pendingAnchor.sessionToken)
+            actionPopupAnchorStore.consume(sessionToken: pendingAnchor.sessionToken)
             extensionRuntimeTrace(
                 "actionPopupAnchor stale session extensionId=\(extensionId) reason=profileMismatch capturedProfile=\(pendingAnchor.profileID.uuidString) resolvedProfile=\(presentationProfileId.uuidString)"
             )
@@ -174,17 +164,11 @@ extension ExtensionManager {
     }
 
     func consumePendingActionPopupAnchor(sessionToken: UUID?) {
-        guard let sessionToken else { return }
-        clearPendingActionPopupAnchor(sessionToken: sessionToken)
+        actionPopupAnchorStore.consume(sessionToken: sessionToken)
     }
 
     func clearActionPopupAnchors(notMatching profileId: UUID) {
-        let staleTokens = pendingActionPopupAnchors.compactMap { token, anchor in
-            anchor.profileID == profileId ? nil : token
-        }
-        for token in staleTokens {
-            clearPendingActionPopupAnchor(sessionToken: token)
-        }
+        actionPopupAnchorStore.clearAnchors(notMatching: profileId)
     }
 
     func presentResolvedExtensionActionPopup(
@@ -259,41 +243,5 @@ extension ExtensionManager {
 
         let anchorRect = extensionActionPopupAnchorRect(for: view)
         return view.convert(anchorRect, to: window.contentView)
-    }
-
-    private func pruneExpiredActionPopupAnchors() {
-        let now = Date()
-        let expiredTokens = pendingActionPopupAnchors.compactMap { token, anchor -> UUID? in
-            now.timeIntervalSince(anchor.capturedAt) > Self.actionPopupAnchorSessionTTL
-                ? token
-                : nil
-        }
-        for token in expiredTokens {
-            clearPendingActionPopupAnchor(sessionToken: token)
-        }
-    }
-
-    private func clearPendingActionPopupAnchor(sessionToken: UUID) {
-        guard let anchor = pendingActionPopupAnchors.removeValue(forKey: sessionToken) else {
-            return
-        }
-        if latestActionPopupAnchorSessionByExtensionID[anchor.extensionID] == sessionToken {
-            latestActionPopupAnchorSessionByExtensionID.removeValue(forKey: anchor.extensionID)
-        }
-    }
-
-    private func enforcePendingActionPopupAnchorLimit() {
-        guard pendingActionPopupAnchors.count > Self.maxPendingActionPopupAnchors else {
-            return
-        }
-
-        let sortedTokens = pendingActionPopupAnchors.values
-            .sorted { $0.capturedAt < $1.capturedAt }
-            .map(\.sessionToken)
-
-        let overflow = pendingActionPopupAnchors.count - Self.maxPendingActionPopupAnchors
-        for token in sortedTokens.prefix(overflow) {
-            clearPendingActionPopupAnchor(sessionToken: token)
-        }
     }
 }
