@@ -14,6 +14,7 @@ struct TabManagerSnapshotCache {
     private var spacePinnedTabsBySpace: [UUID: [SnapshotTab]] = [:]
     private var regularTabsBySpace: [UUID: [SnapshotTab]] = [:]
     private var folderSnapshotsBySpace: [UUID: [SnapshotFolder]] = [:]
+    private let materializer = TabStructuralSnapshotMaterializer()
 
     private var spacesDirty = true
     private var splitGroupsDirty = true
@@ -66,20 +67,11 @@ struct TabManagerSnapshotCache {
         let liveSpaceIds = Set(orderedSpaces.map(\.id))
 
         if spacesDirty {
-            spaceSnapshots = orderedSpaces.enumerated().map { index, space in
-                SnapshotSpace(
-                    id: space.id,
-                    name: space.name,
-                    icon: space.icon,
-                    index: index,
-                    workspaceThemeData: space.workspaceTheme.encoded,
-                    profileId: space.profileId
-                )
-            }
+            spaceSnapshots = materializer.makeSpaceSnapshots(spaces: orderedSpaces)
             spacesDirty = false
         }
         if splitGroupsDirty {
-            splitGroupSnapshots = SplitGroup.sanitized(tabManager.splitGroups)
+            splitGroupSnapshots = materializer.makeSplitGroupSnapshots(tabManager.splitGroups)
             splitGroupsDirty = false
         }
 
@@ -95,7 +87,7 @@ struct TabManagerSnapshotCache {
                 + regularTabsBySpace.values.reduce(0) { $0 + $1.count }
         )
 
-        for profileId in tabManager.pinnedByProfile.keys.sorted(by: uuidLessThan) {
+        for profileId in tabManager.pinnedByProfile.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
             tabSnapshots.append(contentsOf: pinnedTabsByProfile[profileId] ?? [])
         }
         for space in orderedSpaces {
@@ -109,17 +101,13 @@ struct TabManagerSnapshotCache {
             folderSnapshots.append(contentsOf: folderSnapshotsBySpace[space.id] ?? [])
         }
 
-        let state = TabSnapshotRepository.SnapshotState(
-            currentTabID: tabManager.persistableCurrentTabID(),
-            currentSpaceID: tabManager.currentSpace?.id
-        )
-
-        return TabSnapshotRepository.Snapshot(
+        return materializer.makeSnapshot(
             spaces: spaceSnapshots,
             tabs: tabSnapshots,
             folders: folderSnapshots,
             splitGroups: splitGroupSnapshots,
-            state: state
+            currentTabId: tabManager.persistableCurrentTabID(),
+            currentSpaceId: tabManager.currentSpace?.id
         )
     }
 
@@ -135,25 +123,11 @@ struct TabManagerSnapshotCache {
         }
 
         for profileId in profileIdsToRefresh {
-            let orderedPins = Array(tabManager.pinnedByProfile[profileId] ?? []).sorted { $0.index < $1.index }
-            pinnedTabsByProfile[profileId] = orderedPins.map { pin in
-                SnapshotTab(
-                    id: pin.id,
-                    urlString: pin.launchURL.absoluteString,
-                    name: pin.title,
-                    index: pin.index,
-                    spaceId: nil,
-                    isPinned: true,
-                    isSpacePinned: false,
-                    profileId: profileId,
-                    executionProfileId: pin.executionProfileId,
-                    folderId: nil,
-                    iconAsset: pin.iconAsset,
-                    currentURLString: pin.launchURL.absoluteString,
-                    canGoBack: false,
-                    canGoForward: false
-                )
-            }
+            let pins = Array(tabManager.pinnedByProfile[profileId] ?? [])
+            pinnedTabsByProfile[profileId] = materializer.makePinnedTabSnapshots(
+                profileId: profileId,
+                pins: pins
+            )
         }
         dirtyPinnedProfileIds.removeAll(keepingCapacity: true)
     }
@@ -172,25 +146,11 @@ struct TabManagerSnapshotCache {
                 spacePinnedTabsBySpace.removeValue(forKey: spaceId)
                 continue
             }
-            let shortcutPins = Array(tabManager.spacePinnedShortcuts[spaceId] ?? []).sorted { $0.index < $1.index }
-            spacePinnedTabsBySpace[spaceId] = shortcutPins.map { pin in
-                SnapshotTab(
-                    id: pin.id,
-                    urlString: pin.launchURL.absoluteString,
-                    name: pin.title,
-                    index: pin.index,
-                    spaceId: spaceId,
-                    isPinned: false,
-                    isSpacePinned: true,
-                    profileId: nil,
-                    executionProfileId: pin.executionProfileId,
-                    folderId: pin.folderId,
-                    iconAsset: pin.iconAsset,
-                    currentURLString: pin.launchURL.absoluteString,
-                    canGoBack: false,
-                    canGoForward: false
-                )
-            }
+            let shortcutPins = Array(tabManager.spacePinnedShortcuts[spaceId] ?? [])
+            spacePinnedTabsBySpace[spaceId] = materializer.makeSpacePinnedTabSnapshots(
+                spaceId: spaceId,
+                pins: shortcutPins
+            )
         }
         dirtySpacePinnedSpaceIds.removeAll(keepingCapacity: true)
     }
@@ -210,25 +170,11 @@ struct TabManagerSnapshotCache {
                 continue
             }
             let regularTabs = Array(tabManager.tabsBySpace[spaceId] ?? [])
-                .filter { tabManager.shouldPersistRegularTab($0) }
-            regularTabsBySpace[spaceId] = regularTabs.map { tab in
-                SnapshotTab(
-                    id: tab.id,
-                    urlString: tab.url.absoluteString,
-                    name: tab.name,
-                    index: tab.index,
-                    spaceId: spaceId,
-                    isPinned: false,
-                    isSpacePinned: false,
-                    profileId: tab.profileId,
-                    executionProfileId: nil,
-                    folderId: tab.folderId,
-                    iconAsset: nil,
-                    currentURLString: tab.url.absoluteString,
-                    canGoBack: tab.canGoBack,
-                    canGoForward: tab.canGoForward
-                )
-            }
+            regularTabsBySpace[spaceId] = materializer.makeRegularTabSnapshots(
+                spaceId: spaceId,
+                tabs: regularTabs,
+                shouldPersistRegularTab: tabManager.shouldPersistRegularTab
+            )
         }
         dirtyRegularTabSpaceIds.removeAll(keepingCapacity: true)
     }
@@ -247,25 +193,13 @@ struct TabManagerSnapshotCache {
                 folderSnapshotsBySpace.removeValue(forKey: spaceId)
                 continue
             }
-            let orderedFolders = (tabManager.foldersBySpace[spaceId] ?? []).sorted { $0.index < $1.index }
-            folderSnapshotsBySpace[spaceId] = orderedFolders.map { folder in
-                SnapshotFolder(
-                    id: folder.id,
-                    name: folder.name,
-                    icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(folder.icon),
-                    color: folder.color.toHexString() ?? "#000000",
-                    spaceId: spaceId,
-                    parentFolderId: folder.parentFolderId,
-                    isOpen: folder.isOpen,
-                    index: folder.index
-                )
-            }
+            let folders = tabManager.foldersBySpace[spaceId] ?? []
+            folderSnapshotsBySpace[spaceId] = materializer.makeFolderSnapshots(
+                spaceId: spaceId,
+                folders: folders
+            )
         }
         dirtyFolderSpaceIds.removeAll(keepingCapacity: true)
-    }
-
-    private func uuidLessThan(_ lhs: UUID, _ rhs: UUID) -> Bool {
-        lhs.uuidString < rhs.uuidString
     }
 }
 
@@ -695,18 +629,6 @@ extension TabManager {
         return currentTab.id
     }
 
-    private func nonPersistableRegularTabIDs(from ids: Set<UUID>) -> Set<UUID> {
-        guard ids.isEmpty == false else { return [] }
-
-        var deletedIds = Set<UUID>()
-        for tabs in tabsBySpace.values {
-            for tab in tabs where ids.contains(tab.id) && shouldPersistRegularTab(tab) == false {
-                deletedIds.insert(tab.id)
-            }
-        }
-        return deletedIds
-    }
-
     func _buildSnapshot() -> TabSnapshotRepository.Snapshot {
         PerformanceTrace.withInterval("TabManager._buildSnapshot") {
             snapshotCache.makeSnapshot(for: self)
@@ -716,135 +638,18 @@ extension TabManager {
     func _buildStructuralDelta(
         from dirtySet: TabStructuralDirtySet
     ) -> TabSnapshotRepository.StructuralDelta {
-        TabSnapshotRepository.StructuralDelta(
-            spaces: makeDirtySpaceSnapshots(for: dirtySet.dirtySpaceIds),
-            tabs: makeDirtyTabSnapshots(for: dirtySet.dirtyTabIds),
-            folders: makeDirtyFolderSnapshots(for: dirtySet.dirtyFolderIds),
-            splitGroups: dirtySet.splitGroupsDirty ? SplitGroup.sanitized(splitGroups) : nil,
-            deletedSpaceIds: dirtySet.deletedSpaceIds,
-            deletedTabIds: dirtySet.deletedTabIds
-                .union(nonPersistableRegularTabIDs(from: dirtySet.dirtyTabIds)),
-            deletedFolderIds: dirtySet.deletedFolderIds,
-            state: TabSnapshotRepository.SnapshotState(
-                currentTabID: persistableCurrentTabID(),
-                currentSpaceID: currentSpace?.id
-            )
+        TabStructuralSnapshotMaterializer().makeStructuralDelta(
+            from: dirtySet,
+            spaces: spaces,
+            pinnedByProfile: pinnedByProfile,
+            spacePinnedShortcuts: spacePinnedShortcuts,
+            tabsBySpace: tabsBySpace,
+            foldersBySpace: foldersBySpace,
+            splitGroups: splitGroups,
+            currentTabId: persistableCurrentTabID(),
+            currentSpaceId: currentSpace?.id,
+            shouldPersistRegularTab: shouldPersistRegularTab
         )
-    }
-
-    private func makeDirtySpaceSnapshots(for ids: Set<UUID>) -> [TabSnapshotRepository.SnapshotSpace] {
-        guard ids.isEmpty == false else { return [] }
-        return spaces.enumerated().compactMap { index, space in
-            guard ids.contains(space.id) else { return nil }
-            return TabSnapshotRepository.SnapshotSpace(
-                id: space.id,
-                name: space.name,
-                icon: space.icon,
-                index: index,
-                workspaceThemeData: space.workspaceTheme.encoded,
-                profileId: space.profileId
-            )
-        }
-    }
-
-    private func makeDirtyTabSnapshots(for ids: Set<UUID>) -> [TabSnapshotRepository.SnapshotTab] {
-        guard ids.isEmpty == false else { return [] }
-        var snapshots: [TabSnapshotRepository.SnapshotTab] = []
-
-        for profileId in pinnedByProfile.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
-            let orderedPins = Array(pinnedByProfile[profileId] ?? []).sorted { $0.index < $1.index }
-            for pin in orderedPins where ids.contains(pin.id) {
-                snapshots.append(
-                    TabSnapshotRepository.SnapshotTab(
-                        id: pin.id,
-                        urlString: pin.launchURL.absoluteString,
-                        name: pin.title,
-                        index: pin.index,
-                        spaceId: nil,
-                        isPinned: true,
-                        isSpacePinned: false,
-                        profileId: profileId,
-                        executionProfileId: pin.executionProfileId,
-                        folderId: nil,
-                        iconAsset: pin.iconAsset,
-                        currentURLString: pin.launchURL.absoluteString,
-                        canGoBack: false,
-                        canGoForward: false
-                    )
-                )
-            }
-        }
-
-        for space in spaces {
-            let shortcutPins = Array(spacePinnedShortcuts[space.id] ?? []).sorted { $0.index < $1.index }
-            for pin in shortcutPins where ids.contains(pin.id) {
-                snapshots.append(
-                    TabSnapshotRepository.SnapshotTab(
-                        id: pin.id,
-                        urlString: pin.launchURL.absoluteString,
-                        name: pin.title,
-                        index: pin.index,
-                        spaceId: space.id,
-                        isPinned: false,
-                        isSpacePinned: true,
-                        profileId: nil,
-                        executionProfileId: pin.executionProfileId,
-                        folderId: pin.folderId,
-                        iconAsset: pin.iconAsset,
-                        currentURLString: pin.launchURL.absoluteString,
-                        canGoBack: false,
-                        canGoForward: false
-                    )
-                )
-            }
-
-            let regularTabs = Array(tabsBySpace[space.id] ?? [])
-            for tab in regularTabs where ids.contains(tab.id) && shouldPersistRegularTab(tab) {
-                snapshots.append(
-                    TabSnapshotRepository.SnapshotTab(
-                        id: tab.id,
-                        urlString: tab.url.absoluteString,
-                        name: tab.name,
-                        index: tab.index,
-                        spaceId: space.id,
-                        isPinned: false,
-                        isSpacePinned: false,
-                        profileId: tab.profileId,
-                        executionProfileId: nil,
-                        folderId: tab.folderId,
-                        iconAsset: nil,
-                        currentURLString: tab.url.absoluteString,
-                        canGoBack: tab.canGoBack,
-                        canGoForward: tab.canGoForward
-                    )
-                )
-            }
-        }
-
-        return snapshots
-    }
-
-    private func makeDirtyFolderSnapshots(for ids: Set<UUID>) -> [TabSnapshotRepository.SnapshotFolder] {
-        guard ids.isEmpty == false else { return [] }
-        var snapshots: [TabSnapshotRepository.SnapshotFolder] = []
-        for space in spaces {
-            let orderedFolders = (foldersBySpace[space.id] ?? []).sorted { $0.index < $1.index }
-            for folder in orderedFolders where ids.contains(folder.id) {
-                snapshots.append(
-                    TabSnapshotRepository.SnapshotFolder(
-                        id: folder.id,
-                        name: folder.name,
-                        icon: SumiZenFolderIconCatalog.normalizedFolderIconValue(folder.icon),
-                        color: folder.color.toHexString() ?? "#000000",
-                        spaceId: space.id,
-                        parentFolderId: folder.parentFolderId,
-                        isOpen: folder.isOpen,
-                        index: folder.index
-                    )
-                )
-            }
-        }
-        return snapshots
     }
 
     func markSnapshotCacheDirty() {
