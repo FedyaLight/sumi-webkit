@@ -127,8 +127,17 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(webViewCoordinatorSource.contains("installNowPlayingSessionObservationIfNeeded"))
         XCTAssertTrue(webViewCoordinatorSource.contains("postMediaTouchBarRecoveryRequest"))
         XCTAssertTrue(webViewCoordinatorSource.contains("requestFullscreenMediaExit"))
-        XCTAssertTrue(webViewCoordinatorSource.contains("webView.sumiTabContentView.removeFromSuperview()"))
+        XCTAssertTrue(webViewCoordinatorSource.contains("host.removeFromSuperview()"))
         XCTAssertFalse(webViewCoordinatorSource.contains("closeAllMediaPresentations"))
+
+        let containerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/SumiWebViewContainerView.swift"
+            ),
+            encoding: .utf8
+        )
+        XCTAssertTrue(containerSource.contains("preservesDisplayedContentOnNextRemoval"))
+        XCTAssertTrue(containerSource.contains("webView.sumiTabContentView.removeFromSuperview()"))
 
         let compositorSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
