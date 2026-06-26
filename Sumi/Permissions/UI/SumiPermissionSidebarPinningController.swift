@@ -3,6 +3,8 @@ import Foundation
 @MainActor
 final class SumiPermissionSidebarPinningController {
     private struct SessionRecord {
+        let pageId: String
+        let windowID: UUID
         let source: SidebarTransientPresentationSource
         let token: SidebarTransientSessionToken
     }
@@ -24,8 +26,25 @@ final class SumiPermissionSidebarPinningController {
             )
         }
 
-        for query in promptableQueries where sessionsByQueryID[query.id] == nil {
-            guard let windowState = windowForPageId(query.pageId) else { continue }
+        for query in promptableQueries {
+            guard let windowState = windowForPageId(query.pageId) else {
+                finishSession(
+                    queryID: query.id,
+                    reason: "\(reason):window-missing"
+                )
+                continue
+            }
+
+            if let record = sessionsByQueryID[query.id] {
+                guard record.pageId != query.pageId || record.windowID != windowState.id else {
+                    continue
+                }
+                finishSession(
+                    queryID: query.id,
+                    reason: "\(reason):window-changed"
+                )
+            }
+
             beginSession(
                 for: query,
                 in: windowState,
@@ -48,6 +67,8 @@ final class SumiPermissionSidebarPinningController {
             path: "SumiPermissionSidebarPinningController.\(reason)"
         )
         sessionsByQueryID[query.id] = SessionRecord(
+            pageId: query.pageId,
+            windowID: windowState.id,
             source: source,
             token: token
         )
