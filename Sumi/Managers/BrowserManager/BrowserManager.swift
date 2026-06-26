@@ -217,6 +217,9 @@ class BrowserManager: ObservableObject {
         guard let self else { return [] }
         return self.splitManager.visibleTabIds(for: windowId)
     }
+    lazy var tabCloseFallbackPlanner = BrowserTabCloseFallbackPlanner(
+        selectionService: shellSelectionService
+    )
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
             self?.tabManager.tab(for: tabId)
@@ -1492,7 +1495,13 @@ class BrowserManager: ObservableObject {
         }
 
         let wasCurrent = windowState.currentTabId == tab.id
-        let fallback = wasCurrent ? fallbackTab(afterClosing: tab, in: windowState) : nil
+        let fallback = wasCurrent
+            ? tabCloseFallbackPlanner.fallbackAfterClosingRegularTab(
+                tab,
+                in: windowState,
+                tabStore: tabManager.runtimeStore
+            )
+            : nil
         if let fallback {
             selectTab(fallback, in: windowState)
             performImmediateVisualHandoffIfPossible(in: windowState)
@@ -2225,8 +2234,11 @@ class BrowserManager: ObservableObject {
             windowState.currentTabId == tab.id
             || (tab.shortcutPinId != nil && windowState.currentShortcutPinId == tab.shortcutPinId)
         let fallback = wasCurrent
-            ? historicalFallbackTab(afterClosing: tab, in: windowState)
-                ?? preferredRegularTabForWindow(windowState)
+            ? tabCloseFallbackPlanner.fallbackAfterClosingShortcutLiveTab(
+                tab,
+                in: windowState,
+                tabStore: tabManager.runtimeStore
+            )
             : nil
 
         if let fallback {
@@ -2282,106 +2294,6 @@ class BrowserManager: ObservableObject {
         } else {
             showEmptyState(in: windowState)
         }
-    }
-
-    private func fallbackTab(afterClosing tab: Tab, in windowState: BrowserWindowState) -> Tab? {
-        let targetSpaceId = tab.spaceId ?? windowState.currentSpaceId
-        guard let targetSpaceId,
-              let space = tabManager.spaces.first(where: { $0.id == targetSpaceId })
-        else {
-            return preferredRegularTabForWindow(windowState)
-        }
-
-        let spaceTabs = tabManager.tabs(in: space)
-        let regularTabs = spaceTabs.filter { $0.id != tab.id }
-        let regularTabById = tabLookup(excluding: tab.id, in: spaceTabs)
-        if let historyMatch = historicalFallbackTab(
-            afterClosing: tab,
-            in: windowState,
-            targetSpaceId: targetSpaceId,
-            regularTabsById: regularTabById
-        ) {
-            return historyMatch
-        }
-
-        guard !regularTabs.isEmpty else {
-            return nil
-        }
-
-        if let historyMatch = firstTab(
-            matching: windowState.recentRegularTabIdsBySpace[targetSpaceId],
-            in: regularTabById
-        ) {
-            return historyMatch
-        }
-
-        if let closingIndex = spaceTabs.firstIndex(where: { $0.id == tab.id }) {
-            if regularTabs.indices.contains(closingIndex) {
-                return regularTabs[closingIndex]
-            }
-            if regularTabs.indices.contains(max(0, closingIndex - 1)) {
-                return regularTabs[max(0, closingIndex - 1)]
-            }
-        }
-
-        return regularTabs.last
-    }
-
-    private func historicalFallbackTab(afterClosing tab: Tab, in windowState: BrowserWindowState) -> Tab? {
-        let targetSpaceId = tab.spaceId ?? windowState.currentSpaceId
-        guard let targetSpaceId,
-              let space = tabManager.spaces.first(where: { $0.id == targetSpaceId })
-        else {
-            return nil
-        }
-
-        return historicalFallbackTab(
-            afterClosing: tab,
-            in: windowState,
-            targetSpaceId: targetSpaceId,
-            regularTabsById: tabLookup(excluding: tab.id, in: tabManager.tabs(in: space))
-        )
-    }
-
-    private func historicalFallbackTab(
-        afterClosing tab: Tab,
-        in windowState: BrowserWindowState,
-        targetSpaceId: UUID,
-        regularTabsById: [Tab.ID: Tab]
-    ) -> Tab? {
-        for item in windowState.recentSelectionItemsBySpace[targetSpaceId] ?? [] {
-            switch item {
-            case let .regularTab(tabId):
-                if let regularTab = regularTabsById[tabId] {
-                    return regularTab
-                }
-            case let .shortcutPin(pinId):
-                if let liveTab = tabManager.shortcutLiveTab(for: pinId, in: windowState.id),
-                   liveTab.id != tab.id,
-                   liveTab.shortcutPinRole == .essential || liveTab.spaceId == targetSpaceId {
-                    return liveTab
-                }
-            }
-        }
-
-        return nil
-    }
-
-    private func tabLookup(excluding excludedTabId: Tab.ID, in tabs: [Tab]) -> [Tab.ID: Tab] {
-        tabs.reduce(into: [:]) { lookup, tab in
-            guard tab.id != excludedTabId, lookup[tab.id] == nil else { return }
-            lookup[tab.id] = tab
-        }
-    }
-
-    private func firstTab(matching tabIds: [Tab.ID]?, in tabsById: [Tab.ID: Tab]) -> Tab? {
-        guard let tabIds else { return nil }
-        for tabId in tabIds {
-            if let tab = tabsById[tabId] {
-                return tab
-            }
-        }
-        return nil
     }
 
     func showEmptyState(in windowState: BrowserWindowState) {
