@@ -127,12 +127,12 @@ final class ExtensionActionVisibilityTests: XCTestCase {
         let source = try Self.source(named: "Sumi/Components/Extensions/ExtensionActionView.swift")
 
         XCTAssertTrue(source.contains("title: \"Pin to Toolbar\""))
-        XCTAssertTrue(source.contains("browserManager.extensionsModule.pinToToolbar(ext.id)"))
+        XCTAssertTrue(source.contains("actionPresentationContext.pinToToolbar(extensionId: ext.id)"))
         XCTAssertTrue(source.contains("title: \"Unpin from Toolbar\""))
-        XCTAssertTrue(source.contains("browserManager.extensionsModule.unpinFromToolbar(ext.id)"))
+        XCTAssertTrue(source.contains("actionPresentationContext.unpinFromToolbar(extensionId: ext.id)"))
         XCTAssertTrue(source.contains("if ext.hasOptionsPage"))
         XCTAssertTrue(source.contains("title: \"Options\""))
-        XCTAssertTrue(source.contains("browserManager.extensionsModule.openOptionsPage"))
+        XCTAssertTrue(source.contains("actionPresentationContext.openOptionsPage(for: ext)"))
         XCTAssertFalse(source.contains("title: \"Open Extension Action\""))
     }
 
@@ -157,16 +157,20 @@ final class ExtensionActionVisibilityTests: XCTestCase {
     }
 
     func testExtensionActionColdStartClickUsesWindowSelectionFallbackAndLiveAnchorRegistration() throws {
-        let source = try Self.source(named: "Sumi/Components/Extensions/ExtensionActionView.swift")
+        let actionViewSource = try Self.source(named: "Sumi/Components/Extensions/ExtensionActionView.swift")
+        let contextSource = try Self.source(
+            named: "Sumi/Components/Extensions/ExtensionActionPresentationContext.swift"
+        )
 
-        XCTAssertTrue(source.contains("currentExtensionActionTab"))
-        XCTAssertTrue(source.contains("currentExtensionActionTabForClick"))
-        XCTAssertTrue(source.contains("windowState.currentTabId.flatMap"))
-        XCTAssertTrue(source.contains("browserManager.shellSelectionService.currentTab"))
-        XCTAssertTrue(source.contains("browserManager.tabManager.hasLoadedInitialData"))
-        XCTAssertTrue(source.contains("ActionAnchorHostView"))
-        XCTAssertTrue(source.contains("override func viewDidMoveToWindow()"))
-        XCTAssertTrue(source.contains("registerAnchor()"))
+        XCTAssertTrue(actionViewSource.contains("actionPresentationContext.presentActionPopup(for: ext)"))
+        XCTAssertTrue(contextSource.contains("currentActionTab"))
+        XCTAssertTrue(contextSource.contains("currentActionTabForClick"))
+        XCTAssertTrue(contextSource.contains("windowState.currentTabId.flatMap"))
+        XCTAssertTrue(contextSource.contains("browserManager.shellSelectionService.currentTab"))
+        XCTAssertTrue(contextSource.contains("browserManager.tabManager.hasLoadedInitialData"))
+        XCTAssertTrue(actionViewSource.contains("ActionAnchorHostView"))
+        XCTAssertTrue(actionViewSource.contains("override func viewDidMoveToWindow()"))
+        XCTAssertTrue(actionViewSource.contains("registerAnchor()"))
     }
 
     func testExtensionActionClickSupportsDefaultActionWhenNoTabIsAvailable() throws {

@@ -60,12 +60,12 @@ final class SafariExtensionActionPopupActiveTabTests: XCTestCase {
         )
     }
 
-    func testExtensionActionClickResolvesTabOnlyFromClickedWindowState() throws {
+    func testExtensionActionPresentationContextResolvesTabOnlyFromClickedWindowState() throws {
         let actionSource = try source(
-            named: "Sumi/Components/Extensions/ExtensionActionView.swift"
+            named: "Sumi/Components/Extensions/ExtensionActionPresentationContext.swift"
         )
         let clickResolver = try methodBody(
-            containing: "private var currentExtensionActionTab",
+            containing: "private var currentActionTab",
             in: actionSource
         )
 

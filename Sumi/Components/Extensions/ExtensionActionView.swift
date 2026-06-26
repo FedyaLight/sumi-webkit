@@ -664,62 +664,16 @@ struct ExtensionActionButton: View {
 
     private func showExtensionPopup() {
         Task { @MainActor in
-            let currentTab = await currentExtensionActionTabForClick()
-            let profileId =
-                currentTab?.profileId
-                ?? windowState.currentProfileId
-                ?? browserManager.currentProfile?.id
-            browserManager.extensionsModule.captureActionPopupAnchor(
-                extensionId: ext.id,
-                windowId: windowState.id,
-                profileId: profileId
-            )
-            let result = await browserManager.extensionsModule
-                .openActionPopupFromURLHub(
-                    extensionId: ext.id,
-                    currentTab: currentTab
-                )
-            guard result.opened == false else { return }
-            browserManager.showBrowserExtensionsUnavailableAlert(
-                extensionName: ext.name,
-                informativeText: result.message
-            )
+            await actionPresentationContext.presentActionPopup(for: ext)
         }
     }
 
-    @MainActor
-    private func currentExtensionActionTabForClick() async -> Tab? {
-        if let currentTab = currentExtensionActionTab {
-            return currentTab
-        }
-
-        guard windowState.isAwaitingInitialSessionResolution
-                || !browserManager.tabManager.hasLoadedInitialData
-        else {
-            return nil
-        }
-
-        for _ in 0..<30 {
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            if let currentTab = currentExtensionActionTab {
-                return currentTab
-            }
-            if !windowState.isAwaitingInitialSessionResolution
-                && browserManager.tabManager.hasLoadedInitialData
-            {
-                return nil
-            }
-        }
-        return currentExtensionActionTab
-    }
-
-    private var currentExtensionActionTab: Tab? {
-        browserManager.currentTab(for: windowState)
-            ?? windowState.currentTabId.flatMap { browserManager.tabManager.tab(for: $0) }
-            ?? browserManager.shellSelectionService.currentTab(
-                for: windowState,
-                tabStore: browserManager.tabManager.runtimeStore
-            )
+    private var actionPresentationContext: ExtensionActionPresentationContext {
+        ExtensionActionPresentationContext(
+            browserManager: browserManager,
+            windowState: windowState,
+            profileId: profileId
+        )
     }
 
     private func extensionContextMenuEntries() -> [SidebarContextMenuEntry] {
@@ -730,7 +684,7 @@ struct ExtensionActionButton: View {
                     systemImage: "gearshape",
                     classification: .presentationOnly,
                     action: {
-                        browserManager.openSettingsTab(selecting: .extensions, in: windowState)
+                        actionPresentationContext.openExtensionsSettings()
                     }
                 )
             ),
@@ -745,7 +699,7 @@ struct ExtensionActionButton: View {
                         systemImage: "pin",
                         classification: .presentationOnly,
                         action: {
-                            browserManager.extensionsModule.pinToToolbar(ext.id)
+                            actionPresentationContext.pinToToolbar(extensionId: ext.id)
                         }
                     )
                 )
@@ -758,7 +712,7 @@ struct ExtensionActionButton: View {
                         systemImage: "pin.slash",
                         classification: .presentationOnly,
                         action: {
-                            browserManager.extensionsModule.unpinFromToolbar(ext.id)
+                            actionPresentationContext.unpinFromToolbar(extensionId: ext.id)
                         }
                     )
                 )
@@ -774,10 +728,7 @@ struct ExtensionActionButton: View {
                         classification: .presentationOnly,
                         action: {
                             Task { @MainActor in
-                                await browserManager.extensionsModule.openOptionsPage(
-                                    extensionId: ext.id,
-                                    profileId: extensionActionProfileId
-                                )
+                                await actionPresentationContext.openOptionsPage(for: ext)
                             }
                         }
                     )
@@ -786,13 +737,6 @@ struct ExtensionActionButton: View {
         }
 
         return entries
-    }
-
-    private var extensionActionProfileId: UUID? {
-        profileId
-            ?? currentExtensionActionTab?.profileId
-            ?? windowState.currentProfileId
-            ?? browserManager.currentProfile?.id
     }
 }
 

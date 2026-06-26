@@ -5,9 +5,33 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionActionPopupAnchorTests: XCTestCase {
+    func testExtensionActionViewDelegatesRuntimePresentationToContext() throws {
+        let actionView = try String(
+            contentsOf: projectURL("Sumi/Components/Extensions/ExtensionActionView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(actionView.contains("ExtensionActionPresentationContext("))
+        XCTAssertTrue(actionView.contains("presentActionPopup(for: ext)"))
+        XCTAssertFalse(
+            actionView.contains("openActionPopupFromURLHub("),
+            "SwiftUI action controls should not call the extension runtime popup path directly"
+        )
+        XCTAssertFalse(
+            actionView.contains("currentActionTabForClick"),
+            "Clicked-tab resolution should live in the action presentation context"
+        )
+    }
+
     func testClickCapturesAnchorBeforeAsyncRuntimeLoad() throws {
         let actionView = try String(
             contentsOf: projectURL("Sumi/Components/Extensions/ExtensionActionView.swift"),
+            encoding: .utf8
+        )
+        let actionContext = try String(
+            contentsOf: projectURL(
+                "Sumi/Components/Extensions/ExtensionActionPresentationContext.swift"
+            ),
             encoding: .utf8
         )
         let uiSource = try String(
@@ -16,15 +40,22 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
         )
 
         XCTAssertTrue(
-            actionView.contains("captureActionPopupAnchor("),
-            "URL-hub click must capture the popup anchor before async runtime work"
+            actionView.contains("actionPresentationContext.presentActionPopup(for: ext)"),
+            "ExtensionActionButton should delegate popup presentation to the action context"
         )
         XCTAssertTrue(
-            actionView.range(
+            actionContext.contains("captureActionPopupAnchor("),
+            "URL-hub click context must capture the popup anchor before async runtime work"
+        )
+        XCTAssertTrue(
+            actionContext.range(
                 of: "captureActionPopupAnchor",
                 options: .backwards
             ).map { captureRange in
-                actionView.range(of: "openActionPopupFromURLHub", range: captureRange.upperBound..<actionView.endIndex) != nil
+                actionContext.range(
+                    of: "openActionPopupFromURLHub",
+                    range: captureRange.upperBound..<actionContext.endIndex
+                ) != nil
             } == true,
             "Anchor capture must precede openActionPopupFromURLHub in the click handler"
         )
