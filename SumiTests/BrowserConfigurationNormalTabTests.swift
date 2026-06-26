@@ -676,23 +676,37 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     }
 
     func testBrowserManagerDoesNotConstructSumiScriptsManagerAtStartup() throws {
-        let source = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
+        let browserManagerSource = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
+        let runtimeWiringSource = try Self.source(
+            named: "Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift"
+        )
 
-        XCTAssertTrue(source.contains("let userscriptsModule: SumiUserscriptsModule"))
-        XCTAssertTrue(source.contains("self.userscriptsModule.attach(browserManager: self)"))
-        XCTAssertFalse(source.contains("let sumiScriptsManager"))
-        XCTAssertFalse(source.contains("self.sumiScriptsManager"))
-        XCTAssertFalse(source.contains("SumiScriptsManager("))
+        XCTAssertTrue(browserManagerSource.contains("let userscriptsModule: SumiUserscriptsModule"))
+        XCTAssertTrue(
+            runtimeWiringSource.contains(
+                "browserManager.userscriptsModule.attach(browserManager: browserManager)"
+            )
+        )
+        XCTAssertFalse(browserManagerSource.contains("let sumiScriptsManager"))
+        XCTAssertFalse(browserManagerSource.contains("self.sumiScriptsManager"))
+        XCTAssertFalse(browserManagerSource.contains("SumiScriptsManager("))
     }
 
     func testBrowserManagerDoesNotConstructExtensionManagerAtStartup() throws {
-        let source = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
+        let browserManagerSource = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
+        let runtimeWiringSource = try Self.source(
+            named: "Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift"
+        )
 
-        XCTAssertTrue(source.contains("let extensionsModule: SumiExtensionsModule"))
-        XCTAssertTrue(source.contains("self.extensionsModule.attach(browserManager: self)"))
-        XCTAssertFalse(source.contains("let extensionManager"))
-        XCTAssertFalse(source.contains("self.extensionManager"))
-        XCTAssertFalse(source.contains("ExtensionManager("))
+        XCTAssertTrue(browserManagerSource.contains("let extensionsModule: SumiExtensionsModule"))
+        XCTAssertTrue(
+            runtimeWiringSource.contains(
+                "browserManager.extensionsModule.attach(browserManager: browserManager)"
+            )
+        )
+        XCTAssertFalse(browserManagerSource.contains("let extensionManager"))
+        XCTAssertFalse(browserManagerSource.contains("self.extensionManager"))
+        XCTAssertFalse(browserManagerSource.contains("ExtensionManager("))
     }
 
     private func assertNoTabSuspensionBridge(

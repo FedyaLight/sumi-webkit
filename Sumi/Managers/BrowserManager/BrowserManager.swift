@@ -504,23 +504,7 @@ class BrowserManager: ObservableObject {
         )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
-        self.compositorManager.browserManager = self
-        self.tabSuspensionService.attach(browserManager: self)
-        self.backgroundMediaOptimizationService.attach(browserManager: self)
-        self.splitManager.browserManager = self
-        self.splitManager.windowRegistry = self.windowRegistry
-        // Note: settingsManager will be injected later, so we skip initialization here
-        self.tabManager.browserManager = self
-        self.tabManager.reattachBrowserManager(self)
-        self.liveFolderManager.attach(browserManager: self)
-        self.downloadManager.browserManager = self
-        self.extensionsModule.attach(browserManager: self)
-        self.userscriptsModule.attach(browserManager: self)
-        self.boostsModule.attach(browserManager: self)
-        bindTabManagerStructuralUpdates()
-        self.auxiliaryWindowManager.attach(browserManager: self)
-        self.glanceManager.attach(browserManager: self)
-        self.authenticationManager.attach(browserManager: self)
+        structuralChangeCancellable = BrowserManagerRuntimeWiring.attach(to: self)
 
         tabManagerLoadObserverToken = NotificationCenter.default.addObserver(
             forName: .tabManagerDidLoadInitialData,
@@ -547,20 +531,6 @@ class BrowserManager: ObservableObject {
         }
 
         beginProtectionRestoreForStartupIfNeeded()
-    }
-
-    private func bindTabManagerStructuralUpdates() {
-        structuralChangeCancellable = tabManager.structuralChanges
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.tabStructuralRevision &+= 1
-                self?.tabSuspensionService.scheduleProactiveTimerReconcile(
-                    reason: "tab-structure-changed"
-                )
-                self?.backgroundMediaOptimizationService.scheduleReconcile(
-                    reason: "tab-structure-changed"
-                )
-            }
     }
 
     func showBrowserExtensionsUnavailableAlert(
