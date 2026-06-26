@@ -404,6 +404,38 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(coordinator.isWebViewProtectedFromCompositorMutation(webView))
     }
 
+    func testCloneWebViewPrimaryWindowSelectionDoesNotDependOnDictionaryOrder() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+        let creationSlice = try sourceSlice(
+            source,
+            from: "func getOrCreateWebView",
+            to: "private func deferWebViewCreationForInitialDocumentWarmupIfNeeded"
+        )
+
+        XCTAssertTrue(creationSlice.contains("primaryWindowIdForClone"))
+        XCTAssertFalse(creationSlice.contains("otherWindows.first"))
+        XCTAssertFalse(creationSlice.contains("first!.key"))
+
+        let policySlice = try sourceSlice(
+            source,
+            from: "private func primaryWindowIdForClone",
+            to: "private func deferWebViewCreationForInitialDocumentWarmupIfNeeded"
+        )
+
+        XCTAssertTrue(policySlice.contains("tab.primaryWindowId"))
+        XCTAssertTrue(policySlice.contains("otherWindows[primaryWindowId] != nil"))
+        XCTAssertTrue(policySlice.contains("otherWindows.keys.min"))
+        XCTAssertTrue(policySlice.contains("uuidString <"))
+    }
+
     func testClosingAndSpaceSwitchPathsPerformVisualHandoffBeforeRuntimeCleanup() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

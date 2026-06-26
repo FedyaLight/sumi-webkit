@@ -996,10 +996,31 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         } else {
             // Another window is already displaying this tab
             // Create a "clone" WebView for this window
-            let cloneWebView = createCloneWebView(for: tab, in: windowId, primaryWindowId: otherWindows.first!.key)
+            let primaryWindowId = primaryWindowIdForClone(
+                of: tab,
+                otherWindows: otherWindows
+            )
+            let cloneWebView = createCloneWebView(
+                for: tab,
+                in: windowId,
+                primaryWindowId: primaryWindowId
+            )
             
             return cloneWebView
         }
+    }
+
+    private func primaryWindowIdForClone(
+        of tab: Tab,
+        otherWindows: [UUID: WKWebView]
+    ) -> UUID {
+        if let primaryWindowId = tab.primaryWindowId,
+           otherWindows[primaryWindowId] != nil
+        {
+            return primaryWindowId
+        }
+
+        return otherWindows.keys.min { $0.uuidString < $1.uuidString }!
     }
 
     private func deferWebViewCreationForInitialDocumentWarmupIfNeeded(
