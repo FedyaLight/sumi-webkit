@@ -310,8 +310,7 @@ class BrowserManager: ObservableObject {
     private var startupProtectionRestoreTask: Task<Void, Never>?
     private(set) var hasFinishedStartupProtectionRestore = false
     private var deferredStartupBackgroundTabIds: Set<UUID> = []
-    private var pendingUserActivationsByWindow: [UUID: PendingUserTabActivation] = [:]
-    private var userActivationFlushScheduledWindows: Set<UUID> = []
+    private let windowTabActivationBatcher = WindowTabActivationBatcher()
     private var deferredHistorySwipeWindowMutationsByWindow: [UUID: DeferredHistorySwipeWindowMutations] = [:]
 
     private func adoptProfileIfNeeded(
@@ -1194,14 +1193,9 @@ class BrowserManager: ObservableObject {
         findManager.updateCurrentTab(activePageTabForActiveWindow())
     }
 
-    enum TabSelectionLoadPolicy {
+    enum TabSelectionLoadPolicy: Equatable {
         case immediate
         case deferred
-    }
-
-    private struct PendingUserTabActivation {
-        let tabId: UUID
-        let loadPolicy: TabSelectionLoadPolicy
     }
 
     enum TabOpenActivationPolicy {
@@ -1776,38 +1770,27 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy = .immediate
     ) {
-        pendingUserActivationsByWindow[windowState.id] = PendingUserTabActivation(
+        windowTabActivationBatcher.requestActivation(
             tabId: tab.id,
+            in: windowState.id,
             loadPolicy: loadPolicy
-        )
-
-        guard !userActivationFlushScheduledWindows.contains(windowState.id) else { return }
-        userActivationFlushScheduledWindows.insert(windowState.id)
-
-        DispatchQueue.main.async { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.flushPendingUserTabActivation(for: windowState.id)
+        ) { [weak self] windowId, activation in
+            guard let self,
+                  let windowState = self.windowRegistry?.windows[windowId],
+                  let tab = self.resolvedTab(for: activation.tabId, in: windowState)
+            else {
+                return
             }
-        }
-    }
 
-    private func flushPendingUserTabActivation(for windowId: UUID) {
-        userActivationFlushScheduledWindows.remove(windowId)
-        guard let activation = pendingUserActivationsByWindow.removeValue(forKey: windowId),
-              let windowState = windowRegistry?.windows[windowId],
-              let tab = resolvedTab(for: activation.tabId, in: windowState)
-        else {
-            return
+            self.applyTabSelection(
+                tab,
+                in: windowState,
+                updateSpaceFromTab: true,
+                updateTheme: true,
+                rememberSelection: true,
+                loadPolicy: activation.loadPolicy
+            )
         }
-
-        applyTabSelection(
-            tab,
-            in: windowState,
-            updateSpaceFromTab: true,
-            updateTheme: true,
-            rememberSelection: true,
-            loadPolicy: activation.loadPolicy
-        )
     }
 
     private func resolvedTab(for tabId: UUID, in windowState: BrowserWindowState) -> Tab? {
