@@ -208,7 +208,7 @@ struct WebsiteView: View {
 
     private var tabCompositor: some View {
         TabCompositorWrapper(
-            browserManager: browserManager,
+            browserContext: browserManager,
             webViewCoordinator: webViewCoordinator,
             hoveredLink: $hoveredLink,
             splitGroup: splitManager.splitGroup(for: windowState.id),

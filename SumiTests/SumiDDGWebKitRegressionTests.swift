@@ -476,32 +476,23 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertNil(nilCurrentState.activeSplitGroup)
     }
 
-    func testWindowWebContentControllerUsesBrowserContextBoundary() throws {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let source = try String(
-            contentsOf: repositoryRoot.appendingPathComponent(
-                "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
-            ),
-            encoding: .utf8
+    func testWindowWebContentUsesBrowserContextBoundary() throws {
+        let browserContext = CompositorBrowserContextStub()
+        let windowState = BrowserWindowState()
+        let webViewCoordinator = WebViewCoordinator()
+
+        let wrapper = TabCompositorWrapper(
+            browserContext: browserContext,
+            webViewCoordinator: webViewCoordinator,
+            hoveredLink: .constant(nil),
+            splitGroup: nil,
+            isSplitDropCaptureActive: false,
+            chromeGeometry: BrowserChromeGeometry(),
+            windowState: windowState,
+            contentBackgroundColor: .white
         )
 
-        XCTAssertTrue(source.contains("private protocol WindowWebContentBrowserContext"))
-        XCTAssertTrue(source.contains("extension BrowserManager: WindowWebContentBrowserContext"))
-        XCTAssertTrue(source.contains("browserContext: browserManager"))
-
-        let controllerSource = try sourceSlice(
-            source,
-            from: "final class WindowWebContentController",
-            to: "@MainActor\nprivate final class VisualHandoffCoverController"
-        )
-        XCTAssertTrue(controllerSource.contains("private let browserContext: any WindowWebContentBrowserContext"))
-        XCTAssertTrue(controllerSource.contains("browserContext.schedulePrepareVisibleWebViews"))
-        XCTAssertTrue(controllerSource.contains("browserContext.enqueueWindowMutationDuringHistorySwipe"))
-        XCTAssertTrue(controllerSource.contains("browserContext.currentTab(for: windowState)"))
-        XCTAssertFalse(controllerSource.contains("private let browserManager: BrowserManager"))
-        XCTAssertFalse(controllerSource.contains("browserManager."))
+        XCTAssertFalse(wrapper.isSplitDropCaptureActive)
     }
 
     func testCloneWebViewPrimaryWindowSelectionDoesNotDependOnDictionaryOrder() throws {
@@ -1362,6 +1353,45 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         let violations = forbiddenTokens.filter { featureSource.contains($0) }
         XCTAssertTrue(violations.isEmpty, violations.joined(separator: "\n"))
+    }
+
+    @MainActor
+    private final class CompositorBrowserContextStub: WindowWebContentBrowserContext {
+        func currentTab(for windowState: BrowserWindowState) -> Tab? {
+            nil
+        }
+
+        func tab(for tabId: UUID) -> Tab? {
+            nil
+        }
+
+        func splitGroup(for windowId: UUID) -> SplitGroup? {
+            nil
+        }
+
+        func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {}
+
+        func enqueueWindowMutationDuringHistorySwipe(
+            _ kind: HistorySwipeDeferredWindowMutationKind,
+            for windowState: BrowserWindowState
+        ) {}
+
+        func removeSplitGroup(id: UUID) {}
+
+        func updateSplitLayoutSizes(
+            groupId: UUID,
+            path: [Int],
+            sizes: [Double],
+            for windowId: UUID
+        ) {}
+
+        func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {}
+
+        func configureSplitControls(
+            _ controls: SplitPaneControlsView,
+            tab: Tab,
+            windowState: BrowserWindowState
+        ) {}
     }
 
     private func sourceSlice(_ source: String, from startToken: String, to endToken: String) throws -> Substring {

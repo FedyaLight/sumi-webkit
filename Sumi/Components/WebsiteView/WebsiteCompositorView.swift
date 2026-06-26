@@ -50,7 +50,7 @@ struct WebsiteDisplayState: Equatable {
 }
 
 @MainActor
-private protocol WindowWebContentBrowserContext: AnyObject {
+protocol WindowWebContentBrowserContext: AnyObject {
     func currentTab(for windowState: BrowserWindowState) -> Tab?
     func tab(for tabId: UUID) -> Tab?
     func splitGroup(for windowId: UUID) -> SplitGroup?
@@ -75,19 +75,19 @@ private protocol WindowWebContentBrowserContext: AnyObject {
 }
 
 extension BrowserManager: WindowWebContentBrowserContext {
-    fileprivate func tab(for tabId: UUID) -> Tab? {
+    func tab(for tabId: UUID) -> Tab? {
         tabManager.tab(for: tabId)
     }
 
-    fileprivate func splitGroup(for windowId: UUID) -> SplitGroup? {
+    func splitGroup(for windowId: UUID) -> SplitGroup? {
         splitManager.splitGroup(for: windowId)
     }
 
-    fileprivate func removeSplitGroup(id: UUID) {
+    func removeSplitGroup(id: UUID) {
         tabManager.removeSplitGroup(id: id)
     }
 
-    fileprivate func updateSplitLayoutSizes(
+    func updateSplitLayoutSizes(
         groupId: UUID,
         path: [Int],
         sizes: [Double],
@@ -101,13 +101,13 @@ extension BrowserManager: WindowWebContentBrowserContext {
         )
     }
 
-    fileprivate func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {
+    func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {
         view.browserManager = self
         view.splitManager = splitManager
         view.windowId = windowId
     }
 
-    fileprivate func configureSplitControls(
+    func configureSplitControls(
         _ controls: SplitPaneControlsView,
         tab: Tab,
         windowState: BrowserWindowState
@@ -813,7 +813,7 @@ private final class VisualHandoffCoverController {
 }
 
 struct TabCompositorWrapper: NSViewControllerRepresentable {
-    let browserManager: BrowserManager
+    let browserContext: any WindowWebContentBrowserContext
     let webViewCoordinator: WebViewCoordinator
     @Binding var hoveredLink: String?
     var splitGroup: SplitGroup?
@@ -867,7 +867,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
     func makeNSViewController(context: Context) -> WindowWebContentController {
         WindowWebContentController(
-            browserContext: browserManager,
+            browserContext: browserContext,
             webViewCoordinator: webViewCoordinator,
             chromeGeometry: chromeGeometry,
             windowState: windowState
@@ -896,7 +896,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     }
 
     private func makeDisplayState() -> WebsiteDisplayState {
-        let currentTab = browserManager.currentTab(for: windowState)
+        let currentTab = browserContext.currentTab(for: windowState)
         let currentId = currentTab?.id
         return WebsiteDisplayState(
             splitGroup: splitGroup,
@@ -1298,7 +1298,7 @@ final class PaneContainerView: NSView {
     }
 }
 
-private final class SplitPaneControlsView: NSVisualEffectView {
+final class SplitPaneControlsView: NSVisualEffectView {
     private let stackView = NSStackView()
     private let dragButton = SplitPaneDragButton()
     private let expandButton = SplitPaneToolbarButton(icon: .fullscreen)
