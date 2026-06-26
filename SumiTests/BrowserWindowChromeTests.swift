@@ -392,6 +392,18 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertTrue(handler.persistedWindowIds.isEmpty)
     }
 
+    func testSplitPaneControlsOnlyHitTestWhenVisible() {
+        let controls = SplitPaneControlsView(frame: NSRect(x: 0, y: 0, width: 64, height: 26))
+
+        XCTAssertNil(controls.hitTest(NSPoint(x: 8, y: 8)))
+
+        controls.setVisible(true, animated: false)
+        XCTAssertNotNil(controls.hitTest(NSPoint(x: 8, y: 8)))
+
+        controls.setVisible(false, animated: false)
+        XCTAssertNil(controls.hitTest(NSPoint(x: 8, y: 8)))
+    }
+
     private func assertNativeBrowserControlsHidden(
         _ window: NSWindow,
         file: StaticString = #filePath,
