@@ -547,6 +547,87 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(webViewHost.contains("if let displayedHost = displayedHost(for: tab.id)"))
     }
 
+    func testWebViewCoordinatorCleanupKeepsProtectedDeferralAndRefreshPolicySeparate() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let callSites = [
+            (
+                "func cleanupWindow(_ windowId: UUID, tabManager: TabManager)",
+                "func cleanupAllWebViews(tabManager: TabManager)",
+                ["enqueueDeferredProtectedCommand(", "continue"]
+            ),
+            (
+                "func cleanupAllWebViews(tabManager: TabManager)",
+                "// MARK: - History Swipe Protection",
+                ["enqueueDeferredProtectedCommand(", "continue"]
+            ),
+            (
+                "func removeAllWebViews(\n        for tab: Tab,",
+                "@discardableResult\n    func suspendWebViews",
+                ["enqueueDeferredProtectedCommand(", "return false"]
+            ),
+            (
+                "private func evictHiddenWebViewsIfNeeded(",
+                "private func notifyTabActivatedIfCurrent",
+                ["enqueueDeferredProtectedCommand(", "continue"]
+            ),
+        ]
+
+        for (start, end, protectedDeferralTokens) in callSites {
+            let callSite = try sourceSlice(source, from: start, to: end)
+            try assertTokenOrder(
+                callSite,
+                protectedDeferralTokens
+                    + ["cleanupUnprotectedTrackedWebView(", "refreshPrimaryTrackedWebView"]
+            )
+        }
+
+        let deferredWrapper = try sourceSlice(
+            source,
+            from: "private func cleanupTrackedWebView(\n        _ webView: WKWebView,\n        owner: TrackedWebViewOwner\n    )",
+            to: "private func cleanupUnprotectedTrackedWebView"
+        )
+        try assertTokenOrder(
+            deferredWrapper,
+            [
+                "finishDestructiveDataCleanupNavigation(on: webView)",
+                "cleanupUnprotectedTrackedWebView(",
+                "refreshPrimaryTrackedWebView"
+            ]
+        )
+
+        let unprotectedHelper = try sourceSlice(
+            source,
+            from: "private func cleanupUnprotectedTrackedWebView(",
+            to: "@discardableResult\n    private func closeTrackedWebViewFromWebKit"
+        )
+        try assertTokenOrder(
+            unprotectedHelper,
+            [
+                "removeWebViewFromContainers(webView)",
+                "unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)",
+                "tab.cleanupCloneWebView(webView)"
+            ]
+        )
+        try assertTokenOrder(
+            unprotectedHelper,
+            [
+                "unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)",
+                "performFallbackWebViewCleanup("
+            ]
+        )
+        XCTAssertFalse(unprotectedHelper.contains("finishDestructiveDataCleanupNavigation"))
+        XCTAssertFalse(unprotectedHelper.contains("refreshPrimaryTrackedWebView"))
+    }
+
     func testWebViewContainerLayoutDoesNotReparentDisplayedContent() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -667,6 +748,30 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let start = try XCTUnwrap(source.range(of: startToken)).lowerBound
         let end = try XCTUnwrap(source.range(of: endToken, range: start..<source.endIndex)).lowerBound
         return source[start..<end]
+    }
+
+    private func assertTokenOrder(
+        _ source: Substring,
+        _ tokens: [String],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        var previousIndex: Substring.Index?
+        var searchStart = source.startIndex
+        for token in tokens {
+            let range = try XCTUnwrap(
+                source.range(of: token, range: searchStart..<source.endIndex),
+                "Missing token: \(token)",
+                file: file,
+                line: line
+            )
+            let index = range.lowerBound
+            if let previousIndex {
+                XCTAssertLessThan(previousIndex, index, file: file, line: line)
+            }
+            previousIndex = index
+            searchStart = range.upperBound
+        }
     }
 
     private func loadHTML(_ html: String, into webView: WKWebView) async throws {

@@ -642,18 +642,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 continue
             }
 
-            removeWebViewFromContainers(webView)
-            _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
-
-            if let tab = tabManager.tab(for: owner.tabID) {
-                tab.cleanupCloneWebView(webView)
+            let tab = tabManager.tab(for: owner.tabID)
+            cleanupUnprotectedTrackedWebView(
+                webView,
+                owner: owner,
+                tab: tab,
+                browserManager: tabManager.browserManager
+            )
+            if let tab {
                 refreshPrimaryTrackedWebView(for: tab, browserManager: tabManager.browserManager)
-            } else {
-                performFallbackWebViewCleanup(
-                    webView,
-                    tabId: owner.tabID,
-                    browserManager: tabManager.browserManager
-                )
             }
 
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
@@ -682,18 +679,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 continue
             }
 
-            removeWebViewFromContainers(webView)
-            _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
-
-            if let tab = tabManager.tab(for: owner.tabID) {
-                tab.cleanupCloneWebView(webView)
+            let tab = tabManager.tab(for: owner.tabID)
+            cleanupUnprotectedTrackedWebView(
+                webView,
+                owner: owner,
+                tab: tab,
+                browserManager: tabManager.browserManager
+            )
+            if let tab {
                 refreshPrimaryTrackedWebView(for: tab, browserManager: tabManager.browserManager)
-            } else {
-                performFallbackWebViewCleanup(
-                    webView,
-                    tabId: owner.tabID,
-                    browserManager: tabManager.browserManager
-                )
             }
 
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
@@ -1238,12 +1232,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         guard trackedEntries.isEmpty == false else { return false }
 
         for (owner, webView) in trackedEntries {
-            removeWebViewFromContainers(webView)
-            _ = unregisterTrackedWebViewSlot(
+            cleanupUnprotectedTrackedWebView(
+                webView,
                 owner: owner,
-                expectedWebView: webView
+                tab: tab,
+                browserManager: tab.browserManager
             )
-            tab.cleanupCloneWebView(webView)
         }
         refreshPrimaryTrackedWebView(for: tab, browserManager: tab.browserManager)
         return true
@@ -1800,12 +1794,30 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         owner: TrackedWebViewOwner
     ) {
         finishDestructiveDataCleanupNavigation(on: webView)
+        let tab = resolvedTab(with: owner.tabID)
+        let cleanupBrowserManager = tab?.browserManager ?? browserManager
+        cleanupUnprotectedTrackedWebView(
+            webView,
+            owner: owner,
+            tab: tab,
+            browserManager: cleanupBrowserManager
+        )
+        if let tab {
+            refreshPrimaryTrackedWebView(for: tab, browserManager: cleanupBrowserManager)
+        }
+    }
+
+    private func cleanupUnprotectedTrackedWebView(
+        _ webView: WKWebView,
+        owner: TrackedWebViewOwner,
+        tab: Tab?,
+        browserManager: BrowserManager?
+    ) {
         removeWebViewFromContainers(webView)
         _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
 
-        if let tab = resolvedTab(with: owner.tabID) {
+        if let tab {
             tab.cleanupCloneWebView(webView)
-            refreshPrimaryTrackedWebView(for: tab, browserManager: tab.browserManager)
         } else {
             performFallbackWebViewCleanup(
                 webView,
@@ -2093,9 +2105,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 continue
             }
 
-            removeWebViewFromContainers(webView)
-            _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
-            tab.cleanupCloneWebView(webView)
+            cleanupUnprotectedTrackedWebView(
+                webView,
+                owner: owner,
+                tab: tab,
+                browserManager: browserManager
+            )
             refreshPrimaryTrackedWebView(for: tab, browserManager: browserManager)
 
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
