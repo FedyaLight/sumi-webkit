@@ -648,6 +648,8 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertTrue(providerSource.contains("store.fetchSitePage"))
         XCTAssertTrue(storeSource.contains("descriptor.fetchLimit = limit"))
         XCTAssertTrue(storeSource.contains("descriptor.fetchOffset = offset"))
+        XCTAssertTrue(storeSource.contains("fetchPagedSiteRecords"))
+        XCTAssertFalse(storeSource.contains("let sites = try allSiteRecords(in: ctx, profileId: profileId)"))
         XCTAssertTrue(storeSource.contains("clearAllExplicit"))
         XCTAssertTrue(storeSource.contains("deleteVisits("))
         XCTAssertTrue(searchSource.contains("historySuggestionTask"))

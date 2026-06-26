@@ -437,10 +437,19 @@ extension ExtensionManager {
                 where entity.isEnabled && entity.hasContentScripts
             {
                 guard Task.isCancelled == false else { return }
-                _ = try? await self.ensureExtensionLoaded(
-                    extensionId: entity.id,
-                    profileId: profileId
-                )
+                do {
+                    _ = try await self.ensureExtensionLoaded(
+                        extensionId: entity.id,
+                        profileId: profileId
+                    )
+                } catch {
+                    self.logExtensionLoadFailure(
+                        error,
+                        extensionId: entity.id,
+                        profileId: profileId,
+                        operation: "preload content-script context"
+                    )
+                }
             }
         }
         contentScriptContextLoadTasksByProfile[profileId] = task
@@ -487,21 +496,54 @@ extension ExtensionManager {
                 profileId: profileId
             ) {
                 guard Task.isCancelled == false else { return }
-                guard let extensionContext = try? await self.ensureExtensionLoaded(
-                    extensionId: entity.id,
-                    profileId: profileId
-                ) else {
-                    continue
+                do {
+                    guard let extensionContext = try await self.ensureExtensionLoaded(
+                        extensionId: entity.id,
+                        profileId: profileId
+                    ) else {
+                        continue
+                    }
+                    _ = try await self.ensureBackgroundAvailableIfRequired(
+                        for: extensionContext.webExtension,
+                        context: extensionContext,
+                        reason: .nativeMessaging
+                    )
+                } catch {
+                    self.logExtensionLoadFailure(
+                        error,
+                        extensionId: entity.id,
+                        profileId: profileId,
+                        operation: "warm initial-document native messaging runtime"
+                    )
                 }
-                _ = try? await self.ensureBackgroundAvailableIfRequired(
-                    for: extensionContext.webExtension,
-                    context: extensionContext,
-                    reason: .nativeMessaging
-                )
             }
         }
         initialDocumentNativeMessagingWarmupTasksByProfile[profileId] = task
         await task.value
+    }
+
+    func logExtensionLoadFailure(
+        _ error: Error,
+        extensionId: String,
+        profileId: UUID,
+        operation: String
+    ) {
+        Self.logger.error(
+            "Failed to \(operation, privacy: .public) for extension \(extensionId, privacy: .public) profile \(profileId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+        )
+    }
+
+    func logBackgroundWakeFailure(
+        _ error: Error,
+        extensionContext: WKWebExtensionContext,
+        reason: ExtensionBackgroundWakeReason,
+        operation: String
+    ) {
+        let extensionId = extensionID(for: extensionContext) ?? "(unknown)"
+        let profileId = profileId(for: extensionContext)?.uuidString ?? "(unknown)"
+        Self.logger.error(
+            "Failed to \(operation, privacy: .public) for extension \(extensionId, privacy: .public) profile \(profileId, privacy: .public) reason \(reason.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)"
+        )
     }
 
     func profileNeedsInitialDocumentNativeMessagingWarmup(profileId: UUID) -> Bool {

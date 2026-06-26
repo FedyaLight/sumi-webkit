@@ -171,6 +171,53 @@ final class HistoryBoundedQueryTests: XCTestCase {
         XCTAssertEqual(secondPage.sites.map(\.domain), ["b.example"])
     }
 
+    func testSitePagePaginationMergesLegacySiteDomainFallbacks() async throws {
+        let harness = try makeHarness()
+        let ctx = ModelContext(harness.container)
+        ctx.autosaveEnabled = false
+        insertEntry(
+            urlString: "https://legacy.example/one",
+            title: "Legacy One",
+            domain: "legacy.example",
+            siteDomain: nil,
+            visitCount: 1,
+            lastVisit: date("2026-04-23T09:00:00Z"),
+            profileID: harness.profileID,
+            in: ctx
+        )
+        insertEntry(
+            urlString: "https://www.legacy.example/two",
+            title: "Legacy Two",
+            domain: "www.legacy.example",
+            siteDomain: "legacy.example",
+            visitCount: 2,
+            lastVisit: date("2026-04-23T10:00:00Z"),
+            profileID: harness.profileID,
+            in: ctx
+        )
+        insertEntry(
+            urlString: "https://aaa.example/other",
+            title: "Other Profile",
+            domain: "aaa.example",
+            siteDomain: "aaa.example",
+            visitCount: 5,
+            lastVisit: date("2026-04-23T11:00:00Z"),
+            profileID: UUID(),
+            in: ctx
+        )
+        try ctx.save()
+
+        let page = try await harness.store.fetchSitePage(
+            profileId: harness.profileID,
+            searchTerm: nil,
+            limit: 10,
+            offset: 0
+        )
+
+        XCTAssertEqual(page.sites.map(\.domain), ["legacy.example"])
+        XCTAssertEqual(page.sites.first?.visitCount, 3)
+    }
+
     func testClearAllRemainsExplicitAndSeparateFromBoundedPages() async throws {
         let harness = try makeHarness()
         for index in 0..<3 {
@@ -288,6 +335,14 @@ final class HistoryBoundedQueryTests: XCTestCase {
         XCTAssertFalse(source.contains(".wait("))
     }
 
+    func testSitePageFetchDoesNotBuildAllSiteRecords() throws {
+        let source = try productionSource(paths: ["Sumi/Managers/History/HistoryStore.swift"])
+        let fetchSitePageSource = try functionSource(named: "fetchSitePage", in: source)
+
+        XCTAssertFalse(fetchSitePageSource.contains("allSiteRecords"))
+        XCTAssertTrue(fetchSitePageSource.contains("fetchPagedSiteRecords"))
+    }
+
     private func makeHarness() throws -> (
         container: ModelContainer,
         store: HistoryStore,
@@ -324,6 +379,30 @@ final class HistoryBoundedQueryTests: XCTestCase {
         )
     }
 
+    private func insertEntry(
+        urlString: String,
+        title: String,
+        domain: String,
+        siteDomain: String?,
+        visitCount: Int,
+        lastVisit: Date,
+        profileID: UUID,
+        in ctx: ModelContext
+    ) {
+        ctx.insert(
+            HistoryEntryEntity(
+                urlKey: "\(profileID.uuidString.lowercased())|\(urlString)",
+                urlString: urlString,
+                title: title,
+                domain: domain,
+                siteDomain: siteDomain,
+                numberOfTotalVisits: visitCount,
+                lastVisit: lastVisit,
+                profileId: profileID
+            )
+        )
+    }
+
     private func date(_ value: String) -> Date {
         ISO8601DateFormatter().date(from: value)!
     }
@@ -335,6 +414,35 @@ final class HistoryBoundedQueryTests: XCTestCase {
         return try paths
             .map { try String(contentsOf: repoRoot.appendingPathComponent($0), encoding: .utf8) }
             .joined(separator: "\n")
+    }
+
+    private func functionSource(named name: String, in source: String) throws -> Substring {
+        guard let nameRange = source.range(of: "func \(name)("),
+              let openingBrace = source[nameRange.lowerBound...].firstIndex(of: "{")
+        else {
+            XCTFail("Could not find function \(name)")
+            return ""
+        }
+
+        var depth = 0
+        var index = openingBrace
+        while index < source.endIndex {
+            switch source[index] {
+            case "{":
+                depth += 1
+            case "}":
+                depth -= 1
+                if depth == 0 {
+                    return source[nameRange.lowerBound...index]
+                }
+            default:
+                break
+            }
+            index = source.index(after: index)
+        }
+
+        XCTFail("Could not parse function \(name)")
+        return ""
     }
 
     private func waitForVisitedLinkReload(

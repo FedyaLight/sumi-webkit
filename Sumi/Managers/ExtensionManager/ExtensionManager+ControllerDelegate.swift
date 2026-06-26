@@ -75,9 +75,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         reason: String,
         dedupeKey: String? = nil
     ) async -> ExtensionPermissionPromptDecision {
-        if RuntimeDiagnostics.isRunningTests {
-            return .allow(expirationDate: nil)
-        }
+        #if DEBUG
+            if let permissionPromptDecision = testHooks.permissionPromptDecision {
+                return permissionPromptDecision(extensionContext, targets, reason)
+            }
+        #endif
 
         return await enqueueExtensionPermissionPrompt(
             key: dedupeKey ?? permissionPromptDedupeKey(
@@ -1519,11 +1521,20 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         if extensionsModuleEnabled {
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                _ = try? await self.ensureBackgroundAvailableIfRequired(
-                    for: extensionContext.webExtension,
-                    context: extensionContext,
-                    reason: .nativeMessaging
-                )
+                do {
+                    _ = try await self.ensureBackgroundAvailableIfRequired(
+                        for: extensionContext.webExtension,
+                        context: extensionContext,
+                        reason: .nativeMessaging
+                    )
+                } catch {
+                    self.logBackgroundWakeFailure(
+                        error,
+                        extensionContext: extensionContext,
+                        reason: .nativeMessaging,
+                        operation: "wake native messaging background before sendMessage"
+                    )
+                }
             }
         }
         let profileId = profileId(for: extensionContext)
@@ -1595,11 +1606,20 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         if extensionsModuleEnabled {
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                _ = try? await self.ensureBackgroundAvailableIfRequired(
-                    for: extensionContext.webExtension,
-                    context: extensionContext,
-                    reason: .nativeMessaging
-                )
+                do {
+                    _ = try await self.ensureBackgroundAvailableIfRequired(
+                        for: extensionContext.webExtension,
+                        context: extensionContext,
+                        reason: .nativeMessaging
+                    )
+                } catch {
+                    self.logBackgroundWakeFailure(
+                        error,
+                        extensionContext: extensionContext,
+                        reason: .nativeMessaging,
+                        operation: "wake native messaging background before connect"
+                    )
+                }
             }
         }
 

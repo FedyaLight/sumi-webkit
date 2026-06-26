@@ -323,6 +323,14 @@ final class SumiBookmarkManagerTests: XCTestCase {
         XCTAssertEqual(observed.isMainThread, true)
     }
 
+    func testBookmarkDatabaseBootstrapSaveFailureIsLoggedAndRolledBack() throws {
+        let source = try source(named: "Sumi/Bookmarks/SumiBookmarkDatabase.swift")
+
+        XCTAssertFalse(source.contains("try? context.save()"))
+        XCTAssertTrue(source.contains("context.rollback()"))
+        XCTAssertTrue(source.contains("Failed to save bookmark bootstrap folder structure"))
+    }
+
     func testMoveOrderingAndDeletionSurviveStoreReopen() throws {
         let directory = try temporaryDirectory(named: "SumiBookmarkMoveOrderingParity")
         let folderAID: String
@@ -449,6 +457,13 @@ final class SumiBookmarkManagerTests: XCTestCase {
 
     private func applicationSupportDirectory() -> URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+    }
+
+    private func source(named relativePath: String) throws -> String {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 }
 

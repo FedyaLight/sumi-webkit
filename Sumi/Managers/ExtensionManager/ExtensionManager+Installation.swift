@@ -1173,7 +1173,22 @@ extension ExtensionManager {
             }
 
             if shouldRestoreExistingRuntime, let existingEntitySnapshot {
-                _ = try? await loadEnabledExtension(from: existingEntitySnapshot)
+                do {
+                    _ = try await loadEnabledExtension(from: existingEntitySnapshot)
+                } catch let restoreError {
+                    if let restoreProfileId = currentProfileId ?? browserManager?.currentProfile?.id {
+                        logExtensionLoadFailure(
+                            restoreError,
+                            extensionId: existingEntitySnapshot.id,
+                            profileId: restoreProfileId,
+                            operation: "restore existing runtime after failed installation"
+                        )
+                    } else {
+                        Self.logger.error(
+                            "Failed to restore existing runtime after failed installation for extension \(existingEntitySnapshot.id, privacy: .public): \(restoreError.localizedDescription, privacy: .public)"
+                        )
+                    }
+                }
             }
 
             throw error
@@ -1433,7 +1448,22 @@ extension ExtensionManager {
                 removeUIState: false
             )
             if shouldRestoreExistingRuntime, let existingEntitySnapshot {
-                _ = try? await loadEnabledExtension(from: existingEntitySnapshot)
+                do {
+                    _ = try await loadEnabledExtension(from: existingEntitySnapshot)
+                } catch let restoreError {
+                    if let restoreProfileId = currentProfileId ?? browserManager?.currentProfile?.id {
+                        logExtensionLoadFailure(
+                            restoreError,
+                            extensionId: existingEntitySnapshot.id,
+                            profileId: restoreProfileId,
+                            operation: "restore existing runtime after failed Safari extension enable"
+                        )
+                    } else {
+                        Self.logger.error(
+                            "Failed to restore existing runtime after failed Safari extension enable for extension \(existingEntitySnapshot.id, privacy: .public): \(restoreError.localizedDescription, privacy: .public)"
+                        )
+                    }
+                }
             }
             throw error
         }
@@ -1855,11 +1885,6 @@ extension ExtensionManager {
         manifest: [String: Any]
     ) {
         var permissions = webExtension.requestedPermissions
-        if RuntimeDiagnostics.isRunningTests {
-            permissions.formUnion(
-                webExtension.optionalPermissions.filter { $0 != .nativeMessaging }
-            )
-        }
         permissions.formUnion(Self.requiredManifestWebExtensionPermissions(from: manifest))
         grantNativeMessagingPermissionIfDeclared(
             to: extensionContext,

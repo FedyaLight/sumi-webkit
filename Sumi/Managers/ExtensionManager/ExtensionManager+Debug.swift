@@ -38,6 +38,8 @@ extension ExtensionManager {
             ((String, ExtensionManager.WebExtensionStorageSnapshot) throws -> Void)?
         var backgroundContentWake:
             (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
+        var permissionPromptDecision:
+            ((WKWebExtensionContext, [String], String) -> ExtensionPermissionPromptDecision)?
         var webExtensionDataCleanup: (@MainActor (String) async -> Bool)?
         var didOpenTab: ((UUID) -> Void)?
         var didDeferOpenTab: ((UUID, String) -> Void)?

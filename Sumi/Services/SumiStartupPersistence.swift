@@ -7,6 +7,7 @@
 import AppKit
 import Combine
 import CoreServices
+import Darwin
 import OSLog
 import SwiftData
 import SwiftUI
@@ -15,7 +16,15 @@ import WebKit
 @MainActor
 final class SumiStartupPersistence {
     static let shared = SumiStartupPersistence()
-    let container: ModelContainer
+    private let containerResult: Result<ModelContainer, Error>
+
+    var container: ModelContainer {
+        do {
+            return try modelContainer()
+        } catch {
+            Self.terminateBecauseStartupPersistenceUnavailable(error)
+        }
+    }
 
     // MARK: - Constants
     nonisolated private static let log = Logger.sumi(category: "StartupPersistence")
@@ -75,11 +84,18 @@ final class SumiStartupPersistence {
 
     // MARK: - Init
     private init() {
-        do {
-            self.container = try Self.makePersistentContainerForStartup()
-        } catch {
-            fatalError(Self.startupFailureMessage(for: error))
+        self.containerResult = Result {
+            try Self.makePersistentContainerForStartup()
         }
+        if case .failure(let error) = containerResult {
+            Self.log.fault(
+                "Startup persistence is unavailable. \(Self.startupFailureMessage(for: error), privacy: .public) error=\(String(describing: error), privacy: .public)"
+            )
+        }
+    }
+
+    func modelContainer() throws -> ModelContainer {
+        try containerResult.get()
     }
 
     static func makePersistentContainerForStartup() throws -> ModelContainer {
@@ -201,6 +217,25 @@ final class SumiStartupPersistence {
         default:
             return "Sumi could not open the local browser store: \(error)"
         }
+    }
+
+    private static func terminateBecauseStartupPersistenceUnavailable(_ error: Error) -> Never {
+        let message = startupFailureMessage(for: error)
+        log.fault(
+            "Terminating because startup persistence is unavailable. \(message, privacy: .public) error=\(String(describing: error), privacy: .public)"
+        )
+
+        if NSApplication.shared.isRunning {
+            let alert = NSAlert()
+            alert.messageText = "Sumi could not open browser data"
+            alert.informativeText = message
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "Quit")
+            alert.runModal()
+            NSApplication.shared.terminate(nil)
+        }
+
+        Darwin.exit(EXIT_FAILURE)
     }
 
     private static func errorDescriptionTree(_ error: Error) -> String {

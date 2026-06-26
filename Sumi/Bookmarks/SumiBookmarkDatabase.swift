@@ -1,8 +1,11 @@
 import Bookmarks
 import CoreData
 import Foundation
+import OSLog
 
 final class SumiBookmarkDatabase {
+    private static let log = Logger.sumi(category: "BookmarkDatabase")
+
     private let database: any SumiCoreDataDatabase
 
     init(directory: URL? = nil) {
@@ -40,7 +43,14 @@ final class SumiBookmarkDatabase {
         context.performAndWait {
             BookmarkUtils.prepareFoldersStructure(in: context)
             if context.hasChanges {
-                try? context.save()
+                do {
+                    try context.save()
+                } catch {
+                    context.rollback()
+                    Self.log.error(
+                        "Failed to save bookmark bootstrap folder structure: \(String(describing: error), privacy: .public)"
+                    )
+                }
             }
         }
     }

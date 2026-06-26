@@ -33,13 +33,30 @@ final class SumiStartupPersistenceTests: XCTestCase {
         XCTAssertTrue(resolvedContainer === recreatedContainer)
     }
 
+    func testNonResettableStoreOpenFailurePropagatesWithoutFallbackContainer() throws {
+        var openAttempts = 0
+        var resetAttempts = 0
+        let permissionError = NSError(
+            domain: NSCocoaErrorDomain,
+            code: NSFileReadNoPermissionError,
+            userInfo: [NSLocalizedDescriptionKey: "Store access denied."]
+        )
+
+        XCTAssertThrowsError(
+            try SumiStartupPersistence.makePersistentContainerForStartup {
+                openAttempts += 1
+                throw permissionError
+            } resetPersistentStore: {
+                resetAttempts += 1
+            }
+        )
+
+        XCTAssertEqual(openAttempts, 1)
+        XCTAssertEqual(resetAttempts, 0)
+    }
+
     func testStartupPersistenceSourceDoesNotContainRemovedRecoveryOrBlockingPatterns() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = repoRoot
-            .appendingPathComponent("Sumi/Services/SumiStartupPersistence.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try startupPersistenceSource()
         let lowercasedSource = source.lowercased()
 
         for removedPattern in [
@@ -58,5 +75,22 @@ final class SumiStartupPersistenceTests: XCTestCase {
         XCTAssertFalse(lowercasedSource.contains("backup"))
         XCTAssertFalse(lowercasedSource.contains("migration"))
         XCTAssertFalse(lowercasedSource.contains("migrate"))
+    }
+
+    func testSharedStartupPersistenceDoesNotFatalErrorOnOpenFailure() throws {
+        let source = try startupPersistenceSource()
+
+        XCTAssertFalse(source.contains("fatalError("))
+        XCTAssertTrue(source.contains("private let containerResult: Result<ModelContainer, Error>"))
+        XCTAssertTrue(source.contains("func modelContainer() throws -> ModelContainer"))
+    }
+
+    private func startupPersistenceSource() throws -> String {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repoRoot
+            .appendingPathComponent("Sumi/Services/SumiStartupPersistence.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

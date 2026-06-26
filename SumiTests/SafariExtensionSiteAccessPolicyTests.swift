@@ -460,6 +460,12 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             matchPatternString: matchPattern.string
         )
         context.setPermissionStatus(.unknown, for: matchPattern)
+        manager.testHooks.permissionPromptDecision = { _, _, _ in
+            .allow(expirationDate: nil)
+        }
+        defer {
+            manager.testHooks.permissionPromptDecision = nil
+        }
 
         let controller = manager.ensureExtensionController(for: profile.id)
         let grantedPatterns = await withCheckedContinuation { continuation in

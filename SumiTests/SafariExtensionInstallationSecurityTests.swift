@@ -171,6 +171,41 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         )
     }
 
+    func testOptionalPermissionsAreNotPregrantedUnderTests() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Optional Permissions Profile")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+        let installed = try await manager.performInstallation(
+            from: try makeUnpackedExtension(
+                name: "OptionalTabs",
+                geckoId: "optional-tabs-\(UUID().uuidString)@example.com",
+                optionalPermissions: ["tabs"]
+            ),
+            enableOnInstall: true
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(
+                at: URL(fileURLWithPath: installed.packagePath, isDirectory: true)
+            )
+        }
+
+        let context = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+        let storagePermission = WKWebExtension.Permission(rawValue: "storage")
+        let tabsPermission = WKWebExtension.Permission(rawValue: "tabs")
+
+        XCTAssertEqual(context.permissionStatus(for: storagePermission), .grantedExplicitly)
+        XCTAssertFalse(
+            manager.isGrantedPermissionStatus(
+                context.permissionStatus(for: tabsPermission)
+            )
+        )
+    }
+
     func testRequiredNativeMessagingStillPregrantsOnInstall() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Required Native Messaging Profile")

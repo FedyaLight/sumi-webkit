@@ -1792,6 +1792,25 @@ final class SumiFaviconV2SourceGuardTests: XCTestCase {
         XCTAssertTrue(scheduler.contains("SumiFaviconWebKitDownloader.shared.download"))
     }
 
+    func testBlobStoreMutationPersistFailuresAreLogged() throws {
+        let blobStore = try Self.source("Sumi/Favicons/V2/SumiFaviconBlobStore.swift")
+
+        XCTAssertTrue(blobStore.contains("private func persistOrLog"))
+        XCTAssertTrue(blobStore.contains("Failed to persist favicon metadata"))
+        XCTAssertFalse(blobStore.contains("try? persist(metadata:"))
+
+        for operation in [
+            "alias association",
+            "candidate failure",
+            "no-icon marker",
+            "site invalidation",
+            "history clear burn",
+            "domain burn",
+        ] {
+            XCTAssertTrue(blobStore.contains("operation: \"\(operation)\""))
+        }
+    }
+
     private static func source(_ relativePath: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

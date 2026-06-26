@@ -21,6 +21,24 @@ actor HistoryStore {
         var visitCount: Int
     }
 
+    private enum SiteEntrySource {
+        case resolvedSiteDomain
+        case missingSiteDomain
+    }
+
+    private struct SiteGroup {
+        let domain: String
+        let accumulator: SiteAccumulator
+    }
+
+    private struct SiteGroupCursor {
+        let source: SiteEntrySource
+        var rawOffset = 0
+        var bufferedEntries: [HistoryEntryEntity] = []
+        var bufferedIndex = 0
+        var pendingEntry: HistoryEntryEntity?
+    }
+
     init(container: ModelContainer) {
         self.container = container
     }
@@ -201,15 +219,14 @@ actor HistoryStore {
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
         let query = searchTerm.map(SearchTextQuery.init)
-        let sites = try allSiteRecords(in: ctx, profileId: profileId)
-            .values
-            .sorted { $0.domain < $1.domain }
         let startOffset = max(0, offset)
-        let matchingSites = sites.filter { site in
-            guard let query, !query.isEmpty else { return true }
-            return siteMatches(site, query: query)
-        }
-        let page = Array(matchingSites.dropFirst(startOffset).prefix(limit + 1))
+        let page = try fetchPagedSiteRecords(
+            in: ctx,
+            profileId: profileId,
+            query: query,
+            limit: limit,
+            offset: startOffset
+        )
         return HistorySitePage(
             sites: Array(page.prefix(limit)),
             nextOffset: startOffset + min(page.count, limit),
@@ -592,6 +609,222 @@ actor HistoryStore {
         return try ctx.fetch(descriptor)
     }
 
+    private func fetchSiteEntryChunk(
+        in ctx: ModelContext,
+        profileId: UUID?,
+        source: SiteEntrySource,
+        limit: Int,
+        offset: Int
+    ) throws -> [HistoryEntryEntity] {
+        var descriptor: FetchDescriptor<HistoryEntryEntity>
+        switch (profileId, source) {
+        case (.some(let profileId), .resolvedSiteDomain):
+            let predicate = #Predicate<HistoryEntryEntity> { entry in
+                entry.profileId == profileId && entry.siteDomain != nil
+            }
+            descriptor = FetchDescriptor(
+                predicate: predicate,
+                sortBy: [
+                    SortDescriptor(\HistoryEntryEntity.siteDomain),
+                    SortDescriptor(\HistoryEntryEntity.domain),
+                ]
+            )
+        case (.some(let profileId), .missingSiteDomain):
+            let predicate = #Predicate<HistoryEntryEntity> { entry in
+                entry.profileId == profileId && entry.siteDomain == nil
+            }
+            descriptor = FetchDescriptor(
+                predicate: predicate,
+                sortBy: [SortDescriptor(\HistoryEntryEntity.domain)]
+            )
+        case (.none, .resolvedSiteDomain):
+            let predicate = #Predicate<HistoryEntryEntity> { entry in
+                entry.siteDomain != nil
+            }
+            descriptor = FetchDescriptor(
+                predicate: predicate,
+                sortBy: [
+                    SortDescriptor(\HistoryEntryEntity.siteDomain),
+                    SortDescriptor(\HistoryEntryEntity.domain),
+                ]
+            )
+        case (.none, .missingSiteDomain):
+            let predicate = #Predicate<HistoryEntryEntity> { entry in
+                entry.siteDomain == nil
+            }
+            descriptor = FetchDescriptor(
+                predicate: predicate,
+                sortBy: [SortDescriptor(\HistoryEntryEntity.domain)]
+            )
+        }
+        descriptor.fetchLimit = limit
+        descriptor.fetchOffset = offset
+        return try ctx.fetch(descriptor)
+    }
+
+    private func fetchPagedSiteRecords(
+        in ctx: ModelContext,
+        profileId: UUID?,
+        query: SearchTextQuery?,
+        limit: Int,
+        offset: Int
+    ) throws -> [HistorySiteRecord] {
+        var resolvedCursor = SiteGroupCursor(source: .resolvedSiteDomain)
+        var missingCursor = SiteGroupCursor(source: .missingSiteDomain)
+        var resolvedGroup = try nextSiteGroup(from: &resolvedCursor, in: ctx, profileId: profileId)
+        var missingGroup = try nextSiteGroup(from: &missingCursor, in: ctx, profileId: profileId)
+        var visibleOffset = 0
+        var page: [HistorySiteRecord] = []
+
+        while let domain = nextSiteDomain(resolvedGroup: resolvedGroup, missingGroup: missingGroup) {
+            var accumulator: SiteAccumulator?
+            if let group = resolvedGroup, group.domain == domain {
+                merge(group.accumulator, into: &accumulator, domain: domain)
+                resolvedGroup = try nextSiteGroup(from: &resolvedCursor, in: ctx, profileId: profileId)
+            }
+            if let group = missingGroup, group.domain == domain {
+                merge(group.accumulator, into: &accumulator, domain: domain)
+                missingGroup = try nextSiteGroup(from: &missingCursor, in: ctx, profileId: profileId)
+            }
+
+            guard let accumulator,
+                  let record = siteRecord(domain: domain, accumulator: accumulator)
+            else {
+                continue
+            }
+
+            if let query, !query.isEmpty, !siteMatches(record, query: query) {
+                continue
+            }
+
+            guard visibleOffset >= offset else {
+                visibleOffset += 1
+                continue
+            }
+
+            page.append(record)
+            if page.count > limit {
+                return page
+            }
+        }
+
+        return page
+    }
+
+    private func nextSiteDomain(
+        resolvedGroup: SiteGroup?,
+        missingGroup: SiteGroup?
+    ) -> String? {
+        switch (resolvedGroup?.domain, missingGroup?.domain) {
+        case (.some(let resolvedDomain), .some(let missingDomain)):
+            return min(resolvedDomain, missingDomain)
+        case (.some(let resolvedDomain), .none):
+            return resolvedDomain
+        case (.none, .some(let missingDomain)):
+            return missingDomain
+        case (.none, .none):
+            return nil
+        }
+    }
+
+    private func nextSiteGroup(
+        from cursor: inout SiteGroupCursor,
+        in ctx: ModelContext,
+        profileId: UUID?
+    ) throws -> SiteGroup? {
+        guard let firstEntry = try nextSiteEntry(from: &cursor, in: ctx, profileId: profileId) else {
+            return nil
+        }
+
+        let domain = effectiveSiteDomain(for: firstEntry)
+        var accumulator = SiteAccumulator(
+            bestEntry: firstEntry,
+            visitCount: firstEntry.numberOfTotalVisits
+        )
+
+        while let entry = try nextSiteEntry(from: &cursor, in: ctx, profileId: profileId) {
+            let entryDomain = effectiveSiteDomain(for: entry)
+            guard entryDomain == domain else {
+                cursor.pendingEntry = entry
+                break
+            }
+
+            accumulator.visitCount += entry.numberOfTotalVisits
+            if comparePreferredEntries(entry, accumulator.bestEntry, for: domain) {
+                accumulator.bestEntry = entry
+            }
+        }
+
+        return SiteGroup(domain: domain, accumulator: accumulator)
+    }
+
+    private func nextSiteEntry(
+        from cursor: inout SiteGroupCursor,
+        in ctx: ModelContext,
+        profileId: UUID?
+    ) throws -> HistoryEntryEntity? {
+        if let pendingEntry = cursor.pendingEntry {
+            cursor.pendingEntry = nil
+            return pendingEntry
+        }
+
+        while cursor.bufferedIndex >= cursor.bufferedEntries.count {
+            let entries = try fetchSiteEntryChunk(
+                in: ctx,
+                profileId: profileId,
+                source: cursor.source,
+                limit: Self.siteChunkSize,
+                offset: cursor.rawOffset
+            )
+            guard !entries.isEmpty else { return nil }
+            cursor.rawOffset += entries.count
+            cursor.bufferedEntries = entries
+            cursor.bufferedIndex = 0
+        }
+
+        let entry = cursor.bufferedEntries[cursor.bufferedIndex]
+        cursor.bufferedIndex += 1
+        return entry
+    }
+
+    private func merge(
+        _ incoming: SiteAccumulator,
+        into accumulator: inout SiteAccumulator?,
+        domain: String
+    ) {
+        guard var current = accumulator else {
+            accumulator = incoming
+            return
+        }
+
+        current.visitCount += incoming.visitCount
+        if comparePreferredEntries(incoming.bestEntry, current.bestEntry, for: domain) {
+            current.bestEntry = incoming.bestEntry
+        }
+        accumulator = current
+    }
+
+    private func siteRecord(
+        domain: String,
+        accumulator: SiteAccumulator
+    ) -> HistorySiteRecord? {
+        let bestEntry = accumulator.bestEntry
+        guard let url = URL(string: bestEntry.urlString) else { return nil }
+
+        let title = bestEntry.title.isEmpty ? bestEntry.urlString : bestEntry.title
+        return HistorySiteRecord(
+            id: domain,
+            domain: domain,
+            url: url,
+            title: title,
+            visitCount: accumulator.visitCount
+        )
+    }
+
+    private func effectiveSiteDomain(for entry: HistoryEntryEntity) -> String {
+        entry.siteDomain ?? entry.domain
+    }
+
     private func allSiteRecords(
         in ctx: ModelContext,
         profileId: UUID?
@@ -609,7 +842,7 @@ actor HistoryStore {
             guard !entries.isEmpty else { break }
             rawOffset += entries.count
             for entry in entries {
-                let domain = entry.siteDomain ?? entry.domain
+                let domain = effectiveSiteDomain(for: entry)
                 if var accumulator = accumulators[domain] {
                     accumulator.visitCount += entry.numberOfTotalVisits
                     if comparePreferredEntries(entry, accumulator.bestEntry, for: domain) {
@@ -627,17 +860,7 @@ actor HistoryStore {
 
         var records: [String: HistorySiteRecord] = [:]
         for (domain, accumulator) in accumulators {
-            let bestEntry = accumulator.bestEntry
-            guard let url = URL(string: bestEntry.urlString) else { continue }
-
-            let title = bestEntry.title.isEmpty ? bestEntry.urlString : bestEntry.title
-            records[domain] = HistorySiteRecord(
-                id: domain,
-                domain: domain,
-                url: url,
-                title: title,
-                visitCount: accumulator.visitCount
-            )
+            records[domain] = siteRecord(domain: domain, accumulator: accumulator)
         }
 
         return records

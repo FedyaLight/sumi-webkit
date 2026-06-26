@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import OSLog
 
 struct SumiStoredFaviconSelection: Sendable {
     let partition: SumiFaviconPartition
@@ -32,6 +33,8 @@ struct SumiFaviconAliasAssociationResult: Sendable {
 
 // Sendable by construction: every metadata and private-payload mutation is isolated to `queue`.
 final class SumiFaviconBlobStore: @unchecked Sendable {
+    private static let log = Logger.sumi(category: "FaviconBlobStore")
+
     private struct Metadata: Codable {
         var schemaVersion = 2
         var blobs: [String: BlobRecord] = [:]
@@ -339,7 +342,11 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
                     fileName: blob.fileName
                 )
                 metadataByPartition[selection.partition] = metadata
-                try? persist(metadata: metadata, partition: selection.partition)
+                persistOrLog(
+                    metadata: metadata,
+                    partition: selection.partition,
+                    operation: "alias association"
+                )
             }
             return SumiFaviconAliasAssociationResult(
                 invalidations: aliasResult.invalidations,
@@ -373,7 +380,11 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
             record.failureKind = failureKind
             metadata.candidateMappings[key] = record
             metadataByPartition[partition] = metadata
-            try? persist(metadata: metadata, partition: partition)
+            persistOrLog(
+                metadata: metadata,
+                partition: partition,
+                operation: "candidate failure"
+            )
         }
     }
 
@@ -392,7 +403,11 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
             guard !hasFreshMapping else { return }
             metadata.noIconUntilBySiteKey[siteKey] = now.addingTimeInterval(SumiFaviconTTL.noIconFound)
             metadataByPartition[partition] = metadata
-            try? persist(metadata: metadata, partition: partition)
+            persistOrLog(
+                metadata: metadata,
+                partition: partition,
+                operation: "no-icon marker"
+            )
         }
     }
 
@@ -424,7 +439,11 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
                     return !domainMatches(host: host, domain: normalizedDomain)
                 }
                 metadataByPartition[partition] = metadata
-                try? persist(metadata: metadata, partition: partition)
+                persistOrLog(
+                    metadata: metadata,
+                    partition: partition,
+                    operation: "site invalidation"
+                )
             }
 
             return invalidations
@@ -458,7 +477,11 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
                 }
                 pruneAliases(in: &metadata)
                 metadataByPartition[partition] = metadata
-                try? persist(metadata: metadata, partition: partition)
+                persistOrLog(
+                    metadata: metadata,
+                    partition: partition,
+                    operation: "history clear burn"
+                )
             }
             return invalidations
         }
@@ -492,7 +515,11 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
                 }
                 pruneAliases(in: &metadata)
                 metadataByPartition[partition] = metadata
-                try? persist(metadata: metadata, partition: partition)
+                persistOrLog(
+                    metadata: metadata,
+                    partition: partition,
+                    operation: "domain burn"
+                )
             }
             return invalidations
         }
@@ -529,6 +556,20 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder.sumiFavicon.encode(metadata)
         try data.write(to: metadataURL(for: partition), options: [.atomic])
+    }
+
+    private func persistOrLog(
+        metadata: Metadata,
+        partition: SumiFaviconPartition,
+        operation: String
+    ) {
+        do {
+            try persist(metadata: metadata, partition: partition)
+        } catch {
+            Self.log.error(
+                "Failed to persist favicon metadata after \(operation, privacy: .public) for \(partition.storageComponent, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 
     private func cleanupDiskBudgetIfNeeded(metadata: inout Metadata, partition: SumiFaviconPartition) {
