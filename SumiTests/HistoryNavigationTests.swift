@@ -53,6 +53,16 @@ final class HistoryNavigationTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, firstHistoryTab.id)
     }
 
+    func testHistoryWindowOpenPathsShareWindowRegistrationAwaiter() throws {
+        let source = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager+History.swift")
+        let reopenSource = try Self.functionSource(named: "reopenWindow", in: source)
+
+        XCTAssertEqual(source.components(separatedBy: "awaitNextRegisteredWindow(").count - 1, 1)
+        XCTAssertTrue(source.contains("private func createNewWindowRegistrationAwaiter()"))
+        XCTAssertTrue(reopenSource.contains("createNewWindowRegistrationAwaiter()"))
+        XCTAssertTrue(reopenSource.contains("windowSessionService.applyWindowSessionSnapshot("))
+    }
+
     private func makeHarness() -> (BrowserManager, WindowRegistry, BrowserWindowState, Space) {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
@@ -75,5 +85,35 @@ final class HistoryNavigationTests: XCTestCase {
         windowRegistry.setActive(windowState)
 
         return (browserManager, windowRegistry, windowState, space)
+    }
+
+    private static func source(named relativePath: String) throws -> String {
+        var directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+
+        while directory.path != "/" {
+            let candidate = directory.appendingPathComponent(relativePath)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return try String(contentsOf: candidate, encoding: .utf8)
+            }
+            directory.deleteLastPathComponent()
+        }
+
+        throw NSError(
+            domain: "HistoryNavigationTests",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Could not locate \(relativePath)"]
+        )
+    }
+
+    private static func functionSource(named functionName: String, in source: String) throws -> Substring {
+        let start = try XCTUnwrap(source.range(of: "func \(functionName)"))
+        let remainingSource = source[start.upperBound...]
+        let nextFunctionBoundaries = [
+            remainingSource.range(of: "\n    func ")?.lowerBound,
+            remainingSource.range(of: "\n    private func ")?.lowerBound
+        ].compactMap { $0 }
+        let end = nextFunctionBoundaries.min() ?? source.endIndex
+
+        return source[start.lowerBound..<end]
     }
 }

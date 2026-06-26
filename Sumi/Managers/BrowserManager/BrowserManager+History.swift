@@ -8,6 +8,8 @@ import SwiftUI
 
 @MainActor
 extension BrowserManager {
+    private typealias NewWindowRegistrationAwaiter = @MainActor () async -> BrowserWindowState?
+
     enum HistoryOpenMode {
         case currentTab
         case newTab
@@ -78,13 +80,10 @@ extension BrowserManager {
             return
         }
 
-        let existingWindowIDs = Set(windowRegistry?.windows.keys.map { $0 } ?? [])
-        createNewWindow()
+        let awaitNewWindow = createNewWindowRegistrationAwaiter()
         Task { @MainActor [weak self] in
             guard let self,
-                  let targetWindow = await self.windowRegistry?.awaitNextRegisteredWindow(
-                    excluding: existingWindowIDs
-                  )
+                  let targetWindow = await awaitNewWindow()
             else {
                 return
             }
@@ -192,13 +191,10 @@ extension BrowserManager {
         let uniqueURLs = Array(NSOrderedSet(array: urls)).compactMap { $0 as? URL }
         guard !uniqueURLs.isEmpty else { return }
 
-        let existingWindowIDs = Set(windowRegistry?.windows.keys.map { $0 } ?? [])
-        createNewWindow()
+        let awaitNewWindow = createNewWindowRegistrationAwaiter()
         Task { @MainActor [weak self] in
             guard let self,
-                  let targetWindow = await self.windowRegistry?.awaitNextRegisteredWindow(
-                    excluding: existingWindowIDs
-                  )
+                  let targetWindow = await awaitNewWindow()
             else {
                 return
             }
@@ -484,11 +480,8 @@ extension BrowserManager {
     }
 
     func reopenWindow(from snapshot: WindowSessionSnapshot) async {
-        let existingWindowIDs = Set(windowRegistry?.windows.keys.map { $0 } ?? [])
-        createNewWindow()
-        guard let targetWindow = await windowRegistry?.awaitNextRegisteredWindow(
-            excluding: existingWindowIDs
-        ) else {
+        let awaitNewWindow = createNewWindowRegistrationAwaiter()
+        guard let targetWindow = await awaitNewWindow() else {
             return
         }
 
@@ -499,6 +492,17 @@ extension BrowserManager {
         )
         targetWindow.window?.makeKeyAndOrderFront(nil as Any?)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func createNewWindowRegistrationAwaiter() -> NewWindowRegistrationAwaiter {
+        let existingWindowIDs = Set(windowRegistry?.windows.keys.map { $0 } ?? [])
+        createNewWindow()
+
+        return { [weak self] in
+            await self?.windowRegistry?.awaitNextRegisteredWindow(
+                excluding: existingWindowIDs
+            )
+        }
     }
 
     func currentRegularWindowSnapshots(
