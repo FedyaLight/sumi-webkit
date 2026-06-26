@@ -24,7 +24,8 @@ final class SumiPermissionEventOwnerTests: XCTestCase {
         await waitUntil {
             await coordinator.subscriptionCount == 1
         }
-        XCTAssertEqual(await coordinator.subscriptionCount, 1)
+        let subscriptionCount = await coordinator.subscriptionCount
+        XCTAssertEqual(subscriptionCount, 1)
 
         let query = Self.permissionQuery()
         await coordinator.emit(.queryActivated(query))
