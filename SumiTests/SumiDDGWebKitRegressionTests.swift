@@ -476,6 +476,34 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertNil(nilCurrentState.activeSplitGroup)
     }
 
+    func testWindowWebContentControllerUsesBrowserContextBoundary() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("private protocol WindowWebContentBrowserContext"))
+        XCTAssertTrue(source.contains("extension BrowserManager: WindowWebContentBrowserContext"))
+        XCTAssertTrue(source.contains("browserContext: browserManager"))
+
+        let controllerSource = try sourceSlice(
+            source,
+            from: "final class WindowWebContentController",
+            to: "@MainActor\nprivate final class VisualHandoffCoverController"
+        )
+        XCTAssertTrue(controllerSource.contains("private let browserContext: any WindowWebContentBrowserContext"))
+        XCTAssertTrue(controllerSource.contains("browserContext.schedulePrepareVisibleWebViews"))
+        XCTAssertTrue(controllerSource.contains("browserContext.enqueueWindowMutationDuringHistorySwipe"))
+        XCTAssertTrue(controllerSource.contains("browserContext.currentTab(for: windowState)"))
+        XCTAssertFalse(controllerSource.contains("private let browserManager: BrowserManager"))
+        XCTAssertFalse(controllerSource.contains("browserManager."))
+    }
+
     func testCloneWebViewPrimaryWindowSelectionDoesNotDependOnDictionaryOrder() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

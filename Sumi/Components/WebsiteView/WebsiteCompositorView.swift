@@ -50,14 +50,85 @@ struct WebsiteDisplayState: Equatable {
 }
 
 @MainActor
+private protocol WindowWebContentBrowserContext: AnyObject {
+    func currentTab(for windowState: BrowserWindowState) -> Tab?
+    func tab(for tabId: UUID) -> Tab?
+    func splitGroup(for windowId: UUID) -> SplitGroup?
+    func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState)
+    func enqueueWindowMutationDuringHistorySwipe(
+        _ kind: HistorySwipeDeferredWindowMutationKind,
+        for windowState: BrowserWindowState
+    )
+    func removeSplitGroup(id: UUID)
+    func updateSplitLayoutSizes(
+        groupId: UUID,
+        path: [Int],
+        sizes: [Double],
+        for windowId: UUID
+    )
+    func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID)
+    func configureSplitControls(
+        _ controls: SplitPaneControlsView,
+        tab: Tab,
+        windowState: BrowserWindowState
+    )
+}
+
+extension BrowserManager: WindowWebContentBrowserContext {
+    fileprivate func tab(for tabId: UUID) -> Tab? {
+        tabManager.tab(for: tabId)
+    }
+
+    fileprivate func splitGroup(for windowId: UUID) -> SplitGroup? {
+        splitManager.splitGroup(for: windowId)
+    }
+
+    fileprivate func removeSplitGroup(id: UUID) {
+        tabManager.removeSplitGroup(id: id)
+    }
+
+    fileprivate func updateSplitLayoutSizes(
+        groupId: UUID,
+        path: [Int],
+        sizes: [Double],
+        for windowId: UUID
+    ) {
+        splitManager.updateLayoutSizes(
+            groupId: groupId,
+            path: path,
+            sizes: sizes,
+            for: windowId
+        )
+    }
+
+    fileprivate func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {
+        view.browserManager = self
+        view.splitManager = splitManager
+        view.windowId = windowId
+    }
+
+    fileprivate func configureSplitControls(
+        _ controls: SplitPaneControlsView,
+        tab: Tab,
+        windowState: BrowserWindowState
+    ) {
+        controls.configure(
+            tab: tab,
+            browserManager: self,
+            splitManager: splitManager,
+            windowState: windowState
+        )
+    }
+}
+
+@MainActor
 final class WindowWebContentController: NSViewController {
-    private let browserManager: BrowserManager
+    private let browserContext: any WindowWebContentBrowserContext
     private let webViewCoordinator: WebViewCoordinator
     private let windowState: BrowserWindowState
     private var chromeGeometry: BrowserChromeGeometry
     private lazy var containerView = ContainerView(
-        browserManager: browserManager,
-        splitManager: browserManager.splitManager,
+        browserContext: browserContext,
         windowId: windowState.id,
         chromeGeometry: chromeGeometry
     )
@@ -86,13 +157,13 @@ final class WindowWebContentController: NSViewController {
         }
     )
 
-    init(
-        browserManager: BrowserManager,
+    fileprivate init(
+        browserContext: any WindowWebContentBrowserContext,
         webViewCoordinator: WebViewCoordinator,
         chromeGeometry: BrowserChromeGeometry,
         windowState: BrowserWindowState
     ) {
-        self.browserManager = browserManager
+        self.browserContext = browserContext
         self.webViewCoordinator = webViewCoordinator
         self.chromeGeometry = chromeGeometry
         self.windowState = windowState
@@ -114,7 +185,7 @@ final class WindowWebContentController: NSViewController {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.browserManager.schedulePrepareVisibleWebViews(for: self.windowState)
+            self.browserContext.schedulePrepareVisibleWebViews(for: self.windowState)
         }
     }
 
@@ -134,7 +205,7 @@ final class WindowWebContentController: NSViewController {
         super.viewDidLayout()
 
         if webViewCoordinator.hasActiveHistorySwipe(in: windowState.id) {
-            browserManager.enqueueWindowMutationDuringHistorySwipe(
+            browserContext.enqueueWindowMutationDuringHistorySwipe(
                 .refreshCompositor,
                 for: windowState
             )
@@ -148,7 +219,7 @@ final class WindowWebContentController: NSViewController {
         chromeGeometry: BrowserChromeGeometry,
         contentBackgroundColor: Color
     ) {
-        let currentTab = browserManager.currentTab(for: windowState)
+        let currentTab = browserContext.currentTab(for: windowState)
         let displayStateChanged = appliedDisplayState != displayState
         let hasStaleSubviews = compositorSubtreeHasStaleWebViews(
             currentTab: currentTab,
@@ -175,7 +246,7 @@ final class WindowWebContentController: NSViewController {
         }
 
         if !displayState.visibleTabIds.isEmpty && missingPreparedWebViews(for: displayState.visibleTabIds) {
-            browserManager.schedulePrepareVisibleWebViews(for: windowState)
+            browserContext.schedulePrepareVisibleWebViews(for: windowState)
         }
 
         if lastHoverTabId != displayState.currentId,
@@ -202,14 +273,14 @@ final class WindowWebContentController: NSViewController {
         guard let displayState = pendingDisplayState else { return }
 
         if webViewCoordinator.hasActiveHistorySwipe(in: windowState.id) {
-            browserManager.enqueueWindowMutationDuringHistorySwipe(
+            browserContext.enqueueWindowMutationDuringHistorySwipe(
                 .refreshCompositor,
                 for: windowState
             )
             return
         }
 
-        let currentTab = browserManager.currentTab(for: windowState)
+        let currentTab = browserContext.currentTab(for: windowState)
         let hasStaleSubviews = compositorSubtreeHasStaleWebViews(
             currentTab: currentTab,
             displayState: displayState
@@ -226,16 +297,10 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func apply(displayState: WebsiteDisplayState, currentTab: Tab?) {
-        let splitManager = browserManager.splitManager
-        containerView.setSplitDropCaptureActive(
-            displayState.isSplitDropCaptureActive,
-            browserManager: browserManager,
-            splitManager: splitManager,
-            windowId: windowState.id
-        )
+        containerView.setSplitDropCaptureActive(displayState.isSplitDropCaptureActive)
 
         if let group = displayState.activeSplitGroup {
-            let tabs = group.tabIds.compactMap { browserManager.tabManager.tab(for: $0) }
+            let tabs = group.tabIds.compactMap { browserContext.tab(for: $0) }
             guard tabs.count == group.tabIds.count else {
                 let didBeginVisualHandoff = beginSinglePaneVisualHandoffIfNeeded(to: currentTab)
                 scheduleSplitRepair(groupId: group.id)
@@ -256,16 +321,16 @@ final class WindowWebContentController: NSViewController {
 
     private func performImmediateVisualHandoffIfPossible() -> Bool {
         guard !webViewCoordinator.hasActiveHistorySwipe(in: windowState.id),
-              let currentTab = browserManager.currentTab(for: windowState),
+              let currentTab = browserContext.currentTab(for: windowState),
               currentTab.requiresPrimaryWebView
         else {
             return false
         }
 
-        if let group = browserManager.splitManager.splitGroup(for: windowState.id),
+        if let group = browserContext.splitGroup(for: windowState.id),
            group.contains(currentTab.id)
         {
-            let tabs = group.tabIds.compactMap { browserManager.tabManager.tab(for: $0) }
+            let tabs = group.tabIds.compactMap { browserContext.tab(for: $0) }
             guard tabs.count == group.tabIds.count else { return false }
             let didBeginVisualHandoff = beginVisualHandoffCovers(excluding: Set(group.tabIds))
             showSplitGroup(group, tabs: tabs)
@@ -377,8 +442,7 @@ final class WindowWebContentController: NSViewController {
             if let host = webViewHost(for: tab, slot: .split(tab.id)) {
                 paneView.configureSplitControls(
                     tab: tab,
-                    browserManager: browserManager,
-                    splitManager: browserManager.splitManager,
+                    browserContext: browserContext,
                     windowState: windowState
                 )
                 attach(host, to: paneView)
@@ -418,7 +482,7 @@ final class WindowWebContentController: NSViewController {
             return
         }
 
-        let currentTab = browserManager.currentTab(for: windowState)
+        let currentTab = browserContext.currentTab(for: windowState)
         guard let currentTab,
               tabID == nil || currentTab.id == tabID
         else {
@@ -639,7 +703,7 @@ final class WindowWebContentController: NSViewController {
 
     private func missingPreparedWebViews(for visibleTabIds: Set<UUID>) -> Bool {
         visibleTabIds.contains { tabId in
-            if let tab = browserManager.tabManager.tab(for: tabId),
+            if let tab = browserContext.tab(for: tabId),
                tab.requiresPrimaryWebView == false {
                 return false
             }
@@ -667,7 +731,7 @@ final class WindowWebContentController: NSViewController {
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.browserManager.tabManager.removeSplitGroup(id: groupId)
+            self.browserContext.removeSplitGroup(id: groupId)
             self.pendingSplitRepairGroupId = nil
         }
     }
@@ -803,7 +867,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
     func makeNSViewController(context: Context) -> WindowWebContentController {
         WindowWebContentController(
-            browserManager: browserManager,
+            browserContext: browserManager,
             webViewCoordinator: webViewCoordinator,
             chromeGeometry: chromeGeometry,
             windowState: windowState
@@ -859,21 +923,20 @@ private final class ContainerView: NSView {
     private let splitDropCaptureView = SplitDropCaptureView(frame: .zero)
     private var paneLayout: PaneLayout = .single
     private var chromeGeometry: BrowserChromeGeometry
-    private weak var splitManager: SplitViewManager?
-    private var windowId: UUID
+    private weak var browserContext: (any WindowWebContentBrowserContext)?
+    private let windowId: UUID
 
     var hasHostedSplitWebViews: Bool {
         splitRootView.hasHostedWebViews
     }
 
     init(
-        browserManager: BrowserManager,
-        splitManager: SplitViewManager,
+        browserContext: any WindowWebContentBrowserContext,
         windowId: UUID,
         chromeGeometry: BrowserChromeGeometry
     ) {
         self.chromeGeometry = chromeGeometry
-        self.splitManager = splitManager
+        self.browserContext = browserContext
         self.windowId = windowId
         super.init(frame: .zero)
 
@@ -886,12 +949,7 @@ private final class ContainerView: NSView {
         visualHandoffOverlayView.isHidden = true
         addSubview(visualHandoffOverlayView)
 
-        setSplitDropCaptureActive(
-            false,
-            browserManager: browserManager,
-            splitManager: splitManager,
-            windowId: windowId
-        )
+        setSplitDropCaptureActive(false)
     }
 
     @available(*, unavailable)
@@ -923,16 +981,9 @@ private final class ContainerView: NSView {
     }
 
     func setSplitDropCaptureActive(
-        _ isActive: Bool,
-        browserManager: BrowserManager,
-        splitManager: SplitViewManager,
-        windowId: UUID
+        _ isActive: Bool
     ) {
-        self.splitManager = splitManager
-        self.windowId = windowId
-        splitDropCaptureView.browserManager = browserManager
-        splitDropCaptureView.splitManager = splitManager
-        splitDropCaptureView.windowId = windowId
+        browserContext?.configureSplitDropCapture(splitDropCaptureView, windowId: windowId)
 
         if isActive {
             if splitDropCaptureView.superview !== self {
@@ -992,7 +1043,7 @@ private final class ContainerView: NSView {
                 chromeGeometry: chromeGeometry,
                 onResize: { [weak self] path, sizes in
                     guard let self else { return }
-                    self.splitManager?.updateLayoutSizes(
+                    self.browserContext?.updateSplitLayoutSizes(
                         groupId: group.id,
                         path: path,
                         sizes: sizes,
@@ -1248,20 +1299,14 @@ final class PaneContainerView: NSView {
         }
     }
 
-    func configureSplitControls(
+    fileprivate func configureSplitControls(
         tab: Tab,
-        browserManager: BrowserManager,
-        splitManager: SplitViewManager,
+        browserContext: any WindowWebContentBrowserContext,
         windowState: BrowserWindowState
     ) {
         let controls = splitControlsView ?? SplitPaneControlsView()
         splitControlsView = controls
-        controls.configure(
-            tab: tab,
-            browserManager: browserManager,
-            splitManager: splitManager,
-            windowState: windowState
-        )
+        browserContext.configureSplitControls(controls, tab: tab, windowState: windowState)
         if controls.superview !== self {
             addSubview(controls, positioned: .above, relativeTo: nil)
         }
@@ -1704,13 +1749,8 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
     }
 
     private func setSplitDropShieldActive(_ isActive: Bool) {
-        guard let browserManager, let splitManager, let windowState else { return }
-        enclosingContainerView?.setSplitDropCaptureActive(
-            isActive,
-            browserManager: browserManager,
-            splitManager: splitManager,
-            windowId: windowState.id
-        )
+        guard browserManager != nil, splitManager != nil, windowState != nil else { return }
+        enclosingContainerView?.setSplitDropCaptureActive(isActive)
     }
 
     private var enclosingContainerView: ContainerView? {
