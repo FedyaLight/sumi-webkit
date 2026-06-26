@@ -596,18 +596,8 @@ extension ExtensionManager {
 
         if forceReload == false,
            let resolvedProfileId,
-           let extensionId,
-           isExtensionRuntimeReady(extensionId: extensionId, profileId: resolvedProfileId)
-        {
-            markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
-            return true
-        }
-
-        if forceReload == false,
-           extensionId == nil,
-           let resolvedProfileId,
-           extensionControllersByProfile[resolvedProfileId] != nil,
-           isProfileExtensionRuntimeReady(for: resolvedProfileId)
+           extensionRuntimeReadinessContext(for: resolvedProfileId)
+            .canUseExistingRuntime(extensionID: extensionId)
         {
             markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
             return true
@@ -627,26 +617,18 @@ extension ExtensionManager {
         }
 
         if let resolvedProfileId,
-           let extensionId,
-           isExtensionRuntimeReady(extensionId: extensionId, profileId: resolvedProfileId)
+           extensionRuntimeReadinessContext(for: resolvedProfileId)
+            .isReadyAfterRuntimeRequest(extensionID: extensionId)
         {
             markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
             return true
         }
 
         if let resolvedProfileId,
-           extensionId == nil,
-           isProfileExtensionRuntimeReady(for: resolvedProfileId)
+           extensionRuntimeReadinessContext(for: resolvedProfileId)
+            .allowsReadyControllerFallback(extensionID: extensionId)
         {
-            markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
             return true
-        }
-
-        if let resolvedProfileId,
-           extensionControllersByProfile[resolvedProfileId] != nil,
-           runtimeState == .ready
-        {
-            return extensionId == nil
         }
 
         return false

@@ -205,36 +205,45 @@ extension ExtensionManager {
     }
 
     func missingEnabledExtensionIDs(for profileId: UUID) -> [String] {
-        let enabledIDs = Set(enabledPersistedExtensionEntities().map(\.id))
-        let loadedIDs = Set(extensionContexts(for: profileId).keys)
-        return Array(enabledIDs.subtracting(loadedIDs)).sorted()
+        extensionRuntimeReadinessContext(for: profileId).missingEnabledExtensionIDs
     }
 
     func isProfileExtensionRuntimeReady(for profileId: UUID) -> Bool {
-        guard hasEnabledInstalledExtensions else { return true }
-        return missingEnabledExtensionIDs(for: profileId).isEmpty
+        extensionRuntimeReadinessContext(for: profileId).isProfileReady
     }
 
     func isExtensionRuntimeReady(
         extensionId: String,
         profileId: UUID
     ) -> Bool {
-        guard let context = getExtensionContext(for: extensionId, profileId: profileId) else {
-            return false
-        }
-        return context.isLoaded
+        extensionRuntimeReadinessContext(for: profileId)
+            .isExtensionReady(extensionID: extensionId)
     }
 
     func markExtensionRuntimeReadyIfProfileContextsLoaded(for profileId: UUID) {
         guard extensionControllersByProfile[profileId] != nil else { return }
+        let readiness = extensionRuntimeReadinessContext(for: profileId)
         extensionsLoaded = true
-        if isProfileExtensionRuntimeReady(for: profileId) {
+        if readiness.isProfileReady {
             runtimeState = .ready
         } else if runtimeState != .failed {
             runtimeState = .ready
         }
         extensionRuntimeTrace(
-            "markExtensionRuntimeReady profile=\(profileId.uuidString) loadedContexts=\(extensionContexts(for: profileId).count) allEnabledLoaded=\(isProfileExtensionRuntimeReady(for: profileId))"
+            "markExtensionRuntimeReady profile=\(profileId.uuidString) loadedContexts=\(extensionContexts(for: profileId).count) allEnabledLoaded=\(readiness.isProfileReady)"
+        )
+    }
+
+    func extensionRuntimeReadinessContext(
+        for profileId: UUID
+    ) -> ExtensionRuntimeReadinessContext {
+        ExtensionRuntimeReadinessContext(
+            hasEnabledExtensionDemand: hasEnabledInstalledExtensions,
+            enabledExtensionIDs: Set(enabledPersistedExtensionEntities().map(\.id)),
+            loadedExtensionStatesByID: extensionContexts(for: profileId)
+                .mapValues(\.isLoaded),
+            controllerExists: extensionControllersByProfile[profileId] != nil,
+            globalRuntimeReady: runtimeState == .ready
         )
     }
 
