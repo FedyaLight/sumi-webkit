@@ -299,6 +299,7 @@ class BrowserManager: ObservableObject {
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
+        startupPersistence: BrowserManagerStartupPersistence = .production,
         // Explicit injection seams keep module-boundary tests focused without constructing optional runtimes at startup.
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
@@ -332,10 +333,10 @@ class BrowserManager: ObservableObject {
         }
 
         // Phase 1: initialize all stored properties
-        let startupModelContext = SumiStartupPersistence.shared.container.mainContext
+        let startupModelContext = startupPersistence.mainContext
         let systemPermissionService = systemPermissionService ?? MacSumiSystemPermissionService()
         let persistentPermissionStore = SwiftDataPermissionStore(
-            container: SumiStartupPersistence.shared.container
+            container: startupPersistence.container
         )
         let antiAbuseStore = SumiPermissionAntiAbuseStore()
         let permissionCoordinator = permissionCoordinator
