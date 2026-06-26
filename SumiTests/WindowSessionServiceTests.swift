@@ -103,6 +103,61 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
     }
 
+    func testApplyWindowSessionSnapshotRestoresPersistedWindowFields() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Snapshot", profileId: profileId)
+        let tab = tabManager.createNewTab(url: "https://snapshot.example", in: space, activate: true)
+        let shortcutPinId = UUID()
+        let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+
+        let snapshot = WindowSessionSnapshot(
+            currentTabId: tab.id,
+            currentSpaceId: space.id,
+            currentProfileId: profileId,
+            activeShortcutPinId: shortcutPinId,
+            activeShortcutPinRole: .spacePinned,
+            isShowingEmptyState: false,
+            floatingBarReason: .keyboard,
+            activeTabsBySpace: [
+                SpaceTabSelectionSnapshot(spaceId: space.id, tabId: tab.id)
+            ],
+            activeShortcutsBySpace: [
+                SpaceShortcutSelectionSnapshot(spaceId: space.id, shortcutPinId: shortcutPinId)
+            ],
+            sidebarWidth: 312,
+            savedSidebarWidth: 340,
+            sidebarContentWidth: 1,
+            isSidebarVisible: false,
+            floatingBarDraft: FloatingBarDraftState(text: "persisted draft", navigateCurrentTab: true),
+            splitSession: nil
+        )
+        let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let windowState = BrowserWindowState()
+        windowState.isDownloadsPopoverPresented = true
+
+        service.applyWindowSessionSnapshot(snapshot, to: windowState, delegate: delegate)
+
+        XCTAssertEqual(windowState.currentTabId, tab.id)
+        XCTAssertEqual(windowState.currentSpaceId, space.id)
+        XCTAssertEqual(windowState.currentProfileId, profileId)
+        XCTAssertEqual(windowState.currentShortcutPinId, shortcutPinId)
+        XCTAssertEqual(windowState.currentShortcutPinRole, .spacePinned)
+        XCTAssertFalse(windowState.isShowingEmptyState)
+        XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
+        XCTAssertEqual(windowState.activeTabForSpace[space.id], tab.id)
+        XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], shortcutPinId)
+        XCTAssertEqual(windowState.sidebarWidth, 312)
+        XCTAssertEqual(windowState.savedSidebarWidth, 340)
+        XCTAssertEqual(windowState.sidebarContentWidth, BrowserWindowState.sidebarContentWidth(for: 312))
+        XCTAssertFalse(windowState.isSidebarVisible)
+        XCTAssertFalse(windowState.isDownloadsPopoverPresented)
+        XCTAssertEqual(windowState.floatingBarDraftText, "persisted draft")
+        XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
+    }
+
     func testActiveEssentialShortcutSurvivesPreloadSetupAndMaterializesAfterTabLoad() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         let space = Space(id: UUID(), name: "Primary")

@@ -102,6 +102,45 @@ protocol WindowSessionServiceDelegate: AnyObject {
 }
 
 @MainActor
+private enum WindowSessionSnapshotApplier {
+    static func apply(
+        _ snapshot: WindowSessionSnapshot,
+        to windowState: BrowserWindowState,
+        delegate: WindowSessionServiceDelegate
+    ) {
+        windowState.currentTabId = snapshot.currentTabId
+        windowState.currentSpaceId = snapshot.currentSpaceId
+        windowState.currentProfileId = snapshot.currentProfileId
+        windowState.currentShortcutPinId = snapshot.activeShortcutPinId
+        windowState.currentShortcutPinRole = snapshot.activeShortcutPinRole
+        windowState.isShowingEmptyState = snapshot.isShowingEmptyState
+        windowState.floatingBarPresentationReason =
+            snapshot.isShowingEmptyState
+            ? (snapshot.floatingBarReason ?? .emptySpace)
+            : .none
+        windowState.activeTabForSpace = Dictionary(
+            uniqueKeysWithValues: snapshot.activeTabsBySpace.map { ($0.spaceId, $0.tabId) }
+        )
+        windowState.selectedShortcutPinForSpace = Dictionary(
+            uniqueKeysWithValues: (snapshot.activeShortcutsBySpace ?? []).map { ($0.spaceId, $0.shortcutPinId) }
+        )
+        let restoredSidebarWidth = BrowserWindowState.clampedSidebarWidth(CGFloat(snapshot.sidebarWidth))
+        let restoredSavedSidebarWidth = BrowserWindowState.clampedSidebarWidth(CGFloat(snapshot.savedSidebarWidth))
+        windowState.sidebarWidth = restoredSidebarWidth
+        windowState.savedSidebarWidth = restoredSavedSidebarWidth
+        windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: restoredSidebarWidth)
+        windowState.isSidebarVisible = snapshot.isSidebarVisible
+        windowState.isDownloadsPopoverPresented = false
+        windowState.floatingBarDraftText = snapshot.floatingBarDraft.text
+        windowState.floatingBarDraftNavigatesCurrentTab = snapshot.floatingBarDraft.navigateCurrentTab
+        windowState.pendingSessionSplitGroupId = snapshot.activeSplitGroupId
+        delegate.splitManager.restoreSession(snapshot.splitSession, for: windowState.id)
+        delegate.glanceManager.restoreSession(snapshot.glanceSession, in: windowState)
+        delegate.sanitizeFloatingBarState(in: windowState)
+    }
+}
+
+@MainActor
 final class WindowSessionService {
     private let lastWindowSessionKey: String
     private var lastPersistedWindowSessionData: Data?
@@ -229,7 +268,7 @@ final class WindowSessionService {
         delegate: WindowSessionServiceDelegate
     ) {
         windowState.tabManager = delegate.tabManager
-        apply(snapshot: snapshot, to: windowState, delegate: delegate)
+        WindowSessionSnapshotApplier.apply(snapshot, to: windowState, delegate: delegate)
         finalizeWindowStateRestore(windowState, delegate: delegate, source: "applyWindowSessionSnapshot")
     }
 
@@ -512,44 +551,8 @@ final class WindowSessionService {
         didRestoreGlobalWindowSessionThisCycle = true
         lastPersistedWindowSessionData = data
 
-        apply(snapshot: snapshot, to: windowState, delegate: delegate)
+        WindowSessionSnapshotApplier.apply(snapshot, to: windowState, delegate: delegate)
         return true
-    }
-
-    private func apply(
-        snapshot: WindowSessionSnapshot,
-        to windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
-    ) {
-        windowState.currentTabId = snapshot.currentTabId
-        windowState.currentSpaceId = snapshot.currentSpaceId
-        windowState.currentProfileId = snapshot.currentProfileId
-        windowState.currentShortcutPinId = snapshot.activeShortcutPinId
-        windowState.currentShortcutPinRole = snapshot.activeShortcutPinRole
-        windowState.isShowingEmptyState = snapshot.isShowingEmptyState
-        windowState.floatingBarPresentationReason =
-            snapshot.isShowingEmptyState
-            ? (snapshot.floatingBarReason ?? .emptySpace)
-            : .none
-        windowState.activeTabForSpace = Dictionary(
-            uniqueKeysWithValues: snapshot.activeTabsBySpace.map { ($0.spaceId, $0.tabId) }
-        )
-        windowState.selectedShortcutPinForSpace = Dictionary(
-            uniqueKeysWithValues: (snapshot.activeShortcutsBySpace ?? []).map { ($0.spaceId, $0.shortcutPinId) }
-        )
-        let restoredSidebarWidth = BrowserWindowState.clampedSidebarWidth(CGFloat(snapshot.sidebarWidth))
-        let restoredSavedSidebarWidth = BrowserWindowState.clampedSidebarWidth(CGFloat(snapshot.savedSidebarWidth))
-        windowState.sidebarWidth = restoredSidebarWidth
-        windowState.savedSidebarWidth = restoredSavedSidebarWidth
-        windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: restoredSidebarWidth)
-        windowState.isSidebarVisible = snapshot.isSidebarVisible
-        windowState.isDownloadsPopoverPresented = false
-        windowState.floatingBarDraftText = snapshot.floatingBarDraft.text
-        windowState.floatingBarDraftNavigatesCurrentTab = snapshot.floatingBarDraft.navigateCurrentTab
-        windowState.pendingSessionSplitGroupId = snapshot.activeSplitGroupId
-        delegate.splitManager.restoreSession(snapshot.splitSession, for: windowState.id)
-        delegate.glanceManager.restoreSession(snapshot.glanceSession, in: windowState)
-        delegate.sanitizeFloatingBarState(in: windowState)
     }
 
     private func restorePendingSplitGroupSelectionIfNeeded(
