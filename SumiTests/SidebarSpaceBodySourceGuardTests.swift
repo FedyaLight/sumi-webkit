@@ -35,6 +35,21 @@ final class SidebarSpaceBodySourceGuardTests: XCTestCase {
         XCTAssertFalse(source.contains("private func sortedFolderItems"))
     }
 
+    func testSpaceScrollChromeNotificationsKeepSynchronousMainActorBoundary() throws {
+        let source = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpaceScrollChrome.swift")
+        let observationSource = try Self.sourceRange(
+            in: source,
+            from: "private func syncScrollBoundsObservation",
+            to: "private func configurePassiveScrollIndicator"
+        )
+
+        XCTAssertTrue(observationSource.contains("forName: NSView.boundsDidChangeNotification"))
+        XCTAssertTrue(observationSource.contains("forName: NSView.frameDidChangeNotification"))
+        XCTAssertEqual(observationSource.components(separatedBy: "queue: nil").count - 1, 2)
+        XCTAssertEqual(observationSource.components(separatedBy: "MainActor.assumeIsolated").count - 1, 2)
+        XCTAssertFalse(observationSource.contains("Task { @MainActor"))
+    }
+
     private static func sourceRange(
         in source: String,
         from startMarker: String,

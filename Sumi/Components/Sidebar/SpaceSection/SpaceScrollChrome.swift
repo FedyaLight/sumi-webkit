@@ -376,7 +376,9 @@ private final class SidebarTabListScrollRegistrationView: NSView {
             object: scrollView.contentView,
             queue: nil
         ) { [weak self] _ in
-            self?.reportCurrentScrollBoundaries()
+            MainActor.assumeIsolated {
+                self?.reportCurrentScrollBoundaries()
+            }
         }
 
         // 2. Observe Document View frame changes synchronously
@@ -391,7 +393,9 @@ private final class SidebarTabListScrollRegistrationView: NSView {
                 object: documentView,
                 queue: nil
             ) { [weak self] _ in
-                self?.reportCurrentScrollBoundaries()
+                MainActor.assumeIsolated {
+                    self?.reportCurrentScrollBoundaries()
+                }
             }
         }
 
