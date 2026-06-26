@@ -1249,6 +1249,70 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(containerSource.contains("override var isOpaque"))
     }
 
+    func testNativeSplitTreeViewBoundaryOwnsNativeDividerMechanics() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let compositorSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
+            ),
+            encoding: .utf8
+        )
+        let nativeSplitSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/NativeSplitTreeView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(compositorSource.contains("final class NativeSplitTreeView"))
+        XCTAssertTrue(compositorSource.contains("NativeSplitTreeView(axis: axis"))
+        XCTAssertTrue(compositorSource.contains("splitView.updateStoredSizes"))
+
+        XCTAssertTrue(nativeSplitSource.contains("final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate"))
+        XCTAssertTrue(nativeSplitSource.contains("func updateStoredSizes"))
+        XCTAssertTrue(nativeSplitSource.contains("func splitViewDidResizeSubviews"))
+        XCTAssertTrue(nativeSplitSource.contains("private static func normalizedSizes"))
+        XCTAssertFalse(nativeSplitSource.contains("WindowWebContentController"))
+        XCTAssertFalse(nativeSplitSource.contains("WebViewCoordinator"))
+        XCTAssertFalse(nativeSplitSource.contains("SplitDropCaptureView"))
+    }
+
+    func testNativeSplitTreeViewRestoresStoredSizesAndReportsUserResize() throws {
+        let splitView = NativeSplitTreeView(axis: .row, path: [1, 0], sizes: [0.25, 0.75])
+        let leftPane = NSView()
+        let rightPane = NSView()
+        var reportedResize: (path: [Int], sizes: [Double])?
+
+        splitView.frame = NSRect(x: 0, y: 0, width: 400, height: 200)
+        splitView.addSubview(leftPane)
+        splitView.addSubview(rightPane)
+        splitView.resizeHandler = { path, sizes in
+            reportedResize = (path, sizes)
+        }
+
+        splitView.layoutSubtreeIfNeeded()
+
+        XCTAssertNil(reportedResize)
+        XCTAssertEqual(leftPane.frame.width, 100, accuracy: 4)
+        XCTAssertEqual(rightPane.frame.width, 300, accuracy: 4)
+
+        reportedResize = nil
+        splitView.setPosition(280, ofDividerAt: 0)
+        if reportedResize == nil {
+            splitView.splitViewDidResizeSubviews(
+                Notification(name: NSSplitView.didResizeSubviewsNotification, object: splitView)
+            )
+        }
+
+        let resize = try XCTUnwrap(reportedResize)
+        XCTAssertEqual(resize.path, [1, 0])
+        XCTAssertEqual(resize.sizes.reduce(0, +), 1, accuracy: 0.0001)
+        XCTAssertGreaterThan(resize.sizes[0], 0.60)
+        XCTAssertLessThan(resize.sizes[1], 0.40)
+    }
+
     func testRoundedWebContentViewportUsesNativeLayerClippingWithoutWebPageInjectionOrSnapshots() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -1258,6 +1322,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             "Sumi/Components/WebsiteView/BrowserContentViewportCutouts.swift",
             "Sumi/Components/WebsiteView/WebsiteView.swift",
             "Sumi/Components/WebsiteView/WebsiteCompositorView.swift",
+            "Sumi/Components/WebsiteView/NativeSplitTreeView.swift",
             "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift",
             "Sumi/Managers/WebViewCoordinator/SumiWebViewContainerView.swift",
         ]
