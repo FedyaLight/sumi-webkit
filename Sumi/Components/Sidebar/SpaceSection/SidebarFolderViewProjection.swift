@@ -20,6 +20,306 @@ struct SidebarFolderDisplayEntry: Identifiable {
     let id: String
 }
 
+struct SidebarFolderDragDisplayProjection: Equatable {
+    let isActive: Bool
+    let sourceFolderID: UUID?
+    let draggedItemID: UUID?
+    let folderDropIntent: FolderDropIntent
+    let suppressesCommittedPlaceholder: Bool
+
+    init(
+        isActive: Bool,
+        sourceFolderID: UUID?,
+        draggedItemID: UUID?,
+        folderDropIntent: FolderDropIntent,
+        suppressesCommittedPlaceholder: Bool
+    ) {
+        self.isActive = isActive
+        self.sourceFolderID = sourceFolderID
+        self.draggedItemID = draggedItemID
+        self.folderDropIntent = folderDropIntent
+        self.suppressesCommittedPlaceholder = suppressesCommittedPlaceholder
+    }
+
+    @MainActor
+    init(
+        dragState: SidebarDragState,
+        folderID: UUID,
+        baseItems: [SidebarFolderListItem]
+    ) {
+        let draggedItemID = dragState.projectionDragItemId
+        let sourceFolderID: UUID?
+        if case .folder(let projectedSourceFolderID) = dragState.projectionDragScope?.sourceContainer {
+            sourceFolderID = projectedSourceFolderID
+        } else {
+            sourceFolderID = nil
+        }
+
+        let targetAlreadyContainsDraggedItem = draggedItemID.map { itemID in
+            baseItems.contains { $0.matchesItemID(itemID) }
+        } ?? false
+
+        self.init(
+            isActive: dragState.isDropProjectionActive,
+            sourceFolderID: sourceFolderID,
+            draggedItemID: draggedItemID,
+            folderDropIntent: dragState.projectionFolderDropIntent,
+            suppressesCommittedPlaceholder: draggedItemID != nil
+                && dragState.shouldHideCommittedCrossContainerPlaceholder(
+                    into: .folder(folderID),
+                    targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
+                )
+        )
+    }
+}
+
+@MainActor
+struct SidebarFolderContentProjection {
+    let childCount: Int
+    let bodyItems: [SidebarFolderListItem]
+    let bodyDisplayEntries: [SidebarFolderDisplayEntry]
+    let targetCollapsedProjectionIDs: [UUID]
+    let visibleCollapsedProjectionIDs: [UUID]
+
+    var hasCollapsedProjectionForLayout: Bool {
+        !visibleCollapsedProjectionIDs.isEmpty || !targetCollapsedProjectionIDs.isEmpty
+    }
+
+    init(
+        baseItems: [SidebarFolderListItem],
+        folderID: UUID,
+        isFolderOpen: Bool,
+        shortcutPins: [ShortcutPin],
+        restoreGaps: [ShortcutRestoreGap],
+        displayedCollapsedProjectionIDs: [UUID],
+        projectedChildIDs: [UUID],
+        projection: SidebarFolderViewProjection,
+        dragProjection: SidebarFolderDragDisplayProjection
+    ) {
+        childCount = baseItems.count
+        let renderedItems = SidebarFolderDisplayProjection.renderedItems(
+            baseItems: baseItems,
+            folderID: folderID,
+            isFolderOpen: isFolderOpen,
+            restoreGaps: restoreGaps,
+            dragProjection: dragProjection
+        )
+        targetCollapsedProjectionIDs = isFolderOpen
+            ? []
+            : SidebarFolderDisplayProjection.targetCollapsedProjectionIDs(
+                shortcutPins: shortcutPins,
+                projectedChildIDs: projectedChildIDs,
+                projection: projection
+            )
+        visibleCollapsedProjectionIDs = SidebarFolderDisplayProjection.visibleCollapsedProjectionIDs(
+            displayedCollapsedProjectionIDs: displayedCollapsedProjectionIDs,
+            targetCollapsedProjectionIDs: targetCollapsedProjectionIDs
+        )
+        bodyItems = isFolderOpen
+            ? renderedItems
+            : visibleCollapsedProjectionIDs.map(SidebarFolderListItem.shortcut)
+        bodyDisplayEntries = SidebarFolderDisplayProjection.displayEntries(
+            from: bodyItems,
+            restoreGaps: restoreGaps,
+            placeholderDragItemID: dragProjection.draggedItemID
+        )
+    }
+}
+
+enum SidebarFolderDisplayProjection {
+    static func renderedItems(
+        baseItems: [SidebarFolderListItem],
+        folderID: UUID,
+        isFolderOpen: Bool,
+        restoreGaps: [ShortcutRestoreGap],
+        dragProjection: SidebarFolderDragDisplayProjection
+    ) -> [SidebarFolderListItem] {
+        var items = SidebarDropProjection.projectedItems(
+            itemIDs: baseItems,
+            removesSourceID: projectedSourceItem(
+                in: baseItems,
+                folderID: folderID,
+                dragProjection: dragProjection
+            ),
+            insertsPlaceholderAt: projectedInsertionIndex(
+                folderID: folderID,
+                isFolderOpen: isFolderOpen,
+                dragProjection: dragProjection
+            )
+        )
+        .map { item in
+            switch item {
+            case .item(let folderItem):
+                return folderItem
+            case .placeholder:
+                return .placeholder
+            }
+        }
+
+        let gaps = restoreGaps.filter { gap in
+            gap.container == .folder(folderID)
+        }
+        for gap in gaps.sorted(by: { $0.index < $1.index }) {
+            items.removeAll { item in
+                if case .shortcut(let pinID) = item {
+                    return pinID == gap.pinId
+                }
+                return false
+            }
+            items.insert(.restoreGap(gap.id), at: max(0, min(gap.index, items.count)))
+        }
+
+        return items
+    }
+
+    static func displayEntries(
+        from items: [SidebarFolderListItem],
+        restoreGaps: [ShortcutRestoreGap],
+        placeholderDragItemID: UUID?
+    ) -> [SidebarFolderDisplayEntry] {
+        var childCount = 0
+        return items.map { item in
+            let entry = SidebarFolderDisplayEntry(
+                item: item,
+                dropIndex: childCount,
+                id: displayID(
+                    for: item,
+                    placeholderIndex: childCount,
+                    restoreGaps: restoreGaps,
+                    placeholderDragItemID: placeholderDragItemID
+                )
+            )
+            switch item {
+            case .folder, .shortcut, .liveItem, .splitGroup:
+                childCount += 1
+            case .restoreGap, .placeholder:
+                break
+            }
+            return entry
+        }
+    }
+
+    @MainActor
+    static func targetCollapsedProjectionPins(
+        shortcutPins: [ShortcutPin],
+        projectedChildIDs: [UUID],
+        projection: SidebarFolderViewProjection
+    ) -> [ShortcutPin] {
+        let livePins = shortcutPins.filter { pin in
+            projection.liveTab(for: pin.id) != nil
+        }
+
+        guard !projectedChildIDs.isEmpty else {
+            return livePins.sorted { lhs, rhs in
+                if lhs.index != rhs.index { return lhs.index < rhs.index }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+        }
+
+        let projectedOrder = Dictionary(
+            uniqueKeysWithValues: projectedChildIDs.enumerated().map { ($1, $0) }
+        )
+        return livePins.sorted { lhs, rhs in
+            let leftOrder = projectedOrder[lhs.id] ?? lhs.index
+            let rightOrder = projectedOrder[rhs.id] ?? rhs.index
+            if leftOrder != rightOrder { return leftOrder < rightOrder }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+    }
+
+    @MainActor
+    static func targetCollapsedProjectionIDs(
+        shortcutPins: [ShortcutPin],
+        projectedChildIDs: [UUID],
+        projection: SidebarFolderViewProjection
+    ) -> [UUID] {
+        targetCollapsedProjectionPins(
+            shortcutPins: shortcutPins,
+            projectedChildIDs: projectedChildIDs,
+            projection: projection
+        ).map(\.id)
+    }
+
+    static func visibleCollapsedProjectionIDs(
+        displayedCollapsedProjectionIDs: [UUID],
+        targetCollapsedProjectionIDs: [UUID]
+    ) -> [UUID] {
+        displayedCollapsedProjectionIDs.isEmpty
+            ? targetCollapsedProjectionIDs
+            : displayedCollapsedProjectionIDs
+    }
+
+    private static func projectedSourceItem(
+        in items: [SidebarFolderListItem],
+        folderID: UUID,
+        dragProjection: SidebarFolderDragDisplayProjection
+    ) -> SidebarFolderListItem? {
+        guard dragProjection.isActive,
+              dragProjection.sourceFolderID == folderID,
+              let draggedItemID = dragProjection.draggedItemID else {
+            return nil
+        }
+        return items.first { $0.matchesItemID(draggedItemID) }
+    }
+
+    private static func projectedInsertionIndex(
+        folderID: UUID,
+        isFolderOpen: Bool,
+        dragProjection: SidebarFolderDragDisplayProjection
+    ) -> Int? {
+        guard dragProjection.isActive,
+              case .insertIntoFolder(let targetFolderID, let index) = dragProjection.folderDropIntent,
+              targetFolderID == folderID,
+              isFolderOpen else {
+            return nil
+        }
+
+        guard !dragProjection.suppressesCommittedPlaceholder else {
+            return nil
+        }
+        return index
+    }
+
+    private static func displayID(
+        for item: SidebarFolderListItem,
+        placeholderIndex: Int,
+        restoreGaps: [ShortcutRestoreGap],
+        placeholderDragItemID: UUID?
+    ) -> String {
+        switch item {
+        case .folder(let id):
+            return "folder-\(id.uuidString)"
+        case .shortcut(let id):
+            return "item-\(id.uuidString)"
+        case .liveItem(let id):
+            return "live-item-\(id)"
+        case .splitGroup(let id):
+            return "split-group-\(id.uuidString)"
+        case .restoreGap(let id):
+            if let gap = restoreGaps.first(where: { $0.id == id }) {
+                return "item-\(gap.pinId.uuidString)"
+            }
+            return "restore-gap-\(id.uuidString)"
+        case .placeholder:
+            if let placeholderDragItemID {
+                return "item-\(placeholderDragItemID.uuidString)"
+            }
+            return "placeholder-\(placeholderIndex)"
+        }
+    }
+}
+
+private extension SidebarFolderListItem {
+    func matchesItemID(_ id: UUID) -> Bool {
+        switch self {
+        case .folder(let itemID), .shortcut(let itemID), .splitGroup(let itemID):
+            return itemID == id
+        case .liveItem, .restoreGap, .placeholder:
+            return false
+        }
+    }
+}
+
 @MainActor
 struct SidebarFolderViewProjection {
     let liveFolderSource: SumiLiveFolderSource?

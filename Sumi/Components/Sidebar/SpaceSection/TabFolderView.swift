@@ -76,137 +76,15 @@ struct TabFolderView: View {
         browserManager.liveFolderManager.source(for: folder.id)
     }
 
-    private func folderItems(baseItems: [FolderListItem]) -> [FolderListItem] {
-        var items = SidebarDropProjection.projectedItems(
-            itemIDs: baseItems,
-            removesSourceID: folderProjectedSourceItem(in: baseItems),
-            insertsPlaceholderAt: folderProjectedInsertionIndex(baseItems: baseItems)
-        )
-        .map { item in
-            switch item {
-            case .item(let folderItem):
-                return folderItem
-            case .placeholder:
-                return .placeholder
-            }
-        }
-
-        let gaps = shortcutRestoreGaps.filter { gap in
-            gap.container == .folder(folder.id)
-        }
-        for gap in gaps.sorted(by: { $0.index < $1.index }) {
-            items.removeAll { item in
-                if case .shortcut(let pinId) = item {
-                    return pinId == gap.pinId
-                }
-                return false
-            }
-            items.insert(.restoreGap(gap.id), at: max(0, min(gap.index, items.count)))
-        }
-
-        return items
-    }
-
-
-    private func folderProjectedSourceItem(in items: [FolderListItem]) -> FolderListItem? {
-        guard dragState.isDropProjectionActive,
-              dragState.projectionDragScope?.sourceContainer == .folder(folder.id),
-              let projectionDragItemId = dragState.projectionDragItemId else {
-            return nil
-        }
-        return items.first { item in
-            switch item {
-            case .folder(let id), .shortcut(let id), .splitGroup(let id):
-                return id == projectionDragItemId
-            case .liveItem:
-                return false
-            case .restoreGap, .placeholder:
-                return false
-            }
-        }
-    }
-
-    private func folderProjectedInsertionIndex(baseItems: [FolderListItem]) -> Int? {
-        guard dragState.isDropProjectionActive,
-              case .insertIntoFolder(let folderId, let index) = dragState.projectionFolderDropIntent,
-              folderId == folder.id,
-              folder.isOpen else {
-            return nil
-        }
-        if let projectionDragItemId = dragState.projectionDragItemId,
-           dragState.shouldHideCommittedCrossContainerPlaceholder(
-                into: .folder(folder.id),
-                targetAlreadyContainsDraggedItem: baseItems.contains { item in
-                    switch item {
-                    case .folder(let id), .shortcut(let id), .splitGroup(let id):
-                        return id == projectionDragItemId
-                    case .liveItem:
-                        return false
-                    case .restoreGap, .placeholder:
-                        return false
-                    }
-                }
-           ) {
-            return nil
-        }
-        return index
-    }
-
-    private func targetCollapsedProjectionPins(
-        using projection: SidebarFolderViewProjection
-    ) -> [ShortcutPin] {
-        guard !folder.isOpen else { return [] }
-        return collapsedProjectedShortcutPins(
-            using: folderProjectionState.projectedChildIDs,
-            projection: projection
-        )
-    }
-
     private func targetCollapsedProjectionIDs(
         using projection: SidebarFolderViewProjection
     ) -> [UUID] {
-        targetCollapsedProjectionPins(using: projection).map(\.id)
-    }
-
-    private func visibleCollapsedProjectionIDs(
-        using projection: SidebarFolderViewProjection
-    ) -> [UUID] {
-        displayedCollapsedProjectionIDs.isEmpty
-            ? targetCollapsedProjectionIDs(using: projection)
-            : displayedCollapsedProjectionIDs
-    }
-
-    private func hasCollapsedProjectionForLayout(
-        using projection: SidebarFolderViewProjection
-    ) -> Bool {
-        !displayedCollapsedProjectionIDs.isEmpty
-            || !targetCollapsedProjectionIDs(using: projection).isEmpty
-    }
-
-    private func collapsedProjectedShortcutPins(
-        using projectedChildIDs: [UUID],
-        projection: SidebarFolderViewProjection
-    ) -> [ShortcutPin] {
-        let livePins = shortcutPinsInFolder.filter { pin in
-            projection.liveTab(for: pin.id) != nil
-        }
-
-        guard !projectedChildIDs.isEmpty else {
-            return livePins.sorted { lhs, rhs in
-                if lhs.index != rhs.index { return lhs.index < rhs.index }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-        }
-
-        let projectedOrder = Dictionary(
-            uniqueKeysWithValues: projectedChildIDs.enumerated().map { ($1, $0) }
+        guard !folder.isOpen else { return [] }
+        return SidebarFolderDisplayProjection.targetCollapsedProjectionIDs(
+            shortcutPins: shortcutPinsInFolder,
+            projectedChildIDs: folderProjectionState.projectedChildIDs,
+            projection: projection
         )
-        return livePins.sorted { lhs, rhs in
-            let leftOrder = projectedOrder[lhs.id] ?? lhs.index
-            let rightOrder = projectedOrder[rhs.id] ?? rhs.index
-            if leftOrder != rightOrder { return leftOrder < rightOrder }
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
     }
 
     // Replaced by SidebarDragState
@@ -237,16 +115,37 @@ struct TabFolderView: View {
         8
     }
 
-    private func folderBodyShouldRender(
+    private func folderContentProjection(
         using projection: SidebarFolderViewProjection
+    ) -> SidebarFolderContentProjection {
+        SidebarFolderContentProjection(
+            baseItems: projection.baseItems,
+            folderID: folder.id,
+            isFolderOpen: folder.isOpen,
+            shortcutPins: shortcutPinsInFolder,
+            restoreGaps: shortcutRestoreGaps,
+            displayedCollapsedProjectionIDs: displayedCollapsedProjectionIDs,
+            projectedChildIDs: folderProjectionState.projectedChildIDs,
+            projection: projection,
+            dragProjection: SidebarFolderDragDisplayProjection(
+                dragState: dragState,
+                folderID: folder.id,
+                baseItems: projection.baseItems
+            )
+        )
+    }
+
+    private func folderBodyShouldRender(
+        contentProjection: SidebarFolderContentProjection
     ) -> Bool {
-        folder.isOpen || hasCollapsedProjectionForLayout(using: projection)
+        folder.isOpen || contentProjection.hasCollapsedProjectionForLayout
     }
 
     private func folderBodyGeometryIsActive(
-        using projection: SidebarFolderViewProjection
+        contentProjection: SidebarFolderContentProjection,
+        projection: SidebarFolderViewProjection
     ) -> Bool {
-        isInteractive && folderBodyShouldRender(using: projection) && !projection.isLiveFolder
+        isInteractive && folderBodyShouldRender(contentProjection: contentProjection) && !projection.isLiveFolder
     }
 
     private var folderLayoutAnimation: Animation? {
@@ -320,15 +219,10 @@ struct TabFolderView: View {
             childFolders: childFolders,
             shortcutRestoreGaps: shortcutRestoreGaps
         ) { projection in
-            let childCount = projection.baseItems.count
-            let items = folderItems(baseItems: projection.baseItems)
-            let bodyItems = folder.isOpen
-                ? items
-                : visibleCollapsedProjectionIDs(using: projection).map(FolderListItem.shortcut)
+            let contentProjection = folderContentProjection(using: projection)
 
             folderCompositeContent(
-                childCount: childCount,
-                bodyItems: bodyItems,
+                contentProjection: contentProjection,
                 projection: projection
             )
                 .transaction { transaction in
@@ -368,32 +262,28 @@ struct TabFolderView: View {
     }
 
     private func folderCompositeContent(
-        childCount: Int,
-        bodyItems: [FolderListItem],
+        contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
     ) -> some View {
         VStack(spacing: 0) {
-            folderHeader(childCount: childCount, projection: projection)
+            folderHeader(contentProjection: contentProjection, projection: projection)
             folderBodyContainer(
-                childCount: childCount,
-                bodyItems: bodyItems,
+                contentProjection: contentProjection,
                 projection: projection
             )
         }
         .background(alignment: .bottom) {
-            folderAfterDropTarget(childCount: childCount)
+            folderAfterDropTarget(childCount: contentProjection.childCount)
         }
     }
 
     @ViewBuilder
     private func folderBodyContainer(
-        childCount: Int,
-        bodyItems: [FolderListItem],
+        contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
     ) -> some View {
         folderBodyAnimatedContent(
-            childCount: childCount,
-            bodyItems: bodyItems,
+            contentProjection: contentProjection,
             projection: projection
         )
             .sidebarFolderDropGeometry(
@@ -401,27 +291,29 @@ struct TabFolderView: View {
                 spaceId: space.id,
                 parentFolderId: parentFolderId,
                 topLevelIndex: resolvedTopLevelPinnedIndex,
-                childCount: childCount,
+                childCount: contentProjection.childCount,
                 isOpen: folder.isOpen,
                 region: .body,
                 generation: dragState.sidebarGeometryGeneration,
-                isActive: folderBodyGeometryIsActive(using: projection)
+                isActive: folderBodyGeometryIsActive(
+                    contentProjection: contentProjection,
+                    projection: projection
+                )
             )
     }
 
     @ViewBuilder
     private func folderBodyAnimatedContent(
-        childCount: Int,
-        bodyItems: [FolderListItem],
+        contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
     ) -> some View {
-        if folderBodyShouldRender(using: projection) {
-            folderBodyVisibleContent(bodyItems: bodyItems, projection: projection)
+        if folderBodyShouldRender(contentProjection: contentProjection) {
+            folderBodyVisibleContent(contentProjection: contentProjection, projection: projection)
                 .transition(.sidebarRowContentOpacity)
                 .animation(folderLayoutAnimation, value: folder.isOpen)
-                .animation(folderLayoutAnimation, value: bodyItems)
+                .animation(folderLayoutAnimation, value: contentProjection.bodyItems)
                 .animation(folderLayoutAnimation, value: displayedCollapsedProjectionIDs)
-                .animation(folderLayoutAnimation, value: targetCollapsedProjectionIDs(using: projection))
+                .animation(folderLayoutAnimation, value: contentProjection.targetCollapsedProjectionIDs)
         } else {
             Color.clear
                 .frame(height: 0)
@@ -431,20 +323,20 @@ struct TabFolderView: View {
     }
 
     private func folderBodyVisibleContent(
-        bodyItems: [FolderListItem],
+        contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
     ) -> some View {
         folderBodyContent(
-            items: bodyItems,
+            contentProjection: contentProjection,
             reportsGeometry: true,
             reportsFolderChildGeometry: folder.isOpen,
             projection: projection
         )
-        .allowsHitTesting(folder.isOpen || !visibleCollapsedProjectionIDs(using: projection).isEmpty)
+        .allowsHitTesting(folder.isOpen || !contentProjection.visibleCollapsedProjectionIDs.isEmpty)
         .animation(folderLayoutAnimation, value: folder.isOpen)
-        .animation(folderLayoutAnimation, value: bodyItems)
+        .animation(folderLayoutAnimation, value: contentProjection.bodyItems)
         .animation(folderLayoutAnimation, value: displayedCollapsedProjectionIDs)
-        .animation(folderLayoutAnimation, value: targetCollapsedProjectionIDs(using: projection))
+        .animation(folderLayoutAnimation, value: contentProjection.targetCollapsedProjectionIDs)
     }
 
     @ViewBuilder
@@ -474,16 +366,16 @@ struct TabFolderView: View {
 
 
     private func folderHeader(
-        childCount: Int,
+        contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
     ) -> some View {
-        folderHeaderRow(projection: projection)
+        folderHeaderRow(contentProjection: contentProjection, projection: projection)
         .sidebarFolderDropGeometry(
             folderId: folder.id,
             spaceId: space.id,
             parentFolderId: parentFolderId,
             topLevelIndex: resolvedTopLevelPinnedIndex,
-            childCount: childCount,
+            childCount: contentProjection.childCount,
             isOpen: folder.isOpen,
             region: .header,
             generation: dragState.sidebarGeometryGeneration,
@@ -497,7 +389,10 @@ struct TabFolderView: View {
                 sourceZone: parentFolderId.map(DropZoneID.folder) ?? .spacePinned(space.id),
                 previewKind: .folderRow,
                 pinnedConfig: .large,
-                folderGlyphPresentation: folderGlyphPresentation(using: projection),
+                folderGlyphPresentation: folderGlyphPresentation(
+                    using: projection,
+                    contentProjection: contentProjection
+                ),
                 folderGlyphPalette: folderShellPalette,
                 onActivate: {
                     toggleFolderOpenState()
@@ -518,10 +413,11 @@ struct TabFolderView: View {
     }
 
     private func folderHeaderRow(
+        contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
     ) -> some View {
         HStack(spacing: 0) {
-            folderHeaderIconSlot(projection: projection)
+            folderHeaderIconSlot(contentProjection: contentProjection, projection: projection)
             folderTitleView
             Spacer(minLength: 0)
         }
@@ -558,10 +454,14 @@ struct TabFolderView: View {
     }
 
     private func folderIconView(
+        contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
     ) -> some View {
         SumiFolderGlyphView(
-            presentation: folderGlyphPresentation(using: projection),
+            presentation: folderGlyphPresentation(
+                using: projection,
+                contentProjection: contentProjection
+            ),
             palette: folderShellPalette
         )
         .frame(
@@ -573,19 +473,20 @@ struct TabFolderView: View {
 
     /// Full-size Zen glyph; horizontal center matches favicon column, layout width matches tab rows (`folderTitleLeading`).
     private func folderHeaderIconSlot(
+        contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
     ) -> some View {
         ZStack(alignment: .leading) {
             Color.clear
                 .frame(width: SidebarRowLayout.folderTitleLeading, height: SidebarRowLayout.rowHeight)
-            folderIconView(projection: projection)
+            folderIconView(contentProjection: contentProjection, projection: projection)
                 .offset(x: SidebarRowLayout.folderHeaderGlyphCenteringOffset)
         }
         .frame(width: SidebarRowLayout.folderTitleLeading, alignment: .leading)
     }
 
     private func folderBodyContent(
-        items: [FolderListItem],
+        contentProjection: SidebarFolderContentProjection,
         reportsGeometry: Bool,
         reportsFolderChildGeometry: Bool,
         projection: SidebarFolderViewProjection
@@ -594,7 +495,7 @@ struct TabFolderView: View {
         let shortcutPinsById = Dictionary(uniqueKeysWithValues: shortcutPinsInFolder.map { ($0.id, $0) })
 
         return LazyVStack(spacing: 0) {
-            ForEach(folderDisplayEntries(from: items)) { entry in
+            ForEach(contentProjection.bodyDisplayEntries) { entry in
                 VStack(spacing: 0) {
                     switch entry.item {
                     case .folder(let folderId):
@@ -652,9 +553,9 @@ struct TabFolderView: View {
         .padding(.leading, Self.folderContentLeadingPadding)
         .padding(.vertical, Self.folderContentVerticalPadding)
         .background(alignment: .leading) {
-            folderNestingGuide(isVisible: !items.isEmpty)
+            folderNestingGuide(isVisible: !contentProjection.bodyItems.isEmpty)
         }
-        .animation(folderLayoutAnimation, value: items)
+        .animation(folderLayoutAnimation, value: contentProjection.bodyItems)
     }
 
     private func nestedFolderView(_ childFolder: TabFolder, containerIndex: Int) -> some View {
@@ -695,24 +596,6 @@ struct TabFolderView: View {
                 .padding(.vertical, 6)
                 .offset(x: 6)
                 .accessibilityHidden(true)
-        }
-    }
-
-    private func folderDisplayEntries(from items: [FolderListItem]) -> [FolderDisplayEntry] {
-        var childCount = 0
-        return items.map { item in
-            let entry = FolderDisplayEntry(
-                item: item,
-                dropIndex: childCount,
-                id: folderDisplayID(for: item, placeholderIndex: childCount)
-            )
-            switch item {
-            case .folder, .shortcut, .liveItem, .splitGroup:
-                childCount += 1
-            case .restoreGap, .placeholder:
-                break
-            }
-            return entry
         }
     }
 
@@ -771,32 +654,6 @@ struct TabFolderView: View {
 
     private func folderContainsElevatedSelection(_ folderId: UUID) -> Bool {
         elevatedFolderIds.contains(folderId)
-    }
-
-    private func folderDisplayID(
-        for item: FolderListItem,
-        placeholderIndex: Int
-    ) -> String {
-        switch item {
-        case .folder(let id):
-            return "folder-\(id.uuidString)"
-        case .shortcut(let id):
-            return "item-\(id.uuidString)"
-        case .liveItem(let id):
-            return "live-item-\(id)"
-        case .splitGroup(let id):
-            return "split-group-\(id.uuidString)"
-        case .restoreGap(let id):
-            if let gap = shortcutRestoreGaps.first(where: { $0.id == id }) {
-                return "item-\(gap.pinId.uuidString)"
-            }
-            return "restore-gap-\(id.uuidString)"
-        case .placeholder:
-            if let projectionDragItemId = dragState.projectionDragItemId {
-                return "item-\(projectionDragItemId.uuidString)"
-            }
-            return "placeholder-\(placeholderIndex)"
-        }
     }
 
     private var folderDropGap: some View {
@@ -1285,28 +1142,34 @@ struct TabFolderView: View {
     }
 
     private func folderGlyphPresentation(
-        using projection: SidebarFolderViewProjection
+        using projection: SidebarFolderViewProjection,
+        contentProjection: SidebarFolderContentProjection
     ) -> SumiFolderGlyphPresentationState {
         SumiFolderGlyphPresentationState(
             iconValue: folder.icon,
             isOpen: folderPreviewIsOpen,
-            hasActiveProjection: folderHasProjectedContent(using: projection)
+            hasActiveProjection: folderHasProjectedContent(
+                using: projection,
+                contentProjection: contentProjection
+            )
         )
     }
 
     private func folderHasProjectedContent(
-        using projection: SidebarFolderViewProjection
+        using projection: SidebarFolderViewProjection,
+        contentProjection: SidebarFolderContentProjection
     ) -> Bool {
         folderProjectionState.hasActiveProjection
             || folderHasActiveSelection(using: projection)
-            || hasCollapsedProjectionForLayout(using: projection)
+            || contentProjection.hasCollapsedProjectionForLayout
     }
 
     private func scheduleProjectionStateRefresh(
         projection: SidebarFolderViewProjection
     ) {
-        let projectedIDs = collapsedProjectedShortcutPins(
-            using: folderProjectionState.projectedChildIDs,
+        let projectedIDs = SidebarFolderDisplayProjection.targetCollapsedProjectionPins(
+            shortcutPins: shortcutPinsInFolder,
+            projectedChildIDs: folderProjectionState.projectedChildIDs,
             projection: projection
         ).map(\.id)
         let newHasActiveProjection = folderHasActiveSelection(using: projection) || !projectedIDs.isEmpty

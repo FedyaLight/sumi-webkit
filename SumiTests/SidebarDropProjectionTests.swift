@@ -252,6 +252,157 @@ final class SidebarDropProjectionTests: XCTestCase {
         )
     }
 
+    func testFolderProjectionRemovesDraggedSourceAndInsertsPlaceholderInOpenFolder() {
+        let folderId = UUID()
+        let draggedFolderId = UUID()
+        let shortcutId = UUID()
+        let splitGroupId = UUID()
+
+        let items = SidebarFolderDisplayProjection.renderedItems(
+            baseItems: [
+                .folder(draggedFolderId),
+                .shortcut(shortcutId),
+                .splitGroup(splitGroupId),
+            ],
+            folderID: folderId,
+            isFolderOpen: true,
+            restoreGaps: [],
+            dragProjection: SidebarFolderDragDisplayProjection(
+                isActive: true,
+                sourceFolderID: folderId,
+                draggedItemID: draggedFolderId,
+                folderDropIntent: .insertIntoFolder(folderId: folderId, index: 2),
+                suppressesCommittedPlaceholder: false
+            )
+        )
+
+        XCTAssertEqual(items, [.shortcut(shortcutId), .splitGroup(splitGroupId), .placeholder])
+    }
+
+    func testFolderProjectionDoesNotInsertPlaceholderIntoClosedFolder() {
+        let folderId = UUID()
+        let draggedShortcutId = UUID()
+        let shortcutId = UUID()
+
+        let items = SidebarFolderDisplayProjection.renderedItems(
+            baseItems: [.shortcut(draggedShortcutId), .shortcut(shortcutId)],
+            folderID: folderId,
+            isFolderOpen: false,
+            restoreGaps: [],
+            dragProjection: SidebarFolderDragDisplayProjection(
+                isActive: true,
+                sourceFolderID: folderId,
+                draggedItemID: draggedShortcutId,
+                folderDropIntent: .insertIntoFolder(folderId: folderId, index: 1),
+                suppressesCommittedPlaceholder: false
+            )
+        )
+
+        XCTAssertEqual(items, [.shortcut(shortcutId)])
+    }
+
+    func testFolderProjectionSuppressesCommittedPlaceholderForRegularSource() {
+        let folderId = UUID()
+        let draggedTabId = UUID()
+        let shortcutId = UUID()
+
+        let items = SidebarFolderDisplayProjection.renderedItems(
+            baseItems: [.shortcut(shortcutId)],
+            folderID: folderId,
+            isFolderOpen: true,
+            restoreGaps: [],
+            dragProjection: SidebarFolderDragDisplayProjection(
+                isActive: true,
+                sourceFolderID: nil,
+                draggedItemID: draggedTabId,
+                folderDropIntent: .insertIntoFolder(folderId: folderId, index: 0),
+                suppressesCommittedPlaceholder: true
+            )
+        )
+
+        XCTAssertEqual(items, [.shortcut(shortcutId)])
+    }
+
+    func testFolderProjectionKeepsSameFolderCommitPlaceholder() {
+        let folderId = UUID()
+        let draggedShortcutId = UUID()
+        let shortcutId = UUID()
+
+        let items = SidebarFolderDisplayProjection.renderedItems(
+            baseItems: [.shortcut(draggedShortcutId), .shortcut(shortcutId)],
+            folderID: folderId,
+            isFolderOpen: true,
+            restoreGaps: [],
+            dragProjection: SidebarFolderDragDisplayProjection(
+                isActive: true,
+                sourceFolderID: folderId,
+                draggedItemID: draggedShortcutId,
+                folderDropIntent: .insertIntoFolder(folderId: folderId, index: 1),
+                suppressesCommittedPlaceholder: false
+            )
+        )
+
+        XCTAssertEqual(items, [.shortcut(shortcutId), .placeholder])
+    }
+
+    func testFolderProjectionMergesShortcutRestoreGapAfterDragProjection() {
+        let folderId = UUID()
+        let draggedShortcutId = UUID()
+        let restoredShortcutId = UUID()
+        let gap = ShortcutRestoreGap(
+            pinId: restoredShortcutId,
+            container: .folder(folderId),
+            index: 0
+        )
+
+        let items = SidebarFolderDisplayProjection.renderedItems(
+            baseItems: [.shortcut(draggedShortcutId), .shortcut(restoredShortcutId)],
+            folderID: folderId,
+            isFolderOpen: true,
+            restoreGaps: [gap],
+            dragProjection: SidebarFolderDragDisplayProjection(
+                isActive: true,
+                sourceFolderID: folderId,
+                draggedItemID: draggedShortcutId,
+                folderDropIntent: .insertIntoFolder(folderId: folderId, index: 1),
+                suppressesCommittedPlaceholder: false
+            )
+        )
+
+        XCTAssertEqual(items, [.restoreGap(gap.id), .placeholder])
+    }
+
+    func testFolderDisplayEntriesDoNotAdvanceDropIndexForPlaceholderOrRestoreGap() {
+        let shortcutId = UUID()
+        let draggedShortcutId = UUID()
+        let restoredShortcutId = UUID()
+        let childFolderId = UUID()
+        let gap = ShortcutRestoreGap(
+            pinId: restoredShortcutId,
+            container: .folder(UUID()),
+            index: 0
+        )
+
+        let entries = SidebarFolderDisplayProjection.displayEntries(
+            from: [
+                .shortcut(shortcutId),
+                .placeholder,
+                .restoreGap(gap.id),
+                .folder(childFolderId),
+            ],
+            restoreGaps: [gap],
+            placeholderDragItemID: draggedShortcutId
+        )
+
+        XCTAssertEqual(entries.map(\.dropIndex), [0, 1, 1, 1])
+        XCTAssertEqual(entries.map(\.id), [
+            "item-\(shortcutId.uuidString)",
+            "item-\(draggedShortcutId.uuidString)",
+            "item-\(restoredShortcutId.uuidString)",
+            "folder-\(childFolderId.uuidString)",
+        ])
+    }
+
     private func makeScrollView(frame: NSRect) -> NSScrollView {
         let scrollView = NSScrollView(frame: frame)
         scrollView.borderType = .noBorder

@@ -35,6 +35,25 @@ final class SidebarSpaceBodySourceGuardTests: XCTestCase {
         XCTAssertFalse(source.contains("private func sortedFolderItems"))
     }
 
+    func testTabFolderViewDoesNotOwnFolderDragDisplayProjectionRules() throws {
+        let folderSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift")
+        let projectionSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SidebarFolderViewProjection.swift")
+
+        XCTAssertTrue(projectionSource.contains("struct SidebarFolderDragDisplayProjection"))
+        XCTAssertTrue(projectionSource.contains("enum SidebarFolderDisplayProjection"))
+        XCTAssertFalse(projectionSource.contains("SidebarDragState.shared"))
+
+        for forbidden in [
+            "dragState.projectionDragScope",
+            "dragState.projectionFolderDropIntent",
+            "dragState.shouldHideCommittedCrossContainerPlaceholder",
+            "private func folderDisplayEntries",
+            "private func folderDisplayID"
+        ] {
+            XCTAssertFalse(folderSource.contains(forbidden), "TabFolderView should not own \(forbidden)")
+        }
+    }
+
     func testSpaceScrollChromeNotificationsKeepSynchronousMainActorBoundary() throws {
         let source = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpaceScrollChrome.swift")
         let observationSource = try Self.sourceRange(
