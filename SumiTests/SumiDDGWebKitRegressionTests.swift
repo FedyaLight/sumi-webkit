@@ -554,7 +554,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         let webViewHost = try sourceSlice(
             compositorSource,
-            from: "private func webViewHost(for tab: Tab, slot: PaneSlot)",
+            from: "private func webViewHost(for tab: Tab, slot: WindowWebContentPaneSlot)",
             to: "private func attach(_ host: SumiWebViewContainerView"
         )
         XCTAssertTrue(webViewHost.contains("if let displayedHost = hostRegistry.displayedHost(for: tab.id)"))
@@ -570,16 +570,20 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
-
-        let registry = try sourceSlice(
-            source,
-            from: "private final class WindowWebContentHostRegistry",
-            to: "private func webViewHost(for tab: Tab, slot: PaneSlot)"
+        let registrySource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WindowWebContentHostRegistry.swift"
+            ),
+            encoding: .utf8
         )
-        XCTAssertTrue(registry.contains("func protectedHost(for webView: WKWebView)"))
-        XCTAssertFalse(registry.contains("DispatchWorkItem"))
-        XCTAssertFalse(registry.contains("CATransaction"))
-        XCTAssertFalse(registry.contains("placeVisualHandoffCover"))
+
+        XCTAssertTrue(source.contains("private let hostRegistry = WindowWebContentHostRegistry()"))
+        XCTAssertTrue(registrySource.contains("enum WindowWebContentPaneSlot"))
+        XCTAssertTrue(registrySource.contains("final class WindowWebContentHostRegistry"))
+        XCTAssertTrue(registrySource.contains("func protectedHost(for webView: WKWebView)"))
+        XCTAssertFalse(registrySource.contains("DispatchWorkItem"))
+        XCTAssertFalse(registrySource.contains("CATransaction"))
+        XCTAssertFalse(registrySource.contains("placeVisualHandoffCover"))
 
         let releaseCallback = try sourceSlice(
             source,
