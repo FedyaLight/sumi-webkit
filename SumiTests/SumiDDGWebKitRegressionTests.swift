@@ -544,7 +544,60 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             from: "private func webViewHost(for tab: Tab, slot: PaneSlot)",
             to: "private func attach(_ host: SumiWebViewContainerView"
         )
-        XCTAssertTrue(webViewHost.contains("if let displayedHost = displayedHost(for: tab.id)"))
+        XCTAssertTrue(webViewHost.contains("if let displayedHost = hostRegistry.displayedHost(for: tab.id)"))
+    }
+
+    func testWebsiteCompositorHostRegistryLeavesPresentationOrderingInController() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let registry = try sourceSlice(
+            source,
+            from: "private final class WindowWebContentHostRegistry",
+            to: "private func webViewHost(for tab: Tab, slot: PaneSlot)"
+        )
+        XCTAssertTrue(registry.contains("func protectedHost(for webView: WKWebView)"))
+        XCTAssertFalse(registry.contains("DispatchWorkItem"))
+        XCTAssertFalse(registry.contains("CATransaction"))
+        XCTAssertFalse(registry.contains("placeVisualHandoffCover"))
+
+        let visualHandoff = try sourceSlice(
+            source,
+            from: "private func beginVisualHandoffCovers",
+            to: "private func scheduleVisualHandoffCoverRelease(if didBeginVisualHandoff: Bool)"
+        )
+        try assertTokenOrder(
+            visualHandoff,
+            [
+                "webViewCoordinator.beginVisualHandoffProtection(for: host.webView)",
+                "hostRegistry.clearReferences(to: host)",
+                "hostRegistry.parkProtectedHost(host)",
+                "containerView.placeVisualHandoffCover(host"
+            ]
+        )
+
+        let attach = try sourceSlice(
+            source,
+            from: "private func attach(_ host: SumiWebViewContainerView",
+            to: "private func performWithoutImplicitAnimations"
+        )
+        try assertTokenOrder(
+            attach,
+            [
+                "hostRegistry.removeParkedProtectedHost(for: host.webView)",
+                "host.attachDisplayedContentIfNeeded()",
+                "if isProtected",
+                "hostRegistry.parkProtectedHost(host)",
+                "webViewCoordinator.completePromotedHostAttachment"
+            ]
+        )
     }
 
     func testWebViewCoordinatorCleanupKeepsProtectedDeferralAndRefreshPolicySeparate() throws {

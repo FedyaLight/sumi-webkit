@@ -63,9 +63,7 @@ final class WindowWebContentController: NSViewController {
     private var lastHoverTabId: UUID?
     private var pendingSplitRepairGroupId: UUID?
     private var hoveredLinkHandler: ((String?) -> Void)?
-    private var singlePaneHost: SumiWebViewContainerView?
-    private var splitPaneHostsByTabId: [UUID: SumiWebViewContainerView] = [:]
-    private var parkedProtectedHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
+    private let hostRegistry = WindowWebContentHostRegistry()
     private var visualHandoffCoverHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
     private var visualHandoffCoverReleaseWorkItem: DispatchWorkItem?
     private var visualHandoffCoverReleaseGeneration = 0
@@ -277,8 +275,7 @@ final class WindowWebContentController: NSViewController {
     @discardableResult
     private func beginVisualHandoffCovers(excluding incomingTabIDs: Set<UUID>) -> Bool {
         var seenWebViewIDs = Set<ObjectIdentifier>()
-        let outgoingHosts = ([singlePaneHost].compactMap { $0 } + Array(splitPaneHostsByTabId.values))
-            .filter { !incomingTabIDs.contains($0.tabID) }
+        let outgoingHosts = hostRegistry.displayedHosts(excluding: incomingTabIDs)
         guard !outgoingHosts.isEmpty else { return false }
 
         releaseVisualHandoffCovers()
@@ -289,8 +286,8 @@ final class WindowWebContentController: NSViewController {
 
             let frameInContainer = host.convert(host.bounds, to: containerView)
             webViewCoordinator.beginVisualHandoffProtection(for: host.webView)
-            clearPaneHostReferences(to: host)
-            parkedProtectedHosts[webViewID] = host
+            hostRegistry.clearReferences(to: host)
+            hostRegistry.parkProtectedHost(host)
             containerView.placeVisualHandoffCover(host, frameInContainer: frameInContainer)
             visualHandoffCoverHosts[webViewID] = host
         }
@@ -344,7 +341,7 @@ final class WindowWebContentController: NSViewController {
         visualHandoffCoverHosts.removeAll(keepingCapacity: true)
         for (webViewID, host) in covers {
             containerView.removeVisualHandoffCover(host)
-            parkedProtectedHosts.removeValue(forKey: webViewID)
+            hostRegistry.removeParkedProtectedHost(for: webViewID)
             webViewCoordinator.finishVisualHandoffProtection(for: host.webView)
         }
     }
@@ -370,7 +367,7 @@ final class WindowWebContentController: NSViewController {
 
         if hostedWebViewCount(in: containerView.singlePaneView, stoppingAfter: 0) > 0 { return true }
         guard let group = displayState.splitGroup else { return false }
-        for tabId in splitPaneHostsByTabId.keys where group.contains(tabId) == false {
+        for tabId in hostRegistry.splitPaneTabIds where group.contains(tabId) == false {
             return true
         }
         return false
@@ -399,7 +396,7 @@ final class WindowWebContentController: NSViewController {
         containerView.layoutSubtreeIfNeeded()
 
         let visibleIds = Set(group.tabIds)
-        for tabId in Array(splitPaneHostsByTabId.keys) where visibleIds.contains(tabId) == false {
+        for tabId in hostRegistry.splitPaneTabIds where visibleIds.contains(tabId) == false {
             clearSplitPaneHost(tabId)
         }
 
@@ -534,6 +531,98 @@ final class WindowWebContentController: NSViewController {
         case split(UUID)
     }
 
+    @MainActor
+    private final class WindowWebContentHostRegistry {
+        private var singlePaneHost: SumiWebViewContainerView?
+        private var splitPaneHostsByTabId: [UUID: SumiWebViewContainerView] = [:]
+        private var parkedProtectedHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
+
+        var splitPaneTabIds: [UUID] {
+            Array(splitPaneHostsByTabId.keys)
+        }
+
+        var displayedHosts: [SumiWebViewContainerView] {
+            [singlePaneHost].compactMap { $0 } + Array(splitPaneHostsByTabId.values)
+        }
+
+        func displayedHosts(excluding incomingTabIDs: Set<UUID>) -> [SumiWebViewContainerView] {
+            displayedHosts.filter { !incomingTabIDs.contains($0.tabID) }
+        }
+
+        func host(for slot: PaneSlot) -> SumiWebViewContainerView? {
+            switch slot {
+            case .single:
+                return singlePaneHost
+            case .split(let tabId):
+                return splitPaneHostsByTabId[tabId]
+            }
+        }
+
+        func setHost(_ host: SumiWebViewContainerView, for slot: PaneSlot) {
+            switch slot {
+            case .single:
+                singlePaneHost = host
+            case .split(let tabId):
+                splitPaneHostsByTabId[tabId] = host
+            }
+        }
+
+        func removeSinglePaneHost() -> SumiWebViewContainerView? {
+            let host = singlePaneHost
+            singlePaneHost = nil
+            return host
+        }
+
+        func removeSplitPaneHost(for tabId: UUID) -> SumiWebViewContainerView? {
+            splitPaneHostsByTabId.removeValue(forKey: tabId)
+        }
+
+        func displayedHost(for tabId: UUID) -> SumiWebViewContainerView? {
+            if singlePaneHost?.tabID == tabId { return singlePaneHost }
+            return splitPaneHostsByTabId[tabId]
+        }
+
+        func protectedHost(for webView: WKWebView) -> SumiWebViewContainerView? {
+            let webViewID = ObjectIdentifier(webView)
+            if let parkedHost = parkedProtectedHosts[webViewID] {
+                return parkedHost
+            }
+
+            if let singlePaneHost, singlePaneHost.webView === webView {
+                parkedProtectedHosts[webViewID] = singlePaneHost
+                return singlePaneHost
+            }
+
+            for currentHost in splitPaneHostsByTabId.values where currentHost.webView === webView {
+                parkedProtectedHosts[webViewID] = currentHost
+                return currentHost
+            }
+
+            return nil
+        }
+
+        func parkProtectedHost(_ host: SumiWebViewContainerView) {
+            parkedProtectedHosts[ObjectIdentifier(host.webView)] = host
+        }
+
+        func removeParkedProtectedHost(for webView: WKWebView) {
+            removeParkedProtectedHost(for: ObjectIdentifier(webView))
+        }
+
+        func removeParkedProtectedHost(for webViewID: ObjectIdentifier) {
+            parkedProtectedHosts.removeValue(forKey: webViewID)
+        }
+
+        func clearReferences(to host: SumiWebViewContainerView) {
+            if singlePaneHost === host {
+                singlePaneHost = nil
+            }
+            for (tabId, currentHost) in splitPaneHostsByTabId where currentHost === host {
+                splitPaneHostsByTabId[tabId] = nil
+            }
+        }
+    }
+
     private func webViewHost(for tab: Tab, slot: PaneSlot) -> SumiWebViewContainerView? {
         guard tab.requiresPrimaryWebView else {
             clearPaneHost(slot)
@@ -546,7 +635,7 @@ final class WindowWebContentController: NSViewController {
             return nil
         }
 
-        if let host = paneHost(slot),
+        if let host = hostRegistry.host(for: slot),
            host.tabID == tab.id,
            host.webView === webView {
             return host
@@ -559,39 +648,39 @@ final class WindowWebContentController: NSViewController {
         ) {
             clearPaneHost(slot)
             configureViewportStyle(on: promotedHost)
-            setPaneHost(promotedHost, for: slot)
+            hostRegistry.setHost(promotedHost, for: slot)
             return promotedHost
         }
 
-        if let displayedHost = displayedHost(for: tab.id),
+        if let displayedHost = hostRegistry.displayedHost(for: tab.id),
            displayedHost.webView === webView {
             clearPaneHost(slot)
             configureViewportStyle(on: displayedHost)
-            clearPaneHostReferences(to: displayedHost)
-            setPaneHost(displayedHost, for: slot)
+            hostRegistry.clearReferences(to: displayedHost)
+            hostRegistry.setHost(displayedHost, for: slot)
             return displayedHost
         }
 
         if webViewCoordinator.isWebViewProtectedFromCompositorMutation(webView),
-           let existingHost = protectedHost(for: webView) {
+           let existingHost = hostRegistry.protectedHost(for: webView) {
             clearPaneHost(slot)
             configureViewportStyle(on: existingHost)
-            clearPaneHostReferences(to: existingHost)
-            setPaneHost(existingHost, for: slot)
+            hostRegistry.clearReferences(to: existingHost)
+            hostRegistry.setHost(existingHost, for: slot)
             return existingHost
         }
 
         clearPaneHost(slot)
         let host = SumiWebViewContainerView(tab: tab, webView: webView)
         configureViewportStyle(on: host)
-        setPaneHost(host, for: slot)
+        hostRegistry.setHost(host, for: slot)
         return host
     }
 
     private func attach(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
         let isProtected = webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView)
         performWithoutImplicitAnimations {
-            parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
+            hostRegistry.removeParkedProtectedHost(for: host.webView)
             if host.superview != nil && host.superview !== paneView {
                 host.prepareForSuperviewTransferPreservingDisplayedContent()
                 host.removeFromSuperview()
@@ -618,7 +707,7 @@ final class WindowWebContentController: NSViewController {
         }
 
         if isProtected {
-            parkedProtectedHosts[ObjectIdentifier(host.webView)] = host
+            hostRegistry.parkProtectedHost(host)
         }
         webViewCoordinator.completePromotedHostAttachment(for: host.tabID, in: windowState.id)
     }
@@ -634,25 +723,6 @@ final class WindowWebContentController: NSViewController {
         CATransaction.commit()
     }
 
-    private func protectedHost(for webView: WKWebView) -> SumiWebViewContainerView? {
-        let webViewID = ObjectIdentifier(webView)
-        if let parkedHost = parkedProtectedHosts[webViewID] {
-            return parkedHost
-        }
-
-        if let singlePaneHost, singlePaneHost.webView === webView {
-            parkedProtectedHosts[webViewID] = singlePaneHost
-            return singlePaneHost
-        }
-
-        for currentHost in splitPaneHostsByTabId.values where currentHost.webView === webView {
-            parkedProtectedHosts[webViewID] = currentHost
-            return currentHost
-        }
-
-        return nil
-    }
-
     private func clearPaneHost(_ slot: PaneSlot) {
         switch slot {
         case .single:
@@ -663,10 +733,9 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func clearSinglePane() {
-        if let host = singlePaneHost {
+        if let host = hostRegistry.removeSinglePaneHost() {
             removeHostFromDisplay(host)
         }
-        singlePaneHost = nil
         containerView.singlePaneView.removeHostedSubviews(
             keeping: nil,
             shouldRemove: shouldRemoveHostedSubview
@@ -674,10 +743,9 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func clearSplitPaneHost(_ tabId: UUID) {
-        if let host = splitPaneHostsByTabId[tabId] {
+        if let host = hostRegistry.removeSplitPaneHost(for: tabId) {
             removeHostFromDisplay(host)
         }
-        splitPaneHostsByTabId[tabId] = nil
         if let paneView = containerView.paneView(for: tabId) {
             paneView.clearSplitControls()
             paneView.removeHostedSubviews(
@@ -688,7 +756,7 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func clearAllSplitPaneHosts() {
-        for tabId in Array(splitPaneHostsByTabId.keys) {
+        for tabId in hostRegistry.splitPaneTabIds {
             clearSplitPaneHost(tabId)
         }
         containerView.clearSplitTree()
@@ -698,7 +766,7 @@ final class WindowWebContentController: NSViewController {
         if webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView) {
             parkProtectedHost(host)
         } else {
-            parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
+            hostRegistry.removeParkedProtectedHost(for: host.webView)
             host.removeFromSuperview()
         }
     }
@@ -711,45 +779,17 @@ final class WindowWebContentController: NSViewController {
             parkProtectedHost(host)
             return false
         }
-        parkedProtectedHosts.removeValue(forKey: ObjectIdentifier(host.webView))
+        hostRegistry.removeParkedProtectedHost(for: host.webView)
         return true
     }
 
     private func parkProtectedHost(_ host: SumiWebViewContainerView) {
-        parkedProtectedHosts[ObjectIdentifier(host.webView)] = host
+        hostRegistry.parkProtectedHost(host)
         host.isHidden = true
     }
 
     private func displayedHost(for tabId: UUID) -> SumiWebViewContainerView? {
-        if singlePaneHost?.tabID == tabId { return singlePaneHost }
-        return splitPaneHostsByTabId[tabId]
-    }
-
-    private func paneHost(_ slot: PaneSlot) -> SumiWebViewContainerView? {
-        switch slot {
-        case .single:
-            return singlePaneHost
-        case .split(let tabId):
-            return splitPaneHostsByTabId[tabId]
-        }
-    }
-
-    private func setPaneHost(_ host: SumiWebViewContainerView?, for slot: PaneSlot) {
-        switch slot {
-        case .single:
-            singlePaneHost = host
-        case .split(let tabId):
-            splitPaneHostsByTabId[tabId] = host
-        }
-    }
-
-    private func clearPaneHostReferences(to host: SumiWebViewContainerView) {
-        if singlePaneHost === host {
-            singlePaneHost = nil
-        }
-        for (tabId, currentHost) in splitPaneHostsByTabId where currentHost === host {
-            splitPaneHostsByTabId[tabId] = nil
-        }
+        hostRegistry.displayedHost(for: tabId)
     }
 
     private func missingPreparedWebViews(for visibleTabIds: Set<UUID>) -> Bool {
@@ -763,11 +803,8 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func updateDisplayedHostViewportStyles() {
-        if let singlePaneHost {
-            configureViewportStyle(on: singlePaneHost)
-        }
-        for splitPaneHost in splitPaneHostsByTabId.values {
-            configureViewportStyle(on: splitPaneHost)
+        for host in hostRegistry.displayedHosts {
+            configureViewportStyle(on: host)
         }
     }
 
