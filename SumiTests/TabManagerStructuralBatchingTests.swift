@@ -50,6 +50,107 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.tab(for: second.id)?.id, second.id)
     }
 
+    func testSplitGroupLookupsFollowStructuralMutations() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let first = tabManager.createNewTab(url: "https://example.com/one", in: space)
+        let second = tabManager.createNewTab(url: "https://example.com/two", in: space, activate: false)
+        let third = tabManager.createNewTab(url: "https://example.com/three", in: space, activate: false)
+        let fourth = tabManager.createNewTab(url: "https://example.com/four", in: space, activate: false)
+        let initial = try XCTUnwrap(
+            SplitGroup.make(tabIds: [first.id, second.id], layoutKind: .vertical, activeTabId: first.id)
+        )
+
+        tabManager.upsertSplitGroup(initial)
+
+        XCTAssertEqual(tabManager.splitGroup(with: initial.id)?.id, initial.id)
+        XCTAssertEqual(tabManager.splitGroup(containing: first.id)?.id, initial.id)
+        XCTAssertEqual(tabManager.splitGroupIds(containing: second.id), [initial.id])
+
+        let replacement = try XCTUnwrap(
+            SplitGroup.make(tabIds: [second.id, third.id, fourth.id], layoutKind: .horizontal, activeTabId: third.id)
+        )
+        tabManager.upsertSplitGroup(replacement)
+
+        XCTAssertNil(tabManager.splitGroup(with: initial.id))
+        XCTAssertNil(tabManager.splitGroup(containing: first.id))
+        XCTAssertEqual(tabManager.splitGroup(containing: second.id)?.id, replacement.id)
+        XCTAssertEqual(tabManager.splitGroup(containing: fourth.id)?.id, replacement.id)
+
+        tabManager.removeSplitGroups(containing: second.id)
+
+        let trimmed = try XCTUnwrap(tabManager.splitGroup(with: replacement.id))
+        XCTAssertEqual(trimmed.tabIds, [third.id, fourth.id])
+        XCTAssertNil(tabManager.splitGroup(containing: second.id))
+        XCTAssertEqual(tabManager.splitGroup(containing: third.id)?.id, replacement.id)
+
+        let final = try XCTUnwrap(
+            SplitGroup.make(tabIds: [first.id, fourth.id], layoutKind: .vertical, activeTabId: fourth.id)
+        )
+        tabManager.replaceSplitGroups([final])
+
+        XCTAssertEqual(tabManager.splitGroup(with: final.id)?.id, final.id)
+        XCTAssertNil(tabManager.splitGroup(with: replacement.id))
+        XCTAssertNil(tabManager.splitGroup(containing: third.id))
+        XCTAssertEqual(tabManager.splitGroup(containing: first.id)?.id, final.id)
+
+        tabManager.removeSplitGroup(id: final.id)
+
+        XCTAssertNil(tabManager.splitGroup(with: final.id))
+        XCTAssertNil(tabManager.splitGroup(containing: first.id))
+    }
+
+    func testDirectSplitGroupsAssignmentRefreshesLookups() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let first = tabManager.createNewTab(url: "https://example.com/one", in: space)
+        let second = tabManager.createNewTab(url: "https://example.com/two", in: space, activate: false)
+        let group = try XCTUnwrap(
+            SplitGroup.make(tabIds: [first.id, second.id], layoutKind: .vertical, activeTabId: first.id)
+        )
+
+        tabManager.splitGroups = [group]
+
+        XCTAssertEqual(tabManager.splitGroup(with: group.id)?.id, group.id)
+        XCTAssertEqual(tabManager.splitGroup(containing: first.id)?.id, group.id)
+
+        tabManager.splitGroups.removeAll()
+
+        XCTAssertNil(tabManager.splitGroup(with: group.id))
+        XCTAssertNil(tabManager.splitGroup(containing: first.id))
+    }
+
+    func testSplitGroupMutationsPublishOnceAndLookupUpdatesDuringTransaction() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let recorder = StructuralEventRecorder(tabManager: tabManager)
+        let space = tabManager.createSpace(name: "Workspace")
+        let first = tabManager.createNewTab(url: "https://example.com/one", in: space)
+        let second = tabManager.createNewTab(url: "https://example.com/two", in: space, activate: false)
+        let third = tabManager.createNewTab(url: "https://example.com/three", in: space, activate: false)
+        let initial = try XCTUnwrap(
+            SplitGroup.make(tabIds: [first.id, second.id], layoutKind: .vertical, activeTabId: first.id)
+        )
+        let replacement = try XCTUnwrap(
+            SplitGroup.make(tabIds: [second.id, third.id], layoutKind: .horizontal, activeTabId: third.id)
+        )
+        recorder.reset()
+
+        tabManager.withStructuralUpdateTransaction {
+            tabManager.upsertSplitGroup(initial)
+            XCTAssertEqual(recorder.count, 0)
+            XCTAssertEqual(tabManager.splitGroup(containing: first.id)?.id, initial.id)
+
+            tabManager.upsertSplitGroup(replacement)
+            XCTAssertEqual(recorder.count, 0)
+            XCTAssertNil(tabManager.splitGroup(containing: first.id))
+            XCTAssertEqual(tabManager.splitGroup(containing: third.id)?.id, replacement.id)
+        }
+
+        XCTAssertEqual(recorder.count, 1)
+        XCTAssertNil(tabManager.splitGroup(with: initial.id))
+        XCTAssertEqual(tabManager.splitGroup(containing: second.id)?.id, replacement.id)
+    }
+
     func testAdoptingGlanceTabInsertsAfterSourceAndPreservesWebView() throws {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.createSpace(name: "Workspace")

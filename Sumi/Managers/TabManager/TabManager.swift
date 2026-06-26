@@ -39,12 +39,10 @@ class TabManager: ObservableObject {
     // Structural split groups, restored and persisted with the tab model.
     @Published var splitGroups: [SplitGroup] = [] {
         didSet {
-            rebuildSplitGroupIndexes()
+            splitGroupIndexStore.rebuild(from: splitGroups)
         }
     }
-    private(set) var splitGroupById: [UUID: SplitGroup] = [:]
-    private(set) var splitGroupIndexById: [UUID: Int] = [:]
-    private(set) var splitGroupIdByTabId: [UUID: UUID] = [:]
+    var splitGroupIndexStore = SplitGroupIndexStore()
 
     // Folders per space
     @Published var foldersBySpace: [UUID: [TabFolder]] = [:]
@@ -79,22 +77,6 @@ class TabManager: ObservableObject {
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?
 
-    private func rebuildSplitGroupIndexes() {
-        splitGroupById.removeAll(keepingCapacity: true)
-        splitGroupIndexById.removeAll(keepingCapacity: true)
-        splitGroupIdByTabId.removeAll(keepingCapacity: true)
-        for (index, group) in splitGroups.enumerated() {
-            splitGroupById[group.id] = group
-            splitGroupIndexById[group.id] = index
-            for tabId in group.tabIds {
-                splitGroupIdByTabId[tabId] = group.id
-            }
-            for pinId in group.shortcutPinIds {
-                splitGroupIdByTabId[pinId] = group.id
-            }
-        }
-    }
-    
     // Live essentials API for shell views that still read a tab-backed collection.
     var pinnedTabs: [Tab] {
         activeEssentialTabs(for: browserManager?.currentProfile?.id)
