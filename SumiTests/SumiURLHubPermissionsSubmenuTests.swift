@@ -117,23 +117,6 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
         XCTAssertFalse(source.contains(".onReceive("))
     }
 
-    func testNormalTabProtectionAttachmentUsesBundlePath() throws {
-        let runtime = try sourceFile("Sumi/Models/Tab/Tab+WebViewRuntime.swift")
-        let tabLifecycle = try sourceFile("Sumi/Models/Tab/Tab.swift")
-        let adapter = try sourceFile("Sumi/UserScripts/SumiNormalTabBrowserServicesKitUserContentControllerAdapter.swift")
-        let coordinator = try sourceFile("Sumi/ContentBlocking/SumiProtectionCoordinator.swift")
-
-        XCTAssertTrue(runtime.contains(".normalTabDecision(for: url, profileId: profile.id)"))
-        XCTAssertTrue(runtime.contains("contentBlockingService: protectionDecision?.contentBlockingService"))
-        XCTAssertTrue(coordinator.contains("private final class SumiProtectionAttachmentServiceCache"))
-        XCTAssertTrue(coordinator.contains("private let attachmentServiceCache = SumiProtectionAttachmentServiceCache()"))
-        XCTAssertTrue(adapter.contains("profileId: profileId"))
-        XCTAssertFalse(runtime.contains("SumiContentBlockingService("))
-        XCTAssertFalse(runtime.contains("enabledSafariContentBlockingServices(for: url"))
-        XCTAssertFalse(runtime.contains("additionalContentBlockingServices: safariContentBlockerServices"))
-        XCTAssertFalse(tabLifecycle.contains("safariContentBlockerAttachmentRequiresNormalWebViewRebuild"))
-    }
-
     func testURLHubInlinePermissionsUseNonLiveSystemSnapshotModeAndIdentifiers() throws {
         let urlBar = try [
             sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift"),

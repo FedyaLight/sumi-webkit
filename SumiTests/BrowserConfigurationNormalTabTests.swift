@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import SwiftData
 import WebKit
@@ -56,6 +57,74 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(contentBlockingSummary.isInstalled)
         XCTAssertFalse(controller.wkUserContentController.userScripts.isEmpty)
         XCTAssertEqual(contentBlockingSummary.globalRuleListCount, 0)
+    }
+
+    func testTabNormalWebViewCreationInstallsProtectionCoordinatorPreparedBundleRules() async throws {
+        let fixture = try makePreparedProtectionBundleFixture()
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let settings = SumiProtectionSettings(userDefaults: harness.defaults)
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: fixture.manifestStoreRoot)
+        let adBlockingModule = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            preparedBundleResourceURL: fixture.resourceRoot,
+            preparedBundleRemoteRootURL: fixture.remoteRoot,
+            preparedBundleGeneratedRootURL: nil,
+            ruleListStoreFactory: { isEnabled in
+                AdblockWebKitRuleListStore(
+                    isAdblockEnabled: isEnabled,
+                    manifestStore: manifestStore,
+                    embeddedBundleURLProvider: { fixture.bundleURL }
+                )
+            }
+        )
+        let protectionCoordinator = SumiProtectionCoordinator(
+            settings: settings,
+            adBlockingModule: adBlockingModule,
+            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(userDefaults: harness.defaults)
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            startupPersistence: BrowserManagerStartupPersistence(container: try Self.makeInMemoryStartupContainer()),
+            adBlockingModule: adBlockingModule,
+            protectionCoordinator: protectionCoordinator
+        )
+        await waitForStartupProtectionRestore(on: browserManager)
+
+        settings.setLevel(.protection)
+        settings.setAppliedLevel(.protection)
+        _ = try await protectionCoordinator.restoreAppliedLevelForStartup()
+
+        let profile = try XCTUnwrap(browserManager.currentProfile)
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/protection",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let decision = protectionCoordinator.normalTabDecision(for: tab.url, profileId: profile.id)
+        let expectedIdentifiers = Set(fixture.ruleListIdentifiers)
+
+        XCTAssertEqual(Set(decision.plan.expectedRuleListIdentifiers), expectedIdentifiers)
+        XCTAssertNotNil(decision.contentBlockingService)
+
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.protectionPreparedBundleRules"
+        )
+        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
+        let summary = controller.contentBlockingAssetSummary
+
+        XCTAssertTrue(summary.isInstalled)
+        XCTAssertTrue(summary.isContentBlockingFeatureEnabled)
+        XCTAssertEqual(summary.globalRuleListCount, expectedIdentifiers.count)
+        XCTAssertEqual(summary.updateRuleCount, expectedIdentifiers.count)
+        XCTAssertEqual(Set(summary.globalRuleListIdentifiers), expectedIdentifiers)
+        XCTAssertEqual(Set(summary.lookupSucceededIdentifiers), expectedIdentifiers)
+        XCTAssertEqual(Set(summary.addedToUserContentControllerIdentifiers), expectedIdentifiers)
     }
 
     func testBrowserManagerStartupWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() {
@@ -851,11 +920,156 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         return directory
     }
 
+    private func makePreparedProtectionBundleFixture() throws -> (
+        resourceRoot: URL,
+        remoteRoot: URL,
+        bundleURL: URL,
+        manifestStoreRoot: URL,
+        ruleListIdentifiers: [String]
+    ) {
+        let root = temporaryDirectory(prefix: "SumiNormalTabProtectionBundle")
+        let resourceRoot = root.appendingPathComponent("Resources", isDirectory: true)
+        let remoteRoot = root.appendingPathComponent("Remote", isDirectory: true)
+        let manifestStoreRoot = root.appendingPathComponent("ManifestStore", isDirectory: true)
+        let bundleURL = resourceRoot
+            .appendingPathComponent("SumiAdblockBundles", isDirectory: true)
+            .appendingPathComponent(SumiProtectionBundleProfile.adblock, isDirectory: true)
+            .appendingPathComponent(SumiAdblockNativeRuleBundle.directoryName, isDirectory: true)
+
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: remoteRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: manifestStoreRoot, withIntermediateDirectories: true)
+
+        let shard = try writePreparedBundleShard(
+            bundleURL: bundleURL,
+            group: .trackingNetwork,
+            relativePath: "tracking/tracking-0001.json"
+        )
+        let manifest = makePreparedBundleManifest(shards: [shard.shard])
+        let manifestData = try JSONEncoder().encode(manifest)
+        try manifestData.write(
+            to: bundleURL.appendingPathComponent(SumiAdblockNativeRuleBundle.manifestFileName),
+            options: [.atomic]
+        )
+
+        return (
+            resourceRoot: resourceRoot,
+            remoteRoot: remoteRoot,
+            bundleURL: bundleURL,
+            manifestStoreRoot: manifestStoreRoot,
+            ruleListIdentifiers: [shard.identifier]
+        )
+    }
+
+    private func writePreparedBundleShard(
+        bundleURL: URL,
+        group: SumiProtectionGroupKind,
+        relativePath: String
+    ) throws -> (identifier: String, shard: SumiAdblockNativeRuleBundleManifest.Shard) {
+        let shardURL = bundleURL.appendingPathComponent(relativePath)
+        try FileManager.default.createDirectory(
+            at: shardURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let data = Self.validPreparedBundleRuleListData(group: group)
+        try data.write(to: shardURL, options: [.atomic])
+        let identifier = "SumiTestProtection\(group.rawValue)\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+
+        return (
+            identifier: identifier,
+            shard: SumiAdblockNativeRuleBundleManifest.Shard(
+                kind: "network",
+                group: group.rawValue,
+                logicalGroup: group.rawValue,
+                relativePath: relativePath,
+                hash: Self.sha256Hex(data),
+                byteSize: data.count,
+                ruleCount: 1,
+                webKitIdentifier: identifier
+            )
+        )
+    }
+
+    private func makePreparedBundleManifest(
+        shards: [SumiAdblockNativeRuleBundleManifest.Shard]
+    ) -> SumiAdblockNativeRuleBundleManifest {
+        SumiAdblockNativeRuleBundleManifest(
+            schemaVersion: 1,
+            bundleId: "sumi-test-protection-\(UUID().uuidString)",
+            generationId: "generation-\(UUID().uuidString)",
+            profileId: SumiProtectionBundleProfile.adblock,
+            compiler: .init(name: "SumiTests", version: "1"),
+            nativeCSSSafetyPolicyVersion: SumiAdblockNativeRuleBundle.requiredNativeCSSSafetyPolicyVersion,
+            generatedDate: "2026-06-26T00:00:00Z",
+            lists: [],
+            profileLevelMapping: nil,
+            groups: nil,
+            shards: shards,
+            diagnosticsSummary: .init(
+                inputRuleCount: shards.count,
+                finalRuleCount: shards.count,
+                finalShardCount: shards.count,
+                networkRuleCount: shards.count,
+                nativeCSSRuleCount: 0,
+                unsafeCSSFilteredCount: 0,
+                warnings: []
+            ),
+            unsafeCSSFilteredCount: 0,
+            deduplication: .init(
+                inputRawRuleCount: shards.count,
+                rawDuplicateCountRemoved: 0,
+                nativeJSONDuplicateCountRemoved: 0,
+                skippedDedupeCount: 0,
+                skippedDedupeReasons: [:],
+                finalRuleCount: shards.count,
+                finalShardCount: shards.count
+            )
+        )
+    }
+
+    private func waitForStartupProtectionRestore(on browserManager: BrowserManager) async {
+        for _ in 0..<100 {
+            if browserManager.hasFinishedStartupProtectionRestore { return }
+            await Task.yield()
+        }
+        XCTFail("Timed out waiting for initial startup protection restore")
+    }
+
     private static func makeInMemoryExtensionContainer() throws -> ModelContainer {
         try ModelContainer(
             for: Schema([ExtensionEntity.self]),
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+    }
+
+    private static func makeInMemoryStartupContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+    }
+
+    private static func validPreparedBundleRuleListData(group: SumiProtectionGroupKind) -> Data {
+        Data(
+            """
+            [
+              {
+                "trigger": {
+                  "url-filter": ".*sumi-\(group.rawValue)-blocked\\\\.example/.*"
+                },
+                "action": {
+                  "type": "block"
+                }
+              }
+            ]
+            """.utf8
+        )
+    }
+
+    private static func sha256Hex(_ data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 }
 
