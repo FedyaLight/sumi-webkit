@@ -871,6 +871,85 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
     }
 
+    func testWebViewCoordinatorWeakWebViewBookkeepingStaysBehindNarrowRegistry() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let registrySource = try sourceSlice(
+            source,
+            from: "private struct WeakWebViewRegistry",
+            to: "enum DeferredWebViewCommandKey"
+        )
+        XCTAssertTrue(registrySource.contains("private var webViewsByIdentifier"))
+        XCTAssertTrue(registrySource.contains("mutating func note(_ webView: WKWebView)"))
+        XCTAssertTrue(registrySource.contains("mutating func resolve(with identifier: ObjectIdentifier)"))
+        XCTAssertTrue(registrySource.contains("mutating func pruneStaleIdentifiers() -> [ObjectIdentifier]"))
+        XCTAssertFalse(registrySource.contains("activeHistorySwipeProtections"))
+        XCTAssertFalse(registrySource.contains("visualHandoffProtectedWebViewIDs"))
+        XCTAssertFalse(registrySource.contains("fullscreenProtection"))
+        XCTAssertFalse(registrySource.contains("deferredProtectedWebViewCommands"))
+        XCTAssertFalse(registrySource.contains("DeferredProtectedWebViewCommandStore"))
+        XCTAssertFalse(registrySource.contains("webViewRegistry.trackedWebView"))
+
+        let coordinatorStart = try XCTUnwrap(
+            source.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
+        ).lowerBound
+        let coordinatorSource = String(source[coordinatorStart...])
+        XCTAssertTrue(
+            coordinatorSource.contains(
+                "private var weakWebViewRegistry = WeakWebViewRegistry()"
+            )
+        )
+        XCTAssertFalse(coordinatorSource.contains("weakWebViewsByIdentifier"))
+
+        let noteSource = try sourceSlice(
+            source,
+            from: "private func noteWeakWebView",
+            to: "private func installFullscreenStateObservationIfNeeded"
+        )
+        XCTAssertTrue(noteSource.contains("weakWebViewRegistry.note(webView)"))
+
+        let resolveSource = try sourceSlice(
+            source,
+            from: "private func resolveWebView",
+            to: "private func resolvedTab"
+        )
+        try assertTokenOrder(
+            resolveSource,
+            [
+                "if let webView = webViewRegistry.trackedWebView(with: identifier)",
+                "noteWeakWebView(webView)",
+                "return webView",
+                "return resolveWeakWebView(with: identifier)"
+            ]
+        )
+
+        let pruneSource = try sourceSlice(
+            source,
+            from: "private func pruneStaleWebViewBookkeeping",
+            to: "private func pruneInvalidDeferredProtectedCommands"
+        )
+        try assertTokenOrder(
+            pruneSource,
+            [
+                "let staleIDs = weakWebViewRegistry.pruneStaleIdentifiers()",
+                "guard staleIDs.isEmpty == false",
+                "activeHistorySwipeProtections.removeValue(forKey: id)",
+                "visualHandoffProtectedWebViewIDs.remove(id)",
+                "fullscreenProtection.remove(id)",
+                "deferredProtectedWebViewCommands.removeAllCommands(for: id)"
+            ]
+        )
+        XCTAssertFalse(pruneSource.contains("webViewsByIdentifier"))
+    }
+
     func testWebViewContainerLayoutDoesNotReparentDisplayedContent() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

@@ -151,6 +151,32 @@ private struct WeakWKWebView {
     weak var value: WKWebView?
 }
 
+private struct WeakWebViewRegistry {
+    private var webViewsByIdentifier: [ObjectIdentifier: WeakWKWebView] = [:]
+
+    mutating func note(_ webView: WKWebView) {
+        webViewsByIdentifier[ObjectIdentifier(webView)] = WeakWKWebView(value: webView)
+    }
+
+    mutating func resolve(with identifier: ObjectIdentifier) -> WKWebView? {
+        if let webView = webViewsByIdentifier[identifier]?.value {
+            return webView
+        }
+        webViewsByIdentifier.removeValue(forKey: identifier)
+        return nil
+    }
+
+    mutating func pruneStaleIdentifiers() -> [ObjectIdentifier] {
+        let staleIDs = webViewsByIdentifier.compactMap { key, entry -> ObjectIdentifier? in
+            entry.value == nil ? key : nil
+        }
+        for id in staleIDs {
+            webViewsByIdentifier.removeValue(forKey: id)
+        }
+        return staleIDs
+    }
+}
+
 enum DeferredWebViewCommandKey: Hashable {
     case removeWebViewFromContainers(ObjectIdentifier)
     case removeAllWebViews(UUID)
@@ -370,7 +396,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private var deferredProtectedWebViewCommands = DeferredProtectedWebViewCommandStore()
 
     @ObservationIgnored
-    private var weakWebViewsByIdentifier: [ObjectIdentifier: WeakWKWebView] = [:]
+    private var weakWebViewRegistry = WeakWebViewRegistry()
 
     @ObservationIgnored
     private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
@@ -1545,7 +1571,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func noteWeakWebView(_ webView: WKWebView) {
-        weakWebViewsByIdentifier[ObjectIdentifier(webView)] = WeakWKWebView(value: webView)
+        weakWebViewRegistry.note(webView)
     }
 
     private func installFullscreenStateObservationIfNeeded(on webView: WKWebView) {
@@ -1602,11 +1628,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private func resolveWeakWebView(
         with identifier: ObjectIdentifier
     ) -> WKWebView? {
-        if let webView = weakWebViewsByIdentifier[identifier]?.value {
-            return webView
-        }
-        weakWebViewsByIdentifier.removeValue(forKey: identifier)
-        return nil
+        weakWebViewRegistry.resolve(with: identifier)
     }
 
     private func resolveWebView(
@@ -1634,13 +1656,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func pruneStaleWebViewBookkeeping(reason: String) {
-        guard weakWebViewsByIdentifier.isEmpty == false else { return }
-        let staleIDs = weakWebViewsByIdentifier.compactMap { key, entry -> ObjectIdentifier? in
-            entry.value == nil ? key : nil
-        }
+        let staleIDs = weakWebViewRegistry.pruneStaleIdentifiers()
         guard staleIDs.isEmpty == false else { return }
         for id in staleIDs {
-            weakWebViewsByIdentifier.removeValue(forKey: id)
             activeHistorySwipeProtections.removeValue(forKey: id)
             visualHandoffProtectedWebViewIDs.remove(id)
             fullscreenProtection.remove(id)
