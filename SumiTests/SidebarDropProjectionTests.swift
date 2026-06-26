@@ -403,6 +403,109 @@ final class SidebarDropProjectionTests: XCTestCase {
         ])
     }
 
+    func testFolderDragSnapshotDerivesFolderPresentationState() {
+        let folderId = UUID()
+        let otherFolderId = UUID()
+        let childId = UUID()
+
+        let snapshot = SidebarFolderDragSnapshot(
+            isDragging: true,
+            activeDragItemID: childId,
+            activeHoveredFolderID: folderId,
+            folderDropIntent: .contain(folderId: folderId),
+            geometryGeneration: 42
+        )
+
+        XCTAssertTrue(snapshot.isContainTargeted(folderID: folderId))
+        XCTAssertFalse(snapshot.isContainTargeted(folderID: otherFolderId))
+        XCTAssertTrue(snapshot.isFolderPreviewOpen(folderID: folderId, isOpen: false))
+        XCTAssertFalse(snapshot.isFolderPreviewOpen(folderID: otherFolderId, isOpen: false))
+        XCTAssertTrue(snapshot.isFolderPreviewOpen(folderID: otherFolderId, isOpen: true))
+        XCTAssertEqual(snapshot.afterDropTargetHeight(rowHeight: 20), 9)
+        XCTAssertEqual(snapshot.childOpacity(itemID: childId), 0.001, accuracy: 0.0001)
+        XCTAssertEqual(snapshot.childOpacity(itemID: otherFolderId), 1)
+        XCTAssertTrue(snapshot.allowsLayoutAnimation(isInteractive: true))
+        XCTAssertFalse(snapshot.allowsLayoutAnimation(isInteractive: false))
+        XCTAssertEqual(snapshot.geometryGeneration, 42)
+    }
+
+    func testFolderDragSnapshotKeepsCompletionProjectionSeparateFromLiveHover() {
+        let folderId = UUID()
+        let draggedId = UUID()
+
+        let snapshot = SidebarFolderDragSnapshot(
+            isCompletingDrop: true,
+            projectionDragItemID: draggedId,
+            projectionSourceContainer: .folder(folderId),
+            projectionFolderDropIntent: .insertIntoFolder(folderId: folderId, index: 1)
+        )
+
+        XCTAssertTrue(snapshot.isDropProjectionActive)
+        XCTAssertEqual(snapshot.projectionSourceFolderID, folderId)
+        XCTAssertEqual(snapshot.projectionDragItemID, draggedId)
+        XCTAssertEqual(
+            snapshot.projectionFolderDropIntent,
+            .insertIntoFolder(folderId: folderId, index: 1)
+        )
+        XCTAssertFalse(snapshot.isContainTargeted(folderID: folderId))
+        XCTAssertEqual(snapshot.childOpacity(itemID: draggedId), 1)
+        XCTAssertFalse(snapshot.allowsLayoutAnimation(isInteractive: true))
+    }
+
+    func testFolderDragSnapshotUsesCommittedPlaceholderPolicy() {
+        let sourceSpaceId = UUID()
+        let sourceFolderId = UUID()
+        let targetFolderId = UUID()
+
+        let regularSourceCommit = SidebarFolderDragSnapshot(
+            isCompletingDrop: true,
+            projectionSourceContainer: .spaceRegular(sourceSpaceId)
+        )
+
+        XCTAssertTrue(
+            regularSourceCommit.shouldHideCommittedPlaceholder(
+                into: .folder(targetFolderId),
+                targetAlreadyContainsDraggedItem: false
+            )
+        )
+
+        let sameFolderCommit = SidebarFolderDragSnapshot(
+            isCompletingDrop: true,
+            projectionSourceContainer: .folder(sourceFolderId)
+        )
+
+        XCTAssertFalse(
+            sameFolderCommit.shouldHideCommittedPlaceholder(
+                into: .folder(sourceFolderId),
+                targetAlreadyContainsDraggedItem: true
+            )
+        )
+        XCTAssertTrue(
+            sameFolderCommit.shouldHideCommittedPlaceholder(
+                into: .folder(targetFolderId),
+                targetAlreadyContainsDraggedItem: true
+            )
+        )
+        XCTAssertFalse(
+            sameFolderCommit.shouldHideCommittedPlaceholder(
+                into: .folder(targetFolderId),
+                targetAlreadyContainsDraggedItem: false
+            )
+        )
+
+        let activeDrag = SidebarFolderDragSnapshot(
+            isDragging: true,
+            projectionSourceContainer: .folder(sourceFolderId)
+        )
+
+        XCTAssertFalse(
+            activeDrag.shouldHideCommittedPlaceholder(
+                into: .folder(targetFolderId),
+                targetAlreadyContainsDraggedItem: true
+            )
+        )
+    }
+
     private func makeScrollView(frame: NSRect) -> NSScrollView {
         let scrollView = NSScrollView(frame: frame)
         scrollView.borderType = .noBorder

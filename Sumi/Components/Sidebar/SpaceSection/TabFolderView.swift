@@ -44,6 +44,10 @@ struct TabFolderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var dragState = SidebarDragState.shared
 
+    private var folderDragSnapshot: SidebarFolderDragSnapshot {
+        SidebarFolderDragSnapshot(dragState: dragState)
+    }
+
     private var isInteractive: Bool {
         renderMode.isInteractive
     }
@@ -87,23 +91,12 @@ struct TabFolderView: View {
         )
     }
 
-    // Replaced by SidebarDragState
-    private var isFolderContainTargeted: Bool {
-        dragState.folderDropIntent == .contain(folderId: folder.id)
-    }
-
     private var isFolderDropHighlighted: Bool {
-        isFolderContainTargeted
+        folderDragSnapshot.isContainTargeted(folderID: folder.id)
     }
 
     private var folderPreviewIsOpen: Bool {
-        folder.isOpen || isFolderDragOpenPreviewed
-    }
-
-    private var isFolderDragOpenPreviewed: Bool {
-        dragState.isDragging
-            && !folder.isOpen
-            && dragState.activeHoveredFolderId == folder.id
+        folderDragSnapshot.isFolderPreviewOpen(folderID: folder.id, isOpen: folder.isOpen)
     }
 
     private var resolvedTopLevelPinnedIndex: Int {
@@ -116,7 +109,8 @@ struct TabFolderView: View {
     }
 
     private func folderContentProjection(
-        using projection: SidebarFolderViewProjection
+        using projection: SidebarFolderViewProjection,
+        dragSnapshot: SidebarFolderDragSnapshot
     ) -> SidebarFolderContentProjection {
         SidebarFolderContentProjection(
             baseItems: projection.baseItems,
@@ -128,7 +122,7 @@ struct TabFolderView: View {
             projectedChildIDs: folderProjectionState.projectedChildIDs,
             projection: projection,
             dragProjection: SidebarFolderDragDisplayProjection(
-                dragState: dragState,
+                dragSnapshot: dragSnapshot,
                 folderID: folder.id,
                 baseItems: projection.baseItems
             )
@@ -149,7 +143,7 @@ struct TabFolderView: View {
     }
 
     private var folderLayoutAnimation: Animation? {
-        isInteractive && !dragState.isCompletingDrop
+        folderDragSnapshot.allowsLayoutAnimation(isInteractive: isInteractive)
             ? SidebarMotionPolicy.folderLayoutAnimation(
                 for: SidebarMotionPolicy.currentMode(
                     reduceMotion: reduceMotion || sumiSettings.shouldReduceChromeMotion
@@ -219,14 +213,18 @@ struct TabFolderView: View {
             childFolders: childFolders,
             shortcutRestoreGaps: shortcutRestoreGaps
         ) { projection in
-            let contentProjection = folderContentProjection(using: projection)
+            let dragSnapshot = folderDragSnapshot
+            let contentProjection = folderContentProjection(
+                using: projection,
+                dragSnapshot: dragSnapshot
+            )
 
             folderCompositeContent(
                 contentProjection: contentProjection,
                 projection: projection
             )
                 .transaction { transaction in
-                    if dragState.isCompletingDrop {
+                    if dragSnapshot.isCompletingDrop {
                         transaction.animation = nil
                         transaction.disablesAnimations = true
                     }
@@ -294,7 +292,7 @@ struct TabFolderView: View {
                 childCount: contentProjection.childCount,
                 isOpen: folder.isOpen,
                 region: .body,
-                generation: dragState.sidebarGeometryGeneration,
+                generation: folderDragSnapshot.geometryGeneration,
                 isActive: folderBodyGeometryIsActive(
                     contentProjection: contentProjection,
                     projection: projection
@@ -341,7 +339,8 @@ struct TabFolderView: View {
 
     @ViewBuilder
     private func folderAfterDropTarget(childCount: Int) -> some View {
-        let height = dragState.isDragging ? SidebarRowLayout.rowHeight * 0.45 : 0
+        let dragSnapshot = folderDragSnapshot
+        let height = dragSnapshot.afterDropTargetHeight(rowHeight: SidebarRowLayout.rowHeight)
         Color.clear
             .frame(height: height)
             .frame(maxWidth: .infinity)
@@ -358,7 +357,7 @@ struct TabFolderView: View {
                 childCount: childCount,
                 isOpen: folder.isOpen,
                 region: .after,
-                generation: dragState.sidebarGeometryGeneration,
+                generation: dragSnapshot.geometryGeneration,
                 isActive: isInteractive && height > 0
             )
             .allowsHitTesting(false)
@@ -378,7 +377,7 @@ struct TabFolderView: View {
             childCount: contentProjection.childCount,
             isOpen: folder.isOpen,
             region: .header,
-            generation: dragState.sidebarGeometryGeneration,
+            generation: folderDragSnapshot.geometryGeneration,
             isActive: isInteractive && !projection.isLiveFolder
         )
         .sidebarAppKitContextMenu(
@@ -506,7 +505,7 @@ struct TabFolderView: View {
                                     folderId: folder.id,
                                     childId: childFolder.id,
                                     index: entry.dropIndex,
-                                    generation: dragState.sidebarGeometryGeneration,
+                                    generation: folderDragSnapshot.geometryGeneration,
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
                         }
@@ -518,7 +517,7 @@ struct TabFolderView: View {
                                     folderId: folder.id,
                                     childId: pin.id,
                                     index: entry.dropIndex,
-                                    generation: dragState.sidebarGeometryGeneration,
+                                    generation: folderDragSnapshot.geometryGeneration,
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
                         }
@@ -537,7 +536,7 @@ struct TabFolderView: View {
                                     folderId: folder.id,
                                     childId: group.id,
                                     index: entry.dropIndex,
-                                    generation: dragState.sidebarGeometryGeneration,
+                                    generation: folderDragSnapshot.geometryGeneration,
                                     isActive: isInteractive && reportsGeometry && reportsFolderChildGeometry
                                 )
                         }
@@ -812,9 +811,7 @@ struct TabFolderView: View {
                 }
             )
             .opacity(
-                dragState.isDragging && dragState.activeDragItemId == pin.id
-                    ? 0.001
-                    : 1
+                folderDragSnapshot.childOpacity(itemID: pin.id)
             )
         } else {
             ShortcutSidebarRow(
@@ -833,9 +830,7 @@ struct TabFolderView: View {
                 onRemove: { removeShortcutPin(pin) }
             )
             .opacity(
-                dragState.isDragging && dragState.activeDragItemId == pin.id
-                    ? 0.001
-                    : 1
+                folderDragSnapshot.childOpacity(itemID: pin.id)
             )
         }
     }
@@ -1191,7 +1186,7 @@ struct TabFolderView: View {
             displayedCollapsedProjectionIDs = targetIDs
         }
 
-        if animated && isInteractive && !dragState.isCompletingDrop {
+        if animated && folderDragSnapshot.allowsLayoutAnimation(isInteractive: isInteractive) {
             withAnimation(folderLayoutAnimation, update)
         } else {
             update()

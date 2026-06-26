@@ -43,29 +43,23 @@ struct SidebarFolderDragDisplayProjection: Equatable {
 
     @MainActor
     init(
-        dragState: SidebarDragState,
+        dragSnapshot: SidebarFolderDragSnapshot,
         folderID: UUID,
         baseItems: [SidebarFolderListItem]
     ) {
-        let draggedItemID = dragState.projectionDragItemId
-        let sourceFolderID: UUID?
-        if case .folder(let projectedSourceFolderID) = dragState.projectionDragScope?.sourceContainer {
-            sourceFolderID = projectedSourceFolderID
-        } else {
-            sourceFolderID = nil
-        }
+        let draggedItemID = dragSnapshot.projectionDragItemID
 
         let targetAlreadyContainsDraggedItem = draggedItemID.map { itemID in
             baseItems.contains { $0.matchesItemID(itemID) }
         } ?? false
 
         self.init(
-            isActive: dragState.isDropProjectionActive,
-            sourceFolderID: sourceFolderID,
+            isActive: dragSnapshot.isDropProjectionActive,
+            sourceFolderID: dragSnapshot.projectionSourceFolderID,
             draggedItemID: draggedItemID,
-            folderDropIntent: dragState.projectionFolderDropIntent,
+            folderDropIntent: dragSnapshot.projectionFolderDropIntent,
             suppressesCommittedPlaceholder: draggedItemID != nil
-                && dragState.shouldHideCommittedCrossContainerPlaceholder(
+                && dragSnapshot.shouldHideCommittedPlaceholder(
                     into: .folder(folderID),
                     targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
                 )

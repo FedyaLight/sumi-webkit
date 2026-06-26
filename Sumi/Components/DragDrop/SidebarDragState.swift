@@ -16,21 +16,6 @@ private struct SidebarDragGeometryMutation {
     let apply: @MainActor (SidebarDragState) -> Void
 }
 
-private extension TabDragManager.DragContainer {
-    func createsNewLauncherIdentity(whenDroppedInto target: TabDragManager.DragContainer) -> Bool {
-        guard case .spaceRegular = self else {
-            return false
-        }
-
-        switch target {
-        case .essentials, .spacePinned, .folder:
-            return true
-        case .spaceRegular, .none:
-            return false
-        }
-    }
-}
-
 @MainActor
 final class SidebarDragState: ObservableObject {
     static let shared = SidebarDragState()
@@ -114,19 +99,12 @@ final class SidebarDragState: ObservableObject {
         into targetContainer: TabDragManager.DragContainer,
         targetAlreadyContainsDraggedItem: Bool
     ) -> Bool {
-        guard isCompletingDrop,
-              let sourceContainer = projectionDragScope?.sourceContainer else {
-            return false
-        }
-
-        if sourceContainer.createsNewLauncherIdentity(whenDroppedInto: targetContainer) {
-            return true
-        }
-
-        guard targetAlreadyContainsDraggedItem else {
-            return false
-        }
-        return sourceContainer != targetContainer
+        SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
+            isCompletingDrop: isCompletingDrop,
+            sourceContainer: projectionDragScope?.sourceContainer,
+            targetContainer: targetContainer,
+            targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
+        )
     }
 
     private static func resolvedMetricsRowCount(
