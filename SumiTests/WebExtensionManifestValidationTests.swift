@@ -390,6 +390,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         var traces: [String] = []
         let result = store.loadInstalledExtensionMetadata { traces.append($0) }
 
+        XCTAssertTrue(result.didFetchPersistedMetadata)
         XCTAssertEqual(result.records.map(\.id), [staleRecord.id])
         XCTAssertEqual(result.enabledEntities.map(\.id), [staleRecord.id])
         XCTAssertEqual(result.records.first?.backgroundModel, .persistentPage)
@@ -401,6 +402,39 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         let entity = try XCTUnwrap(try store.extensionEntity(for: staleRecord.id))
         XCTAssertEqual(entity.backgroundModelRawValue, "persistent_page")
         XCTAssertTrue(entity.hasBackground)
+    }
+
+    @available(macOS 15.5, *)
+    @MainActor
+    func testLoadInstalledMetadataFetchFailurePreservesPinnedToolbarIDs() throws {
+        let profile = Profile(name: "Pinned Toolbar Profile")
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile,
+            browserConfiguration: BrowserConfiguration()
+        )
+        let profileKey = ExtensionManager.pinnedToolbarProfileKey(for: profile.id)
+        manager.pinnedToolbarExtensionIDsByProfile[profileKey] = ["missing-extension"]
+        manager.pinnedToolbarExtensionIDs = ["missing-extension"]
+
+        _ = manager.applyInstalledExtensionMetadataLoadResult(
+            .init(
+                didFetchPersistedMetadata: false,
+                records: [],
+                enabledEntities: []
+            )
+        )
+
+        XCTAssertTrue(manager.installedExtensions.isEmpty)
+        XCTAssertEqual(manager.pinnedToolbarExtensionIDs, ["missing-extension"])
+        XCTAssertEqual(
+            manager.pinnedToolbarExtensionIDsByProfile[profileKey],
+            ["missing-extension"]
+        )
     }
 
     func testInstalledExtensionMetadataRecordsManifestVersionTwo() throws {

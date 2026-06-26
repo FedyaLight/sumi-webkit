@@ -205,8 +205,17 @@ extension ExtensionManager {
         let result = installationMetadataStore.loadInstalledExtensionMetadata {
             extensionRuntimeTrace($0)
         }
+        return applyInstalledExtensionMetadataLoadResult(result)
+    }
+
+    @discardableResult
+    func applyInstalledExtensionMetadataLoadResult(
+        _ result: ExtensionInstallationMetadataStore.MetadataLoadResult
+    ) -> [ExtensionEntity] {
         installedExtensions = result.records
-        reconcilePinnedToolbarExtensions()
+        if result.didFetchPersistedMetadata {
+            reconcilePinnedToolbarExtensions()
+        }
         extensionsLoaded = true
         extensionRuntimeTrace(
             "loadInstalledExtensionMetadata complete records=\(result.records.count) enabled=\(result.enabledEntities.count)"

@@ -12,6 +12,7 @@ import SwiftData
 @MainActor
 final class ExtensionInstallationMetadataStore {
     struct MetadataLoadResult {
+        var didFetchPersistedMetadata: Bool
         var records: [InstalledExtension]
         var enabledEntities: [ExtensionEntity]
     }
@@ -85,7 +86,11 @@ final class ExtensionInstallationMetadataStore {
             entities = try context.fetch(FetchDescriptor<ExtensionEntity>())
         } catch {
             ExtensionManager.logger.error("Failed to fetch extensions: \(error.localizedDescription, privacy: .public)")
-            return MetadataLoadResult(records: [], enabledEntities: [])
+            return MetadataLoadResult(
+                didFetchPersistedMetadata: false,
+                records: [],
+                enabledEntities: []
+            )
         }
 
         var loadedRecords: [InstalledExtension] = []
@@ -161,6 +166,7 @@ final class ExtensionInstallationMetadataStore {
         }
 
         return MetadataLoadResult(
+            didFetchPersistedMetadata: true,
             records: loadedRecords.sorted {
                 $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             },
