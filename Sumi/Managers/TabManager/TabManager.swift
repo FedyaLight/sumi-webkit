@@ -59,19 +59,15 @@ class TabManager: ObservableObject {
     // WebKit may close immediately during install/onboarding handshakes.
     var transientExtensionTabsByID: [UUID: Tab] = [:]
     var auxiliaryMiniWindowTabsByID: [UUID: Tab] = [:]
-    private var tabLookup: [UUID: Tab] = [:]
-    private var transientTabLookupIDs: Set<UUID> = []
+    private let tabLookupStore = TabLookupStore()
     private var attachedLiveTabIDs: Set<UUID> = []
     /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for persistence completion—`scheduleStructuralPersistence()` does not send this.
     let structuralChanges = PassthroughSubject<Void, Never>()
     private var structuralUpdateDepth = 0
     private var pendingStructuralPublish = false
     private var structuralTransactionSignpostState: OSSignpostIntervalState?
-    private var pendingTabLookupRemovedIDs: Set<UUID> = []
-    private var pendingTabLookupUpserts: [UUID: Tab] = [:]
-    private var pendingTransientTabLookupRefresh = false
-    private(set) var structuralLookupBatchFlushCount = 0
-    private(set) var structuralLookupImmediateFlushCount = 0
+    var structuralLookupBatchFlushCount: Int { tabLookupStore.batchFlushCount }
+    var structuralLookupImmediateFlushCount: Int { tabLookupStore.immediateFlushCount }
     private var faviconCacheObserver: NSObjectProtocol?
     private var pendingFaviconPresentationRefreshTask: Task<Void, Never>?
     // Space activation to resume after a deferred profile switch
@@ -253,8 +249,7 @@ class TabManager: ObservableObject {
             pendingPinnedWithoutProfile.removeAll()
             transientShortcutTabsByWindow.removeAll()
             transientExtensionTabsByID.removeAll()
-            tabLookup.removeAll()
-            transientTabLookupIDs.removeAll()
+            tabLookupStore.removeAll()
             spaces.removeAll()
             currentTab = nil
             currentSpace = nil
@@ -342,50 +337,21 @@ class TabManager: ObservableObject {
 
     func tab(for id: UUID) -> Tab? {
         flushPendingStructuralLookupImmediatelyIfNeeded()
-        if let tab = tabLookup[id] {
+        if let tab = tabLookupStore.tab(for: id) {
             return tab
         }
 
         rebuildTabLookup()
-        return tabLookup[id]
+        return tabLookupStore.tab(for: id)
     }
 
     private func rebuildTabLookup() {
-        var updatedLookup: [UUID: Tab] = [:]
-        updatedLookup.reserveCapacity(
-            tabsBySpace.values.reduce(0) { $0 + $1.count }
-                + transientShortcutTabsByWindow.values.reduce(0) { $0 + $1.count }
-                + transientExtensionTabsByID.count
-                + auxiliaryMiniWindowTabsByID.count
+        tabLookupStore.rebuild(
+            tabsBySpace: tabsBySpace,
+            transientShortcutTabsByWindow: transientShortcutTabsByWindow,
+            transientExtensionTabsByID: transientExtensionTabsByID,
+            auxiliaryMiniWindowTabsByID: auxiliaryMiniWindowTabsByID
         )
-
-        for tabs in tabsBySpace.values {
-            for tab in tabs {
-                updatedLookup[tab.id] = tab
-            }
-        }
-
-        for liveTabs in transientShortcutTabsByWindow.values {
-            for tab in liveTabs.values {
-                updatedLookup[tab.id] = tab
-            }
-        }
-        for tab in transientExtensionTabsByID.values {
-            updatedLookup[tab.id] = tab
-        }
-        for tab in auxiliaryMiniWindowTabsByID.values {
-            updatedLookup[tab.id] = tab
-        }
-
-        var transientIDs = Set(
-            transientShortcutTabsByWindow.values
-                .flatMap(\.values)
-                .map(\.id)
-        )
-        transientIDs.formUnion(transientExtensionTabsByID.keys)
-
-        tabLookup = updatedLookup
-        transientTabLookupIDs = transientIDs
     }
 
     func rebuildTabLookupForRestore() {
@@ -436,111 +402,34 @@ class TabManager: ObservableObject {
         structuralChanges.send()
     }
 
-    private var hasPendingStructuralLookupWork: Bool {
-        pendingTransientTabLookupRefresh
-            || pendingTabLookupRemovedIDs.isEmpty == false
-            || pendingTabLookupUpserts.isEmpty == false
-    }
-
     private func queueTabLookupEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
-        guard structuralUpdateDepth > 0 else {
-            replaceTabLookupEntries(removing: previousTabs, with: currentTabs)
-            return
-        }
-
-        let currentIDs = Set(currentTabs.map(\.id))
-        for tab in previousTabs where !currentIDs.contains(tab.id) {
-            pendingTabLookupUpserts.removeValue(forKey: tab.id)
-            pendingTabLookupRemovedIDs.insert(tab.id)
-        }
-        for tab in currentTabs {
-            pendingTabLookupRemovedIDs.remove(tab.id)
-            pendingTabLookupUpserts[tab.id] = tab
-        }
+        tabLookupStore.queueEntries(
+            removing: previousTabs,
+            with: currentTabs,
+            batching: structuralUpdateDepth > 0
+        )
     }
 
     private func queueTransientTabLookupRefresh() {
-        guard structuralUpdateDepth > 0 else {
-            refreshTransientTabLookup()
-            return
-        }
-
-        pendingTransientTabLookupRefresh = true
+        tabLookupStore.queueTransientRefresh(
+            transientShortcutTabsByWindow: transientShortcutTabsByWindow,
+            transientExtensionTabsByID: transientExtensionTabsByID,
+            batching: structuralUpdateDepth > 0
+        )
     }
 
     private func flushPendingStructuralLookupBatchIfNeeded() {
-        guard hasPendingStructuralLookupWork else { return }
-        structuralLookupBatchFlushCount += 1
-        PerformanceTrace.withInterval("TabManager.structuralLookupBatch") {
-            applyPendingStructuralLookupWork()
-        }
+        tabLookupStore.flushBatchIfNeeded(
+            transientShortcutTabsByWindow: transientShortcutTabsByWindow,
+            transientExtensionTabsByID: transientExtensionTabsByID
+        )
     }
 
     private func flushPendingStructuralLookupImmediatelyIfNeeded() {
-        guard hasPendingStructuralLookupWork else { return }
-        structuralLookupImmediateFlushCount += 1
-        PerformanceTrace.withInterval("TabManager.structuralLookupImmediate") {
-            applyPendingStructuralLookupWork()
-        }
-    }
-
-    private func applyPendingStructuralLookupWork() {
-        let removedIDs = pendingTabLookupRemovedIDs
-        let upserts = pendingTabLookupUpserts
-        let shouldRefreshTransientLookup = pendingTransientTabLookupRefresh
-
-        pendingTabLookupRemovedIDs.removeAll(keepingCapacity: true)
-        pendingTabLookupUpserts.removeAll(keepingCapacity: true)
-        pendingTransientTabLookupRefresh = false
-
-        var liveTransientIDs = Set(
-            transientShortcutTabsByWindow.values
-                .flatMap(\.values)
-                .map(\.id)
+        tabLookupStore.flushImmediatelyIfNeeded(
+            transientShortcutTabsByWindow: transientShortcutTabsByWindow,
+            transientExtensionTabsByID: transientExtensionTabsByID
         )
-        liveTransientIDs.formUnion(transientExtensionTabsByID.keys)
-
-        if shouldRefreshTransientLookup {
-            refreshTransientTabLookup()
-        }
-
-        for tabId in removedIDs where upserts[tabId] == nil && !liveTransientIDs.contains(tabId) {
-            tabLookup.removeValue(forKey: tabId)
-        }
-
-        for (tabId, tab) in upserts {
-            tabLookup[tabId] = tab
-        }
-    }
-
-    private func replaceTabLookupEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
-        let currentIDs = Set(currentTabs.map(\.id))
-        for tab in previousTabs where !currentIDs.contains(tab.id) {
-            tabLookup.removeValue(forKey: tab.id)
-        }
-        for tab in currentTabs {
-            tabLookup[tab.id] = tab
-        }
-    }
-
-    private func refreshTransientTabLookup() {
-        for tabId in transientTabLookupIDs {
-            tabLookup.removeValue(forKey: tabId)
-        }
-
-        var updatedIDs: Set<UUID> = []
-        for liveTabs in transientShortcutTabsByWindow.values {
-            for tab in liveTabs.values {
-                tabLookup[tab.id] = tab
-                updatedIDs.insert(tab.id)
-            }
-        }
-        for tab in transientExtensionTabsByID.values {
-            tabLookup[tab.id] = tab
-            updatedIDs.insert(tab.id)
-        }
-
-        transientTabLookupIDs = updatedIDs
     }
     func normalizedSpacePinnedShortcuts(_ items: [ShortcutPin]) -> [ShortcutPin] {
         struct ContainerKey: Hashable {
@@ -808,19 +697,19 @@ class TabManager: ObservableObject {
     func attach(_ tab: Tab) {
         tab.browserManager = browserManager
         tab.sumiSettings = sumiSettings
-        tabLookup[tab.id] = tab
+        tabLookupStore.insert(tab)
 
         attachedLiveTabIDs.insert(tab.id)
     }
 
     func detach(_ tab: Tab) {
         attachedLiveTabIDs.remove(tab.id)
-        tabLookup.removeValue(forKey: tab.id)
+        tabLookupStore.remove(tab.id)
     }
 
     // Public accessor for managers that need to iterate tabs (e.g., privacy, rules updates)
     func allTabs() -> [Tab] {
-        if tabLookup.isEmpty {
+        if tabLookupStore.isEmpty {
             rebuildTabLookup()
         }
 
@@ -1135,8 +1024,7 @@ class TabManager: ObservableObject {
         tab.webExtensionContextOverride = webExtensionContextOverride
         attach(tab)
         transientExtensionTabsByID[tab.id] = tab
-        tabLookup[tab.id] = tab
-        transientTabLookupIDs.insert(tab.id)
+        tabLookupStore.insertTransientExtensionTab(tab)
         return tab
     }
 
@@ -1167,13 +1055,12 @@ class TabManager: ObservableObject {
         tab.webExtensionContextOverride = webExtensionContextOverride
         attach(tab)
         auxiliaryMiniWindowTabsByID[tab.id] = tab
-        tabLookup[tab.id] = tab
         return tab
     }
 
     func removeAuxiliaryMiniWindowTab(_ tab: Tab) {
         auxiliaryMiniWindowTabsByID.removeValue(forKey: tab.id)
-        tabLookup.removeValue(forKey: tab.id)
+        tabLookupStore.remove(tab.id)
         browserManager?.compositorManager.unloadTab(tab)
         browserManager?.webViewCoordinator?.removeAllWebViews(
             for: tab,
@@ -1199,7 +1086,7 @@ class TabManager: ObservableObject {
         guard transientExtensionTabsByID.removeValue(forKey: tab.id) != nil else {
             return false
         }
-        transientTabLookupIDs.remove(tab.id)
+        tabLookupStore.stopTrackingTransientTab(tab.id)
 
         let targetSpace = space
             ?? tab.spaceId.flatMap { spaceId in
@@ -1241,8 +1128,7 @@ class TabManager: ObservableObject {
             var removedIndexInCurrentSpace: Int?
 
             if let transientExtensionTab = transientExtensionTabsByID.removeValue(forKey: id) {
-                transientTabLookupIDs.remove(id)
-                tabLookup.removeValue(forKey: id)
+                tabLookupStore.removeTransientExtensionTab(id)
                 cleanupRemovedTransientExtensionTab(transientExtensionTab)
                 return
             }

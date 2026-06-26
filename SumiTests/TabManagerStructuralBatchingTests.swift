@@ -50,6 +50,83 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.tab(for: second.id)?.id, second.id)
     }
 
+    func testLookupReadInsideTransactionFlushesPendingRegularMutationsImmediately() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let recorder = StructuralEventRecorder(tabManager: tabManager)
+        let space = tabManager.createSpace(name: "Workspace")
+        let first = tabManager.createNewTab(url: "https://example.com/one", in: space)
+        let second = tabManager.createNewTab(url: "https://example.com/two", in: space, activate: false)
+        let batchFlushesBefore = tabManager.structuralLookupBatchFlushCount
+        let immediateFlushesBefore = tabManager.structuralLookupImmediateFlushCount
+        recorder.reset()
+
+        tabManager.withStructuralUpdateTransaction {
+            tabManager.reorderRegularTabs(first, in: space.id, to: 2)
+
+            XCTAssertEqual(recorder.count, 0)
+            XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore)
+            XCTAssertEqual(tabManager.tab(for: first.id)?.id, first.id)
+            XCTAssertEqual(tabManager.tab(for: second.id)?.id, second.id)
+            XCTAssertEqual(tabManager.structuralLookupImmediateFlushCount, immediateFlushesBefore + 1)
+        }
+
+        XCTAssertEqual(recorder.count, 1)
+        XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore)
+        XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [second.id, first.id])
+    }
+
+    func testTransientShortcutLookupRefreshFlushesImmediatelyInsideTransaction() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let recorder = StructuralEventRecorder(tabManager: tabManager)
+        let space = tabManager.createSpace(name: "Workspace")
+        let folder = tabManager.createFolder(for: space.id, name: "Folder")
+        let regular = tabManager.createNewTab(url: "https://example.com/folder", in: space)
+        tabManager.moveTabToFolder(tab: regular, folderId: folder.id)
+        let pin = try XCTUnwrap(tabManager.folderPinnedPins(for: folder.id, in: space.id).first)
+        let windowId = UUID()
+        let batchFlushesBefore = tabManager.structuralLookupBatchFlushCount
+        let immediateFlushesBefore = tabManager.structuralLookupImmediateFlushCount
+        recorder.reset()
+
+        tabManager.withStructuralUpdateTransaction {
+            let liveTab = tabManager.activateShortcutPin(pin, in: windowId, currentSpaceId: space.id)
+
+            XCTAssertEqual(recorder.count, 0)
+            XCTAssertEqual(tabManager.tab(for: liveTab.id)?.id, liveTab.id)
+            XCTAssertEqual(tabManager.structuralLookupImmediateFlushCount, immediateFlushesBefore + 1)
+
+            tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowId)
+
+            XCTAssertNil(tabManager.tab(for: liveTab.id))
+            XCTAssertEqual(tabManager.structuralLookupImmediateFlushCount, immediateFlushesBefore + 2)
+        }
+
+        XCTAssertEqual(recorder.count, 1)
+        XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore)
+    }
+
+    func testLookupIncludesTransientExtensionAndAuxiliaryTabs() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let opener = tabManager.createNewTab(url: "https://example.com/opener", in: space)
+
+        let transientExtension = tabManager.createTransientExtensionTab(
+            url: "https://example.com/transient",
+            in: space,
+            webExtensionContextOverride: nil
+        )
+        let auxiliary = tabManager.createAuxiliaryMiniWindowTab(openerTab: opener)
+
+        XCTAssertTrue(tabManager.tab(for: transientExtension.id) === transientExtension)
+        XCTAssertTrue(tabManager.tab(for: auxiliary.id) === auxiliary)
+
+        tabManager.removeAuxiliaryMiniWindowTab(auxiliary)
+        tabManager.removeTab(transientExtension.id)
+
+        XCTAssertNil(tabManager.tab(for: auxiliary.id))
+        XCTAssertNil(tabManager.tab(for: transientExtension.id))
+    }
+
     func testSplitGroupLookupsFollowStructuralMutations() throws {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.createSpace(name: "Workspace")
