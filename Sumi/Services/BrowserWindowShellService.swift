@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 
 @MainActor
 final class BrowserWindowShellService {
@@ -12,7 +11,7 @@ final class BrowserWindowShellService {
         let permissionLifecycleController: SumiPermissionGrantLifecycleController?
         let profileManager: ProfileManager
         let tabManager: TabManager
-        let makeContentView: ContentViewFactory
+        let makeContentView: ContentViewFactory?
         let showEmptyState: EmptyStatePresenter
     }
 
@@ -20,10 +19,11 @@ final class BrowserWindowShellService {
 
     func createNewWindow(using context: Context) {
         guard let windowRegistry = context.windowRegistry,
-              let webViewCoordinator = context.webViewCoordinator
+              let webViewCoordinator = context.webViewCoordinator,
+              let makeContentView = context.makeContentView
         else {
             RuntimeDiagnostics.emit(
-                "⚠️ [WindowShellService] Cannot create window - missing WindowRegistry or WebViewCoordinator"
+                "⚠️ [WindowShellService] Cannot create window - missing WindowRegistry, WebViewCoordinator, or content view factory"
             )
             return
         }
@@ -33,7 +33,7 @@ final class BrowserWindowShellService {
 
         let newWindow = makeWindow(
             title: "Sumi",
-            contentView: context.makeContentView(windowRegistry, webViewCoordinator, windowState)
+            contentView: makeContentView(windowRegistry, webViewCoordinator, windowState)
         )
         windowState.window = newWindow
 
@@ -44,10 +44,11 @@ final class BrowserWindowShellService {
 
     func createIncognitoWindow(using context: Context) {
         guard let windowRegistry = context.windowRegistry,
-              let webViewCoordinator = context.webViewCoordinator
+              let webViewCoordinator = context.webViewCoordinator,
+              let makeContentView = context.makeContentView
         else {
             RuntimeDiagnostics.emit(
-                "⚠️ [WindowShellService] Cannot create incognito window - missing WindowRegistry or WebViewCoordinator"
+                "⚠️ [WindowShellService] Cannot create incognito window - missing WindowRegistry, WebViewCoordinator, or content view factory"
             )
             return
         }
@@ -74,7 +75,7 @@ final class BrowserWindowShellService {
 
         let newWindow = makeWindow(
             title: "Incognito - Sumi",
-            contentView: context.makeContentView(windowRegistry, webViewCoordinator, windowState)
+            contentView: makeContentView(windowRegistry, webViewCoordinator, windowState)
         )
         windowState.window = newWindow
 

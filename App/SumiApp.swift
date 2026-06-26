@@ -90,6 +90,20 @@ struct SumiApp: App {
         browserManager.windowRegistry = windowRegistry
         browserManager.sumiSettings = settingsManager
         browserManager.keyboardShortcutManager = keyboardShortcutManager
+        browserManager.windowShellContentViewFactory = {
+            [settingsManager, keyboardShortcutManager] browserManager,
+            windowRegistry,
+            webViewCoordinator,
+            windowState in
+            Self.makeWindowShellContentView(
+                browserManager: browserManager,
+                settingsManager: settingsManager,
+                keyboardShortcutManager: keyboardShortcutManager,
+                windowRegistry: windowRegistry,
+                webViewCoordinator: webViewCoordinator,
+                windowState: windowState
+            )
+        }
 
         // `MediaControlsView` also configures this, but tab selection / activation can refresh the
         // shared controller before the sidebar appears; without an early configure, `refreshImmediately`
@@ -169,5 +183,33 @@ struct SumiApp: App {
                 for: browserManager.currentProfile
             )
         }
+    }
+
+    private static func makeWindowShellContentView(
+        browserManager: BrowserManager,
+        settingsManager: SumiSettingsService,
+        keyboardShortcutManager: KeyboardShortcutManager,
+        windowRegistry: WindowRegistry,
+        webViewCoordinator: WebViewCoordinator,
+        windowState: BrowserWindowState?
+    ) -> NSView {
+        let contentView = ContentView(
+            windowState: windowState,
+            initialWorkspaceTheme: browserManager.tabManager.currentSpace?.workspaceTheme
+        )
+            .ignoresSafeArea(.all)
+            .environmentObject(browserManager)
+            .environmentObject(browserManager.glanceManager)
+            .environmentObject(browserManager.extensionSurfaceStore)
+            .environment(windowRegistry)
+            .environment(webViewCoordinator)
+            .environment(\.sumiSettings, settingsManager)
+            .environment(\.sumiModuleRegistry, browserManager.moduleRegistry)
+            .environment(\.sumiProtectionCoordinator, browserManager.protectionCoordinator)
+            .environment(\.sumiExtensionsModule, browserManager.extensionsModule)
+            .environment(\.sumiUserscriptsModule, browserManager.userscriptsModule)
+            .environment(keyboardShortcutManager)
+
+        return NSHostingView(rootView: contentView)
     }
 }

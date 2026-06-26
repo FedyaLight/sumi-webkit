@@ -1,6 +1,3 @@
-import AppKit
-import SwiftUI
-
 @MainActor
 extension BrowserManager {
     func createNewWindow() {
@@ -63,36 +60,22 @@ extension BrowserManager {
     }
 
     private func makeWindowShellContext() -> BrowserWindowShellService.Context {
-        BrowserWindowShellService.Context(
+        let makeContentView: BrowserWindowShellService.ContentViewFactory?
+        if let factory = windowShellContentViewFactory {
+            makeContentView = { windowRegistry, webViewCoordinator, windowState in
+                factory(self, windowRegistry, webViewCoordinator, windowState)
+            }
+        } else {
+            makeContentView = nil
+        }
+
+        return BrowserWindowShellService.Context(
             windowRegistry: windowRegistry,
             webViewCoordinator: webViewCoordinator,
             permissionLifecycleController: permissionLifecycleController,
             profileManager: profileManager,
             tabManager: tabManager,
-            makeContentView: { [weak self] windowRegistry, webViewCoordinator, windowState in
-                guard let self else { return NSView() }
-
-                let contentView = ContentView(
-                    windowState: windowState,
-                    initialWorkspaceTheme: self.tabManager.currentSpace?.workspaceTheme
-                )
-                    .ignoresSafeArea(.all)
-                    .environmentObject(self)
-                    .environmentObject(self.glanceManager)
-                    .environmentObject(self.extensionSurfaceStore)
-                    .environment(windowRegistry)
-                    .environment(webViewCoordinator)
-                    .environment(\.sumiSettings, self.sumiSettings ?? SumiSettingsService())
-                    .environment(\.sumiModuleRegistry, self.moduleRegistry)
-                    .environment(\.sumiProtectionCoordinator, self.protectionCoordinator)
-                    .environment(\.sumiExtensionsModule, self.extensionsModule)
-                    .environment(\.sumiUserscriptsModule, self.userscriptsModule)
-                    .environment(
-                        self.keyboardShortcutManager ?? KeyboardShortcutManager(installEventMonitor: false)
-                    )
-
-                return NSHostingView(rootView: contentView)
-            },
+            makeContentView: makeContentView,
             showEmptyState: { [weak self] windowState in
                 self?.showEmptyState(in: windowState)
             }

@@ -364,6 +364,20 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertTrue(appSource.contains(".windowStyle(.hiddenTitleBar)"))
     }
 
+    func testBrowserManagerDoesNotOwnSwiftUIWindowContentConstruction() throws {
+        let windowShellSource = try Self.source(
+            named: "Sumi/Managers/BrowserManager/BrowserManager+WindowShell.swift"
+        )
+        let browserManagerSource = try Self.source(
+            named: "Sumi/Managers/BrowserManager/BrowserManager.swift"
+        )
+
+        XCTAssertFalse(windowShellSource.contains("ContentView("))
+        XCTAssertFalse(windowShellSource.contains("NSHostingView"))
+        XCTAssertFalse(browserManagerSource.contains("NSHostingView<ContentView>"))
+        XCTAssertFalse(browserManagerSource.contains("NSApplication.shared.windows"))
+    }
+
     private func assertNativeBrowserControlsHidden(
         _ window: NSWindow,
         file: StaticString = #filePath,

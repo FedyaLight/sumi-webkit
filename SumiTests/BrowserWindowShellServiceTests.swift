@@ -47,6 +47,67 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertFalse(harness.profileManager.profiles.contains { $0.id == ephemeralProfile.id })
     }
 
+    func testCreateNewWindowWithoutContentFactoryDoesNotRegisterWindow() {
+        let harness = makeHarness()
+        let service = BrowserWindowShellService()
+        let context = BrowserWindowShellService.Context(
+            windowRegistry: harness.windowRegistry,
+            webViewCoordinator: harness.webViewCoordinator,
+            permissionLifecycleController: nil,
+            profileManager: harness.profileManager,
+            tabManager: harness.tabManager,
+            makeContentView: nil,
+            showEmptyState: { _ in }
+        )
+
+        service.createNewWindow(using: context)
+
+        XCTAssertTrue(harness.windowRegistry.allWindows.isEmpty)
+    }
+
+    func testCreateNewWindowUsesContentFactoryAndRegistersWindowWithAssociatedNSWindow() throws {
+        let harness = makeHarness()
+        let service = BrowserWindowShellService()
+        var factoryWindowStates: [BrowserWindowState] = []
+        var registeredWindowHadNSWindow: Bool?
+        harness.windowRegistry.onWindowRegister = { windowState in
+            registeredWindowHadNSWindow = windowState.window != nil
+        }
+
+        let context = BrowserWindowShellService.Context(
+            windowRegistry: harness.windowRegistry,
+            webViewCoordinator: harness.webViewCoordinator,
+            permissionLifecycleController: nil,
+            profileManager: harness.profileManager,
+            tabManager: harness.tabManager,
+            makeContentView: { windowRegistry, webViewCoordinator, windowState in
+                XCTAssertTrue(windowRegistry === harness.windowRegistry)
+                XCTAssertTrue(webViewCoordinator === harness.webViewCoordinator)
+                guard let windowState else {
+                    XCTFail("Expected window shell service to pass the new window state.")
+                    return NSView()
+                }
+                factoryWindowStates.append(windowState)
+                return NSView()
+            },
+            showEmptyState: { _ in }
+        )
+
+        service.createNewWindow(using: context)
+
+        let windowState = try XCTUnwrap(harness.windowRegistry.allWindows.first)
+        defer {
+            windowState.window?.close()
+            harness.windowRegistry.unregister(windowState.id)
+        }
+
+        XCTAssertEqual(factoryWindowStates.map(\.id), [windowState.id])
+        XCTAssertTrue(windowState.window is SumiBrowserWindow)
+        XCTAssertTrue(windowState.tabManager === harness.tabManager)
+        XCTAssertEqual(harness.windowRegistry.activeWindowId, windowState.id)
+        XCTAssertEqual(registeredWindowHadNSWindow, true)
+    }
+
     func testEphemeralTabsUseMonotonicIndexesAndIncognitoCleanupIsIdempotent() async throws {
         let harness = makeHarness()
         let service = BrowserWindowShellService()

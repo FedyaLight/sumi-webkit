@@ -194,6 +194,14 @@ class BrowserManager: ObservableObject {
     let permissionSidebarPinningController = SumiPermissionSidebarPinningController()
     private var permissionEventOwner: SumiPermissionEventOwner?
     private var didPauseGeolocationForApplicationBackground = false
+    /// App-shell owned factory for AppKit-created browser windows.
+    typealias WindowShellContentViewFactory = @MainActor (
+        BrowserManager,
+        WindowRegistry,
+        WebViewCoordinator,
+        BrowserWindowState?
+    ) -> NSView
+    var windowShellContentViewFactory: WindowShellContentViewFactory?
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -1534,20 +1542,13 @@ class BrowserManager: ObservableObject {
 
     // MARK: - Window State Management
 
-    /// Register a new window state and attach shell services (`WindowSessionService`, extensions).
-    /// Window ↔ `NSWindow` association uses heuristics until window creation is fully owned by the shell layer.
+    /// Register a new window state and attach browser services (`WindowSessionService`, extensions).
+    /// Window ↔ `NSWindow` association is owned by `BrowserWindowBridge` for SwiftUI scene windows
+    /// and by `BrowserWindowShellService` for BrowserManager-created windows.
     func setupWindowState(_ windowState: BrowserWindowState) {
         windowSessionService.setupWindowState(windowState, delegate: self)
         extensionsModule.notifyWindowOpenedIfLoaded(windowState)
         reconcileStartupSessionIfPossible()
-
-        if let window = NSApplication.shared.windows.first(where: {
-            $0.contentView?.subviews.contains(where: {
-                ($0 as? NSHostingView<ContentView>) != nil
-            }) ?? false
-        }) {
-            windowState.window = window
-        }
     }
 
 
