@@ -32,6 +32,18 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
         XCTAssertFalse(geolocation.contains("decisionHandler(.grant)"))
     }
 
+    func testNormalTabPermissionSurfaceContextStaysOutOfMainTabBody() throws {
+        let tab = try sourceFile("Sumi/Models/Tab/Tab.swift")
+        let surface = try sourceFile("Sumi/Models/Tab/Tab+PermissionSurface.swift")
+
+        XCTAssertFalse(tab.contains("func popupPermissionTabContext"))
+        XCTAssertFalse(tab.contains("func externalSchemePermissionTabContext"))
+        XCTAssertFalse(tab.contains("func permissionRequestSurfaceState"))
+        XCTAssertTrue(surface.contains("func popupPermissionTabContext"))
+        XCTAssertTrue(surface.contains("func externalSchemePermissionTabContext"))
+        XCTAssertTrue(surface.contains("func permissionRequestSurfaceState"))
+    }
+
     func testNormalTabFilePickerRoutesThroughBridgeAndOpenPanelsStayOutOfNormalTabDelegate() throws {
         let tabDelegate = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
         let normalOpenPanel = try tabDelegate.slice(
