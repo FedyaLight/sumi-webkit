@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 import QuartzCore
 import SwiftUI
 import WebKit
@@ -42,8 +41,6 @@ struct WebsiteDisplayState: Equatable {
 
 @MainActor
 final class WindowWebContentController: NSViewController {
-    private static let mediaTouchBarRecoveryRetryDelays: [TimeInterval] = [0, 0.2, 0.5]
-
     private let browserManager: BrowserManager
     private let webViewCoordinator: WebViewCoordinator
     private let windowState: BrowserWindowState
@@ -72,7 +69,12 @@ final class WindowWebContentController: NSViewController {
             self.webViewCoordinator.finishVisualHandoffProtection(for: host.webView)
         }
     )
-    private var mediaTouchBarRecoveryCancellable: AnyCancellable?
+    private lazy var mediaTouchBarRecoveryController = WindowMediaTouchBarRecoveryController(
+        windowID: windowState.id,
+        recover: { [weak self] tabID, webView in
+            self?.recoverMediaTouchBarAfterWebKitReparent(tabID: tabID, webView: webView)
+        }
+    )
 
     init(
         browserManager: BrowserManager,
@@ -98,7 +100,7 @@ final class WindowWebContentController: NSViewController {
         webViewCoordinator.setImmediateVisualHandoffHandler({ [weak self] in
             self?.performImmediateVisualHandoffIfPossible() ?? false
         }, for: windowState.id)
-        installMediaTouchBarRecoveryObservation()
+        mediaTouchBarRecoveryController.start()
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -113,8 +115,7 @@ final class WindowWebContentController: NSViewController {
         releaseVisualHandoffCovers()
         clearSinglePane()
         clearAllSplitPaneHosts()
-        mediaTouchBarRecoveryCancellable?.cancel()
-        mediaTouchBarRecoveryCancellable = nil
+        mediaTouchBarRecoveryController.stop()
         webViewCoordinator.setImmediateVisualHandoffHandler(nil, for: windowState.id)
         webViewCoordinator.removeCompositorContainerView(for: windowState.id)
     }
@@ -404,33 +405,6 @@ final class WindowWebContentController: NSViewController {
         guard !host.webView.sumiIsInFullscreenElementPresentation else { return }
         guard window.firstResponder !== host.webView else { return }
         window.makeFirstResponder(host.webView)
-    }
-
-    private func installMediaTouchBarRecoveryObservation() {
-        mediaTouchBarRecoveryCancellable = NotificationCenter.default
-            .publisher(for: .sumiWebViewNeedsMediaTouchBarRecovery)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] notification in
-                self?.handleMediaTouchBarRecoveryRequest(notification)
-            }
-    }
-
-    private func handleMediaTouchBarRecoveryRequest(_ notification: Notification) {
-        guard let webView = notification.object as? WKWebView,
-              let windowID = notification.userInfo?[SumiMediaTouchBarRecoveryNotificationKey.windowID] as? UUID,
-              windowID == windowState.id
-        else {
-            return
-        }
-
-        let tabID = notification.userInfo?[SumiMediaTouchBarRecoveryNotificationKey.tabID] as? UUID
-        recoverMediaTouchBarAfterWebKitReparent(tabID: tabID, webView: webView)
-        for delay in Self.mediaTouchBarRecoveryRetryDelays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak webView] in
-                guard let webView else { return }
-                self?.recoverMediaTouchBarAfterWebKitReparent(tabID: tabID, webView: webView)
-            }
-        }
     }
 
     private func recoverMediaTouchBarAfterWebKitReparent(tabID: UUID?, webView: WKWebView) {

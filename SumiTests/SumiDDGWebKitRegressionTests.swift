@@ -145,12 +145,35 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let recoverySource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WindowMediaTouchBarRecoveryController.swift"
+            ),
+            encoding: .utf8
+        )
+        XCTAssertTrue(compositorSource.contains("private lazy var mediaTouchBarRecoveryController"))
+        XCTAssertTrue(compositorSource.contains("mediaTouchBarRecoveryController.start()"))
+        XCTAssertTrue(compositorSource.contains("mediaTouchBarRecoveryController.stop()"))
         XCTAssertTrue(compositorSource.contains("recoverMediaTouchBarAfterWebKitReparent"))
         XCTAssertTrue(compositorSource.contains("resetWebKitMediaTouchBar"))
         XCTAssertTrue(compositorSource.contains("host.attachDisplayedContentIfNeeded()"))
         XCTAssertFalse(compositorSource.contains("webView.sumiCloseInactiveFullscreenWindowControllerIfNeeded()"))
         XCTAssertTrue(compositorSource.contains("webView.touchBar = nil"))
         XCTAssertTrue(compositorSource.contains("window.makeFirstResponder(webView)"))
+        XCTAssertTrue(recoverySource.contains("final class WindowMediaTouchBarRecoveryController"))
+        XCTAssertTrue(recoverySource.contains("private static let retryDelays: [TimeInterval] = [0, 0.2, 0.5]"))
+        XCTAssertTrue(recoverySource.contains("publisher(for: .sumiWebViewNeedsMediaTouchBarRecovery)"))
+        try assertTokenOrder(
+            Substring(recoverySource),
+            [
+                "notificationWindowID == windowID",
+                "let tabID = notification.userInfo?[SumiMediaTouchBarRecoveryNotificationKey.tabID] as? UUID",
+                "recover(tabID, webView)",
+                "for delay in Self.retryDelays",
+                "DispatchQueue.main.asyncAfter(deadline: .now() + delay)",
+                "self?.recover(tabID, webView)"
+            ]
+        )
 
         let audioStateSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
@@ -597,7 +620,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let releaseCallback = try sourceSlice(
             source,
             from: "private lazy var visualHandoffCovers",
-            to: "private var mediaTouchBarRecoveryCancellable"
+            to: "private lazy var mediaTouchBarRecoveryController"
         )
         try assertTokenOrder(
             releaseCallback,
