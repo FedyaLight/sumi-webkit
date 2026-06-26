@@ -19,6 +19,12 @@ protocol WindowCommandRouting: AnyObject {
 }
 
 @MainActor
+protocol BrowserWindowLifecycleHandling: AnyObject {
+    var tabManager: TabManager { get }
+    func persistWindowSession(for windowState: BrowserWindowState)
+}
+
+@MainActor
 protocol WebViewLookup: AnyObject {
     func webView(for tabId: UUID, in windowId: UUID) -> WKWebView?
 }

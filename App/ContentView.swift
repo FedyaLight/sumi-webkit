@@ -7,16 +7,19 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(WindowRegistry.self) private var windowRegistry
+
+    private let windowLifecycleHandler: any BrowserWindowLifecycleHandling
+    private let providedWindowState: BrowserWindowState?
+
     @State private var defaultWindowState: BrowserWindowState
     
-    private let providedWindowState: BrowserWindowState?
-    
     init(
+        windowLifecycleHandler: any BrowserWindowLifecycleHandling,
         windowState: BrowserWindowState? = nil,
         initialWorkspaceTheme: WorkspaceTheme? = nil
     ) {
+        self.windowLifecycleHandler = windowLifecycleHandler
         self.providedWindowState = windowState
         _defaultWindowState = State(
             initialValue: BrowserWindowState(
@@ -40,8 +43,7 @@ struct ContentView: View {
             )
             .onAppear {
                 StartupPerformanceTrace.firstWindowVisible()
-                // Set TabManager reference for computed properties
-                windowState.tabManager = browserManager.tabManager
+                windowState.tabManager = windowLifecycleHandler.tabManager
                 // Register this window state with the registry
                 windowRegistry.register(windowState)
             }
@@ -49,7 +51,7 @@ struct ContentView: View {
                 guard windowRegistry.windows[windowState.id] != nil else {
                     return
                 }
-                browserManager.persistWindowSession(for: windowState)
+                windowLifecycleHandler.persistWindowSession(for: windowState)
                 // Fallback for lifecycle paths that disappear without a close notification.
                 windowRegistry.unregister(windowState.id)
             }

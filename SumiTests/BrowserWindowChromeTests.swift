@@ -1,4 +1,5 @@
 import AppKit
+import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -378,6 +379,19 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(browserManagerSource.contains("NSApplication.shared.windows"))
     }
 
+    func testContentViewCanBeConstructedWithWindowLifecycleHandlerProtocol() throws {
+        let handler = try FakeWindowLifecycleHandler()
+        let lifecycleHandler: any BrowserWindowLifecycleHandling = handler
+
+        let contentView = ContentView(
+            windowLifecycleHandler: lifecycleHandler,
+            initialWorkspaceTheme: .default
+        )
+
+        XCTAssertTrue(type(of: contentView) == ContentView.self)
+        XCTAssertTrue(handler.persistedWindowIds.isEmpty)
+    }
+
     private func assertNativeBrowserControlsHidden(
         _ window: NSWindow,
         file: StaticString = #filePath,
@@ -426,5 +440,23 @@ private final class WindowShouldCloseDelegate: NSObject, NSWindowDelegate {
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         windowShouldCloseCount += 1
         return shouldClose
+    }
+}
+
+@MainActor
+private final class FakeWindowLifecycleHandler: BrowserWindowLifecycleHandling {
+    let tabManager: TabManager
+    private(set) var persistedWindowIds: [UUID] = []
+
+    init() throws {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+    }
+
+    func persistWindowSession(for windowState: BrowserWindowState) {
+        persistedWindowIds.append(windowState.id)
     }
 }

@@ -2382,8 +2382,8 @@ extension BrowserManager {
     }
 }
 
-extension BrowserManager: BrowserCommandRouting, WindowCommandRouting, ExternalURLHandling,
-    BrowserPersistenceHandling, WebViewLookup
+extension BrowserManager: BrowserCommandRouting, WindowCommandRouting, BrowserWindowLifecycleHandling,
+    ExternalURLHandling, BrowserPersistenceHandling, WebViewLookup
 {
     func flushRuntimeStatePersistenceAwaitingResult() async -> Int {
         await tabManager.flushRuntimeStatePersistenceAwaitingResult()
