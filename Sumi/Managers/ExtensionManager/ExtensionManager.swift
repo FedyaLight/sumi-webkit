@@ -140,8 +140,19 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     weak var browserManager: BrowserManager?
-    var extensionControllersByProfile: [UUID: WKWebExtensionController] = [:]
-    var extensionContextsByProfile: [UUID: [String: WKWebExtensionContext]] = [:]
+    var profileRuntimeState = ExtensionProfileRuntimeState()
+    var extensionControllersByProfile: [UUID: WKWebExtensionController] {
+        get { profileRuntimeState.controllersByProfile }
+        set { profileRuntimeState.replaceControllers(newValue) }
+    }
+    var extensionContextsByProfile: [UUID: [String: WKWebExtensionContext]] {
+        get { profileRuntimeState.contextsByProfile }
+        set { profileRuntimeState.replaceContexts(newValue) }
+    }
+    var extensionContextBindingGenerationByProfile: [UUID: UInt64] {
+        get { profileRuntimeState.contextBindingGenerationByProfile }
+        set { profileRuntimeState.replaceContextBindingGenerations(newValue) }
+    }
     /// Parsed extension resources are profile-agnostic; each profile gets its own context.
     var cachedWebExtensionsByID: [String: WKWebExtension] = [:]
     var cachedWebExtensionRuntimeSourceKeysByID: [String: WebExtensionRuntimeSourceKey] = [:]
@@ -197,7 +208,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     )
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
-    var extensionContextBindingGenerationByProfile: [UUID: UInt64] = [:]
     var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
     var initialDocumentNativeMessagingWarmupTasksByProfile: [UUID: Task<Void, Never>] = [:]
     var extensionPermissionPromptQueue: [@MainActor () -> Void] = []

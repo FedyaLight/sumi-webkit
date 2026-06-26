@@ -6,16 +6,16 @@ import WebKit
 extension ExtensionManager {
     var extensionController: WKWebExtensionController? {
         guard let currentProfileId else { return nil }
-        return extensionControllersByProfile[currentProfileId]
+        return profileRuntimeState.controller(for: currentProfileId)
     }
 
     var extensionContexts: [String: WKWebExtensionContext] {
         guard let currentProfileId else { return [:] }
-        return extensionContextsByProfile[currentProfileId] ?? [:]
+        return profileRuntimeState.contexts(for: currentProfileId)
     }
 
     func extensionContexts(for profileId: UUID) -> [String: WKWebExtensionContext] {
-        extensionContextsByProfile[profileId] ?? [:]
+        profileRuntimeState.contexts(for: profileId)
     }
 
     func setExtensionContext(
@@ -23,24 +23,41 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) {
-        var contexts = extensionContextsByProfile[profileId] ?? [:]
-        contexts[extensionId] = context
-        extensionContextsByProfile[profileId] = contexts
-        bumpExtensionContextBindingGeneration(for: profileId, reason: "setExtensionContext")
+        let generation = profileRuntimeState.setContext(
+            context,
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        traceExtensionContextBindingGeneration(
+            profileId: profileId,
+            generation: generation,
+            reason: "setExtensionContext"
+        )
     }
 
     func extensionContextBindingGeneration(for profileId: UUID) -> UInt64 {
-        extensionContextBindingGenerationByProfile[profileId] ?? 0
+        profileRuntimeState.contextBindingGeneration(for: profileId)
     }
 
     func bumpExtensionContextBindingGeneration(
         for profileId: UUID,
         reason: String
     ) {
-        let next = (extensionContextBindingGenerationByProfile[profileId] ?? 0) &+ 1
-        extensionContextBindingGenerationByProfile[profileId] = next
+        let next = profileRuntimeState.bumpContextBindingGeneration(for: profileId)
+        traceExtensionContextBindingGeneration(
+            profileId: profileId,
+            generation: next,
+            reason: reason
+        )
+    }
+
+    private func traceExtensionContextBindingGeneration(
+        profileId: UUID,
+        generation: UInt64,
+        reason: String
+    ) {
         extensionRuntimeTrace(
-            "extensionContextBindingGeneration profile=\(profileId.uuidString) generation=\(next) reason=\(reason)"
+            "extensionContextBindingGeneration profile=\(profileId.uuidString) generation=\(generation) reason=\(reason)"
         )
     }
 
@@ -49,39 +66,28 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) -> WKWebExtensionContext? {
-        guard var contexts = extensionContextsByProfile[profileId] else {
-            return nil
-        }
-        let removed = contexts.removeValue(forKey: extensionId)
-        if contexts.isEmpty {
-            extensionContextsByProfile.removeValue(forKey: profileId)
-        } else {
-            extensionContextsByProfile[profileId] = contexts
-        }
-        if removed != nil {
-            bumpExtensionContextBindingGeneration(
-                for: profileId,
-                reason: "removeExtensionContext"
-            )
-        }
-        return removed
+        guard let removed = profileRuntimeState.removeContext(
+            extensionId: extensionId,
+            profileId: profileId
+        ) else { return nil }
+        traceExtensionContextBindingGeneration(
+            profileId: profileId,
+            generation: removed.generation,
+            reason: "removeExtensionContext"
+        )
+        return removed.context
     }
 
     func allLoadedExtensionIDs() -> Set<String> {
-        Set(extensionContextsByProfile.values.flatMap(\.keys))
+        profileRuntimeState.allLoadedExtensionIDs()
     }
 
     func profileId(for extensionContext: WKWebExtensionContext) -> UUID? {
-        for (profileId, contexts) in extensionContextsByProfile {
-            if contexts.values.contains(where: { $0 === extensionContext }) {
-                return profileId
-            }
-        }
-        return nil
+        profileRuntimeState.profileId(for: extensionContext)
     }
 
     func profileId(for controller: WKWebExtensionController) -> UUID? {
-        extensionControllersByProfile.first(where: { $0.value === controller })?.key
+        profileRuntimeState.profileId(for: controller)
     }
 
     func resolvedProfileId(for tab: Tab?) -> UUID? {
@@ -141,7 +147,7 @@ extension ExtensionManager {
 
     @discardableResult
     func ensureExtensionController(for profileId: UUID) -> WKWebExtensionController {
-        if let existing = extensionControllersByProfile[profileId] {
+        if let existing = profileRuntimeState.controller(for: profileId) {
             return existing
         }
 
@@ -160,7 +166,7 @@ extension ExtensionManager {
             defaultDataStore: defaultDataStore,
             profileId: profileId
         )
-        extensionControllersByProfile[profileId] = controller
+        profileRuntimeState.setController(controller, for: profileId)
         scheduleControllerDelegateRebind(for: controller)
 
         if currentProfileId == profileId {
@@ -258,7 +264,7 @@ extension ExtensionManager {
     }
 
     func countLoadedExtensionContexts() -> Int {
-        extensionContextsByProfile.values.reduce(0) { $0 + $1.count }
+        profileRuntimeState.countLoadedExtensionContexts()
     }
 
     func touchLiveExtensionContext(extensionId: String, profileId: UUID) {
