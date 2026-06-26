@@ -436,6 +436,46 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(coordinator.isWebViewProtectedFromCompositorMutation(webView))
     }
 
+    func testWebsiteDisplayStateActiveSplitGroupRequiresCurrentTabMembership() throws {
+        let current = UUID()
+        let secondary = UUID()
+        let outside = UUID()
+        let group = try XCTUnwrap(SplitGroup.make(
+            tabIds: [current, secondary],
+            layoutKind: .vertical
+        ))
+
+        let activeState = WebsiteDisplayState(
+            splitGroup: group,
+            currentId: current,
+            compositorVersion: 1,
+            currentTabUnloaded: false,
+            visibleTabIds: [current, secondary],
+            isSplitDropCaptureActive: false
+        )
+        XCTAssertEqual(activeState.activeSplitGroup?.id, group.id)
+
+        let outsideState = WebsiteDisplayState(
+            splitGroup: group,
+            currentId: outside,
+            compositorVersion: 1,
+            currentTabUnloaded: false,
+            visibleTabIds: [outside],
+            isSplitDropCaptureActive: false
+        )
+        XCTAssertNil(outsideState.activeSplitGroup)
+
+        let nilCurrentState = WebsiteDisplayState(
+            splitGroup: group,
+            currentId: nil,
+            compositorVersion: 1,
+            currentTabUnloaded: true,
+            visibleTabIds: [],
+            isSplitDropCaptureActive: false
+        )
+        XCTAssertNil(nilCurrentState.activeSplitGroup)
+    }
+
     func testCloneWebViewPrimaryWindowSelectionDoesNotDependOnDictionaryOrder() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

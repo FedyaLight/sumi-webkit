@@ -29,6 +29,16 @@ struct WebsiteDisplayState: Equatable {
     let visibleTabIds: Set<UUID>
     let isSplitDropCaptureActive: Bool
 
+    var activeSplitGroup: SplitGroup? {
+        guard let splitGroup,
+              let currentId,
+              splitGroup.contains(currentId)
+        else {
+            return nil
+        }
+        return splitGroup
+    }
+
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.splitGroup == rhs.splitGroup
             && lhs.currentId == rhs.currentId
@@ -224,10 +234,7 @@ final class WindowWebContentController: NSViewController {
             windowId: windowState.id
         )
 
-        if let group = displayState.splitGroup,
-           let currentId = displayState.currentId,
-           group.contains(currentId)
-        {
+        if let group = displayState.activeSplitGroup {
             let tabs = group.tabIds.compactMap { browserManager.tabManager.tab(for: $0) }
             guard tabs.count == group.tabIds.count else {
                 let didBeginVisualHandoff = beginSinglePaneVisualHandoffIfNeeded(to: currentTab)
@@ -321,11 +328,7 @@ final class WindowWebContentController: NSViewController {
             return false
         }
 
-        let shouldShowSplit = displayState.currentId.map {
-            displayState.splitGroup?.contains($0) == true
-        } ?? false
-
-        if shouldShowSplit == false {
+        guard let activeSplitGroup = displayState.activeSplitGroup else {
             let expected = (currentTab != nil && displayState.currentTabUnloaded == false) ? 1 : 0
             if hostedWebViewCount(in: containerView.singlePaneView, stoppingAfter: expected) > expected { return true }
             if containerView.hasHostedSplitWebViews { return true }
@@ -333,8 +336,7 @@ final class WindowWebContentController: NSViewController {
         }
 
         if hostedWebViewCount(in: containerView.singlePaneView, stoppingAfter: 0) > 0 { return true }
-        guard let group = displayState.splitGroup else { return false }
-        for tabId in hostRegistry.splitPaneTabIds where group.contains(tabId) == false {
+        for tabId in hostRegistry.splitPaneTabIds where activeSplitGroup.contains(tabId) == false {
             return true
         }
         return false
