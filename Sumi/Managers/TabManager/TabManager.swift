@@ -1392,25 +1392,7 @@ class TabManager: ObservableObject {
             }
         }
 
-        // Save this tab as the active tab for the appropriate space
-        var didChangeSpacePersistenceState = false
-        if let sid = tab.spaceId, let space = spaces.first(where: { $0.id == sid }) {
-            if space.activeTabId != tab.id {
-                space.activeTabId = tab.id
-                didChangeSpacePersistenceState = true
-            }
-            if currentSpace?.id != space.id {
-                currentSpace = space
-            }
-        } else if let cs = currentSpace {
-            if cs.activeTabId != tab.id {
-                cs.activeTabId = tab.id
-                didChangeSpacePersistenceState = true
-            }
-        }
-        if didChangeSpacePersistenceState {
-            markSpacesSnapshotDirty()
-        }
+        updateActiveTabSpaceSelectionState(for: tab, refreshCurrentSpaceReference: false)
 
         if previous?.id != tab.id {
             browserManager?.extensionsModule.notifyTabActivatedIfLoaded(
@@ -1429,15 +1411,24 @@ class TabManager: ObservableObject {
             return
         }
         currentTab = tab
+        updateActiveTabSpaceSelectionState(for: tab, refreshCurrentSpaceReference: true)
         
-        // Save this tab as the active tab for the appropriate space
+        persistSelection()
+    }
+
+    private func updateActiveTabSpaceSelectionState(
+        for tab: Tab,
+        refreshCurrentSpaceReference: Bool
+    ) {
         var didChangeSpacePersistenceState = false
         if let sid = tab.spaceId, let space = spaces.first(where: { $0.id == sid }) {
             if space.activeTabId != tab.id {
                 space.activeTabId = tab.id
                 didChangeSpacePersistenceState = true
             }
-            currentSpace = space
+            if refreshCurrentSpaceReference || currentSpace?.id != space.id {
+                currentSpace = space
+            }
         } else if let cs = currentSpace {
             if cs.activeTabId != tab.id {
                 cs.activeTabId = tab.id
@@ -1447,8 +1438,6 @@ class TabManager: ObservableObject {
         if didChangeSpacePersistenceState {
             markSpacesSnapshotDirty()
         }
-        
-        persistSelection()
     }
 
     @discardableResult

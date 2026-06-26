@@ -457,6 +457,53 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         }
     }
 
+    func testActiveTabStatePathsPersistSelectionWithoutSchedulingStructuralPersistence() async throws {
+        let container = try makeInMemoryContainer()
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let profileId = UUID()
+        let firstSpace = tabManager.createSpace(name: "First", profileId: profileId)
+        let secondSpace = tabManager.createSpace(name: "Second", profileId: profileId)
+        let first = tabManager.createNewTab(url: "https://example.com/first", in: firstSpace, activate: false)
+        let alternate = tabManager.createNewTab(url: "https://example.com/alternate", in: firstSpace, activate: false)
+        let second = tabManager.createNewTab(url: "https://example.com/second", in: secondSpace, activate: false)
+
+        tabManager.setActiveTab(first)
+        try await waitForStore(in: container) { context in
+            guard let state = try context.fetch(FetchDescriptor<TabsStateEntity>()).first else {
+                return false
+            }
+            return try fetchTab(first.id, in: context) != nil
+                && fetchTab(alternate.id, in: context) != nil
+                && fetchTab(second.id, in: context) != nil
+                && state.currentTabID == first.id
+                && state.currentSpaceID == firstSpace.id
+                && tabManager.structuralDirtySet.isEmpty
+                && tabManager.scheduledStructuralPersistTask == nil
+        }
+
+        tabManager.setActiveTab(second)
+
+        XCTAssertEqual(tabManager.currentTab?.id, second.id)
+        XCTAssertEqual(tabManager.currentSpace?.id, secondSpace.id)
+        XCTAssertEqual(secondSpace.activeTabId, second.id)
+        XCTAssertTrue(tabManager.structuralDirtySet.isEmpty)
+        XCTAssertNil(tabManager.scheduledStructuralPersistTask)
+        try await waitForPersistedState(in: container) { state in
+            state.currentTabID == second.id && state.currentSpaceID == secondSpace.id
+        }
+
+        tabManager.updateActiveTabState(alternate)
+
+        XCTAssertEqual(tabManager.currentTab?.id, alternate.id)
+        XCTAssertEqual(tabManager.currentSpace?.id, firstSpace.id)
+        XCTAssertEqual(firstSpace.activeTabId, alternate.id)
+        XCTAssertTrue(tabManager.structuralDirtySet.isEmpty)
+        XCTAssertNil(tabManager.scheduledStructuralPersistTask)
+        try await waitForPersistedState(in: container) { state in
+            state.currentTabID == alternate.id && state.currentSpaceID == firstSpace.id
+        }
+    }
+
     func testRuntimeStateBatchFlushUpdatesStoredTabFields() async throws {
         let container = try makeInMemoryContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
