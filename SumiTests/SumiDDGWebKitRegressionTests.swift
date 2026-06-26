@@ -628,6 +628,196 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(unprotectedHelper.contains("refreshPrimaryTrackedWebView"))
     }
 
+    func testDeferredProtectedCommandBufferCollapsesDuplicateKeysInPlace() {
+        var buffer = DeferredProtectedCommandBuffer()
+        let tabID = UUID()
+        let firstPreferredWindowID = UUID()
+        let latestPreferredWindowID = UUID()
+
+        XCTAssertEnqueueOutcome(
+            buffer.enqueue(.rebuildLiveWebViews(
+                tabID: tabID,
+                preferredPrimaryWindowID: firstPreferredWindowID
+            )),
+            is: .enqueued
+        )
+        XCTAssertEnqueueOutcome(buffer.enqueue(.cleanupAllWebViews), is: .enqueued)
+        XCTAssertEnqueueOutcome(
+            buffer.enqueue(.rebuildLiveWebViews(
+                tabID: tabID,
+                preferredPrimaryWindowID: latestPreferredWindowID
+            )),
+            is: .collapsed
+        )
+        XCTAssertEqual(buffer.count, 2)
+
+        let drained = buffer.drain()
+        XCTAssertEqual(drained.count, 2)
+        guard case let .rebuildLiveWebViews(drainedTabID, drainedPreferredWindowID) = drained[0],
+              case .cleanupAllWebViews = drained[1]
+        else {
+            return XCTFail("Expected duplicate command replacement to keep original FIFO slot")
+        }
+        XCTAssertEqual(drainedTabID, tabID)
+        XCTAssertEqual(drainedPreferredWindowID, latestPreferredWindowID)
+    }
+
+    func testDeferredProtectedCommandBufferDropsAtCapacityWithoutMutatingExistingCommands() {
+        var buffer = DeferredProtectedCommandBuffer()
+        let commandIDs = (0..<DeferredProtectedCommandBuffer.maxCommands).map { _ in UUID() }
+
+        for commandID in commandIDs {
+            XCTAssertEnqueueOutcome(
+                buffer.enqueue(.removeAllWebViews(tabID: commandID)),
+                is: .enqueued
+            )
+        }
+        XCTAssertEqual(buffer.count, DeferredProtectedCommandBuffer.maxCommands)
+
+        let droppedTabID = UUID()
+        XCTAssertEnqueueOutcome(
+            buffer.enqueue(.removeAllWebViews(tabID: droppedTabID)),
+            is: .droppedAtCapacity
+        )
+        XCTAssertEqual(buffer.count, DeferredProtectedCommandBuffer.maxCommands)
+
+        let drained = buffer.drain()
+        XCTAssertEqual(drained.count, DeferredProtectedCommandBuffer.maxCommands)
+        for (command, expectedTabID) in zip(drained, commandIDs) {
+            guard case let .removeAllWebViews(drainedTabID) = command else {
+                return XCTFail("Expected capacity drop to leave queued commands unchanged")
+            }
+            XCTAssertEqual(drainedTabID, expectedTabID)
+        }
+    }
+
+    func testDeferredProtectedCommandBufferPruneReturnsDroppedCommandsAndKeepsSurvivorsInOrder() {
+        var buffer = DeferredProtectedCommandBuffer()
+        let firstTabID = UUID()
+        let droppedWindowID = UUID()
+        let lastTabID = UUID()
+
+        XCTAssertEnqueueOutcome(buffer.enqueue(.removeAllWebViews(tabID: firstTabID)), is: .enqueued)
+        XCTAssertEnqueueOutcome(buffer.enqueue(.cleanupWindow(windowID: droppedWindowID)), is: .enqueued)
+        XCTAssertEnqueueOutcome(buffer.enqueue(.rebuildLiveWebViews(
+            tabID: lastTabID,
+            preferredPrimaryWindowID: nil
+        )), is: .enqueued)
+
+        let droppedCommands = buffer.prune { command in
+            if case .cleanupWindow = command { return true }
+            return false
+        }
+
+        XCTAssertEqual(droppedCommands.count, 1)
+        guard case let .cleanupWindow(drainedDroppedWindowID) = droppedCommands[0] else {
+            return XCTFail("Expected prune to return the dropped command")
+        }
+        XCTAssertEqual(drainedDroppedWindowID, droppedWindowID)
+
+        let survivors = buffer.drain()
+        XCTAssertEqual(survivors.count, 2)
+        guard case let .removeAllWebViews(drainedFirstTabID) = survivors[0],
+              case let .rebuildLiveWebViews(drainedLastTabID, drainedPreferredWindowID) = survivors[1]
+        else {
+            return XCTFail("Expected prune to keep survivors in FIFO order")
+        }
+        XCTAssertEqual(drainedFirstTabID, firstTabID)
+        XCTAssertEqual(drainedLastTabID, lastTabID)
+        XCTAssertNil(drainedPreferredWindowID)
+    }
+
+    func testWebViewCoordinatorDeferredProtectedCommandsStayBehindNarrowStore() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let storeSource = try sourceSlice(
+            source,
+            from: "private struct DeferredProtectedWebViewCommandStore",
+            to: "@MainActor\n@Observable\nclass WebViewCoordinator"
+        )
+        XCTAssertTrue(storeSource.contains("private var buffersBySourceWebViewID"))
+        XCTAssertFalse(storeSource.contains("activeHistorySwipeProtections"))
+        XCTAssertFalse(storeSource.contains("visualHandoffProtectedWebViewIDs"))
+        XCTAssertFalse(storeSource.contains("fullscreenProtection"))
+        XCTAssertFalse(storeSource.contains("weakWebViewsByIdentifier"))
+        XCTAssertFalse(storeSource.contains("resolveWebView"))
+        XCTAssertFalse(storeSource.contains("executeDeferredProtectedCommand"))
+        XCTAssertFalse(storeSource.contains("dropDeferredProtectedCommand"))
+
+        let coordinatorStart = try XCTUnwrap(
+            source.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
+        ).lowerBound
+        let coordinatorSource = String(source[coordinatorStart...])
+        XCTAssertTrue(
+            coordinatorSource.contains(
+                "private var deferredProtectedWebViewCommands = DeferredProtectedWebViewCommandStore()"
+            )
+        )
+        XCTAssertFalse(coordinatorSource.contains("deferredProtectedWebViewCommands["))
+        XCTAssertFalse(coordinatorSource.contains("deferredProtectedWebViewCommands.keys"))
+
+        let enqueueSource = try sourceSlice(
+            source,
+            from: "private func enqueueDeferredCommandIfNeeded",
+            to: "private func noteWeakWebView"
+        )
+        try assertTokenOrder(
+            enqueueSource,
+            [
+                "noteWeakWebView(webView)",
+                "guard shouldDefer(sourceWebViewID)",
+                "pruneInvalidDeferredProtectedCommands(reason: \"enqueue.preflight\")",
+                "guard isDeferredProtectedCommandValid(command)",
+                "deferredProtectedWebViewCommands.enqueue(",
+                "switch enqueueResult.outcome"
+            ]
+        )
+
+        let flushSource = try sourceSlice(
+            source,
+            from: "private func flushDeferredProtectedCommands",
+            to: "private func isCancelledHistorySwipe"
+        )
+        try assertTokenOrder(
+            flushSource,
+            [
+                "guard activeHistorySwipeProtections[webViewID] == nil",
+                "visualHandoffProtectedWebViewIDs.contains(webViewID) == false",
+                "fullscreenProtection.isProtected(webViewID) == false",
+                "pruneInvalidDeferredProtectedCommands(reason: \"flush.preflight\")",
+                "deferredProtectedWebViewCommands.drainCommands(for: webViewID)",
+                "Task { @MainActor",
+                "executeDeferredProtectedCommand("
+            ]
+        )
+
+        let pruneSource = try sourceSlice(
+            source,
+            from: "private func pruneInvalidDeferredProtectedCommands",
+            to: "private func isDeferredProtectedCommandValid"
+        )
+        try assertTokenOrder(
+            pruneSource,
+            [
+                "pruneStaleWebViewBookkeeping",
+                "for sourceWebViewID in deferredProtectedWebViewCommands.sourceWebViewIDs",
+                "guard resolveWebView(with: sourceWebViewID) != nil",
+                "deferredProtectedWebViewCommands.drainCommands(for: sourceWebViewID)",
+                "dropDeferredProtectedCommand(",
+                "deferredProtectedWebViewCommands.pruneCommands(for: sourceWebViewID)",
+                "dropDeferredProtectedCommand("
+            ]
+        )
+    }
+
     func testWebViewContainerLayoutDoesNotReparentDisplayedContent() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -771,6 +961,22 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             }
             previousIndex = index
             searchStart = range.upperBound
+        }
+    }
+
+    private func XCTAssertEnqueueOutcome(
+        _ actual: DeferredProtectedCommandEnqueueOutcome,
+        is expected: DeferredProtectedCommandEnqueueOutcome,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        switch (actual, expected) {
+        case (.enqueued, .enqueued),
+             (.collapsed, .collapsed),
+             (.droppedAtCapacity, .droppedAtCapacity):
+            break
+        default:
+            XCTFail("Expected \(expected), got \(actual)", file: file, line: line)
         }
     }
 

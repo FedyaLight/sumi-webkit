@@ -273,6 +273,51 @@ struct DeferredProtectedCommandBuffer {
 
 }
 
+private struct DeferredProtectedWebViewCommandStore {
+    private var buffersBySourceWebViewID: [ObjectIdentifier: DeferredProtectedCommandBuffer] = [:]
+
+    var sourceWebViewIDs: [ObjectIdentifier] {
+        Array(buffersBySourceWebViewID.keys)
+    }
+
+    mutating func enqueue(
+        _ command: DeferredWebViewCommand,
+        sourceWebViewID: ObjectIdentifier
+    ) -> (outcome: DeferredProtectedCommandEnqueueOutcome, count: Int) {
+        var buffer = buffersBySourceWebViewID[sourceWebViewID]
+            ?? DeferredProtectedCommandBuffer()
+        let outcome = buffer.enqueue(command)
+        buffersBySourceWebViewID[sourceWebViewID] = buffer
+        return (outcome, buffer.count)
+    }
+
+    mutating func drainCommands(for sourceWebViewID: ObjectIdentifier) -> [DeferredWebViewCommand] {
+        var buffer = buffersBySourceWebViewID.removeValue(forKey: sourceWebViewID)
+        return buffer?.drain() ?? []
+    }
+
+    mutating func removeAllCommands(for sourceWebViewID: ObjectIdentifier) {
+        buffersBySourceWebViewID.removeValue(forKey: sourceWebViewID)
+    }
+
+    mutating func pruneCommands(
+        for sourceWebViewID: ObjectIdentifier,
+        where shouldDrop: (DeferredWebViewCommand) -> Bool
+    ) -> [DeferredWebViewCommand] {
+        guard var buffer = buffersBySourceWebViewID[sourceWebViewID] else {
+            return []
+        }
+
+        let droppedCommands = buffer.prune(where: shouldDrop)
+        if buffer.isEmpty {
+            buffersBySourceWebViewID.removeValue(forKey: sourceWebViewID)
+        } else {
+            buffersBySourceWebViewID[sourceWebViewID] = buffer
+        }
+        return droppedCommands
+    }
+}
+
 @MainActor
 @Observable
 class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
@@ -322,7 +367,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private let fullscreenProtection = FullscreenWebViewProtection()
 
     @ObservationIgnored
-    private var deferredProtectedWebViewCommands: [ObjectIdentifier: DeferredProtectedCommandBuffer] = [:]
+    private var deferredProtectedWebViewCommands = DeferredProtectedWebViewCommandStore()
 
     @ObservationIgnored
     private var weakWebViewsByIdentifier: [ObjectIdentifier: WeakWKWebView] = [:]
@@ -902,8 +947,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
               fullscreenProtection.isProtected(webViewID) == false
         else { return }
         pruneInvalidDeferredProtectedCommands(reason: "flush.preflight")
-        var buffer = deferredProtectedWebViewCommands.removeValue(forKey: webViewID)
-        let commands = buffer?.drain() ?? []
+        let commands = deferredProtectedWebViewCommands.drainCommands(for: webViewID)
         guard !commands.isEmpty else { return }
         Task { @MainActor in
             let signpostState = PerformanceTrace.beginInterval(
@@ -1473,21 +1517,21 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return true
         }
 
-        var buffer = deferredProtectedWebViewCommands[sourceWebViewID]
-            ?? DeferredProtectedCommandBuffer()
-        let outcome = buffer.enqueue(command)
-        deferredProtectedWebViewCommands[sourceWebViewID] = buffer
+        let enqueueResult = deferredProtectedWebViewCommands.enqueue(
+            command,
+            sourceWebViewID: sourceWebViewID
+        )
 
-        switch outcome {
+        switch enqueueResult.outcome {
         case .enqueued:
             PerformanceTrace.emitEvent("WebViewCoordinator.enqueueDeferredProtectedCommand")
             RuntimeDiagnostics.protectedWebViewTrace(
-                "enqueueDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(buffer.count)"
+                "enqueueDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.count)"
             )
         case .collapsed:
             PerformanceTrace.emitEvent("WebViewCoordinator.collapseDeferredProtectedCommand")
             RuntimeDiagnostics.protectedWebViewTrace(
-                "collapseDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(buffer.count)"
+                "collapseDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.count)"
             )
         case .droppedAtCapacity:
             dropDeferredProtectedCommand(
@@ -1600,7 +1644,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             activeHistorySwipeProtections.removeValue(forKey: id)
             visualHandoffProtectedWebViewIDs.remove(id)
             fullscreenProtection.remove(id)
-            deferredProtectedWebViewCommands.removeValue(forKey: id)
+            deferredProtectedWebViewCommands.removeAllCommands(for: id)
         }
         RuntimeDiagnostics.protectedWebViewTrace(
             "pruneStaleWebViewBookkeeping reason=\(reason) count=\(staleIDs.count)"
@@ -1610,33 +1654,22 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private func pruneInvalidDeferredProtectedCommands(reason: String) {
         pruneStaleWebViewBookkeeping(reason: "\(reason).staleBookkeeping")
 
-        for sourceWebViewID in Array(deferredProtectedWebViewCommands.keys) {
+        for sourceWebViewID in deferredProtectedWebViewCommands.sourceWebViewIDs {
             guard resolveWebView(with: sourceWebViewID) != nil else {
                 activeHistorySwipeProtections.removeValue(forKey: sourceWebViewID)
                 fullscreenProtection.remove(sourceWebViewID)
-                if var buffer = deferredProtectedWebViewCommands.removeValue(forKey: sourceWebViewID) {
-                    for command in buffer.drain() {
-                        dropDeferredProtectedCommand(
-                            command,
-                            sourceWebViewID: sourceWebViewID,
-                            reason: "\(reason).deadSource"
-                        )
-                    }
+                for command in deferredProtectedWebViewCommands.drainCommands(for: sourceWebViewID) {
+                    dropDeferredProtectedCommand(
+                        command,
+                        sourceWebViewID: sourceWebViewID,
+                        reason: "\(reason).deadSource"
+                    )
                 }
                 continue
             }
 
-            guard var buffer = deferredProtectedWebViewCommands[sourceWebViewID] else {
-                continue
-            }
-            let droppedCommands = buffer.prune { [self] command in
+            let droppedCommands = deferredProtectedWebViewCommands.pruneCommands(for: sourceWebViewID) { [self] command in
                 isDeferredProtectedCommandValid(command) == false
-            }
-
-            if buffer.isEmpty {
-                deferredProtectedWebViewCommands.removeValue(forKey: sourceWebViewID)
-            } else {
-                deferredProtectedWebViewCommands[sourceWebViewID] = buffer
             }
 
             for command in droppedCommands {
