@@ -382,113 +382,13 @@ indirect enum SplitLayoutTree: Codable, Equatable, Hashable, Sendable {
         }
     }
 
-    func leafTabId(at point: CGPoint, in rect: CGRect) -> UUID? {
-        leafHit(at: point, in: rect)?.tabId
-    }
-
-    func leafHit(at point: CGPoint, in rect: CGRect) -> SplitLayoutLeafHit? {
-        leafHit(at: point, in: rect, path: [])
-    }
-
-    private func leafHit(at point: CGPoint, in rect: CGRect, path: [Int]) -> SplitLayoutLeafHit? {
-        guard rect.width > 0, rect.height > 0, rect.contains(point) else { return nil }
-        switch self {
-        case .leaf(let tabId, _):
-            return SplitLayoutLeafHit(tabId: tabId, rect: rect, path: path)
-        case .split(let axis, _, let children):
-            let childRects = childRects(in: rect, axis: axis, children: children)
-            guard childRects.count == children.count else { return nil }
-            for (index, child) in children.enumerated() {
-                let childRect = childRects[index]
-                if childRect.contains(point) {
-                    return child.leafHit(at: point, in: childRect, path: path + [index])
-                }
-            }
-            guard let lastIndex = children.indices.last else { return nil }
-            return children[lastIndex].leafHit(at: point, in: childRects[lastIndex], path: path + [lastIndex])
-        }
-    }
-
-    func leafHits(in rect: CGRect) -> [SplitLayoutLeafHit] {
-        leafHits(in: rect, path: [])
-    }
-
-    private func leafHits(in rect: CGRect, path: [Int]) -> [SplitLayoutLeafHit] {
-        guard rect.width > 0, rect.height > 0 else { return [] }
-        switch self {
-        case .leaf(let tabId, _):
-            return [SplitLayoutLeafHit(tabId: tabId, rect: rect, path: path)]
-        case .split(let axis, _, let children):
-            let childRects = childRects(in: rect, axis: axis, children: children)
-            guard childRects.count == children.count else { return [] }
-            return children.enumerated().flatMap { index, child -> [SplitLayoutLeafHit] in
-                child.leafHits(in: childRects[index], path: path + [index])
-            }
-        }
-    }
-
-    func leafRects(in rect: CGRect) -> [UUID: CGRect] {
-        Dictionary(uniqueKeysWithValues: leafHits(in: rect).map { ($0.tabId, $0.rect) })
-    }
-
-    func leafRect(for tabId: UUID, in rect: CGRect) -> CGRect? {
-        leafHit(for: tabId, in: rect, path: [])?.rect
-    }
-
-    private func leafHit(for tabId: UUID, in rect: CGRect, path: [Int]) -> SplitLayoutLeafHit? {
-        guard rect.width > 0, rect.height > 0 else { return nil }
-        switch self {
-        case .leaf(let id, _):
-            return id == tabId ? SplitLayoutLeafHit(tabId: id, rect: rect, path: path) : nil
-        case .split(let axis, _, let children):
-            let childRects = childRects(in: rect, axis: axis, children: children)
-            guard childRects.count == children.count else { return nil }
-            for (index, child) in children.enumerated() {
-                guard let hit = child.leafHit(
-                    for: tabId,
-                    in: childRects[index],
-                    path: path + [index]
-                ) else {
-                    continue
-                }
-                return hit
-            }
-            return nil
-        }
-    }
-
-    func edgeTabId(for side: SplitDropSide, in rect: CGRect) -> UUID? {
-        let leaves = leafHits(in: rect)
-        guard leaves.isEmpty == false else { return nil }
-        switch side {
-        case .left:
-            return leaves.min {
-                if $0.rect.minX == $1.rect.minX { return $0.rect.maxY > $1.rect.maxY }
-                return $0.rect.minX < $1.rect.minX
-            }?.tabId
-        case .right:
-            return leaves.max {
-                if $0.rect.maxX == $1.rect.maxX { return $0.rect.maxY < $1.rect.maxY }
-                return $0.rect.maxX < $1.rect.maxX
-            }?.tabId
-        case .top:
-            return leaves.max {
-                if $0.rect.maxY == $1.rect.maxY { return $0.rect.minX > $1.rect.minX }
-                return $0.rect.maxY < $1.rect.maxY
-            }?.tabId
-        case .bottom:
-            return leaves.min {
-                if $0.rect.minY == $1.rect.minY { return $0.rect.minX < $1.rect.minX }
-                return $0.rect.minY < $1.rect.minY
-            }?.tabId
-        case .center:
-            return nil
-        }
-    }
-
     func tilePlanes(in rect: CGRect) -> [SplitTilePlaneHit] {
         guard let canonical = canonicalTileTreePreservingSizes() else { return [] }
-        return canonical.tilePlanes(in: rect, path: [], includeChildPlanes: canonical.hasSecondaryPlane)
+        return SplitLayoutGeometry.tilePlanes(
+            in: canonical,
+            rect: rect,
+            includeChildPlanes: SplitLayoutGeometry.hasSecondaryPlane(in: canonical)
+        )
     }
 
     func canonicalizedForTiles() -> SplitLayoutTree? {
@@ -558,61 +458,6 @@ indirect enum SplitLayoutTree: Codable, Equatable, Hashable, Sendable {
     private var isLeaf: Bool {
         if case .leaf = self { return true }
         return false
-    }
-
-    private var hasSecondaryPlane: Bool {
-        guard case .split(_, _, let children) = self else { return false }
-        return children.contains { !$0.isLeaf }
-    }
-
-    private func tilePlanes(
-        in rect: CGRect,
-        path: [Int],
-        includeChildPlanes: Bool
-    ) -> [SplitTilePlaneHit] {
-        var planes = [
-            SplitTilePlaneHit(path: path, rect: rect, tabIds: tabIds)
-        ]
-        guard includeChildPlanes,
-              case .split(let axis, _, let children) = self
-        else {
-            return planes
-        }
-
-        let childRects = childRects(in: rect, axis: axis, children: children)
-        for (index, child) in children.enumerated() {
-            planes.append(
-                SplitTilePlaneHit(
-                    path: path + [index],
-                    rect: childRects[index],
-                    tabIds: child.tabIds
-                )
-            )
-        }
-        return planes
-    }
-
-    private func childRects(
-        in rect: CGRect,
-        axis: SplitAxis,
-        children: [SplitLayoutTree]
-    ) -> [CGRect] {
-        let total = children.reduce(0) { $0 + max(0.01, $1.sizeInParent) }
-        guard total > 0 else { return [] }
-        var cursor: CGFloat = 0
-        return children.map { child in
-            let fraction = CGFloat(max(0.01, child.sizeInParent) / total)
-            switch axis {
-            case .row:
-                let width = rect.width * fraction
-                defer { cursor += width }
-                return CGRect(x: rect.minX + cursor, y: rect.minY, width: width, height: rect.height)
-            case .column:
-                let height = rect.height * fraction
-                defer { cursor += height }
-                return CGRect(x: rect.minX, y: rect.maxY - cursor - height, width: rect.width, height: height)
-            }
-        }
     }
 
     private func canonicalTileTreePreservingSizes() -> SplitLayoutTree? {
@@ -755,7 +600,7 @@ indirect enum SplitLayoutTree: Codable, Equatable, Hashable, Sendable {
 
         if target.intent == .rootEdge,
            let insertionAxis = target.side.insertionAxis,
-           base.hasSecondaryPlane,
+           SplitLayoutGeometry.hasSecondaryPlane(in: base),
            case .split(let axis, _, _) = base,
            axis == insertionAxis {
             var ids = base.tabIds

@@ -961,6 +961,33 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(bottomRight.rect, CGRect(x: 500, y: 0, width: 500, height: 400))
     }
 
+    func testGridTilePlanesExposeRootAndImmediateChildRects() throws {
+        let ids = makeIDs(4)
+        let group = try XCTUnwrap(SplitGroup.make(tabIds: ids, layoutKind: .grid))
+        let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+
+        let planes = group.layoutTree.tilePlanes(in: bounds)
+
+        XCTAssertEqual(planes.count, 3)
+        XCTAssertEqual(planes[0], SplitTilePlaneHit(path: [], rect: bounds, tabIds: ids))
+        XCTAssertEqual(
+            planes[1],
+            SplitTilePlaneHit(
+                path: [0],
+                rect: CGRect(x: 0, y: 0, width: 500, height: 800),
+                tabIds: Array(ids[0...1])
+            )
+        )
+        XCTAssertEqual(
+            planes[2],
+            SplitTilePlaneHit(
+                path: [1],
+                rect: CGRect(x: 500, y: 0, width: 500, height: 800),
+                tabIds: Array(ids[2...3])
+            )
+        )
+    }
+
     func testDropTargetInsertionAlongExistingAxisUsesEqualRootThirds() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")
