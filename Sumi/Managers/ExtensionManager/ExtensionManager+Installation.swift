@@ -12,100 +12,6 @@ import WebKit
 
 @available(macOS 15.5, *)
 extension ExtensionManager {
-    enum WebExtensionStorageCleanupMode {
-        case pruneDirectoryIfPossible
-        case preserveDirectoryForImmediateRuntimeLoad
-    }
-
-    struct WebExtensionStorageSnapshot: Equatable {
-        let directoryExists: Bool
-        let entryNames: [String]
-        let hasRegisteredContentScriptsStore: Bool
-        let hasLocalStorageStore: Bool
-        let hasSyncStorageStore: Bool
-
-        static let trackedOptionalStoreNames = [
-            "RegisteredContentScripts.db",
-            "LocalStorage.db",
-            "SyncStorage.db",
-        ]
-
-        var hasOnlyPrunableEntries: Bool {
-            entryNames.allSatisfy { $0 == "State.plist" }
-        }
-
-        var missingTrackedOptionalStoreNames: [String] {
-            Self.trackedOptionalStoreNames.filter { entryNames.contains($0) == false }
-        }
-
-        var isMissingTrackedOptionalStoresOnly: Bool {
-            directoryExists && missingTrackedOptionalStoreNames.isEmpty == false
-        }
-    }
-
-    struct WebExtensionStoreCapabilitySnapshot: Equatable {
-        let usesWebKitCompatibilityPrelude: Bool
-        let mayTouchDynamicContentScriptStore: Bool
-        let mayTouchSyncStorageStore: Bool
-        let declaredPermissions: [String]
-        let unsupportedAPIs: [String]
-    }
-
-    struct WebExtensionCleanupErrorDiagnostic: Equatable {
-        let domain: String
-        let code: Int
-        let localizedDescription: String
-        let localizedFailureReason: String
-        let debugDescription: String
-        let userInfoDescription: String
-
-        private var normalizedPayload: String {
-            [
-                localizedDescription,
-                localizedFailureReason,
-                debugDescription,
-                userInfoDescription,
-            ]
-            .filter { $0.isEmpty == false }
-            .joined(separator: " ")
-            .lowercased()
-        }
-
-        var referencesOptionalStore: Bool {
-            WebExtensionStorageSnapshot.trackedOptionalStoreNames.contains { storeName in
-                normalizedPayload.contains(storeName.lowercased())
-            }
-        }
-
-        var mentionsMissingFile: Bool {
-            normalizedPayload.contains("no such file or directory")
-                || normalizedPayload.contains("cannot open file")
-                || normalizedPayload.contains("open(")
-        }
-
-        var isGenericSQLiteStoreCreationFailure: Bool {
-            normalizedPayload.contains("failed to create sqlite store")
-        }
-
-        var isWebKitExtensionStorageComputationFailure: Bool {
-            domain == "WKWebExtensionDataRecordErrorDomain"
-                && code == 3
-                && (
-                    normalizedPayload.contains("unable to calculate extension storage")
-                        || normalizedPayload.contains("unable to delete extension storage")
-                )
-        }
-
-        var logSummary: String {
-            "domain=\(domain) code=\(code) desc=\(localizedDescription) reason=\(localizedFailureReason) debug=\(debugDescription) userInfo=\(userInfoDescription)"
-        }
-    }
-
-    struct WebExtensionCleanupErrorClassification: Equatable {
-        let benignOptionalStoreDiagnostics: [WebExtensionCleanupErrorDiagnostic]
-        let actionableDiagnostics: [WebExtensionCleanupErrorDiagnostic]
-    }
-
     /// Delivers install results on the next main runloop turn so SwiftUI does not emit
     /// "Publishing changes from within view updates" when UI callbacks mutate `@Published` state.
     private func deliverInstallCompletion(
@@ -1620,9 +1526,9 @@ extension ExtensionManager {
     }
 
     func hasStoredWebExtensionDataCandidate(for extensionId: String) -> Bool {
-        webExtensionStorageSnapshot(for: extensionId).entryNames.contains {
-            $0 != "State.plist"
-        }
+        WebExtensionStorageCleanupPlanner.shared.hasStoredDataCandidate(
+            in: webExtensionStorageSnapshot(for: extensionId)
+        )
     }
 
     @discardableResult
@@ -1746,17 +1652,9 @@ extension ExtensionManager {
     func webExtensionStoreCapabilitySnapshot(
         for manifest: [String: Any]
     ) -> WebExtensionStoreCapabilitySnapshot {
-        let permissions = Set((manifest["permissions"] as? [String] ?? []).map {
-            $0.lowercased()
-        })
-        let unsupportedAPIs = Self.webKitRuntimeUnsupportedAPIs(for: manifest).sorted()
-
-        return WebExtensionStoreCapabilitySnapshot(
-            usesWebKitCompatibilityPrelude: false,
-            mayTouchDynamicContentScriptStore: permissions.contains("scripting"),
-            mayTouchSyncStorageStore: permissions.contains("storage"),
-            declaredPermissions: permissions.sorted(),
-            unsupportedAPIs: unsupportedAPIs
+        WebExtensionStorageCleanupPlanner.shared.storeCapabilitySnapshot(
+            for: manifest,
+            unsupportedAPIs: Self.webKitRuntimeUnsupportedAPIs(for: manifest)
         )
     }
 
@@ -1766,29 +1664,11 @@ extension ExtensionManager {
         preCleanupSnapshot: WebExtensionStorageSnapshot,
         postCleanupSnapshot: WebExtensionStorageSnapshot
     ) -> WebExtensionCleanupErrorClassification {
-        let diagnostics = errors.map(makeWebExtensionCleanupErrorDiagnostic)
-        let hasNonOptionalFailureSignals = diagnostics.contains { diagnostic in
-            diagnostic.referencesOptionalStore == false
-                && diagnostic.isGenericSQLiteStoreCreationFailure == false
-                && diagnostic.isWebKitExtensionStorageComputationFailure == false
-        }
-
-        let benignOptionalStoreDiagnostics = diagnostics.filter { diagnostic in
-            isBenignMissingOptionalWebExtensionStoreError(
-                diagnostic,
-                extensionId: extensionId,
-                preCleanupSnapshot: preCleanupSnapshot,
-                postCleanupSnapshot: postCleanupSnapshot,
-                hasNonOptionalFailureSignals: hasNonOptionalFailureSignals
-            )
-        }
-        let actionableDiagnostics = diagnostics.filter { diagnostic in
-            benignOptionalStoreDiagnostics.contains(diagnostic) == false
-        }
-
-        return WebExtensionCleanupErrorClassification(
-            benignOptionalStoreDiagnostics: benignOptionalStoreDiagnostics,
-            actionableDiagnostics: actionableDiagnostics
+        WebExtensionStorageCleanupPlanner.shared.classifyCleanupErrors(
+            errors,
+            extensionId: extensionId,
+            preCleanupSnapshot: preCleanupSnapshot,
+            postCleanupSnapshot: postCleanupSnapshot
         )
     }
 
@@ -1814,15 +1694,7 @@ extension ExtensionManager {
     func makeWebExtensionCleanupErrorDiagnostic(
         _ error: Error,
     ) -> WebExtensionCleanupErrorDiagnostic {
-        let nsError = error as NSError
-        return WebExtensionCleanupErrorDiagnostic(
-            domain: nsError.domain,
-            code: nsError.code,
-            localizedDescription: nsError.localizedDescription,
-            localizedFailureReason: nsError.localizedFailureReason ?? "",
-            debugDescription: String(describing: error),
-            userInfoDescription: nsError.userInfo.description
-        )
+        WebExtensionStorageCleanupPlanner.shared.makeErrorDiagnostic(error)
     }
 
     func isBenignMissingOptionalWebExtensionStoreError(
@@ -1832,34 +1704,17 @@ extension ExtensionManager {
         postCleanupSnapshot: WebExtensionStorageSnapshot,
         hasNonOptionalFailureSignals: Bool
     ) -> Bool {
-        let extensionMatches = diagnostic.logSummary.lowercased().contains(extensionId.lowercased())
-        let snapshotShowsOnlyOptionalStoreGap =
-            preCleanupSnapshot.isMissingTrackedOptionalStoresOnly
-            || postCleanupSnapshot.isMissingTrackedOptionalStoresOnly
-        if diagnostic.referencesOptionalStore && diagnostic.mentionsMissingFile {
-            return true
-        }
-
-        if diagnostic.isGenericSQLiteStoreCreationFailure,
-           snapshotShowsOnlyOptionalStoreGap,
-           hasNonOptionalFailureSignals == false,
-           extensionMatches || diagnostic.referencesOptionalStore
-        {
-            return true
-        }
-
-        if diagnostic.isWebKitExtensionStorageComputationFailure,
-           snapshotShowsOnlyOptionalStoreGap,
-           hasNonOptionalFailureSignals == false
-        {
-            return true
-        }
-
-        return false
+        WebExtensionStorageCleanupPlanner.shared.isBenignMissingOptionalStoreError(
+            diagnostic,
+            extensionId: extensionId,
+            preCleanupSnapshot: preCleanupSnapshot,
+            postCleanupSnapshot: postCleanupSnapshot,
+            hasNonOptionalFailureSignals: hasNonOptionalFailureSignals
+        )
     }
 
     private func isPrunableWebExtensionStorageEntry(_ url: URL) -> Bool {
-        url.lastPathComponent == "State.plist"
+        WebExtensionStorageCleanupPlanner.shared.isPrunableStorageEntry(url)
     }
 
     func configureContextIdentity(
