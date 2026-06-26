@@ -76,6 +76,77 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.tab(for: preview.id)?.id, preview.id)
     }
 
+    func testTabCreationPathsKeepDistinctProfileAndPersistenceBehavior() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Workspace", profileId: profileId)
+
+        let regular = tabManager.createNewTab(
+            url: "https://example.com/regular",
+            in: space,
+            activate: false
+        )
+        let transientExtension = tabManager.createTransientExtensionTab(
+            url: "https://example.com/transient",
+            in: space,
+            webExtensionContextOverride: nil
+        )
+        let webViewBacked = tabManager.createNewTabWithWebView(
+            url: "https://example.com/webview",
+            in: space
+        )
+        let popup = tabManager.createPopupTab(in: space, activate: false)
+
+        XCTAssertEqual(regular.spaceId, space.id)
+        XCTAssertEqual(regular.profileId, profileId)
+        XCTAssertEqual(transientExtension.spaceId, space.id)
+        XCTAssertEqual(transientExtension.profileId, profileId)
+        XCTAssertTrue(tabManager.isTransientExtensionTab(transientExtension))
+
+        XCTAssertEqual(webViewBacked.spaceId, space.id)
+        XCTAssertNil(webViewBacked.profileId)
+        XCTAssertEqual(popup.spaceId, space.id)
+        XCTAssertNil(popup.profileId)
+        XCTAssertTrue(popup.isPopupHost)
+
+        XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [
+            regular.id,
+            webViewBacked.id,
+            popup.id,
+        ])
+        XCTAssertFalse((tabManager.tabsBySpace[space.id] ?? []).contains { $0.id == transientExtension.id })
+    }
+
+    func testGlanceAdoptionTargetsSourceSpaceAndBackfillsFromPreviewProfile() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let sourceSpace = tabManager.createSpace(name: "Source")
+        let currentSpace = tabManager.createSpace(name: "Current")
+        let source = tabManager.createNewTab(
+            url: "https://example.com/source",
+            in: sourceSpace,
+            activate: false
+        )
+        let previewProfileId = UUID()
+        let preview = Tab(
+            url: URL(string: "https://example.com/preview")!,
+            name: "Preview",
+            spaceId: nil
+        )
+        preview.profileId = previewProfileId
+
+        let adopted = tabManager.adoptGlanceTab(preview, sourceTab: source)
+
+        XCTAssertTrue(adopted === preview)
+        XCTAssertEqual(preview.spaceId, sourceSpace.id)
+        XCTAssertEqual(preview.profileId, previewProfileId)
+        XCTAssertEqual(sourceSpace.profileId, previewProfileId)
+        XCTAssertNil(currentSpace.profileId)
+        XCTAssertEqual(tabManager.tabsBySpace[sourceSpace.id]?.map(\.id), [
+            source.id,
+            preview.id,
+        ])
+    }
+
     func testDuplicatingRegularTabPublishesOnlyFinalInsertionOrder() throws {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.createSpace(name: "Workspace")

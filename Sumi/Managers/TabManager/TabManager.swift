@@ -1050,17 +1050,14 @@ class TabManager: ObservableObject {
             attach(tab)
             if contains(tab) { return tab }
 
-            let targetSpace = space
-                ?? sourceTab?.spaceId.flatMap { sourceSpaceId in
-                    spaces.first(where: { $0.id == sourceSpaceId })
-                }
-                ?? currentSpace
-                ?? ensureDefaultSpaceIfNeeded()
-
-            if targetSpace.profileId == nil {
-                targetSpace.profileId = tab.profileId ?? browserManager?.currentProfile?.id
-                markAllSpacesStructurallyDirty()
-            }
+            let targetSpace = resolvedTargetSpace(
+                preferred: space,
+                fallbackSpaceId: sourceTab?.spaceId
+            )
+            backfillTargetSpaceProfileIfNeeded(
+                targetSpace,
+                profileId: tab.profileId ?? browserManager?.currentProfile?.id
+            )
 
             let insertionIndex: Int? = {
                 if let sourceTab,
@@ -1097,6 +1094,31 @@ class TabManager: ObservableObject {
         setTabs(arr, for: spaceId)
     }
 
+    private func resolvedTargetSpace(preferred space: Space?, fallbackSpaceId: UUID? = nil) -> Space {
+        space
+            ?? fallbackSpaceId.flatMap { spaceId in
+                spaces.first(where: { $0.id == spaceId })
+            }
+            ?? currentSpace
+            ?? ensureDefaultSpaceIfNeeded()
+    }
+
+    private var defaultProfileIdForSpaceBootstrap: UUID? {
+        browserManager?.currentProfile?.id
+            ?? browserManager?.profileManager.profiles.first?.id
+    }
+
+    @discardableResult
+    private func backfillTargetSpaceProfileIfNeeded(
+        _ targetSpace: Space,
+        profileId: UUID?
+    ) -> Bool {
+        guard targetSpace.profileId == nil, let profileId else { return false }
+        targetSpace.profileId = profileId
+        markAllSpacesStructurallyDirty()
+        return true
+    }
+
     func isTransientExtensionTab(_ tab: Tab) -> Bool {
         transientExtensionTabsByID[tab.id] != nil
     }
@@ -1112,15 +1134,9 @@ class TabManager: ObservableObject {
         let normalizedUrl = normalizeURL(url, queryTemplate: template)
         let validURL = URL(string: normalizedUrl) ?? SumiSurface.emptyTabURL
 
-        let targetSpace = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
-        if targetSpace.profileId == nil {
-            let defaultProfileId = browserManager?.currentProfile?.id
-                ?? browserManager?.profileManager.profiles.first?.id
-            if let defaultProfileId {
-                targetSpace.profileId = defaultProfileId
-                markAllSpacesStructurallyDirty()
-                scheduleStructuralPersistence()
-            }
+        let targetSpace = resolvedTargetSpace(preferred: space)
+        if backfillTargetSpaceProfileIfNeeded(targetSpace, profileId: defaultProfileIdForSpaceBootstrap) {
+            scheduleStructuralPersistence()
         }
 
         let sid = targetSpace.id
@@ -1460,22 +1476,14 @@ class TabManager: ObservableObject {
                 )
             }
 
-            let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
-            // Ensure the target space has a profile assignment; backfill from currentProfile if missing
-            if let ts = targetSpace, ts.profileId == nil {
-                let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
-                if let pid = defaultProfileId {
-                    ts.profileId = pid
-                    markAllSpacesStructurallyDirty()
-                    scheduleStructuralPersistence()
-                }
+            let targetSpace = resolvedTargetSpace(preferred: space)
+            if backfillTargetSpaceProfileIfNeeded(targetSpace, profileId: defaultProfileIdForSpaceBootstrap) {
+                scheduleStructuralPersistence()
             }
-            let sid = targetSpace?.id
+            let sid = targetSpace.id
 
             let nextIndex = regularInsertionIndex
-                ?? sid
-                .flatMap { tabsBySpace[$0]?.map(\.index).max() }
-                .map { $0 + 1 }
+                ?? tabsBySpace[sid]?.map(\.index).max().map { $0 + 1 }
                 ?? 0
 
             let newTab = Tab(
@@ -1486,7 +1494,7 @@ class TabManager: ObservableObject {
                 index: nextIndex,
                 browserManager: browserManager
             )
-            newTab.profileId = targetSpace?.profileId
+            newTab.profileId = targetSpace.profileId
             newTab.webExtensionContextOverride = webExtensionContextOverride
             if let webViewConfigurationOverride {
                 newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
@@ -1546,21 +1554,13 @@ class TabManager: ObservableObject {
                 return createNewTab(in: space)
             }
 
-            let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
-            // Ensure the target space has a profile assignment; backfill from currentProfile if missing
-            if let ts = targetSpace, ts.profileId == nil {
-                let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
-                if let pid = defaultProfileId {
-                    ts.profileId = pid
-                    markAllSpacesStructurallyDirty()
-                    scheduleStructuralPersistence()
-                }
+            let targetSpace = resolvedTargetSpace(preferred: space)
+            if backfillTargetSpaceProfileIfNeeded(targetSpace, profileId: defaultProfileIdForSpaceBootstrap) {
+                scheduleStructuralPersistence()
             }
-            let sid = targetSpace?.id
+            let sid = targetSpace.id
 
-            let nextIndex = sid
-                .flatMap { tabsBySpace[$0]?.map(\.index).max() }
-                .map { $0 + 1 }
+            let nextIndex = tabsBySpace[sid]?.map(\.index).max().map { $0 + 1 }
                 ?? 0
 
             let newTab = Tab(
@@ -1589,18 +1589,12 @@ class TabManager: ObservableObject {
         regularInsertionIndex: Int? = nil
     ) -> Tab {
         return withStructuralUpdateTransaction {
-            let targetSpace: Space? = space ?? currentSpace ?? ensureDefaultSpaceIfNeeded()
-            // Ensure target space has a profile assignment
-            if let ts = targetSpace, ts.profileId == nil {
-                let defaultProfileId = browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
-                if let pid = defaultProfileId {
-                    ts.profileId = pid
-                    markAllSpacesStructurallyDirty()
-                    scheduleStructuralPersistence()
-                }
+            let targetSpace = resolvedTargetSpace(preferred: space)
+            if backfillTargetSpaceProfileIfNeeded(targetSpace, profileId: defaultProfileIdForSpaceBootstrap) {
+                scheduleStructuralPersistence()
             }
-            let sid = targetSpace?.id
-            let existingTabs = sid.flatMap { tabsBySpace[$0] } ?? []
+            let sid = targetSpace.id
+            let existingTabs = tabsBySpace[sid] ?? []
             let resolvedIndex = regularInsertionIndex.map { max(0, min($0, existingTabs.count)) }
                 ?? ((existingTabs.map { $0.index }.max() ?? -1) + 1)
 
@@ -1619,12 +1613,8 @@ class TabManager: ObservableObject {
             if let webViewConfigurationOverride {
                 newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
             }
-            if let sid {
-                attach(newTab)
-                insertRegularTab(newTab, in: sid, at: resolvedIndex)
-            } else {
-                addTab(newTab)
-            }
+            attach(newTab)
+            insertRegularTab(newTab, in: sid, at: resolvedIndex)
             scheduleStructuralPersistence()
             if activate {
                 setActiveTab(newTab)
