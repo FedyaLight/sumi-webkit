@@ -466,6 +466,45 @@ final class SumiProtectionSettings: ObservableObject {
 }
 
 @MainActor
+private final class SumiProtectionAttachmentServiceCache {
+    private(set) var attachmentPlan: SumiProtectionGlobalAttachmentPlan?
+    private var contentBlockingService: SumiContentBlockingService?
+    private(set) var generationId: UInt64 = 0
+
+    var isEmpty: Bool {
+        attachmentPlan == nil && contentBlockingService == nil
+    }
+
+    func cachedContentBlockingService(
+        for plan: SumiProtectionRulePlan,
+        cachedPlanMatchesActiveManifest: Bool
+    ) -> SumiContentBlockingService? {
+        guard plan.sitePolicyAllowsProtection,
+              !plan.expectedRuleListIdentifiers.isEmpty,
+              cachedPlanMatchesActiveManifest,
+              let contentBlockingService,
+              contentBlockingService.latestRuleListIdentifiers == plan.expectedRuleListIdentifiers
+        else { return nil }
+        return contentBlockingService
+    }
+
+    func replace(
+        withMetadataOnlyPlan plan: SumiProtectionGlobalAttachmentPlan,
+        service: SumiContentBlockingService?
+    ) {
+        attachmentPlan = plan
+        contentBlockingService = service
+        generationId &+= 1
+    }
+
+    func clear() {
+        attachmentPlan = nil
+        contentBlockingService = nil
+        generationId &+= 1
+    }
+}
+
+@MainActor
 final class SumiProtectionCoordinator {
     static let shared = SumiProtectionCoordinator()
 
@@ -478,9 +517,7 @@ final class SumiProtectionCoordinator {
     private var cancellables = Set<AnyCancellable>()
     private(set) var lastApplySummary: String?
     private(set) var lastApplyError: String?
-    private var cachedAttachmentPlan: SumiProtectionGlobalAttachmentPlan?
-    private var cachedAttachmentService: SumiContentBlockingService?
-    private var contentBlockingServiceGenerationId: UInt64 = 0
+    private let attachmentServiceCache = SumiProtectionAttachmentServiceCache()
     private var runtimeAppliedLevel: SumiProtectionLevel
     private var lastBundleLookupDuration: TimeInterval?
     private var lastPreparedBundleDiscoveryProfileId: String?
@@ -845,7 +882,7 @@ final class SumiProtectionCoordinator {
         let manifest = adBlockingModule.activeManifestIfLoaded()
         if !loadRuleDefinitions,
            !includeExpensiveDiagnostics,
-           let cachedAttachmentPlan,
+           let cachedAttachmentPlan = attachmentServiceCache.attachmentPlan,
            cachedAttachmentPlanMatches(cachedAttachmentPlan, level: level, manifest: manifest)
         {
             return metadataOnlyGlobalAttachmentPlan(cachedAttachmentPlan)
@@ -1019,18 +1056,18 @@ final class SumiProtectionCoordinator {
     private func cachedContentBlockingService(
         for plan: SumiProtectionRulePlan
     ) -> SumiContentBlockingService? {
-        guard plan.sitePolicyAllowsProtection,
-              !plan.expectedRuleListIdentifiers.isEmpty,
-              let cachedAttachmentPlan,
-              let cachedAttachmentService,
-              cachedAttachmentPlanMatches(
-                cachedAttachmentPlan,
+        let manifest = adBlockingModule.activeManifestIfLoaded()
+        let cachedPlanMatchesActiveManifest = attachmentServiceCache.attachmentPlan.map {
+            cachedAttachmentPlanMatches(
+                $0,
                 level: plan.requestedLevel,
-                manifest: adBlockingModule.activeManifestIfLoaded()
-              ),
-              cachedAttachmentService.latestRuleListIdentifiers == plan.expectedRuleListIdentifiers
-        else { return nil }
-        return cachedAttachmentService
+                manifest: manifest
+            )
+        } ?? false
+        return attachmentServiceCache.cachedContentBlockingService(
+            for: plan,
+            cachedPlanMatchesActiveManifest: cachedPlanMatchesActiveManifest
+        )
     }
 
     private func prepareCachedAttachmentService(
@@ -1055,8 +1092,10 @@ final class SumiProtectionCoordinator {
         try validateRequiredGroupsReady(in: metadataPlan)
 
         guard metadataPlan.isAttachable else {
-            clearCachedAttachmentService()
-            cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(metadataPlan)
+            attachmentServiceCache.replace(
+                withMetadataOnlyPlan: metadataOnlyGlobalAttachmentPlan(metadataPlan),
+                service: nil
+            )
             return
         }
 
@@ -1074,9 +1113,10 @@ final class SumiProtectionCoordinator {
                     ruleLists: metadataOnlyDefinitions
                 )
                 service.commitPreparedContentBlockingUpdate(preparedUpdate)
-                cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(metadataPlan)
-                cachedAttachmentService = service
-                contentBlockingServiceGenerationId &+= 1
+                attachmentServiceCache.replace(
+                    withMetadataOnlyPlan: metadataOnlyGlobalAttachmentPlan(metadataPlan),
+                    service: service
+                )
 #if DEBUG
                 SumiProtectionStartupRestoreDiagnostics.shared.recordMetadataOnlyRestoreUsed()
 #endif
@@ -1100,8 +1140,10 @@ final class SumiProtectionCoordinator {
         try validateRequiredGroupsReady(in: plan)
 
         guard plan.isAttachable else {
-            clearCachedAttachmentService()
-            cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(plan)
+            attachmentServiceCache.replace(
+                withMetadataOnlyPlan: metadataOnlyGlobalAttachmentPlan(plan),
+                service: nil
+            )
             return
         }
 
@@ -1110,9 +1152,10 @@ final class SumiProtectionCoordinator {
             retainEncodedRuleListsInPreparedPolicy: false
         )
         service.commitPreparedContentBlockingUpdate(preparedUpdate)
-        cachedAttachmentPlan = metadataOnlyGlobalAttachmentPlan(plan)
-        cachedAttachmentService = service
-        contentBlockingServiceGenerationId &+= 1
+        attachmentServiceCache.replace(
+            withMetadataOnlyPlan: metadataOnlyGlobalAttachmentPlan(plan),
+            service: service
+        )
     }
 
     private func metadataOnlyRuleDefinitions(
@@ -1177,9 +1220,7 @@ final class SumiProtectionCoordinator {
     }
 
     private func clearCachedAttachmentService() {
-        cachedAttachmentPlan = nil
-        cachedAttachmentService = nil
-        contentBlockingServiceGenerationId &+= 1
+        attachmentServiceCache.clear()
     }
 
     private func clearPreparedBundleLookupDiagnostics() {
@@ -1238,7 +1279,7 @@ final class SumiProtectionCoordinator {
             reloadRequiredReason: reloadRequired ? (reloadRequiredReason ?? "protection attachment plan changed") : nil,
             didManualReloadRebuildWebView: didManualReloadRebuildWebView,
             appliedAfterManualReload: appliedAfterManualReload,
-            contentBlockingServiceGenerationId: contentBlockingServiceGenerationId,
+            contentBlockingServiceGenerationId: attachmentServiceCache.generationId,
             generationSource: plan.bundleSource,
             nativeRuleBundleId: plan.nativeRuleBundleId,
             bundleProfileId: plan.bundleProfileId,
@@ -1338,8 +1379,7 @@ final class SumiProtectionCoordinator {
             adblockBundleAvailable: adblockBundleAvailable,
             strictOffActive: selectedLevel == .off
                 && appliedLevel == .off
-                && cachedAttachmentPlan == nil
-                && cachedAttachmentService == nil
+                && attachmentServiceCache.isEmpty
                 && !adBlockingModule.isEnabled
         )
     }
@@ -1431,7 +1471,7 @@ final class SumiProtectionCoordinator {
             "reloadRequiredReason=\(reloadRequiredReason ?? "nil")",
             "manualReloadRebuiltWebView=\(didManualReloadRebuildWebView)",
             "manualReloadMatchedDesiredState=\(appliedAfterManualReload)",
-            "contentBlockingServiceGenerationId=\(contentBlockingServiceGenerationId)",
+            "contentBlockingServiceGenerationId=\(attachmentServiceCache.generationId)",
             "planComputeDuration=\(currentTabDiagnostics.map { SumiProtectionCurrentTabDiagnostics.renderDuration($0.planComputeDuration) } ?? "nil")",
             "bundleLookupDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(lastBundleLookupDuration))",
             "ruleListLookupDuration=\(SumiProtectionCurrentTabDiagnostics.renderOptionalDuration(currentTabDiagnostics?.ruleListLookupDuration))",

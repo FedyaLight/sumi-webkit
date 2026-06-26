@@ -357,11 +357,18 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let sources = provider.userScripts.map(\.source).joined(separator: "\n")
 
         XCTAssertEqual(controller.contentBlockingAssetSummary.globalRuleListCount, 0)
+        XCTAssertEqual(controller.contentBlockingAssetSummary.updateRuleCount, 0)
+        XCTAssertFalse(controller.contentBlockingAssetSummary.isContentBlockingFeatureEnabled)
+        XCTAssertTrue(controller.contentBlockingAssetSummary.addedToUserContentControllerIdentifiers.isEmpty)
+        XCTAssertNil(controller.contentBlockingAssetSummary.tabAttachmentDuration)
         XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
         XCTAssertTrue(sources.contains("__sumiTabSuspension"))
         assertNoOptionalModuleScriptsOrHandlers(in: webView.configuration.userContentController)
         XCTAssertNil(webView.configuration.webExtensionController)
+        XCTAssertFalse(browserManager.adBlockingModule.hasLoadedRuntime)
+        XCTAssertFalse(browserManager.adBlockingModule.isEnabled)
+        XCTAssertFalse(browserManager.adBlockingModule.isPreparedBundleRuntimeEnabled)
 
         let suspensionScript = try XCTUnwrap(
             tab.normalTabCoreUserScripts().first { $0.source.contains("__sumiTabSuspension") }
