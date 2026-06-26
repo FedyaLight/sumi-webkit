@@ -1,4 +1,7 @@
+import SwiftData
 import XCTest
+
+@testable import Sumi
 
 final class SumiPermissionSourceRegressionTests: XCTestCase {
     func testNormalTabMediaCaptureRoutesThroughWebKitPermissionBridge() throws {
@@ -179,14 +182,72 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
         XCTAssertFalse(cleanup.contains("cookie"))
     }
 
-    func testBrowserManagerDelegatesPermissionEventSubscriptionOwnership() throws {
-        let browserManager = try sourceFile("Sumi/Managers/BrowserManager/BrowserManager.swift")
+    @MainActor
+    func testBrowserManagerPermissionRuntimeRecordsPermissionEvents() async throws {
+        let recentActivityStore = SumiPermissionRecentActivityStore()
+        let siteActivityStore = SumiPermissionSiteActivityStore(
+            userDefaults: try XCTUnwrap(
+                UserDefaults(suiteName: "SumiPermissionSourceRegressionTests-\(UUID().uuidString)")
+            )
+        )
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            systemPermissionService: FakeSumiSystemPermissionService(
+                states: sumiPermissionIntegrationAuthorizedSystemStates()
+            ),
+            permissionRecentActivityStore: recentActivityStore,
+            permissionSiteActivityStore: siteActivityStore
+        )
+        await Task.yield()
 
-        XCTAssertTrue(browserManager.contains("private var permissionEventOwner: SumiPermissionEventOwner?"))
-        XCTAssertTrue(browserManager.contains("self.permissionEventOwner = SumiPermissionEventOwner("))
-        XCTAssertFalse(browserManager.contains("permissionCoordinator.events()"))
-        XCTAssertFalse(browserManager.contains("permissionRecentActivityTask"))
-        XCTAssertFalse(browserManager.contains("permissionSidebarPinningTask"))
+        let requestTask = Task {
+            await browserManager.permissionCoordinator.requestPermission(
+                sumiPermissionIntegrationContext([.camera])
+            )
+        }
+        let query = await sumiPermissionIntegrationWaitForActiveQuery(
+            browserManager.permissionCoordinator
+        )
+
+        await waitUntil {
+            recentActivityStore.records.contains {
+                $0.permissionType == .camera && $0.action == .asked
+            } && siteActivityStore.records(
+                forSiteOf: query.topOrigin,
+                profilePartitionId: query.profilePartitionId,
+                isEphemeralProfile: query.isEphemeralProfile
+            ).contains {
+                $0.permissionType == .camera && $0.hasRequested
+            }
+        }
+
+        await browserManager.permissionCoordinator.dismiss(query.id)
+        _ = await requestTask.value
+    }
+
+    @MainActor
+    private func makeInMemoryStartupContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+    }
+
+    @MainActor
+    private func waitUntil(
+        _ condition: @escaping @MainActor () -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<100 {
+            if condition() {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Timed out waiting for condition", file: file, line: line)
     }
 
     private func sourceFile(_ relativePath: String) throws -> String {

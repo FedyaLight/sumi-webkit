@@ -172,28 +172,64 @@ class BrowserManager: ObservableObject {
     var splitManager: SplitViewManager
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
-    let systemPermissionService: any SumiSystemPermissionService
-    let permissionCoordinator: any SumiPermissionCoordinating
-    private let geolocationProvider: (any SumiGeolocationProviding)?
-    let runtimePermissionController: any SumiRuntimePermissionControlling
-    let webKitPermissionBridge: SumiWebKitPermissionBridge
-    let webKitGeolocationBridge: SumiWebKitGeolocationBridge
-    let notificationPermissionBridge: SumiNotificationPermissionBridge
-    let filePickerPermissionBridge: SumiFilePickerPermissionBridge
-    let storageAccessPermissionBridge: SumiStorageAccessPermissionBridge
-    let permissionIndicatorEventStore: SumiPermissionIndicatorEventStore
-    let permissionRecentActivityStore: SumiPermissionRecentActivityStore
-    let permissionSiteActivityStore: SumiPermissionSiteActivityStore
-    let permissionCleanupService: SumiPermissionCleanupService
-    let blockedPopupStore: SumiBlockedPopupStore
-    let popupPermissionBridge: SumiPopupPermissionBridge
-    let externalAppResolver: any SumiExternalAppResolving
-    let externalSchemeSessionStore: SumiExternalSchemeSessionStore
-    let externalSchemePermissionBridge: SumiExternalSchemePermissionBridge
-    let permissionLifecycleController: SumiPermissionGrantLifecycleController
-    let permissionSidebarPinningController = SumiPermissionSidebarPinningController()
-    private var permissionEventOwner: SumiPermissionEventOwner?
-    private var didPauseGeolocationForApplicationBackground = false
+    let permissionRuntime: BrowserManagerPermissionRuntime
+    var systemPermissionService: any SumiSystemPermissionService {
+        permissionRuntime.systemPermissionService
+    }
+    var permissionCoordinator: any SumiPermissionCoordinating {
+        permissionRuntime.permissionCoordinator
+    }
+    var runtimePermissionController: any SumiRuntimePermissionControlling {
+        permissionRuntime.runtimePermissionController
+    }
+    var webKitPermissionBridge: SumiWebKitPermissionBridge {
+        permissionRuntime.webKitPermissionBridge
+    }
+    var webKitGeolocationBridge: SumiWebKitGeolocationBridge {
+        permissionRuntime.webKitGeolocationBridge
+    }
+    var notificationPermissionBridge: SumiNotificationPermissionBridge {
+        permissionRuntime.notificationPermissionBridge
+    }
+    var filePickerPermissionBridge: SumiFilePickerPermissionBridge {
+        permissionRuntime.filePickerPermissionBridge
+    }
+    var storageAccessPermissionBridge: SumiStorageAccessPermissionBridge {
+        permissionRuntime.storageAccessPermissionBridge
+    }
+    var permissionIndicatorEventStore: SumiPermissionIndicatorEventStore {
+        permissionRuntime.permissionIndicatorEventStore
+    }
+    var permissionRecentActivityStore: SumiPermissionRecentActivityStore {
+        permissionRuntime.permissionRecentActivityStore
+    }
+    var permissionSiteActivityStore: SumiPermissionSiteActivityStore {
+        permissionRuntime.permissionSiteActivityStore
+    }
+    var permissionCleanupService: SumiPermissionCleanupService {
+        permissionRuntime.permissionCleanupService
+    }
+    var blockedPopupStore: SumiBlockedPopupStore {
+        permissionRuntime.blockedPopupStore
+    }
+    var popupPermissionBridge: SumiPopupPermissionBridge {
+        permissionRuntime.popupPermissionBridge
+    }
+    var externalAppResolver: any SumiExternalAppResolving {
+        permissionRuntime.externalAppResolver
+    }
+    var externalSchemeSessionStore: SumiExternalSchemeSessionStore {
+        permissionRuntime.externalSchemeSessionStore
+    }
+    var externalSchemePermissionBridge: SumiExternalSchemePermissionBridge {
+        permissionRuntime.externalSchemePermissionBridge
+    }
+    var permissionLifecycleController: SumiPermissionGrantLifecycleController {
+        permissionRuntime.permissionLifecycleController
+    }
+    var permissionSidebarPinningController: SumiPermissionSidebarPinningController {
+        permissionRuntime.permissionSidebarPinningController
+    }
     /// App-shell owned factory for AppKit-created browser windows.
     typealias WindowShellContentViewFactory = @MainActor (
         BrowserManager,
@@ -342,38 +378,6 @@ class BrowserManager: ObservableObject {
 
         // Phase 1: initialize all stored properties
         let startupModelContext = startupPersistence.mainContext
-        let systemPermissionService = systemPermissionService ?? MacSumiSystemPermissionService()
-        let persistentPermissionStore = SwiftDataPermissionStore(
-            container: startupPersistence.container
-        )
-        let antiAbuseStore = SumiPermissionAntiAbuseStore()
-        let permissionCoordinator = permissionCoordinator
-            ?? SumiPermissionCoordinator(
-                policyResolver: DefaultSumiPermissionPolicyResolver(
-                    systemPermissionService: systemPermissionService
-                ),
-                persistentStore: persistentPermissionStore,
-                antiAbuseStore: antiAbuseStore,
-                sessionOwnerId: "browser"
-            )
-        let geolocationProvider = geolocationProvider
-            ?? SumiGeolocationProvider(browserConfiguration: BrowserConfiguration.shared)
-        let notificationService = notificationService ?? SumiNotificationService()
-        let runtimePermissionController = runtimePermissionController
-            ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)
-        let filePickerPanelPresenter = filePickerPanelPresenter ?? SumiFilePickerPanelPresenter()
-        let permissionIndicatorEventStore = permissionIndicatorEventStore ?? SumiPermissionIndicatorEventStore()
-        let permissionRecentActivityStore = permissionRecentActivityStore ?? SumiPermissionRecentActivityStore()
-        let permissionSiteActivityStore = permissionSiteActivityStore ?? SumiPermissionSiteActivityStore.shared
-        let permissionCleanupService = permissionCleanupService
-            ?? SumiPermissionCleanupService(
-                store: persistentPermissionStore,
-                recentActivityStore: permissionRecentActivityStore,
-                antiAbuseStore: antiAbuseStore
-            )
-        let blockedPopupStore = blockedPopupStore ?? SumiBlockedPopupStore()
-        let externalAppResolver = externalAppResolver ?? SumiNSWorkspaceExternalAppResolver.shared
-        let externalSchemeSessionStore = externalSchemeSessionStore ?? SumiExternalSchemeSessionStore()
         self.modelContext = startupModelContext
         self.moduleRegistry = moduleRegistry
         let resolvedAdBlockingModule = adBlockingModule
@@ -435,73 +439,34 @@ class BrowserManager: ObservableObject {
         self.splitManager = SplitViewManager()
         self.workspaceThemeCoordinator = WorkspaceThemeCoordinator()
         self.findManager = FindManager()
-        self.systemPermissionService = systemPermissionService
-        self.permissionCoordinator = permissionCoordinator
-        self.geolocationProvider = geolocationProvider
-        self.runtimePermissionController = runtimePermissionController
-        self.webKitPermissionBridge = webKitPermissionBridge
-            ?? SumiWebKitPermissionBridge(
-                coordinator: permissionCoordinator,
-                runtimeController: runtimePermissionController
-            )
-        self.webKitGeolocationBridge = webKitGeolocationBridge
-            ?? SumiWebKitGeolocationBridge(
-                coordinator: permissionCoordinator,
-                geolocationProvider: geolocationProvider
-            )
-        self.notificationPermissionBridge = notificationPermissionBridge
-            ?? SumiNotificationPermissionBridge(
-                coordinator: permissionCoordinator,
+        self.permissionRuntime = BrowserManagerPermissionRuntime(
+            dependencies: BrowserManagerPermissionRuntime.Dependencies(
+                startupPersistence: startupPersistence,
+                systemPermissionService: systemPermissionService,
+                permissionCoordinator: permissionCoordinator,
+                geolocationProvider: geolocationProvider,
                 notificationService: notificationService,
-                indicatorEventStore: permissionIndicatorEventStore
-            )
-        let resolvedFilePickerPermissionBridge = filePickerPermissionBridge
-            ?? SumiFilePickerPermissionBridge(
-                coordinator: permissionCoordinator,
-                panelPresenter: filePickerPanelPresenter,
-                indicatorEventStore: permissionIndicatorEventStore
-            )
-        self.filePickerPermissionBridge = resolvedFilePickerPermissionBridge
-        self.storageAccessPermissionBridge = storageAccessPermissionBridge
-            ?? SumiStorageAccessPermissionBridge(
-                coordinator: permissionCoordinator,
-                indicatorEventStore: permissionIndicatorEventStore
-            )
-        self.permissionIndicatorEventStore = permissionIndicatorEventStore
-        self.permissionRecentActivityStore = permissionRecentActivityStore
-        self.permissionSiteActivityStore = permissionSiteActivityStore
-        self.permissionCleanupService = permissionCleanupService
-        self.blockedPopupStore = blockedPopupStore
-        self.popupPermissionBridge = popupPermissionBridge
-            ?? SumiPopupPermissionBridge(
-                coordinator: permissionCoordinator,
+                runtimePermissionController: runtimePermissionController,
+                webKitPermissionBridge: webKitPermissionBridge,
+                webKitGeolocationBridge: webKitGeolocationBridge,
+                notificationPermissionBridge: notificationPermissionBridge,
+                filePickerPanelPresenter: filePickerPanelPresenter,
+                filePickerPermissionBridge: filePickerPermissionBridge,
+                storageAccessPermissionBridge: storageAccessPermissionBridge,
+                permissionIndicatorEventStore: permissionIndicatorEventStore,
+                permissionRecentActivityStore: permissionRecentActivityStore,
+                permissionSiteActivityStore: permissionSiteActivityStore,
+                permissionCleanupService: permissionCleanupService,
                 blockedPopupStore: blockedPopupStore,
-                siteActivityStore: permissionSiteActivityStore
+                popupPermissionBridge: popupPermissionBridge,
+                externalAppResolver: externalAppResolver,
+                externalSchemeSessionStore: externalSchemeSessionStore,
+                externalSchemePermissionBridge: externalSchemePermissionBridge
             )
-        self.externalAppResolver = externalAppResolver
-        self.externalSchemeSessionStore = externalSchemeSessionStore
-        self.externalSchemePermissionBridge = externalSchemePermissionBridge
-            ?? SumiExternalSchemePermissionBridge(
-                coordinator: permissionCoordinator,
-                appResolver: externalAppResolver,
-                sessionStore: externalSchemeSessionStore
-            )
-        self.permissionLifecycleController = SumiPermissionGrantLifecycleController(
-            coordinator: permissionCoordinator,
-            geolocationProvider: geolocationProvider,
-            filePickerBridge: resolvedFilePickerPermissionBridge,
-            indicatorEventStore: permissionIndicatorEventStore,
-            blockedPopupStore: blockedPopupStore,
-            externalSchemeSessionStore: externalSchemeSessionStore
         )
-        self.permissionEventOwner = SumiPermissionEventOwner(
-            coordinator: permissionCoordinator,
-            recentActivityStore: permissionRecentActivityStore,
-            siteActivityStore: permissionSiteActivityStore,
-            onEvent: { [weak self] _ in
-                await self?.reconcilePermissionSidebarPins(reason: "permission-event")
-            }
-        )
+        self.permissionRuntime.startPermissionEventObservation { [weak self] _ in
+            await self?.reconcilePermissionSidebarPins(reason: "permission-event")
+        }
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
         structuralChangeCancellable = BrowserManagerRuntimeWiring.attach(to: self)
@@ -1497,7 +1462,7 @@ class BrowserManager: ObservableObject {
         }
     }
     isolated deinit {
-        permissionEventOwner?.cancel()
+        permissionRuntime.cancelPermissionEventObservation()
         startupProtectionRestoreTask?.cancel()
         startupProtectionRestoreTask = nil
         windowSessionService.cancelPendingWindowSessionPersistence()
@@ -2336,21 +2301,12 @@ extension BrowserManager: SumiProfileRoutingSupport {}
 extension BrowserManager: BrowserAppLifecycleHandling {
     func handleApplicationWillResignActive() {
         backgroundMediaOptimizationService.scheduleReconcile(reason: "app-will-resign-active")
-
-        guard let geolocationProvider,
-              geolocationProvider.currentState == .active
-        else { return }
-
-        didPauseGeolocationForApplicationBackground = geolocationProvider.pause() == .paused
+        permissionRuntime.pauseGeolocationForApplicationBackgroundIfNeeded()
     }
 
     func handleApplicationDidBecomeActive() {
         backgroundMediaOptimizationService.scheduleReconcile(reason: "app-did-become-active")
-
-        guard didPauseGeolocationForApplicationBackground else { return }
-
-        didPauseGeolocationForApplicationBackground = false
-        _ = geolocationProvider?.resume()
+        permissionRuntime.resumeGeolocationForApplicationForegroundIfNeeded()
     }
 
     func handleWindowVisibilityChanged(_ windowState: BrowserWindowState) {

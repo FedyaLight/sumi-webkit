@@ -1,3 +1,4 @@
+import Foundation
 import SwiftData
 import XCTest
 
@@ -23,6 +24,42 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(browserManager.glanceManager.browserManager === browserManager)
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
+    }
+
+    func testBrowserManagerInitializationRetainsInjectedPermissionRuntimeDependencies() throws {
+        let container = try makeInMemoryStartupContainer()
+        let permissionStore = SwiftDataPermissionStore(container: container)
+        let recentActivityStore = SumiPermissionRecentActivityStore()
+        let siteActivityStore = SumiPermissionSiteActivityStore(
+            userDefaults: try XCTUnwrap(
+                UserDefaults(suiteName: "BrowserManagerRuntimeWiringTests-\(UUID().uuidString)")
+            )
+        )
+        let indicatorEventStore = SumiPermissionIndicatorEventStore()
+        let cleanupService = SumiPermissionCleanupService(
+            store: permissionStore,
+            recentActivityStore: recentActivityStore,
+            antiAbuseStore: SumiPermissionAntiAbuseStore(userDefaults: nil)
+        )
+        let blockedPopupStore = SumiBlockedPopupStore()
+        let externalSchemeSessionStore = SumiExternalSchemeSessionStore()
+
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(container: container),
+            permissionIndicatorEventStore: indicatorEventStore,
+            permissionRecentActivityStore: recentActivityStore,
+            permissionSiteActivityStore: siteActivityStore,
+            permissionCleanupService: cleanupService,
+            blockedPopupStore: blockedPopupStore,
+            externalSchemeSessionStore: externalSchemeSessionStore
+        )
+
+        XCTAssertTrue(browserManager.permissionIndicatorEventStore === indicatorEventStore)
+        XCTAssertTrue(browserManager.permissionRecentActivityStore === recentActivityStore)
+        XCTAssertTrue(browserManager.permissionSiteActivityStore === siteActivityStore)
+        XCTAssertTrue(browserManager.permissionCleanupService === cleanupService)
+        XCTAssertTrue(browserManager.blockedPopupStore === blockedPopupStore)
+        XCTAssertTrue(browserManager.externalSchemeSessionStore === externalSchemeSessionStore)
     }
 
     func testRuntimeWiringSourceOwnsPhase2AttachmentOrder() throws {
