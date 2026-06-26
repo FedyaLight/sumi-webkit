@@ -5,6 +5,15 @@ import XCTest
 
 final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
     private let planner = WebExtensionStorageCleanupPlanner.shared
+    private var temporaryDirectories: [URL] = []
+
+    override func tearDownWithError() throws {
+        for directory in temporaryDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        temporaryDirectories.removeAll()
+        try super.tearDownWithError()
+    }
 
     func testStoredDataCandidateIgnoresStateOnlyDirectory() {
         XCTAssertFalse(
@@ -110,6 +119,79 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         XCTAssertEqual(classification.actionableDiagnostics.count, 1)
     }
 
+    func testStorageCleanupStoreResolvesDirectoryUnderInjectedLibraryDirectory() throws {
+        let controllerStorageId = UUID()
+        let libraryDirectory = makeTemporaryLibraryDirectory()
+        let store = WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerStorageId,
+            libraryDirectoryProvider: { libraryDirectory }
+        )
+
+        let directory = try XCTUnwrap(store.directory(for: "resolved-extension"))
+        let expectedDirectory = libraryDirectory
+            .appendingPathComponent("WebKit", isDirectory: true)
+            .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
+            .appendingPathComponent("WebExtensions", isDirectory: true)
+            .appendingPathComponent(controllerStorageId.uuidString.uppercased(), isDirectory: true)
+            .appendingPathComponent("resolved-extension", isDirectory: true)
+            .standardizedFileURL
+
+        XCTAssertEqual(directory.standardizedFileURL.path, expectedDirectory.path)
+    }
+
+    func testStorageCleanupStoreSnapshotsAndPrunesStateOnlyDirectory() throws {
+        let store = makeCleanupStore()
+        let extensionId = "state-only-extension"
+
+        XCTAssertFalse(store.hasStoredDataCandidate(for: extensionId))
+        XCTAssertTrue(store.ensureDirectoryExists(for: extensionId))
+
+        let storageDirectory = try XCTUnwrap(store.directory(for: extensionId))
+        try Data().write(to: storageDirectory.appendingPathComponent("State.plist"))
+
+        let snapshot = store.snapshot(for: extensionId)
+        XCTAssertTrue(snapshot.directoryExists)
+        XCTAssertEqual(snapshot.entryNames, ["State.plist"])
+        XCTAssertFalse(store.hasStoredDataCandidate(for: extensionId))
+
+        XCTAssertTrue(store.pruneEmptyOrStateOnlyDirectory(for: extensionId))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storageDirectory.path))
+    }
+
+    func testStorageCleanupStorePreservesDirectoryWithDataCandidate() throws {
+        let store = makeCleanupStore()
+        let extensionId = "extension-with-store"
+
+        XCTAssertTrue(store.ensureDirectoryExists(for: extensionId))
+        let storageDirectory = try XCTUnwrap(store.directory(for: extensionId))
+        try Data().write(to: storageDirectory.appendingPathComponent("LocalStorage.db"))
+        try Data().write(to: storageDirectory.appendingPathComponent("State.plist"))
+
+        let snapshot = store.snapshot(for: extensionId)
+        XCTAssertEqual(snapshot.entryNames, ["LocalStorage.db", "State.plist"])
+        XCTAssertTrue(snapshot.hasLocalStorageStore)
+        XCTAssertTrue(store.hasStoredDataCandidate(for: extensionId))
+
+        XCTAssertFalse(store.pruneEmptyOrStateOnlyDirectory(for: extensionId))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: storageDirectory.path))
+    }
+
+    func testStorageCleanupStoreWithoutControllerIdentifierIsZeroCost() {
+        let store = WebExtensionStorageCleanupStore(
+            controllerStorageId: nil,
+            libraryDirectoryProvider: {
+                XCTFail("Library directory should not be resolved without a controller id")
+                return nil
+            }
+        )
+
+        XCTAssertNil(store.directory(for: "extension-id"))
+        XCTAssertFalse(store.ensureDirectoryExists(for: "extension-id"))
+        XCTAssertFalse(store.pruneEmptyOrStateOnlyDirectory(for: "extension-id"))
+        XCTAssertFalse(store.snapshot(for: "extension-id").directoryExists)
+        XCTAssertFalse(store.hasStoredDataCandidate(for: "extension-id"))
+    }
+
     private func stateOnlySnapshot() -> WebExtensionStorageCleanupPlanner.StorageSnapshot {
         .init(
             directoryExists: true,
@@ -118,5 +200,23 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
             hasLocalStorageStore: false,
             hasSyncStorageStore: false
         )
+    }
+
+    private func makeCleanupStore() -> WebExtensionStorageCleanupStore {
+        let libraryDirectory = makeTemporaryLibraryDirectory()
+        return WebExtensionStorageCleanupStore(
+            controllerStorageId: UUID(),
+            libraryDirectoryProvider: { libraryDirectory }
+        )
+    }
+
+    private func makeTemporaryLibraryDirectory() -> URL {
+        let libraryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                "SumiWebExtensionCleanupStoreTests-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        temporaryDirectories.append(libraryDirectory)
+        return libraryDirectory
     }
 }

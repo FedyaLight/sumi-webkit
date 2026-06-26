@@ -1525,63 +1525,33 @@ extension ExtensionManager {
         }
     }
 
+    private func webExtensionStorageCleanupStore(
+        profileId: UUID? = nil
+    ) -> WebExtensionStorageCleanupStore {
+        let resolvedProfileId =
+            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        let controllerStorageId = resolvedProfileId.map {
+            extensionControllerIdentifier(for: $0)
+        }
+        return WebExtensionStorageCleanupStore(controllerStorageId: controllerStorageId)
+    }
+
     func hasStoredWebExtensionDataCandidate(for extensionId: String) -> Bool {
-        WebExtensionStorageCleanupPlanner.shared.hasStoredDataCandidate(
-            in: webExtensionStorageSnapshot(for: extensionId)
-        )
+        webExtensionStorageCleanupStore().hasStoredDataCandidate(for: extensionId)
     }
 
     @discardableResult
     func pruneEmptyOrStateOnlyWebExtensionStorageDirectory(for extensionId: String) -> Bool {
-        guard let storageDirectory = webExtensionStorageDirectory(for: extensionId) else {
-            return false
-        }
-        guard let contents = try? FileManager.default.contentsOfDirectory(
-            at: storageDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return false
-        }
-        guard contents.allSatisfy(isPrunableWebExtensionStorageEntry) else {
-            return false
-        }
-
-        do {
-            try FileManager.default.removeItem(at: storageDirectory)
-            return true
-        } catch {
-            Self.logger.debug(
-                "Failed to prune empty WebExtension storage directory for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
-            return false
-        }
+        webExtensionStorageCleanupStore()
+            .pruneEmptyOrStateOnlyDirectory(for: extensionId)
     }
 
     func webExtensionStorageDirectory(
         for extensionId: String,
         profileId: UUID? = nil
     ) -> URL? {
-        let resolvedProfileId =
-            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
-        guard let resolvedProfileId else { return nil }
-        guard let libraryDirectory = FileManager.default.urls(
-            for: .libraryDirectory,
-            in: .userDomainMask
-        ).first else {
-            return nil
-        }
-
-        let controllerStorageId = extensionControllerIdentifier(for: resolvedProfileId)
-        let storageRoot = libraryDirectory
-            .appendingPathComponent("WebKit", isDirectory: true)
-            .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
-            .appendingPathComponent("WebExtensions", isDirectory: true)
-            .appendingPathComponent(controllerStorageId.uuidString.uppercased(), isDirectory: true)
-        return try? ExtensionUtils.extensionDirectory(
-            forExtensionID: extensionId,
-            under: storageRoot
-        )
+        webExtensionStorageCleanupStore(profileId: profileId)
+            .directory(for: extensionId)
     }
 
     @discardableResult
@@ -1589,64 +1559,14 @@ extension ExtensionManager {
         for extensionId: String,
         profileId: UUID? = nil
     ) -> Bool {
-        guard let storageDirectory = webExtensionStorageDirectory(
-            for: extensionId,
-            profileId: profileId
-        ) else {
-            return false
-        }
-
-        do {
-            try FileManager.default.createDirectory(
-                at: storageDirectory,
-                withIntermediateDirectories: true
-            )
-            return true
-        } catch {
-            Self.logger.debug(
-                "Failed to create WebExtension storage directory for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
-            return false
-        }
+        webExtensionStorageCleanupStore(profileId: profileId)
+            .ensureDirectoryExists(for: extensionId)
     }
 
     func webExtensionStorageSnapshot(
         for extensionId: String
     ) -> WebExtensionStorageSnapshot {
-        guard let storageDirectory = webExtensionStorageDirectory(for: extensionId) else {
-            return WebExtensionStorageSnapshot(
-                directoryExists: false,
-                entryNames: [],
-                hasRegisteredContentScriptsStore: false,
-                hasLocalStorageStore: false,
-                hasSyncStorageStore: false
-            )
-        }
-
-        let directoryExists = FileManager.default.fileExists(atPath: storageDirectory.path)
-        guard directoryExists else {
-            return WebExtensionStorageSnapshot(
-                directoryExists: false,
-                entryNames: [],
-                hasRegisteredContentScriptsStore: false,
-                hasLocalStorageStore: false,
-                hasSyncStorageStore: false
-            )
-        }
-
-        let entryNames = ((try? FileManager.default.contentsOfDirectory(
-            at: storageDirectory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )) ?? []).map(\.lastPathComponent).sorted()
-
-        return WebExtensionStorageSnapshot(
-            directoryExists: true,
-            entryNames: entryNames,
-            hasRegisteredContentScriptsStore: entryNames.contains("RegisteredContentScripts.db"),
-            hasLocalStorageStore: entryNames.contains("LocalStorage.db"),
-            hasSyncStorageStore: entryNames.contains("SyncStorage.db")
-        )
+        webExtensionStorageCleanupStore().snapshot(for: extensionId)
     }
 
     func webExtensionStoreCapabilitySnapshot(
@@ -1711,10 +1631,6 @@ extension ExtensionManager {
             postCleanupSnapshot: postCleanupSnapshot,
             hasNonOptionalFailureSignals: hasNonOptionalFailureSignals
         )
-    }
-
-    private func isPrunableWebExtensionStorageEntry(_ url: URL) -> Bool {
-        WebExtensionStorageCleanupPlanner.shared.isPrunableStorageEntry(url)
     }
 
     func configureContextIdentity(

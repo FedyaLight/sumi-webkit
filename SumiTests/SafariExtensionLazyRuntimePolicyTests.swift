@@ -19,6 +19,26 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         XCTAssertTrue(manager.extensionContextsByProfile.isEmpty)
     }
 
+    func testDisabledInstallDoesNotCreateRuntimeControllerOrContext() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Disabled Install")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+
+        let scratchDirectory = try makeScratchDirectory()
+        _ = try await installUnpackedExtension(
+            manager: manager,
+            scratchDirectory: scratchDirectory,
+            name: "DisabledInstallExtension"
+        )
+
+        XCTAssertEqual(manager.countLoadedExtensionContexts(), 0)
+        XCTAssertTrue(manager.extensionContextsByProfile.isEmpty)
+        XCTAssertTrue(manager.extensionControllersByProfile.isEmpty)
+    }
+
     func testEightProfilesWithOneExtensionCreatesAtMostOneContextUntilUsed() async throws {
         let container = try makeTestContainer()
         var profiles: [Profile] = []
