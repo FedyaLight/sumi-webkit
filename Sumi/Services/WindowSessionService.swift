@@ -105,12 +105,18 @@ protocol WindowSessionServiceDelegate: AnyObject {
 final class WindowSessionService {
     private let lastWindowSessionKey: String
     private var lastPersistedWindowSessionData: Data?
+    private var pendingPersistTasks: [UUID: Task<Void, Never>] = [:]
+    private var pendingPersistStates: [UUID: BrowserWindowState] = [:]
     /// The global session JSON is applied to at most one non-incognito window per "cycle"
     /// (after all windows close, `prepareForAllWindowsClosed()` clears this).
     private var didRestoreGlobalWindowSessionThisCycle = false
 
     init(lastWindowSessionKey: String) {
         self.lastWindowSessionKey = lastWindowSessionKey
+    }
+
+    isolated deinit {
+        pendingPersistTasks.values.forEach { $0.cancel() }
     }
 
     /// Call when the last browser window unregisters so the next window may restore persisted UI again.
@@ -416,6 +422,7 @@ final class WindowSessionService {
         for windowState: BrowserWindowState,
         delegate: WindowSessionServiceDelegate
     ) {
+        cancelPendingPersistence(for: windowState.id)
         guard !windowState.isIncognito else { return }
         let snapshot = makeWindowSessionSnapshot(for: windowState, delegate: delegate)
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
@@ -426,6 +433,63 @@ final class WindowSessionService {
 
         UserDefaults.standard.set(data, forKey: lastWindowSessionKey)
         lastPersistedWindowSessionData = data
+    }
+
+    func schedulePersistWindowSession(
+        for windowState: BrowserWindowState,
+        delayNanoseconds: UInt64 = 450_000_000,
+        persist: @escaping @MainActor (BrowserWindowState) -> Void
+    ) {
+        guard !windowState.isIncognito else { return }
+
+        let windowId = windowState.id
+        cancelPendingPersistence(for: windowId)
+        pendingPersistStates[windowId] = windowState
+        pendingPersistTasks[windowId] = Task { @MainActor [weak self, weak windowState] in
+            try? await Task.sleep(nanoseconds: delayNanoseconds)
+            guard !Task.isCancelled,
+                  let self,
+                  let windowState
+            else {
+                return
+            }
+
+            self.pendingPersistTasks.removeValue(forKey: windowId)
+            self.pendingPersistStates.removeValue(forKey: windowId)
+            persist(windowState)
+        }
+    }
+
+    func flushPendingWindowSessionPersistence(
+        persist: @MainActor (BrowserWindowState) -> Void
+    ) {
+        guard !pendingPersistStates.isEmpty else { return }
+
+        let pendingStates = pendingPersistStates.values.sorted {
+            $0.id.uuidString < $1.id.uuidString
+        }
+        cancelPendingWindowSessionPersistence()
+
+        let signpostState = PerformanceTrace.beginInterval("WindowSession.flushPendingPersistence")
+        defer {
+            PerformanceTrace.endInterval("WindowSession.flushPendingPersistence", signpostState)
+        }
+
+        for windowState in pendingStates {
+            persist(windowState)
+        }
+    }
+
+    func cancelPendingWindowSessionPersistence() {
+        pendingPersistTasks.values.forEach { $0.cancel() }
+        pendingPersistTasks.removeAll()
+        pendingPersistStates.removeAll()
+    }
+
+    private func cancelPendingPersistence(for windowId: UUID) {
+        pendingPersistTasks[windowId]?.cancel()
+        pendingPersistTasks.removeValue(forKey: windowId)
+        pendingPersistStates.removeValue(forKey: windowId)
     }
 
     @discardableResult

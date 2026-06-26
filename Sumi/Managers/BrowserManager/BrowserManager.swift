@@ -310,8 +310,6 @@ class BrowserManager: ObservableObject {
     private var startupProtectionRestoreTask: Task<Void, Never>?
     private(set) var hasFinishedStartupProtectionRestore = false
     private var deferredStartupBackgroundTabIds: Set<UUID> = []
-    private var pendingWindowSessionPersistTasks: [UUID: Task<Void, Never>] = [:]
-    private var pendingWindowSessionPersistStates: [UUID: BrowserWindowState] = [:]
     private var pendingUserActivationsByWindow: [UUID: PendingUserTabActivation] = [:]
     private var userActivationFlushScheduledWindows: Set<UUID> = []
     private var deferredHistorySwipeWindowMutationsByWindow: [UUID: DeferredHistorySwipeWindowMutations] = [:]
@@ -1629,9 +1627,7 @@ class BrowserManager: ObservableObject {
         permissionSidebarPinningTask?.cancel()
         startupProtectionRestoreTask?.cancel()
         startupProtectionRestoreTask = nil
-        pendingWindowSessionPersistTasks.values.forEach { $0.cancel() }
-        pendingWindowSessionPersistTasks.removeAll()
-        pendingWindowSessionPersistStates.removeAll()
+        windowSessionService.cancelPendingWindowSessionPersistence()
         if let token = tabManagerLoadObserverToken {
             NotificationCenter.default.removeObserver(token)
         }
@@ -2349,9 +2345,6 @@ class BrowserManager: ObservableObject {
     }
 
     func persistWindowSession(for windowState: BrowserWindowState) {
-        pendingWindowSessionPersistTasks[windowState.id]?.cancel()
-        pendingWindowSessionPersistTasks.removeValue(forKey: windowState.id)
-        pendingWindowSessionPersistStates.removeValue(forKey: windowState.id)
         persistWindowSessionNow(for: windowState)
     }
 
@@ -2359,42 +2352,22 @@ class BrowserManager: ObservableObject {
         for windowState: BrowserWindowState,
         delayNanoseconds: UInt64 = 450_000_000
     ) {
-        guard !windowState.isIncognito else { return }
-
-        let windowId = windowState.id
-        pendingWindowSessionPersistTasks[windowId]?.cancel()
-        pendingWindowSessionPersistStates[windowId] = windowState
-        pendingWindowSessionPersistTasks[windowId] = Task { @MainActor [weak self, weak windowState] in
-            try? await Task.sleep(nanoseconds: delayNanoseconds)
-            guard !Task.isCancelled,
-                  let self,
-                  let windowState
-            else {
+        windowSessionService.schedulePersistWindowSession(
+            for: windowState,
+            delayNanoseconds: delayNanoseconds
+        ) { [weak self] windowState in
+            guard let self else {
                 return
             }
-
-            self.pendingWindowSessionPersistTasks.removeValue(forKey: windowId)
-            self.pendingWindowSessionPersistStates.removeValue(forKey: windowId)
             self.persistWindowSessionNow(for: windowState)
         }
     }
 
     func flushPendingWindowSessionPersistence() {
-        guard !pendingWindowSessionPersistStates.isEmpty else { return }
-
-        let pendingStates = pendingWindowSessionPersistStates.values.sorted {
-            $0.id.uuidString < $1.id.uuidString
-        }
-        pendingWindowSessionPersistTasks.values.forEach { $0.cancel() }
-        pendingWindowSessionPersistTasks.removeAll()
-        pendingWindowSessionPersistStates.removeAll()
-
-        let signpostState = PerformanceTrace.beginInterval("WindowSession.flushPendingPersistence")
-        defer {
-            PerformanceTrace.endInterval("WindowSession.flushPendingPersistence", signpostState)
-        }
-
-        for windowState in pendingStates {
+        windowSessionService.flushPendingWindowSessionPersistence { [weak self] windowState in
+            guard let self else {
+                return
+            }
             persistWindowSessionNow(for: windowState)
         }
     }
