@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import SwiftData
 import WebKit
 
 @available(macOS 15.5, *)
@@ -31,16 +30,11 @@ extension ExtensionManager {
     fileprivate static let globalPinnedToolbarProfileKey = "__global__"
 
     func persist(record: InstalledExtension) throws {
-        if let existing = try extensionEntity(for: record.id) {
-            update(existing, from: record)
-        } else {
-            context.insert(ExtensionEntity(record: record))
-        }
-        try context.save()
+        try installationMetadataStore.persist(record: record)
     }
 
     func extensionEntity(for id: String) throws -> ExtensionEntity? {
-        try context.fetch(FetchDescriptor<ExtensionEntity>()).first(where: { $0.id == id })
+        try installationMetadataStore.extensionEntity(for: id)
     }
 
     func extensionResourcesRoot(
@@ -48,36 +42,15 @@ extension ExtensionManager {
         packagePath: String,
         sourceBundlePath: String
     ) throws -> URL {
-        if sourceKind == .safariAppExtension {
-            if let appexURL = SafariAppExtensionResources.installedAppexBundleURL(
-                sourceKind: sourceKind,
-                sourceBundlePath: sourceBundlePath
-            ) {
-                return try SafariAppExtensionResources.resourcesRoot(in: appexURL)
-            }
-
-            let packageURL = URL(fileURLWithPath: packagePath, isDirectory: true)
-            if FileManager.default.fileExists(
-                atPath: packageURL.appendingPathComponent("manifest.json").path
-            ) {
-                return packageURL
-            }
-
-            throw ExtensionError.installationFailed(
-                "Installed Safari app extension bundle is unavailable"
-            )
-        }
-
-        return URL(fileURLWithPath: packagePath, isDirectory: true)
+        try installationMetadataStore.extensionResourcesRoot(
+            sourceKind: sourceKind,
+            packagePath: packagePath,
+            sourceBundlePath: sourceBundlePath
+        )
     }
 
     func extensionResourcesRoot(for entity: ExtensionEntity) throws -> URL {
-        let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
-        return try extensionResourcesRoot(
-            sourceKind: sourceKind,
-            packagePath: entity.packagePath,
-            sourceBundlePath: entity.sourceBundlePath
-        )
+        try installationMetadataStore.extensionResourcesRoot(for: entity)
     }
 
     func sortInstalledExtensions() {
@@ -238,53 +211,14 @@ extension ExtensionManager {
         _ entity: ExtensionEntity,
         from record: InstalledExtension
     ) {
-        entity.name = record.name
-        entity.version = record.version
-        entity.manifestVersion = record.manifestVersion
-        entity.extensionDescription = record.description
-        entity.isEnabled = record.isEnabled
-        entity.installDate = record.installDate
-        entity.lastUpdateDate = record.lastUpdateDate
-        entity.packagePath = record.packagePath
-        entity.iconPath = record.iconPath
-        entity.sourceKindRawValue = record.sourceKind.rawValue
-        entity.backgroundModelRawValue = record.backgroundModel.rawValue
-        entity.incognitoModeRawValue = record.incognitoMode.rawValue
-        entity.sourcePathFingerprint = record.sourcePathFingerprint
-        entity.manifestRootFingerprint = record.manifestRootFingerprint
-        entity.sourceBundlePath = record.sourceBundlePath
-        entity.optionsPagePath = record.optionsPagePath
-        entity.defaultPopupPath = record.defaultPopupPath
-        entity.hasBackground = record.hasBackground
-        entity.hasAction = record.hasAction
-        entity.hasOptionsPage = record.hasOptionsPage
-        entity.hasContentScripts = record.hasContentScripts
-        entity.hasExtensionPages = record.hasExtensionPages
-        entity.broadScope = record.activationSummary.broadScope
-        entity.activationSummaryJSON = record.encodedActivationSummary
-        entity.manifestSnapshotJSON = record.encodedManifestSnapshot
+        installationMetadataStore.update(entity, from: record)
     }
 
     func refreshedRecord(
         for entity: ExtensionEntity,
         manifest: [String: Any]
     ) throws -> InstalledExtension {
-        let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
-        let extensionRoot = try extensionResourcesRoot(
-            sourceKind: sourceKind,
-            packagePath: entity.packagePath,
-            sourceBundlePath: entity.sourceBundlePath
-        )
-        return try makeInstalledRecord(
-            extensionId: entity.id,
-            manifest: manifest,
-            extensionRoot: extensionRoot,
-            isEnabled: entity.isEnabled,
-            sourceKind: sourceKind,
-            sourceBundlePath: entity.sourceBundlePath,
-            sourceFingerprintURL: URL(fileURLWithPath: entity.sourceBundlePath),
-            existingEntity: entity
-        )
+        try installationMetadataStore.refreshedRecord(for: entity, manifest: manifest)
     }
 
     func makeInstalledRecord(
@@ -297,62 +231,15 @@ extension ExtensionManager {
         sourceFingerprintURL: URL,
         existingEntity: ExtensionEntity?
     ) throws -> InstalledExtension {
-        let installDate = existingEntity?.installDate ?? Date()
-        let lastUpdateDate = Date()
-        let backgroundModel = ExtensionUtils.backgroundModel(from: manifest)
-        let optionsPagePath = ExtensionUtils.storedOptionsPagePath(
-            from: manifest,
-            in: extensionRoot
-        )
-        let defaultPopupPath = ExtensionUtils.defaultPopupPath(from: manifest)
-        let manifestActivationSummary = ExtensionUtils.activationSummary(from: manifest)
-        let activationSummary = ExtensionActivationSummary(
-            matchPatternStrings: manifestActivationSummary.matchPatternStrings,
-            broadScope: manifestActivationSummary.broadScope,
-            hasContentScripts: manifestActivationSummary.hasContentScripts,
-            hasAction: manifestActivationSummary.hasAction,
-            hasOptionsPage: optionsPagePath != nil,
-            hasExtensionPages: optionsPagePath != nil || defaultPopupPath != nil
-        )
-        let incognitoMode = try IncognitoExtensionMode.fromManifest(manifest)
-
-        let localizedName = ExtensionUtils.localizedString(
-            manifest["name"] as? String,
-            in: extensionRoot
-        ) ?? (manifest["name"] as? String) ?? "Unknown Extension"
-        let localizedDescription = ExtensionUtils.localizedString(
-            manifest["description"] as? String,
-            in: extensionRoot
-        ) ?? (manifest["description"] as? String)
-
-        return InstalledExtensionRecord(
-            id: extensionId,
-            name: localizedName,
-            version: manifest["version"] as? String ?? "1.0",
-            manifestVersion: manifest["manifest_version"] as? Int ?? 3,
-            description: localizedDescription,
+        try installationMetadataStore.makeInstalledRecord(
+            extensionId: extensionId,
+            manifest: manifest,
+            extensionRoot: extensionRoot,
             isEnabled: isEnabled,
-            installDate: installDate,
-            lastUpdateDate: lastUpdateDate,
-            packagePath: extensionRoot.path,
-            iconPath: ExtensionUtils.iconPath(in: extensionRoot, manifest: manifest),
             sourceKind: sourceKind,
-            backgroundModel: backgroundModel,
-            incognitoMode: incognitoMode,
-            sourcePathFingerprint: ExtensionUtils.normalizePathFingerprint(sourceFingerprintURL),
-            manifestRootFingerprint: ExtensionUtils.fingerprint(
-                fileAt: extensionRoot.appendingPathComponent("manifest.json")
-            ),
             sourceBundlePath: sourceBundlePath,
-            optionsPagePath: optionsPagePath,
-            defaultPopupPath: defaultPopupPath,
-            hasBackground: backgroundModel != .none,
-            hasAction: activationSummary.hasAction,
-            hasOptionsPage: activationSummary.hasOptionsPage,
-            hasContentScripts: activationSummary.hasContentScripts,
-            hasExtensionPages: activationSummary.hasExtensionPages,
-            activationSummary: activationSummary,
-            manifest: manifest
+            sourceFingerprintURL: sourceFingerprintURL,
+            existingEntity: existingEntity
         )
     }
 

@@ -24,10 +24,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     }()
     static let controllerIdentifierKey =
         "\(SumiAppIdentity.bundleIdentifier).WKWebExtensionController.Identifier"
-    nonisolated static let orphanedExtensionCleanupDefaultsKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.orphanedPackageCleanup.lastRunAt"
-    nonisolated static let orphanedExtensionCleanupInterval: TimeInterval =
-        24 * 60 * 60
     nonisolated static let extensionPermissionDecisionsStorageKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.permissionDecisions.v1"
     nonisolated static let extensionSiteAccessStorageKey =
@@ -134,6 +130,7 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     let context: ModelContext
     let browserConfiguration: BrowserConfiguration
+    let installationMetadataStore: ExtensionInstallationMetadataStore
     var controllerIdentifierStorage: UUID?
     var controllerIdentifier: UUID {
         ensureRuntimeControllerIdentifier()
@@ -239,6 +236,9 @@ final class ExtensionManager: NSObject, ObservableObject {
         _ = Self.registerSafariWebExtensionURLScheme
         self.context = context
         self.browserConfiguration = browserConfiguration ?? .shared
+        self.installationMetadataStore = ExtensionInstallationMetadataStore(
+            context: context
+        )
         self.currentProfileId = initialProfile?.id
         self.pinnedToolbarExtensionIDsByProfile = Self.loadPinnedToolbarExtensionIDsByProfile()
         self.pinnedToolbarExtensionIDs = Self.normalizedPinnedToolbarExtensionIDs(

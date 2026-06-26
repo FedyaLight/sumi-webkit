@@ -356,6 +356,53 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         XCTAssertTrue(entity.hasBackground)
     }
 
+    @available(macOS 15.5, *)
+    @MainActor
+    func testInstallationMetadataStoreRefreshesPersistedMetadata() throws {
+        let directory = try temporaryExtensionDirectory()
+        let manifest: [String: Any] = [
+            "manifest_version": 2,
+            "name": "Store-owned Metadata",
+            "version": "2.0",
+            "background": [
+                "page": "background.html",
+                "persistent": true,
+            ],
+            "content_scripts": [[
+                "matches": ["<all_urls>"],
+                "js": ["content.js"],
+            ]],
+        ]
+        let staleRecord = try makeInstalledRecord(
+            manifestVersion: 2,
+            id: "metadata-store-refresh",
+            packagePath: directory.path,
+            manifest: manifest
+        )
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        container.mainContext.insert(ExtensionEntity(record: staleRecord))
+        try container.mainContext.save()
+
+        let store = ExtensionInstallationMetadataStore(context: container.mainContext)
+        var traces: [String] = []
+        let result = store.loadInstalledExtensionMetadata { traces.append($0) }
+
+        XCTAssertEqual(result.records.map(\.id), [staleRecord.id])
+        XCTAssertEqual(result.enabledEntities.map(\.id), [staleRecord.id])
+        XCTAssertEqual(result.records.first?.backgroundModel, .persistentPage)
+        XCTAssertTrue(result.records.first?.hasBackground == true)
+        XCTAssertTrue(
+            traces.contains { $0.contains("Refreshed extension metadata") }
+        )
+
+        let entity = try XCTUnwrap(try store.extensionEntity(for: staleRecord.id))
+        XCTAssertEqual(entity.backgroundModelRawValue, "persistent_page")
+        XCTAssertTrue(entity.hasBackground)
+    }
+
     func testInstalledExtensionMetadataRecordsManifestVersionTwo() throws {
         let record = try makeInstalledRecord(manifestVersion: 2)
         XCTAssertEqual(record.manifestVersion, 2)
