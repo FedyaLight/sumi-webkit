@@ -43,7 +43,6 @@ struct WebsiteDisplayState: Equatable {
 @MainActor
 final class WindowWebContentController: NSViewController {
     private static let mediaTouchBarRecoveryRetryDelays: [TimeInterval] = [0, 0.2, 0.5]
-    private static let visualHandoffCoverReleaseDelay: TimeInterval = 0.1
 
     private let browserManager: BrowserManager
     private let webViewCoordinator: WebViewCoordinator
@@ -64,9 +63,15 @@ final class WindowWebContentController: NSViewController {
     private var pendingSplitRepairGroupId: UUID?
     private var hoveredLinkHandler: ((String?) -> Void)?
     private let hostRegistry = WindowWebContentHostRegistry()
-    private var visualHandoffCoverHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
-    private var visualHandoffCoverReleaseWorkItem: DispatchWorkItem?
-    private var visualHandoffCoverReleaseGeneration = 0
+    private lazy var visualHandoffCovers = VisualHandoffCoverController(
+        containerView: containerView,
+        releaseCover: { [weak self] webViewID, host in
+            guard let self else { return }
+            self.containerView.removeVisualHandoffCover(host)
+            self.hostRegistry.removeParkedProtectedHost(for: webViewID)
+            self.webViewCoordinator.finishVisualHandoffProtection(for: host.webView)
+        }
+    )
     private var mediaTouchBarRecoveryCancellable: AnyCancellable?
 
     init(
@@ -288,11 +293,10 @@ final class WindowWebContentController: NSViewController {
             webViewCoordinator.beginVisualHandoffProtection(for: host.webView)
             hostRegistry.clearReferences(to: host)
             hostRegistry.parkProtectedHost(host)
-            containerView.placeVisualHandoffCover(host, frameInContainer: frameInContainer)
-            visualHandoffCoverHosts[webViewID] = host
+            visualHandoffCovers.placeCover(host, frameInContainer: frameInContainer)
         }
 
-        return !visualHandoffCoverHosts.isEmpty
+        return visualHandoffCovers.hasCovers
     }
 
     private func scheduleVisualHandoffCoverRelease(if didBeginVisualHandoff: Bool) {
@@ -301,49 +305,11 @@ final class WindowWebContentController: NSViewController {
     }
 
     private func scheduleVisualHandoffCoverRelease() {
-        guard !visualHandoffCoverHosts.isEmpty else { return }
-
-        visualHandoffCoverReleaseWorkItem?.cancel()
-        visualHandoffCoverReleaseGeneration &+= 1
-        let generation = visualHandoffCoverReleaseGeneration
-        CATransaction.flush()
-
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self,
-                  self.visualHandoffCoverReleaseGeneration == generation
-            else {
-                return
-            }
-            self.containerView.layoutSubtreeIfNeeded()
-            self.containerView.displayIfNeeded()
-            DispatchQueue.main.async { [weak self] in
-                guard let self,
-                      self.visualHandoffCoverReleaseGeneration == generation
-                else {
-                    return
-                }
-                self.releaseVisualHandoffCovers()
-            }
-        }
-        visualHandoffCoverReleaseWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.visualHandoffCoverReleaseDelay,
-            execute: workItem
-        )
+        visualHandoffCovers.scheduleRelease()
     }
 
     private func releaseVisualHandoffCovers() {
-        visualHandoffCoverReleaseGeneration &+= 1
-        visualHandoffCoverReleaseWorkItem?.cancel()
-        visualHandoffCoverReleaseWorkItem = nil
-
-        let covers = visualHandoffCoverHosts
-        visualHandoffCoverHosts.removeAll(keepingCapacity: true)
-        for (webViewID, host) in covers {
-            containerView.removeVisualHandoffCover(host)
-            hostRegistry.removeParkedProtectedHost(for: webViewID)
-            webViewCoordinator.finishVisualHandoffProtection(for: host.webView)
-        }
+        visualHandoffCovers.releaseCovers()
     }
 
     private func compositorSubtreeHasStaleWebViews(
@@ -824,6 +790,81 @@ final class WindowWebContentController: NSViewController {
             guard let self else { return }
             self.browserManager.tabManager.removeSplitGroup(id: groupId)
             self.pendingSplitRepairGroupId = nil
+        }
+    }
+}
+
+@MainActor
+private final class VisualHandoffCoverController {
+    private static let releaseDelay: TimeInterval = 0.1
+
+    private let containerView: ContainerView
+    private let releaseCover: (ObjectIdentifier, SumiWebViewContainerView) -> Void
+    private var coverHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
+    private var releaseWorkItem: DispatchWorkItem?
+    private var releaseGeneration = 0
+
+    var hasCovers: Bool {
+        !coverHosts.isEmpty
+    }
+
+    init(
+        containerView: ContainerView,
+        releaseCover: @escaping (ObjectIdentifier, SumiWebViewContainerView) -> Void
+    ) {
+        self.containerView = containerView
+        self.releaseCover = releaseCover
+    }
+
+    func placeCover(
+        _ host: SumiWebViewContainerView,
+        frameInContainer: NSRect
+    ) {
+        containerView.placeVisualHandoffCover(host, frameInContainer: frameInContainer)
+        coverHosts[ObjectIdentifier(host.webView)] = host
+    }
+
+    func scheduleRelease() {
+        guard !coverHosts.isEmpty else { return }
+
+        releaseWorkItem?.cancel()
+        releaseGeneration &+= 1
+        let generation = releaseGeneration
+        CATransaction.flush()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.releaseGeneration == generation
+            else {
+                return
+            }
+            self.containerView.layoutSubtreeIfNeeded()
+            self.containerView.displayIfNeeded()
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      self.releaseGeneration == generation
+                else {
+                    return
+                }
+                self.releaseCovers()
+            }
+        }
+        releaseWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.releaseDelay,
+            execute: workItem
+        )
+    }
+
+    func releaseCovers() {
+        releaseGeneration &+= 1
+        releaseWorkItem?.cancel()
+        releaseWorkItem = nil
+
+        let covers = coverHosts
+        coverHosts.removeAll(keepingCapacity: true)
+        for (webViewID, host) in covers {
+            releaseCover(webViewID, host)
         }
     }
 }

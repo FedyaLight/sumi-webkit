@@ -522,12 +522,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         let coverRelease = try sourceSlice(
             compositorSource,
-            from: "private func scheduleVisualHandoffCoverRelease()",
-            to: "private func releaseVisualHandoffCovers()"
+            from: "private final class VisualHandoffCoverController",
+            to: "struct TabCompositorWrapper"
         )
         XCTAssertTrue(coverRelease.contains("CATransaction.flush()"))
         XCTAssertTrue(coverRelease.contains("containerView.displayIfNeeded()"))
-        XCTAssertTrue(coverRelease.contains("visualHandoffCoverReleaseGeneration == generation"))
+        XCTAssertTrue(coverRelease.contains("releaseGeneration == generation"))
 
         let splitLayout = try sourceSlice(
             compositorSource,
@@ -547,7 +547,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(webViewHost.contains("if let displayedHost = hostRegistry.displayedHost(for: tab.id)"))
     }
 
-    func testWebsiteCompositorHostRegistryLeavesPresentationOrderingInController() throws {
+    func testWebsiteCompositorVisualHandoffOwnerKeepsPresentationOrderingExplicit() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -568,6 +568,20 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(registry.contains("CATransaction"))
         XCTAssertFalse(registry.contains("placeVisualHandoffCover"))
 
+        let releaseCallback = try sourceSlice(
+            source,
+            from: "private lazy var visualHandoffCovers",
+            to: "private var mediaTouchBarRecoveryCancellable"
+        )
+        try assertTokenOrder(
+            releaseCallback,
+            [
+                "containerView.removeVisualHandoffCover(host)",
+                "hostRegistry.removeParkedProtectedHost(for: webViewID)",
+                "webViewCoordinator.finishVisualHandoffProtection(for: host.webView)"
+            ]
+        )
+
         let visualHandoff = try sourceSlice(
             source,
             from: "private func beginVisualHandoffCovers",
@@ -579,7 +593,40 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "webViewCoordinator.beginVisualHandoffProtection(for: host.webView)",
                 "hostRegistry.clearReferences(to: host)",
                 "hostRegistry.parkProtectedHost(host)",
-                "containerView.placeVisualHandoffCover(host"
+                "visualHandoffCovers.placeCover(host"
+            ]
+        )
+
+        let coverController = try sourceSlice(
+            source,
+            from: "private final class VisualHandoffCoverController",
+            to: "struct TabCompositorWrapper"
+        )
+        XCTAssertTrue(coverController.contains("private var coverHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]"))
+        XCTAssertTrue(coverController.contains("private var releaseWorkItem: DispatchWorkItem?"))
+        XCTAssertTrue(coverController.contains("private var releaseGeneration = 0"))
+        try assertTokenOrder(
+            coverController,
+            [
+                "containerView.placeVisualHandoffCover(host",
+                "coverHosts[ObjectIdentifier(host.webView)] = host"
+            ]
+        )
+        try assertTokenOrder(
+            coverController,
+            [
+                "CATransaction.flush()",
+                "containerView.layoutSubtreeIfNeeded()",
+                "containerView.displayIfNeeded()",
+                "self.releaseCovers()"
+            ]
+        )
+        try assertTokenOrder(
+            coverController,
+            [
+                "let covers = coverHosts",
+                "coverHosts.removeAll(keepingCapacity: true)",
+                "releaseCover(webViewID, host)"
             ]
         )
 
