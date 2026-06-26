@@ -7,6 +7,36 @@ import XCTest
 
 @testable import Sumi
 
+@MainActor
+final class TabFaviconRuntimeOwnershipTests: XCTestCase {
+    func testRegularTabCacheMissUsesTemplateGlobePlaceholder() {
+        let tab = Tab(
+            url: URL(string: "https://runtime-owner.example/page")!,
+            name: "Example",
+            loadsCachedFaviconOnInit: false
+        )
+
+        XCTAssertTrue(tab.faviconIsTemplateGlobePlaceholder)
+        XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)
+    }
+
+    func testInternalSurfaceClearsGlobePlaceholder() {
+        let settingsURL = SumiSurface.settingsSurfaceURL(paneQuery: "general")
+        let tab = Tab(
+            url: URL(string: "https://runtime-owner.example/page")!,
+            name: "Example",
+            loadsCachedFaviconOnInit: false
+        )
+
+        XCTAssertTrue(tab.faviconIsTemplateGlobePlaceholder)
+        tab.url = settingsURL
+        XCTAssertTrue(tab.applyCachedFaviconOrPlaceholder(for: settingsURL))
+
+        XCTAssertFalse(tab.faviconIsTemplateGlobePlaceholder)
+        XCTAssertTrue(tab.usesChromeThemedTemplateFavicon)
+    }
+}
+
 final class SumiFaviconV2DiscoveryTests: XCTestCase {
     func testRelParsingTreatsShortcutIconAsCaseInsensitiveTokens() throws {
         let pageURL = try XCTUnwrap(URL(string: "https://example.com/path/page"))

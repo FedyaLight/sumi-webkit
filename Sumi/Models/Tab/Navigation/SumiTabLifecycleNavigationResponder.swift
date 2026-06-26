@@ -81,7 +81,7 @@ final class SumiTabLifecycleNavigationResponder:
                 tab.resetPlaybackActivity()
                 tab.url = newURL
                 tab.applyCachedFaviconOrPlaceholder(for: newURL)
-                tab.faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
+                tab.refreshFaviconExtensionCache()
             } else {
                 tab.url = newURL
             }
@@ -173,7 +173,7 @@ final class SumiTabLifecycleNavigationResponder:
         if let newURL = webView.url {
             tab.url = newURL
             tab.browserManager?.loadZoomForTab(tab.id)
-            tab.faviconsTabExtension?.loadCachedFavicon(previousURL: nil, error: nil)
+            tab.refreshFaviconExtensionCache()
             if let policy = tab.browserManager?.adBlockingModule.effectivePolicy(for: newURL),
                let host = policy.host,
                policy.isEnabled {

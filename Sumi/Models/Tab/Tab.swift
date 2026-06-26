@@ -131,6 +131,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     private let navigationRuntime = TabNavigationRuntime()
     let mediaRuntime = TabMediaRuntime()
     let popupUserActivationTracker = SumiPopupUserActivationTracker()
+    let faviconRuntime = TabFaviconRuntime()
     private let webViewRuntime = TabWebViewRuntime()
 
     // MARK: - Pin State
@@ -448,18 +449,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var isSuspensionRestoreInProgress: Bool {
         get { webViewRuntime.isSuspensionRestoreInProgress }
         set { webViewRuntime.isSuspensionRestoreInProgress = newValue }
-    }
-    var resolvedFaviconCacheKey: String? {
-        get { webViewRuntime.resolvedFaviconCacheKey }
-        set { webViewRuntime.resolvedFaviconCacheKey = newValue }
-    }
-    var faviconsTabExtension: FaviconsTabExtension? {
-        get { webViewRuntime.faviconsTabExtension }
-        set { webViewRuntime.faviconsTabExtension = newValue }
-    }
-    var faviconCancellables: Set<AnyCancellable> {
-        get { webViewRuntime.faviconCancellables }
-        set { webViewRuntime.faviconCancellables = newValue }
     }
     var lastWebViewInteractionEvent: NSEvent? {
         get { webViewRuntime.lastWebViewInteractionEvent }
