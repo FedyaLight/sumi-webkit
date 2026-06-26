@@ -11,6 +11,155 @@ import WebKit
 
 @available(macOS 15.5, *)
 @MainActor
+protocol ExtensionBrowserBridgeContext: AnyObject {
+    func extensionWindowState(for windowId: UUID) -> BrowserWindowState?
+    var activeExtensionWindowState: BrowserWindowState? { get }
+    func extensionTab(for tabId: UUID) -> Tab?
+    func currentExtensionTab(in windowState: BrowserWindowState) -> Tab?
+    func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab]
+    func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState?
+    func setActiveExtensionWindow(_ windowState: BrowserWindowState)
+    func isTransientExtensionTab(_ tab: Tab) -> Bool
+    func promoteTransientExtensionTab(_ tab: Tab) -> Bool
+    func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool
+    func isPinnedExtensionTab(_ tab: Tab) -> Bool
+    func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState?)
+    func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession?
+    func auxiliaryWindowSession(for sessionId: UUID) -> AuxiliaryWindowSession?
+    func focusAuxiliaryWindowSession(_ sessionId: UUID)
+    func closeAuxiliaryWindowSession(_ session: AuxiliaryWindowSession)
+    func closeAuxiliaryWindowWebView(_ webView: WKWebView)
+    func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool
+}
+
+@available(macOS 15.5, *)
+@MainActor
+extension BrowserManager: ExtensionBrowserBridgeContext {
+    func extensionWindowState(for windowId: UUID) -> BrowserWindowState? {
+        windowRegistry?.windows[windowId]
+    }
+
+    var activeExtensionWindowState: BrowserWindowState? {
+        windowRegistry?.activeWindow
+    }
+
+    func extensionTab(for tabId: UUID) -> Tab? {
+        if let tab = tabManager.tab(for: tabId) {
+            return tab
+        }
+
+        guard let windowStates = windowRegistry?.windows.values else {
+            return nil
+        }
+        for windowState in windowStates {
+            if let tab = windowState.ephemeralTabs.first(where: { $0.id == tabId }) {
+                return tab
+            }
+        }
+        return nil
+    }
+
+    func currentExtensionTab(in windowState: BrowserWindowState) -> Tab? {
+        currentTab(for: windowState)
+    }
+
+    func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab] {
+        shellSelectionService.tabsForWebExtensionWindow(
+            in: windowState,
+            tabStore: tabManager.runtimeStore
+        )
+    }
+
+    func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState? {
+        if let primaryWindowId = tab.primaryWindowId,
+           let primaryWindow = windowRegistry?.windows[primaryWindowId]
+        {
+            return primaryWindow
+        }
+
+        if let containing = windowState(containing: tab) {
+            return containing
+        }
+
+        if let activeWindow = activeExtensionWindowState,
+           tabsForExtensionWindow(activeWindow).contains(where: { $0.id == tab.id })
+        {
+            return activeWindow
+        }
+
+        return windowRegistry?.windows.values.first { windowState in
+            tabsForExtensionWindow(windowState).contains(where: { $0.id == tab.id })
+        }
+    }
+
+    func setActiveExtensionWindow(_ windowState: BrowserWindowState) {
+        windowRegistry?.setActive(windowState)
+    }
+
+    func isTransientExtensionTab(_ tab: Tab) -> Bool {
+        tabManager.isTransientExtensionTab(tab)
+    }
+
+    @discardableResult
+    func promoteTransientExtensionTab(_ tab: Tab) -> Bool {
+        guard tabManager.isTransientExtensionTab(tab) else {
+            return false
+        }
+
+        let targetSpace = tab.spaceId.flatMap { spaceId in
+            tabManager.spaces.first(where: { $0.id == spaceId })
+        } ?? tabManager.currentSpace
+
+        return tabManager.promoteTransientExtensionTab(
+            tab,
+            in: targetSpace,
+            activate: false
+        )
+    }
+
+    func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool {
+        tabManager.isAuxiliaryMiniWindowTab(tab)
+    }
+
+    func isPinnedExtensionTab(_ tab: Tab) -> Bool {
+        tab.isPinned || tabManager.pinnedTabs.contains(where: { $0.id == tab.id })
+    }
+
+    func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState?) {
+        if let windowState {
+            selectTab(tab, in: windowState)
+        } else {
+            selectTab(tab)
+        }
+    }
+
+    func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession? {
+        auxiliaryWindowManager.session(for: tab)
+    }
+
+    func auxiliaryWindowSession(for sessionId: UUID) -> AuxiliaryWindowSession? {
+        auxiliaryWindowManager.session(for: sessionId)
+    }
+
+    func focusAuxiliaryWindowSession(_ sessionId: UUID) {
+        auxiliaryWindowManager.focus(sessionID: sessionId)
+    }
+
+    func closeAuxiliaryWindowSession(_ session: AuxiliaryWindowSession) {
+        auxiliaryWindowManager.teardown(for: session.webView, reason: .extensionRequestedClose)
+    }
+
+    func closeAuxiliaryWindowWebView(_ webView: WKWebView) {
+        auxiliaryWindowManager.teardown(for: webView, reason: .extensionRequestedClose)
+    }
+
+    func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool {
+        auxiliaryWindowManager.contains(webView: webView)
+    }
+}
+
+@available(macOS 15.5, *)
+@MainActor
 private enum ExtensionBridgeCallbackSupport {
     static func complete(
         _ completionHandler: @escaping (Error?) -> Void,
@@ -42,22 +191,22 @@ private enum ExtensionBridgeCallbackSupport {
 final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     let windowId: UUID
 
-    private weak var browserManager: BrowserManager?
+    private weak var browserContext: (any ExtensionBrowserBridgeContext)?
     private weak var extensionManager: ExtensionManager?
 
     init(
         windowId: UUID,
-        browserManager: BrowserManager,
+        browserContext: any ExtensionBrowserBridgeContext,
         extensionManager: ExtensionManager
     ) {
         self.windowId = windowId
-        self.browserManager = browserManager
+        self.browserContext = browserContext
         self.extensionManager = extensionManager
         super.init()
     }
 
     private var windowState: BrowserWindowState? {
-        browserManager?.windowRegistry?.windows[windowId]
+        browserContext?.extensionWindowState(for: windowId)
     }
 
     override func isEqual(_ object: Any?) -> Bool {
@@ -71,12 +220,12 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
     func activeTab(for extensionContext: WKWebExtensionContext) -> (any WKWebExtensionTab)? {
         guard
-            let browserManager,
+            let browserContext,
             let extensionManager,
             let windowState,
             let contextProfileId = extensionManager.profileId(for: extensionContext),
             extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId),
-            let tab = browserManager.currentTab(for: windowState),
+            let tab = browserContext.currentExtensionTab(in: windowState),
             extensionManager.resolvedProfileId(for: tab) == contextProfileId,
             extensionManager.isTabEligibleForCurrentExtensionRuntime(tab)
         else {
@@ -98,17 +247,14 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func tabs(for extensionContext: WKWebExtensionContext) -> [any WKWebExtensionTab] {
-        guard let browserManager,
+        guard let browserContext,
               let extensionManager,
               let windowState,
               let contextProfileId = extensionManager.profileId(for: extensionContext),
               extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId)
         else { return [] }
 
-        return browserManager.shellSelectionService.tabsForWebExtensionWindow(
-            in: windowState,
-            tabStore: browserManager.tabManager.runtimeStore
-        ).filter {
+        return browserContext.tabsForExtensionWindow(windowState).filter {
             extensionManager.resolvedProfileId(for: $0) == contextProfileId
                 && extensionManager.isTabEligibleForCurrentExtensionRuntime($0)
         }.compactMap {
@@ -142,7 +288,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         }
 
         windowState.window?.makeKeyAndOrderFront(nil)
-        browserManager?.windowRegistry?.setActive(windowState)
+        browserContext?.setActiveExtensionWindow(windowState)
         NSApp.activate(ignoringOtherApps: true)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
@@ -255,7 +401,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     let sessionId: UUID
     let tabId: UUID
 
-    private weak var browserManager: BrowserManager?
+    private weak var browserContext: (any ExtensionBrowserBridgeContext)?
     private weak var extensionManager: ExtensionManager?
     private weak var window: NSWindow?
     private let isPrivateWindow: Bool
@@ -265,7 +411,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         sessionId: UUID,
         tabId: UUID,
         window: NSWindow,
-        browserManager: BrowserManager,
+        browserContext: any ExtensionBrowserBridgeContext,
         extensionManager: ExtensionManager,
         isPrivate: Bool,
         shouldActivateApp: Bool
@@ -273,7 +419,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         self.sessionId = sessionId
         self.tabId = tabId
         self.window = window
-        self.browserManager = browserManager
+        self.browserContext = browserContext
         self.extensionManager = extensionManager
         self.isPrivateWindow = isPrivate
         self.shouldActivateApp = shouldActivateApp
@@ -281,7 +427,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     private var tab: Tab? {
-        browserManager?.tabManager.tab(for: tabId)
+        browserContext?.extensionTab(for: tabId)
     }
 
     override func isEqual(_ object: Any?) -> Bool {
@@ -400,7 +546,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
             NSApp.activate(ignoringOtherApps: true)
         }
         window?.makeKeyAndOrderFront(nil)
-        browserManager?.auxiliaryWindowManager.focus(sessionID: sessionId)
+        browserContext?.focusAuxiliaryWindowSession(sessionId)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 
@@ -408,8 +554,8 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let browserManager,
-              let session = browserManager.auxiliaryWindowManager.session(for: sessionId)
+        guard let browserContext,
+              let session = browserContext.auxiliaryWindowSession(for: sessionId)
         else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
@@ -423,7 +569,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
             return
         }
 
-        browserManager.auxiliaryWindowManager.teardown(for: session.webView, reason: .extensionRequestedClose)
+        browserContext.closeAuxiliaryWindowSession(session)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 }
@@ -433,25 +579,22 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
 final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     let tabId: UUID
 
-    private weak var browserManager: BrowserManager?
+    private weak var browserContext: (any ExtensionBrowserBridgeContext)?
     private weak var extensionManager: ExtensionManager?
 
     init(
         tabId: UUID,
-        browserManager: BrowserManager,
+        browserContext: any ExtensionBrowserBridgeContext,
         extensionManager: ExtensionManager
     ) {
         self.tabId = tabId
-        self.browserManager = browserManager
+        self.browserContext = browserContext
         self.extensionManager = extensionManager
         super.init()
     }
 
     var tab: Tab? {
-        browserManager?.tabManager.tab(for: tabId)
-            ?? browserManager?.windowRegistry?.windows.values.lazy
-                .flatMap(\.ephemeralTabs)
-                .first(where: { $0.id == tabId })
+        browserContext?.extensionTab(for: tabId)
     }
 
     private var tabUnavailableUntilReloadError: NSError {
@@ -492,52 +635,13 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     }
 
     private func resolvedWindowState() -> BrowserWindowState? {
-        guard let browserManager, let tab else { return nil }
-
-        if let primaryWindowId = tab.primaryWindowId,
-           let primaryWindow = browserManager.windowRegistry?.windows[primaryWindowId]
-        {
-            return primaryWindow
-        }
-
-        if let containing = browserManager.windowState(containing: tab) {
-            return containing
-        }
-
-        if let activeWindow = browserManager.windowRegistry?.activeWindow,
-           browserManager.shellSelectionService.tabsForWebExtensionWindow(
-                in: activeWindow,
-                tabStore: browserManager.tabManager.runtimeStore
-           ).contains(where: { $0.id == tab.id })
-        {
-            return activeWindow
-        }
-
-        return browserManager.windowRegistry?.windows.values.first { windowState in
-            browserManager.shellSelectionService.tabsForWebExtensionWindow(
-                in: windowState,
-                tabStore: browserManager.tabManager.runtimeStore
-            ).contains(where: { $0.id == tab.id })
-        }
+        guard let tab else { return nil }
+        return browserContext?.preferredExtensionWindowState(containing: tab)
     }
 
     @discardableResult
     private func promoteTransientExtensionTabIfNeeded(_ tab: Tab) -> Bool {
-        guard let browserManager,
-              browserManager.tabManager.isTransientExtensionTab(tab)
-        else {
-            return false
-        }
-
-        let targetSpace = tab.spaceId.flatMap { spaceId in
-            browserManager.tabManager.spaces.first(where: { $0.id == spaceId })
-        } ?? browserManager.tabManager.currentSpace
-
-        return browserManager.tabManager.promoteTransientExtensionTab(
-            tab,
-            in: targetSpace,
-            activate: false
-        )
+        browserContext?.promoteTransientExtensionTab(tab) ?? false
     }
 
     func url(for extensionContext: WKWebExtensionContext) -> URL? {
@@ -550,29 +654,27 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
 
     func isSelected(for extensionContext: WKWebExtensionContext) -> Bool {
         guard
-            let browserManager,
+            let browserContext,
             let tab = eligibleTab(),
             let windowState = resolvedWindowState()
         else {
             return false
         }
 
-        return browserManager.currentTab(for: windowState)?.id == tab.id
+        return browserContext.currentExtensionTab(in: windowState)?.id == tab.id
     }
 
     func indexInWindow(for extensionContext: WKWebExtensionContext) -> Int {
         guard
-            let browserManager,
+            let browserContext,
             let tab = eligibleTab(),
             let windowState = resolvedWindowState()
         else {
             return 0
         }
 
-        return browserManager.shellSelectionService.tabsForWebExtensionWindow(
-            in: windowState,
-            tabStore: browserManager.tabManager.runtimeStore
-        ).firstIndex(where: { $0.id == tab.id }) ?? 0
+        return browserContext.tabsForExtensionWindow(windowState)
+            .firstIndex(where: { $0.id == tab.id }) ?? 0
     }
 
     func isLoadingComplete(for extensionContext: WKWebExtensionContext) -> Bool {
@@ -581,7 +683,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
 
     func isPinned(for extensionContext: WKWebExtensionContext) -> Bool {
         guard let tab = eligibleTab() else { return false }
-        return tab.isPinned || browserManager?.tabManager.pinnedTabs.contains(where: { $0.id == tabId }) == true
+        return browserContext?.isPinnedExtensionTab(tab) == true
     }
 
     func isMuted(for extensionContext: WKWebExtensionContext) -> Bool {
@@ -623,7 +725,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let browserManager, let tab = eligibleTab() else {
+        guard let browserContext, let tab = eligibleTab() else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .tabAdapterCompletion,
@@ -633,12 +735,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         }
 
         promoteTransientExtensionTabIfNeeded(tab)
-
-        if let windowState = resolvedWindowState() {
-            browserManager.selectTab(tab, in: windowState)
-        } else {
-            browserManager.selectTab(tab)
-        }
+        browserContext.selectExtensionTab(tab, in: resolvedWindowState())
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
     }
 
@@ -655,12 +752,12 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             return
         }
 
-        if let browserManager,
-           browserManager.tabManager.isAuxiliaryMiniWindowTab(tab),
+        if let browserContext,
+           browserContext.isAuxiliaryMiniWindowTab(tab),
            let webView = tab.existingWebView,
-           browserManager.auxiliaryWindowManager.contains(webView: webView)
+           browserContext.containsAuxiliaryWebView(webView)
         {
-            browserManager.auxiliaryWindowManager.teardown(for: webView, reason: .extensionRequestedClose)
+            browserContext.closeAuxiliaryWindowWebView(webView)
             ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
             return
         }
@@ -776,7 +873,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
 
     func window(for extensionContext: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
         guard let tab = eligibleTab() else { return nil }
-        if browserManager?.tabManager.isAuxiliaryMiniWindowTab(tab) == true {
+        if browserContext?.isAuxiliaryMiniWindowTab(tab) == true {
             return extensionManager?.miniWindowAdapter(for: tab)
         }
         if let miniWindowAdapter = extensionManager?.miniWindowAdapter(for: tab) {

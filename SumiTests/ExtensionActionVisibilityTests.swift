@@ -182,6 +182,26 @@ final class ExtensionActionVisibilityTests: XCTestCase {
         XCTAssertFalse(source.contains("notifyTabActivated(newTab: currentTab, previous: nil)"))
     }
 
+    func testWebExtensionBridgeAdaptersUseBrowserContextBoundary() throws {
+        let bridgeSource = try Self.source(named: "Sumi/Managers/ExtensionManager/ExtensionBridge.swift")
+        let managerSource = try Self.source(named: "Sumi/Managers/ExtensionManager/ExtensionManager.swift")
+        let profilesSource = try Self.source(named: "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift")
+
+        XCTAssertTrue(bridgeSource.contains("protocol ExtensionBrowserBridgeContext"))
+        XCTAssertTrue(bridgeSource.contains("extension BrowserManager: ExtensionBrowserBridgeContext"))
+        XCTAssertTrue(managerSource.contains("weak var browserBridgeContext"))
+        XCTAssertTrue(profilesSource.contains("browserBridgeContext = browserManager"))
+
+        XCTAssertFalse(
+            bridgeSource.contains("private weak var browserManager: BrowserManager?"),
+            "WebExtension adapters should depend on the bridge context, not BrowserManager as a service locator"
+        )
+        XCTAssertFalse(
+            bridgeSource.contains("browserManager: BrowserManager,"),
+            "WebExtension adapter initializers should accept ExtensionBrowserBridgeContext"
+        )
+    }
+
     func testURLBarDoesNotHostASeparateAdBlockerAction() throws {
         let source = try Self.source(named: "Sumi/Components/Sidebar/URLBarTrailingActions.swift")
 

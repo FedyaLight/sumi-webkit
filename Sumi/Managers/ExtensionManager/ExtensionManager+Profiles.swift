@@ -7,6 +7,7 @@ import WebKit
 extension ExtensionManager {
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
+        browserBridgeContext = browserManager
 
         if browserManager.windowRegistry?.activeWindow == nil,
            let currentProfile = browserManager.currentProfile

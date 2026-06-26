@@ -140,6 +140,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     weak var browserManager: BrowserManager?
+    weak var browserBridgeContext: (any ExtensionBrowserBridgeContext)?
     var profileRuntimeState = ExtensionProfileRuntimeState()
     var extensionControllersByProfile: [UUID: WKWebExtensionController] {
         get { profileRuntimeState.controllersByProfile }
@@ -374,7 +375,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     func miniWindowAdapter(for tab: Tab) -> ExtensionMiniWindowAdapter? {
-        browserManager?.auxiliaryWindowManager.session(for: tab)?.miniWindowAdapter
+        browserBridgeContext?.auxiliaryWindowSession(for: tab)?.miniWindowAdapter
     }
 
     func miniWindowAdapter(
@@ -384,7 +385,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         isPrivate: Bool,
         shouldActivateApp: Bool
     ) -> ExtensionMiniWindowAdapter? {
-        guard let browserManager else { return nil }
+        guard let browserBridgeContext else { return nil }
 
         if let existing = miniWindowAdapters[sessionId] {
             return existing
@@ -394,7 +395,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             sessionId: sessionId,
             tabId: tab.id,
             window: window,
-            browserManager: browserManager,
+            browserContext: browserBridgeContext,
             extensionManager: self,
             isPrivate: isPrivate,
             shouldActivateApp: shouldActivateApp
@@ -404,8 +405,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     func windowAdapter(for windowId: UUID) -> ExtensionWindowAdapter? {
-        guard let browserManager else { return nil }
-        guard browserManager.windowRegistry?.windows[windowId] != nil else {
+        guard let browserBridgeContext else { return nil }
+        guard browserBridgeContext.extensionWindowState(for: windowId) != nil else {
             return nil
         }
 
@@ -415,7 +416,7 @@ final class ExtensionManager: NSObject, ObservableObject {
 
         let created = ExtensionWindowAdapter(
             windowId: windowId,
-            browserManager: browserManager,
+            browserContext: browserBridgeContext,
             extensionManager: self
         )
         windowAdapters[windowId] = created
@@ -423,7 +424,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
-        guard let browserManager else { return nil }
+        guard let browserBridgeContext else { return nil }
 
         if let existing = tabAdapters[tab.id] {
             return existing
@@ -431,7 +432,7 @@ final class ExtensionManager: NSObject, ObservableObject {
 
         let created = ExtensionTabAdapter(
             tabId: tab.id,
-            browserManager: browserManager,
+            browserContext: browserBridgeContext,
             extensionManager: self
         )
         tabAdapters[tab.id] = created
