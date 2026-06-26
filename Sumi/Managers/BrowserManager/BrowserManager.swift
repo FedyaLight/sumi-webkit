@@ -288,6 +288,7 @@ class BrowserManager: ObservableObject {
     let workspaceAppearanceService = WorkspaceAppearanceService()
     let privacyService = BrowserPrivacyService()
     let liveFolderManager = SumiLiveFolderManager()
+    private let floatingBarNavigationOwner = FloatingBarNavigationOwner()
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
         guard let self else { return [] }
@@ -892,6 +893,43 @@ class BrowserManager: ObservableObject {
         return max(BrowserWindowState.sidebarMinimumWidth, savedSidebarWidth)
     }
 
+    private var floatingBarActions: FloatingBarNavigationOwner.Actions {
+        FloatingBarNavigationOwner.Actions(
+            activePageTab: { windowState in
+                self.activePageTab(for: windowState)
+            },
+            cancelEmptySplitPlaceholder: { windowState in
+                self.splitManager.cancelEmptySplitPlaceholder(in: windowState)
+            },
+            commitEmptySplitPlaceholder: { tabId, windowState in
+                self.splitManager.commitEmptySplitPlaceholder(tabId: tabId, in: windowState)
+            },
+            replaceEmptySplitPlaceholder: { tab, windowState in
+                self.splitManager.replaceEmptySplitPlaceholder(with: tab, in: windowState)
+            },
+            selectTab: { tab, windowState in
+                self.selectTab(tab, in: windowState)
+            },
+            createNewTabAfterSidebarInsertion: { windowState, url in
+                _ = self.createNewTabAfterSidebarInsertion(in: windowState, url: url)
+            },
+            normalizeURL: { text in
+                let template = self.sumiSettings?.resolvedSearchEngineTemplate
+                    ?? SearchProvider.google.queryTemplate
+                return normalizeURL(text, queryTemplate: template)
+            },
+            dismissWorkspaceThemePickerIfNeededDiscarding: {
+                self.dismissWorkspaceThemePickerIfNeededDiscarding()
+            },
+            persistWindowSession: { windowState in
+                self.persistWindowSession(for: windowState)
+            },
+            schedulePersistWindowSession: { windowState in
+                self.schedulePersistWindowSession(for: windowState)
+            }
+        )
+    }
+
 
     func focusFloatingBarForActiveWindow(
         prefill: String = "",
@@ -913,17 +951,13 @@ class BrowserManager: ObservableObject {
         navigateCurrentTab: Bool = false,
         presentationReason: FloatingBarPresentationReason = .keyboard
     ) {
-        let shouldOverrideDraft = !prefill.isEmpty
-            || windowState.floatingBarDraftText.isEmpty
-            || navigateCurrentTab
-        if shouldOverrideDraft {
-            windowState.floatingBarDraftText = prefill
-            windowState.floatingBarDraftNavigatesCurrentTab = navigateCurrentTab
-        }
-        windowState.floatingBarPresentationReason = presentationReason
-        windowState.isFloatingBarVisible = true
-        dismissWorkspaceThemePickerIfNeededDiscarding()
-        persistWindowSession(for: windowState)
+        floatingBarNavigationOwner.focus(
+            in: windowState,
+            prefill: prefill,
+            navigateCurrentTab: navigateCurrentTab,
+            presentationReason: presentationReason,
+            actions: floatingBarActions
+        )
     }
 
     func focusFloatingBar(
@@ -940,12 +974,10 @@ class BrowserManager: ObservableObject {
     }
 
     func showNewTabFloatingBar(in windowState: BrowserWindowState) {
-        windowState.floatingBarDraftText = ""
-        windowState.floatingBarDraftNavigatesCurrentTab = false
-        windowState.floatingBarPresentationReason = .emptySpace
-        windowState.isFloatingBarVisible = true
-        dismissWorkspaceThemePickerIfNeededDiscarding()
-        persistWindowSession(for: windowState)
+        floatingBarNavigationOwner.showNewTab(
+            in: windowState,
+            actions: floatingBarActions
+        )
     }
 
     func openNewTabOrFloatingBar(in windowState: BrowserWindowState) {
@@ -1015,9 +1047,11 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         text: String
     ) {
-        guard windowState.floatingBarDraftText != text else { return }
-        windowState.floatingBarDraftText = text
-        schedulePersistWindowSession(for: windowState)
+        floatingBarNavigationOwner.updateDraft(
+            in: windowState,
+            text: text,
+            actions: floatingBarActions
+        )
     }
 
     func dismissFloatingBar(
@@ -1025,16 +1059,12 @@ class BrowserManager: ObservableObject {
         preserveDraft: Bool,
         cancelEmptySplitPlaceholder: Bool = true
     ) {
-        if cancelEmptySplitPlaceholder {
-            splitManager.cancelEmptySplitPlaceholder(in: windowState)
-        }
-        windowState.floatingBarPresentationReason = .none
-        windowState.isFloatingBarVisible = false
-        if !preserveDraft {
-            windowState.floatingBarDraftText = ""
-            windowState.floatingBarDraftNavigatesCurrentTab = false
-        }
-        persistWindowSession(for: windowState)
+        floatingBarNavigationOwner.dismiss(
+            in: windowState,
+            preserveDraft: preserveDraft,
+            cancelEmptySplitPlaceholder: cancelEmptySplitPlaceholder,
+            actions: floatingBarActions
+        )
     }
 
     func dismissFloatingBarForActiveWindow(preserveDraft: Bool = true) {
@@ -1063,15 +1093,11 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
-        dismissFloatingBar(
-            in: windowState,
-            preserveDraft: false,
-            cancelEmptySplitPlaceholder: false
-        )
-        openFloatingBarSuggestion(
+        floatingBarNavigationOwner.commitSuggestion(
             suggestion,
             in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab
+            navigatesCurrentTab: navigatesCurrentTab,
+            actions: floatingBarActions
         )
     }
 
@@ -1080,24 +1106,12 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
-        let navigationTargetTab = activePageTab(for: windowState)
-        dismissFloatingBar(
+        floatingBarNavigationOwner.commitNavigation(
+            to: urlString,
             in: windowState,
-            preserveDraft: false,
-            cancelEmptySplitPlaceholder: false
+            navigatesCurrentTab: navigatesCurrentTab,
+            actions: floatingBarActions
         )
-
-        if navigatesCurrentTab,
-           let navigationTargetTab
-        {
-            splitManager.commitEmptySplitPlaceholder(tabId: navigationTargetTab.id, in: windowState)
-            navigationTargetTab.loadURL(urlString)
-        } else {
-            createNewTabAfterSidebarInsertion(
-                in: windowState,
-                url: urlString
-            )
-        }
     }
 
     func openFloatingBarSuggestion(
@@ -1116,112 +1130,27 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
-        let navigationTargetTab = activePageTab(for: windowState)
-
-        switch suggestion.type {
-        case .tab(let existingTab):
-            if !splitManager.replaceEmptySplitPlaceholder(with: existingTab, in: windowState) {
-                selectTab(existingTab, in: windowState)
-            }
-            RuntimeDiagnostics.debug(
-                "Switched to existing tab: \(existingTab.name)",
-                category: "FloatingBar"
-            )
-        case .history(let historyEntry):
-            if navigatesCurrentTab,
-               let navigationTargetTab
-            {
-                splitManager.commitEmptySplitPlaceholder(tabId: navigationTargetTab.id, in: windowState)
-                navigationTargetTab.loadURL(historyEntry.url.absoluteString)
-                RuntimeDiagnostics.debug(
-                    "Navigated current tab to history URL: \(historyEntry.url)",
-                    category: "FloatingBar"
-                )
-            } else {
-                createNewTabAfterSidebarInsertion(
-                    in: windowState,
-                    url: historyEntry.url.absoluteString
-                )
-                RuntimeDiagnostics.debug(
-                    "Created new tab from history in window \(windowState.id)",
-                    category: "FloatingBar"
-                )
-            }
-        case .bookmark(let bookmark):
-            if navigatesCurrentTab,
-               let navigationTargetTab
-            {
-                splitManager.commitEmptySplitPlaceholder(tabId: navigationTargetTab.id, in: windowState)
-                navigationTargetTab.loadURL(bookmark.url.absoluteString)
-                RuntimeDiagnostics.debug(
-                    "Navigated current tab to bookmark URL: \(bookmark.url)",
-                    category: "FloatingBar"
-                )
-            } else {
-                createNewTabAfterSidebarInsertion(
-                    in: windowState,
-                    url: bookmark.url.absoluteString
-                )
-                RuntimeDiagnostics.debug(
-                    "Created new tab from bookmark in window \(windowState.id)",
-                    category: "FloatingBar"
-                )
-            }
-        case .url, .search:
-            if navigatesCurrentTab,
-               let navigationTargetTab
-            {
-                splitManager.commitEmptySplitPlaceholder(tabId: navigationTargetTab.id, in: windowState)
-                navigationTargetTab.navigateToURL(suggestion.text)
-                RuntimeDiagnostics.debug(
-                    "Navigated current tab to: \(suggestion.text)",
-                    category: "FloatingBar"
-                )
-            } else {
-                let template = sumiSettings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
-                let resolved = normalizeURL(suggestion.text, queryTemplate: template)
-                createNewTabAfterSidebarInsertion(in: windowState, url: resolved)
-                RuntimeDiagnostics.debug(
-                    "Created new tab in window \(windowState.id)",
-                    category: "FloatingBar"
-                )
-            }
-        }
+        floatingBarNavigationOwner.openSuggestion(
+            suggestion,
+            in: windowState,
+            navigatesCurrentTab: navigatesCurrentTab,
+            actions: floatingBarActions
+        )
     }
 
     private func dismissFloatingBarAfterSelection(in windowState: BrowserWindowState) {
-        guard windowState.isFloatingBarVisible || windowState.floatingBarPresentationReason != .none else {
-            return
-        }
-        let preserveDraft: Bool
-        switch windowState.floatingBarPresentationReason {
-        case .emptySpace, .splitTabPicker:
-            preserveDraft = false
-        case .keyboard, .none:
-            preserveDraft = true
-        }
-        dismissFloatingBar(in: windowState, preserveDraft: preserveDraft)
-    }
-
-    private func clearEmptyStatePresentationIfNeeded(in windowState: BrowserWindowState) {
-        guard windowState.isShowingEmptyState
-            || windowState.floatingBarPresentationReason == .emptySpace
-        else { return }
-
-        windowState.isShowingEmptyState = false
-        dismissFloatingBar(in: windowState, preserveDraft: false)
+        floatingBarNavigationOwner.dismissAfterSelection(
+            in: windowState,
+            actions: floatingBarActions
+        )
     }
 
     func sanitizeFloatingBarState(in windowState: BrowserWindowState) {
-        if hasValidCurrentSelection(in: windowState) {
-            clearEmptyStatePresentationIfNeeded(in: windowState)
-        } else if windowState.isShowingEmptyState {
-            if windowState.floatingBarPresentationReason == .none {
-                windowState.floatingBarPresentationReason = .emptySpace
-            }
-        } else {
-            windowState.floatingBarPresentationReason = .none
-        }
+        floatingBarNavigationOwner.sanitize(
+            in: windowState,
+            hasValidCurrentSelection: hasValidCurrentSelection(in: windowState),
+            actions: floatingBarActions
+        )
     }
 
     func showFindBar() {
@@ -2210,7 +2139,11 @@ class BrowserManager: ObservableObject {
            hasValidCurrentSelection(in: windowState),
            currentTab(for: windowState) != nil
         {
-            clearEmptyStatePresentationIfNeeded(in: windowState)
+            floatingBarNavigationOwner.sanitize(
+                in: windowState,
+                hasValidCurrentSelection: true,
+                actions: floatingBarActions
+            )
             applySpaceContext(space, to: windowState)
             syncShortcutSelectionState(for: windowState)
             persistWindowSession(for: windowState)
