@@ -268,34 +268,28 @@ extension ExtensionManager {
     }
 
     func touchLiveExtensionContext(extensionId: String, profileId: UUID) {
-        let key = backgroundScopedKey(extensionId: extensionId, profileId: profileId)
-        liveExtensionContextOrder.removeAll { $0 == key }
-        liveExtensionContextOrder.append(key)
+        extensionRuntimeResidencyState.touch(
+            extensionId: extensionId,
+            profileId: profileId
+        )
     }
 
     func enforceBoundedLiveExtensionContexts(
         keepingProfileId: UUID,
         keepingExtensionId: String
     ) {
-        let keepKey = backgroundScopedKey(
-            extensionId: keepingExtensionId,
-            profileId: keepingProfileId
-        )
-        touchLiveExtensionContext(
-            extensionId: keepingExtensionId,
-            profileId: keepingProfileId
-        )
+        let evictionCandidates =
+            extensionRuntimeResidencyState.touchAndEvictionCandidates(
+                loadedContextCount: countLoadedExtensionContexts(),
+                limit: Self.maxLiveExtensionContexts,
+                keepingExtensionId: keepingExtensionId,
+                keepingProfileId: keepingProfileId
+            )
 
-        while countLoadedExtensionContexts() > Self.maxLiveExtensionContexts,
-              let evictionKey = liveExtensionContextOrder.first(where: { $0 != keepKey })
-        {
-            guard let parsed = parseBackgroundScopedKey(evictionKey) else {
-                liveExtensionContextOrder.removeAll { $0 == evictionKey }
-                continue
-            }
+        for evictionCandidate in evictionCandidates {
             unloadExtensionContextIfLoaded(
-                extensionId: parsed.extensionId,
-                profileId: parsed.profileId
+                extensionId: evictionCandidate.extensionId,
+                profileId: evictionCandidate.profileId
             )
         }
     }
@@ -325,7 +319,10 @@ extension ExtensionManager {
         backgroundWakeTasks[wakeKey]?.cancel()
         backgroundWakeTasks.removeValue(forKey: wakeKey)
         backgroundRuntimeStateByExtensionID.removeValue(forKey: wakeKey)
-        liveExtensionContextOrder.removeAll { $0 == wakeKey }
+        extensionRuntimeResidencyState.remove(
+            extensionId: extensionId,
+            profileId: profileId
+        )
 
         removeExtensionContext(extensionId: extensionId, profileId: profileId)
         if let controller = extensionControllersByProfile[profileId] {
@@ -341,18 +338,6 @@ extension ExtensionManager {
         extensionRuntimeTrace(
             "unloadExtensionContext extensionId=\(extensionId) profileId=\(profileId.uuidString) remainingContexts=\(countLoadedExtensionContexts())"
         )
-    }
-
-    private func parseBackgroundScopedKey(
-        _ key: String
-    ) -> (profileId: UUID, extensionId: String)? {
-        let parts = key.split(separator: ":", maxSplits: 1)
-        guard parts.count == 2,
-              let profileId = UUID(uuidString: String(parts[0]))
-        else {
-            return nil
-        }
-        return (profileId, String(parts[1]))
     }
 
     @discardableResult
@@ -868,7 +853,10 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) -> String {
-        "\(profileId.uuidString):\(extensionId)"
+        ExtensionRuntimeResidencyState.scopedKey(
+            extensionId: extensionId,
+            profileId: profileId
+        )
     }
 
     func classifyActionPopupRuntimeFailure(

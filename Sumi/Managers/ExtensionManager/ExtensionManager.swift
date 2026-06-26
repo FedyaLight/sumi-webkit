@@ -157,7 +157,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var cachedWebExtensionsByID: [String: WKWebExtension] = [:]
     var cachedWebExtensionRuntimeSourceKeysByID: [String: WebExtensionRuntimeSourceKey] = [:]
     var lastExtensionLoadErrors: [String: Error] = [:]
-    var liveExtensionContextOrder: [String] = []
+    var extensionRuntimeResidencyState = ExtensionRuntimeResidencyState()
     var runtimeState: ExtensionRuntimeState = .idle
     var extensionRuntimeAllowsWithoutEnabledExtensions = false
     var runtimeInitializationTask: Task<Void, Never>?

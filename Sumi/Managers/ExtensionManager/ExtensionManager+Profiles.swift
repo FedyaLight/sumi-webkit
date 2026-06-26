@@ -683,7 +683,7 @@ extension ExtensionManager {
             cachedWebExtensionsByID.removeAll()
             cachedWebExtensionRuntimeSourceKeysByID.removeAll()
             lastExtensionLoadErrors.removeAll()
-            liveExtensionContextOrder.removeAll()
+            extensionRuntimeResidencyState.removeAll()
         }
 
         let hasDemand =
@@ -792,7 +792,7 @@ extension ExtensionManager {
         lastExtensionLoadErrors = lastExtensionLoadErrors.filter {
             !$0.key.hasSuffix(":\(extensionId)")
         }
-        liveExtensionContextOrder.removeAll { $0.hasSuffix(":\(extensionId)") }
+        extensionRuntimeResidencyState.remove(extensionId: extensionId)
         lastLoggedExtensionErrorFingerprints.removeValue(forKey: extensionId)
         closeOptionsWindow(for: extensionId)
         tearDownNativeMessageHandlers(for: extensionId)
@@ -831,7 +831,7 @@ extension ExtensionManager {
         cachedWebExtensionsByID.removeAll()
         cachedWebExtensionRuntimeSourceKeysByID.removeAll()
         lastExtensionLoadErrors.removeAll()
-        liveExtensionContextOrder.removeAll()
+        extensionRuntimeResidencyState.removeAll()
         backgroundWakeTasks.values.forEach { $0.cancel() }
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
@@ -924,7 +924,7 @@ extension ExtensionManager {
         cachedWebExtensionsByID.removeAll()
         cachedWebExtensionRuntimeSourceKeysByID.removeAll()
         lastExtensionLoadErrors.removeAll()
-        liveExtensionContextOrder.removeAll()
+        extensionRuntimeResidencyState.removeAll()
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
         runtimeMetricsByExtensionID.removeAll()
