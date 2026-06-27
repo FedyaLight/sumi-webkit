@@ -7,6 +7,45 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionProfileIsolationTests: XCTestCase {
+    func testProfileRuntimeOwnerResolvesExplicitTabProfileBeforeCurrentFallback() {
+        let currentProfileId = UUID()
+        let tabProfileId = UUID()
+        let owner = ExtensionProfileRuntimeOwner(initialProfileId: currentProfileId)
+        let tab = Tab()
+        tab.profileId = tabProfileId
+
+        XCTAssertEqual(
+            owner.resolvedProfileId(for: tab, browserManager: nil),
+            tabProfileId
+        )
+        XCTAssertEqual(
+            owner.resolvedProfileId(explicitProfileId: nil, browserManager: nil),
+            currentProfileId
+        )
+    }
+
+    func testProfileRuntimeOwnerProfileActivationReportsRuntimeDemand() {
+        let owner = ExtensionProfileRuntimeOwner(initialProfileId: nil)
+        let profileId = UUID()
+
+        XCTAssertFalse(
+            owner.activateProfile(
+                profileId,
+                hasExtensionDemand: false,
+                runtimeIsReadyOrLoading: false
+            )
+        )
+        XCTAssertEqual(owner.currentProfileId, profileId)
+
+        XCTAssertTrue(
+            owner.activateProfile(
+                UUID(),
+                hasExtensionDemand: true,
+                runtimeIsReadyOrLoading: false
+            )
+        )
+    }
+
     func testExtensionControllersAreDistinctPerProfile() throws {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,

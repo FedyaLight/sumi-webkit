@@ -146,17 +146,16 @@ extension ExtensionManager {
             PerformanceTrace.endInterval("ExtensionManager.switchProfile", signpostState)
         }
 
-        currentProfileId = profileId
+        let runtimeInitialized = profileRuntimeOwner.activateProfile(
+            profileId,
+            hasExtensionDemand: hasEnabledInstalledExtensions,
+            runtimeIsReadyOrLoading: runtimeState == .ready || runtimeState == .loading
+        )
         clearActionPopupAnchors(notMatching: profileId)
         reloadPinnedToolbarExtensionsForCurrentProfile()
 
         guard isExtensionSupportAvailable else { return }
 
-        let runtimeInitialized =
-            extensionControllersByProfile.isEmpty == false
-            || hasEnabledInstalledExtensions
-            || runtimeState == .ready
-            || runtimeState == .loading
         guard runtimeInitialized else { return }
 
         let controller = ensureExtensionController(for: profileId)
@@ -541,8 +540,10 @@ extension ExtensionManager {
             extensionRuntimeAllowsWithoutEnabledExtensions = true
         }
 
-        let resolvedProfileId =
-            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        let resolvedProfileId = profileRuntimeOwner.resolvedProfileId(
+            explicitProfileId: profileId,
+            browserManager: browserManager
+        )
         let controller: WKWebExtensionController
         if let resolvedProfileId {
             controller = ensureExtensionController(for: resolvedProfileId)
@@ -578,8 +579,10 @@ extension ExtensionManager {
         profileId: UUID? = nil,
         extensionId: String? = nil
     ) async -> Bool {
-        let resolvedProfileId =
-            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        let resolvedProfileId = profileRuntimeOwner.resolvedProfileId(
+            explicitProfileId: profileId,
+            browserManager: browserManager
+        )
 
         if forceReload == false,
            let resolvedProfileId,
@@ -626,7 +629,7 @@ extension ExtensionManager {
     ) -> WKWebExtensionController {
         let profileId =
             currentProfileId
-            ?? currentProfile()?.id
+            ?? profileRuntimeOwner.currentProfile(in: browserManager)?.id
             ?? browserManager?.currentProfile?.id
             ?? UUID()
         let controller = ensureExtensionController(for: profileId)
@@ -645,8 +648,10 @@ extension ExtensionManager {
         runtimeInitializationTask?.cancel()
         runtimeInitializationTask = nil
 
-        let resolvedProfileId =
-            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        let resolvedProfileId = profileRuntimeOwner.resolvedProfileId(
+            explicitProfileId: profileId,
+            browserManager: browserManager
+        )
 
         if forceReload {
             resetLoadedExtensionRuntimeStateForReload()
@@ -689,12 +694,6 @@ extension ExtensionManager {
             Self.logger.error("Failed to fetch enabled extensions: \(error.localizedDescription, privacy: .public)")
             return []
         }
-    }
-
-    private func currentProfile() -> Profile? {
-        guard let currentProfileId else { return browserManager?.currentProfile }
-        return browserManager?.profileManager.profiles.first(where: { $0.id == currentProfileId })
-            ?? browserManager?.currentProfile
     }
 
     func observeExtensionErrors(
@@ -917,7 +916,7 @@ extension ExtensionManager {
                 controller.delegate = nil
             }
             extensionControllersByProfile.removeAll()
-            profileWebsiteDataStoreCache.removeAll()
+            profileRuntimeOwner.removeAllWebsiteDataStores()
             extensionRuntimeAllowsWithoutEnabledExtensions = false
             runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
             extensionsLoaded = false
@@ -1082,8 +1081,10 @@ extension ExtensionManager {
     func resolvedExtensionRuntimeWebsiteDataStore(
         profileId: UUID? = nil
     ) -> WKWebsiteDataStore? {
-        let resolvedProfileId =
-            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        let resolvedProfileId = profileRuntimeOwner.resolvedProfileId(
+            explicitProfileId: profileId,
+            browserManager: browserManager
+        )
         guard let resolvedProfileId else { return nil }
         if let store = extensionControllersByProfile[resolvedProfileId]?
             .configuration.defaultWebsiteDataStore
@@ -1129,21 +1130,10 @@ extension ExtensionManager {
     func getExtensionDataStore(
         for profileId: UUID
     ) -> WKWebsiteDataStore {
-        profileWebsiteDataStoreCache.store(
+        profileRuntimeOwner.websiteDataStore(
             for: profileId,
-            activeProfile: activeProfile(for: profileId),
-            currentProfileId: currentProfileId
+            browserManager: browserManager
         )
-    }
-
-    private func activeProfile(for profileId: UUID) -> Profile? {
-        if let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
-            return profile
-        }
-
-        return browserManager?.windowRegistry?.windows.values
-            .compactMap(\.ephemeralProfile)
-            .first(where: { $0.id == profileId })
     }
 
     func canLateBindExtensionController(to webView: WKWebView) -> Bool {

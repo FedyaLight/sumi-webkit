@@ -135,7 +135,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     let installationMetadataStore: ExtensionInstallationMetadataStore
     let extensionPreferences: UserDefaults
     let requestedTabLifecycleOwner = ExtensionRequestedTabLifecycleOwner()
-    let profileWebsiteDataStoreCache = ExtensionProfileWebsiteDataStoreCache()
+    let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var controllerIdentifierStorage: UUID?
     var controllerIdentifier: UUID {
         ensureRuntimeControllerIdentifier()
@@ -143,18 +143,17 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     weak var browserManager: BrowserManager?
     weak var browserBridgeContext: (any ExtensionBrowserBridgeContext)?
-    var profileRuntimeState = ExtensionProfileRuntimeState()
     var extensionControllersByProfile: [UUID: WKWebExtensionController] {
-        get { profileRuntimeState.controllersByProfile }
-        set { profileRuntimeState.replaceControllers(newValue) }
+        get { profileRuntimeOwner.controllersByProfile }
+        set { profileRuntimeOwner.replaceControllers(newValue) }
     }
     var extensionContextsByProfile: [UUID: [String: WKWebExtensionContext]] {
-        get { profileRuntimeState.contextsByProfile }
-        set { profileRuntimeState.replaceContexts(newValue) }
+        get { profileRuntimeOwner.contextsByProfile }
+        set { profileRuntimeOwner.replaceContexts(newValue) }
     }
     var extensionContextBindingGenerationByProfile: [UUID: UInt64] {
-        get { profileRuntimeState.contextBindingGenerationByProfile }
-        set { profileRuntimeState.replaceContextBindingGenerations(newValue) }
+        get { profileRuntimeOwner.contextBindingGenerationsByProfile }
+        set { profileRuntimeOwner.replaceContextBindingGenerations(newValue) }
     }
     /// Parsed extension resources are profile-agnostic; each profile gets its own context.
     var cachedWebExtensionsByID: [String: WKWebExtension] = [:]
@@ -220,7 +219,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     var extensionPageUserContentControllersByProfile:
         [UUID: WKUserContentController] = [:]
 
-    var currentProfileId: UUID?
+    var currentProfileId: UUID? {
+        get { profileRuntimeOwner.currentProfileId }
+        set { profileRuntimeOwner.currentProfileId = newValue }
+    }
     var pinnedToolbarExtensionIDsByProfile: [String: [String]] = [:]
 
     nonisolated static let profileExtensionStoreLimit =
@@ -244,7 +246,9 @@ final class ExtensionManager: NSObject, ObservableObject {
         self.installationMetadataStore = ExtensionInstallationMetadataStore(
             context: context
         )
-        self.currentProfileId = initialProfile?.id
+        self.profileRuntimeOwner = ExtensionProfileRuntimeOwner(
+            initialProfileId: initialProfile?.id
+        )
         self.pinnedToolbarExtensionIDsByProfile =
             Self.loadPinnedToolbarExtensionIDsByProfile(from: extensionPreferences)
         self.pinnedToolbarExtensionIDs = Self.normalizedPinnedToolbarExtensionIDs(

@@ -248,7 +248,7 @@ extension ExtensionManager {
     func extensionID(
         for extensionContext: WKWebExtensionContext
     ) -> String? {
-        profileRuntimeState.extensionId(for: extensionContext)
+        profileRuntimeOwner.extensionId(for: extensionContext)
     }
 
     func ownerExtensionID(
