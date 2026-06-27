@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 private enum SumiBoostEditorMetrics {
     static let normalWidth: CGFloat = 204
@@ -148,12 +147,7 @@ final class SumiBoostEditorSession: ObservableObject {
     @Published var isZapActive = false
     var onCodeModeChange: ((Bool) -> Void)?
 
-    private weak var tab: Tab?
-    private weak var profile: Profile?
-    private weak var windowState: BrowserWindowState?
-    private weak var module: SumiBoostsModule?
-    private let onClose: @MainActor () -> Void
-    private var didDelete = false
+    private let actions: SumiBoostEditorSessionActions
 
     /// Full list of available font families, captured once at session build.
     /// This is a (relatively) expensive system call + sort; caching it avoids
@@ -170,16 +164,18 @@ final class SumiBoostEditorSession: ObservableObject {
         onClose: @escaping @MainActor () -> Void
     ) {
         self.boost = boost
-        self.tab = tab
-        self.profile = profile
-        self.windowState = windowState
-        self.module = module
-        self.onClose = onClose
+        self.actions = SumiBoostEditorSessionActions(
+            tab: tab,
+            profile: profile,
+            windowState: windowState,
+            module: module,
+            onClose: onClose
+        )
         self.fontFamilies = [""] + NSFontManager.shared.availableFontFamilies.sorted()
     }
 
     var isEphemeral: Bool {
-        profile?.isEphemeral == true || tab?.isEphemeral == true
+        actions.isEphemeral
     }
 
     var hostTitle: String {
@@ -241,22 +237,12 @@ final class SumiBoostEditorSession: ObservableObject {
     }
 
     func close() {
-        module?.stopZapSelection()
+        actions.close(boost: boost)
         isZapActive = false
-        guard !didDelete else { return }
-        // If the user made changes, the boost is persisted and active; we must
-        // re-sync the atDocumentStart WKUserScript so the final state takes
-        // effect on the next navigation, and flush any debounced disk write.
-        // If nothing changed, discard the ephemeral draft instead.
-        if boost.data.changeWasMade {
-            module?.reinstallUserScriptsAfterEdit(profileId: boost.profileId, host: boost.host)
-        } else {
-            module?.discardUnchangedDraft(boost)
-        }
     }
 
     func dismiss() {
-        onClose()
+        actions.dismiss()
     }
 
     func rename(_ name: String) {
@@ -404,9 +390,7 @@ final class SumiBoostEditorSession: ObservableObject {
     }
 
     func delete() {
-        didDelete = true
-        module?.deleteBoost(boost, isEphemeral: isEphemeral)
-        onClose()
+        actions.delete(boost: boost)
     }
 
     func setCustomCSS(_ css: String) {
@@ -422,12 +406,8 @@ final class SumiBoostEditorSession: ObservableObject {
     }
 
     func startZap() {
-        guard let tab, let windowState else { return }
-        let didStart = module?.startZapSelection(
-            for: boost,
-            tab: tab,
-            windowState: windowState,
-            isEphemeral: isEphemeral,
+        let didStart = actions.startZap(
+            boost: boost,
             onSelector: { [weak self] updated in
                 self?.boost = updated
                 self?.isZapActive = false
@@ -437,84 +417,51 @@ final class SumiBoostEditorSession: ObservableObject {
                 self?.isZapActive = false
                 self?.statusMessage = nil
             }
-        ) ?? false
+        )
         isZapActive = didStart
         statusMessage = didStart ? "Select an element" : nil
     }
 
     func stopZap() {
-        module?.stopZapSelection()
+        actions.stopZap()
         isZapActive = false
         statusMessage = nil
     }
 
     func previewZap(_ selector: String, isHighlighted: Bool) {
-        guard let tab, let windowState else { return }
-        module?.previewZapSelector(selector, isHighlighted: isHighlighted, tab: tab, windowState: windowState)
+        actions.previewZap(selector, isHighlighted: isHighlighted)
     }
 
     func exportJSON() {
-        guard let module else { return }
-        do {
-            let data = try module.exportData(for: boost)
-            let savePanel = NSSavePanel()
-            savePanel.allowedContentTypes = [.json]
-            savePanel.nameFieldStringValue = "\(boost.data.boostName).sumi-boost.json"
-            savePanel.begin { [weak self] response in
-                guard response == .OK, let url = savePanel.url else { return }
-                do {
-                    try data.write(to: url, options: [.atomic])
-                } catch {
-                    Task { @MainActor [weak self] in
-                        self?.statusMessage = error.localizedDescription
-                    }
-                }
-            }
-        } catch {
-            statusMessage = error.localizedDescription
+        actions.exportJSON(boost: boost) { [weak self] message in
+            self?.statusMessage = message
         }
     }
 
     func importJSON() {
-        guard let tab, let module else { return }
-        let openPanel = NSOpenPanel()
-        openPanel.allowedContentTypes = [.json]
-        openPanel.allowsMultipleSelection = false
-        openPanel.canChooseDirectories = false
-        openPanel.begin { [weak self] response in
-            guard response == .OK,
-                  let url = openPanel.url,
-                  let data = try? Data(contentsOf: url)
-            else {
-                return
+        actions.importJSON(
+            onImported: { [weak self] imported in
+                self?.boost = imported
+                self?.statusMessage = nil
+            },
+            onError: { [weak self] message in
+                self?.statusMessage = message
             }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    let imported = try module.importBoost(from: data, tab: tab, profile: self.profile)
-                    self.boost = imported
-                    self.statusMessage = nil
-                } catch {
-                    self.statusMessage = error.localizedDescription
-                }
-            }
-        }
+        )
     }
 
     func openInspector() {
-        module?.browserManager?.openWebInspector()
+        actions.openInspector()
     }
 
     private func update(
         refreshPath: SumiBoostsModule.RefreshPath = .liveState,
         _ mutate: (inout SumiBoostData) -> Void
     ) {
-        guard let updated = module?.updateBoost(
-            boost,
-            isEphemeral: isEphemeral,
-            markChanged: true,
+        guard let updated = actions.update(
+            boost: boost,
             refreshPath: refreshPath,
-            mutate: mutate
+            mutate
         ) else {
             return
         }
