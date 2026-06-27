@@ -556,62 +556,28 @@ final class SumiProtectionCoordinator {
         loadRuleDefinitions: Bool
     ) -> SumiProtectionRulePlan {
         let requestedLevel = runtimeAppliedLevel
-        let manifest = requestedLevel == .off
+        let activeManifest = requestedLevel == .off
             ? nil
             : adBlockingModule.activeManifestIfLoaded()
-        let eligibility = SumiAdblockSurfaceEligibility.evaluate(
-            url: url,
-            normalizer: siteNormalizer
-        )
-        let siteHost = eligibility.normalizedSiteHost
-        let shouldConsultSiteOverride = requestedLevel != .off && eligibility.isEligible
-        let siteOverride = shouldConsultSiteOverride
-            ? adBlockingModule.siteOverride(for: url)
-            : .inherit
-        let siteAllowsProtection = requestedLevel != .off
-            && eligibility.isEligible
-            && siteOverride != .disabled
-
-        let globalPlan = siteAllowsProtection
-            ? globalAttachmentPlan(
-                for: requestedLevel,
-                includeExpensiveDiagnostics: includeExpensiveDiagnostics,
-                loadRuleDefinitions: loadRuleDefinitions
-            )
-            : emptyGlobalAttachmentPlan(
-                for: requestedLevel,
-                manifest: manifest
-            )
-
-        let requestedGroups = siteAllowsProtection ? requestedLevel.requestedGroups : []
-        let inactiveGroups = requestedGroups
-            .filter { !globalPlan.activeGroups.contains($0) }
-            .sorted { $0.rawValue < $1.rawValue }
-        let effectiveLevel = Self.effectiveLevel(for: globalPlan.activeGroups)
-
-        return SumiProtectionRulePlan(
+        return SumiProtectionRulePlanner(siteNormalizer: siteNormalizer).makeRulePlan(
+            for: url,
             requestedLevel: requestedLevel,
-            effectiveLevel: effectiveLevel,
-            siteHost: siteHost,
-            siteOverride: siteOverride,
-            sitePolicyAllowsProtection: siteAllowsProtection,
-            activeGroups: globalPlan.activeGroups,
-            inactiveGroups: inactiveGroups,
-            bundleSource: globalPlan.bundleSource,
-            nativeRuleBundleId: globalPlan.nativeRuleBundleId,
-            bundleProfileId: globalPlan.bundleProfileId,
-            requiredBundleProfileId: globalPlan.requiredBundleProfileId,
-            activeGenerationId: globalPlan.activeGenerationId,
-            previousGenerationId: globalPlan.previousGenerationId,
-            previousGenerationRetained: globalPlan.previousGenerationRetained,
-            ruleCountsByGroup: globalPlan.ruleCountsByGroup,
-            shardCountsByGroup: globalPlan.shardCountsByGroup,
-            expectedRuleListIdentifiers: globalPlan.expectedRuleListIdentifiers,
-            dedupeSummary: globalPlan.dedupeSummary,
-            overlapSummary: globalPlan.overlapSummary,
-            ineligibleSurfaceReason: eligibility.ineligibleReason,
-            planningErrors: globalPlan.planningErrors,
-            ruleDefinitions: globalPlan.ruleDefinitions
+            activeManifest: activeManifest,
+            includeExpensiveDiagnostics: includeExpensiveDiagnostics,
+            loadRuleDefinitions: loadRuleDefinitions,
+            siteOverrideProvider: { [adBlockingModule] url in
+                adBlockingModule.siteOverride(for: url)
+            },
+            globalAttachmentPlanProvider: { [self] level, includeExpensiveDiagnostics, loadRuleDefinitions in
+                globalAttachmentPlan(
+                    for: level,
+                    includeExpensiveDiagnostics: includeExpensiveDiagnostics,
+                    loadRuleDefinitions: loadRuleDefinitions
+                )
+            },
+            emptyGlobalAttachmentPlanProvider: { [self] level, manifest in
+                emptyGlobalAttachmentPlan(for: level, manifest: manifest)
+            }
         )
     }
 
@@ -1210,18 +1176,6 @@ final class SumiProtectionCoordinator {
         SumiProtectionPreparedBundleIdentity.installedBundleProfileId(from: manifest)
     }
 
-    private static func effectiveLevel(
-        for activeGroups: [SumiProtectionGroupKind]
-    ) -> SumiProtectionLevel {
-        if activeGroups.contains(.adblockAdsPrivacyNetwork) {
-            return .adblock
-        }
-        if activeGroups.contains(.trackingNetwork) {
-            return .protection
-        }
-        return .off
-    }
-
     private static func deduped(
         _ plannedDefinitions: [PlannedRuleDefinition]
     ) -> (definitions: [PlannedRuleDefinition], summary: SumiProtectionDedupeSummary) {
@@ -1397,30 +1351,6 @@ private struct PlannedRuleDefinition: Equatable, Sendable {
     let group: SumiProtectionGroupKind
     let source: PlannedRuleSource
     let definition: SumiContentRuleListDefinition
-}
-
-private struct SumiProtectionGlobalAttachmentPlan: Equatable, Sendable {
-    let level: SumiProtectionLevel
-    let activeGroups: [SumiProtectionGroupKind]
-    let inactiveGroups: [SumiProtectionGroupKind]
-    let ruleCountsByGroup: [SumiProtectionGroupKind: Int]
-    let shardCountsByGroup: [SumiProtectionGroupKind: Int]
-    let expectedRuleListIdentifiers: [String]
-    let dedupeSummary: SumiProtectionDedupeSummary
-    let overlapSummary: SumiProtectionOverlapSummary
-    let planningErrors: [String]
-    let ruleDefinitions: [SumiContentRuleListDefinition]
-    let bundleSource: AdblockRuleGenerationSource?
-    let nativeRuleBundleId: String?
-    let bundleProfileId: String?
-    let requiredBundleProfileId: String?
-    let activeGenerationId: String?
-    let previousGenerationId: String?
-    let previousGenerationRetained: Bool
-
-    var isAttachable: Bool {
-        !activeGroups.isEmpty && !expectedRuleListIdentifiers.isEmpty
-    }
 }
 
 private struct CachedAdblockGroup: Equatable, Sendable {
