@@ -140,6 +140,43 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
     }
 
+    func testSurfaceStorePublishesSiteAccessPolicySnapshotForActiveProfile()
+        async throws
+    {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Surface Snapshot")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+
+        let installed = try await installExtension(
+            manager: manager,
+            name: "SurfaceSnapshotHostAccess"
+        )
+        let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: manager)
+
+        surfaceStore.refreshSiteAccessPolicies(profileId: profile.id)
+        await drainSurfaceStoreUpdates()
+
+        XCTAssertEqual(
+            surfaceStore.siteAccessPoliciesByExtensionID[installed.id]?.defaultAccess,
+            .allow
+        )
+
+        manager.setDefaultSiteAccess(
+            .ask,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        await drainSurfaceStoreUpdates()
+
+        XCTAssertEqual(
+            surfaceStore.siteAccessPoliciesByExtensionID[installed.id]?.defaultAccess,
+            .ask
+        )
+    }
+
     func testSiteAccessIsProfileScoped() async throws {
         let container = try makeTestContainer()
         let profileA = Profile(name: "Profile A")
@@ -663,6 +700,12 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+    }
+
+    private func drainSurfaceStoreUpdates() async {
+        for _ in 0 ..< 3 {
+            await Task.yield()
+        }
     }
 
     private func installExtension(

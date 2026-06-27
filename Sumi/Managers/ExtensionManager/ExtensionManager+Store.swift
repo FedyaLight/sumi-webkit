@@ -485,31 +485,68 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) -> SafariExtensionSiteAccessPolicy {
-        let key = extensionSiteAccessPolicyKey(
-            extensionId: extensionId,
+        siteAccessPolicySnapshot(
+            extensionIds: [extensionId],
             profileId: profileId
-        )
-        var policies = loadStoredExtensionSiteAccessPolicies()
-        if let stored = policies[key] {
-            let normalized = stored.normalized()
-            if normalized != stored {
-                policies[key] = normalized
-                saveStoredExtensionSiteAccessPolicies(policies)
-            }
-            return normalized
-        }
-
-        let policy = SafariExtensionSiteAccessPolicy.defaultPolicy(
-            extensionId: extensionId,
-            profileId: profileId,
-            seededRules: migratedSiteAccessRules(
+        )[extensionId]
+            ?? SafariExtensionSiteAccessPolicy.defaultPolicy(
                 extensionId: extensionId,
                 profileId: profileId
             )
+    }
+
+    func siteAccessPolicySnapshot(
+        extensionIds: [String],
+        profileId: UUID
+    ) -> [String: SafariExtensionSiteAccessPolicy] {
+        guard extensionIds.isEmpty == false else { return [:] }
+
+        var snapshot: [String: SafariExtensionSiteAccessPolicy] = [:]
+        var policies = loadStoredExtensionSiteAccessPolicies()
+        var shouldSave = false
+
+        for extensionId in extensionIds {
+            let key = extensionSiteAccessPolicyKey(
+                extensionId: extensionId,
+                profileId: profileId
+            )
+            if let stored = policies[key] {
+                let normalized = stored.normalized()
+                if normalized != stored {
+                    policies[key] = normalized
+                    shouldSave = true
+                }
+                snapshot[extensionId] = normalized
+                continue
+            }
+
+            let policy = SafariExtensionSiteAccessPolicy.defaultPolicy(
+                extensionId: extensionId,
+                profileId: profileId,
+                seededRules: migratedSiteAccessRules(
+                    extensionId: extensionId,
+                    profileId: profileId
+                )
+            )
+            policies[key] = policy
+            snapshot[extensionId] = policy
+            shouldSave = true
+        }
+
+        if shouldSave {
+            saveStoredExtensionSiteAccessPolicies(policies)
+        }
+
+        return snapshot
+    }
+
+    func siteAccessPolicySnapshot(
+        profileId: UUID
+    ) -> [String: SafariExtensionSiteAccessPolicy] {
+        siteAccessPolicySnapshot(
+            extensionIds: installedExtensions.map(\.id),
+            profileId: profileId
         )
-        policies[key] = policy
-        saveStoredExtensionSiteAccessPolicies(policies)
-        return policy
     }
 
     func setDefaultSiteAccess(
@@ -981,6 +1018,10 @@ extension ExtensionManager {
         UserDefaults.standard.set(
             data,
             forKey: Self.extensionSiteAccessStorageKey
+        )
+        NotificationCenter.default.post(
+            name: .sumiExtensionSiteAccessPoliciesDidChange,
+            object: self
         )
     }
 

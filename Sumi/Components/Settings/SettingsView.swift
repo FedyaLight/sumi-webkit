@@ -399,7 +399,7 @@ struct SumiExtensionsSettingsPane: View {
                 SumiSettingsModuleToggleGate(descriptor: .extensions) {
                     extensionsManagerBody
                         .onDisappear {
-                            cancelExtensionPaneTasks()
+                            clearExtensionPaneState()
                         }
                 }
             case .userScripts:
@@ -411,11 +411,11 @@ struct SumiExtensionsSettingsPane: View {
             }
         }
         .onDisappear {
-            cancelExtensionPaneTasks()
+            clearExtensionPaneState()
         }
         .onChange(of: sumiSettings.extensionsSettingsSubPane) { _, subPane in
             if subPane != .extensions {
-                cancelExtensionPaneTasks()
+                clearExtensionPaneState()
             }
         }
         .confirmationDialog(
@@ -439,9 +439,22 @@ struct SumiExtensionsSettingsPane: View {
     @ViewBuilder
     private var extensionsManagerBody: some View {
         if browserManager.extensionsModule.managerIfEnabled() != nil {
+            let installedExtensions = extensionSurfaceStore.installedExtensions
             extensionsBody(
-                installedExtensions: extensionSurfaceStore.installedExtensions
+                installedExtensions: installedExtensions,
+                siteAccessPoliciesByExtensionID:
+                    extensionSurfaceStore.siteAccessPoliciesByExtensionID
             )
+            .task(
+                id: ExtensionsSiteAccessPolicyRefreshKey(
+                    profileId: browserManager.currentProfile?.id,
+                    extensionIds: installedExtensions.map(\.id)
+                )
+            ) {
+                extensionSurfaceStore.refreshSiteAccessPolicies(
+                    profileId: browserManager.currentProfile?.id
+                )
+            }
         } else {
             Text("Enable the Extensions module to manage installed extensions.")
                 .foregroundStyle(.secondary)
@@ -459,7 +472,8 @@ struct SumiExtensionsSettingsPane: View {
 
     @ViewBuilder
     private func extensionsBody(
-        installedExtensions: [InstalledExtension]
+        installedExtensions: [InstalledExtension],
+        siteAccessPoliciesByExtensionID: [String: SafariExtensionSiteAccessPolicy]
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
 
@@ -478,11 +492,7 @@ struct SumiExtensionsSettingsPane: View {
                         ForEach(installedExtensions, id: \.id) { ext in
                             ExtensionCatalogRow(
                                 extensionRecord: ext,
-                                siteAccessPolicy: browserManager.extensionsModule
-                                    .siteAccessPolicy(
-                                        extensionId: ext.id,
-                                        profileId: browserManager.currentProfile?.id
-                                    ),
+                                siteAccessPolicy: siteAccessPoliciesByExtensionID[ext.id],
                                 isBusy: busyExtensionIDs.contains(ext.id),
                                 onToggleEnabled: {
                                     toggleExtension(ext)
@@ -579,6 +589,16 @@ struct SumiExtensionsSettingsPane: View {
         extensionOperationTasks.removeAll()
         busyExtensionIDs.removeAll()
     }
+
+    private func clearExtensionPaneState() {
+        cancelExtensionPaneTasks()
+        extensionSurfaceStore.refreshSiteAccessPolicies(profileId: nil)
+    }
+}
+
+private struct ExtensionsSiteAccessPolicyRefreshKey: Hashable {
+    let profileId: UUID?
+    let extensionIds: [String]
 }
 
 private struct ExtensionCatalogRow: View {
