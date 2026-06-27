@@ -39,9 +39,10 @@ extension Tab {
                 reason: "Tab.refresh.autoplayPolicy"
             )
         if protectionReloadWasRequired {
-            didManualReloadRebuildProtectionWebView = rebuiltForConfigurationPolicy
-            appliedProtectionAfterManualReload =
-                protectionAppliedAttachmentState == protectionDesiredAttachmentState(for: targetURL)
+            noteProtectionManualReloadResult(
+                rebuiltForConfigurationPolicy: rebuiltForConfigurationPolicy,
+                targetURL: targetURL
+            )
         }
         if let webView = _webView
         {

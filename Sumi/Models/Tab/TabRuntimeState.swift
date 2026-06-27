@@ -297,14 +297,7 @@ final class TabWebViewRuntime {
     var isSuspensionRestoreInProgress: Bool = false
     var suspensionRestoreTraceState: OSSignpostIntervalState?
     var profileAwaitCancellable: AnyCancellable?
-    var safariContentBlockerAppliedAttachmentState: SumiSafariContentBlockerAttachmentState?
-    var protectionAppliedAttachmentState: SumiProtectionAttachmentState?
-    var safariContentBlockerReloadRequirement: SumiSafariContentBlockerReloadRequirement?
-    var protectionReloadRequirement: SumiProtectionReloadRequirement?
-    var didManualReloadRebuildProtectionWebView: Bool = false
-    var appliedProtectionAfterManualReload: Bool = false
-    var lastProtectionWebViewRebuildDuration: TimeInterval?
-    var lastProtectionURLHubSummaryDuration: TimeInterval?
+    let protectionAttachmentReloadOwner = TabProtectionAttachmentReloadOwner()
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement?
     var lastWebViewInteractionEvent: NSEvent?
     var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] = [:]

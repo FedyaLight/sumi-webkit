@@ -314,44 +314,47 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.webExtensionContextOverride }
         set { webViewRuntime.webExtensionContextOverride = newValue }
     }
+    private var protectionAttachmentReloadOwner: TabProtectionAttachmentReloadOwner {
+        webViewRuntime.protectionAttachmentReloadOwner
+    }
 
     var safariContentBlockerAppliedAttachmentState: SumiSafariContentBlockerAttachmentState? {
-        get { webViewRuntime.safariContentBlockerAppliedAttachmentState }
-        set { webViewRuntime.safariContentBlockerAppliedAttachmentState = newValue }
+        get { protectionAttachmentReloadOwner.safariContentBlockerAppliedAttachmentState }
+        set { protectionAttachmentReloadOwner.safariContentBlockerAppliedAttachmentState = newValue }
     }
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState? {
-        get { webViewRuntime.protectionAppliedAttachmentState }
-        set { webViewRuntime.protectionAppliedAttachmentState = newValue }
+        get { protectionAttachmentReloadOwner.protectionAppliedAttachmentState }
+        set { protectionAttachmentReloadOwner.protectionAppliedAttachmentState = newValue }
     }
     var safariContentBlockerReloadRequirement: SumiSafariContentBlockerReloadRequirement? {
-        get { webViewRuntime.safariContentBlockerReloadRequirement }
-        set { webViewRuntime.safariContentBlockerReloadRequirement = newValue }
+        get { protectionAttachmentReloadOwner.safariContentBlockerReloadRequirement }
+        set { protectionAttachmentReloadOwner.safariContentBlockerReloadRequirement = newValue }
     }
     var isSafariContentBlockerReloadRequired: Bool {
-        safariContentBlockerReloadRequirement != nil
+        protectionAttachmentReloadOwner.isSafariContentBlockerReloadRequired
     }
     var protectionReloadRequirement: SumiProtectionReloadRequirement? {
-        get { webViewRuntime.protectionReloadRequirement }
-        set { webViewRuntime.protectionReloadRequirement = newValue }
+        get { protectionAttachmentReloadOwner.protectionReloadRequirement }
+        set { protectionAttachmentReloadOwner.protectionReloadRequirement = newValue }
     }
     var isProtectionReloadRequired: Bool {
-        protectionReloadRequirement != nil
+        protectionAttachmentReloadOwner.isProtectionReloadRequired
     }
     var didManualReloadRebuildProtectionWebView: Bool {
-        get { webViewRuntime.didManualReloadRebuildProtectionWebView }
-        set { webViewRuntime.didManualReloadRebuildProtectionWebView = newValue }
+        get { protectionAttachmentReloadOwner.didManualReloadRebuildProtectionWebView }
+        set { protectionAttachmentReloadOwner.didManualReloadRebuildProtectionWebView = newValue }
     }
     var appliedProtectionAfterManualReload: Bool {
-        get { webViewRuntime.appliedProtectionAfterManualReload }
-        set { webViewRuntime.appliedProtectionAfterManualReload = newValue }
+        get { protectionAttachmentReloadOwner.appliedProtectionAfterManualReload }
+        set { protectionAttachmentReloadOwner.appliedProtectionAfterManualReload = newValue }
     }
     var lastProtectionWebViewRebuildDuration: TimeInterval? {
-        get { webViewRuntime.lastProtectionWebViewRebuildDuration }
-        set { webViewRuntime.lastProtectionWebViewRebuildDuration = newValue }
+        get { protectionAttachmentReloadOwner.lastProtectionWebViewRebuildDuration }
+        set { protectionAttachmentReloadOwner.lastProtectionWebViewRebuildDuration = newValue }
     }
     var lastProtectionURLHubSummaryDuration: TimeInterval? {
-        get { webViewRuntime.lastProtectionURLHubSummaryDuration }
-        set { webViewRuntime.lastProtectionURLHubSummaryDuration = newValue }
+        get { protectionAttachmentReloadOwner.lastProtectionURLHubSummaryDuration }
+        set { protectionAttachmentReloadOwner.lastProtectionURLHubSummaryDuration = newValue }
     }
     var autoplayReloadRequirement: SumiAutoplayReloadRequirement? {
         get { webViewRuntime.autoplayReloadRequirement }
@@ -856,139 +859,113 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func safariContentBlockerDesiredAttachmentState(
         for targetURL: URL?
     ) -> SumiSafariContentBlockerAttachmentState {
-        browserManager?.extensionsModule.safariContentBlockerAttachmentState(for: targetURL)
-            ?? .disabled(siteHost: nil)
+        protectionAttachmentReloadOwner.safariContentBlockerDesiredAttachmentState(
+            for: targetURL,
+            browserManager: browserManager
+        )
     }
 
     func noteSafariContentBlockerAttachmentApplied(
         _ state: SumiSafariContentBlockerAttachmentState
     ) {
-        safariContentBlockerAppliedAttachmentState = state
+        protectionAttachmentReloadOwner.noteSafariContentBlockerAttachmentApplied(state)
     }
 
     func protectionDesiredAttachmentState(
         for targetURL: URL?
     ) -> SumiProtectionAttachmentState {
-        guard let coordinator = browserManager?.protectionCoordinator else {
-            return .disabled(siteHost: nil)
-        }
-        return coordinator.desiredAttachmentState(for: targetURL)
+        protectionAttachmentReloadOwner.protectionDesiredAttachmentState(
+            for: targetURL,
+            browserManager: browserManager
+        )
     }
 
     func noteProtectionAttachmentApplied(
         _ state: SumiProtectionAttachmentState
     ) {
-        protectionAppliedAttachmentState = state
+        protectionAttachmentReloadOwner.noteProtectionAttachmentApplied(state)
     }
 
     func markProtectionReloadRequiredIfNeeded(
         afterChangingPolicyFor changedURL: URL?
     ) {
-        guard let coordinator = browserManager?.protectionCoordinator,
-              let changedHost = coordinator.surfaceEligibility(for: changedURL).normalizedSiteHost,
-              changedHost == coordinator.surfaceEligibility(for: url).normalizedSiteHost
-        else { return }
-
-        updateProtectionReloadRequirementForCurrentSite()
+        notifyContentBlockingReloadRequirementChangedIfNeeded(
+            protectionAttachmentReloadOwner.markProtectionReloadRequiredIfNeeded(
+                afterChangingPolicyFor: changedURL,
+                currentURL: url,
+                existingWebView: existingWebView,
+                browserManager: browserManager
+            )
+        )
     }
 
     func markSafariContentBlockerReloadRequiredIfNeeded(
         afterChangingPolicyFor changedURL: URL?
     ) {
-        let changedState = safariContentBlockerDesiredAttachmentState(for: changedURL)
-        let currentState = safariContentBlockerDesiredAttachmentState(for: url)
-        guard changedState.siteHost != nil,
-              changedState.siteHost == currentState.siteHost
-        else { return }
-
-        updateSafariContentBlockerReloadRequirementForCurrentSite()
+        notifyContentBlockingReloadRequirementChangedIfNeeded(
+            protectionAttachmentReloadOwner.markSafariContentBlockerReloadRequiredIfNeeded(
+                afterChangingPolicyFor: changedURL,
+                currentURL: url,
+                existingWebView: existingWebView,
+                browserManager: browserManager
+            )
+        )
     }
 
     func updateSafariContentBlockerReloadRequirementForCurrentSite() {
-        guard existingWebView != nil else {
-            clearSafariContentBlockerReloadRequirement()
-            return
-        }
-
-        let desiredState = safariContentBlockerDesiredAttachmentState(for: url)
-        guard desiredState.siteHost != nil,
-              let appliedState = safariContentBlockerAppliedAttachmentState,
-              appliedState != desiredState
-        else {
-            clearSafariContentBlockerReloadRequirement()
-            return
-        }
-
-        setSafariContentBlockerReloadRequirement(
-            SumiSafariContentBlockerReloadRequirement(
-                siteHost: desiredState.siteHost,
-                desiredAttachmentState: desiredState
+        notifyContentBlockingReloadRequirementChangedIfNeeded(
+            protectionAttachmentReloadOwner.updateSafariContentBlockerReloadRequirementForCurrentSite(
+                currentURL: url,
+                existingWebView: existingWebView,
+                browserManager: browserManager
             )
         )
     }
 
     func clearSafariContentBlockerReloadRequirementIfResolved(for committedURL: URL) {
-        guard let requirement = safariContentBlockerReloadRequirement else { return }
-
-        let committedState = safariContentBlockerDesiredAttachmentState(for: committedURL)
-        if committedState.siteHost != requirement.siteHost
-            || safariContentBlockerAppliedAttachmentState == committedState {
-            clearSafariContentBlockerReloadRequirement()
-        }
+        notifyContentBlockingReloadRequirementChangedIfNeeded(
+            protectionAttachmentReloadOwner.clearSafariContentBlockerReloadRequirementIfResolved(
+                for: committedURL,
+                browserManager: browserManager
+            )
+        )
     }
 
     func updateProtectionReloadRequirementForCurrentSite() {
-        guard existingWebView != nil else {
-            clearProtectionReloadRequirement()
-            return
-        }
-
-        let desiredState = protectionDesiredAttachmentState(for: url)
-        guard desiredState.siteHost != nil,
-              let appliedState = protectionAppliedAttachmentState,
-              appliedState != desiredState
-        else {
-            clearProtectionReloadRequirement()
-            return
-        }
-
-        setProtectionReloadRequirement(
-            SumiProtectionReloadRequirement(
-                siteHost: desiredState.siteHost,
-                desiredAttachmentState: desiredState
+        notifyContentBlockingReloadRequirementChangedIfNeeded(
+            protectionAttachmentReloadOwner.updateProtectionReloadRequirementForCurrentSite(
+                currentURL: url,
+                existingWebView: existingWebView,
+                browserManager: browserManager
             )
         )
     }
 
     func clearProtectionReloadRequirementIfResolved(for committedURL: URL) {
-        guard let requirement = protectionReloadRequirement else { return }
-
-        let committedState = protectionDesiredAttachmentState(for: committedURL)
-        if committedState.siteHost != requirement.siteHost
-            || protectionAppliedAttachmentState == committedState {
-            clearProtectionReloadRequirement()
-        }
+        notifyContentBlockingReloadRequirementChangedIfNeeded(
+            protectionAttachmentReloadOwner.clearProtectionReloadRequirementIfResolved(
+                for: committedURL,
+                browserManager: browserManager
+            )
+        )
     }
 
     func protectionCurrentTabDiagnostics() -> SumiProtectionCurrentTabDiagnostics? {
-        let contentBlockingSummary = existingWebView?
-            .configuration
-            .userContentController
-            .sumiNormalTabUserContentController?
-            .contentBlockingAssetSummary
-        return browserManager?.protectionCoordinator.currentTabDiagnostics(
+        protectionAttachmentReloadOwner.protectionCurrentTabDiagnostics(
             for: url,
-            appliedState: protectionAppliedAttachmentState,
-            reloadRequired: isProtectionReloadRequired,
-            reloadRequiredReason: protectionReloadRequirement.map { requirement in
-                "desired=\(requirement.desiredAttachmentState.effectiveLevel.rawValue)"
-            },
-            didManualReloadRebuildWebView: didManualReloadRebuildProtectionWebView,
-            appliedAfterManualReload: appliedProtectionAfterManualReload,
-            actualAttachedRuleListIdentifiers: contentBlockingSummary?.globalRuleListIdentifiers,
-            contentBlockingAssetSummary: contentBlockingSummary,
-            webViewRebuildDuration: lastProtectionWebViewRebuildDuration,
-            urlHubSummaryDuration: lastProtectionURLHubSummaryDuration
+            existingWebView: existingWebView,
+            browserManager: browserManager
+        )
+    }
+
+    func noteProtectionManualReloadResult(
+        rebuiltForConfigurationPolicy: Bool,
+        targetURL: URL?
+    ) {
+        protectionAttachmentReloadOwner.noteProtectionManualReloadResult(
+            rebuiltForConfigurationPolicy: rebuiltForConfigurationPolicy,
+            targetURL: targetURL,
+            browserManager: browserManager
         )
     }
 
@@ -1036,16 +1013,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func protectionAttachmentRequiresNormalWebViewRebuild(
         for targetURL: URL?
     ) -> Bool {
-        guard existingWebView != nil,
-              webViewConfigurationOverride == nil,
-              !isPopupHost
-        else { return false }
-
-        let desiredState = protectionDesiredAttachmentState(for: targetURL)
-        guard let appliedState = protectionAppliedAttachmentState else {
-            return desiredState.isEnabled
-        }
-        return appliedState != desiredState
+        protectionAttachmentReloadOwner.protectionAttachmentRequiresNormalWebViewRebuild(
+            for: targetURL,
+            existingWebView: existingWebView,
+            webViewConfigurationOverride: webViewConfigurationOverride,
+            isPopupHost: isPopupHost,
+            browserManager: browserManager
+        )
     }
 
     func autoplayPolicyRequiresNormalWebViewRebuild(for targetURL: URL?) -> Bool {
@@ -1084,7 +1058,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
         let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
         if hadTrackedWebViews && !removedTrackedWebViews {
-            protectionAppliedAttachmentState = previousProtectionState
+            protectionAttachmentReloadOwner.noteProtectionWebViewRebuildFailed(
+                restoringAppliedState: previousProtectionState
+            )
             return false
         }
 
@@ -1106,7 +1082,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
         updateSafariContentBlockerReloadRequirementForCurrentSite()
         updateProtectionReloadRequirementForCurrentSite()
-        lastProtectionWebViewRebuildDuration = Date().timeIntervalSince(rebuildStart)
+        protectionAttachmentReloadOwner.noteProtectionWebViewRebuildSucceeded(startedAt: rebuildStart)
         updateAutoplayReloadRequirementForCurrentSite()
         return true
     }
@@ -1162,6 +1138,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
 
+    private func notifyContentBlockingReloadRequirementChangedIfNeeded(_ didChange: Bool) {
+        guard didChange else { return }
+        notifyContentBlockingReloadRequirementChanged()
+    }
+
     private func notifyContentBlockingReloadRequirementChanged() {
         objectWillChange.send()
         NotificationCenter.default.post(
@@ -1169,37 +1150,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             object: self,
             userInfo: ["tabId": id]
         )
-    }
-
-    private func setSafariContentBlockerReloadRequirement(
-        _ requirement: SumiSafariContentBlockerReloadRequirement
-    ) {
-        guard safariContentBlockerReloadRequirement != requirement else { return }
-        safariContentBlockerReloadRequirement = requirement
-        notifyContentBlockingReloadRequirementChanged()
-    }
-
-    private func clearSafariContentBlockerReloadRequirement() {
-        guard safariContentBlockerReloadRequirement != nil else { return }
-        safariContentBlockerReloadRequirement = nil
-        notifyContentBlockingReloadRequirementChanged()
-    }
-
-    private func setProtectionReloadRequirement(
-        _ requirement: SumiProtectionReloadRequirement
-    ) {
-        guard protectionReloadRequirement != requirement else { return }
-        didManualReloadRebuildProtectionWebView = false
-        appliedProtectionAfterManualReload = false
-        lastProtectionWebViewRebuildDuration = nil
-        protectionReloadRequirement = requirement
-        notifyContentBlockingReloadRequirementChanged()
-    }
-
-    private func clearProtectionReloadRequirement() {
-        guard protectionReloadRequirement != nil else { return }
-        protectionReloadRequirement = nil
-        notifyContentBlockingReloadRequirementChanged()
     }
 
     private func setAutoplayReloadRequirement(
