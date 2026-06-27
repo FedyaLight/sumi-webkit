@@ -1201,22 +1201,11 @@ extension ExtensionManager {
             }
         #endif
 
-        let dataTypes = WKWebExtensionController.allExtensionDataTypes
-        var matchingRecords: [WKWebExtension.DataRecord] = []
-        for (profileId, controller) in extensionControllersByProfile {
-            let records = await withCheckedContinuation { continuation in
-                controller.fetchDataRecords(ofTypes: dataTypes) { records in
-                    continuation.resume(returning: records)
-                }
-            }
-            let scopedIdentifier = "\(profileId.uuidString):\(extensionId)"
-            matchingRecords.append(
-                contentsOf: records.filter {
-                    $0.uniqueIdentifier == extensionId
-                        || $0.uniqueIdentifier == scopedIdentifier
-                }
-            )
-        }
+        let dataCleanupOwner = WebExtensionControllerDataCleanupOwner()
+        let matchingRecords = await dataCleanupOwner.matchingRecords(
+            for: extensionId,
+            controllersByProfile: extensionControllersByProfile
+        )
 
         let preCleanupSnapshot = webExtensionStorageSnapshot(for: extensionId)
 
@@ -1234,24 +1223,13 @@ extension ExtensionManager {
             return
         }
 
-        for (profileId, controller) in extensionControllersByProfile {
-            let scopedIdentifier = "\(profileId.uuidString):\(extensionId)"
-            let profileRecords = matchingRecords.filter {
-                $0.uniqueIdentifier == extensionId
-                    || $0.uniqueIdentifier == scopedIdentifier
-            }
-            guard profileRecords.isEmpty == false else { continue }
-            await withCheckedContinuation { continuation in
-                controller.removeData(
-                    ofTypes: dataTypes,
-                    from: profileRecords
-                ) {
-                    continuation.resume(returning: ())
-                }
-            }
-        }
+        await dataCleanupOwner.remove(
+            matchingRecords,
+            extensionId: extensionId,
+            using: extensionControllersByProfile
+        )
 
-        let errors = matchingRecords.flatMap(\.errors)
+        let errors = matchingRecords.errors
         finalizeWebExtensionStorageCleanup(for: extensionId, mode: mode)
         let postCleanupSnapshot = webExtensionStorageSnapshot(for: extensionId)
         let classifiedErrors = classifyWebExtensionDataCleanupErrors(
