@@ -24,7 +24,7 @@ extension TabManager {
         for spaceId: UUID,
         in windowId: UUID? = nil
     ) -> SpaceLauncherProjection {
-        let regularTabs = Array(tabsBySpace[spaceId] ?? [])
+        let regularTabs = regularTabCollectionOwner.tabs(in: spaceId)
         let persistedPins = spacePinnedPins(for: spaceId)
         let shortcutHostedHiddenPinIds = Set(
             shortcutHostedSplitGroups(for: spaceId).flatMap { group in

@@ -598,11 +598,7 @@ private extension TabManager {
             existingLiveTab.isPinned = false
             existingLiveTab.isSpacePinned = false
             attach(existingLiveTab)
-            var arr = tabsBySpace[targetSpaceId] ?? []
-            let safeIndex = max(0, min(targetIndex ?? arr.count, arr.count))
-            arr.insert(existingLiveTab, at: safeIndex)
-            for (i, tab) in arr.enumerated() { tab.index = i }
-            setTabs(arr, for: targetSpaceId)
+            regularTabCollectionOwner.insert(existingLiveTab, in: targetSpaceId, at: targetIndex)
             if let windowState = browserManager?.windowRegistry?.windows[existingWindowId] {
                 windowState.currentShortcutPinId = nil
                 windowState.currentShortcutPinRole = nil
@@ -623,11 +619,7 @@ private extension TabManager {
         )
         _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
         attach(tab)
-        var arr = tabsBySpace[targetSpaceId] ?? []
-        let safeIndex = max(0, min(targetIndex ?? arr.count, arr.count))
-        arr.insert(tab, at: safeIndex)
-        for (i, item) in arr.enumerated() { item.index = i }
-        setTabs(arr, for: targetSpaceId)
+        regularTabCollectionOwner.insert(tab, in: targetSpaceId, at: targetIndex)
         return tab
     }
 }

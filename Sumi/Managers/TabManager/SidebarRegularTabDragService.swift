@@ -168,25 +168,9 @@ final class SidebarRegularTabDragService {
     @discardableResult
     func reorderRegularTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
         tabManager.withStructuralUpdateTransaction {
-            guard var regularTabs = tabManager.tabsBySpace[spaceId],
-                  let currentIndex = regularTabs.firstIndex(where: { $0.id == tab.id }) else {
+            guard tabManager.regularTabCollectionOwner.reorder(tab, in: spaceId, to: index) else {
                 return false
             }
-            let adjustedIndex = tabManager.adjustedSameContainerInsertionIndex(
-                currentIndex: currentIndex,
-                proposedIndex: index
-            )
-            guard adjustedIndex != currentIndex else { return false }
-
-            regularTabs.remove(at: currentIndex)
-            let clampedIndex = min(max(adjustedIndex, 0), regularTabs.count)
-            regularTabs.insert(tab, at: clampedIndex)
-
-            for (index, regularTab) in regularTabs.enumerated() {
-                regularTab.index = index
-            }
-
-            tabManager.setTabs(regularTabs, for: spaceId)
             tabManager.scheduleStructuralPersistence()
             return true
         }
@@ -215,18 +199,7 @@ final class SidebarRegularTabDragService {
 
     private func moveTabIntoRegularSection(_ tab: Tab, spaceId: UUID, index: Int) -> Bool {
         tabManager.removeFromCurrentContainer(tab)
-        tab.folderId = nil
-        tab.spaceId = spaceId
-        tab.isSpacePinned = false
-        tab.isPinned = false
-
-        var regularTabs = tabManager.tabsBySpace[spaceId] ?? []
-        let safeIndex = max(0, min(index, regularTabs.count))
-        regularTabs.insert(tab, at: safeIndex)
-        for (index, existingTab) in regularTabs.enumerated() {
-            existingTab.index = index
-        }
-        tabManager.setTabs(regularTabs, for: spaceId)
+        tabManager.regularTabCollectionOwner.insert(tab, in: spaceId, at: index)
         tabManager.scheduleStructuralPersistence()
         return true
     }

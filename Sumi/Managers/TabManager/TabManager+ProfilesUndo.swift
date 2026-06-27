@@ -87,7 +87,7 @@ extension TabManager {
     }
 
     func tabs(in space: Space) -> [Tab] {
-        Array(tabsBySpace[space.id] ?? [])
+        regularTabCollectionOwner.tabs(in: space)
     }
 }
 
@@ -268,10 +268,7 @@ extension TabManager {
     func closeAllTabsBelow(_ tab: Tab) {
         withStructuralUpdateTransaction {
             guard let spaceId = tab.spaceId else { return }
-            guard let tabs = tabsBySpace[spaceId] else { return }
-            guard tabs.firstIndex(where: { $0.id == tab.id }) != nil else { return }
-
-            let tabsBelow = tabs.filter { $0.index > tab.index }
+            guard let tabsBelow = regularTabCollectionOwner.tabsBelow(tab) else { return }
             if tabsBelow.isEmpty {
                 return
             }
@@ -291,17 +288,13 @@ extension TabManager {
         var removed: Tab?
         var removedIndexInCurrentSpace: Int?
 
-        if removed == nil {
-            for space in spaces {
-                if var tabs = tabsBySpace[space.id],
-                   let index = tabs.firstIndex(where: { $0.id == id })
-                {
-                    removed = tabs.remove(at: index)
-                    removedIndexInCurrentSpace = space.id == currentSpace?.id ? index : nil
-                    setTabs(tabs, for: space.id)
-                    break
-                }
-            }
+        if let removal = regularTabCollectionOwner.remove(
+            id,
+            in: spaces,
+            currentSpaceId: currentSpace?.id
+        ) {
+            removed = removal.tab
+            removedIndexInCurrentSpace = removal.indexInCurrentSpace
         }
 
         if removed == nil,
@@ -341,12 +334,12 @@ extension TabManager {
                 if let first = tabs.first {
                     setActiveTab(first)
                 }
-            } else if let spaceId = tab.spaceId,
-                      let spaceTabs = tabsBySpace[spaceId],
-                      !spaceTabs.isEmpty
-            {
-                let targetIndex = min(removedIndexInCurrentSpace ?? 0, spaceTabs.count - 1)
-                setActiveTab(spaceTabs[targetIndex])
+            } else if let spaceId = tab.spaceId {
+                let spaceTabs = regularTabCollectionOwner.tabs(in: spaceId)
+                if !spaceTabs.isEmpty {
+                    let targetIndex = min(removedIndexInCurrentSpace ?? 0, spaceTabs.count - 1)
+                    setActiveTab(spaceTabs[targetIndex])
+                }
             }
         }
 

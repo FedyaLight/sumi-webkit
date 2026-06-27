@@ -261,7 +261,7 @@ extension TabManager {
                 return
             }
 
-            let targetTabs = tabsBySpace[targetSpaceId] ?? []
+            let targetTabs = regularTabCollectionOwner.tabs(in: targetSpaceId)
             moveTabBetweenSpaces(
                 tab,
                 from: currentSpaceId,
@@ -274,36 +274,14 @@ extension TabManager {
 
     func moveTabUp(_ tabId: UUID) {
         withStructuralUpdateTransaction {
-            guard let spaceId = findSpaceForTab(tabId) else { return }
-            let tabs = tabsBySpace[spaceId] ?? []
-            guard let currentIndex = tabs.firstIndex(where: { $0.id == tabId }) else { return }
-            guard currentIndex > 0 else { return }
-
-            let tab = tabs[currentIndex]
-            let targetTab = tabs[currentIndex - 1]
-            let tempIndex = tab.index
-            tab.index = targetTab.index
-            targetTab.index = tempIndex
-
-            setTabs(tabs, for: spaceId)
+            guard regularTabCollectionOwner.moveUp(tabId) else { return }
             scheduleStructuralPersistence()
         }
     }
 
     func moveTabDown(_ tabId: UUID) {
         withStructuralUpdateTransaction {
-            guard let spaceId = findSpaceForTab(tabId) else { return }
-            let tabs = tabsBySpace[spaceId] ?? []
-            guard let currentIndex = tabs.firstIndex(where: { $0.id == tabId }) else { return }
-            guard currentIndex < tabs.count - 1 else { return }
-
-            let tab = tabs[currentIndex]
-            let targetTab = tabs[currentIndex + 1]
-            let tempIndex = tab.index
-            tab.index = targetTab.index
-            targetTab.index = tempIndex
-
-            setTabs(tabs, for: spaceId)
+            guard regularTabCollectionOwner.moveDown(tabId) else { return }
             scheduleStructuralPersistence()
         }
     }
@@ -348,26 +326,8 @@ extension TabManager {
         }
 
         removeFromCurrentContainer(tab)
-        tab.spaceId = toSpaceId
-
-        var regularTabs = tabsBySpace[toSpaceId] ?? []
-        tab.index = toIndex
-        let safeIndex = max(0, min(toIndex, regularTabs.count))
-        regularTabs.insert(tab, at: safeIndex)
-
-        for (index, regularTab) in regularTabs.enumerated() {
-            regularTab.index = index
-        }
-
-        setTabs(regularTabs, for: toSpaceId)
+        regularTabCollectionOwner.insert(tab, in: toSpaceId, at: toIndex)
         scheduleStructuralPersistence()
-    }
-
-    private func findSpaceForTab(_ tabId: UUID) -> UUID? {
-        for (spaceId, tabs) in tabsBySpace where tabs.contains(where: { $0.id == tabId }) {
-            return spaceId
-        }
-        return nil
     }
 
 }

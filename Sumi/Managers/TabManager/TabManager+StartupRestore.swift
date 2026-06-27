@@ -28,7 +28,7 @@ extension TabManager {
             }
 
             for space in spaces {
-                let regularTabs = tabsBySpace[space.id] ?? []
+                let regularTabs = regularTabCollectionOwner.tabs(in: space)
                 for tab in regularTabs {
                     cancelRuntimeStatePersistence(for: tab.id)
                     browserManager?.compositorManager.unloadTab(tab)

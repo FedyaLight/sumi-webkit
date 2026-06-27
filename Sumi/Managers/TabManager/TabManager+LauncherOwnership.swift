@@ -453,11 +453,12 @@ extension TabManager {
             }
         }
 
-        if let spaceId = tab.spaceId,
-           var regularTabs = tabsBySpace[spaceId],
-           let index = regularTabs.firstIndex(where: { $0.id == tab.id }) {
-            if index < regularTabs.count { regularTabs.remove(at: index) }
-            setTabs(regularTabs, for: spaceId)
+        if let spaceId = tab.spaceId {
+            _ = regularTabCollectionOwner.remove(
+                tab.id,
+                from: spaceId,
+                currentSpaceId: currentSpace?.id
+            )
         }
     }
 }

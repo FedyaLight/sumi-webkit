@@ -27,6 +27,7 @@ class TabManager: ObservableObject {
 
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
     lazy var folderService = TabFolderService(tabManager: self)
+    lazy var regularTabCollectionOwner = RegularTabCollectionOwner(tabManager: self)
     lazy var regularTabDragService = SidebarRegularTabDragService(tabManager: self)
     lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
 
@@ -265,7 +266,7 @@ class TabManager: ObservableObject {
     var tabs: [Tab] {
         guard let s = currentSpace else { return [] }
         // `setTabs` keeps each space’s array sorted by index (and id tie-break); copy for callers that mutate.
-        return Array(tabsBySpace[s.id] ?? [])
+        return regularTabCollectionOwner.tabs(in: s)
     }
 
     func setTabs(_ items: [Tab], for spaceId: UUID) {
@@ -707,7 +708,7 @@ class TabManager: ObservableObject {
             rebuildTabLookup()
         }
 
-        let normals = spaces.flatMap { tabsBySpace[$0.id] ?? [] }
+        let normals = regularTabCollectionOwner.allTabs(in: spaces)
         return transientShortcutTabsByWindow.values.flatMap(\.values)
             + Array(transientExtensionTabsByID.values)
             + normals
@@ -726,9 +727,8 @@ class TabManager: ObservableObject {
                 guard tab.shortcutPinRole == .spacePinned, let sid = tab.spaceId else { return false }
                 return spaceIds.contains(sid)
             }
-        let regular = spaces
-            .filter { spaceIds.contains($0.id) }
-            .flatMap { tabsBySpace[$0.id] ?? [] }
+        let regular = regularTabCollectionOwner
+            .allTabs(in: spaces.filter { spaceIds.contains($0.id) })
         return pinned + spacePinned + regular
     }
 
@@ -739,8 +739,7 @@ class TabManager: ObservableObject {
         if allPinnedTabsAllProfiles.contains(where: { $0.id == tab.id }) {
             return true
         }
-        if let sid = tab.spaceId,
-           (tabsBySpace[sid] ?? []).contains(where: { $0.id == tab.id }) {
+        if regularTabCollectionOwner.contains(tab) {
             return true
         }
         return false
@@ -763,24 +762,7 @@ class TabManager: ObservableObject {
     }
 
     func regularChildInsertionIndex(openedFrom sourceTab: Tab?, in targetSpace: Space?) -> Int? {
-        guard let sourceTab, let targetSpace else { return nil }
-
-        if sourceTab.isPinned
-            || sourceTab.isSpacePinned
-            || sourceTab.shortcutPinRole != nil
-            || isGlobalPinned(sourceTab)
-            || isSpacePinned(sourceTab)
-        {
-            return 0
-        }
-
-        guard sourceTab.spaceId == targetSpace.id,
-              let sourceIndex = tabsBySpace[targetSpace.id]?.firstIndex(where: { $0.id == sourceTab.id })
-        else {
-            return nil
-        }
-
-        return sourceIndex + 1
+        regularTabCollectionOwner.childInsertionIndex(openedFrom: sourceTab, in: targetSpace)
     }
 
     /// Create a new regular tab duplicating the source tab's URL/name and insert near an anchor tab.
@@ -810,7 +792,7 @@ class TabManager: ObservableObject {
 
             let insertionIndex = anchor
                 .flatMap { anchor in
-                    tabsBySpace[targetSpace.id]?.firstIndex(where: { $0.id == anchor.id })
+                    regularTabCollectionOwner.firstIndex(of: anchor, in: targetSpace.id)
                 }
                 .map { $0 + (placeAfterAnchor ? 1 : 0) }
             addTab(newTab, regularInsertionIndex: insertionIndex)
@@ -927,7 +909,7 @@ class TabManager: ObservableObject {
             let insertionIndex: Int? = {
                 if let sourceTab,
                    sourceTab.spaceId == targetSpace.id,
-                   let sourceIndex = tabsBySpace[targetSpace.id]?.firstIndex(where: { $0.id == sourceTab.id }) {
+                   let sourceIndex = regularTabCollectionOwner.firstIndex(of: sourceTab, in: targetSpace.id) {
                     return sourceIndex + 1
                 }
                 if sourceTab?.isPinned == true || sourceTab?.shortcutPinRole == .essential {
@@ -946,17 +928,7 @@ class TabManager: ObservableObject {
     }
 
     private func insertRegularTab(_ tab: Tab, in spaceId: UUID, at insertionIndex: Int?) {
-        var arr = tabsBySpace[spaceId] ?? []
-        let safeIndex = insertionIndex.map { max(0, min($0, arr.count)) } ?? arr.count
-        tab.spaceId = spaceId
-        tab.isPinned = false
-        tab.isSpacePinned = false
-        tab.folderId = nil
-        arr.insert(tab, at: safeIndex)
-        for (index, existingTab) in arr.enumerated() {
-            existingTab.index = index
-        }
-        setTabs(arr, for: spaceId)
+        regularTabCollectionOwner.insert(tab, in: spaceId, at: insertionIndex)
     }
 
     private func resolvedTargetSpace(preferred space: Space?, fallbackSpaceId: UUID? = nil) -> Space {
@@ -1005,7 +977,7 @@ class TabManager: ObservableObject {
         }
 
         let sid = targetSpace.id
-        let nextIndex = (tabsBySpace[sid]?.map(\.index).max() ?? -1) + 1
+        let nextIndex = regularTabCollectionOwner.appendIndex(in: sid)
         let tab = Tab(
             url: validURL,
             name: "New Tab",
@@ -1135,20 +1107,14 @@ class TabManager: ObservableObject {
                 return
             }
 
-            if removed == nil {
-                for space in spaces {
-                    // Then check regular tabs
-                    if var arr = tabsBySpace[space.id],
-                       let i = arr.firstIndex(where: { $0.id == id })
-                    {
-                        if i < arr.count { removed = arr.remove(at: i) }
-                        removedSpaceId = space.id
-                        removedIndexInCurrentSpace =
-                            (space.id == currentSpace?.id) ? i : nil
-                        setTabs(arr, for: space.id)
-                        break
-                    }
-                }
+            if let removal = regularTabCollectionOwner.remove(
+                id,
+                in: spaces,
+                currentSpaceId: currentSpace?.id
+            ) {
+                removed = removal.tab
+                removedSpaceId = removal.spaceId
+                removedIndexInCurrentSpace = removal.indexInCurrentSpace
             }
             if removed == nil,
                let (windowId, pinId, tab) = transientShortcutTabsByWindow.lazy
@@ -1196,7 +1162,7 @@ class TabManager: ObservableObject {
                         currentTab = pinnedTabs.last
                     } else if let cs = currentSpace {
                         let spacePinned = liveSpacePinnedTabs(for: cs.id)
-                        let arr = tabsBySpace[cs.id] ?? []
+                        let arr = regularTabCollectionOwner.tabs(in: cs.id)
                         currentTab = spacePinned.last ?? arr.last
                     } else {
                         currentTab = nil
@@ -1204,7 +1170,7 @@ class TabManager: ObservableObject {
                 } else if let cs = currentSpace {
                     // Tab was in a space
                     let spacePinned = liveSpacePinnedTabs(for: cs.id)
-                    let arr = tabsBySpace[cs.id] ?? []
+                    let arr = regularTabCollectionOwner.tabs(in: cs.id)
 
                     if let i = removedIndexInCurrentSpace {
                         // Try to select adjacent tab
@@ -1334,8 +1300,7 @@ class TabManager: ObservableObject {
             let sid = targetSpace.id
 
             let nextIndex = regularInsertionIndex
-                ?? tabsBySpace[sid]?.map(\.index).max().map { $0 + 1 }
-                ?? 0
+                ?? regularTabCollectionOwner.appendIndex(in: sid)
 
             let newTab = Tab(
                 url: validURL,
@@ -1411,8 +1376,7 @@ class TabManager: ObservableObject {
             }
             let sid = targetSpace.id
 
-            let nextIndex = tabsBySpace[sid]?.map(\.index).max().map { $0 + 1 }
-                ?? 0
+            let nextIndex = regularTabCollectionOwner.appendIndex(in: sid)
 
             let newTab = Tab(
                 url: validURL,
@@ -1445,9 +1409,9 @@ class TabManager: ObservableObject {
                 scheduleStructuralPersistence()
             }
             let sid = targetSpace.id
-            let existingTabs = tabsBySpace[sid] ?? []
-            let resolvedIndex = regularInsertionIndex.map { max(0, min($0, existingTabs.count)) }
-                ?? ((existingTabs.map { $0.index }.max() ?? -1) + 1)
+            let resolvedIndex = regularInsertionIndex
+                .map { regularTabCollectionOwner.clampedInsertionIndex($0, in: sid) }
+                ?? regularTabCollectionOwner.appendIndex(in: sid)
 
             guard let blankURL = URL(string: "about:blank") else {
                 preconditionFailure("TabManager: invalid about:blank URL")
@@ -1499,7 +1463,8 @@ class TabManager: ObservableObject {
 
     func clearRegularTabs(for spaceId: UUID) {
         withStructuralUpdateTransaction {
-            guard let tabs = tabsBySpace[spaceId] else { return }
+            let tabs = regularTabCollectionOwner.tabs(in: spaceId)
+            guard !tabs.isEmpty else { return }
 
             RuntimeDiagnostics.emit("🧹 [TabManager] Clearing \(tabs.count) regular tabs for space \(spaceId)")
 

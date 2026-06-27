@@ -52,7 +52,7 @@ extension TabManager {
             guard spaces.count > 1 else { return }
             guard let idx = spaces.firstIndex(where: { $0.id == id }) else { return }
 
-            let closing = tabsBySpace[id] ?? []
+            let closing = regularTabCollectionOwner.tabs(in: id)
             let transientClosing = transientShortcutTabsByWindow.values
                 .flatMap(\.values)
                 .filter { $0.spaceId == id }
