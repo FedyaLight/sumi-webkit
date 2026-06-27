@@ -123,12 +123,23 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
-        XCTAssertTrue(webViewCoordinatorSource.contains("sumiWebViewNeedsMediaTouchBarRecovery"))
-        XCTAssertTrue(webViewCoordinatorSource.contains("installNowPlayingSessionObservationIfNeeded"))
-        XCTAssertTrue(webViewCoordinatorSource.contains("postMediaTouchBarRecoveryRequest"))
-        XCTAssertTrue(webViewCoordinatorSource.contains("requestFullscreenMediaExit"))
+        let mediaProtectionOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewMediaProtectionOwner.swift"
+            ),
+            encoding: .utf8
+        )
+        XCTAssertTrue(webViewCoordinatorSource.contains("private let mediaProtectionOwner = WebViewMediaProtectionOwner()"))
+        XCTAssertTrue(webViewCoordinatorSource.contains("installMediaProtectionObservationsIfNeeded"))
         XCTAssertTrue(webViewCoordinatorSource.contains("host.removeFromSuperview()"))
+        XCTAssertFalse(webViewCoordinatorSource.contains("private var nowPlayingSessionCancellablesByWebViewID"))
+        XCTAssertFalse(webViewCoordinatorSource.contains("private func postMediaTouchBarRecoveryRequest"))
+        XCTAssertFalse(webViewCoordinatorSource.contains("private func requestFullscreenMediaExit"))
         XCTAssertFalse(webViewCoordinatorSource.contains("closeAllMediaPresentations"))
+        XCTAssertTrue(mediaProtectionOwnerSource.contains("sumiWebViewNeedsMediaTouchBarRecovery"))
+        XCTAssertTrue(mediaProtectionOwnerSource.contains("installNowPlayingSessionObservationIfNeeded"))
+        XCTAssertTrue(mediaProtectionOwnerSource.contains("postMediaTouchBarRecoveryRequest"))
+        XCTAssertTrue(mediaProtectionOwnerSource.contains("requestFullscreenMediaExit"))
 
         let containerSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
@@ -1135,6 +1146,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let mediaOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewMediaProtectionOwner.swift"
+            ),
+            encoding: .utf8
+        )
         let commandSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
                 "Sumi/Managers/WebViewCoordinator/DeferredWebViewCommand.swift"
@@ -1162,27 +1179,45 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             coordinatorSource.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
         ).lowerBound
         let coordinatorClassSource = String(coordinatorSource[coordinatorStart...])
-        XCTAssertTrue(coordinatorClassSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
+        XCTAssertTrue(coordinatorClassSource.contains("private let mediaProtectionOwner = WebViewMediaProtectionOwner()"))
+        XCTAssertFalse(coordinatorClassSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
         XCTAssertFalse(coordinatorClassSource.contains("private var activeHistorySwipeProtections"))
         XCTAssertFalse(coordinatorClassSource.contains("private var visualHandoffProtectedWebViewIDs"))
         XCTAssertFalse(coordinatorClassSource.contains("private let fullscreenProtection"))
         XCTAssertFalse(coordinatorClassSource.contains("private var deferredProtectedWebViewCommands"))
         XCTAssertFalse(coordinatorClassSource.contains("struct DeferredProtectedCommandBuffer"))
+        XCTAssertTrue(mediaOwnerSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
 
         let enqueueSource = try sourceSlice(
             coordinatorSource,
             from: "private func enqueueDeferredProtectedCommand",
-            to: "private func installFullscreenStateObservationIfNeeded"
+            to: "private func installMediaProtectionObservationsIfNeeded"
         )
         try assertTokenOrder(
             enqueueSource,
             [
-                "protectedCommandOwner.enqueueDeferredCommandIfNeeded(",
+                "mediaProtectionOwner.enqueueDeferredCommandIfNeeded(",
                 "resolveWebView:",
                 "isCommandValid:",
                 "dropCommand:",
                 "didPruneStaleWebViewIDs:",
                 "finishDestructiveCleanupSuppression(for: webViewIDs)"
+            ]
+        )
+
+        let mediaOwnerEnqueueSource = try sourceSlice(
+            mediaOwnerSource,
+            from: "func enqueueDeferredCommandIfNeeded(",
+            to: "func commandsToFlushIfUnprotected"
+        )
+        try assertTokenOrder(
+            mediaOwnerEnqueueSource,
+            [
+                "protectedCommandOwner.enqueueDeferredCommandIfNeeded(",
+                "resolveWebView:",
+                "isCommandValid:",
+                "dropCommand:",
+                "didPruneStaleWebViewIDs:"
             ]
         )
 
@@ -1212,7 +1247,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         try assertTokenOrder(
             flushSource,
             [
-                "protectedCommandOwner.commandsToFlushIfUnprotected(",
+                "mediaProtectionOwner.commandsToFlushIfUnprotected(",
                 "didPruneStaleWebViewIDs:",
                 "finishDestructiveCleanupSuppression(for: webViewIDs)",
                 "Task { @MainActor",
@@ -1252,6 +1287,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let mediaOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewMediaProtectionOwner.swift"
+            ),
+            encoding: .utf8
+        )
 
         let registrySource = try sourceSlice(
             ownerSource,
@@ -1273,11 +1314,13 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             coordinatorSource.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
         ).lowerBound
         let coordinatorClassSource = String(coordinatorSource[coordinatorStart...])
-        XCTAssertTrue(coordinatorClassSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
+        XCTAssertTrue(coordinatorClassSource.contains("private let mediaProtectionOwner = WebViewMediaProtectionOwner()"))
+        XCTAssertFalse(coordinatorClassSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
         XCTAssertFalse(coordinatorClassSource.contains("WeakWebViewRegistry"))
         XCTAssertFalse(coordinatorClassSource.contains("weakWebViewsByIdentifier"))
         XCTAssertFalse(coordinatorClassSource.contains("noteWeakWebView"))
         XCTAssertFalse(coordinatorClassSource.contains("private func resolveWeakWebView"))
+        XCTAssertTrue(mediaOwnerSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
 
         let resolveSource = try sourceSlice(
             coordinatorSource,
@@ -1288,9 +1331,9 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             resolveSource,
             [
                 "if let webView = webViewRegistry.trackedWebView(with: identifier)",
-                "protectedCommandOwner.note(webView)",
+                "mediaProtectionOwner.note(webView)",
                 "return webView",
-                "return protectedCommandOwner.resolveWeakWebView(with: identifier)"
+                "return mediaProtectionOwner.resolveWeakWebView(with: identifier)"
             ]
         )
 
@@ -1320,7 +1363,104 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             coordinatorPruneSource,
             [
                 "finishDestructiveCleanupSuppression(",
-                "protectedCommandOwner.pruneStaleBookkeeping(reason: reason)"
+                "mediaProtectionOwner.pruneStaleBookkeeping(reason: reason)"
+            ]
+        )
+    }
+
+    func testWebViewCoordinatorMediaProtectionBookkeepingStaysBehindMediaProtectionOwner() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let coordinatorSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+        let mediaOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewMediaProtectionOwner.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let coordinatorStart = try XCTUnwrap(
+            coordinatorSource.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
+        ).lowerBound
+        let coordinatorClassSource = String(coordinatorSource[coordinatorStart...])
+        XCTAssertTrue(coordinatorClassSource.contains("private let mediaProtectionOwner = WebViewMediaProtectionOwner()"))
+        XCTAssertFalse(coordinatorClassSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
+        XCTAssertFalse(coordinatorClassSource.contains("private var nowPlayingSessionCancellablesByWebViewID"))
+        XCTAssertFalse(coordinatorClassSource.contains("private func requestFullscreenMediaExit"))
+        XCTAssertFalse(coordinatorClassSource.contains("private func postMediaTouchBarRecoveryRequest"))
+        XCTAssertFalse(coordinatorClassSource.contains("private func beginFullscreenProtectionIfNeeded"))
+        XCTAssertFalse(coordinatorClassSource.contains("private func finishFullscreenProtectionIfNeeded"))
+
+        XCTAssertTrue(mediaOwnerSource.contains("final class WebViewMediaProtectionOwner"))
+        XCTAssertTrue(mediaOwnerSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
+        XCTAssertTrue(mediaOwnerSource.contains("private var nowPlayingSessionCancellablesByWebViewID"))
+        XCTAssertTrue(mediaOwnerSource.contains("private func requestFullscreenMediaExit"))
+        XCTAssertTrue(mediaOwnerSource.contains("private func postMediaTouchBarRecoveryRequest"))
+
+        let closeActiveSource = try sourceSlice(
+            coordinatorSource,
+            from: "func closeActiveFullscreenMedia",
+            to: "func isWebViewProtectedFromCompositorMutation"
+        )
+        try assertTokenOrder(
+            closeActiveSource,
+            [
+                "mediaProtectionOwner.closeActiveFullscreenMedia(in: windowId)",
+                "resolveWebView(with: webViewID)"
+            ]
+        )
+
+        let installSource = try sourceSlice(
+            coordinatorSource,
+            from: "private func installMediaProtectionObservationsIfNeeded",
+            to: "private func uninstallMediaProtectionObservationsIfUntracked"
+        )
+        try assertTokenOrder(
+            installSource,
+            [
+                "mediaProtectionOwner.installFullscreenStateObservationIfNeeded(",
+                "trackedOwner:",
+                "fallbackWindowID:",
+                "flushDeferredProtectedCommands:",
+                "refreshCompositor:",
+                "mediaProtectionOwner.installNowPlayingSessionObservationIfNeeded("
+            ]
+        )
+
+        try assertTokenOrder(
+            Substring(mediaOwnerSource),
+            [
+                "func closeActiveFullscreenMedia(",
+                "protectedCommandOwner.activeFullscreenWebViewIDs(in: windowID)",
+                "requestFullscreenMediaExit(on: webView)",
+                "func closeFullscreenMediaIfNeeded(on webView: WKWebView)",
+                "protectedCommandOwner.isFullscreenProtected(webViewID)",
+                "private func requestFullscreenMediaExit"
+            ]
+        )
+        try assertTokenOrder(
+            Substring(mediaOwnerSource),
+            [
+                "func installNowPlayingSessionObservationIfNeeded(",
+                "nowPlayingSessionCancellablesByWebViewID[webViewID] = webView",
+                "publisher(for: \\.sumiHasActiveNowPlayingSession",
+                "postMediaTouchBarRecoveryRequest("
+            ]
+        )
+        try assertTokenOrder(
+            Substring(mediaOwnerSource),
+            [
+                "func installFullscreenStateObservationIfNeeded(",
+                "protectedCommandOwner.installFullscreenStateObservationIfNeeded(",
+                "updateFullscreenProtection(",
+                "private func beginFullscreenProtectionIfNeeded",
+                "private func finishFullscreenProtectionIfNeeded"
             ]
         )
     }
@@ -1416,7 +1556,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             stalePruneSource,
             [
                 "finishDestructiveCleanupSuppression(",
-                "protectedCommandOwner.pruneStaleBookkeeping(reason: reason)"
+                "mediaProtectionOwner.pruneStaleBookkeeping(reason: reason)"
             ]
         )
 
