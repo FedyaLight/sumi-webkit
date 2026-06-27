@@ -255,7 +255,6 @@ class BrowserManager: ObservableObject {
     let workspaceAppearanceService = WorkspaceAppearanceService()
     let privacyService = BrowserPrivacyService()
     let liveFolderManager = SumiLiveFolderManager()
-    private let floatingBarNavigationOwner = FloatingBarNavigationOwner()
     private let tabSelectionOwner = BrowserTabSelectionOwner()
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
@@ -310,6 +309,54 @@ class BrowserManager: ObservableObject {
             },
             selectTab: { [weak self] tab, windowState, loadPolicy in
                 self?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
+            }
+        )
+    )
+    private lazy var browserActionOwner = BrowserActionOwner(
+        dependencies: BrowserActionOwner.Dependencies(
+            tabOpeningOwner: { [unowned self] in self.tabOpeningOwner },
+            tabManager: { [unowned self] in self.tabManager },
+            liveFolderManager: { [unowned self] in self.liveFolderManager },
+            windowRegistry: { [unowned self] in self.windowRegistry },
+            settings: { [unowned self] in self.sumiSettings },
+            activePageTab: { [unowned self] windowState in
+                self.activePageTab(for: windowState)
+            },
+            hasValidCurrentSelection: { [unowned self] windowState in
+                self.hasValidCurrentSelection(in: windowState)
+            },
+            cancelEmptySplitPlaceholder: { [unowned self] windowState in
+                self.splitManager.cancelEmptySplitPlaceholder(in: windowState)
+            },
+            commitEmptySplitPlaceholder: { [unowned self] tabId, windowState in
+                self.splitManager.commitEmptySplitPlaceholder(tabId: tabId, in: windowState)
+            },
+            replaceEmptySplitPlaceholder: { [unowned self] tab, windowState in
+                self.splitManager.replaceEmptySplitPlaceholder(with: tab, in: windowState)
+            },
+            selectTab: { [unowned self] tab, windowState in
+                self.selectTab(tab, in: windowState)
+            },
+            dismissWorkspaceThemePickerIfNeededDiscarding: { [unowned self] in
+                self.dismissWorkspaceThemePickerIfNeededDiscarding()
+            },
+            updateSavedSidebarVisibility: { [unowned self] isVisible in
+                self.savedSidebarVisibility = isVisible
+            },
+            toggleSavedSidebarVisibility: { [unowned self] in
+                self.savedSidebarVisibility.toggle()
+            },
+            updateSavedSidebarWidth: { [unowned self] width in
+                self.savedSidebarWidth = width
+            },
+            persistWindowSession: { [unowned self] windowState in
+                self.persistWindowSession(for: windowState)
+            },
+            schedulePersistWindowSession: { [unowned self] windowState, delayNanoseconds in
+                self.schedulePersistWindowSession(
+                    for: windowState,
+                    delayNanoseconds: delayNanoseconds
+                )
             }
         )
     )
@@ -606,7 +653,7 @@ class BrowserManager: ObservableObject {
         deferredStartupBackgroundTabIds.removeAll()
         for tabId in deferredBackgroundTabs {
             guard let tab = tabManager.tab(for: tabId) else { continue }
-            tabOpeningOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
+            browserActionOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
         }
 
         for windowState in windowRegistry?.allWindows ?? [] {
@@ -778,49 +825,11 @@ class BrowserManager: ObservableObject {
     }
 
     func toggleSidebar() {
-        if let windowState = sidebarToggleTargetWindowState() {
-            toggleSidebar(for: windowState)
-        } else {
-            savedSidebarVisibility.toggle()
-        }
+        browserActionOwner.toggleSidebar()
     }
 
     func toggleSidebar(for windowState: BrowserWindowState) {
-        windowState.isSidebarVisible.toggle()
-        // Width stays the same whether visible or hidden.
-        savedSidebarVisibility = windowState.isSidebarVisible
-        savedSidebarWidth = windowState.savedSidebarWidth
-        schedulePersistWindowSession(for: windowState, delayNanoseconds: 150_000_000)
-    }
-
-    private func sidebarToggleTargetWindowState() -> BrowserWindowState? {
-        if let activeWindow = windowRegistry?.activeWindow {
-            return activeWindow
-        }
-
-        guard let windowRegistry else {
-            return nil
-        }
-
-        if let keyWindow = NSApp.keyWindow,
-           let keyWindowState = windowRegistry.allWindows.first(where: { windowState in
-               guard let browserWindow = windowState.window else { return false }
-               if browserWindow === keyWindow {
-                   return true
-               }
-               return browserWindow.childWindows?.contains(where: { $0 === keyWindow }) == true
-           }) {
-            windowRegistry.setActive(keyWindowState)
-            return keyWindowState
-        }
-
-        if windowRegistry.allWindows.count == 1,
-           let onlyWindow = windowRegistry.allWindows.first {
-            windowRegistry.setActive(onlyWindow)
-            return onlyWindow
-        }
-
-        return nil
+        browserActionOwner.toggleSidebar(for: windowState)
     }
 
     // MARK: - Sidebar width access for overlays
@@ -833,10 +842,6 @@ class BrowserManager: ObservableObject {
             return max(BrowserWindowState.sidebarMinimumWidth, active.savedSidebarWidth)
         }
         return max(BrowserWindowState.sidebarMinimumWidth, savedSidebarWidth)
-    }
-
-    private var floatingBarActions: FloatingBarNavigationOwner.Actions {
-        .browserManager(self)
     }
 
     private var tabSelectionActions: BrowserTabSelectionOwner.Actions {
@@ -926,7 +931,7 @@ class BrowserManager: ObservableObject {
                 self?.updateProfileRuntimeStates(activeWindowState: windowState)
             },
             showNewTabFloatingBar: { [weak self] windowState in
-                self?.showNewTabFloatingBar(in: windowState)
+                self?.browserActionOwner.showNewTabFloatingBar(in: windowState)
             }
         )
     }
@@ -937,11 +942,10 @@ class BrowserManager: ObservableObject {
         navigateCurrentTab: Bool = false,
         presentationReason: FloatingBarPresentationReason = .keyboard
     ) {
-        floatingBarNavigationOwner.focusActiveWindow(
+        browserActionOwner.focusFloatingBarForActiveWindow(
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab,
-            presentationReason: presentationReason,
-            actions: floatingBarActions
+            presentationReason: presentationReason
         )
     }
 
@@ -951,12 +955,11 @@ class BrowserManager: ObservableObject {
         navigateCurrentTab: Bool = false,
         presentationReason: FloatingBarPresentationReason = .keyboard
     ) {
-        floatingBarNavigationOwner.focus(
+        browserActionOwner.focusFloatingBar(
             in: windowState,
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab,
-            presentationReason: presentationReason,
-            actions: floatingBarActions
+            presentationReason: presentationReason
         )
     }
 
@@ -974,80 +977,40 @@ class BrowserManager: ObservableObject {
     }
 
     func showNewTabFloatingBar(in windowState: BrowserWindowState) {
-        floatingBarNavigationOwner.showNewTab(
-            in: windowState,
-            actions: floatingBarActions
-        )
+        browserActionOwner.showNewTabFloatingBar(in: windowState)
     }
 
     func openNewTabOrFloatingBar(in windowState: BrowserWindowState) {
-        floatingBarNavigationOwner.openNewTabSurface(
-            in: windowState,
-            actions: floatingBarActions
-        )
+        browserActionOwner.openNewTabOrFloatingBar(in: windowState)
     }
 
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
-        windowState.currentSpaceId
-            .flatMap { spaceId in tabManager.spaces.first(where: { $0.id == spaceId }) }
-            ?? tabManager.currentSpace
+        browserActionOwner.spaceForSidebarActions(in: windowState)
     }
 
     func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        guard let space = spaceForSidebarActions(in: windowState) else { return }
-        _ = tabManager.createFolder(for: space.id)
+        browserActionOwner.createFolderInCurrentSpace(in: windowState)
     }
 
     func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        guard let space = spaceForSidebarActions(in: windowState),
-              let feedURLString = promptForLiveFolderFeedURL() else {
-            return
-        }
-        liveFolderManager.createRSSFolder(in: space.id, feedURLString: feedURLString)
+        browserActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
     }
 
     func createGitHubPullRequestsLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        guard let space = spaceForSidebarActions(in: windowState) else { return }
-        liveFolderManager.createGitHubFolder(in: space.id, kind: .githubPullRequests)
+        browserActionOwner.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
     }
 
     func createGitHubIssuesLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        guard let space = spaceForSidebarActions(in: windowState) else { return }
-        liveFolderManager.createGitHubFolder(in: space.id, kind: .githubIssues)
-    }
-
-    private func promptForLiveFolderFeedURL() -> String? {
-        let alert = NSAlert()
-        alert.messageText = "New RSS Live Folder"
-        alert.informativeText = "Enter an RSS or Atom feed URL."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Create")
-        alert.addButton(withTitle: "Cancel")
-
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
-        field.placeholderString = "https://example.com/feed.xml"
-        alert.accessoryView = field
-
-        guard alert.runModal() == .alertFirstButtonReturn else {
-            return nil
-        }
-
-        let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: value),
-              ["http", "https"].contains(url.scheme?.lowercased()) else {
-            return nil
-        }
-        return value
+        browserActionOwner.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
     }
 
     func updateFloatingBarDraft(
         in windowState: BrowserWindowState,
         text: String
     ) {
-        floatingBarNavigationOwner.updateDraft(
+        browserActionOwner.updateFloatingBarDraft(
             in: windowState,
-            text: text,
-            actions: floatingBarActions
+            text: text
         )
     }
 
@@ -1056,19 +1019,15 @@ class BrowserManager: ObservableObject {
         preserveDraft: Bool,
         cancelEmptySplitPlaceholder: Bool = true
     ) {
-        floatingBarNavigationOwner.dismiss(
+        browserActionOwner.dismissFloatingBar(
             in: windowState,
             preserveDraft: preserveDraft,
-            cancelEmptySplitPlaceholder: cancelEmptySplitPlaceholder,
-            actions: floatingBarActions
+            cancelEmptySplitPlaceholder: cancelEmptySplitPlaceholder
         )
     }
 
     func dismissFloatingBarForActiveWindow(preserveDraft: Bool = true) {
-        floatingBarNavigationOwner.dismissActiveWindow(
-            preserveDraft: preserveDraft,
-            actions: floatingBarActions
-        )
+        browserActionOwner.dismissFloatingBarForActiveWindow(preserveDraft: preserveDraft)
     }
 
     @discardableResult
@@ -1076,18 +1035,14 @@ class BrowserManager: ObservableObject {
         in windowId: UUID,
         preserveDraft: Bool = true
     ) -> Bool {
-        floatingBarNavigationOwner.dismissIfVisible(
+        browserActionOwner.dismissFloatingBarIfVisible(
             in: windowId,
-            preserveDraft: preserveDraft,
-            actions: floatingBarActions
+            preserveDraft: preserveDraft
         )
     }
 
     func floatingBarCommitNavigatesCurrentTab(in windowState: BrowserWindowState) -> Bool {
-        floatingBarNavigationOwner.commitNavigatesCurrentTab(
-            in: windowState,
-            actions: floatingBarActions
-        )
+        browserActionOwner.floatingBarCommitNavigatesCurrentTab(in: windowState)
     }
 
     func commitFloatingBarSuggestion(
@@ -1095,11 +1050,10 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
-        floatingBarNavigationOwner.commitSuggestion(
+        browserActionOwner.commitFloatingBarSuggestion(
             suggestion,
             in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
-            actions: floatingBarActions
+            navigatesCurrentTab: navigatesCurrentTab
         )
     }
 
@@ -1108,11 +1062,10 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
-        floatingBarNavigationOwner.commitNavigation(
+        browserActionOwner.commitFloatingBarNavigation(
             to: urlString,
             in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
-            actions: floatingBarActions
+            navigatesCurrentTab: navigatesCurrentTab
         )
     }
 
@@ -1132,27 +1085,19 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
-        floatingBarNavigationOwner.openSuggestion(
+        browserActionOwner.openFloatingBarSuggestion(
             suggestion,
             in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
-            actions: floatingBarActions
+            navigatesCurrentTab: navigatesCurrentTab
         )
     }
 
     private func dismissFloatingBarAfterSelection(in windowState: BrowserWindowState) {
-        floatingBarNavigationOwner.dismissAfterSelection(
-            in: windowState,
-            actions: floatingBarActions
-        )
+        browserActionOwner.dismissFloatingBarAfterSelection(in: windowState)
     }
 
     func sanitizeFloatingBarState(in windowState: BrowserWindowState) {
-        floatingBarNavigationOwner.sanitize(
-            in: windowState,
-            hasValidCurrentSelection: hasValidCurrentSelection(in: windowState),
-            actions: floatingBarActions
-        )
+        browserActionOwner.sanitizeFloatingBarState(in: windowState)
     }
 
     func showFindBar() {
@@ -1174,12 +1119,12 @@ class BrowserManager: ObservableObject {
 
     // MARK: - Tab Management (delegates to TabManager)
     func createNewTab() {
-        tabOpeningOwner.createNewTab()
+        browserActionOwner.createNewTab()
     }
 
     /// Create a new tab and set it as active in the specified window
     func createNewTab(in windowState: BrowserWindowState, url: String = SumiSurface.emptyTabURL.absoluteString) {
-        tabOpeningOwner.createNewTab(in: windowState, url: url)
+        browserActionOwner.createNewTab(in: windowState, url: url)
     }
 
     @discardableResult
@@ -1187,7 +1132,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         url: String = SumiSurface.emptyTabURL.absoluteString
     ) -> Tab {
-        tabOpeningOwner.createNewTabAfterSidebarInsertion(in: windowState, url: url)
+        browserActionOwner.createNewTabAfterSidebarInsertion(in: windowState, url: url)
     }
 
     @discardableResult
@@ -1195,11 +1140,11 @@ class BrowserManager: ObservableObject {
         url: String = SumiSurface.emptyTabURL.absoluteString,
         context: TabOpenContext
     ) -> Tab {
-        tabOpeningOwner.openNewTab(url: url, context: context)
+        browserActionOwner.openNewTab(url: url, context: context)
     }
 
     func resolvedTabOpenSpace(for context: TabOpenContext) -> Space? {
-        tabOpeningOwner.resolvedTabOpenSpace(for: context)
+        browserActionOwner.resolvedTabOpenSpace(for: context)
     }
 
     @discardableResult
@@ -1208,7 +1153,7 @@ class BrowserManager: ObservableObject {
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         activate: Bool = true
     ) -> Tab? {
-        tabOpeningOwner.createPopupTab(
+        browserActionOwner.createPopupTab(
             from: sourceTab,
             webViewConfigurationOverride: webViewConfigurationOverride,
             activate: activate
@@ -1291,7 +1236,7 @@ class BrowserManager: ObservableObject {
     }
 
     func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        tabOpeningOwner.duplicateTab(tab, in: windowState)
+        browserActionOwner.duplicateTab(tab, in: windowState)
     }
 
     func closeCurrentTab() {
