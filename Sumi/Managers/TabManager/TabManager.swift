@@ -433,70 +433,13 @@ class TabManager: ObservableObject {
             transientExtensionTabsByID: transientExtensionTabsByID
         )
     }
+    typealias SpacePinnedTopLevelItem = SpacePinnedShortcutOrderOwner.TopLevelItem
+
     func normalizedSpacePinnedShortcuts(_ items: [ShortcutPin]) -> [ShortcutPin] {
-        struct ContainerKey: Hashable {
-            let spaceId: UUID?
-            let folderId: UUID?
-        }
-
-        func reservedFolderIndexes(for key: ContainerKey) -> Set<Int> {
-            guard let spaceId = key.spaceId else { return [] }
-            return Set(
-                (foldersBySpace[spaceId] ?? [])
-                    .filter { $0.parentFolderId == key.folderId }
-                    .map(\.index)
-            )
-        }
-
-        func normalizedGroup(_ pins: [ShortcutPin], reservedIndexes: Set<Int>) -> [ShortcutPin] {
-            var nextIndex = 0
-            func nextAvailableIndex() -> Int {
-                while reservedIndexes.contains(nextIndex) {
-                    nextIndex += 1
-                }
-                defer { nextIndex += 1 }
-                return nextIndex
-            }
-
-            return pins
-                .sorted { lhs, rhs in
-                    if lhs.index != rhs.index { return lhs.index < rhs.index }
-                    return lhs.id.uuidString < rhs.id.uuidString
-                }
-                .map { pin in pin.refreshed(index: nextAvailableIndex()) }
-        }
-
-        let groupedByContainer = Dictionary(grouping: items) {
-            ContainerKey(spaceId: $0.spaceId, folderId: $0.folderId)
-        }
-
-        return groupedByContainer.keys
-            .sorted { lhs, rhs in
-                let leftSpace = lhs.spaceId?.uuidString ?? ""
-                let rightSpace = rhs.spaceId?.uuidString ?? ""
-                if leftSpace != rightSpace { return leftSpace < rightSpace }
-                let leftFolder = lhs.folderId?.uuidString ?? ""
-                let rightFolder = rhs.folderId?.uuidString ?? ""
-                return leftFolder < rightFolder
-            }
-            .flatMap { key in
-                normalizedGroup(
-                    groupedByContainer[key] ?? [],
-                    reservedIndexes: reservedFolderIndexes(for: key)
-                )
-            }
-    }
-
-    enum SpacePinnedTopLevelItem {
-        case folder(TabFolder)
-        case shortcut(ShortcutPin)
-
-        var id: UUID {
-            switch self {
-            case .folder(let folder): return folder.id
-            case .shortcut(let pin): return pin.id
-            }
-        }
+        SpacePinnedShortcutOrderOwner.normalizedShortcuts(
+            items,
+            foldersBySpace: foldersBySpace
+        )
     }
 
     enum FolderChildVisualItem: Hashable {
@@ -547,18 +490,11 @@ class TabManager: ObservableObject {
     }
 
     func topLevelSpacePinnedItems(for spaceId: UUID) -> [SpacePinnedTopLevelItem] {
-        let folders = (foldersBySpace[spaceId] ?? [])
-            .filter { $0.parentFolderId == nil }
-            .map { ($0.index, SpacePinnedTopLevelItem.folder($0)) }
-        let pins = spacePinnedPins(for: spaceId)
-            .filter { $0.folderId == nil }
-            .map { ($0.index, SpacePinnedTopLevelItem.shortcut($0)) }
-        return (folders + pins)
-            .sorted { lhs, rhs in
-                if lhs.0 != rhs.0 { return lhs.0 < rhs.0 }
-                return lhs.1.id.uuidString < rhs.1.id.uuidString
-            }
-            .map(\.1)
+        SpacePinnedShortcutOrderOwner.topLevelItems(
+            for: spaceId,
+            foldersBySpace: foldersBySpace,
+            spacePinnedShortcuts: spacePinnedShortcuts
+        )
     }
 
     func applyTopLevelSpacePinnedOrder(
@@ -566,33 +502,24 @@ class TabManager: ObservableObject {
         for spaceId: UUID
     ) {
         withStructuralUpdateTransaction {
-            let folderMap = Dictionary(uniqueKeysWithValues: (foldersBySpace[spaceId] ?? []).map { ($0.id, $0) })
-            var orderedFolders: [TabFolder] = []
-            var orderedTopLevelPins: [ShortcutPin] = []
-
-            for (index, item) in items.enumerated() {
-                switch item {
-                case .folder(let folder):
-                    let target = folderMap[folder.id] ?? folder
-                    target.index = index
-                    target.spaceId = spaceId
-                    target.parentFolderId = nil
-                    orderedFolders.append(target)
-                case .shortcut(let pin):
-                    orderedTopLevelPins.append(pin.refreshed(index: index).moved(toFolderId: nil))
-                }
+            let plan = SpacePinnedShortcutOrderOwner.topLevelOrderPlan(
+                items,
+                for: spaceId,
+                foldersBySpace: foldersBySpace,
+                spacePinnedShortcuts: spacePinnedShortcuts
+            )
+            for placement in plan.folderPlacements {
+                placement.folder.index = placement.index
+                placement.folder.spaceId = placement.spaceId
+                placement.folder.parentFolderId = placement.parentFolderId
             }
-
-            let remainingFolders = (foldersBySpace[spaceId] ?? [])
-                .filter { folder in orderedFolders.contains(where: { $0.id == folder.id }) == false }
-            let finalFolders = (orderedFolders + remainingFolders).sorted { lhs, rhs in
+            let finalFolders = (plan.orderedFolders + plan.remainingFolders).sorted { lhs, rhs in
                 if lhs.index != rhs.index { return lhs.index < rhs.index }
                 return lhs.id.uuidString < rhs.id.uuidString
             }
             setFolders(finalFolders, for: spaceId)
 
-            let folderPins = (spacePinnedShortcuts[spaceId] ?? []).filter { $0.folderId != nil }
-            let finalPins = normalizedSpacePinnedShortcuts(folderPins + orderedTopLevelPins)
+            let finalPins = normalizedSpacePinnedShortcuts(plan.folderPins + plan.orderedTopLevelPins)
             setSpacePinnedShortcuts(finalPins, for: spaceId)
         }
     }
@@ -602,9 +529,11 @@ class TabManager: ObservableObject {
         in spaceId: UUID,
         at targetIndex: Int
     ) -> ShortcutPin? {
-        var items = topLevelSpacePinnedItems(for: spaceId)
-        let safeIndex = max(0, min(targetIndex, items.count))
-        items.insert(.shortcut(pin.moved(toFolderId: nil)), at: safeIndex)
+        let items = SpacePinnedShortcutOrderOwner.insertingTopLevelShortcut(
+            pin,
+            in: topLevelSpacePinnedItems(for: spaceId),
+            at: targetIndex
+        )
         applyTopLevelSpacePinnedOrder(items, for: spaceId)
         return spacePinnedShortcuts[spaceId]?.first(where: { $0.id == pin.id })
     }
@@ -613,10 +542,10 @@ class TabManager: ObservableObject {
         currentIndex: Int,
         proposedIndex: Int
     ) -> Int {
-        let safeProposedIndex = max(0, proposedIndex)
-        return currentIndex < safeProposedIndex
-            ? max(0, safeProposedIndex - 1)
-            : safeProposedIndex
+        SpacePinnedShortcutOrderOwner.adjustedSameContainerInsertionIndex(
+            currentIndex: currentIndex,
+            proposedIndex: proposedIndex
+        )
     }
 
     @discardableResult
@@ -625,21 +554,19 @@ class TabManager: ObservableObject {
         in spaceId: UUID,
         to targetIndex: Int
     ) -> ShortcutPin? {
-        var items = topLevelSpacePinnedItems(for: spaceId)
-        guard let currentIndex = items.firstIndex(where: {
-            if case .shortcut(let existingPin) = $0 { return existingPin.id == pin.id }
-            return false
-        }) else { return nil }
-        let adjustedIndex = adjustedSameContainerInsertionIndex(
-            currentIndex: currentIndex,
-            proposedIndex: targetIndex
-        )
-        guard currentIndex != adjustedIndex else { return pin }
-        let moving = items.remove(at: currentIndex)
-        let safeIndex = max(0, min(adjustedIndex, items.count))
-        items.insert(moving, at: safeIndex)
-        applyTopLevelSpacePinnedOrder(items, for: spaceId)
-        return spacePinnedShortcuts[spaceId]?.first(where: { $0.id == pin.id })
+        switch SpacePinnedShortcutOrderOwner.reorderingTopLevelItem(
+            id: pin.id,
+            in: topLevelSpacePinnedItems(for: spaceId),
+            to: targetIndex
+        ) {
+        case .missing:
+            return nil
+        case .unchanged:
+            return pin
+        case .moved(let items):
+            applyTopLevelSpacePinnedOrder(items, for: spaceId)
+            return spacePinnedShortcuts[spaceId]?.first(where: { $0.id == pin.id })
+        }
     }
 
     @discardableResult
@@ -648,22 +575,18 @@ class TabManager: ObservableObject {
         in spaceId: UUID,
         to targetIndex: Int
     ) -> Bool {
-        var items = topLevelSpacePinnedItems(for: spaceId)
-        guard let currentIndex = items.firstIndex(where: {
-            if case .folder(let existingFolder) = $0 { return existingFolder.id == folder.id }
+        switch SpacePinnedShortcutOrderOwner.reorderingTopLevelItem(
+            id: folder.id,
+            in: topLevelSpacePinnedItems(for: spaceId),
+            to: targetIndex
+        ) {
+        case .missing, .unchanged:
             return false
-        }) else { return false }
-        let adjustedIndex = adjustedSameContainerInsertionIndex(
-            currentIndex: currentIndex,
-            proposedIndex: targetIndex
-        )
-        guard currentIndex != adjustedIndex else { return false }
-        let moving = items.remove(at: currentIndex)
-        let safeIndex = max(0, min(adjustedIndex, items.count))
-        items.insert(moving, at: safeIndex)
-        applyTopLevelSpacePinnedOrder(items, for: spaceId)
-        scheduleStructuralPersistence()
-        return true
+        case .moved(let items):
+            applyTopLevelSpacePinnedOrder(items, for: spaceId)
+            scheduleStructuralPersistence()
+            return true
+        }
     }
 
     func withSpacePinnedShortcutGroup(
@@ -672,20 +595,12 @@ class TabManager: ObservableObject {
         _ mutate: (inout [ShortcutPin]) -> Void
     ) {
         let allPins = spacePinnedShortcuts[spaceId] ?? []
-        var targetGroup = allPins
-            .filter { $0.folderId == folderId }
-            .sorted { lhs, rhs in
-                if lhs.index != rhs.index { return lhs.index < rhs.index }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-        let otherPins = allPins.filter { $0.folderId != folderId }
-
-        mutate(&targetGroup)
-
-        let normalizedGroup = targetGroup.enumerated().map { index, pin in
-            pin.refreshed(index: index)
-        }
-        let rebuilt = normalizedSpacePinnedShortcuts(otherPins + normalizedGroup)
+        let rebuilt = SpacePinnedShortcutOrderOwner.mutatingShortcutGroup(
+            in: allPins,
+            folderId: folderId,
+            foldersBySpace: foldersBySpace,
+            mutate
+        )
         setSpacePinnedShortcuts(rebuilt, for: spaceId)
     }
 
