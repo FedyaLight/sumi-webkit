@@ -4,7 +4,6 @@ actor SumiPermissionCoordinator {
     typealias NowProvider = @Sendable () -> Date
     private typealias DecisionContinuation = CheckedContinuation<SumiPermissionCoordinatorDecision, Never>
     private typealias PendingQuery = SumiPendingAuthorizationQuery
-    private typealias PendingAuthorizationQueryIndex = SumiPendingAuthorizationQueryIndex
 
     private struct PolicyEvaluation: Sendable {
         let permissionType: SumiPermissionType
@@ -25,7 +24,7 @@ actor SumiPermissionCoordinator {
 
     private var state = SumiPermissionCoordinatorState()
     private var eventContinuations: [UUID: AsyncStream<SumiPermissionCoordinatorEvent>.Continuation] = [:]
-    private var pendingQueryIndex = PendingAuthorizationQueryIndex()
+    private var pendingQueryOwner = SumiPermissionPendingQueryOwner()
 
     init(
         policyResolver: any SumiPermissionPolicyResolver,
@@ -163,16 +162,17 @@ actor SumiPermissionCoordinator {
 
     func stateSnapshot() -> SumiPermissionCoordinatorState {
         var snapshot = state
-        snapshot.activeQueriesByPageId = pendingQueryIndex.activeQueriesByPageId
+        snapshot.activeQueriesByPageId = pendingQueryOwner.activeQueriesByPageId
+        snapshot.queueCountByPageId = pendingQueryOwner.queueCountsByPageId
         return snapshot
     }
 
     func activeQuery(forPageId pageId: String) -> SumiPermissionAuthorizationQuery? {
-        pendingQueryIndex.activeQuery(forPageId: pageId)
+        pendingQueryOwner.activeQuery(forPageId: pageId)
     }
 
     func recordPromptShown(queryId: String) async {
-        guard let pending = pendingQueryIndex.pending(queryId: queryId) else { return }
+        guard let pending = pendingQueryOwner.pending(queryId: queryId) else { return }
         await recordAntiAbuseEvents(
             type: .promptShown,
             keys: pending.keys,
@@ -335,10 +335,10 @@ actor SumiPermissionCoordinator {
         snapshots: [SumiSystemPermissionSnapshot],
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        guard let pending = pendingQueryIndex.pending(queryId: queryId) else {
+        guard let pending = pendingQueryOwner.pending(queryId: queryId) else {
             return ignoredDecision(reason: "query-not-found", permissionTypes: [])
         }
-        guard pendingQueryIndex.isActive(queryId: queryId, pageId: pending.query.pageId) else {
+        guard pendingQueryOwner.isActive(queryId: queryId, pageId: pending.query.pageId) else {
             return ignoredDecision(
                 reason: "query-not-active",
                 permissionTypes: pending.query.permissionTypes
@@ -366,13 +366,10 @@ actor SumiPermissionCoordinator {
             keys: pending.keys,
             reason: reason
         )
-        let continuations = pendingQueryIndex.takeContinuations(for: pending.requestIds)
-        pendingQueryIndex.remove(pending)
+        let continuations = pendingQueryOwner.resolveCompletedActiveQuery(pending)
         let advance = await queue.finishActiveRequest(pageId: pending.query.pageId)
         await refreshState(forPageId: pending.query.pageId)
-        if let promoted = advance.nextActive,
-           let promotedQuery = pendingQueryIndex.query(forRequestId: promoted.request.id)
-        {
+        if let promotedQuery = pendingQueryOwner.promotedQuery(from: advance.nextActive) {
             emit(.queryPromoted(promotedQuery))
         }
         emit(.systemBlocked(decision))
@@ -442,7 +439,7 @@ actor SumiPermissionCoordinator {
         if let normalizedTabId {
             _ = await memoryStore.clearOneTimeDecisions(forTabId: normalizedTabId)
         }
-        let matchingPrimaryIds = pendingQueryIndex.primaryRequestIds { $0.tabId == normalizedTabId }
+        let matchingPrimaryIds = pendingQueryOwner.primaryRequestIds { $0.tabId == normalizedTabId }
         return await cancelPrimaryRequestIds(
             matchingPrimaryIds,
             outcome: .cancelled,
@@ -458,7 +455,7 @@ actor SumiPermissionCoordinator {
     ) async -> SumiPermissionCoordinatorDecision {
         let normalizedProfileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         await memoryStore.clearForProfile(profilePartitionId: normalizedProfileId)
-        let matchingPrimaryIds = pendingQueryIndex.primaryRequestIds {
+        let matchingPrimaryIds = pendingQueryOwner.primaryRequestIds {
             $0.query.profilePartitionId == normalizedProfileId
         }
         let decision = await cancelPrimaryRequestIds(
@@ -480,7 +477,7 @@ actor SumiPermissionCoordinator {
         await memoryStore.clearForSession(ownerId: normalizedOwnerId)
         let matchingPrimaryIds: [String]
         if normalizedOwnerId == Self.normalizedOwnerId(sessionOwnerId ?? "") {
-            matchingPrimaryIds = pendingQueryIndex.primaryRequestIds { _ in true }
+            matchingPrimaryIds = pendingQueryOwner.primaryRequestIds { _ in true }
         } else {
             matchingPrimaryIds = []
         }
@@ -705,70 +702,38 @@ actor SumiPermissionCoordinator {
         request: SumiPermissionRequest,
         promptEvaluations: [PolicyEvaluation]
     ) {
-        switch enqueueResult {
-        case .activated(let entry):
-            storeNewPendingQuery(
-                query: query,
-                entry: entry,
-                request: request,
-                continuation: continuation,
-                promptEvaluations: promptEvaluations
-            )
-            pendingQueryIndex.activate(query)
-            state.queueCountByPageId[query.pageId] = 0
-            emit(.queryActivated(query))
-        case .queued(let entry, let position):
-            storeNewPendingQuery(
-                query: query,
-                entry: entry,
-                request: request,
-                continuation: continuation,
-                promptEvaluations: promptEvaluations
-            )
-            state.queueCountByPageId[query.pageId] = position
-            emit(.queryQueued(query, position: position))
-        case .coalesced(let existing):
-            guard let existingQueryId = pendingQueryIndex.registerCoalesced(
-                existing: existing,
-                requestId: request.id,
-                continuation: continuation
-            ) else {
-                continuation.resume(
-                    returning: ignoredDecision(
-                        reason: "coalesced-query-not-found",
-                        permissionTypes: request.permissionTypes
-                    )
-                )
-                return
-            }
-            emit(.queryCoalesced(queryId: existingQueryId, requestId: request.id))
-        }
-    }
-
-    private func storeNewPendingQuery(
-        query: SumiPermissionAuthorizationQuery,
-        entry: SumiPermissionQueueEntry,
-        request: SumiPermissionRequest,
-        continuation: DecisionContinuation,
-        promptEvaluations: [PolicyEvaluation]
-    ) {
-        pendingQueryIndex.storeNewPendingQuery(
+        let registration = pendingQueryOwner.register(
+            continuation,
+            enqueueResult: enqueueResult,
             query: query,
-            entry: entry,
             request: request,
-            continuation: continuation,
             keys: promptEvaluations.map(\.key)
         )
+        switch registration {
+        case .activated(let query):
+            emit(.queryActivated(query))
+        case .queued(let query, let position):
+            emit(.queryQueued(query, position: position))
+        case .coalesced(let queryId, let requestId):
+            emit(.queryCoalesced(queryId: queryId, requestId: requestId))
+        case .coalescedQueryMissing(let continuation, let permissionTypes):
+            continuation.resume(
+                returning: ignoredDecision(
+                    reason: "coalesced-query-not-found",
+                    permissionTypes: permissionTypes
+                )
+            )
+        }
     }
 
     private func settle(
         queryId: String,
         with userDecision: SumiPermissionUserDecision
     ) async -> SumiPermissionCoordinatorDecision {
-        guard let pending = pendingQueryIndex.pending(queryId: queryId) else {
+        guard let pending = pendingQueryOwner.pending(queryId: queryId) else {
             return ignoredDecision(reason: "query-not-found", permissionTypes: [])
         }
-        guard pendingQueryIndex.isActive(queryId: queryId, pageId: pending.query.pageId) else {
+        guard pendingQueryOwner.isActive(queryId: queryId, pageId: pending.query.pageId) else {
             return ignoredDecision(
                 reason: "query-not-active",
                 permissionTypes: pending.query.permissionTypes
@@ -778,13 +743,10 @@ actor SumiPermissionCoordinator {
         let decision = settlementDecisionBuilder.decision(for: userDecision, pending: pending)
         await recordAntiAbuseSettlement(userDecision, pending: pending, decision: decision)
         await writeUserDecisionIfNeeded(userDecision, pending: pending, decision: decision)
-        let continuations = pendingQueryIndex.takeContinuations(for: pending.requestIds)
-        pendingQueryIndex.remove(pending)
+        let continuations = pendingQueryOwner.resolveCompletedActiveQuery(pending)
         let advance = await queue.finishActiveRequest(pageId: pending.query.pageId)
         await refreshState(forPageId: pending.query.pageId)
-        if let promoted = advance.nextActive,
-           let promotedQuery = pendingQueryIndex.query(forRequestId: promoted.request.id)
-        {
+        if let promotedQuery = pendingQueryOwner.promotedQuery(from: advance.nextActive) {
             emit(.queryPromoted(promotedQuery))
         }
         emit(.querySettled(queryId: queryId, decision: decision))
@@ -1042,7 +1004,7 @@ actor SumiPermissionCoordinator {
         decision: SumiPermissionCoordinatorDecision
     ) async {
         guard !requestIds.isEmpty else { return }
-        let continuations = pendingQueryIndex.resolveCancelledRequestIds(requestIds)
+        let continuations = pendingQueryOwner.resolveCancelledRequestIds(requestIds)
         resume(continuations, with: decision)
     }
 
@@ -1071,17 +1033,11 @@ actor SumiPermissionCoordinator {
     private func refreshState(forPageId pageId: String) async {
         let normalizedPageId = Self.normalizedPageId(pageId)
         let snapshot = await queue.snapshot(forPageId: normalizedPageId)
-        pendingQueryIndex.refreshActiveQuery(pageId: normalizedPageId, snapshot: snapshot)
-
-        if snapshot.queued.isEmpty {
-            state.queueCountByPageId.removeValue(forKey: normalizedPageId)
-        } else {
-            state.queueCountByPageId[normalizedPageId] = snapshot.queued.count
-        }
+        pendingQueryOwner.refreshActiveQuery(pageId: normalizedPageId, snapshot: snapshot)
     }
 
     private func pageIds(forRequestIds requestIds: [String]) -> Set<String> {
-        pendingQueryIndex.pageIds(forRequestIds: requestIds)
+        pendingQueryOwner.pageIds(forRequestIds: requestIds)
     }
 
     private func authorizationQuery(
@@ -1205,7 +1161,7 @@ actor SumiPermissionCoordinator {
         reason: String,
         requestIds: [String]
     ) -> SumiPermissionCoordinatorDecision {
-        let pendingQueries = pendingQueryIndex.pendingQueries(forRequestIds: requestIds)
+        let pendingQueries = pendingQueryOwner.pendingQueries(forRequestIds: requestIds)
         return SumiPermissionCoordinatorDecision(
             outcome: outcome,
             state: nil,
