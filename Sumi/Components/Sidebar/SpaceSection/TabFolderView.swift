@@ -684,115 +684,24 @@ struct TabFolderView: View {
         .accessibilityHidden(true)
     }
 
-    private func performShortcutHostedSegmentAction(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) {
-        if SplitGroupSidebarModel.member(for: item, in: group)?.isShortcutBacked == true {
-            onPerformShortcutRestoreWithPreparedGap(item, group) {
-                performFolderSplitModelMutation {
-                    browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
-                }
-            }
-            return
-        }
-
-        guard let tab = item.tab else { return }
-        performFolderSplitModelMutation {
-            browserManager.closeTab(tab, in: windowState)
-        }
-    }
-
-    private func performFolderSplitModelMutation(_ update: () -> Void) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction, update)
-    }
-
     @ViewBuilder
     private func shortcutHostedSplitGroupView(
         _ group: SplitGroup,
         items: [SplitGroupSidebarItem]
     ) -> some View {
         if !items.isEmpty {
-            SplitGroupSidebarRow(
+            ShortcutHostedSplitGroupRow(
                 group: group,
                 items: items,
                 spaceId: space.id,
                 isAppKitInteractionEnabled: isInteractive,
-                segmentAction: { item in
-                    SplitGroupSidebarModel.segmentAction(for: item, in: group)
-                },
-                dragSource: { item in
-                    shortcutHostedSplitSegmentDragSource(for: item, in: group)
-                },
-                contextMenuEntries: { _ in [] },
-                onActivate: { tab in
-                    browserManager.requestUserTabActivation(tab, in: windowState)
-                },
-                onActivateGroup: {
-                    browserManager.focusSplitGroup(group, in: windowState)
-                },
-                onSegmentActionAnimationStart: { item in
-                    if SplitGroupSidebarModel.segmentAction(for: item, in: group) == .restore {
-                        onPrepareShortcutRestoreGap(item, group)
-                    }
-                },
-                onSegmentAction: { item in
-                    performShortcutHostedSegmentAction(for: item, in: group)
-                }
+                accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
+                onPrepareShortcutRestoreGap: onPrepareShortcutRestoreGap,
+                onPerformShortcutRestoreWithPreparedGap: onPerformShortcutRestoreWithPreparedGap
             )
             .environmentObject(browserManager)
             .environmentObject(splitManager)
-            .accessibilityIdentifier("folder-shortcut-host-split-row-\(group.id.uuidString)")
         }
-    }
-
-    private func shortcutHostedSplitSegmentDragSource(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) -> SidebarDragSourceConfiguration? {
-        let member = SplitGroupSidebarModel.member(for: item, in: group)
-        if let pin = SplitGroupSidebarModel.shortcutPin(
-            for: item,
-            member: member,
-            tabManager: browserManager.tabManager
-        ) {
-            let dragItemId = item.tab?.id ?? pin.id
-            return SidebarDragSourceConfiguration(
-                item: SumiDragItem(
-                    tabId: dragItemId,
-                    title: item.title,
-                    urlString: item.tab?.url.absoluteString ?? pin.launchURL.absoluteString
-                ),
-                sourceZone: SplitGroupSidebarModel.sourceZone(for: pin, fallbackSpaceId: space.id),
-                previewKind: .row,
-                previewIcon: item.tab?.favicon ?? pin.storedFavicon,
-                exclusionZones: [.trailingStrip(32)],
-                onActivate: {
-                    browserManager.focusSplitGroup(group, in: windowState)
-                },
-                isEnabled: isInteractive
-            )
-        }
-
-        guard let tab = item.tab else { return nil }
-        return SidebarDragSourceConfiguration(
-            item: SumiDragItem(
-                tabId: tab.id,
-                title: tab.name,
-                urlString: tab.url.absoluteString
-            ),
-            sourceZone: .spaceRegular(space.id),
-            previewKind: .row,
-            previewIcon: tab.favicon,
-            exclusionZones: [.trailingStrip(32)],
-            onActivate: {
-                browserManager.requestUserTabActivation(tab, in: windowState)
-            },
-            isEnabled: isInteractive
-        )
     }
 
     @ViewBuilder

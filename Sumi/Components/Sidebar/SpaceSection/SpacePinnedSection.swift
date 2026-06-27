@@ -213,66 +213,25 @@ extension SpaceView {
         )
     }
 
-    private func performShortcutHostedSegmentAction(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) {
-        if SplitGroupSidebarModel.member(for: item, in: group)?.isShortcutBacked == true {
-            performShortcutRestoreWithPreparedGap(for: item, in: group) {
-                performPinnedSplitModelMutation {
-                    browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
-                }
-            }
-            return
-        }
-
-        guard let tab = item.tab else { return }
-        performPinnedSplitModelMutation {
-            browserManager.closeTab(tab, in: windowState)
-        }
-    }
-
-    private func performPinnedSplitModelMutation(_ update: () -> Void) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        transaction.animation = nil
-        withTransaction(transaction, update)
-    }
-
     @ViewBuilder
     private func shortcutHostedSplitGroupView(_ group: SplitGroup, topLevelPinnedIndex: Int) -> some View {
         let items = SplitGroupSidebarModel.items(for: group, tabManager: browserManager.tabManager)
         if !items.isEmpty {
-            SplitGroupSidebarRow(
+            ShortcutHostedSplitGroupRow(
                 group: group,
                 items: items,
                 spaceId: space.id,
                 isAppKitInteractionEnabled: isInteractive,
-                segmentAction: { item in
-                    SplitGroupSidebarModel.segmentAction(for: item, in: group)
+                accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
+                onPrepareShortcutRestoreGap: { item, group in
+                    prepareShortcutRestoreGap(for: item, in: group)
                 },
-                dragSource: { item in
-                    shortcutHostedSplitSegmentDragSource(for: item, in: group)
-                },
-                contextMenuEntries: { _ in [] },
-                onActivate: { tab in
-                    browserManager.requestUserTabActivation(tab, in: windowState)
-                },
-                onActivateGroup: {
-                    browserManager.focusSplitGroup(group, in: windowState)
-                },
-                onSegmentActionAnimationStart: { item in
-                    if SplitGroupSidebarModel.segmentAction(for: item, in: group) == .restore {
-                        prepareShortcutRestoreGap(for: item, in: group)
-                    }
-                },
-                onSegmentAction: { item in
-                    performShortcutHostedSegmentAction(for: item, in: group)
+                onPerformShortcutRestoreWithPreparedGap: { item, group, update in
+                    performShortcutRestoreWithPreparedGap(for: item, in: group, update: update)
                 }
             )
             .environmentObject(browserManager)
             .environmentObject(splitManager)
-            .accessibilityIdentifier("shortcut-host-split-row-\(group.id.uuidString)")
             .sidebarTopLevelPinnedItemGeometry(
                 itemId: group.id,
                 spaceId: space.id,
@@ -282,52 +241,6 @@ extension SpaceView {
             )
             .sidebarRowListItemTransition(isEnabled: isInteractive)
         }
-    }
-
-    private func shortcutHostedSplitSegmentDragSource(
-        for item: SplitGroupSidebarItem,
-        in group: SplitGroup
-    ) -> SidebarDragSourceConfiguration? {
-        let member = SplitGroupSidebarModel.member(for: item, in: group)
-        if let pin = SplitGroupSidebarModel.shortcutPin(
-            for: item,
-            member: member,
-            tabManager: browserManager.tabManager
-        ) {
-            let dragItemId = item.tab?.id ?? pin.id
-            return SidebarDragSourceConfiguration(
-                item: SumiDragItem(
-                    tabId: dragItemId,
-                    title: item.title,
-                    urlString: item.tab?.url.absoluteString ?? pin.launchURL.absoluteString
-                ),
-                sourceZone: SplitGroupSidebarModel.sourceZone(for: pin, fallbackSpaceId: space.id),
-                previewKind: .row,
-                previewIcon: item.tab?.favicon ?? pin.storedFavicon,
-                exclusionZones: [.trailingStrip(32)],
-                onActivate: {
-                    browserManager.focusSplitGroup(group, in: windowState)
-                },
-                isEnabled: isInteractive
-            )
-        }
-
-        guard let tab = item.tab else { return nil }
-        return SidebarDragSourceConfiguration(
-            item: SumiDragItem(
-                tabId: tab.id,
-                title: tab.name,
-                urlString: tab.url.absoluteString
-            ),
-            sourceZone: .spaceRegular(space.id),
-            previewKind: .row,
-            previewIcon: tab.favicon,
-            exclusionZones: [.trailingStrip(32)],
-            onActivate: {
-                browserManager.requestUserTabActivation(tab, in: windowState)
-            },
-            isEnabled: isInteractive
-        )
     }
 
     private var pinnedTabsList: some View {
