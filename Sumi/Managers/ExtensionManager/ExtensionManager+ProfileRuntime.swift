@@ -117,14 +117,11 @@ extension ExtensionManager {
     }
 
     func rememberPrivateExtensionRuntimeProfileIfNeeded(_ profile: Profile) {
-        if profile.isEphemeral {
-            privateExtensionRuntimeProfileIDs.insert(profile.id)
-        }
+        profileWebsiteDataStoreCache.rememberPrivateRuntimeProfileIfNeeded(profile)
     }
 
     func isPrivateExtensionRuntimeProfile(_ profileId: UUID?) -> Bool {
-        guard let profileId else { return false }
-        return privateExtensionRuntimeProfileIDs.contains(profileId)
+        profileWebsiteDataStoreCache.isPrivateRuntimeProfile(profileId)
     }
 
     func windowMatchesProfile(

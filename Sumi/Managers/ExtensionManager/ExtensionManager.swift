@@ -132,6 +132,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     let browserConfiguration: BrowserConfiguration
     let installationMetadataStore: ExtensionInstallationMetadataStore
     let requestedTabLifecycleOwner = ExtensionRequestedTabLifecycleOwner()
+    let profileWebsiteDataStoreCache = ExtensionProfileWebsiteDataStoreCache()
     var controllerIdentifierStorage: UUID?
     var controllerIdentifier: UUID {
         ensureRuntimeControllerIdentifier()
@@ -195,9 +196,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     var loadedNativeMessagingRelay: SumiNativeMessagingRelay? {
         nativeMessagingRelayStorage
     }
-    var profileExtensionStores: [UUID: WKWebsiteDataStore] = [:]
-    var profileExtensionStoreOrder: [UUID] = []
-    var privateExtensionRuntimeProfileIDs: Set<UUID> = []
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
     var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
@@ -214,7 +212,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     var currentProfileId: UUID?
     var pinnedToolbarExtensionIDsByProfile: [String: [String]] = [:]
 
-    nonisolated static let profileExtensionStoreLimit = 4
+    nonisolated static let profileExtensionStoreLimit =
+        ExtensionProfileWebsiteDataStoreCache.defaultLimit
     nonisolated static let maxLiveExtensionContexts = 8
     init(
         context: ModelContext,

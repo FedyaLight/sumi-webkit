@@ -919,9 +919,7 @@ extension ExtensionManager {
                 controller.delegate = nil
             }
             extensionControllersByProfile.removeAll()
-            profileExtensionStores.removeAll()
-            profileExtensionStoreOrder.removeAll()
-            privateExtensionRuntimeProfileIDs.removeAll()
+            profileWebsiteDataStoreCache.removeAll()
             extensionRuntimeAllowsWithoutEnabledExtensions = false
             runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
             extensionsLoaded = false
@@ -1133,29 +1131,11 @@ extension ExtensionManager {
     func getExtensionDataStore(
         for profileId: UUID
     ) -> WKWebsiteDataStore {
-        if let profile = activeProfile(for: profileId) {
-            rememberPrivateExtensionRuntimeProfileIfNeeded(profile)
-            let store = profile.dataStore
-            profileExtensionStores[profileId] = store
-            touchProfileExtensionStore(profileId)
-            return store
-        }
-
-        if let store = profileExtensionStores[profileId] {
-            touchProfileExtensionStore(profileId)
-            return store
-        }
-
-        let signpostState = PerformanceTrace.beginInterval("ExtensionManager.profileStoreCreate")
-        defer {
-            PerformanceTrace.endInterval("ExtensionManager.profileStoreCreate", signpostState)
-        }
-
-        let store = WKWebsiteDataStore(forIdentifier: profileId)
-        profileExtensionStores[profileId] = store
-        touchProfileExtensionStore(profileId)
-        evictProfileExtensionStoresIfNeeded()
-        return store
+        profileWebsiteDataStoreCache.store(
+            for: profileId,
+            activeProfile: activeProfile(for: profileId),
+            currentProfileId: currentProfileId
+        )
     }
 
     private func activeProfile(for profileId: UUID) -> Profile? {
@@ -1166,24 +1146,6 @@ extension ExtensionManager {
         return browserManager?.windowRegistry?.windows.values
             .compactMap(\.ephemeralProfile)
             .first(where: { $0.id == profileId })
-    }
-
-    private func touchProfileExtensionStore(_ profileId: UUID) {
-        profileExtensionStoreOrder.removeAll { $0 == profileId }
-        profileExtensionStoreOrder.append(profileId)
-    }
-
-    private func evictProfileExtensionStoresIfNeeded() {
-        while profileExtensionStores.count > Self.profileExtensionStoreLimit {
-            guard let evictionID = profileExtensionStoreOrder.first(where: {
-                $0 != currentProfileId
-            }) ?? profileExtensionStoreOrder.first else {
-                return
-            }
-
-            profileExtensionStoreOrder.removeAll { $0 == evictionID }
-            profileExtensionStores.removeValue(forKey: evictionID)
-        }
     }
 
     func canLateBindExtensionController(to webView: WKWebView) -> Bool {

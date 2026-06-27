@@ -143,4 +143,71 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
 
         XCTAssertTrue(manager.isPrivateExtensionRuntimeProfile(ephemeralProfile.id))
     }
+
+    func testProfileStoreCachePreservesCurrentProfileOnEviction() {
+        let cache = ExtensionProfileWebsiteDataStoreCache(limit: 2)
+        let currentProfileId = UUID()
+        let inactiveProfileId = UUID()
+        let newestProfileId = UUID()
+
+        let currentStore = cache.store(
+            for: currentProfileId,
+            activeProfile: nil,
+            currentProfileId: currentProfileId
+        )
+        let inactiveStore = cache.store(
+            for: inactiveProfileId,
+            activeProfile: nil,
+            currentProfileId: currentProfileId
+        )
+
+        XCTAssertTrue(cache.cachedStore(for: currentProfileId) === currentStore)
+        XCTAssertTrue(cache.cachedStore(for: inactiveProfileId) === inactiveStore)
+
+        _ = cache.store(
+            for: newestProfileId,
+            activeProfile: nil,
+            currentProfileId: currentProfileId
+        )
+
+        XCTAssertTrue(cache.cachedStore(for: currentProfileId) === currentStore)
+        XCTAssertNil(cache.cachedStore(for: inactiveProfileId))
+        XCTAssertNotNil(cache.cachedStore(for: newestProfileId))
+    }
+
+    func testProfileStoreCacheTouchRefreshesEvictionOrder() {
+        let cache = ExtensionProfileWebsiteDataStoreCache(limit: 2)
+        let firstProfileId = UUID()
+        let secondProfileId = UUID()
+        let newestProfileId = UUID()
+
+        let firstStore = cache.store(
+            for: firstProfileId,
+            activeProfile: nil,
+            currentProfileId: nil
+        )
+        let secondStore = cache.store(
+            for: secondProfileId,
+            activeProfile: nil,
+            currentProfileId: nil
+        )
+
+        XCTAssertTrue(cache.cachedStore(for: firstProfileId) === firstStore)
+        XCTAssertTrue(cache.cachedStore(for: secondProfileId) === secondStore)
+
+        _ = cache.store(
+            for: firstProfileId,
+            activeProfile: nil,
+            currentProfileId: nil
+        )
+        _ = cache.store(
+            for: newestProfileId,
+            activeProfile: nil,
+            currentProfileId: nil
+        )
+
+        XCTAssertTrue(cache.cachedStore(for: firstProfileId) === firstStore)
+        XCTAssertNil(cache.cachedStore(for: secondProfileId))
+        XCTAssertNotNil(cache.cachedStore(for: newestProfileId))
+    }
 }
