@@ -255,27 +255,6 @@ struct DeferredProtectedCommandBuffer {
 }
 
 @MainActor
-struct DestructiveCleanupNavigationSuppression {
-    private var blankingWebViewIDs: Set<ObjectIdentifier> = []
-
-    mutating func begin(on webView: WKWebView) {
-        blankingWebViewIDs.insert(ObjectIdentifier(webView))
-    }
-
-    func isPreparing(on webView: WKWebView) -> Bool {
-        blankingWebViewIDs.contains(ObjectIdentifier(webView))
-    }
-
-    mutating func finish(on webView: WKWebView) {
-        blankingWebViewIDs.remove(ObjectIdentifier(webView))
-    }
-
-    mutating func finish(webViewID: ObjectIdentifier) {
-        blankingWebViewIDs.remove(webViewID)
-    }
-}
-
-@MainActor
 @Observable
 class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     @ObservationIgnored
@@ -306,7 +285,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
 
     @ObservationIgnored
-    private var destructiveCleanupNavigationSuppression = DestructiveCleanupNavigationSuppression()
+    private let destructiveCleanupPreparationOwner = WebViewDestructiveCleanupPreparationOwner()
 
     // MARK: - Compositor Container Management
 
@@ -376,11 +355,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     func isPreparingForDestructiveDataCleanupNavigation(on webView: WKWebView) -> Bool {
-        destructiveCleanupNavigationSuppression.isPreparing(on: webView)
+        destructiveCleanupPreparationOwner.isSuppressingNavigation(on: webView)
     }
 
     func finishDestructiveDataCleanupNavigation(on webView: WKWebView) {
-        destructiveCleanupNavigationSuppression.finish(on: webView)
+        destructiveCleanupPreparationOwner.finishNavigationSuppression(on: webView)
     }
 
     func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async {
@@ -411,7 +390,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
             tab.cancelPendingMainFrameNavigation()
             for webView in eligibleWebViews {
-                prepareForDestructiveCleanup(webView, tab: tab)
+                destructiveCleanupPreparationOwner.prepare(webView, tab: tab)
                 preparedWebViewCount += 1
             }
         }
@@ -430,28 +409,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     func setWebView(_ webView: WKWebView, for tabId: UUID, in windowId: UUID) {
         registerTrackedWebView(webView, for: tabId, in: windowId)
-    }
-
-    private func prepareForDestructiveCleanup(_ webView: WKWebView, tab: Tab) {
-        tab.stopLoading(on: webView)
-        webView.pauseAllMediaPlayback(completionHandler: nil)
-
-        if webView.cameraCaptureState != .none {
-            webView.setCameraCaptureState(.none, completionHandler: nil)
-        }
-        if webView.microphoneCaptureState != .none {
-            webView.setMicrophoneCaptureState(.none, completionHandler: nil)
-        }
-
-        guard webView.url?.absoluteString != SumiSurface.emptyTabURL.absoluteString else {
-            finishDestructiveDataCleanupNavigation(on: webView)
-            return
-        }
-
-        destructiveCleanupNavigationSuppression.begin(on: webView)
-        if webView.load(URLRequest(url: SumiSurface.emptyTabURL)) == nil {
-            finishDestructiveDataCleanupNavigation(on: webView)
-        }
     }
 
     func registerPromotedHost(
@@ -1469,7 +1426,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private func finishDestructiveCleanupSuppression(for webViewIDs: [ObjectIdentifier]) {
         guard webViewIDs.isEmpty == false else { return }
         for webViewID in webViewIDs {
-            destructiveCleanupNavigationSuppression.finish(webViewID: webViewID)
+            destructiveCleanupPreparationOwner.finishNavigationSuppression(webViewID: webViewID)
         }
     }
 

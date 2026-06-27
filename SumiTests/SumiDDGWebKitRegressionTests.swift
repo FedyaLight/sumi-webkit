@@ -1202,48 +1202,76 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
     }
 
-    func testDestructiveCleanupNavigationSuppressionTracksWebViewIdentity() {
+    func testDestructiveCleanupPreparationOwnerTracksWebViewIdentity() {
         let firstWebView = WKWebView()
         let secondWebView = WKWebView()
-        var suppression = DestructiveCleanupNavigationSuppression()
+        let owner = WebViewDestructiveCleanupPreparationOwner()
 
-        XCTAssertFalse(suppression.isPreparing(on: firstWebView))
-        XCTAssertFalse(suppression.isPreparing(on: secondWebView))
+        XCTAssertFalse(owner.isSuppressingNavigation(on: firstWebView))
+        XCTAssertFalse(owner.isSuppressingNavigation(on: secondWebView))
 
-        suppression.begin(on: firstWebView)
-        XCTAssertTrue(suppression.isPreparing(on: firstWebView))
-        XCTAssertFalse(suppression.isPreparing(on: secondWebView))
+        owner.beginNavigationSuppression(on: firstWebView)
+        XCTAssertTrue(owner.isSuppressingNavigation(on: firstWebView))
+        XCTAssertFalse(owner.isSuppressingNavigation(on: secondWebView))
 
-        suppression.finish(on: firstWebView)
-        XCTAssertFalse(suppression.isPreparing(on: firstWebView))
+        owner.finishNavigationSuppression(on: firstWebView)
+        XCTAssertFalse(owner.isSuppressingNavigation(on: firstWebView))
 
-        suppression.begin(on: firstWebView)
-        suppression.finish(webViewID: ObjectIdentifier(firstWebView))
-        XCTAssertFalse(suppression.isPreparing(on: firstWebView))
+        owner.beginNavigationSuppression(on: firstWebView)
+        owner.finishNavigationSuppression(webViewID: ObjectIdentifier(firstWebView))
+        XCTAssertFalse(owner.isSuppressingNavigation(on: firstWebView))
     }
 
     func testWebViewCoordinatorReleasesDestructiveCleanupSuppressionWithTrackedCleanup() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let source = try String(
+        let coordinatorSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
                 "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
             ),
             encoding: .utf8
         )
+        let ownerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewDestructiveCleanupPreparationOwner.swift"
+            ),
+            encoding: .utf8
+        )
 
         let suppressionSource = try sourceSlice(
-            source,
-            from: "struct DestructiveCleanupNavigationSuppression",
-            to: "@MainActor\n@Observable\nclass WebViewCoordinator"
+            ownerSource,
+            from: "final class WebViewDestructiveCleanupPreparationOwner",
+            to: "func prepare(_ webView: WKWebView, tab: Tab)"
         )
         XCTAssertTrue(suppressionSource.contains("private var blankingWebViewIDs"))
         XCTAssertFalse(suppressionSource.contains("WKNavigation"))
         XCTAssertFalse(suppressionSource.contains("load("))
 
+        let preparationSource = try sourceSlice(
+            ownerSource,
+            from: "func prepare(_ webView: WKWebView, tab: Tab)",
+            to: "\n}"
+        )
+        try assertTokenOrder(
+            preparationSource,
+            [
+                "tab.stopLoading(on: webView)",
+                "webView.pauseAllMediaPlayback",
+                "beginNavigationSuppression(on: webView)",
+                "webView.load(URLRequest(url: SumiSurface.emptyTabURL))"
+            ]
+        )
+
+        let coordinatorStart = try XCTUnwrap(
+            coordinatorSource.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
+        ).lowerBound
+        let coordinatorClassSource = String(coordinatorSource[coordinatorStart...])
+        XCTAssertTrue(coordinatorClassSource.contains("private let destructiveCleanupPreparationOwner = WebViewDestructiveCleanupPreparationOwner()"))
+        XCTAssertFalse(coordinatorClassSource.contains("private var blankingWebViewIDs"))
+
         let cleanupSource = try sourceSlice(
-            source,
+            coordinatorSource,
             from: "private func cleanupUnprotectedTrackedWebView(",
             to: "@discardableResult\n    private func closeTrackedWebViewFromWebKit"
         )
@@ -1257,7 +1285,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         let stalePruneSource = try sourceSlice(
-            source,
+            coordinatorSource,
             from: "private func pruneStaleWebViewBookkeeping",
             to: "private func pruneInvalidDeferredProtectedCommands"
         )
@@ -1270,7 +1298,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         let suppressionReleaseSource = try sourceSlice(
-            source,
+            coordinatorSource,
             from: "private func finishDestructiveCleanupSuppression",
             to: "private func isDeferredProtectedCommandValid"
         )
@@ -1278,7 +1306,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             suppressionReleaseSource,
             [
                 "for webViewID in webViewIDs",
-                "destructiveCleanupNavigationSuppression.finish(webViewID: webViewID)"
+                "destructiveCleanupPreparationOwner.finishNavigationSuppression(webViewID: webViewID)"
             ]
         )
     }
