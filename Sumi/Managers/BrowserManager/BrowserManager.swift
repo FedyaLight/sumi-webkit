@@ -256,6 +256,7 @@ class BrowserManager: ObservableObject {
     let privacyService = BrowserPrivacyService()
     let liveFolderManager = SumiLiveFolderManager()
     private let floatingBarNavigationOwner = FloatingBarNavigationOwner()
+    private let tabSelectionOwner = BrowserTabSelectionOwner()
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
         guard let self else { return [] }
@@ -838,6 +839,98 @@ class BrowserManager: ObservableObject {
         .browserManager(self)
     }
 
+    private var tabSelectionActions: BrowserTabSelectionOwner.Actions {
+        BrowserTabSelectionOwner.Actions(
+            activeWindowId: { [weak self] in
+                self?.windowRegistry?.activeWindow?.id
+            },
+            tab: { [weak self] tabId in
+                self?.tabManager.tab(for: tabId)
+            },
+            currentTab: { [weak self] windowState in
+                self?.currentTab(for: windowState)
+            },
+            liveShortcutTabs: { [weak self] windowId in
+                self?.tabManager.liveShortcutTabs(in: windowId) ?? []
+            },
+            updateActiveSplitSide: { [weak self] tabId, windowId in
+                self?.splitManager.updateActiveSide(for: tabId, in: windowId)
+            },
+            syncWindowSpaceContext: { [weak self] windowState, animateTheme in
+                self?.syncWindowSpaceContext(in: windowState, animateTheme: animateTheme)
+            },
+            space: { [weak self] spaceId in
+                self?.space(for: spaceId)
+            },
+            updateWorkspaceTheme: { [weak self] windowState, theme, animate in
+                self?.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
+            },
+            applySettingsSurfaceNavigation: { [weak self] url in
+                self?.sumiSettings?.applyNavigationFromSettingsSurfaceURL(url)
+            },
+            canMaterializeNormalTabWebViewDuringStartup: { [weak self] tab in
+                self?.canMaterializeNormalTabWebViewDuringStartup(tab) ?? true
+            },
+            markTabAccessed: { [weak self] tabId in
+                self?.compositorManager.markTabAccessed(tabId)
+            },
+            webViewCoordinator: { [weak self] in
+                self?.webViewCoordinator
+            },
+            handleNativeNowPlayingTabActivated: { tabId in
+                SumiNativeNowPlayingController.shared.handleTabActivated(tabId)
+            },
+            scheduleNativeNowPlayingRefresh: { delayNanoseconds in
+                SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: delayNanoseconds)
+            },
+            fetchVisibleFavicon: { tab in
+                Task { @MainActor [weak tab] in
+                    guard let tab else { return }
+                    await tab.fetchFaviconForVisiblePresentation()
+                }
+            },
+            dismissFloatingBarAfterSelection: { [weak self] windowState in
+                self?.dismissFloatingBarAfterSelection(in: windowState)
+            },
+            updateFindManagerCurrentTab: { [weak self] in
+                self?.updateFindManagerCurrentTab()
+            },
+            clearFindManagerCurrentTab: { [weak self] in
+                self?.findManager.updateCurrentTab(nil)
+            },
+            schedulePrepareVisibleWebViews: { [weak self] windowState in
+                self?.schedulePrepareVisibleWebViews(for: windowState)
+            },
+            refreshCompositor: { [weak self] windowState in
+                self?.refreshCompositor(for: windowState)
+            },
+            notifyTabActivated: { [weak self] newTab, previousTab in
+                self?.extensionsModule.notifyTabActivatedIfLoaded(newTab: newTab, previous: previousTab)
+            },
+            scheduleTabSuspensionReconcile: { [weak self] reason in
+                self?.tabSuspensionService.scheduleProactiveTimerReconcile(reason: reason)
+            },
+            scheduleBackgroundMediaReconcile: { [weak self] reason in
+                self?.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
+            },
+            updateActiveTabState: { [weak self] tab in
+                self?.tabManager.updateActiveTabState(tab)
+            },
+            persistWindowSession: { [weak self] windowState in
+                self?.persistWindowSession(for: windowState)
+            },
+            selectionTargetForSpaceActivation: { [weak self] space, windowState in
+                self?.selectionTargetForSpaceActivation(in: space, windowState: windowState)
+            },
+            updateProfileRuntimeStates: { [weak self] windowState in
+                self?.updateProfileRuntimeStates(activeWindowState: windowState)
+            },
+            showNewTabFloatingBar: { [weak self] windowState in
+                self?.showNewTabFloatingBar(in: windowState)
+            }
+        )
+    }
+
 
     func focusFloatingBarForActiveWindow(
         prefill: String = "",
@@ -1389,13 +1482,11 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy = .immediate
     ) {
-        applyTabSelection(
+        tabSelectionOwner.selectTab(
             tab,
             in: windowState,
-            updateSpaceFromTab: true,
-            updateTheme: true,
-            rememberSelection: true,
-            loadPolicy: loadPolicy
+            loadPolicy: loadPolicy,
+            actions: tabSelectionActions
         )
     }
 
@@ -1460,121 +1551,27 @@ class BrowserManager: ObservableObject {
         persistSelection: Bool = true,
         loadPolicy: TabSelectionLoadPolicy
     ) {
-        let selectionApplication = WindowTabSelectionStateApplicator.apply(
+        tabSelectionOwner.applyTabSelection(
             tab,
-            to: windowState,
+            in: windowState,
             updateSpaceFromTab: updateSpaceFromTab,
-            rememberSelection: rememberSelection
+            updateTheme: updateTheme,
+            rememberSelection: rememberSelection,
+            persistSelection: persistSelection,
+            loadPolicy: loadPolicy,
+            actions: tabSelectionActions
         )
-
-        let selectedTabChanged = selectionApplication.previousTabId != tab.id
-        let requiresMaterialization = tab.isUnloaded && tab.requiresPrimaryWebView
-        guard selectionApplication.stateDidChange || selectedTabChanged || requiresMaterialization else {
-            return
-        }
-
-        SumiNativeNowPlayingController.shared.handleTabActivated(tab.id)
-        tab.noteSuspensionAccess()
-        dismissFloatingBarAfterSelection(in: windowState)
-        splitManager.updateActiveSide(for: tab.id, in: windowState.id)
-
-        syncWindowSpaceContext(in: windowState, animateTheme: updateTheme)
-
-        if updateTheme && !windowState.isInteractiveSpaceTransition {
-            if let currentSpace = space(for: windowState.currentSpaceId) {
-                let animateWorkspaceTheme = selectionApplication.previousSpaceId != currentSpace.id
-                updateWorkspaceTheme(
-                    for: windowState,
-                    to: currentSpace.workspaceTheme,
-                    animate: animateWorkspaceTheme
-                )
-            } else {
-                updateWorkspaceTheme(for: windowState, to: .default, animate: false)
-            }
-        }
-
-        // Note: No need to track tab display ownership - each window shows its own current tab
-
-        if tab.representsSumiSettingsSurface {
-            sumiSettings?.applyNavigationFromSettingsSurfaceURL(tab.url)
-        }
-
-        // Load the tab in compositor if needed (reloads unloaded tabs)
-        if tab.requiresPrimaryWebView {
-            scheduleTabLoadIfNeeded(
-                tab,
-                in: windowState,
-                loadPolicy: loadPolicy
-            )
-        }
-
-        Task { @MainActor [weak tab] in
-            guard let tab else { return }
-            await tab.fetchFaviconForVisiblePresentation()
-        }
-
-        SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
-
-        // Update find manager with new current tab
-        updateFindManagerCurrentTab()
-
-        schedulePrepareVisibleWebViews(for: windowState)
-        refreshCompositor(for: windowState)
-
-        let previousTab = selectionApplication.previousTabId.flatMap { previousId in
-            tabManager.tab(for: previousId)
-        }
-        extensionsModule.notifyTabActivatedIfLoaded(newTab: tab, previous: previousTab)
-        tabSuspensionService.scheduleProactiveTimerReconcile(reason: "tab-selection-changed")
-        backgroundMediaOptimizationService.scheduleReconcile(reason: "tab-selection-changed")
-
-        // Update global tab state for the active window
-        if windowRegistry?.activeWindow?.id == windowState.id {
-            // Only update the global state, don't trigger UI operations again
-            tabManager.updateActiveTabState(tab)
-        }
-        if persistSelection {
-            persistWindowSession(for: windowState)
-        }
-    }
-
-    private func scheduleTabLoadIfNeeded(
-        _ tab: Tab,
-        in windowState: BrowserWindowState,
-        loadPolicy: TabSelectionLoadPolicy
-    ) {
-        if tab.isUnloaded {
-            tab.beginLoadingPresentationIfNeeded()
-        }
-
-        guard canMaterializeNormalTabWebViewDuringStartup(tab) else { return }
-
-        switch loadPolicy {
-        case .immediate:
-            materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
-        case .deferred:
-            Task { @MainActor [weak self, weak tab] in
-                guard let self, let tab else { return }
-                await Task.yield()
-                guard self.currentTab(for: windowState)?.id == tab.id else { return }
-                self.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
-                self.refreshCompositor(for: windowState)
-            }
-        }
     }
 
     func materializeVisibleTabWebViewIfNeeded(
         _ tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        compositorManager.markTabAccessed(tab.id)
-        guard let webViewCoordinator else {
-            tab.loadWebViewIfNeeded()
-            return
-        }
-        if webViewCoordinator.getWebView(for: tab.id, in: windowState.id) == nil {
-            _ = webViewCoordinator.getOrCreateWebView(for: tab, in: windowState.id)
-        }
+        tabSelectionOwner.materializeVisibleTabWebViewIfNeeded(
+            tab,
+            in: windowState,
+            actions: tabSelectionActions
+        )
     }
 
     /// Get tabs that should be displayed in a specific window
@@ -1917,23 +1914,10 @@ class BrowserManager: ObservableObject {
     }
 
     func syncShortcutSelectionState(for windowState: BrowserWindowState) {
-        guard let currentTabId = windowState.currentTabId else {
-            if !windowState.isShowingEmptyState {
-                windowState.currentShortcutPinId = nil
-                windowState.currentShortcutPinRole = nil
-            }
-            return
-        }
-
-        if let liveShortcutTab = tabManager.liveShortcutTabs(in: windowState.id)
-            .first(where: { $0.id == currentTabId && $0.isShortcutLiveInstance })
-        {
-            windowState.currentShortcutPinId = liveShortcutTab.shortcutPinId
-            windowState.currentShortcutPinRole = liveShortcutTab.shortcutPinRole
-        } else {
-            windowState.currentShortcutPinId = nil
-            windowState.currentShortcutPinRole = nil
-        }
+        tabSelectionOwner.syncShortcutSelectionState(
+            for: windowState,
+            actions: tabSelectionActions
+        )
     }
 
     private func closeIncognitoTab(_ tab: Tab, in windowState: BrowserWindowState) {
@@ -1951,30 +1935,10 @@ class BrowserManager: ObservableObject {
     }
 
     func showEmptyState(in windowState: BrowserWindowState) {
-        if let currentSpace = space(for: windowState.currentSpaceId),
-           let selectableTab = selectionTargetForSpaceActivation(
-                in: currentSpace,
-                windowState: windowState
-           ) {
-            applyTabSelection(
-                selectableTab,
-                in: windowState,
-                updateSpaceFromTab: false,
-                updateTheme: false,
-                rememberSelection: false
-            )
-            return
-        }
-
-        windowState.currentTabId = nil
-        windowState.currentShortcutPinId = nil
-        windowState.currentShortcutPinRole = nil
-        windowState.isShowingEmptyState = true
-        updateProfileRuntimeStates(activeWindowState: windowState)
-        findManager.updateCurrentTab(nil)
-        refreshCompositor(for: windowState)
-        persistWindowSession(for: windowState)
-        showNewTabFloatingBar(in: windowState)
+        tabSelectionOwner.showEmptyState(
+            in: windowState,
+            actions: tabSelectionActions
+        )
     }
 
     private func updateProfileRuntimeStates(activeWindowState: BrowserWindowState? = nil) {
