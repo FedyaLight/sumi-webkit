@@ -23,6 +23,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionsOriginsCompatibility.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionInstallCapabilityOwner.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -337,6 +338,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let installationSource = try source(named: extensionManagerPaths[0])
         let controllerDelegateSource = try source(named: extensionManagerPaths[7])
         let storeSource = try source(named: extensionManagerPaths[17])
+        let capabilityOwnerSource = try source(named: extensionManagerPaths[18])
 
         XCTAssertTrue(profilesSource.contains("if forceReload {"))
         XCTAssertFalse(
@@ -362,7 +364,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         XCTAssertTrue(
             installationSource.contains("applyConfiguredSiteAccessPolicy")
                 && storeSource.contains("extensionSiteAccessStorageKey")
-                && storeSource.contains("webExtension.optionalPermissionMatchPatterns"),
+                && capabilityOwnerSource.contains("webExtension.optionalPermissionMatchPatterns"),
             "Production context load should restore profile-scoped site access policy, including optional host patterns only when Sumi settings allow them"
         )
         XCTAssertTrue(
@@ -403,6 +405,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicy.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionInstallCapabilityOwner.swift",
         ].map(source(named:)).joined(separator: "\n")
 
         for token in [
@@ -450,16 +453,19 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let installationSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+Installation.swift"
         )
+        let capabilityOwnerSource = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionInstallCapabilityOwner.swift"
+        )
         XCTAssertTrue(installationSource.contains("grantActiveTabURLAccess"))
         XCTAssertTrue(
-            installationSource.contains("decisionSource: .activeTabTemporaryGrant"),
+            capabilityOwnerSource.contains("decisionSource: .activeTabTemporaryGrant"),
             "activeTab grants must be visible in diagnostics"
         )
         XCTExpectFailure(
             "Current activeTab implementation grants a URL globally. Goal 2 should make it tab/navigation-scoped with WebKit tab-aware APIs."
         ) {
             XCTAssertFalse(
-                installationSource.contains("extensionContext.setPermissionStatus(.grantedExplicitly, for: url)"),
+                capabilityOwnerSource.contains("extensionContext.setPermissionStatus(.grantedExplicitly, for: url)"),
                 "activeTab/current-page grants must not become global URL grants"
             )
         }
@@ -505,8 +511,8 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
     }
 
     func testTabAwarePermissionAPIsArePreferredWhenTabIsKnown() throws {
-        let installationSource = try source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+Installation.swift"
+        let capabilityOwnerSource = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionInstallCapabilityOwner.swift"
         )
         let controllerSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
@@ -517,9 +523,9 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
 
         XCTAssertTrue(controllerSource.contains("in tab: (any WKWebExtensionTab)?"))
         XCTAssertTrue(
-            installationSource.contains("permissionStatus(for: permission, in: tab)")
-                && installationSource.contains("permissionStatus(for: matchPattern, in: tab)")
-                && installationSource.contains("permissionStatus(for: url, in: tab)"),
+            capabilityOwnerSource.contains("permissionStatus(for: permission, in: tab)")
+                && capabilityOwnerSource.contains("permissionStatus(for: matchPattern, in: tab)")
+                && capabilityOwnerSource.contains("permissionStatus(for: url, in: tab)"),
             "The shared permission status helper must evaluate permissions, match patterns, and URLs in the supplied tab context"
         )
         XCTAssertTrue(
@@ -529,7 +535,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "WebKit permission prompts and action access checks must fall back to global grants when tab-aware status is unknown"
         )
         XCTAssertTrue(
-            installationSource.contains("permissionStatus(for: pattern, in: tab)"),
+            capabilityOwnerSource.contains("permissionStatus(for: pattern, in: tab)"),
             "Common host-permission helpers must preserve tab-aware granted match patterns"
         )
     }

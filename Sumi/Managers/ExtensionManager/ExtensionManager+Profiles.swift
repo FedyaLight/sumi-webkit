@@ -501,24 +501,11 @@ extension ExtensionManager {
             manifest
             ?? loadedExtensionManifests[extensionId]
             ?? extensionContext.webExtension.manifest
-        extensionContext.unsupportedAPIs = Self.webKitRuntimeUnsupportedAPIs(
-            for: resolvedManifest
-        )
-        SafariExtensionAutofillFillDiagnostics.recordScriptingAvailability(
-            extensionContext: extensionContext,
-            manifest: resolvedManifest
-        )
-        SafariExtensionNativeMessagingPermissionDiagnostics.logContextState(
+        installCapabilityOwner.prepareExtensionContextForRuntime(
+            extensionContext,
             extensionId: extensionId,
             profileId: profileId,
-            manifestDeclaresNativeMessaging: Self.manifestDeclaresNativeMessaging(
-                resolvedManifest
-            ),
-            permissionGranted: isGrantedPermissionStatus(
-                extensionContext.permissionStatus(for: .nativeMessaging)
-            ),
-            unsupportedAPIsContainNativeMessaging: extensionContext.unsupportedAPIs
-                .contains { $0.localizedCaseInsensitiveContains("nativeMessaging") }
+            manifest: resolvedManifest
         )
 
         _ = extensionControllersByProfile[profileId]

@@ -162,6 +162,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var extensionRuntimeAllowsWithoutEnabledExtensions = false
     var runtimeInitializationTask: Task<Void, Never>?
     var loadedExtensionManifests: [String: [String: Any]] = [:]
+    let installCapabilityOwner = SafariExtensionInstallCapabilityOwner()
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
     var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] = [:]
     var actionAnchors: [String: [WeakAnchor]] = [:]

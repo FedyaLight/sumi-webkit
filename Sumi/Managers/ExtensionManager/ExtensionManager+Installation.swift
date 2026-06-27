@@ -1323,10 +1323,7 @@ extension ExtensionManager {
     func webExtensionStoreCapabilitySnapshot(
         for manifest: [String: Any]
     ) -> WebExtensionStoreCapabilitySnapshot {
-        WebExtensionStorageCleanupPlanner.shared.storeCapabilitySnapshot(
-            for: manifest,
-            unsupportedAPIs: Self.webKitRuntimeUnsupportedAPIs(for: manifest)
-        )
+        installCapabilityOwner.webExtensionStoreCapabilitySnapshot(for: manifest)
     }
 
     func classifyWebExtensionDataCleanupErrors(
@@ -1406,98 +1403,35 @@ extension ExtensionManager {
         profileId: UUID? = nil,
         manifest: [String: Any]
     ) {
-        var permissions = webExtension.requestedPermissions
-        permissions.formUnion(Self.requiredManifestWebExtensionPermissions(from: manifest))
-        grantNativeMessagingPermissionIfDeclared(
+        installCapabilityOwner.grantRequestedPermissions(
             to: extensionContext,
-            permissions: &permissions,
+            webExtension: webExtension,
             extensionId: extensionId,
             profileId: profileId,
             manifest: manifest
         )
-
-        for permission in permissions {
-            if shouldDenyAutoGrantForWebKitRuntime(permission, manifest: manifest) {
-                extensionContext.setPermissionStatus(.deniedExplicitly, for: permission)
-                continue
-            }
-            extensionContext.setPermissionStatus(.grantedExplicitly, for: permission)
-        }
-    }
-
-    private func grantNativeMessagingPermissionIfDeclared(
-        to extensionContext: WKWebExtensionContext,
-        permissions: inout Set<WKWebExtension.Permission>,
-        extensionId: String?,
-        profileId: UUID?,
-        manifest: [String: Any]
-    ) {
-        guard Self.manifestDeclaresNativeMessaging(manifest) else { return }
-
-        permissions.insert(.nativeMessaging)
-        extensionContext.setPermissionStatus(
-            .grantedExplicitly,
-            for: .nativeMessaging
-        )
-        SafariExtensionNativeMessagingPermissionDiagnostics.logGrant(
-            extensionId: extensionId,
-            profileId: profileId,
-            manifestDeclaresNativeMessaging: true,
-            permissionGranted: isGrantedPermissionStatus(
-                extensionContext.permissionStatus(for: .nativeMessaging)
-            )
-        )
-    }
-
-    private static func requiredManifestWebExtensionPermissions(
-        from manifest: [String: Any]
-    ) -> Set<WKWebExtension.Permission> {
-        Set(
-            installationManifestStringArray(from: manifest["permissions"])
-                .filter { isManifestWebExtensionPermission($0) }
-                .map { WKWebExtension.Permission(rawValue: $0) }
-        )
-    }
-
-    private static func installationManifestStringArray(from value: Any?) -> [String] {
-        value as? [String] ?? []
     }
 
     static func manifestDeclaresNativeMessaging(_ manifest: [String: Any]) -> Bool {
-        let permissions = installationManifestStringArray(from: manifest["permissions"])
-        return permissions.contains("nativeMessaging")
-    }
-
-    private static func isManifestWebExtensionPermission(_ value: String) -> Bool {
-        (try? WKWebExtension.MatchPattern(string: value)) == nil
+        SafariExtensionInstallCapabilityOwner.manifestDeclaresNativeMessaging(manifest)
     }
 
     func shouldDenyAutoGrantForWebKitRuntime(
         _ permission: WKWebExtension.Permission,
         manifest: [String: Any]
     ) -> Bool {
-        guard Self.manifestDeclaresWebKitBrowserTarget(for: manifest) else {
-            return false
-        }
-
-        return permission.rawValue == "scripting"
+        installCapabilityOwner.shouldDenyAutoGrantForWebKitRuntime(
+            permission,
+            manifest: manifest
+        )
     }
 
     static func webKitRuntimeUnsupportedAPIs(
         for manifest: [String: Any]
     ) -> Set<String> {
-        guard Self.manifestDeclaresWebKitBrowserTarget(for: manifest) else {
-            return []
-        }
-
-        return [
-            "browser.contentScripts.register",
-            "browser.scripting.executeScript",
-            "browser.scripting.insertCSS",
-            "browser.scripting.registerContentScripts",
-            "browser.tabs.executeScript",
-            "browser.tabs.insertCSS",
-        ]
+        SafariExtensionInstallCapabilityOwner.webKitRuntimeUnsupportedAPIs(
+            for: manifest
+        )
     }
 
     func grantRequestedMatchPatterns(
@@ -1524,75 +1458,19 @@ extension ExtensionManager {
         tab: Tab,
         manifest: [String: Any]
     ) {
-        let url = tab.url
-        guard let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https"
-        else {
-            SafariExtensionAutofillFillDiagnostics.recordActiveTabPermission(
-                granted: false,
-                extensionId: extensionID(for: extensionContext),
-                reason: "nonHTTPActiveTab"
-            )
-            return
-        }
-
-        let permissions = (manifest["permissions"] as? [String] ?? [])
-            + (manifest["optional_permissions"] as? [String] ?? [])
-        guard permissions.contains("activeTab") else {
-            SafariExtensionAutofillFillDiagnostics.recordActiveTabPermission(
-                granted: false,
-                extensionId: extensionID(for: extensionContext),
-                reason: "activeTabNotDeclared"
-            )
-            return
-        }
-
-        extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
-        SafariExtensionPermissionLifecycleDiagnostics.logPolicySnapshot(
-            SafariExtensionPolicySnapshot(
-                extensionEnabled: true,
-                extensionBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
-                    extensionID(for: extensionContext)
-                ),
-                profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
-                    profileId(for: extensionContext)
-                ),
-                tabBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(tab.id),
-                isPrivate: tab.isEphemeral,
-                originHost: SafariExtensionPermissionLifecycleDiagnostics.host(from: url),
-                decisionSource: .activeTabTemporaryGrant,
-                declaredSurfaces: [.activeTab],
-                externallyConnectableReportedSeparately: true
-            )
-        )
-        SafariExtensionPermissionLifecycleDiagnostics.logContextApplication(
-            SafariExtensionContextApplicationSnapshot(
-                contextLoaded: extensionContext.isLoaded,
-                extensionBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
-                    extensionID(for: extensionContext)
-                ),
-                profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
-                    profileId(for: extensionContext)
-                ),
-                controllerBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
-                    extensionContext.webExtensionController.map { String(describing: ObjectIdentifier($0)) }
-                ),
-                appliedBeforeNavigation: false,
-                permissionAPIPath: .global,
-                persistedPolicyDivergenceObserved: nil
-            )
-        )
-        SafariExtensionAutofillFillDiagnostics.recordActiveTabPermission(
-            granted: true,
+        installCapabilityOwner.grantActiveTabURLAccess(
+            for: extensionContext,
+            tab: tab,
+            manifest: manifest,
             extensionId: extensionID(for: extensionContext),
-            reason: "activeTabGranted"
+            profileId: profileId(for: extensionContext)
         )
     }
 
     func isGrantedPermissionStatus(
         _ status: WKWebExtensionContext.PermissionStatus
     ) -> Bool {
-        status == .grantedExplicitly || status == .grantedImplicitly
+        installCapabilityOwner.isGrantedPermissionStatus(status)
     }
 
     func effectivePermissionStatus(
@@ -1600,12 +1478,11 @@ extension ExtensionManager {
         in extensionContext: WKWebExtensionContext,
         tab: (any WKWebExtensionTab)?
     ) -> WKWebExtensionContext.PermissionStatus {
-        guard let tab else {
-            return extensionContext.permissionStatus(for: permission)
-        }
-        let tabStatus = extensionContext.permissionStatus(for: permission, in: tab)
-        guard tabStatus == .unknown else { return tabStatus }
-        return extensionContext.permissionStatus(for: permission)
+        installCapabilityOwner.effectivePermissionStatus(
+            for: permission,
+            in: extensionContext,
+            tab: tab
+        )
     }
 
     func effectivePermissionStatus(
@@ -1613,12 +1490,11 @@ extension ExtensionManager {
         in extensionContext: WKWebExtensionContext,
         tab: (any WKWebExtensionTab)?
     ) -> WKWebExtensionContext.PermissionStatus {
-        guard let tab else {
-            return extensionContext.permissionStatus(for: matchPattern)
-        }
-        let tabStatus = extensionContext.permissionStatus(for: matchPattern, in: tab)
-        guard tabStatus == .unknown else { return tabStatus }
-        return extensionContext.permissionStatus(for: matchPattern)
+        installCapabilityOwner.effectivePermissionStatus(
+            for: matchPattern,
+            in: extensionContext,
+            tab: tab
+        )
     }
 
     func effectivePermissionStatus(
@@ -1626,12 +1502,11 @@ extension ExtensionManager {
         in extensionContext: WKWebExtensionContext,
         tab: (any WKWebExtensionTab)?
     ) -> WKWebExtensionContext.PermissionStatus {
-        guard let tab else {
-            return extensionContext.permissionStatus(for: url)
-        }
-        let tabStatus = extensionContext.permissionStatus(for: url, in: tab)
-        guard tabStatus == .unknown else { return tabStatus }
-        return extensionContext.permissionStatus(for: url)
+        installCapabilityOwner.effectivePermissionStatus(
+            for: url,
+            in: extensionContext,
+            tab: tab
+        )
     }
 
     func explicitlyGrantURLIfCoveredByGrantedMatchPattern(
@@ -1639,34 +1514,10 @@ extension ExtensionManager {
         in extensionContext: WKWebExtensionContext,
         tab: (any WKWebExtensionTab)? = nil
     ) -> Bool {
-        var grantedPatterns = Set(extensionContext.grantedPermissionMatchPatterns.keys)
-        let declaredPatterns = extensionContext.webExtension
-            .allRequestedMatchPatterns
-            .union(extensionContext.webExtension.optionalPermissionMatchPatterns)
-
-        var tabScopedGrantedPatterns = Set<WKWebExtension.MatchPattern>()
-        for pattern in declaredPatterns {
-            if isGrantedPermissionStatus(extensionContext.permissionStatus(for: pattern)) {
-                grantedPatterns.insert(pattern)
-            } else if let tab,
-                      isGrantedPermissionStatus(extensionContext.permissionStatus(for: pattern, in: tab))
-            {
-                tabScopedGrantedPatterns.insert(pattern)
-            }
-        }
-
-        if let matchingPattern = grantedPatterns.first(where: { $0.matches(url) }) {
-            extensionContext.setPermissionStatus(.grantedExplicitly, for: url)
-            RuntimeDiagnostics.debug(category: "Extensions") {
-                let host = url.host ?? url.scheme ?? "unknown"
-                return "Auto-granted URL access for \(extensionContext.webExtension.displayName ?? extensionContext.uniqueIdentifier): host=\(host) via \(matchingPattern.string)"
-            }
-            return true
-        }
-
-        guard tabScopedGrantedPatterns.contains(where: { $0.matches(url) }) else {
-            return false
-        }
-        return true
+        installCapabilityOwner.explicitlyGrantURLIfCoveredByGrantedMatchPattern(
+            url,
+            in: extensionContext,
+            tab: tab
+        )
     }
 }

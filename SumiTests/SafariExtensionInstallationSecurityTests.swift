@@ -238,6 +238,42 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         )
     }
 
+    func testInstallCapabilityOwnerClassifiesWebKitRuntimePolicy() {
+        let owner = SafariExtensionInstallCapabilityOwner()
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "WebKit Runtime Policy",
+            "version": "1.0",
+            "permissions": ["scripting", "nativeMessaging"],
+            "browser_specific_settings": [
+                "safari": [:],
+            ],
+        ]
+
+        XCTAssertTrue(
+            owner.shouldDenyAutoGrantForWebKitRuntime(
+                WKWebExtension.Permission(rawValue: "scripting"),
+                manifest: manifest
+            )
+        )
+        XCTAssertFalse(
+            owner.shouldDenyAutoGrantForWebKitRuntime(
+                WKWebExtension.Permission(rawValue: "storage"),
+                manifest: manifest
+            )
+        )
+        XCTAssertTrue(
+            SafariExtensionInstallCapabilityOwner.manifestDeclaresNativeMessaging(
+                manifest
+            )
+        )
+        XCTAssertTrue(
+            SafariExtensionInstallCapabilityOwner.webKitRuntimeUnsupportedAPIs(
+                for: manifest
+            ).contains("browser.scripting.executeScript")
+        )
+    }
+
     private func makeTestContainer() throws -> ModelContainer {
         try ModelContainer(
             for: SumiStartupPersistence.schema,

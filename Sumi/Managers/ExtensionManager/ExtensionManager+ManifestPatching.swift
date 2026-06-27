@@ -178,12 +178,8 @@ extension ExtensionManager {
     nonisolated static func manifestDeclaresWebKitBrowserTarget(
         for manifest: [String: Any]
     ) -> Bool {
-        guard let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any] else {
-            return false
-        }
-
-        return browserSpecificSettings["safari"] != nil
-            || browserSpecificSettings["webkit"] != nil
-            || browserSpecificSettings["WebKit"] != nil
+        SafariExtensionInstallCapabilityOwner.manifestDeclaresWebKitBrowserTarget(
+            for: manifest
+        )
     }
 }

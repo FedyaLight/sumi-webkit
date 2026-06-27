@@ -665,179 +665,30 @@ extension ExtensionManager {
         webExtension: WKWebExtension,
         manifest: [String: Any]? = nil
     ) {
-        let policy = siteAccessPolicy(
-            extensionId: extensionId,
-            profileId: profileId
-        )
-        SafariExtensionPermissionLifecycleDiagnostics.logContextApplication(
-            SafariExtensionContextApplicationSnapshot(
-                contextLoaded: extensionContext.isLoaded,
-                extensionBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(extensionId),
-                profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(profileId),
-                controllerBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
-                    extensionContext.webExtensionController.map { String(describing: ObjectIdentifier($0)) }
+        installCapabilityOwner.applyConfiguredSiteAccessPolicy(
+            to: extensionContext,
+            webExtension: webExtension,
+            input: SafariExtensionInstallCapabilityOwner.SiteAccessApplicationInput(
+                extensionId: extensionId,
+                profileId: profileId,
+                policy: siteAccessPolicy(
+                    extensionId: extensionId,
+                    profileId: profileId
                 ),
-                appliedBeforeNavigation: nil,
-                permissionAPIPath: .global,
-                persistedPolicyDivergenceObserved: nil
+                installedExtension: installedExtensions.first { $0.id == extensionId },
+                manifest: manifest
             )
         )
-        let installedExtension = installedExtensions.first { $0.id == extensionId }
-        extensionContext.hasAccessToPrivateData =
-            policy.privateAccessAllowed
-            && (installedExtension?.incognitoMode.allowsPrivateAccess ?? true)
-        extensionContext.hasRequestedOptionalAccessToAllHosts =
-            policy.hasRequestedOptionalAccessToAllHosts
-
-        let declaredPatterns = declaredSiteAccessMatchPatterns(
-            for: webExtension,
-            manifest: manifest
-        )
-        if let manifest {
-            let surfaces = SafariExtensionManifestAccessSurfaces.from(manifest: manifest)
-            SafariExtensionPermissionLifecycleDiagnostics.logPolicySnapshot(
-                SafariExtensionPolicySnapshot(
-                    extensionEnabled: installedExtension?.isEnabled ?? true,
-                    extensionBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(extensionId),
-                    profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(profileId),
-                    tabBucket: nil,
-                    isPrivate: extensionContext.hasAccessToPrivateData,
-                    originHost: nil,
-                    decisionSource: policy.defaultAccess.diagnosticDecisionSource,
-                    declaredSurfaces: [
-                        surfaces.contentScriptHosts.isEmpty ? nil : .contentScripts,
-                        surfaces.hostPermissionHosts.isEmpty ? nil : .hostPermissions,
-                        surfaces.optionalPermissionHosts.isEmpty ? nil : .optionalPermissions,
-                        surfaces.externallyConnectableHosts.isEmpty ? nil : .externallyConnectable,
-                    ].compactMap { $0 },
-                    externallyConnectableReportedSeparately: true
-                )
-            )
-        }
-        let declaresAllHosts = declaredPatterns.contains {
-            $0 == WKWebExtension.MatchPattern.allHostsAndSchemes()
-                || $0 == WKWebExtension.MatchPattern.allURLs()
-        }
-        let policyAllowsAllHosts =
-            (policy.defaultAccess == .allow && declaresAllHosts)
-            || policy.siteRules.contains {
-                $0.access == .allow && Self.isAllHostsMatchPatternString($0.matchPattern)
-            }
-        if policyAllowsAllHosts {
-            extensionContext.hasRequestedOptionalAccessToAllHosts = true
-        }
-        for matchPattern in declaredPatterns {
-            extensionContext.setPermissionStatus(.unknown, for: matchPattern)
-        }
-
-        switch policy.defaultAccess {
-        case .allow:
-            for matchPattern in declaredPatterns {
-                extensionContext.setPermissionStatus(
-                    .grantedExplicitly,
-                    for: matchPattern
-                )
-            }
-        case .deny:
-            for matchPattern in declaredPatterns {
-                extensionContext.setPermissionStatus(
-                    .deniedExplicitly,
-                    for: matchPattern
-                )
-            }
-        case .ask:
-            break
-        }
-
-        for rule in policy.rulesByIncreasingSpecificity {
-            guard let matchPattern = try? WKWebExtension.MatchPattern(
-                string: rule.matchPattern
-            )
-            else {
-                continue
-            }
-            extensionContext.setPermissionStatus(
-                rule.access.status,
-                for: matchPattern,
-                expirationDate: rule.expiresAt
-            )
-        }
     }
 
     func declaredSiteAccessMatchPatterns(
         for webExtension: WKWebExtension,
         manifest: [String: Any]? = nil
     ) -> Set<WKWebExtension.MatchPattern> {
-        var matchPatterns = webExtension.requestedPermissionMatchPatterns
-            .union(webExtension.allRequestedMatchPatterns)
-            .union(webExtension.optionalPermissionMatchPatterns)
-        if let manifest {
-            let rawSiteAccessPatterns = rawManifestSiteAccessMatchPatterns(
-                from: manifest
-            )
-            let externalMessagingOnlyPatterns = rawManifestExternalMessagingMatchPatterns(
-                from: manifest
-            ).subtracting(rawSiteAccessPatterns)
-            matchPatterns.formUnion(rawSiteAccessPatterns)
-            matchPatterns.subtract(externalMessagingOnlyPatterns)
-        }
-        return matchPatterns
-    }
-
-    private func rawManifestSiteAccessMatchPatterns(
-        from manifest: [String: Any]
-    ) -> Set<WKWebExtension.MatchPattern> {
-        let permissions = manifestStringArray(from: manifest["permissions"])
-        let optionalPermissions = manifestStringArray(from: manifest["optional_permissions"])
-        let contentScriptMatches =
-            (manifest["content_scripts"] as? [[String: Any]] ?? [])
-                .flatMap { manifestStringArray(from: $0["matches"]) }
-
-        let patternStrings =
-            manifestStringArray(from: manifest["host_permissions"])
-            + manifestStringArray(from: manifest["optional_host_permissions"])
-            + permissions.filter(Self.isManifestHostPermissionPattern)
-            + optionalPermissions.filter(Self.isManifestHostPermissionPattern)
-            + contentScriptMatches
-
-        return Set(
-            patternStrings.compactMap {
-                try? WKWebExtension.MatchPattern(string: $0)
-            }
+        installCapabilityOwner.declaredSiteAccessMatchPatterns(
+            for: webExtension,
+            manifest: manifest
         )
-    }
-
-    private func rawManifestExternalMessagingMatchPatterns(
-        from manifest: [String: Any]
-    ) -> Set<WKWebExtension.MatchPattern> {
-        let patternStrings =
-            (manifest["externally_connectable"] as? [String: Any])
-                .map { manifestStringArray(from: $0["matches"]) } ?? []
-
-        return Set(
-            patternStrings.compactMap {
-                try? WKWebExtension.MatchPattern(string: $0)
-            }
-        )
-    }
-
-    private static func isManifestHostPermissionPattern(_ value: String) -> Bool {
-        value == "<all_urls>"
-            || value.hasPrefix("http://")
-            || value.hasPrefix("https://")
-            || value.hasPrefix("*://")
-    }
-
-    private static func isAllHostsMatchPatternString(_ value: String) -> Bool {
-        guard let matchPattern = try? WKWebExtension.MatchPattern(string: value) else {
-            return false
-        }
-        return matchPattern == WKWebExtension.MatchPattern.allHostsAndSchemes()
-            || matchPattern == WKWebExtension.MatchPattern.allURLs()
-    }
-
-    private func manifestStringArray(from value: Any?) -> [String] {
-        value as? [String] ?? []
     }
 
     func grantSiteAccess(
