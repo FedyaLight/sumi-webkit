@@ -593,8 +593,8 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let optionsPresenterSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift"
         )
-        let browserManagerSource = try source(
-            named: "Sumi/Managers/BrowserManager/BrowserManager.swift"
+        let startupProtectionRuntimeSource = try source(
+            named: "Sumi/Managers/BrowserManager/BrowserStartupProtectionRuntime.swift"
         )
         let requestedTabLifecycleSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionRequestedTabLifecycleOwner.swift"
@@ -627,7 +627,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Runtime-owned extension pages must not enter ordinary cross-window tab sync"
         )
         XCTAssertTrue(
-            browserManagerSource.contains(
+            startupProtectionRuntimeSource.contains(
                 "ExtensionUtils.isExtensionOwnedURL(tab.url) || tab.webExtensionContextOverride != nil"
             ),
             "Startup materialization deferral must not discard runtime-owned extension pages"

@@ -68,15 +68,6 @@ struct HistorySwipeWindowMutationQueue {
     }
 }
 
-enum StartupNormalTabMaterializationPolicy {
-    static func shouldDefer(
-        appliedProtectionLevel: SumiProtectionLevel,
-        hasFinishedStartupProtectionRestore: Bool
-    ) -> Bool {
-        appliedProtectionLevel != .off && !hasFinishedStartupProtectionRestore
-    }
-}
-
 private final class WeakBrowserWindowState {
     weak var value: BrowserWindowState?
 
@@ -305,7 +296,7 @@ class BrowserManager: ObservableObject {
                 self?.canMaterializeNormalTabWebViewDuringStartup(tab) ?? true
             },
             deferBackgroundTabUntilStartupReady: { [weak self] tab in
-                self?.deferredStartupBackgroundTabIds.insert(tab.id)
+                self?.startupProtectionRuntime.deferBackgroundTabUntilStartupReady(tab)
             },
             selectTab: { [weak self] tab, windowState, loadPolicy in
                 self?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
@@ -420,9 +411,7 @@ class BrowserManager: ObservableObject {
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
     private var browsingDataRetentionObserverToken: NSObjectProtocol?
-    private var startupProtectionRestoreTask: Task<Void, Never>?
-    private(set) var hasFinishedStartupProtectionRestore = false
-    private var deferredStartupBackgroundTabIds: Set<UUID> = []
+    private var startupProtectionRuntime: BrowserStartupProtectionRuntime!
     private let windowTabActivationBatcher = WindowTabActivationBatcher()
     private var historySwipeWindowMutationQueue = HistorySwipeWindowMutationQueue()
 
@@ -563,6 +552,32 @@ class BrowserManager: ObservableObject {
         self.permissionRuntime.startPermissionEventObservation { [weak self] _ in
             await self?.reconcilePermissionSidebarPins(reason: "permission-event")
         }
+        self.startupProtectionRuntime = BrowserStartupProtectionRuntime(
+            dependencies: BrowserStartupProtectionRuntime.Dependencies(
+                appliedProtectionLevel: { [weak self] in
+                    self?.protectionCoordinator.settings.appliedLevel ?? .off
+                },
+                restoreAppliedProtectionLevelForStartup: { [weak self] in
+                    guard let self else { return }
+                    _ = try await self.protectionCoordinator.restoreAppliedLevelForStartup()
+                },
+                tab: { [weak self] tabId in
+                    self?.tabManager.tab(for: tabId)
+                },
+                allWindows: { [weak self] in
+                    self?.windowRegistry?.allWindows ?? []
+                },
+                prepareBackgroundTabIfNeeded: { [weak self] tab in
+                    self?.browserActionOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
+                },
+                schedulePrepareVisibleWebViews: { [weak self] windowState in
+                    self?.schedulePrepareVisibleWebViews(for: windowState)
+                },
+                refreshCompositor: { [weak self] windowState in
+                    self?.refreshCompositor(for: windowState)
+                }
+            )
+        )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
         structuralChangeCancellable = BrowserManagerRuntimeWiring.attach(to: self)
@@ -618,66 +633,12 @@ class BrowserManager: ObservableObject {
     }
 
     private func beginProtectionRestoreForStartupIfNeeded() {
-        guard startupProtectionRestoreTask == nil else { return }
-        guard !RuntimeDiagnostics.isRunningTests else {
-            finishStartupProtectionRestore()
-            return
-        }
-        startupProtectionRestoreTask = Task { @MainActor [weak self] in
-            await self?.restoreProtectionForStartupIfNeeded()
-        }
-    }
-
-    private func restoreProtectionForStartupIfNeeded() async {
-        let startupTrace = StartupPerformanceTrace.protectionRestoreStarted()
-        defer {
-            StartupPerformanceTrace.protectionRestoreFinished(startupTrace)
-            finishStartupProtectionRestore()
-        }
-
-        do {
-            _ = try await protectionCoordinator.restoreAppliedLevelForStartup()
-        } catch {
-            RuntimeDiagnostics.debug(
-                "Protection startup restore failed: \(error.localizedDescription)",
-                category: "Protection"
-            )
-        }
-    }
-
-    private func finishStartupProtectionRestore() {
-        guard !hasFinishedStartupProtectionRestore else { return }
-        hasFinishedStartupProtectionRestore = true
-
-        let deferredBackgroundTabs = deferredStartupBackgroundTabIds
-        deferredStartupBackgroundTabIds.removeAll()
-        for tabId in deferredBackgroundTabs {
-            guard let tab = tabManager.tab(for: tabId) else { continue }
-            browserActionOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
-        }
-
-        for windowState in windowRegistry?.allWindows ?? [] {
-            schedulePrepareVisibleWebViews(for: windowState)
-            refreshCompositor(for: windowState)
-        }
-
-#if DEBUG
-        Task { @MainActor in
-            await Task.yield()
-            StartupPerformanceTrace.postStartupIdlePoint()
-        }
-#endif
+        startupProtectionRuntime.beginProtectionRestoreForStartupIfNeeded()
     }
 
     #if DEBUG
         func drainProtectionRuntimeTasksForTests(cancel: Bool = false) async {
-            if cancel {
-                startupProtectionRestoreTask?.cancel()
-            }
-            if let startupProtectionRestoreTask {
-                await startupProtectionRestoreTask.value
-                self.startupProtectionRestoreTask = nil
-            }
+            await startupProtectionRuntime.drainProtectionRestoreTaskForTests(cancel: cancel)
             await adBlockingModule.drainRuleListTasksForTests(cancel: cancel)
             await extensionsModule.drainSafariContentBlockerRuntimeForTests(cancel: cancel)
         }
@@ -688,18 +649,16 @@ class BrowserManager: ObservableObject {
         }
     #endif
 
+    var hasFinishedStartupProtectionRestore: Bool {
+        startupProtectionRuntime.hasFinishedProtectionRestore
+    }
+
     var shouldDeferNormalTabMaterializationDuringStartup: Bool {
-        StartupNormalTabMaterializationPolicy.shouldDefer(
-            appliedProtectionLevel: protectionCoordinator.settings.appliedLevel,
-            hasFinishedStartupProtectionRestore: hasFinishedStartupProtectionRestore
-        )
+        startupProtectionRuntime.shouldDeferNormalTabMaterializationDuringStartup
     }
 
     func canMaterializeNormalTabWebViewDuringStartup(_ tab: Tab) -> Bool {
-        if ExtensionUtils.isExtensionOwnedURL(tab.url) || tab.webExtensionContextOverride != nil {
-            return true
-        }
-        return !tab.requiresPrimaryWebView || !shouldDeferNormalTabMaterializationDuringStartup
+        startupProtectionRuntime.canMaterializeNormalTabWebViewDuringStartup(tab)
     }
 
     enum ProfileSwitchContext {
@@ -1298,8 +1257,7 @@ class BrowserManager: ObservableObject {
     }
     isolated deinit {
         permissionRuntime.cancelPermissionEventObservation()
-        startupProtectionRestoreTask?.cancel()
-        startupProtectionRestoreTask = nil
+        startupProtectionRuntime.cancelProtectionRestoreTask()
         windowSessionService.cancelPendingWindowSessionPersistence()
         if let token = tabManagerLoadObserverToken {
             NotificationCenter.default.removeObserver(token)
