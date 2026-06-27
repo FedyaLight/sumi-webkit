@@ -17,6 +17,22 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariApplicationIDAdapter.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/ProtonPassSafariCompanionStore.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingDiagnostics.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingPermissionDiagnostics.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingDiagnosticEnrichment.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingRoutingProbe.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingProbeReport.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingProbeBuilder.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiExtensionsModule+NativeMessagingProbe.swift",
+    ]
+
+    private let diagnosticOwnerPaths = [
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingDiagnostics.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingPermissionDiagnostics.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingDiagnosticEnrichment.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingRoutingProbe.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingProbeReport.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingProbeBuilder.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiExtensionsModule+NativeMessagingProbe.swift",
     ]
 
     private let forbiddenCompatTokens = [
@@ -189,9 +205,9 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
     }
 
     func testDiagnosticsExposeAdapterBoundaryFields() throws {
-        let diagnosticsSource = try source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingDiagnostics.swift"
-        )
+        let diagnosticsSource = try diagnosticOwnerPaths
+            .map { try source(named: $0) }
+            .joined(separator: "\n")
         for symbol in [
             "adapterSelected",
             "adapterIdentifier",
@@ -214,6 +230,88 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
             XCTAssertTrue(
                 diagnosticsSource.contains(symbol),
                 "Missing diagnostic symbol \(symbol)"
+            )
+        }
+    }
+
+    func testNativeMessagingDiagnosticsAreSplitByOwner() throws {
+        let core = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingDiagnostics.swift"
+        )
+        XCTAssertTrue(core.contains("struct SafariExtensionNativeMessagingDiagnostic"))
+        XCTAssertTrue(core.contains("enum SafariExtensionNativeMessagingErrorBucket"))
+        for movedOwner in [
+            "SafariExtensionNativeMessagingPermissionDiagnostics",
+            "SafariExtensionNativeMessagingDiagnosticEnrichment",
+            "SafariExtensionNativeMessagingRoutingProbe",
+            "SafariExtensionNativeMessagingProbeBuilder",
+            "extension SumiExtensionsModule",
+        ] {
+            XCTAssertFalse(core.contains(movedOwner), "Core diagnostics file still owns \(movedOwner)")
+        }
+
+        let enrichment = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingDiagnosticEnrichment.swift"
+        )
+        XCTAssertTrue(enrichment.contains("enum SafariExtensionNativeMessagingDiagnosticEnrichment"))
+        XCTAssertTrue(enrichment.contains("static func failureBucket("))
+        XCTAssertFalse(enrichment.contains("RuntimeDiagnostics.debug"))
+
+        let routing = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingRoutingProbe.swift"
+        )
+        XCTAssertTrue(routing.contains("enum SafariExtensionNativeMessagingRoutingProbe"))
+        XCTAssertTrue(routing.contains("static func sanitizedMessageShape("))
+        XCTAssertTrue(routing.contains("enum SafariExtensionNativeMessagingRoutingBucket"))
+        XCTAssertFalse(routing.contains("SafariExtensionNativeMessagingProbeBuilder"))
+
+        let report = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingProbeReport.swift"
+        )
+        XCTAssertTrue(report.contains("struct SafariExtensionNativeMessagingProbeReport"))
+        XCTAssertTrue(report.contains("SafariExtensionNativeMessagingAdapterCompatibilityStatus"))
+        XCTAssertFalse(report.contains("static func build("))
+
+        let builder = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingProbeBuilder.swift"
+        )
+        XCTAssertTrue(builder.contains("enum SafariExtensionNativeMessagingProbeBuilder"))
+        XCTAssertTrue(builder.contains("static func logIfDiagnosticsEnabled"))
+        XCTAssertFalse(builder.contains("extension SumiExtensionsModule"))
+
+        let moduleAdapter = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiExtensionsModule+NativeMessagingProbe.swift"
+        )
+        XCTAssertTrue(moduleAdapter.contains("extension SumiExtensionsModule"))
+        XCTAssertTrue(moduleAdapter.contains("safariExtensionNativeMessagingProbe()"))
+    }
+
+    func testNativeMessagingDiagnosticOwnerLoggingStaysSanitized() throws {
+        let loggingSource = try [
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingPermissionDiagnostics.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingRoutingProbe.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionNativeMessagingProbeBuilder.swift",
+        ].map { try source(named: $0) }.joined(separator: "\n")
+
+        XCTAssertTrue(loggingSource.contains("extensionIdBucket("))
+        XCTAssertTrue(loggingSource.contains("profileIdBucket("))
+        XCTAssertTrue(loggingSource.contains("sanitizedExtensionLabel("))
+        XCTAssertTrue(loggingSource.contains("sanitizedMessageShape("))
+        for forbidden in [
+            #"ext=\(extensionId)"#,
+            #"profile=\(profileId)"#,
+            #"profile=\(profileId?.uuidString"#,
+            #"message=\(message)"#,
+            "messageBody",
+            "rawMessage",
+            "payloadValue",
+            "AccessToken",
+            "RefreshToken",
+            "clipboard",
+        ] {
+            XCTAssertFalse(
+                loggingSource.localizedCaseInsensitiveContains(forbidden),
+                "Native messaging diagnostic logs must not expose \(forbidden)"
             )
         }
     }
