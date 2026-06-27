@@ -423,7 +423,7 @@ extension ExtensionManager {
             return
         }
 
-        let task = Task { @MainActor [weak self] in
+        let task = Self.detachedMainActorRuntimeTask { [weak self] in
             guard let self else { return }
             defer { self.contentScriptContextLoadTasksByProfile.removeValue(forKey: profileId) }
             guard Task.isCancelled == false else { return }
@@ -479,7 +479,7 @@ extension ExtensionManager {
             return
         }
 
-        let task = Task { @MainActor [weak self] in
+        let task = Self.detachedMainActorRuntimeTask { [weak self] in
             guard let self else { return }
             defer {
                 self.initialDocumentNativeMessagingWarmupTasksByProfile
@@ -575,23 +575,53 @@ extension ExtensionManager {
         value as? [String] ?? []
     }
 
+    @discardableResult
     func scheduleDeferredTabNotificationAfterContextLoad(
         _ tab: Tab,
         profileId: UUID,
         reason: String = #function
-    ) {
+    ) -> Task<Void, Never> {
         let tabId = tab.id
         let scheduledGeneration = extensionLoadGeneration
-        Task { @MainActor [weak self] in
+        let token = UUID()
+        let task = Self.detachedMainActorRuntimeTask { [weak self] in
             guard let self else { return }
-            guard self.extensionLoadGeneration == scheduledGeneration else { return }
+            defer {
+                if self.deferredTabNotificationTasksByTabID[tabId]?.token == token {
+                    self.deferredTabNotificationTasksByTabID.removeValue(forKey: tabId)
+                }
+            }
+
+            guard Task.isCancelled == false,
+                  self.extensionLoadGeneration == scheduledGeneration
+            else { return }
+
             await self.ensureInitialDocumentExtensionContextsLoaded(for: profileId)
-            guard self.extensionLoadGeneration == scheduledGeneration else { return }
+
+            guard Task.isCancelled == false,
+                  self.extensionLoadGeneration == scheduledGeneration
+            else { return }
+
             guard let resolvedTab = self.browserManager?.tabManager.tab(for: tabId) else { return }
             self.reconcileTabAfterContentScriptContextsLoaded(
                 resolvedTab,
                 reason: "\(reason).afterContextLoad"
             )
+        }
+        deferredTabNotificationTasksByTabID[tabId]?.task.cancel()
+        deferredTabNotificationTasksByTabID[tabId] = (token, task)
+        return task
+    }
+
+    func deferredTabNotificationTask(for tabId: UUID) -> Task<Void, Never>? {
+        deferredTabNotificationTasksByTabID[tabId]?.task
+    }
+
+    private nonisolated static func detachedMainActorRuntimeTask(
+        _ operation: @escaping @MainActor @Sendable () async -> Void
+    ) -> Task<Void, Never> {
+        Task.detached {
+            await operation()
         }
     }
 

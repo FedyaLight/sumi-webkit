@@ -63,5 +63,20 @@ extension ExtensionManager {
     func clearDebugState() {
         ExtensionManagerDebugRegistry.clearHooks(for: ObjectIdentifier(self))
     }
+
+    func drainExtensionRuntimeTasksForTests() async {
+        while true {
+            let tasks =
+                deferredTabNotificationTasksByTabID.values.map(\.task)
+                + Array(contentScriptContextLoadTasksByProfile.values)
+                + Array(initialDocumentNativeMessagingWarmupTasksByProfile.values)
+
+            guard tasks.isEmpty == false else { return }
+
+            for task in tasks {
+                await task.value
+            }
+        }
+    }
 }
 #endif

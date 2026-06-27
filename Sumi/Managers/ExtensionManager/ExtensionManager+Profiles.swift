@@ -804,6 +804,8 @@ extension ExtensionManager {
         requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
         clearPermissionsOriginsCompatibilityInstallations()
         extensionPageUserContentControllersByProfile.removeAll()
+        deferredTabNotificationTasksByTabID.values.forEach { $0.task.cancel() }
+        deferredTabNotificationTasksByTabID.removeAll()
         cancelNativeMessagingSessions(reason: "resetLoadedExtensionRuntimeStateForReload")
         pruneRuntimeAdapters()
     }
@@ -846,6 +848,10 @@ extension ExtensionManager {
             "runtimeTeardown start reason=\(reason) removeUIState=\(removeUIState) releaseController=\(releaseController)"
         )
 
+        #if DEBUG
+            clearDebugState()
+        #endif
+
         extensionLoadGeneration &+= 1
         runtimeInitializationTask?.cancel()
         runtimeInitializationTask = nil
@@ -853,6 +859,8 @@ extension ExtensionManager {
         contentScriptContextLoadTasksByProfile.removeAll()
         initialDocumentNativeMessagingWarmupTasksByProfile.values.forEach { $0.cancel() }
         initialDocumentNativeMessagingWarmupTasksByProfile.removeAll()
+        deferredTabNotificationTasksByTabID.values.forEach { $0.task.cancel() }
+        deferredTabNotificationTasksByTabID.removeAll()
         backgroundRuntimeStateOwner.cancelAllWakeTasks()
 
         let uiStateIDs = removeUIState ? Array(actionAnchors.keys) : []

@@ -162,6 +162,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     var extensionRuntimeAllowsWithoutEnabledExtensions = false
     var runtimeInitializationTask: Task<Void, Never>?
     var loadedExtensionManifests: [String: [String: Any]] = [:]
+    var deferredTabNotificationTasksByTabID:
+        [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
     let installCapabilityOwner = SafariExtensionInstallCapabilityOwner()
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
     var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] = [:]

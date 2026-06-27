@@ -7,6 +7,14 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
+    private final class ManagerTeardownBox {
+        var manager: ExtensionManager?
+
+        init(manager: ExtensionManager) {
+            self.manager = manager
+        }
+    }
+
     private func makeManager(
         context: ModelContext,
         profile: Profile,
@@ -17,6 +25,18 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
+        let teardownBox = ManagerTeardownBox(manager: manager)
+        addTeardownBlock { @MainActor in
+            guard let manager = teardownBox.manager else { return }
+            await manager.drainExtensionRuntimeTasksForTests()
+            manager.tearDownExtensionRuntime(
+                reason: "SafariExtensionWebViewControllerWiringTests.tearDown",
+                removeUIState: true,
+                releaseController: true
+            )
+            manager.clearDebugState()
+            teardownBox.manager = nil
+        }
         return (manager, browserConfiguration)
     }
 
@@ -219,10 +239,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
     func testIsTabEligibleForCurrentExtensionRuntimeBlocksEphemeralTabs() throws {
         let container = try makeTestContainer()
         let ephemeralProfile = Profile.createEphemeral()
-        let manager = ExtensionManager(
+        let manager = makeManager(
             context: container.mainContext,
-            initialProfile: ephemeralProfile
-        )
+            profile: ephemeralProfile
+        ).manager
         manager.tabOpenNotificationGeneration = 7
 
         let browserManager = BrowserManager()
@@ -1043,10 +1063,6 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             manager.extensionControllersByProfile[profile.id]
         )
 
-        addTeardownBlock { @MainActor in
-            manager.closeOptionsWindow(for: installed.id)
-        }
-
         let openedOptions = expectation(description: "options page opened")
         var completionError: Error?
         manager.presentOptionsPageWindow(for: extensionContext) { error in
@@ -1405,8 +1421,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertFalse(manager.notifyTabOpened(tab))
+        let deferredTask = manager.deferredTabNotificationTask(for: tab.id)
 
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
+        await deferredTask?.value
         attachUsableExtensionWebView(
             to: tab,
             manager: manager,
@@ -1448,8 +1466,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         await manager.ensureContentScriptContextsLoaded(for: profile.id)
 
         var backgroundWakeCount = 0
+        var backgroundWakeKey: String?
         let backgroundWakeExpectation = expectation(description: "nativeMessaging warmup")
-        manager.testHooks.backgroundContentWake = { _, _ in
+        manager.testHooks.backgroundContentWake = { wakeKey, _ in
+            backgroundWakeKey = wakeKey
             backgroundWakeCount += 1
             backgroundWakeExpectation.fulfill()
         }
@@ -1475,7 +1495,17 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertFalse(tab.didNotifyOpenToExtensions)
 
         await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
+        if let deferredTask = manager.deferredTabNotificationTask(for: tab.id) {
+            await deferredTask.value
+        }
         XCTAssertEqual(backgroundWakeCount, 1)
+        XCTAssertEqual(
+            backgroundWakeKey,
+            manager.backgroundScopedKey(
+                extensionId: installed.id,
+                profileId: profile.id
+            )
+        )
         XCTAssertEqual(
             manager.backgroundRuntimeState(for: installed.id, profileId: profile.id),
             .loaded
@@ -1797,7 +1827,22 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let controller = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = BrowserManager()
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(
+                userDefaults: UserDefaults(suiteName: UUID().uuidString)!
+            )
+        )
+        registry.enable(.extensions)
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            initialProfileProvider: { profile },
+            managerFactory: { _, _, _ in manager }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            extensionsModule: extensionsModule
+        )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
@@ -1990,11 +2035,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profileId: profile.id,
             reason: "SafariExtensionWebViewControllerWiringTests"
         )
+        let deferredTask = manager.deferredTabNotificationTask(for: tab.id)
 
         await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
-        for _ in 0..<5 {
-            await Task.yield()
-        }
+        await deferredTask?.value
 
         XCTAssertEqual(backgroundWakeCount, 1)
         XCTAssertEqual(
