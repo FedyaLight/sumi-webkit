@@ -158,9 +158,13 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
     func testSafariURLSchemeUsesNativeWebKitRegistration() throws {
         let managerSource = try source(named: extensionManagerPaths[3])
         let installationSource = try source(named: extensionManagerPaths[0])
+        let contextLoadSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionRuntimeContextLoadOwner.swift"
+        )
         let runtimeSources = try [
             managerSource,
             installationSource,
+            contextLoadSource,
             source(named: extensionManagerPaths[4]),
             source(named: extensionManagerPaths[5]),
             source(named: extensionManagerPaths[7]),
@@ -184,8 +188,8 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         )
         XCTAssertTrue(
             managerSource.contains("safari-web-extension")
-                && installationSource.contains("Self.safariWebExtensionURLScheme")
-                && installationSource.contains("extensionContext.baseURL = baseURL"),
+                && contextLoadSource.contains("ExtensionManager.safariWebExtensionURLScheme")
+                && contextLoadSource.contains("extensionContext.baseURL = baseURL"),
             "Extension contexts should use the registered Safari-shaped base URL directly"
         )
         XCTAssertFalse(
@@ -406,6 +410,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/ExtensionManager+ProfileRuntime.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionRuntimeContextLoadOwner.swift",
             "Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentationOwner.swift",
             "Sumi/Managers/ExtensionManager/ExtensionActionSurfaceStatePresenter.swift",
             "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",

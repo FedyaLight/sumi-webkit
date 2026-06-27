@@ -5,7 +5,6 @@
 //  Installation and runtime loading flows for Sumi's WebExtension runtime.
 //
 
-import AppKit
 import Foundation
 import SwiftData
 import WebKit
@@ -245,8 +244,6 @@ extension ExtensionManager {
                     "Extension runtime profile is unavailable"
                 )
             }
-            let extensionController = ensureExtensionController(for: resolvedProfileId)
-
             let sourceKind =
                 WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
             let extensionRoot = try extensionResourcesRoot(
@@ -266,128 +263,16 @@ extension ExtensionManager {
             recordRuntimeMetric(for: entity.id) {
                 $0.manifestValidationDuration = CFAbsoluteTimeGetCurrent() - validationStart
             }
-            let webExtensionStart = CFAbsoluteTimeGetCurrent()
-            let (webExtension, runtimeLoadSource) = try await cachedOrCreateWebExtension(
-                extensionId: entity.id,
-                sourceKind: sourceKind,
-                sourceBundlePath: entity.sourceBundlePath,
-                packageRoot: extensionRoot
-            )
-            traceNativeMessagingContextBinding(
-                phase: "webExtensionCreated",
-                extensionId: entity.id,
-                profileId: resolvedProfileId,
-                loadSource: runtimeLoadSource,
-                webExtension: webExtension,
-                controller: extensionController
-            )
-            extensionRuntimeTrace(
-                "loadEnabledExtension webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(extensionRoot.path) sourceBundlePath=\(entity.sourceBundlePath)"
-            )
-            recordRuntimeMetric(for: entity.id) {
-                $0.webExtensionCreationDuration =
-                    CFAbsoluteTimeGetCurrent() - webExtensionStart
-            }
-            try validateExpectedExtensionLoadGeneration(loadGeneration)
-            let extensionContext = WKWebExtensionContext(for: webExtension)
-            configureContextIdentity(
-                extensionContext,
-                extensionId: entity.id,
-                profileId: resolvedProfileId
-            )
-            grantRequestedPermissions(
-                to: extensionContext,
-                webExtension: webExtension,
-                extensionId: entity.id,
-                profileId: resolvedProfileId,
-                manifest: manifest
-            )
-            applyConfiguredSiteAccessPolicy(
-                to: extensionContext,
-                extensionId: entity.id,
-                profileId: resolvedProfileId,
-                webExtension: webExtension,
-                manifest: manifest
-            )
-            applyStoredExtensionPermissionDecisions(
-                to: extensionContext,
-                extensionId: entity.id,
-                profileId: resolvedProfileId
-            )
-            extensionContext.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
-            observeExtensionErrors(for: extensionContext, extensionId: entity.id)
-            prepareExtensionContextForRuntime(
-                extensionContext,
-                extensionId: entity.id,
-                profileId: resolvedProfileId,
-                manifest: manifest
-            )
-            traceNativeMessagingContextBinding(
-                phase: "contextPrepared",
-                extensionId: entity.id,
-                profileId: resolvedProfileId,
-                loadSource: runtimeLoadSource,
-                webExtension: webExtension,
-                extensionContext: extensionContext,
-                controller: extensionController
-            )
-            ensureWebExtensionStorageDirectoryExists(
-                for: entity.id,
-                profileId: resolvedProfileId
-            )
-            traceWebExtensionStoreLifecycle(
-                phase: "before-loadEnabledExtension-controller-load",
-                extensionId: entity.id,
-                manifest: manifest
-            )
-
-            setExtensionContext(
-                extensionContext,
-                extensionId: entity.id,
-                profileId: resolvedProfileId
-            )
-            loadedExtensionManifests[entity.id] = manifest
-            traceNativeMessagingContextBinding(
-                phase: "beforeControllerLoad",
-                extensionId: entity.id,
-                profileId: resolvedProfileId,
-                loadSource: runtimeLoadSource,
-                webExtension: webExtension,
-                extensionContext: extensionContext,
-                controller: extensionController
-            )
-
-            do {
-                #if DEBUG
-                    try testHooks.beforeControllerLoad?(
-                        entity.id,
-                        webExtensionStorageSnapshot(for: entity.id)
-                    )
-                #endif
-                try validateExpectedExtensionLoadGeneration(loadGeneration)
-                let contextLoadStart = CFAbsoluteTimeGetCurrent()
-                try extensionController.load(extensionContext)
-                recordRuntimeMetric(for: entity.id) {
-                    $0.contextLoadDuration =
-                        CFAbsoluteTimeGetCurrent() - contextLoadStart
-                }
-                traceNativeMessagingContextBinding(
-                    phase: "afterControllerLoad",
+            _ = try await ExtensionRuntimeContextLoadOwner(manager: self).load(
+                ExtensionRuntimeContextLoadOwner.Request(
                     extensionId: entity.id,
                     profileId: resolvedProfileId,
-                    loadSource: runtimeLoadSource,
-                    webExtension: webExtension,
-                    extensionContext: extensionContext,
-                    controller: extensionController,
-                    configuration: extensionContext.webViewConfiguration
+                    sourceKind: sourceKind,
+                    sourceBundlePath: entity.sourceBundlePath,
+                    packageRoot: extensionRoot,
+                    manifest: manifest,
+                    operation: .loadEnabled(expectedGeneration: loadGeneration)
                 )
-            } catch {
-                tearDownExtensionRuntimeState(for: entity.id, removeUIState: false)
-                throw error
-            }
-
-            extensionRuntimeTrace(
-                "loadEnabledExtension loaded extensionId=\(entity.id) context=\(extensionRuntimeObjectDescription(extensionContext)) controller=\(extensionRuntimeControllerDescription(extensionController))"
             )
 
             clearExtensionLoadError(
@@ -432,44 +317,6 @@ extension ExtensionManager {
             tearDownExtensionRuntimeState(for: entity.id, removeUIState: false)
             throw error
         }
-    }
-
-    func cachedOrCreateWebExtension(
-        extensionId: String,
-        sourceKind: WebExtensionSourceKind,
-        sourceBundlePath: String,
-        packageRoot: URL
-    ) async throws -> (extension: WKWebExtension, loadSource: SafariAppExtensionRuntimeLoadSource) {
-        let runtimeSourceKind: WebExtensionSourceKind =
-            sourceKind == .safariAppExtension
-            && SafariAppExtensionResources.installedAppexBundleURL(
-                sourceKind: sourceKind,
-                sourceBundlePath: sourceBundlePath
-            ) == nil
-            ? .directory
-            : sourceKind
-        let sourceKey = WebExtensionRuntimeSourceKey(
-            sourceKind: runtimeSourceKind,
-            sourceBundlePath: URL(fileURLWithPath: sourceBundlePath, isDirectory: true)
-                .standardizedFileURL.path,
-            packageRootPath: packageRoot.standardizedFileURL.path
-        )
-        if let cached = cachedWebExtensionsByID[extensionId],
-           cachedWebExtensionRuntimeSourceKeysByID[extensionId] == sourceKey
-        {
-            let loadSource: SafariAppExtensionRuntimeLoadSource =
-                runtimeSourceKind == .safariAppExtension ? .originalAppexBundle : .copiedPackage
-            return (cached, loadSource)
-        }
-
-        let created = try await SafariAppExtensionResources.makeWebExtension(
-            sourceKind: runtimeSourceKind,
-            sourceBundlePath: sourceBundlePath,
-            packageRoot: packageRoot
-        )
-        cachedWebExtensionsByID[extensionId] = created.extension
-        cachedWebExtensionRuntimeSourceKeysByID[extensionId] = sourceKey
-        return created
     }
 
     @discardableResult
@@ -727,115 +574,19 @@ extension ExtensionManager {
                         "Extension runtime profile is unavailable"
                     )
                 }
-                let installController = ensureExtensionController(for: installProfileId)
-
-                let (webExtension, runtimeLoadSource) = try await cachedOrCreateWebExtension(
-                    extensionId: extensionId,
-                    sourceKind: resolvedSource.sourceKind,
-                    sourceBundlePath: resolvedSource.sourceBundlePath.path,
-                    packageRoot: destinationDirectory
-                )
-                traceNativeMessagingContextBinding(
-                    phase: "installWebExtensionCreated",
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    loadSource: runtimeLoadSource,
-                    webExtension: webExtension,
-                    controller: installController
-                )
-                extensionRuntimeTrace(
-                    "performInstallation webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(destinationDirectory.path) sourceBundlePath=\(resolvedSource.sourceBundlePath.path)"
-                )
-                let extensionContext = WKWebExtensionContext(for: webExtension)
-                configureContextIdentity(
-                    extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId
-                )
-                grantRequestedPermissions(
-                    to: extensionContext,
-                    webExtension: webExtension,
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    manifest: finalManifest
-                )
-                applyConfiguredSiteAccessPolicy(
-                    to: extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    webExtension: webExtension,
-                    manifest: finalManifest
-                )
-                applyStoredExtensionPermissionDecisions(
-                    to: extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId
-                )
-                extensionContext.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
-                observeExtensionErrors(for: extensionContext, extensionId: extensionId)
-                prepareExtensionContextForRuntime(
-                    extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    manifest: finalManifest
-                )
-                traceNativeMessagingContextBinding(
-                    phase: "installContextPrepared",
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    loadSource: runtimeLoadSource,
-                    webExtension: webExtension,
-                    extensionContext: extensionContext,
-                    controller: installController
-                )
-                ensureWebExtensionStorageDirectoryExists(
-                    for: extensionId,
-                    profileId: installProfileId
-                )
-                traceWebExtensionStoreLifecycle(
-                    phase: "before-install-controller-load",
-                    extensionId: extensionId,
-                    manifest: finalManifest
-                )
-
-                setExtensionContext(
-                    extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId
-                )
-                loadedExtensionManifests[extensionId] = finalManifest
-                traceNativeMessagingContextBinding(
-                    phase: "installBeforeControllerLoad",
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    loadSource: runtimeLoadSource,
-                    webExtension: webExtension,
-                    extensionContext: extensionContext,
-                    controller: installController
-                )
-
-                do {
-                    #if DEBUG
-                        try testHooks.beforeControllerLoad?(
-                            extensionId,
-                            webExtensionStorageSnapshot(for: extensionId)
-                        )
-                    #endif
-                    try installController.load(extensionContext)
-                    traceNativeMessagingContextBinding(
-                        phase: "installAfterControllerLoad",
+                let extensionContext = try await ExtensionRuntimeContextLoadOwner(
+                    manager: self
+                ).load(
+                    ExtensionRuntimeContextLoadOwner.Request(
                         extensionId: extensionId,
                         profileId: installProfileId,
-                        loadSource: runtimeLoadSource,
-                        webExtension: webExtension,
-                        extensionContext: extensionContext,
-                        controller: installController,
-                        configuration: extensionContext.webViewConfiguration
+                        sourceKind: resolvedSource.sourceKind,
+                        sourceBundlePath: resolvedSource.sourceBundlePath.path,
+                        packageRoot: destinationDirectory,
+                        manifest: finalManifest,
+                        operation: .install
                     )
-                } catch {
-                    tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
-                    throw error
-                }
+                )
 
                 // New contexts must see existing windows even before `loadInstalledExtensions` sets
                 // `extensionsLoaded`, or MV3 onboarding (`tabs.create`) may not run reliably.
@@ -1028,115 +779,19 @@ extension ExtensionManager {
                         "Extension runtime profile is unavailable"
                     )
                 }
-                let installController = ensureExtensionController(for: installProfileId)
-
-                let (webExtension, runtimeLoadSource) = try await cachedOrCreateWebExtension(
-                    extensionId: extensionId,
-                    sourceKind: resolvedSource.sourceKind,
-                    sourceBundlePath: resolvedSource.sourceBundlePath.path,
-                    packageRoot: extensionRoot
-                )
-                traceNativeMessagingContextBinding(
-                    phase: "safariEnableWebExtensionCreated",
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    loadSource: runtimeLoadSource,
-                    webExtension: webExtension,
-                    controller: installController
-                )
-                extensionRuntimeTrace(
-                    "enableSafariAppExtension webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(extensionRoot.path) sourceBundlePath=\(resolvedSource.sourceBundlePath.path)"
-                )
-                let extensionContext = WKWebExtensionContext(for: webExtension)
-                configureContextIdentity(
-                    extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId
-                )
-                grantRequestedPermissions(
-                    to: extensionContext,
-                    webExtension: webExtension,
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    manifest: manifest
-                )
-                applyConfiguredSiteAccessPolicy(
-                    to: extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    webExtension: webExtension,
-                    manifest: manifest
-                )
-                applyStoredExtensionPermissionDecisions(
-                    to: extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId
-                )
-                extensionContext.isInspectable = RuntimeDiagnostics.isDeveloperInspectionEnabled
-                observeExtensionErrors(for: extensionContext, extensionId: extensionId)
-                prepareExtensionContextForRuntime(
-                    extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    manifest: manifest
-                )
-                traceNativeMessagingContextBinding(
-                    phase: "safariEnableContextPrepared",
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    loadSource: runtimeLoadSource,
-                    webExtension: webExtension,
-                    extensionContext: extensionContext,
-                    controller: installController
-                )
-                ensureWebExtensionStorageDirectoryExists(
-                    for: extensionId,
-                    profileId: installProfileId
-                )
-                traceWebExtensionStoreLifecycle(
-                    phase: "before-safari-enable-controller-load",
-                    extensionId: extensionId,
-                    manifest: manifest
-                )
-
-                setExtensionContext(
-                    extensionContext,
-                    extensionId: extensionId,
-                    profileId: installProfileId
-                )
-                loadedExtensionManifests[extensionId] = manifest
-                traceNativeMessagingContextBinding(
-                    phase: "safariEnableBeforeControllerLoad",
-                    extensionId: extensionId,
-                    profileId: installProfileId,
-                    loadSource: runtimeLoadSource,
-                    webExtension: webExtension,
-                    extensionContext: extensionContext,
-                    controller: installController
-                )
-
-                do {
-                    #if DEBUG
-                        try testHooks.beforeControllerLoad?(
-                            extensionId,
-                            webExtensionStorageSnapshot(for: extensionId)
-                        )
-                    #endif
-                    try installController.load(extensionContext)
-                    traceNativeMessagingContextBinding(
-                        phase: "safariEnableAfterControllerLoad",
+                let extensionContext = try await ExtensionRuntimeContextLoadOwner(
+                    manager: self
+                ).load(
+                    ExtensionRuntimeContextLoadOwner.Request(
                         extensionId: extensionId,
                         profileId: installProfileId,
-                        loadSource: runtimeLoadSource,
-                        webExtension: webExtension,
-                        extensionContext: extensionContext,
-                        controller: installController,
-                        configuration: extensionContext.webViewConfiguration
+                        sourceKind: resolvedSource.sourceKind,
+                        sourceBundlePath: resolvedSource.sourceBundlePath.path,
+                        packageRoot: extensionRoot,
+                        manifest: manifest,
+                        operation: .safariEnable
                     )
-                } catch {
-                    tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
-                    throw error
-                }
+                )
 
                 tabOpenNotificationGeneration &+= 1
                 updateWebViewsForProfile(
@@ -1441,14 +1096,11 @@ extension ExtensionManager {
         extensionId: String,
         profileId: UUID
     ) {
-        let scopedIdentifier = "\(profileId.uuidString):\(extensionId)"
-        extensionContext.uniqueIdentifier = extensionId
-        let host =
-            "ext-"
-            + scopedIdentifier.utf8.map { String(format: "%02x", $0) }.joined()
-        if let baseURL = URL(string: "\(Self.safariWebExtensionURLScheme)://\(host)") {
-            extensionContext.baseURL = baseURL
-        }
+        ExtensionRuntimeContextLoadOwner.configureContextIdentity(
+            extensionContext,
+            extensionId: extensionId,
+            profileId: profileId
+        )
     }
 
     func grantRequestedPermissions(
