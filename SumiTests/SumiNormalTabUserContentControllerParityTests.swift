@@ -246,6 +246,31 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertTrue(summaries[1].isContentBlockingFeatureEnabled)
     }
 
+    func testContentBlockingDrainReturnsAfterCancellingDelayedRuleListRefresh() async throws {
+        let provider = ParityContentRuleListProvider()
+        let service = SumiContentBlockingService(ruleListProvider: provider)
+
+        provider.sendChange()
+        await service.drainScheduledTasksForTests(cancel: true)
+    }
+
+    func testDelayedContentBlockingRefreshDoesNotRetainService() async throws {
+        let provider = ParityContentRuleListProvider()
+        weak var weakService: SumiContentBlockingService?
+
+        do {
+            let service = SumiContentBlockingService(ruleListProvider: provider)
+            weakService = service
+            provider.sendChange()
+        }
+
+        for _ in 0 ..< 20 where weakService != nil {
+            await Task.yield()
+        }
+
+        XCTAssertNil(weakService)
+    }
+
     func testCleanupAfterInstalledContentBlockingAssetsIsIdempotentAndPreservesCurrentVisibleSummary() async throws {
         let service = SumiContentBlockingService(
             policy: .enabled(ruleLists: [
@@ -534,6 +559,26 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
             contentWorld: .page
         )
         return value as? String ?? String(describing: value)
+    }
+}
+
+@MainActor
+private final class ParityContentRuleListProvider: SumiContentRuleListSetProviding {
+    private let subject = PassthroughSubject<Void, Never>()
+
+    var changesPublisher: AnyPublisher<Void, Never> {
+        subject.eraseToAnyPublisher()
+    }
+
+    let hasProfileSpecificRuleLists = false
+
+    func sendChange() {
+        subject.send(())
+    }
+
+    func ruleListSet(profileId: UUID?) throws -> SumiContentRuleListSet {
+        _ = profileId
+        return SumiContentRuleListSet()
     }
 }
 

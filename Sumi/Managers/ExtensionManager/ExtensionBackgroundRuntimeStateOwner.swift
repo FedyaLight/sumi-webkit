@@ -99,7 +99,8 @@ final class ExtensionBackgroundRuntimeStateOwner {
         setState(.wakeInFlight, for: wakeKey)
         trace("Starting \(mode) background wake for \(wakeKey) reason=\(reason.rawValue)")
 
-        let task = Task { @MainActor in
+        let task = Self.detachedMainActorWakeTask { [weak self] in
+            guard let self else { return }
             defer {
                 self.wakeTasks.removeValue(forKey: wakeKey)
             }
@@ -126,5 +127,34 @@ final class ExtensionBackgroundRuntimeStateOwner {
 
         wakeTasks[wakeKey] = task
         return task
+    }
+
+    #if DEBUG
+        @discardableResult
+        func drainWakeTasksForTests(cancel: Bool = false) async -> Bool {
+            var drainedTask = false
+
+            while true {
+                let tasks = Array(wakeTasks.values)
+                guard tasks.isEmpty == false else { return drainedTask }
+
+                drainedTask = true
+                if cancel {
+                    tasks.forEach { $0.cancel() }
+                }
+
+                for task in tasks {
+                    _ = try? await task.value
+                }
+            }
+        }
+    #endif
+
+    private nonisolated static func detachedMainActorWakeTask(
+        _ operation: @escaping @MainActor @Sendable () async throws -> Void
+    ) -> Task<Void, Error> {
+        Task.detached {
+            try await operation()
+        }
     }
 }

@@ -1139,23 +1139,10 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             extensionId: extensionId
         )
         if extensionsModuleEnabled {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    _ = try await self.ensureBackgroundAvailableIfRequired(
-                        for: extensionContext.webExtension,
-                        context: extensionContext,
-                        reason: .nativeMessaging
-                    )
-                } catch {
-                    self.logBackgroundWakeFailure(
-                        error,
-                        extensionContext: extensionContext,
-                        reason: .nativeMessaging,
-                        operation: "wake native messaging background before sendMessage"
-                    )
-                }
-            }
+            scheduleNativeMessagingBackgroundWake(
+                for: extensionContext,
+                operation: "wake native messaging background before sendMessage"
+            )
         }
         let profileId = profileId(for: extensionContext)
         let isPrivateBrowsing = isPrivateExtensionRuntimeProfile(profileId)
@@ -1224,23 +1211,10 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             browserManager?.extensionsModule.isEnabled
             ?? SumiModuleRegistry.shared.isEnabled(.extensions)
         if extensionsModuleEnabled {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    _ = try await self.ensureBackgroundAvailableIfRequired(
-                        for: extensionContext.webExtension,
-                        context: extensionContext,
-                        reason: .nativeMessaging
-                    )
-                } catch {
-                    self.logBackgroundWakeFailure(
-                        error,
-                        extensionContext: extensionContext,
-                        reason: .nativeMessaging,
-                        operation: "wake native messaging background before connect"
-                    )
-                }
-            }
+            scheduleNativeMessagingBackgroundWake(
+                for: extensionContext,
+                operation: "wake native messaging background before connect"
+            )
         }
 
         let profileId = profileId(for: extensionContext)

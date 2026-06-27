@@ -47,6 +47,7 @@ struct SumiFaviconFetchResponse: Sendable {
 enum SumiFaviconFetchResult: Sendable {
     case success(SumiFaviconFetchResponse)
     case failure(SumiFaviconValidationFailureKind)
+    case cancelled
 }
 
 protocol SumiFaviconNetworkFetching: Sendable {
@@ -59,14 +60,19 @@ actor SumiFaviconFetchScheduler {
         var perOriginConcurrencyLimit = 2
     }
 
-    private struct FetchKey: Hashable {
+    private struct FetchKey: Hashable, Sendable {
         let partition: SumiFaviconPartition
         let url: URL
     }
 
+    private struct ScheduledFetch {
+        let token: UUID
+        let task: Task<SumiFaviconFetchResult?, Never>
+    }
+
     private let fetcher: any SumiFaviconNetworkFetching
     private let limiter: SumiFaviconFetchLimiter
-    private var inFlight: [FetchKey: Task<SumiFaviconFetchResult, Never>] = [:]
+    private var inFlight: [FetchKey: ScheduledFetch] = [:]
     private var negativeUntilByKey: [FetchKey: Date] = [:]
 
     init(
@@ -91,33 +97,67 @@ actor SumiFaviconFetchScheduler {
         if let negativeUntil = negativeUntilByKey[key], negativeUntil > now {
             return .failure(.transport)
         }
-        if let task = inFlight[key] {
-            return await task.value
+        if let scheduledFetch = inFlight[key] {
+            return await scheduledFetch.task.value ?? .cancelled
         }
 
         let origin = originKey(for: candidate.iconURL)
-        let task = Task<SumiFaviconFetchResult, Never> { [fetcher, limiter] in
-            await limiter.acquire(origin: origin, priority: priority)
+        let token = UUID()
+        let task = Task<SumiFaviconFetchResult?, Never> { [fetcher, limiter] in
+            let acquired = await limiter.acquire(origin: origin, priority: priority)
+            guard acquired else {
+                return nil
+            }
+            guard !Task.isCancelled else {
+                await limiter.release(origin: origin)
+                return nil
+            }
             let result = await fetcher.fetch(url: candidate.iconURL, context: context)
             await limiter.release(origin: origin)
+            guard !Task.isCancelled else {
+                return nil
+            }
             return result
         }
-        inFlight[key] = task
+        inFlight[key] = ScheduledFetch(token: token, task: task)
         let result = await task.value
-        inFlight[key] = nil
+        if inFlight[key]?.token == token {
+            inFlight.removeValue(forKey: key)
+        }
 
-        if case .failure(let failureKind) = result {
+        if let result, case .failure(let failureKind) = result {
             negativeUntilByKey[key] = now.addingTimeInterval(ttl(for: failureKind))
         }
-        return result
+        return result ?? .cancelled
     }
 
-    func cancelColdFetches() {
-        for (_, task) in inFlight {
-            task.cancel()
+    func cancelColdFetches() async {
+        for scheduledFetch in inFlight.values {
+            scheduledFetch.task.cancel()
         }
         inFlight.removeAll()
+        await limiter.cancelQueuedFetches()
     }
+
+    #if DEBUG
+        func drainInFlightFetchesForTests(cancel: Bool = true) async {
+            while !inFlight.isEmpty {
+                let scheduledFetches = Array(inFlight.map { ($0.key, $0.value) })
+                if cancel {
+                    for (_, scheduledFetch) in scheduledFetches {
+                        scheduledFetch.task.cancel()
+                    }
+                    await limiter.cancelQueuedFetches()
+                }
+                for (key, scheduledFetch) in scheduledFetches {
+                    _ = await scheduledFetch.task.value
+                    if inFlight[key]?.token == scheduledFetch.token {
+                        inFlight.removeValue(forKey: key)
+                    }
+                }
+            }
+        }
+    #endif
 
     private func ttl(for failureKind: SumiFaviconValidationFailureKind) -> TimeInterval {
         switch failureKind {
@@ -140,9 +180,10 @@ actor SumiFaviconFetchScheduler {
 
 actor SumiFaviconFetchLimiter {
     private struct Waiter {
+        let id: UUID
         let origin: String
         let priority: SumiFaviconFetchPriority
-        let continuation: CheckedContinuation<Void, Never>
+        let continuation: CheckedContinuation<Bool, Never>
     }
 
     private let globalLimit: Int
@@ -156,20 +197,48 @@ actor SumiFaviconFetchLimiter {
         self.perOriginLimit = max(1, perOriginLimit)
     }
 
-    func acquire(origin: String, priority: SumiFaviconFetchPriority) async {
-        if canAcquire(origin: origin) {
-            markAcquired(origin: origin)
-            return
-        }
-
-        await withCheckedContinuation { continuation in
-            waiters.append(Waiter(origin: origin, priority: priority, continuation: continuation))
-            waiters.sort {
-                if $0.priority != $1.priority {
-                    return $0.priority > $1.priority
+    func acquire(origin: String, priority: SumiFaviconFetchPriority) async -> Bool {
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: false)
+                    return
                 }
-                return $0.origin < $1.origin
+
+                if canAcquire(origin: origin) {
+                    markAcquired(origin: origin)
+                    continuation.resume(returning: true)
+                    return
+                }
+
+                waiters.append(
+                    Waiter(
+                        id: waiterID,
+                        origin: origin,
+                        priority: priority,
+                        continuation: continuation
+                    )
+                )
+                waiters.sort {
+                    if $0.priority != $1.priority {
+                        return $0.priority > $1.priority
+                    }
+                    return $0.origin < $1.origin
+                }
             }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(id: waiterID)
+            }
+        }
+    }
+
+    func cancelQueuedFetches() {
+        let queuedWaiters = waiters
+        waiters.removeAll()
+        for waiter in queuedWaiters {
+            waiter.continuation.resume(returning: false)
         }
     }
 
@@ -182,6 +251,12 @@ actor SumiFaviconFetchLimiter {
         drainWaiters()
     }
 
+    private func cancelWaiter(id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        let waiter = waiters.remove(at: index)
+        waiter.continuation.resume(returning: false)
+    }
+
     private func drainWaiters() {
         var index = 0
         while index < waiters.count {
@@ -192,7 +267,7 @@ actor SumiFaviconFetchLimiter {
             }
             waiters.remove(at: index)
             markAcquired(origin: waiter.origin)
-            waiter.continuation.resume()
+            waiter.continuation.resume(returning: true)
         }
     }
 

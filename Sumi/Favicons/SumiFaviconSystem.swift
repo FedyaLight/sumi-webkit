@@ -192,4 +192,10 @@ final class SumiFaviconSystem {
     func invalidateSite(domain: String, partition: SumiFaviconPartition) {
         service.invalidateSite(domain: domain, partition: partition)
     }
+
+    #if DEBUG
+        func drainRuntimeTasksForTests(cancel: Bool = true) async {
+            await service.drainRuntimeTasksForTests(cancel: cancel)
+        }
+    #endif
 }

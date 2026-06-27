@@ -69,9 +69,12 @@ extension ExtensionManager {
             let tasks =
                 deferredTabNotificationTasksByTabID.values.map(\.task)
                 + Array(contentScriptContextLoadTasksByProfile.values)
-                + Array(initialDocumentNativeMessagingWarmupTasksByProfile.values)
+                + initialDocumentNativeMessagingWarmupTasksByProfile.values.map(\.task)
+                + nativeMessagingBackgroundWakeTasksByKey.values.map(\.task)
+            let didDrainWakeTask = await backgroundRuntimeStateOwner
+                .drainWakeTasksForTests()
 
-            guard tasks.isEmpty == false else { return }
+            guard tasks.isEmpty == false || didDrainWakeTask else { return }
 
             for task in tasks {
                 await task.value

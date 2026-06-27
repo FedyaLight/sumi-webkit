@@ -157,7 +157,11 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let surfaceStore = BrowserExtensionSurfaceStore(extensionManager: manager)
 
         surfaceStore.refreshSiteAccessPolicies(profileId: profile.id)
-        await drainSurfaceStoreUpdates()
+        await waitForSurfaceStoreDefaultAccess(
+            .allow,
+            extensionId: installed.id,
+            surfaceStore: surfaceStore
+        )
 
         XCTAssertEqual(
             surfaceStore.siteAccessPoliciesByExtensionID[installed.id]?.defaultAccess,
@@ -169,7 +173,11 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             extensionId: installed.id,
             profileId: profile.id
         )
-        await drainSurfaceStoreUpdates()
+        await waitForSurfaceStoreDefaultAccess(
+            .ask,
+            extensionId: installed.id,
+            surfaceStore: surfaceStore
+        )
 
         XCTAssertEqual(
             surfaceStore.siteAccessPoliciesByExtensionID[installed.id]?.defaultAccess,
@@ -702,10 +710,20 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
     }
 
-    private func drainSurfaceStoreUpdates() async {
-        for _ in 0 ..< 3 {
+    private func waitForSurfaceStoreDefaultAccess(
+        _ expected: SafariExtensionSiteAccessLevel,
+        extensionId: String,
+        surfaceStore: BrowserExtensionSurfaceStore,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0 ..< 100 {
+            if surfaceStore.siteAccessPoliciesByExtensionID[extensionId]?.defaultAccess == expected {
+                return
+            }
             await Task.yield()
         }
+        XCTFail("Timed out waiting for site-access surface snapshot", file: file, line: line)
     }
 
     private func installExtension(

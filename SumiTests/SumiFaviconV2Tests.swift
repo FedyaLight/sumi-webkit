@@ -520,6 +520,69 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         XCTAssertEqual(order, ["/first.png", "/high.png", "/low.png"])
     }
 
+    func testCancelledColdFetchDoesNotPoisonNextInFlightFetch() async throws {
+        let fetcher = ControlledFaviconNetworkFetcher()
+        let scheduler = SumiFaviconFetchScheduler(
+            fetcher: fetcher,
+            configuration: .init(globalConcurrencyLimit: 2, perOriginConcurrencyLimit: 2)
+        )
+        let pageURL = try XCTUnwrap(URL(string: "https://example.com/"))
+        let iconURL = try XCTUnwrap(URL(string: "https://example.com/favicon.ico"))
+        let candidate = SumiFaviconCandidate(
+            pageURL: pageURL,
+            iconURL: iconURL,
+            sourceKind: .rootFavicon,
+            partition: .regular(nil)
+        )
+
+        let firstTask = Task {
+            await scheduler.fetch(
+                candidate: candidate,
+                context: .publicRootFallback,
+                priority: .backgroundPrefetch
+            )
+        }
+        await fetcher.waitUntilStarted(1)
+        await scheduler.cancelColdFetches()
+
+        let secondTask = Task {
+            await scheduler.fetch(
+                candidate: candidate,
+                context: .publicRootFallback,
+                priority: .visibleActiveTab
+            )
+        }
+        await fetcher.waitUntilStarted(2)
+
+        await fetcher.releaseCall(1)
+        let firstResult = await firstTask.value
+        guard case .cancelled = firstResult else {
+            return XCTFail("Expected cancelled fetch to remain non-cacheable")
+        }
+
+        let thirdTask = Task {
+            await scheduler.fetch(
+                candidate: candidate,
+                context: .publicRootFallback,
+                priority: .visibleActiveTab
+            )
+        }
+        try await Task.sleep(nanoseconds: 20_000_000)
+        let callCountAfterThirdFetchStarted = await fetcher.callCount
+        XCTAssertEqual(callCountAfterThirdFetchStarted, 2)
+
+        await fetcher.releaseCall(2)
+        let secondResult = await secondTask.value
+        let thirdResult = await thirdTask.value
+
+        guard case .success = secondResult else {
+            return XCTFail("Expected second fetch to complete from live network request")
+        }
+        guard case .success = thirdResult else {
+            return XCTFail("Expected third fetch to coalesce with the second in-flight request")
+        }
+    }
+
     func testPreparedCacheInvalidatesOnlyMatchingRevision() throws {
         let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
         let request = SumiPreparedFaviconRequest(
@@ -1958,6 +2021,47 @@ private actor PriorityRecordingFaviconNetworkFetcher: SumiFaviconNetworkFetching
                 statusCode: 200
             )
         )
+    }
+}
+
+private actor ControlledFaviconNetworkFetcher: SumiFaviconNetworkFetching {
+    private(set) var callCount = 0
+    private var releaseContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var startWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+    func waitUntilStarted(_ expectedCallCount: Int) async {
+        guard callCount < expectedCallCount else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append((expectedCallCount, continuation))
+        }
+    }
+
+    func releaseCall(_ callNumber: Int) {
+        releaseContinuations.removeValue(forKey: callNumber)?.resume()
+    }
+
+    func fetch(url: URL, context: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
+        callCount += 1
+        let callNumber = callCount
+        resumeSatisfiedStartWaiters()
+        await withCheckedContinuation { continuation in
+            releaseContinuations[callNumber] = continuation
+        }
+        return .success(
+            SumiFaviconFetchResponse(
+                data: Data([0x89, 0x50, 0x4E, 0x47]),
+                mimeType: "image/png",
+                statusCode: 200
+            )
+        )
+    }
+
+    private func resumeSatisfiedStartWaiters() {
+        let readyWaiters = startWaiters.filter { callCount >= $0.count }
+        startWaiters.removeAll { callCount >= $0.count }
+        for waiter in readyWaiters {
+            waiter.continuation.resume()
+        }
     }
 }
 

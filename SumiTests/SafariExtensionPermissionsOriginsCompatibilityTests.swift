@@ -110,6 +110,7 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
     }
 
     func testPermissionsContainsLocationHrefWithPortRendersOverlay() async throws {
+        SafariExtensionLiveWebKitTestLease.holdForProcess()
         let server = try await AutofillPagesHTTPServer.start()
         addTeardownBlock {
             server.stop()
@@ -118,12 +119,12 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         let container = try makeTestContainer()
         let profile = Profile(name: "Permissions Origins Profile")
         let browserConfiguration = BrowserConfiguration()
-        let manager = ExtensionManager(
+        let manager = makeSafariExtensionTestExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
-        let browserManager = BrowserManager()
+        let browserManager = makeSafariExtensionTestBrowserManager()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         manager.attach(browserManager: browserManager)

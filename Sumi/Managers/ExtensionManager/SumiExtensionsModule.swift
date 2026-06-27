@@ -885,6 +885,12 @@ final class SumiExtensionsModule {
         safariContentBlockerServiceCacheKey = nil
     }
 
+    #if DEBUG
+        func drainSafariContentBlockerRuntimeForTests(cancel: Bool = false) async {
+            await safariContentBlockerService?.drainScheduledTasksForTests(cancel: cancel)
+        }
+    #endif
+
     private func tearDownLoadedRuntime(reason: String) {
         guard let cachedManager else {
             surfaceStore.bind(nil)

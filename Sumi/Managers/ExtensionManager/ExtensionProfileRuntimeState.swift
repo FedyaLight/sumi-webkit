@@ -88,12 +88,55 @@ struct ExtensionProfileRuntimeState {
     }
 
     func profileId(for extensionContext: WKWebExtensionContext) -> UUID? {
-        for (profileId, contexts) in contextsByProfile {
-            if contexts.values.contains(where: { $0 === extensionContext }) {
-                return profileId
+        contextIdentity(for: extensionContext)?.profileId
+    }
+
+    func extensionId(for extensionContext: WKWebExtensionContext) -> String? {
+        if let identity = contextIdentity(for: extensionContext) {
+            return identity.extensionId
+        }
+
+        var webExtensionMatches = Set<String>()
+        for contexts in contextsByProfile.values {
+            for (extensionId, context) in contexts
+            where context.webExtension === extensionContext.webExtension
+            {
+                webExtensionMatches.insert(extensionId)
             }
         }
-        return nil
+        return webExtensionMatches.count == 1 ? webExtensionMatches.first : nil
+    }
+
+    func contextIdentity(
+        for extensionContext: WKWebExtensionContext
+    ) -> (extensionId: String, profileId: UUID)? {
+        for (profileId, contexts) in contextsByProfile {
+            if let extensionId = contexts.first(where: { $0.value === extensionContext })?.key {
+                return (extensionId, profileId)
+            }
+        }
+
+        var baseURLMatches: [(extensionId: String, profileId: UUID)] = []
+        for (profileId, contexts) in contextsByProfile {
+            for (extensionId, context) in contexts
+            where context.baseURL == extensionContext.baseURL
+            {
+                baseURLMatches.append((extensionId, profileId))
+            }
+        }
+        if baseURLMatches.count == 1 {
+            return baseURLMatches[0]
+        }
+
+        var webExtensionMatches: [(extensionId: String, profileId: UUID)] = []
+        for (profileId, contexts) in contextsByProfile {
+            for (extensionId, context) in contexts
+            where context.webExtension === extensionContext.webExtension
+            {
+                webExtensionMatches.append((extensionId, profileId))
+            }
+        }
+        return webExtensionMatches.count == 1 ? webExtensionMatches[0] : nil
     }
 
     func profileId(for controller: WKWebExtensionController) -> UUID? {

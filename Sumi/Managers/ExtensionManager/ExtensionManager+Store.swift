@@ -167,15 +167,17 @@ extension ExtensionManager {
             return
         }
 
-        UserDefaults.standard.set(
+        extensionPreferences.set(
             data,
             forKey: Self.pinnedToolbarExtensionIDsStorageKey
         )
     }
 
-    static func loadPinnedToolbarExtensionIDsByProfile() -> [String: [String]] {
+    static func loadPinnedToolbarExtensionIDsByProfile(
+        from userDefaults: UserDefaults = .standard
+    ) -> [String: [String]] {
         guard
-            let data = UserDefaults.standard.data(
+            let data = userDefaults.data(
                 forKey: pinnedToolbarExtensionIDsStorageKey
             ),
             let decoded = try? JSONDecoder().decode([String: [String]].self, from: data)
@@ -246,20 +248,7 @@ extension ExtensionManager {
     func extensionID(
         for extensionContext: WKWebExtensionContext
     ) -> String? {
-        for contexts in extensionContextsByProfile.values {
-            if let match = contexts.first(where: { $0.value === extensionContext })?.key {
-                return match
-            }
-        }
-        for contexts in extensionContextsByProfile.values {
-            if let match = contexts.first(where: {
-                $0.value.webExtension === extensionContext.webExtension
-                    || $0.value.baseURL == extensionContext.baseURL
-            })?.key {
-                return match
-            }
-        }
-        return nil
+        profileRuntimeState.extensionId(for: extensionContext)
     }
 
     func ownerExtensionID(
@@ -458,7 +447,7 @@ extension ExtensionManager {
     private func loadStoredExtensionPermissionDecisions()
         -> [String: ExtensionStoredPermissionDecision]
     {
-        guard let data = UserDefaults.standard.data(
+        guard let data = extensionPreferences.data(
             forKey: Self.extensionPermissionDecisionsStorageKey
         ),
               let decoded = try? JSONDecoder().decode(
@@ -475,7 +464,7 @@ extension ExtensionManager {
         _ decisions: [String: ExtensionStoredPermissionDecision]
     ) {
         guard let data = try? JSONEncoder().encode(decisions) else { return }
-        UserDefaults.standard.set(
+        extensionPreferences.set(
             data,
             forKey: Self.extensionPermissionDecisionsStorageKey
         )
@@ -849,7 +838,7 @@ extension ExtensionManager {
     private func loadStoredExtensionSiteAccessPolicies()
         -> [String: SafariExtensionSiteAccessPolicy]
     {
-        guard let data = UserDefaults.standard.data(
+        guard let data = extensionPreferences.data(
             forKey: Self.extensionSiteAccessStorageKey
         ),
               let decoded = try? JSONDecoder().decode(
@@ -866,7 +855,7 @@ extension ExtensionManager {
         _ policies: [String: SafariExtensionSiteAccessPolicy]
     ) {
         guard let data = try? JSONEncoder().encode(policies) else { return }
-        UserDefaults.standard.set(
+        extensionPreferences.set(
             data,
             forKey: Self.extensionSiteAccessStorageKey
         )

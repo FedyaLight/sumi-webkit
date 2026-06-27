@@ -751,6 +751,7 @@ extension ExtensionManager {
             let wakeKey = backgroundScopedKey(extensionId: extensionId, profileId: profileId)
             backgroundRuntimeStateOwner.cancelAndRemoveRuntime(for: wakeKey)
         }
+        cancelNativeMessagingBackgroundWakeTasks(forExtensionId: extensionId)
         clearActionSurfaceState(for: extensionId)
         unloadExtensionContextIfNeeded(for: extensionId)
         removeExtensionErrorObserver(for: extensionId)
@@ -806,6 +807,8 @@ extension ExtensionManager {
         extensionPageUserContentControllersByProfile.removeAll()
         deferredTabNotificationTasksByTabID.values.forEach { $0.task.cancel() }
         deferredTabNotificationTasksByTabID.removeAll()
+        cancelInitialDocumentNativeMessagingWarmupTasks()
+        cancelNativeMessagingBackgroundWakeTasks()
         cancelNativeMessagingSessions(reason: "resetLoadedExtensionRuntimeStateForReload")
         pruneRuntimeAdapters()
     }
@@ -857,10 +860,10 @@ extension ExtensionManager {
         runtimeInitializationTask = nil
         contentScriptContextLoadTasksByProfile.values.forEach { $0.cancel() }
         contentScriptContextLoadTasksByProfile.removeAll()
-        initialDocumentNativeMessagingWarmupTasksByProfile.values.forEach { $0.cancel() }
-        initialDocumentNativeMessagingWarmupTasksByProfile.removeAll()
+        cancelInitialDocumentNativeMessagingWarmupTasks()
         deferredTabNotificationTasksByTabID.values.forEach { $0.task.cancel() }
         deferredTabNotificationTasksByTabID.removeAll()
+        cancelNativeMessagingBackgroundWakeTasks()
         backgroundRuntimeStateOwner.cancelAllWakeTasks()
 
         let uiStateIDs = removeUIState ? Array(actionAnchors.keys) : []

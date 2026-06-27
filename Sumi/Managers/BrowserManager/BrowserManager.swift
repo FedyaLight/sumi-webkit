@@ -571,6 +571,10 @@ class BrowserManager: ObservableObject {
 
     private func beginProtectionRestoreForStartupIfNeeded() {
         guard startupProtectionRestoreTask == nil else { return }
+        guard !RuntimeDiagnostics.isRunningTests else {
+            finishStartupProtectionRestore()
+            return
+        }
         startupProtectionRestoreTask = Task { @MainActor [weak self] in
             await self?.restoreProtectionForStartupIfNeeded()
         }
@@ -616,6 +620,25 @@ class BrowserManager: ObservableObject {
         }
 #endif
     }
+
+    #if DEBUG
+        func drainProtectionRuntimeTasksForTests(cancel: Bool = false) async {
+            if cancel {
+                startupProtectionRestoreTask?.cancel()
+            }
+            if let startupProtectionRestoreTask {
+                await startupProtectionRestoreTask.value
+                self.startupProtectionRestoreTask = nil
+            }
+            await adBlockingModule.drainRuleListTasksForTests(cancel: cancel)
+            await extensionsModule.drainSafariContentBlockerRuntimeForTests(cancel: cancel)
+        }
+
+        func drainBrowserRuntimeTasksForTests(cancel: Bool = false) async {
+            await drainProtectionRuntimeTasksForTests(cancel: cancel)
+            await SumiFaviconSystem.shared.drainRuntimeTasksForTests(cancel: cancel)
+        }
+    #endif
 
     var shouldDeferNormalTabMaterializationDuringStartup: Bool {
         StartupNormalTabMaterializationPolicy.shouldDefer(

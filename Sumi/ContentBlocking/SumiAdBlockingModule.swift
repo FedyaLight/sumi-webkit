@@ -135,6 +135,7 @@ final class AdblockWebKitRuleListStore {
     private let updateCoordinator: AdblockUpdateCoordinator
     private let isAdblockEnabled: @Sendable () async -> Bool
     private let embeddedBundleURLProvider: @MainActor () -> URL?
+    private var startupTask: Task<Void, Never>?
     private(set) var lastUpdateDiagnostics: AdblockUpdateDiagnostics?
 
     var activeManifest: AdblockCompiledGenerationManifest? { ruleListProvider.activeManifest }
@@ -169,12 +170,29 @@ final class AdblockWebKitRuleListStore {
             contentRuleListStore: compiler,
             garbageCollector: AdblockGenerationGarbageCollector(manifestStore: manifestStore, contentRuleListStore: compiler)
         )
-        Task { [weak self] in
+        startupTask = Task { @MainActor [weak self] in
             guard let self else { return }
             await self.loadActiveManifestIfEnabled()
             _ = await self.updateCoordinator.rollbackIfActiveGenerationFailsSmokeCheck()
         }
     }
+
+    deinit {
+        startupTask?.cancel()
+    }
+
+    #if DEBUG
+        func drainStartupTasksForTests(cancel: Bool = false) async {
+            if cancel {
+                startupTask?.cancel()
+            }
+            if let startupTask {
+                await startupTask.value
+                self.startupTask = nil
+            }
+            await contentBlockingService.drainScheduledTasksForTests(cancel: cancel)
+        }
+    #endif
 
     func contentRuleListDefinitions(for protectionGroups: Set<SumiProtectionGroupKind>) throws -> [SumiContentRuleListDefinition] {
         guard let manifest = activeManifest else { return [] }
@@ -578,6 +596,12 @@ final class SumiAdBlockingModule {
             cachedRuleListStore = nil
         }
     }
+
+    #if DEBUG
+        func drainRuleListTasksForTests(cancel: Bool = false) async {
+            await cachedRuleListStore?.drainStartupTasksForTests(cancel: cancel)
+        }
+    #endif
 
     func activeManifestIfLoaded() -> AdblockCompiledGenerationManifest? {
         cachedRuleListStore?.activeManifest

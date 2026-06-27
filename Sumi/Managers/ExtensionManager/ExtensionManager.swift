@@ -7,6 +7,7 @@
 
 import AppKit
 import Combine
+import Darwin
 import Foundation
 import OSLog
 import SwiftData
@@ -31,10 +32,11 @@ final class ExtensionManager: NSObject, ObservableObject {
     #if DEBUG
         nonisolated static let testControllerIdentifiersDefaultsKey =
             "\(SumiAppIdentity.bundleIdentifier).tests.WKWebExtensionController.Identifiers"
+        nonisolated private static var currentProcessTestControllerIdentifiersDefaultsKey: String {
+            "\(testControllerIdentifiersDefaultsKey).\(ProcessInfo.processInfo.processIdentifier)"
+        }
         nonisolated static let installTestControllerStorageCleanupAtExit: Void = {
-            atexit {
-                ExtensionManager.removeRegisteredTestWebExtensionControllerStorage()
-            }
+            removeInactiveTestWebExtensionControllerStorage()
         }()
     #endif
     @Published var installedExtensions: [InstalledExtension] = []
@@ -131,6 +133,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     let context: ModelContext
     let browserConfiguration: BrowserConfiguration
     let installationMetadataStore: ExtensionInstallationMetadataStore
+    let extensionPreferences: UserDefaults
     let requestedTabLifecycleOwner = ExtensionRequestedTabLifecycleOwner()
     let profileWebsiteDataStoreCache = ExtensionProfileWebsiteDataStoreCache()
     var controllerIdentifierStorage: UUID?
@@ -164,6 +167,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     var loadedExtensionManifests: [String: [String: Any]] = [:]
     var deferredTabNotificationTasksByTabID:
         [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
+    var nativeMessagingBackgroundWakeTasksByKey:
+        [String: (token: UUID, task: Task<Void, Never>)] = [:]
     let installCapabilityOwner = SafariExtensionInstallCapabilityOwner()
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
     var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] = [:]
@@ -202,7 +207,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
     var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
-    var initialDocumentNativeMessagingWarmupTasksByProfile: [UUID: Task<Void, Never>] = [:]
+    var initialDocumentNativeMessagingWarmupTasksByProfile:
+        [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
+    var retiredInitialDocumentNativeMessagingWarmupTaskTokens = Set<UUID>()
+    var finishedUnregisteredInitialDocumentNativeMessagingWarmupTaskTokens = Set<UUID>()
     var extensionPermissionPromptQueue: [@MainActor () -> Void] = []
     var isPresentingExtensionPermissionPrompt = false
     var extensionPermissionPromptWaitersByKey:
@@ -221,7 +229,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     init(
         context: ModelContext,
         initialProfile: Profile?,
-        browserConfiguration: BrowserConfiguration? = nil
+        browserConfiguration: BrowserConfiguration? = nil,
+        extensionPreferences: UserDefaults = .standard
     ) {
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.init")
         defer {
@@ -231,11 +240,13 @@ final class ExtensionManager: NSObject, ObservableObject {
         _ = Self.registerSafariWebExtensionURLScheme
         self.context = context
         self.browserConfiguration = browserConfiguration ?? .shared
+        self.extensionPreferences = extensionPreferences
         self.installationMetadataStore = ExtensionInstallationMetadataStore(
             context: context
         )
         self.currentProfileId = initialProfile?.id
-        self.pinnedToolbarExtensionIDsByProfile = Self.loadPinnedToolbarExtensionIDsByProfile()
+        self.pinnedToolbarExtensionIDsByProfile =
+            Self.loadPinnedToolbarExtensionIDsByProfile(from: extensionPreferences)
         self.pinnedToolbarExtensionIDs = Self.normalizedPinnedToolbarExtensionIDs(
             pinnedToolbarExtensionIDsByProfile[
                 Self.pinnedToolbarProfileKey(for: initialProfile?.id)
@@ -298,28 +309,43 @@ final class ExtensionManager: NSObject, ObservableObject {
             _ controllerIdentifier: UUID
         ) {
             var identifiers = UserDefaults.standard.stringArray(
-                forKey: testControllerIdentifiersDefaultsKey
+                forKey: currentProcessTestControllerIdentifiersDefaultsKey
             ) ?? []
             identifiers.append(controllerIdentifier.uuidString.uppercased())
             UserDefaults.standard.set(
                 Array(Set(identifiers)).sorted(),
-                forKey: testControllerIdentifiersDefaultsKey
+                forKey: currentProcessTestControllerIdentifiersDefaultsKey
             )
         }
 
-        nonisolated private static func removeRegisteredTestWebExtensionControllerStorage() {
-            let identifiers = UserDefaults.standard.stringArray(
-                forKey: testControllerIdentifiersDefaultsKey
-            ) ?? []
+        nonisolated private static func removeInactiveTestWebExtensionControllerStorage() {
+            let defaults = UserDefaults.standard
+            let prefix = "\(testControllerIdentifiersDefaultsKey)."
+            let processKey = currentProcessTestControllerIdentifiersDefaultsKey
+            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+                guard key != processKey,
+                      let rawPID = key.dropFirst(prefix.count).split(separator: ".").first,
+                      let pid = pid_t(rawPID),
+                      kill(pid, 0) != 0
+                else {
+                    continue
+                }
+
+                let identifiers = defaults.stringArray(forKey: key) ?? []
+                removeTestWebExtensionControllerStorage(identifiers: identifiers)
+                defaults.removeObject(forKey: key)
+            }
+        }
+
+        nonisolated private static func removeTestWebExtensionControllerStorage(
+            identifiers: [String]
+        ) {
             for identifier in identifiers {
                 guard let uuid = UUID(uuidString: identifier) else {
                     continue
                 }
                 removeTestWebExtensionControllerStorageIfNeeded(for: uuid)
             }
-            UserDefaults.standard.removeObject(
-                forKey: testControllerIdentifiersDefaultsKey
-            )
         }
 
         nonisolated private static func removeTestWebExtensionControllerStorageIfNeeded(

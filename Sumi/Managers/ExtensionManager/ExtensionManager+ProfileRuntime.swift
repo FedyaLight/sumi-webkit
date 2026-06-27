@@ -86,6 +86,12 @@ extension ExtensionManager {
         profileRuntimeState.profileId(for: extensionContext)
     }
 
+    func contextIdentity(
+        for extensionContext: WKWebExtensionContext
+    ) -> (extensionId: String, profileId: UUID)? {
+        profileRuntimeState.contextIdentity(for: extensionContext)
+    }
+
     func profileId(for controller: WKWebExtensionController) -> UUID? {
         profileRuntimeState.profileId(for: controller)
     }
@@ -475,15 +481,18 @@ extension ExtensionManager {
         if let existingTask =
             initialDocumentNativeMessagingWarmupTasksByProfile[profileId]
         {
-            await existingTask.value
+            await existingTask.task.value
             return
         }
 
+        let token = UUID()
         let task = Self.detachedMainActorRuntimeTask { [weak self] in
             guard let self else { return }
             defer {
-                self.initialDocumentNativeMessagingWarmupTasksByProfile
-                    .removeValue(forKey: profileId)
+                self.finishInitialDocumentNativeMessagingWarmupTask(
+                    profileId: profileId,
+                    token: token
+                )
             }
             guard Task.isCancelled == false else { return }
 
@@ -513,8 +522,51 @@ extension ExtensionManager {
                 }
             }
         }
-        initialDocumentNativeMessagingWarmupTasksByProfile[profileId] = task
+        initialDocumentNativeMessagingWarmupTasksByProfile[profileId] = (token, task)
+        clearInitialDocumentNativeMessagingWarmupTaskIfFinishedBeforeRegistration(
+            profileId: profileId,
+            token: token
+        )
         await task.value
+    }
+
+    private func finishInitialDocumentNativeMessagingWarmupTask(
+        profileId: UUID,
+        token: UUID
+    ) {
+        var didResolveTask = false
+        if initialDocumentNativeMessagingWarmupTasksByProfile[profileId]?.token == token {
+            initialDocumentNativeMessagingWarmupTasksByProfile.removeValue(forKey: profileId)
+            didResolveTask = true
+        }
+        if retiredInitialDocumentNativeMessagingWarmupTaskTokens.remove(token) != nil {
+            didResolveTask = true
+        }
+        guard !didResolveTask else { return }
+        finishedUnregisteredInitialDocumentNativeMessagingWarmupTaskTokens.insert(token)
+    }
+
+    private func clearInitialDocumentNativeMessagingWarmupTaskIfFinishedBeforeRegistration(
+        profileId: UUID,
+        token: UUID
+    ) {
+        guard
+            finishedUnregisteredInitialDocumentNativeMessagingWarmupTaskTokens
+                .remove(token) != nil
+        else { return }
+
+        if initialDocumentNativeMessagingWarmupTasksByProfile[profileId]?.token == token {
+            initialDocumentNativeMessagingWarmupTasksByProfile.removeValue(forKey: profileId)
+        }
+    }
+
+    func cancelInitialDocumentNativeMessagingWarmupTasks() {
+        for scheduledTask in initialDocumentNativeMessagingWarmupTasksByProfile.values {
+            scheduledTask.task.cancel()
+            retiredInitialDocumentNativeMessagingWarmupTaskTokens.insert(scheduledTask.token)
+        }
+        initialDocumentNativeMessagingWarmupTasksByProfile.removeAll()
+        finishedUnregisteredInitialDocumentNativeMessagingWarmupTaskTokens.removeAll()
     }
 
     func logExtensionLoadFailure(
@@ -617,7 +669,7 @@ extension ExtensionManager {
         deferredTabNotificationTasksByTabID[tabId]?.task
     }
 
-    private nonisolated static func detachedMainActorRuntimeTask(
+    nonisolated static func detachedMainActorRuntimeTask(
         _ operation: @escaping @MainActor @Sendable () async -> Void
     ) -> Task<Void, Never> {
         Task.detached {

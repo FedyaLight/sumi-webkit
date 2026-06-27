@@ -7,37 +7,31 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
-    private final class ManagerTeardownBox {
-        var manager: ExtensionManager?
-
-        init(manager: ExtensionManager) {
-            self.manager = manager
-        }
-    }
-
     private func makeManager(
         context: ModelContext,
         profile: Profile,
         browserConfiguration: BrowserConfiguration = BrowserConfiguration()
     ) -> (manager: ExtensionManager, browserConfiguration: BrowserConfiguration) {
-        let manager = ExtensionManager(
+        SafariExtensionLiveWebKitTestLease.holdForProcess()
+        let manager = makeSafariExtensionTestExtensionManager(
             context: context,
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
-        let teardownBox = ManagerTeardownBox(manager: manager)
-        addTeardownBlock { @MainActor in
-            guard let manager = teardownBox.manager else { return }
-            await manager.drainExtensionRuntimeTasksForTests()
-            manager.tearDownExtensionRuntime(
-                reason: "SafariExtensionWebViewControllerWiringTests.tearDown",
-                removeUIState: true,
-                releaseController: true
-            )
-            manager.clearDebugState()
-            teardownBox.manager = nil
-        }
         return (manager, browserConfiguration)
+    }
+
+    private func makeBrowserManager(
+        moduleRegistry: SumiModuleRegistry? = nil,
+        extensionsModule: SumiExtensionsModule? = nil,
+        profile: Profile? = nil
+    ) -> BrowserManager {
+        let browserManager = makeSafariExtensionTestBrowserManager(
+            moduleRegistry: moduleRegistry,
+            extensionsModule: extensionsModule,
+            profile: profile
+        )
+        return browserManager
     }
 
     @discardableResult
@@ -245,8 +239,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         ).manager
         manager.tabOpenNotificationGeneration = 7
 
-        let browserManager = BrowserManager()
-        browserManager.profileManager.profiles = [ephemeralProfile]
+        let browserManager = makeBrowserManager(profile: ephemeralProfile)
 
         let tab = makeTab(
             profileId: ephemeralProfile.id,
@@ -277,9 +270,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         manager.extensionsLoaded = true
         manager.tabOpenNotificationGeneration = 3
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let tab = browserManager.tabManager.createNewTab(
             url: "https://example.com",
@@ -318,12 +310,12 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             initialProfileProvider: { profile }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
         extensionsModule.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let scratchDirectory = try makeScratchDirectory()
         let manager = try XCTUnwrap(extensionsModule.managerIfEnabled())
@@ -363,13 +355,12 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             initialProfileProvider: { profile }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
         extensionsModule.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -443,7 +434,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             if let nativeMessagingTask =
                 manager.initialDocumentNativeMessagingWarmupTasksByProfile[profile.id]
             {
-                await nativeMessagingTask.value
+                await nativeMessagingTask.task.value
             }
         }
         webView.stopLoading()
@@ -465,15 +456,14 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             initialProfileProvider: { profile }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -581,12 +571,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _ in manager }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -663,12 +652,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _ in manager }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -768,12 +756,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _ in manager }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -847,15 +834,14 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _ in manager }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -956,12 +942,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _ in manager }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -1037,12 +1022,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _ in manager }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         manager.attach(browserManager: browserManager)
 
         let scratchDirectory = try makeScratchDirectory()
@@ -1111,12 +1095,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _ in manager }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -1204,9 +1187,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         manager.extensionsLoaded = true
         manager.tabOpenNotificationGeneration = 9
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
         tab.browserManager = browserManager
@@ -1258,9 +1240,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         manager.extensionsLoaded = true
         manager.tabOpenNotificationGeneration = 11
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
         tab.browserManager = browserManager
@@ -1317,9 +1298,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let expectedController = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let pageURL = server.loginBasicURL
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
@@ -1397,9 +1377,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installContentScriptProbeExtension(
@@ -1449,9 +1428,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installContentScriptNativeMessagingProbeExtension(
@@ -1467,9 +1445,19 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         var backgroundWakeCount = 0
         var backgroundWakeKey: String?
+        var backgroundWakeObservations: [String] = []
         let backgroundWakeExpectation = expectation(description: "nativeMessaging warmup")
-        manager.testHooks.backgroundContentWake = { wakeKey, _ in
+        backgroundWakeExpectation.assertForOverFulfill = false
+        manager.testHooks.backgroundContentWake = { wakeKey, extensionContext in
             backgroundWakeKey = wakeKey
+            let contextIdentity = manager.contextIdentity(for: extensionContext)
+            let stateBefore = manager.backgroundRuntimeState(
+                for: installed.id,
+                profileId: profile.id
+            )
+            backgroundWakeObservations.append(
+                "wake=\(backgroundWakeCount + 1) key=\(wakeKey) expectedProfile=\(profile.id) contextProfile=\(contextIdentity?.profileId.uuidString ?? "nil") stateBefore=\(stateBefore)"
+            )
             backgroundWakeCount += 1
             backgroundWakeExpectation.fulfill()
         }
@@ -1498,7 +1486,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         if let deferredTask = manager.deferredTabNotificationTask(for: tab.id) {
             await deferredTask.value
         }
-        XCTAssertEqual(backgroundWakeCount, 1)
+        XCTAssertEqual(backgroundWakeCount, 1, backgroundWakeObservations.joined(separator: "\n"))
         XCTAssertEqual(
             backgroundWakeKey,
             manager.backgroundScopedKey(
@@ -1526,9 +1514,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let scratchDirectory = try makeScratchDirectory()
         let installed = try await installContentScriptProbeExtension(
@@ -1575,12 +1562,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         _ = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -1646,12 +1631,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let controller = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -1739,12 +1722,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let controller = manager.ensureExtensionController(for: profile.id)
         manager.extensionsLoaded = true
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -1839,15 +1820,14 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _ in manager }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -2211,10 +2191,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profile: profile,
             browserConfiguration: browserConfiguration
         ).manager
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
         browserManager.tabManager = TabManager(
             browserManager: browserManager,
             context: container.mainContext,
@@ -2395,9 +2373,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         manager.extensionsLoaded = true
         manager.tabOpenNotificationGeneration = 21
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
@@ -2468,9 +2445,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         manager.extensionsLoaded = true
         _ = controller
 
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)

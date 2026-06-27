@@ -5,11 +5,16 @@ import WebKit
 // Cross-task facade; mutable scheduling state is isolated to `schedulingQueue`, and collaborators
 // are actors or queue-protected services.
 final class SumiFaviconService: @unchecked Sendable {
+    private struct ScheduledColdFetch {
+        let token: UUID
+        var task: Task<Void, Never>?
+    }
+
     private let blobStore: SumiFaviconBlobStore
     private let preparedPipeline: SumiPreparedFaviconPipeline
     private let fetchScheduler: SumiFaviconFetchScheduler
     private let schedulingQueue = DispatchQueue(label: "SumiFaviconService.scheduling")
-    private var scheduledColdFetchPageKeys = Set<String>()
+    private var scheduledColdFetchesByPageKey: [String: ScheduledColdFetch] = [:]
 
     init(
         rootDirectory: URL,
@@ -23,6 +28,10 @@ final class SumiFaviconService: @unchecked Sendable {
             preparedCache: preparedCache
         )
         self.fetchScheduler = SumiFaviconFetchScheduler(fetcher: fetcher)
+    }
+
+    deinit {
+        cancelScheduledColdFetches()
     }
 
     func cachedPreparedImage(for request: SumiPreparedFaviconRequest) -> NSImage? {
@@ -107,20 +116,20 @@ final class SumiFaviconService: @unchecked Sendable {
         guard pageURL.sumiIsHTTPOrHTTPS else { return }
         guard !blobStore.isNoIconFresh(for: pageURL, partition: partition) else { return }
         let key = "\(partition.storageComponent)|\(pageURL.sumiFaviconPageKey)"
+        let token = UUID()
         let shouldSchedule = schedulingQueue.sync { () -> Bool in
-            guard !scheduledColdFetchPageKeys.contains(key) else { return false }
-            scheduledColdFetchPageKeys.insert(key)
+            guard scheduledColdFetchesByPageKey[key] == nil else { return false }
+            scheduledColdFetchesByPageKey[key] = ScheduledColdFetch(token: token, task: nil)
             return true
         }
         guard shouldSchedule else { return }
 
-        Task(priority: taskPriority(for: priority)) { [weak self] in
+        let task = Task(priority: taskPriority(for: priority)) { [weak self] in
             guard let self else { return }
             defer {
-                _ = self.schedulingQueue.sync {
-                    self.scheduledColdFetchPageKeys.remove(key)
-                }
+                self.finishScheduledColdFetch(pageKey: key, token: token)
             }
+            guard !Task.isCancelled else { return }
             let candidates = SumiFaviconDiscovery.rootFallbackCandidates(
                 for: pageURL,
                 partition: partition
@@ -131,6 +140,19 @@ final class SumiFaviconService: @unchecked Sendable {
                 fetchContext: .publicRootFallback,
                 priority: priority
             )
+        }
+        let shouldCancelCreatedTask = schedulingQueue.sync { () -> Bool in
+            guard var scheduled = scheduledColdFetchesByPageKey[key],
+                  scheduled.token == token
+            else {
+                return true
+            }
+            scheduled.task = task
+            scheduledColdFetchesByPageKey[key] = scheduled
+            return false
+        }
+        if shouldCancelCreatedTask {
+            task.cancel()
         }
     }
 
@@ -366,7 +388,19 @@ final class SumiFaviconService: @unchecked Sendable {
                 )
                 return cachedSelection
             }
-            guard let payload = await payload(for: candidate, fetchContext: fetchContext, priority: priority) else {
+            let candidatePayload: SumiFaviconFetchResponse?
+            do {
+                candidatePayload = try await payload(
+                    for: candidate,
+                    fetchContext: fetchContext,
+                    priority: priority
+                )
+            } catch is CancellationError {
+                return nil
+            } catch {
+                return nil
+            }
+            guard let payload = candidatePayload else {
                 continue
             }
 
@@ -429,6 +463,7 @@ final class SumiFaviconService: @unchecked Sendable {
             return cachedSelection
         }
 
+        guard !Task.isCancelled else { return nil }
         blobStore.recordNoIconFound(for: pageURL, partition: partition)
         return nil
     }
@@ -487,7 +522,7 @@ final class SumiFaviconService: @unchecked Sendable {
         for candidate: SumiFaviconCandidate,
         fetchContext: SumiFaviconFetchContext,
         priority: SumiFaviconFetchPriority
-    ) async -> SumiFaviconFetchResponse? {
+    ) async throws -> SumiFaviconFetchResponse? {
         guard let scheme = candidate.iconURL.scheme?.lowercased() else { return nil }
 
         if scheme == "data" {
@@ -509,6 +544,8 @@ final class SumiFaviconService: @unchecked Sendable {
         switch result {
         case .success(let response):
             return response
+        case .cancelled:
+            throw CancellationError()
         case .failure(let failureKind):
             blobStore.recordFailure(
                 candidateURL: candidate.iconURL,
@@ -622,6 +659,49 @@ final class SumiFaviconService: @unchecked Sendable {
             )
         }
     }
+
+    private func finishScheduledColdFetch(pageKey: String, token: UUID) {
+        schedulingQueue.sync {
+            guard scheduledColdFetchesByPageKey[pageKey]?.token == token else { return }
+            scheduledColdFetchesByPageKey.removeValue(forKey: pageKey)
+        }
+    }
+
+    private func cancelScheduledColdFetches() {
+        let tasks = schedulingQueue.sync { () -> [Task<Void, Never>] in
+            let tasks = scheduledColdFetchesByPageKey.values.compactMap(\.task)
+            scheduledColdFetchesByPageKey.removeAll()
+            return tasks
+        }
+        for task in tasks {
+            task.cancel()
+        }
+    }
+
+    #if DEBUG
+        func drainRuntimeTasksForTests(cancel: Bool = true) async {
+            while true {
+                let tasks = schedulingQueue.sync { () -> [Task<Void, Never>] in
+                    let tasks = scheduledColdFetchesByPageKey.values.compactMap(\.task)
+                    if cancel {
+                        scheduledColdFetchesByPageKey.removeAll()
+                    }
+                    return tasks
+                }
+                if cancel {
+                    for task in tasks {
+                        task.cancel()
+                    }
+                    await fetchScheduler.cancelColdFetches()
+                }
+                guard !tasks.isEmpty else { break }
+                for task in tasks {
+                    await task.value
+                }
+            }
+            await fetchScheduler.drainInFlightFetchesForTests(cancel: cancel)
+        }
+    #endif
 
     private func taskPriority(for priority: SumiFaviconFetchPriority) -> TaskPriority {
         switch priority {
