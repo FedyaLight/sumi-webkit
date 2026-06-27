@@ -252,6 +252,75 @@ final class SidebarDropProjectionTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testEssentialsProjectionRemovesDraggedSourceAndInsertsPlaceholder() {
+        let spaceId = UUID()
+        let profileId = UUID()
+        let first = makeEssentialPin(profileId: profileId, index: 0, title: "One")
+        let second = makeEssentialPin(profileId: profileId, index: 1, title: "Two")
+        let third = makeEssentialPin(profileId: profileId, index: 2, title: "Three")
+        let dragState = SidebarDragState()
+        dragState.isDragging = true
+        dragState.activeDragItemId = first.id
+        dragState.activeDragScope = SidebarDragScope(
+            windowId: nil,
+            spaceId: spaceId,
+            profileId: profileId,
+            sourceContainer: .essentials,
+            sourceItemId: first.id,
+            sourceItemKind: .tab
+        )
+        dragState.hoveredSlot = .essentials(slot: 2)
+
+        let layout = SidebarEssentialsProjectionPolicy.make(
+            items: [first, second, third],
+            width: 155,
+            configuration: .large,
+            dragState: dragState
+        )
+
+        XCTAssertEqual(layout.visibleItems.compactMap { $0?.id }, [second.id, third.id])
+        XCTAssertEqual(layout.layoutItems.count, 3)
+        XCTAssertEqual(layout.layoutItems[0]?.id, second.id)
+        XCTAssertEqual(layout.layoutItems[1]?.id, third.id)
+        XCTAssertNil(layout.layoutItems[2])
+        XCTAssertEqual(layout.capacityColumnCount, 3)
+        XCTAssertEqual(layout.visualColumnSignature, [3])
+    }
+
+    @MainActor
+    func testEssentialsProjectionShowsEmptyStorePlaceholder() {
+        let draggedId = UUID()
+        let dragState = SidebarDragState()
+        dragState.isDragging = true
+        dragState.activeDragItemId = draggedId
+        dragState.activeDragScope = SidebarDragScope(
+            windowId: nil,
+            spaceId: UUID(),
+            profileId: UUID(),
+            sourceContainer: .spaceRegular(UUID()),
+            sourceItemId: draggedId,
+            sourceItemKind: .tab
+        )
+        dragState.hoveredSlot = .essentials(slot: 0)
+
+        let layout = SidebarEssentialsProjectionPolicy.make(
+            items: [],
+            width: 155,
+            configuration: .large,
+            dragState: dragState
+        )
+
+        XCTAssertTrue(layout.canAcceptDrop)
+        XCTAssertTrue(layout.visibleItems.isEmpty)
+        XCTAssertEqual(layout.layoutItems.count, 1)
+        XCTAssertNil(layout.layoutItems[0])
+        XCTAssertEqual(layout.projectedItemCount, 1)
+        XCTAssertEqual(layout.visibleRowCount, 0)
+        XCTAssertEqual(layout.rows.first?.startSlot, 0)
+        XCTAssertEqual(layout.rows.first?.visualColumnCount, 1)
+    }
+
     func testFolderProjectionRemovesDraggedSourceAndInsertsPlaceholderInOpenFolder() {
         let folderId = UUID()
         let draggedFolderId = UUID()
@@ -520,5 +589,17 @@ final class SidebarDropProjectionTests: XCTestCase {
             )
         )
         return scrollView
+    }
+
+    @MainActor
+    private func makeEssentialPin(profileId: UUID, index: Int, title: String) -> ShortcutPin {
+        ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: profileId,
+            index: index,
+            launchURL: URL(string: "https://example.com/\(index)")!,
+            title: title
+        )
     }
 }
