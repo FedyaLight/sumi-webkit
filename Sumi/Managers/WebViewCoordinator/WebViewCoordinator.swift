@@ -433,24 +433,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private let webViewRegistry = WindowWebViewRegistry()
 
     @ObservationIgnored
-    private var promotedHostsByTabAndWindow: [UUID: [UUID: SumiWebViewContainerView]] = [:]
-
-    @ObservationIgnored
-    private var promotedHostAttachmentCompletionsByTabAndWindow: [UUID: [UUID: (@MainActor () -> Void)]] = [:]
+    private let compositorHandoffState = WebViewCompositorHandoffState()
 
     /// Prevent recursive sync calls
     @ObservationIgnored
     private var isSyncingTab: Set<UUID> = []
-
-    /// Weak wrapper for NSView references stored per window
-    private struct WeakNSView { weak var view: NSView? }
-
-    /// Container views per window so the compositor can manage multiple windows safely
-    @ObservationIgnored
-    private var compositorContainerViews: [UUID: WeakNSView] = [:]
-
-    @ObservationIgnored
-    private var immediateVisualHandoffHandlersByWindow: [UUID: @MainActor () -> Bool] = [:]
 
     /// Coalesce WebView creation requests so SwiftUI update passes never create WebViews inline.
     @ObservationIgnored
@@ -486,57 +473,34 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     // MARK: - Compositor Container Management
 
     func setCompositorContainerView(_ view: NSView?, for windowId: UUID) {
-        if let view {
-            compositorContainerViews[windowId] = WeakNSView(view: view)
-        } else {
-            compositorContainerViews.removeValue(forKey: windowId)
-        }
+        compositorHandoffState.setContainerView(view, for: windowId)
     }
 
     func setImmediateVisualHandoffHandler(
         _ handler: (@MainActor () -> Bool)?,
         for windowId: UUID
     ) {
-        immediateVisualHandoffHandlersByWindow[windowId] = handler
+        compositorHandoffState.setImmediateVisualHandoffHandler(handler, for: windowId)
     }
 
     @discardableResult
     func performImmediateVisualHandoffIfPossible(in windowId: UUID) -> Bool {
-        immediateVisualHandoffHandlersByWindow[windowId]?() ?? false
+        compositorHandoffState.performImmediateVisualHandoffIfPossible(in: windowId)
     }
 
     func compositorContainerView(for windowId: UUID) -> NSView? {
-        if let view = compositorContainerViews[windowId]?.view {
-            return view
-        }
-        compositorContainerViews.removeValue(forKey: windowId)
-        immediateVisualHandoffHandlersByWindow.removeValue(forKey: windowId)
-        return nil
+        compositorHandoffState.containerView(for: windowId)
     }
 
     func removeCompositorContainerView(for windowId: UUID) {
-        compositorContainerViews.removeValue(forKey: windowId)
-        immediateVisualHandoffHandlersByWindow.removeValue(forKey: windowId)
+        compositorHandoffState.removeContainerView(for: windowId)
         scheduledPrepareWindowIds.remove(windowId)
         webViewRegistry.removeVisibilityHistory(for: windowId)
         pruneInvalidDeferredProtectedCommands(reason: "removeCompositorContainerView")
     }
 
     func compositorContainers() -> [(UUID, NSView)] {
-        var result: [(UUID, NSView)] = []
-        var staleIdentifiers: [UUID] = []
-        for (windowId, entry) in compositorContainerViews {
-            if let view = entry.view {
-                result.append((windowId, view))
-            } else {
-                staleIdentifiers.append(windowId)
-            }
-        }
-        for id in staleIdentifiers {
-            compositorContainerViews.removeValue(forKey: id)
-            immediateVisualHandoffHandlersByWindow.removeValue(forKey: id)
-        }
-        return result
+        compositorHandoffState.containerViewsByWindow()
     }
 
     // MARK: - WebView Pool Management
@@ -658,40 +622,24 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         in windowId: UUID,
         attachmentCompletion: (@MainActor () -> Void)? = nil
     ) {
-        promotedHostsByTabAndWindow[tabId, default: [:]][windowId] = host
-        if let attachmentCompletion {
-            promotedHostAttachmentCompletionsByTabAndWindow[tabId, default: [:]][windowId] = attachmentCompletion
-        } else {
-            promotedHostAttachmentCompletionsByTabAndWindow[tabId]?[windowId] = nil
-            if promotedHostAttachmentCompletionsByTabAndWindow[tabId]?.isEmpty == true {
-                promotedHostAttachmentCompletionsByTabAndWindow[tabId] = nil
-            }
-        }
+        compositorHandoffState.registerPromotedHost(
+            host,
+            for: tabId,
+            in: windowId,
+            attachmentCompletion: attachmentCompletion
+        )
     }
 
     func takePromotedHost(for tabId: UUID, in windowId: UUID, expectedWebView: WKWebView) -> SumiWebViewContainerView? {
-        guard let host = promotedHostsByTabAndWindow[tabId]?[windowId] else { return nil }
-        guard host.webView === expectedWebView else { return nil }
-
-        promotedHostsByTabAndWindow[tabId]?[windowId] = nil
-        if promotedHostsByTabAndWindow[tabId]?.isEmpty == true {
-            promotedHostsByTabAndWindow[tabId] = nil
-        }
-
-        host.prepareForSuperviewTransferPreservingDisplayedContent()
-        return host
+        compositorHandoffState.takePromotedHost(
+            for: tabId,
+            in: windowId,
+            expectedWebView: expectedWebView
+        )
     }
 
     func completePromotedHostAttachment(for tabId: UUID, in windowId: UUID) {
-        guard let completion = promotedHostAttachmentCompletionsByTabAndWindow[tabId]?[windowId] else {
-            return
-        }
-
-        promotedHostAttachmentCompletionsByTabAndWindow[tabId]?[windowId] = nil
-        if promotedHostAttachmentCompletionsByTabAndWindow[tabId]?.isEmpty == true {
-            promotedHostAttachmentCompletionsByTabAndWindow[tabId] = nil
-        }
-        completion()
+        compositorHandoffState.completePromotedHostAttachment(for: tabId, in: windowId)
     }
 
     @discardableResult
@@ -846,8 +794,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
         if webViewRegistry.isEmpty {
             webViewRegistry.removeAll()
-            compositorContainerViews.removeAll()
-            immediateVisualHandoffHandlersByWindow.removeAll()
+            compositorHandoffState.removeAllWindowRegistrations()
             scheduledPrepareWindowIds.removeAll()
             visualHandoffProtectedWebViewIDs.removeAll()
             fullscreenProtection.removeAll()
@@ -1274,11 +1221,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return
         }
 
-        for (windowId, entry) in compositorContainerViews {
-            guard let container = entry.view else {
-                compositorContainerViews.removeValue(forKey: windowId)
-                continue
-            }
+        for (_, container) in compositorHandoffState.containerViewsByWindow() {
             removeMatchingWebView(webView, from: container)
         }
     }

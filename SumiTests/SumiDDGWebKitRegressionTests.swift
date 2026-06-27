@@ -425,6 +425,70 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertEqual(handoffCount, 1)
     }
 
+    func testCompositorHandoffStatePrunesStaleContainerAndHandlerTogether() {
+        let handoffState = WebViewCompositorHandoffState()
+        let windowID = UUID()
+        var container: NSView? = NSView()
+        var handoffCount = 0
+
+        handoffState.setContainerView(container, for: windowID)
+        handoffState.setImmediateVisualHandoffHandler({
+            handoffCount += 1
+            return true
+        }, for: windowID)
+
+        XCTAssertNotNil(handoffState.containerView(for: windowID))
+        XCTAssertTrue(handoffState.performImmediateVisualHandoffIfPossible(in: windowID))
+        XCTAssertEqual(handoffCount, 1)
+
+        container = nil
+
+        XCTAssertNil(handoffState.containerView(for: windowID))
+        XCTAssertFalse(handoffState.performImmediateVisualHandoffIfPossible(in: windowID))
+        XCTAssertEqual(handoffCount, 1)
+    }
+
+    func testCompositorHandoffStatePromotedHostCompletionRunsOnceAfterMatchingTake() throws {
+        let handoffState = WebViewCompositorHandoffState()
+        let tab = Tab(url: try XCTUnwrap(URL(string: "https://example.com")))
+        let windowID = UUID()
+        let webView = WKWebView()
+        let host = SumiWebViewContainerView(tab: tab, webView: webView)
+        var completionCount = 0
+
+        handoffState.registerPromotedHost(
+            host,
+            for: tab.id,
+            in: windowID,
+            attachmentCompletion: {
+                completionCount += 1
+            }
+        )
+
+        XCTAssertNil(handoffState.takePromotedHost(
+            for: tab.id,
+            in: windowID,
+            expectedWebView: WKWebView()
+        ))
+
+        let takenHost = handoffState.takePromotedHost(
+            for: tab.id,
+            in: windowID,
+            expectedWebView: webView
+        )
+        XCTAssertTrue(takenHost === host)
+        XCTAssertNil(handoffState.takePromotedHost(
+            for: tab.id,
+            in: windowID,
+            expectedWebView: webView
+        ))
+
+        handoffState.completePromotedHostAttachment(for: tab.id, in: windowID)
+        handoffState.completePromotedHostAttachment(for: tab.id, in: windowID)
+
+        XCTAssertEqual(completionCount, 1)
+    }
+
     func testVisualHandoffProtectionIsReleasedExplicitly() {
         let coordinator = WebViewCoordinator()
         let webView = WKWebView()
