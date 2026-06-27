@@ -999,21 +999,27 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertNil(drainedPreferredWindowID)
     }
 
-    func testWebViewCoordinatorDeferredProtectedCommandsStayBehindNarrowStore() throws {
+    func testWebViewCoordinatorDeferredProtectedCommandsStayBehindProtectedCommandOwner() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let source = try String(
+        let coordinatorSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
                 "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
             ),
             encoding: .utf8
         )
+        let ownerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewProtectedCommandOwner.swift"
+            ),
+            encoding: .utf8
+        )
 
         let storeSource = try sourceSlice(
-            source,
+            ownerSource,
             from: "private struct DeferredProtectedWebViewCommandStore",
-            to: "@MainActor\n@Observable\nclass WebViewCoordinator"
+            to: "@MainActor\nfinal class WebViewProtectedCommandOwner"
         )
         XCTAssertTrue(storeSource.contains("private var buffersBySourceWebViewID"))
         XCTAssertFalse(storeSource.contains("activeHistorySwipeProtections"))
@@ -1025,86 +1031,103 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(storeSource.contains("dropDeferredProtectedCommand"))
 
         let coordinatorStart = try XCTUnwrap(
-            source.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
+            coordinatorSource.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
         ).lowerBound
-        let coordinatorSource = String(source[coordinatorStart...])
-        XCTAssertTrue(
-            coordinatorSource.contains(
-                "private var deferredProtectedWebViewCommands = DeferredProtectedWebViewCommandStore()"
-            )
-        )
-        XCTAssertFalse(coordinatorSource.contains("deferredProtectedWebViewCommands["))
-        XCTAssertFalse(coordinatorSource.contains("deferredProtectedWebViewCommands.keys"))
+        let coordinatorClassSource = String(coordinatorSource[coordinatorStart...])
+        XCTAssertTrue(coordinatorClassSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
+        XCTAssertFalse(coordinatorClassSource.contains("private var activeHistorySwipeProtections"))
+        XCTAssertFalse(coordinatorClassSource.contains("private var visualHandoffProtectedWebViewIDs"))
+        XCTAssertFalse(coordinatorClassSource.contains("private let fullscreenProtection"))
+        XCTAssertFalse(coordinatorClassSource.contains("private var deferredProtectedWebViewCommands"))
 
         let enqueueSource = try sourceSlice(
-            source,
-            from: "private func enqueueDeferredCommandIfNeeded",
-            to: "private func noteWeakWebView"
+            coordinatorSource,
+            from: "private func enqueueDeferredProtectedCommand",
+            to: "private func installFullscreenStateObservationIfNeeded"
         )
         try assertTokenOrder(
             enqueueSource,
             [
-                "noteWeakWebView(webView)",
-                "guard shouldDefer(sourceWebViewID)",
-                "pruneInvalidDeferredProtectedCommands(reason: \"enqueue.preflight\")",
-                "guard isDeferredProtectedCommandValid(command)",
+                "protectedCommandOwner.enqueueDeferredCommandIfNeeded(",
+                "resolveWebView:",
+                "isCommandValid:",
+                "dropCommand:",
+                "didPruneStaleWebViewIDs:",
+                "finishDestructiveCleanupSuppression(for: webViewIDs)"
+            ]
+        )
+
+        let ownerEnqueueSource = try sourceSlice(
+            ownerSource,
+            from: "func enqueueDeferredCommandIfNeeded(",
+            to: "func commandsToFlushIfUnprotected"
+        )
+        try assertTokenOrder(
+            ownerEnqueueSource,
+            [
+                "note(webView)",
+                "guard isProtected(sourceWebViewID)",
+                "didPruneStaleWebViewIDs(",
+                "pruneInvalidDeferredCommands(",
+                "guard isCommandValid(command)",
                 "deferredProtectedWebViewCommands.enqueue(",
                 "switch enqueueResult.outcome"
             ]
         )
 
         let flushSource = try sourceSlice(
-            source,
+            coordinatorSource,
             from: "private func flushDeferredProtectedCommands",
-            to: "private func isCancelledHistorySwipe"
+            to: "// MARK: - Smart WebView Assignment"
         )
         try assertTokenOrder(
             flushSource,
             [
-                "guard activeHistorySwipeProtections[webViewID] == nil",
-                "visualHandoffProtectedWebViewIDs.contains(webViewID) == false",
-                "fullscreenProtection.isProtected(webViewID) == false",
-                "pruneInvalidDeferredProtectedCommands(reason: \"flush.preflight\")",
-                "deferredProtectedWebViewCommands.drainCommands(for: webViewID)",
+                "protectedCommandOwner.commandsToFlushIfUnprotected(",
+                "didPruneStaleWebViewIDs:",
+                "finishDestructiveCleanupSuppression(for: webViewIDs)",
                 "Task { @MainActor",
                 "executeDeferredProtectedCommand("
             ]
         )
 
-        let pruneSource = try sourceSlice(
-            source,
-            from: "private func pruneInvalidDeferredProtectedCommands",
-            to: "private func isDeferredProtectedCommandValid"
+        let ownerFlushSource = try sourceSlice(
+            ownerSource,
+            from: "func commandsToFlushIfUnprotected",
+            to: "@discardableResult\n    func pruneInvalidDeferredCommands"
         )
         try assertTokenOrder(
-            pruneSource,
+            ownerFlushSource,
             [
-                "pruneStaleWebViewBookkeeping",
-                "for sourceWebViewID in deferredProtectedWebViewCommands.sourceWebViewIDs",
-                "guard resolveWebView(with: sourceWebViewID) != nil",
-                "deferredProtectedWebViewCommands.drainCommands(for: sourceWebViewID)",
-                "dropDeferredProtectedCommand(",
-                "deferredProtectedWebViewCommands.pruneCommands(for: sourceWebViewID)",
-                "dropDeferredProtectedCommand("
+                "guard isProtected(webViewID) == false",
+                "didPruneStaleWebViewIDs(",
+                "pruneInvalidDeferredCommands(",
+                "deferredProtectedWebViewCommands.drainCommands(for: webViewID)"
             ]
         )
     }
 
-    func testWebViewCoordinatorWeakWebViewBookkeepingStaysBehindNarrowRegistry() throws {
+    func testWebViewCoordinatorWeakWebViewBookkeepingStaysBehindProtectedCommandOwner() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let source = try String(
+        let coordinatorSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
                 "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
             ),
             encoding: .utf8
         )
+        let ownerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewProtectedCommandOwner.swift"
+            ),
+            encoding: .utf8
+        )
 
         let registrySource = try sourceSlice(
-            source,
+            ownerSource,
             from: "private struct WeakWebViewRegistry",
-            to: "enum DeferredWebViewCommandKey"
+            to: "private struct DeferredProtectedWebViewCommandStore"
         )
         XCTAssertTrue(registrySource.contains("private var webViewsByIdentifier"))
         XCTAssertTrue(registrySource.contains("mutating func note(_ webView: WKWebView)"))
@@ -1118,25 +1141,17 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(registrySource.contains("webViewRegistry.trackedWebView"))
 
         let coordinatorStart = try XCTUnwrap(
-            source.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
+            coordinatorSource.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
         ).lowerBound
-        let coordinatorSource = String(source[coordinatorStart...])
-        XCTAssertTrue(
-            coordinatorSource.contains(
-                "private var weakWebViewRegistry = WeakWebViewRegistry()"
-            )
-        )
-        XCTAssertFalse(coordinatorSource.contains("weakWebViewsByIdentifier"))
-
-        let noteSource = try sourceSlice(
-            source,
-            from: "private func noteWeakWebView",
-            to: "private func installFullscreenStateObservationIfNeeded"
-        )
-        XCTAssertTrue(noteSource.contains("weakWebViewRegistry.note(webView)"))
+        let coordinatorClassSource = String(coordinatorSource[coordinatorStart...])
+        XCTAssertTrue(coordinatorClassSource.contains("private let protectedCommandOwner = WebViewProtectedCommandOwner()"))
+        XCTAssertFalse(coordinatorClassSource.contains("WeakWebViewRegistry"))
+        XCTAssertFalse(coordinatorClassSource.contains("weakWebViewsByIdentifier"))
+        XCTAssertFalse(coordinatorClassSource.contains("noteWeakWebView"))
+        XCTAssertFalse(coordinatorClassSource.contains("private func resolveWeakWebView"))
 
         let resolveSource = try sourceSlice(
-            source,
+            coordinatorSource,
             from: "private func resolveWebView",
             to: "private func resolvedTab"
         )
@@ -1144,29 +1159,41 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             resolveSource,
             [
                 "if let webView = webViewRegistry.trackedWebView(with: identifier)",
-                "noteWeakWebView(webView)",
+                "protectedCommandOwner.note(webView)",
                 "return webView",
-                "return resolveWeakWebView(with: identifier)"
+                "return protectedCommandOwner.resolveWeakWebView(with: identifier)"
             ]
         )
 
-        let pruneSource = try sourceSlice(
-            source,
-            from: "private func pruneStaleWebViewBookkeeping",
-            to: "private func pruneInvalidDeferredProtectedCommands"
+        let ownerPruneSource = try sourceSlice(
+            ownerSource,
+            from: "func pruneStaleBookkeeping",
+            to: "private func isCancelledHistorySwipe"
         )
         try assertTokenOrder(
-            pruneSource,
+            ownerPruneSource,
             [
                 "let staleIDs = weakWebViewRegistry.pruneStaleIdentifiers()",
-                "guard staleIDs.isEmpty == false",
                 "activeHistorySwipeProtections.removeValue(forKey: id)",
                 "visualHandoffProtectedWebViewIDs.remove(id)",
                 "fullscreenProtection.remove(id)",
                 "deferredProtectedWebViewCommands.removeAllCommands(for: id)"
             ]
         )
-        XCTAssertFalse(pruneSource.contains("webViewsByIdentifier"))
+        XCTAssertFalse(ownerPruneSource.contains("webViewRegistry.trackedWebView"))
+
+        let coordinatorPruneSource = try sourceSlice(
+            coordinatorSource,
+            from: "private func pruneStaleWebViewBookkeeping",
+            to: "private func pruneInvalidDeferredProtectedCommands"
+        )
+        try assertTokenOrder(
+            coordinatorPruneSource,
+            [
+                "finishDestructiveCleanupSuppression(",
+                "protectedCommandOwner.pruneStaleBookkeeping(reason: reason)"
+            ]
+        )
     }
 
     func testDestructiveCleanupNavigationSuppressionTracksWebViewIdentity() {
@@ -1231,9 +1258,21 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         try assertTokenOrder(
             stalePruneSource,
             [
-                "weakWebViewRegistry.pruneStaleIdentifiers()",
-                "deferredProtectedWebViewCommands.removeAllCommands(for: id)",
-                "destructiveCleanupNavigationSuppression.finish(webViewID: id)"
+                "finishDestructiveCleanupSuppression(",
+                "protectedCommandOwner.pruneStaleBookkeeping(reason: reason)"
+            ]
+        )
+
+        let suppressionReleaseSource = try sourceSlice(
+            source,
+            from: "private func finishDestructiveCleanupSuppression",
+            to: "private func isDeferredProtectedCommandValid"
+        )
+        try assertTokenOrder(
+            suppressionReleaseSource,
+            [
+                "for webViewID in webViewIDs",
+                "destructiveCleanupNavigationSuppression.finish(webViewID: webViewID)"
             ]
         )
     }

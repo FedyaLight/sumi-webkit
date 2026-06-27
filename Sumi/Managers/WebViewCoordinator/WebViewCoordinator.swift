@@ -121,82 +121,6 @@ private enum NormalTabWebViewCreationPlan {
 }
 
 
-private struct HistorySwipeProtectionContext {
-    let windowID: UUID?
-    let originURL: URL?
-    let originHistoryItem: WKBackForwardListItem?
-    let originHistoryURL: URL?
-}
-
-private struct FullscreenProtectionContext {
-    let windowID: UUID?
-}
-
-@MainActor
-private final class FullscreenWebViewProtection {
-    private var activeContexts: [ObjectIdentifier: FullscreenProtectionContext] = [:]
-    private var stateCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
-
-    func hasActive(in windowID: UUID) -> Bool {
-        activeContexts.values.contains { $0.windowID == windowID }
-    }
-
-    func activeWebViewIDs(in windowID: UUID) -> [ObjectIdentifier] {
-        activeContexts.compactMap { webViewID, context in
-            context.windowID == windowID ? webViewID : nil
-        }
-    }
-
-    func isProtected(_ webViewID: ObjectIdentifier) -> Bool {
-        activeContexts[webViewID] != nil
-    }
-
-    func begin(webViewID: ObjectIdentifier, windowID: UUID?) {
-        activeContexts[webViewID] = FullscreenProtectionContext(windowID: windowID)
-    }
-
-    func finish(webViewID: ObjectIdentifier) -> FullscreenProtectionContext? {
-        activeContexts.removeValue(forKey: webViewID)
-    }
-
-    func remove(_ webViewID: ObjectIdentifier) {
-        activeContexts.removeValue(forKey: webViewID)
-        stateCancellablesByWebViewID.removeValue(forKey: webViewID)?.cancel()
-    }
-
-    func removeAll() {
-        activeContexts.removeAll()
-        stateCancellablesByWebViewID.values.forEach { $0.cancel() }
-        stateCancellablesByWebViewID.removeAll()
-    }
-
-    func installObservationIfNeeded(
-        on webView: WKWebView,
-        stateDidChange: @escaping @MainActor (WKWebView) -> Void
-    ) {
-        let webViewID = ObjectIdentifier(webView)
-        guard stateCancellablesByWebViewID[webViewID] == nil else {
-            if webView.sumiIsInFullscreenElementPresentation {
-                stateDidChange(webView)
-            }
-            return
-        }
-
-        stateCancellablesByWebViewID[webViewID] = webView
-            .publisher(for: \.fullscreenState, options: [.initial, .new])
-            .receive(on: DispatchQueue.main)
-            .sink { [weak webView] _ in
-                guard let webView else { return }
-                stateDidChange(webView)
-            }
-    }
-
-    func uninstallObservationIfUntracked(_ webView: WKWebView, isTracked: Bool) {
-        guard !isTracked else { return }
-        remove(ObjectIdentifier(webView))
-    }
-}
-
 enum CompositorPaneDestination: String, CaseIterable {
     case single
     case left
@@ -206,36 +130,6 @@ enum CompositorPaneDestination: String, CaseIterable {
         NSUserInterfaceItemIdentifier("SumiCompositorPane.\(rawValue)")
     }
 
-}
-
-private struct WeakWKWebView {
-    weak var value: WKWebView?
-}
-
-private struct WeakWebViewRegistry {
-    private var webViewsByIdentifier: [ObjectIdentifier: WeakWKWebView] = [:]
-
-    mutating func note(_ webView: WKWebView) {
-        webViewsByIdentifier[ObjectIdentifier(webView)] = WeakWKWebView(value: webView)
-    }
-
-    mutating func resolve(with identifier: ObjectIdentifier) -> WKWebView? {
-        if let webView = webViewsByIdentifier[identifier]?.value {
-            return webView
-        }
-        webViewsByIdentifier.removeValue(forKey: identifier)
-        return nil
-    }
-
-    mutating func pruneStaleIdentifiers() -> [ObjectIdentifier] {
-        let staleIDs = webViewsByIdentifier.compactMap { key, entry -> ObjectIdentifier? in
-            entry.value == nil ? key : nil
-        }
-        for id in staleIDs {
-            webViewsByIdentifier.removeValue(forKey: id)
-        }
-        return staleIDs
-    }
 }
 
 enum DeferredWebViewCommandKey: Hashable {
@@ -360,51 +254,6 @@ struct DeferredProtectedCommandBuffer {
 
 }
 
-private struct DeferredProtectedWebViewCommandStore {
-    private var buffersBySourceWebViewID: [ObjectIdentifier: DeferredProtectedCommandBuffer] = [:]
-
-    var sourceWebViewIDs: [ObjectIdentifier] {
-        Array(buffersBySourceWebViewID.keys)
-    }
-
-    mutating func enqueue(
-        _ command: DeferredWebViewCommand,
-        sourceWebViewID: ObjectIdentifier
-    ) -> (outcome: DeferredProtectedCommandEnqueueOutcome, count: Int) {
-        var buffer = buffersBySourceWebViewID[sourceWebViewID]
-            ?? DeferredProtectedCommandBuffer()
-        let outcome = buffer.enqueue(command)
-        buffersBySourceWebViewID[sourceWebViewID] = buffer
-        return (outcome, buffer.count)
-    }
-
-    mutating func drainCommands(for sourceWebViewID: ObjectIdentifier) -> [DeferredWebViewCommand] {
-        var buffer = buffersBySourceWebViewID.removeValue(forKey: sourceWebViewID)
-        return buffer?.drain() ?? []
-    }
-
-    mutating func removeAllCommands(for sourceWebViewID: ObjectIdentifier) {
-        buffersBySourceWebViewID.removeValue(forKey: sourceWebViewID)
-    }
-
-    mutating func pruneCommands(
-        for sourceWebViewID: ObjectIdentifier,
-        where shouldDrop: (DeferredWebViewCommand) -> Bool
-    ) -> [DeferredWebViewCommand] {
-        guard var buffer = buffersBySourceWebViewID[sourceWebViewID] else {
-            return []
-        }
-
-        let droppedCommands = buffer.prune(where: shouldDrop)
-        if buffer.isEmpty {
-            buffersBySourceWebViewID.removeValue(forKey: sourceWebViewID)
-        } else {
-            buffersBySourceWebViewID[sourceWebViewID] = buffer
-        }
-        return droppedCommands
-    }
-}
-
 @MainActor
 struct DestructiveCleanupNavigationSuppression {
     private var blankingWebViewIDs: Set<ObjectIdentifier> = []
@@ -450,19 +299,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     weak var browserManager: BrowserManager?
 
     @ObservationIgnored
-    private var activeHistorySwipeProtections: [ObjectIdentifier: HistorySwipeProtectionContext] = [:]
-
     @ObservationIgnored
-    private var visualHandoffProtectedWebViewIDs: Set<ObjectIdentifier> = []
-
-    @ObservationIgnored
-    private let fullscreenProtection = FullscreenWebViewProtection()
-
-    @ObservationIgnored
-    private var deferredProtectedWebViewCommands = DeferredProtectedWebViewCommandStore()
-
-    @ObservationIgnored
-    private var weakWebViewRegistry = WeakWebViewRegistry()
+    private let protectedCommandOwner = WebViewProtectedCommandOwner()
 
     @ObservationIgnored
     private var nowPlayingSessionCancellablesByWebViewID: [ObjectIdentifier: AnyCancellable] = [:]
@@ -796,8 +634,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             webViewRegistry.removeAll()
             compositorHandoffState.removeAllWindowRegistrations()
             scheduledPrepareWindowIds.removeAll()
-            visualHandoffProtectedWebViewIDs.removeAll()
-            fullscreenProtection.removeAll()
+            protectedCommandOwner.removeVisualHandoffAndFullscreenProtections()
             nowPlayingSessionCancellablesByWebViewID.values.forEach { $0.cancel() }
             nowPlayingSessionCancellablesByWebViewID.removeAll()
         }
@@ -815,14 +652,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         originURL: URL?,
         originHistoryItem: WKBackForwardListItem?
     ) {
-        let webViewID = ObjectIdentifier(webView)
-        noteWeakWebView(webView)
         let windowId = windowId(containing: webView)
-        activeHistorySwipeProtections[webViewID] = HistorySwipeProtectionContext(
+        let webViewID = protectedCommandOwner.beginHistorySwipeProtection(
+            on: webView,
             windowID: windowId,
             originURL: originURL,
-            originHistoryItem: originHistoryItem,
-            originHistoryURL: originHistoryItem?.url
+            originHistoryItem: originHistoryItem
         )
         RuntimeDiagnostics.swipeTrace(
             "begin tab=\(tabId.uuidString.prefix(8)) window=\(windowId?.uuidString.prefix(8) ?? "nil") webView=\(webViewID) url=\((originURL ?? originHistoryItem?.url)?.absoluteString ?? "nil")"
@@ -836,31 +671,28 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         currentURL: URL?,
         currentHistoryItem: WKBackForwardListItem?
     ) -> Bool {
-        guard let webView else { return false }
-        let webViewID = ObjectIdentifier(webView)
-        let context = activeHistorySwipeProtections.removeValue(forKey: webViewID)
-        let wasCancelled = isCancelledHistorySwipe(
-            context: context,
+        guard let result = protectedCommandOwner.finishHistorySwipeProtection(
+            on: webView,
             currentURL: currentURL,
             currentHistoryItem: currentHistoryItem
-        )
+        ) else { return false }
         RuntimeDiagnostics.swipeTrace(
-            "finish tab=\(tabId.uuidString.prefix(8)) webView=\(webViewID) cancelled=\(wasCancelled) url=\((currentURL ?? currentHistoryItem?.url)?.absoluteString ?? "nil")"
+            "finish tab=\(tabId.uuidString.prefix(8)) webView=\(result.webViewID) cancelled=\(result.wasCancelled) url=\((currentURL ?? currentHistoryItem?.url)?.absoluteString ?? "nil")"
         )
-        flushDeferredProtectedCommands(for: webViewID)
-        return wasCancelled
+        flushDeferredProtectedCommands(for: result.webViewID)
+        return result.wasCancelled
     }
 
     func hasActiveHistorySwipe(in windowId: UUID) -> Bool {
-        activeHistorySwipeProtections.values.contains { $0.windowID == windowId }
+        protectedCommandOwner.hasActiveHistorySwipe(in: windowId)
     }
 
     func hasActiveFullscreen(in windowId: UUID) -> Bool {
-        fullscreenProtection.hasActive(in: windowId)
+        protectedCommandOwner.hasActiveFullscreen(in: windowId)
     }
 
     func closeActiveFullscreenMedia(in windowId: UUID) {
-        for webViewID in fullscreenProtection.activeWebViewIDs(in: windowId) {
+        for webViewID in protectedCommandOwner.activeFullscreenWebViewIDs(in: windowId) {
             guard let webView = resolveWebView(with: webViewID) else { continue }
             requestFullscreenMediaExit(on: webView)
         }
@@ -869,7 +701,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private func closeFullscreenMediaIfNeeded(on webView: WKWebView) {
         let webViewID = ObjectIdentifier(webView)
         guard webView.sumiIsInFullscreenElementPresentation
-            || fullscreenProtection.isProtected(webViewID)
+            || protectedCommandOwner.isFullscreenProtected(webViewID)
         else {
             return
         }
@@ -881,21 +713,17 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     func isWebViewProtectedFromCompositorMutation(_ webView: WKWebView) -> Bool {
-        let webViewID = ObjectIdentifier(webView)
-        return activeHistorySwipeProtections[webViewID] != nil
-            || visualHandoffProtectedWebViewIDs.contains(webViewID)
-            || fullscreenProtection.isProtected(webViewID)
+        protectedCommandOwner.isProtected(webView)
     }
 
     func beginVisualHandoffProtection(for webView: WKWebView) {
-        let webViewID = ObjectIdentifier(webView)
-        noteWeakWebView(webView)
-        visualHandoffProtectedWebViewIDs.insert(webViewID)
+        protectedCommandOwner.beginVisualHandoffProtection(for: webView)
     }
 
     func finishVisualHandoffProtection(for webView: WKWebView) {
-        let webViewID = ObjectIdentifier(webView)
-        guard visualHandoffProtectedWebViewIDs.remove(webViewID) != nil else { return }
+        guard let webViewID = protectedCommandOwner.finishVisualHandoffProtection(for: webView) else {
+            return
+        }
         flushDeferredProtectedCommands(for: webViewID)
     }
 
@@ -905,11 +733,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return
         }
 
-        let webViewID = ObjectIdentifier(webView)
-        noteWeakWebView(webView)
         let owner = trackedOwner(containing: webView)
-        fullscreenProtection.begin(
-            webViewID: webViewID,
+        let webViewID = protectedCommandOwner.beginFullscreenProtection(
+            on: webView,
             windowID: owner?.windowID ?? windowId(containing: webView)
         )
         RuntimeDiagnostics.protectedWebViewTrace(
@@ -918,22 +744,23 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func finishFullscreenProtectionIfNeeded(for webView: WKWebView) {
-        let webViewID = ObjectIdentifier(webView)
-        guard let context = fullscreenProtection.finish(webViewID: webViewID) else { return }
+        guard let result = protectedCommandOwner.finishFullscreenProtection(on: webView) else {
+            return
+        }
         let owner = trackedOwner(containing: webView)
 
         RuntimeDiagnostics.protectedWebViewTrace(
-            "finishFullscreenProtection webView=\(webViewID)"
+            "finishFullscreenProtection webView=\(result.webViewID)"
         )
-        flushDeferredProtectedCommands(for: webViewID)
-        if let windowID = context.windowID,
+        flushDeferredProtectedCommands(for: result.webViewID)
+        if let windowID = result.windowID,
            let windowState = browserManager?.windowRegistry?.windows[windowID] {
             browserManager?.refreshCompositor(for: windowState)
         }
         postMediaTouchBarRecoveryRequest(
             for: webView,
             owner: owner,
-            fallbackWindowID: context.windowID
+            fallbackWindowID: result.windowID
         )
     }
 
@@ -963,7 +790,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     @discardableResult
     func handleWebViewDidClose(_ webView: WKWebView) -> Bool {
         let webViewID = ObjectIdentifier(webView)
-        noteWeakWebView(webView)
+        protectedCommandOwner.note(webView)
         finishDestructiveDataCleanupNavigation(on: webView)
 
         if enqueueDeferredProtectedCommand(
@@ -993,12 +820,25 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
-        guard activeHistorySwipeProtections[webViewID] == nil,
-              visualHandoffProtectedWebViewIDs.contains(webViewID) == false,
-              fullscreenProtection.isProtected(webViewID) == false
-        else { return }
-        pruneInvalidDeferredProtectedCommands(reason: "flush.preflight")
-        let commands = deferredProtectedWebViewCommands.drainCommands(for: webViewID)
+        let commands = protectedCommandOwner.commandsToFlushIfUnprotected(
+            for: webViewID,
+            resolveWebView: { [self] webViewID in
+                resolveWebView(with: webViewID)
+            },
+            isCommandValid: { [self] command in
+                isDeferredProtectedCommandValid(command)
+            },
+            dropCommand: { [self] command, sourceWebViewID, reason in
+                dropDeferredProtectedCommand(
+                    command,
+                    sourceWebViewID: sourceWebViewID,
+                    reason: reason
+                )
+            },
+            didPruneStaleWebViewIDs: { [self] webViewIDs in
+                finishDestructiveCleanupSuppression(for: webViewIDs)
+            }
+        )
         guard !commands.isEmpty else { return }
         Task { @MainActor in
             let signpostState = PerformanceTrace.beginInterval(
@@ -1028,23 +868,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 }
             }
         }
-    }
-
-    private func isCancelledHistorySwipe(
-        context: HistorySwipeProtectionContext?,
-        currentURL: URL?,
-        currentHistoryItem: WKBackForwardListItem?
-    ) -> Bool {
-        guard let context else { return false }
-        if let originHistoryItem = context.originHistoryItem,
-           let currentHistoryItem,
-           originHistoryItem === currentHistoryItem
-        {
-            return true
-        }
-        let originURL = context.originHistoryURL ?? context.originURL
-        let currentURL = currentHistoryItem?.url ?? currentURL
-        return originURL != nil && originURL == currentURL
     }
 
     // MARK: - Smart WebView Assignment (Memory Optimization)
@@ -1517,74 +1340,33 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         for webView: WKWebView,
         reason: String
     ) -> Bool {
-        enqueueDeferredCommandIfNeeded(
+        protectedCommandOwner.enqueueDeferredCommandIfNeeded(
             command,
             for: webView,
-            reason: reason
-        ) { webViewID in
-            activeHistorySwipeProtections[webViewID] != nil
-                || visualHandoffProtectedWebViewIDs.contains(webViewID)
-                || fullscreenProtection.isProtected(webViewID)
-        }
-    }
-
-    @discardableResult
-    private func enqueueDeferredCommandIfNeeded(
-        _ command: DeferredWebViewCommand,
-        for webView: WKWebView,
-        reason: String,
-        shouldDefer: (ObjectIdentifier) -> Bool
-    ) -> Bool {
-        let sourceWebViewID = ObjectIdentifier(webView)
-        noteWeakWebView(webView)
-        guard shouldDefer(sourceWebViewID) else {
-            return false
-        }
-
-        pruneInvalidDeferredProtectedCommands(reason: "enqueue.preflight")
-        guard isDeferredProtectedCommandValid(command) else {
-            dropDeferredProtectedCommand(
-                command,
-                sourceWebViewID: sourceWebViewID,
-                reason: "\(reason).invalidTarget"
-            )
-            return true
-        }
-
-        let enqueueResult = deferredProtectedWebViewCommands.enqueue(
-            command,
-            sourceWebViewID: sourceWebViewID
+            reason: reason,
+            resolveWebView: { [self] webViewID in
+                resolveWebView(with: webViewID)
+            },
+            isCommandValid: { [self] command in
+                isDeferredProtectedCommandValid(command)
+            },
+            dropCommand: { [self] command, sourceWebViewID, reason in
+                dropDeferredProtectedCommand(
+                    command,
+                    sourceWebViewID: sourceWebViewID,
+                    reason: reason
+                )
+            },
+            didPruneStaleWebViewIDs: { [self] webViewIDs in
+                finishDestructiveCleanupSuppression(for: webViewIDs)
+            }
         )
-
-        switch enqueueResult.outcome {
-        case .enqueued:
-            PerformanceTrace.emitEvent("WebViewCoordinator.enqueueDeferredProtectedCommand")
-            RuntimeDiagnostics.protectedWebViewTrace(
-                "enqueueDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.count)"
-            )
-        case .collapsed:
-            PerformanceTrace.emitEvent("WebViewCoordinator.collapseDeferredProtectedCommand")
-            RuntimeDiagnostics.protectedWebViewTrace(
-                "collapseDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)} count=\(enqueueResult.count)"
-            )
-        case .droppedAtCapacity:
-            dropDeferredProtectedCommand(
-                command,
-                sourceWebViewID: sourceWebViewID,
-                reason: "\(reason).capacity"
-            )
-        }
-
-        return true
-    }
-
-    private func noteWeakWebView(_ webView: WKWebView) {
-        weakWebViewRegistry.note(webView)
     }
 
     private func installFullscreenStateObservationIfNeeded(on webView: WKWebView) {
-        noteWeakWebView(webView)
-        fullscreenProtection.installObservationIfNeeded(on: webView) { [weak self] webView in
+        protectedCommandOwner.installFullscreenStateObservationIfNeeded(
+            on: webView
+        ) { [weak self] webView in
             self?.updateFullscreenProtection(for: webView)
         }
     }
@@ -1622,7 +1404,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func uninstallFullscreenStateObservationIfUntracked(_ webView: WKWebView) {
-        fullscreenProtection.uninstallObservationIfUntracked(
+        protectedCommandOwner.uninstallFullscreenStateObservationIfUntracked(
             webView,
             isTracked: webViewRegistry.isIndexed(webView)
         )
@@ -1633,20 +1415,14 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         nowPlayingSessionCancellablesByWebViewID.removeValue(forKey: ObjectIdentifier(webView))?.cancel()
     }
 
-    private func resolveWeakWebView(
-        with identifier: ObjectIdentifier
-    ) -> WKWebView? {
-        weakWebViewRegistry.resolve(with: identifier)
-    }
-
     private func resolveWebView(
         with identifier: ObjectIdentifier
     ) -> WKWebView? {
         if let webView = webViewRegistry.trackedWebView(with: identifier) {
-            noteWeakWebView(webView)
+            protectedCommandOwner.note(webView)
             return webView
         }
-        return resolveWeakWebView(with: identifier)
+        return protectedCommandOwner.resolveWeakWebView(with: identifier)
     }
 
     private func resolvedTab(with tabID: UUID) -> Tab? {
@@ -1664,48 +1440,36 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func pruneStaleWebViewBookkeeping(reason: String) {
-        let staleIDs = weakWebViewRegistry.pruneStaleIdentifiers()
-        guard staleIDs.isEmpty == false else { return }
-        for id in staleIDs {
-            activeHistorySwipeProtections.removeValue(forKey: id)
-            visualHandoffProtectedWebViewIDs.remove(id)
-            fullscreenProtection.remove(id)
-            deferredProtectedWebViewCommands.removeAllCommands(for: id)
-            destructiveCleanupNavigationSuppression.finish(webViewID: id)
-        }
-        RuntimeDiagnostics.protectedWebViewTrace(
-            "pruneStaleWebViewBookkeeping reason=\(reason) count=\(staleIDs.count)"
+        finishDestructiveCleanupSuppression(
+            for: protectedCommandOwner.pruneStaleBookkeeping(reason: reason)
         )
     }
 
     private func pruneInvalidDeferredProtectedCommands(reason: String) {
-        pruneStaleWebViewBookkeeping(reason: "\(reason).staleBookkeeping")
-
-        for sourceWebViewID in deferredProtectedWebViewCommands.sourceWebViewIDs {
-            guard resolveWebView(with: sourceWebViewID) != nil else {
-                activeHistorySwipeProtections.removeValue(forKey: sourceWebViewID)
-                fullscreenProtection.remove(sourceWebViewID)
-                for command in deferredProtectedWebViewCommands.drainCommands(for: sourceWebViewID) {
+        finishDestructiveCleanupSuppression(
+            for: protectedCommandOwner.pruneInvalidDeferredCommands(
+                reason: reason,
+                resolveWebView: { [self] webViewID in
+                    resolveWebView(with: webViewID)
+                },
+                isCommandValid: { [self] command in
+                    isDeferredProtectedCommandValid(command)
+                },
+                dropCommand: { [self] command, sourceWebViewID, reason in
                     dropDeferredProtectedCommand(
                         command,
                         sourceWebViewID: sourceWebViewID,
-                        reason: "\(reason).deadSource"
+                        reason: reason
                     )
                 }
-                continue
-            }
+            )
+        )
+    }
 
-            let droppedCommands = deferredProtectedWebViewCommands.pruneCommands(for: sourceWebViewID) { [self] command in
-                isDeferredProtectedCommandValid(command) == false
-            }
-
-            for command in droppedCommands {
-                dropDeferredProtectedCommand(
-                    command,
-                    sourceWebViewID: sourceWebViewID,
-                    reason: "\(reason).invalidTarget"
-                )
-            }
+    private func finishDestructiveCleanupSuppression(for webViewIDs: [ObjectIdentifier]) {
+        guard webViewIDs.isEmpty == false else { return }
+        for webViewID in webViewIDs {
+            destructiveCleanupNavigationSuppression.finish(webViewID: webViewID)
         }
     }
 
@@ -1988,7 +1752,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         in windowId: UUID
     ) {
         let owner = TrackedWebViewOwner(tabID: tabId, windowID: windowId)
-        noteWeakWebView(webView)
+        protectedCommandOwner.note(webView)
 
         if let existingOwner = webViewRegistry.indexedOwner(containing: webView),
            existingOwner != owner
