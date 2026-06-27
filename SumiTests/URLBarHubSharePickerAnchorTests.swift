@@ -14,15 +14,16 @@ final class URLBarHubSharePickerAnchorTests: XCTestCase {
 
     func testURLHubSharePickerUsesShareButtonAnchor() throws {
         let hubSource = try source("Sumi/Components/Sidebar/URLBarHubPopover.swift")
+        let actionOwnerSource = try source("Sumi/Components/Sidebar/URLBarHubPageActionOwner.swift")
 
         XCTAssertTrue(
-            hubSource.contains("@StateObject private var shareButtonAnchor")
+            hubSource.contains("@StateObject private var pageActionOwner = URLBarHubPageActionOwner()")
         )
         XCTAssertTrue(
-            hubSource.contains(".background(URLBarHubShareAnchorView(anchor: shareButtonAnchor))")
+            hubSource.contains(".background(URLBarHubShareAnchorView(anchor: pageActionOwner.shareButtonAnchor))")
         )
         XCTAssertTrue(
-            hubSource.contains("ownerView: shareButtonAnchor.view"),
+            actionOwnerSource.contains("ownerView: shareButtonAnchor.view"),
             "URL Hub sharing must pass the Share button view as the presentation source owner"
         )
     }
