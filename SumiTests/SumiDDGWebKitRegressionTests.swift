@@ -620,6 +620,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let shortcutLiveTabCloseSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/BrowserManager/BrowserShortcutLiveTabCloseOwner.swift"
+            ),
+            encoding: .utf8
+        )
         let compositorSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
                 "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
@@ -638,8 +644,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         let shortcutClose = try sourceSlice(
-            browserManagerSource,
-            from: "private func closeShortcutLiveTab",
+            shortcutLiveTabCloseSource,
+            from: "func close(_ tab: Tab, in windowState: BrowserWindowState)",
             to: "private func captureClosedShortcutLiveInstance"
         )
         XCTAssertLessThan(

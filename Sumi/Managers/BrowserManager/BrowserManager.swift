@@ -264,6 +264,36 @@ class BrowserManager: ObservableObject {
     lazy var tabCloseFallbackPlanner = BrowserTabCloseFallbackPlanner(
         selectionService: shellSelectionService
     )
+    lazy var shortcutLiveTabCloseOwner = BrowserShortcutLiveTabCloseOwner(
+        dependencies: BrowserShortcutLiveTabCloseOwner.Dependencies(
+            tabManager: { [unowned self] in self.tabManager },
+            recentlyClosedManager: { [unowned self] in self.recentlyClosedManager },
+            fallbackPlanner: { [unowned self] in self.tabCloseFallbackPlanner },
+            selectTab: { [unowned self] tab, windowState in
+                self.selectTab(tab, in: windowState)
+            },
+            performImmediateVisualHandoffIfPossible: { [unowned self] windowState in
+                _ = self.performImmediateVisualHandoffIfPossible(in: windowState)
+            },
+            persistWindowSession: { [unowned self] windowState in
+                self.persistWindowSession(for: windowState)
+            },
+            showEmptyState: { [unowned self] windowState in
+                self.showEmptyState(in: windowState)
+            },
+            restoreShortcutSplitMember: { [unowned self] itemId, group, windowState, preserveLiveInstance in
+                self.restoreShortcutSplitMember(
+                    itemId,
+                    from: group,
+                    in: windowState,
+                    preserveLiveInstance: preserveLiveInstance
+                )
+            },
+            unloadShortcutHostedSplitGroup: { [unowned self] group, windowState in
+                self.unloadShortcutHostedSplitGroup(group, in: windowState)
+            }
+        )
+    )
     lazy var tabOpeningOwner = BrowserTabOpeningOwner(
         dependencies: BrowserTabOpeningOwner.Dependencies(
             tabManager: { [unowned self] in self.tabManager },
@@ -1178,7 +1208,7 @@ class BrowserManager: ObservableObject {
         }
 
         if tab.isShortcutLiveInstance {
-            closeShortcutLiveTab(tab, in: windowState)
+            shortcutLiveTabCloseOwner.close(tab, in: windowState)
             return
         }
 
@@ -1881,82 +1911,6 @@ class BrowserManager: ObservableObject {
             windowState.currentShortcutPinId = nil
             windowState.currentShortcutPinRole = nil
         }
-    }
-
-    private func closeShortcutLiveTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        guard tab.isShortcutLiveInstance else { return }
-        if let group = tabManager.splitGroup(containing: tab.id)
-            ?? tab.shortcutPinId.flatMap({ tabManager.splitGroup(containingPinId: $0) }) {
-            if group.isShortcutHosted {
-                captureClosedShortcutLiveInstance(tab, in: windowState)
-                unloadShortcutHostedSplitGroup(group, in: windowState)
-                return
-            }
-            if group.member(for: tab.id)?.isShortcutBacked == true
-                || tab.shortcutPinId.flatMap({ group.member(forPinId: $0)?.isShortcutBacked }) == true {
-                captureClosedShortcutLiveInstance(tab, in: windowState)
-                restoreShortcutSplitMember(
-                    tab.id,
-                    from: group,
-                    in: windowState,
-                    preserveLiveInstance: false
-                )
-                return
-            }
-        }
-
-        captureClosedShortcutLiveInstance(tab, in: windowState)
-
-        let wasCurrent =
-            windowState.currentTabId == tab.id
-            || (tab.shortcutPinId != nil && windowState.currentShortcutPinId == tab.shortcutPinId)
-        let fallback = wasCurrent
-            ? tabCloseFallbackPlanner.fallbackAfterClosingShortcutLiveTab(
-                tab,
-                in: windowState,
-                tabStore: tabManager.runtimeStore
-            )
-            : nil
-
-        if let fallback {
-            selectTab(fallback, in: windowState)
-            performImmediateVisualHandoffIfPossible(in: windowState)
-        }
-
-        if let pinId = tab.shortcutPinId {
-            tabManager.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
-        } else {
-            tabManager.deactivateShortcutLiveTab(in: windowState.id)
-        }
-
-        guard wasCurrent else {
-            persistWindowSession(for: windowState)
-            return
-        }
-
-        if fallback != nil {
-            persistWindowSession(for: windowState)
-            return
-        }
-
-        windowState.currentShortcutPinId = nil
-        windowState.currentShortcutPinRole = nil
-        windowState.currentTabId = nil
-
-        showEmptyState(in: windowState)
-    }
-
-    private func captureClosedShortcutLiveInstance(_ tab: Tab, in windowState: BrowserWindowState) {
-        guard let pinId = tab.shortcutPinId,
-              let pin = tabManager.shortcutPin(by: pinId)
-        else {
-            return
-        }
-        recentlyClosedManager.captureClosedShortcutLiveInstance(
-            tab: tab,
-            pin: pin,
-            sourceWindowId: windowState.id
-        )
     }
 
     private func closeIncognitoTab(_ tab: Tab, in windowState: BrowserWindowState) {
