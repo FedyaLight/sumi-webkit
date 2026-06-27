@@ -818,7 +818,7 @@ extension ExtensionManager {
         backgroundWakeTasks.values.forEach { $0.cancel() }
         backgroundWakeTasks.removeAll()
         backgroundRuntimeStateByExtensionID.removeAll()
-        recentExtensionTabOpenRequests.removeAll()
+        requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
         clearPermissionsOriginsCompatibilityInstallations()
         extensionPageUserContentControllersByProfile.removeAll()
         cancelNativeMessagingSessions(reason: "resetLoadedExtensionRuntimeStateForReload")
@@ -912,7 +912,7 @@ extension ExtensionManager {
         backgroundRuntimeStateByExtensionID.removeAll()
         runtimeMetricsByExtensionID.removeAll()
         lastLoggedExtensionErrorFingerprints.removeAll()
-        recentExtensionTabOpenRequests.removeAll()
+        requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
         clearPermissionsOriginsCompatibilityInstallations()
         extensionPageUserContentControllersByProfile.removeAll()
         tabAdapters.removeAll()

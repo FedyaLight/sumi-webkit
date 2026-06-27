@@ -6,31 +6,12 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager: WKWebExtensionControllerDelegate {
-    private nonisolated static func recentExtensionTabOpenRequestKey(
-        for url: URL?
-    ) -> String? {
-        guard let url,
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https"
-        else {
-            return nil
-        }
-        return url.absoluteString
-    }
-
     func consumeRecentlyOpenedExtensionTabRequest(for url: URL) -> Bool {
-        guard let key = Self.recentExtensionTabOpenRequestKey(for: url) else {
-            return false
-        }
-
-        return recentExtensionTabOpenRequests.consume(key: key)
+        requestedTabLifecycleOwner.consumeRecentlyOpenedTabRequest(for: url)
     }
 
     func recordRecentlyOpenedExtensionTabRequest(for url: URL?) {
-        guard let key = Self.recentExtensionTabOpenRequestKey(for: url) else {
-            return
-        }
-        recentExtensionTabOpenRequests.record(key: key)
+        requestedTabLifecycleOwner.recordRecentlyOpenedTabRequest(for: url)
     }
 
     private func extensionDisplayName(for extensionContext: WKWebExtensionContext) -> String {
@@ -186,105 +167,10 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for requestedURL: URL?,
         controller: WKWebExtensionController
     ) -> (url: URL?, context: WKWebExtensionContext?) {
-        guard let requestedURL else {
-            return (nil, nil)
-        }
-
-        guard Self.isExtensionOwnedURL(requestedURL) else {
-            return (requestedURL, nil)
-        }
-        return (
-            requestedURL,
-            controller.extensionContext(for: requestedURL)
+        requestedTabLifecycleOwner.loadURL(
+            for: requestedURL,
+            controller: controller
         )
-    }
-
-    private struct ExtensionRequestedTabTarget {
-        let window: BrowserWindowState?
-        let space: Space?
-    }
-
-    private func extensionRequestedTabTarget(
-        requestedWindow: (any WKWebExtensionWindow)?,
-        extensionContext: WKWebExtensionContext? = nil
-    ) throws -> ExtensionRequestedTabTarget {
-        guard let browserManager else {
-            throw NSError(
-                domain: "ExtensionManager",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
-            )
-        }
-
-        if let miniWindowAdapter = requestedWindow as? ExtensionMiniWindowAdapter,
-           let session = browserManager.auxiliaryWindowManager.session(for: miniWindowAdapter.sessionId)
-        {
-            return ExtensionRequestedTabTarget(
-                window: extensionRequestedNormalWindow(
-                    for: session.tab,
-                    extensionContext: extensionContext
-                ),
-                space: extensionRequestedTargetSpace(for: session.tab)
-            )
-        }
-
-        if requestedWindow == nil,
-           let extensionContext,
-           let ownerExtensionID = extensionID(for: extensionContext),
-           let profileId = profileId(for: extensionContext),
-           let miniWindowAdapter = extensionMiniWindowAdapters(
-               ownerExtensionID: ownerExtensionID,
-               profileId: profileId
-           ).first,
-           let session = browserManager.auxiliaryWindowManager.session(for: miniWindowAdapter.sessionId)
-        {
-            return ExtensionRequestedTabTarget(
-                window: extensionRequestedNormalWindow(
-                    for: session.tab,
-                    extensionContext: extensionContext
-                ),
-                space: extensionRequestedTargetSpace(for: session.tab)
-            )
-        }
-
-        let requestedWindowState = (requestedWindow as? ExtensionWindowAdapter)
-            .flatMap { browserManager.windowRegistry?.windows[$0.windowId] }
-        let targetWindow = requestedWindowState ?? browserManager.windowRegistry?.activeWindow
-        let targetSpace = targetWindow?.currentSpaceId.flatMap { spaceID in
-            browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-        } ?? browserManager.tabManager.currentSpace
-        return ExtensionRequestedTabTarget(
-            window: targetWindow,
-            space: targetSpace
-        )
-    }
-
-    private func extensionRequestedNormalWindow(
-        for openerTab: Tab,
-        extensionContext: WKWebExtensionContext?
-    ) -> BrowserWindowState? {
-        guard let browserManager else { return nil }
-        let targetProfileId =
-            resolvedProfileId(for: openerTab)
-                ?? extensionContext.flatMap { profileId(for: $0) }
-                ?? currentProfileId
-                ?? browserManager.currentProfile?.id
-
-        let candidates = [
-            browserManager.windowState(containing: openerTab),
-            browserManager.windowRegistry?.activeWindow
-        ]
-
-        return candidates.compactMap { $0 }.first { windowState in
-            targetProfileId.map { windowMatchesProfile(windowState, profileId: $0) } ?? true
-        }
-    }
-
-    private func extensionRequestedTargetSpace(for tab: Tab) -> Space? {
-        guard let browserManager else { return nil }
-        return tab.spaceId.flatMap { spaceID in
-            browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-        } ?? browserManager.tabManager.currentSpace
     }
 
     @discardableResult
@@ -294,27 +180,12 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         controller: WKWebExtensionController,
         extensionContext: WKWebExtensionContext? = nil
     ) async throws -> UUID? {
-        let resolvedExtensionLoad = extensionLoadURL(
-            for: url,
-            controller: controller
-        )
-        guard shouldPreloadContentScriptContextsForExtensionRequestedTab(
-            loadURL: resolvedExtensionLoad.url,
-            webExtensionContextOverride: resolvedExtensionLoad.context
-        ) else {
-            return nil
-        }
-
-        let target = try extensionRequestedTabTarget(
+        try await requestedTabLifecycleOwner.prepareInitialLoad(
+            url: url,
             requestedWindow: requestedWindow,
-            extensionContext: extensionContext
-        )
-        return await prepareContentScriptContextsForExtensionRequestedInitialLoad(
-            loadURL: resolvedExtensionLoad.url,
-            webExtensionContextOverride: resolvedExtensionLoad.context,
-            targetWindow: target.window,
-            targetSpace: target.space,
-            controller: controller
+            controller: controller,
+            extensionContext: extensionContext,
+            manager: self
         )
     }
 
@@ -326,37 +197,14 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         targetSpace: Space?,
         controller: WKWebExtensionController
     ) async -> UUID? {
-        guard shouldPreloadContentScriptContextsForExtensionRequestedTab(
+        await requestedTabLifecycleOwner.prepareContentScriptContextsForInitialLoad(
             loadURL: loadURL,
-            webExtensionContextOverride: webExtensionContextOverride
-        ) else {
-            return nil
-        }
-
-        guard let profileId =
-            targetSpace?.profileId
-                ?? targetWindow.flatMap(resolvedProfileId(for:))
-                ?? profileId(for: controller)
-                ?? currentProfileId
-                ?? browserManager?.currentProfile?.id
-        else {
-            return nil
-        }
-
-        await ensureContentScriptContextsLoaded(for: profileId)
-        return profileId
-    }
-
-    private func shouldPreloadContentScriptContextsForExtensionRequestedTab(
-        loadURL: URL?,
-        webExtensionContextOverride: WKWebExtensionContext?
-    ) -> Bool {
-        guard webExtensionContextOverride == nil,
-              let scheme = loadURL?.scheme?.lowercased()
-        else {
-            return false
-        }
-        return scheme == "http" || scheme == "https" || scheme == "file"
+            webExtensionContextOverride: webExtensionContextOverride,
+            targetWindow: targetWindow,
+            targetSpace: targetSpace,
+            controller: controller,
+            manager: self
+        )
     }
 
     @discardableResult
@@ -369,120 +217,16 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         extensionContext: WKWebExtensionContext? = nil,
         reason: String = #function
     ) throws -> Tab {
-        guard let browserManager else {
-            throw NSError(
-                domain: "ExtensionManager",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
-            )
-        }
-
-        let target = try extensionRequestedTabTarget(
-            requestedWindow: requestedWindow,
-            extensionContext: extensionContext
-        )
-        let targetWindow = target.window
-        let targetSpace = target.space
-
-        let resolvedExtensionLoad = extensionLoadURL(
-            for: url,
-            controller: controller
-        )
-        let webExtensionContextOverride = resolvedExtensionLoad.context
-        let shouldUseTransientInternalTab = shouldOpenAsTransientInternalExtensionTab(
-            loadURL: resolvedExtensionLoad.url,
+        try requestedTabLifecycleOwner.openTab(
+            url: url,
             shouldBeActive: shouldBeActive,
             shouldBePinned: shouldBePinned,
-            webExtensionContextOverride: webExtensionContextOverride
+            requestedWindow: requestedWindow,
+            controller: controller,
+            extensionContext: extensionContext,
+            reason: reason,
+            manager: self
         )
-        let diagnosticProfileId =
-            targetSpace?.profileId
-                ?? targetWindow.flatMap(resolvedProfileId(for:))
-                ?? extensionContext.flatMap { profileId(for: $0) }
-                ?? profileId(for: controller)
-                ?? currentProfileId
-
-        let newTab: Tab
-        if shouldUseTransientInternalTab, let loadURL = resolvedExtensionLoad.url {
-            newTab = browserManager.tabManager.createTransientExtensionTab(
-                url: loadURL.absoluteString,
-                in: targetSpace,
-                webExtensionContextOverride: webExtensionContextOverride
-            )
-        } else if let loadURL = resolvedExtensionLoad.url {
-            recordRecentlyOpenedExtensionTabRequest(for: url)
-            newTab = browserManager.tabManager.createNewTab(
-                url: loadURL.absoluteString,
-                in: targetSpace,
-                activate: shouldBeActive,
-                webExtensionContextOverride: webExtensionContextOverride
-            )
-        } else {
-            newTab = browserManager.tabManager.createNewTab(
-                in: targetSpace,
-                activate: shouldBeActive,
-                webExtensionContextOverride: webExtensionContextOverride
-            )
-        }
-
-        if shouldBePinned {
-            let resolvedTargetSpaceId = targetSpace?.id ?? newTab.spaceId
-            browserManager.tabManager.pinTab(
-                newTab,
-                context: .init(windowState: targetWindow, spaceId: resolvedTargetSpaceId)
-            )
-        }
-
-        materializeExtensionRequestedNormalTabIfNeeded(
-            newTab,
-            isActive: shouldBeActive,
-            targetWindow: targetWindow
-        )
-        if shouldBeActive, let targetWindow {
-            browserManager.selectTab(newTab, in: targetWindow)
-        }
-
-        registerExtensionCreatedTabWithExtensionRuntime(newTab, reason: reason)
-        materializeExtensionOwnedTabIfNeeded(
-            newTab,
-            isActive: shouldBeActive,
-            hasWindowSelection: targetWindow != nil
-        )
-        SafariExtensionPermissionLifecycleDiagnostics.logTabBinding(
-            SafariExtensionTabBindingSnapshot(
-                route: shouldUseTransientInternalTab ? .extensionInternal : .normalBrowserTab,
-                profileBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(
-                    resolvedProfileId(for: newTab) ?? diagnosticProfileId
-                ),
-                tabBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(newTab.id),
-                dataStoreMatched: nil,
-                controllerMatched: nil,
-                tabAdapterCreated: stableAdapter(for: newTab) != nil,
-                didOpenTabTiming: newTab.lastExtensionOpenNotificationGeneration > 0
-                    ? .beforeNavigation : .deferred,
-                firstNavigationHost: SafariExtensionPermissionLifecycleDiagnostics.host(
-                    from: resolvedExtensionLoad.url
-                ),
-                firstCommitHost: nil
-            )
-        )
-        return newTab
-    }
-
-    private func shouldOpenAsTransientInternalExtensionTab(
-        loadURL: URL?,
-        shouldBeActive: Bool,
-        shouldBePinned: Bool,
-        webExtensionContextOverride: WKWebExtensionContext?
-    ) -> Bool {
-        guard shouldBeActive == false,
-              shouldBePinned == false,
-              webExtensionContextOverride != nil,
-              let loadURL
-        else {
-            return false
-        }
-        return Self.isExtensionOwnedURL(loadURL)
     }
 
     func materializeExtensionRequestedNormalTabIfNeeded(
@@ -490,146 +234,22 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         isActive: Bool,
         targetWindow: BrowserWindowState?
     ) {
-        guard isActive,
-              tab.webExtensionContextOverride == nil,
-              tab.requiresPrimaryWebView
-        else {
-            return
-        }
-
-        if let targetWindow, let browserManager {
-            browserManager.materializeVisibleTabWebViewIfNeeded(tab, in: targetWindow)
-        }
-        if tab.isUnloaded {
-            tab.loadWebViewIfNeeded()
-        }
-        prepareExtensionRequestedNormalTabWebViewForOpenNotification(
+        requestedTabLifecycleOwner.materializeNormalTabIfNeeded(
             tab,
-            targetWindow: targetWindow
+            isActive: isActive,
+            targetWindow: targetWindow,
+            manager: self
         )
-    }
-
-    private func prepareExtensionRequestedNormalTabWebViewForOpenNotification(
-        _ tab: Tab,
-        targetWindow: BrowserWindowState?
-    ) {
-        if let webView = tab.assignedWebView ?? tab.existingWebView {
-            prepareWebViewForExtensionRuntime(
-                webView,
-                currentURL: tab.url,
-                reason: "ExtensionManager.extensionRequestedNormalTab"
-            )
-            if extensionRequestedNormalTabWebViewIsUsable(webView, for: tab) {
-                return
-            }
-        }
-
-        let replacementReason = "ExtensionManager.extensionRequestedNormalTab.replacement"
-        guard let replacementWebView = tab.makeNormalTabWebView(
-            reason: replacementReason,
-            prepareConfiguration: { [weak self, weak tab] configuration in
-                guard let self,
-                      let tab,
-                      let profileId = self.resolvedProfileId(for: tab)
-                else {
-                    return
-                }
-                self.prepareWebViewConfigurationForExtensionRuntime(
-                    configuration,
-                    profileId: profileId,
-                    reason: "\(replacementReason).configuration"
-                )
-            }
-        ) else {
-            return
-        }
-        prepareWebViewForExtensionRuntime(
-            replacementWebView,
-            currentURL: tab.url,
-            reason: replacementReason
-        )
-        guard extensionRequestedNormalTabWebViewIsUsable(replacementWebView, for: tab) else {
-            tab.cleanupCloneWebView(replacementWebView)
-            return
-        }
-
-        let previousWebView = tab.existingWebView
-        if let targetWindow {
-            tab.assignWebViewToWindow(replacementWebView, windowId: targetWindow.id)
-            browserManager?.webViewCoordinator?.setWebView(
-                replacementWebView,
-                for: tab.id,
-                in: targetWindow.id
-            )
-        } else {
-            tab._webView = replacementWebView
-        }
-        if let previousWebView, previousWebView !== replacementWebView {
-            tab.cleanupCloneWebView(previousWebView)
-        }
-    }
-
-    private func extensionRequestedNormalTabWebViewIsUsable(
-        _ webView: WKWebView,
-        for tab: Tab
-    ) -> Bool {
-        guard let expectedController = extensionController(for: tab),
-              attachExtensionControllerIfNeeded(to: webView, for: tab)
-        else {
-            return false
-        }
-        return webView.configuration.webExtensionController === expectedController
-    }
-
-    private func materializeExtensionOwnedTabIfNeeded(
-        _ tab: Tab,
-        isActive: Bool,
-        hasWindowSelection: Bool
-    ) {
-        guard tab.webExtensionContextOverride != nil else { return }
-        guard ExtensionUtils.isExtensionOwnedURL(tab.url) else { return }
-        guard tab.isUnloaded else { return }
-
-        if isActive && hasWindowSelection {
-            return
-        }
-
-        tab.loadWebViewIfNeeded()
     }
 
     func registerExtensionCreatedTabWithExtensionRuntime(
         _ tab: Tab,
         reason: String = #function
     ) {
-        let generation = tabOpenNotificationGeneration
-        tab.prepareExtensionRuntimeGeneration(generation)
-        tab.extensionRuntimeEligibleGeneration = generation
-
-        guard tab.lastExtensionOpenNotificationGeneration != generation else {
-            extensionRuntimeTrace(
-                "registerExtensionCreatedTab skip reason=\(reason) because=alreadyNotified generation=\(generation) \(extensionRuntimeTabDescription(tab))"
-            )
-            return
-        }
-
-        guard notifyTabOpened(tab) else {
-            extensionRuntimeTrace(
-                "registerExtensionCreatedTab skip reason=\(reason) because=notifyFailed generation=\(generation) \(extensionRuntimeTabDescription(tab))"
-            )
-            return
-        }
-
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = tab.extensionRuntimeDocumentSequence
-        if let profileId = resolvedProfileId(for: tab) {
-            tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration =
-                extensionContextBindingGeneration(for: profileId)
-            tab.extensionRuntimeOpenNotifiedWithLoadedContexts =
-                profileHasLoadedContentScriptContexts(profileId: profileId)
-        }
-        tab.didNotifyOpenToExtensions = true
-        tab.lastExtensionOpenNotificationGeneration = generation
-        extensionRuntimeTrace(
-            "registerExtensionCreatedTab marked reason=\(reason) generation=\(generation) \(extensionRuntimeTabDescription(tab))"
+        requestedTabLifecycleOwner.registerCreatedTabWithExtensionRuntime(
+            tab,
+            reason: reason,
+            manager: self
         )
     }
 

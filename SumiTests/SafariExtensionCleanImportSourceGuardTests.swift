@@ -490,16 +490,16 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
     }
 
     func testExtensionCreatedExternalLoginURLRoutesThroughNormalTabs() throws {
-        let delegateSource = try source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
+        let requestedTabLifecycleSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionRequestedTabLifecycleOwner.swift"
         )
 
         XCTAssertTrue(
-            delegateSource.contains(".normalBrowserTab"),
+            requestedTabLifecycleSource.contains(".normalBrowserTab"),
             "Extension-created external web URLs must be diagnosable as normal browser tabs"
         )
         XCTAssertFalse(
-            delegateSource.contains("presentExtensionExternalWebPopupSession"),
+            requestedTabLifecycleSource.contains("presentExtensionExternalWebPopupSession"),
             "External https://account.example.test/login URLs requested by extensions should not use the auxiliary mini-window path"
         )
     }
@@ -579,8 +579,8 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let browserManagerSource = try source(
             named: "Sumi/Managers/BrowserManager/BrowserManager.swift"
         )
-        let delegateSource = try source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
+        let requestedTabLifecycleSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionRequestedTabLifecycleOwner.swift"
         )
         let profilesSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift"
@@ -616,7 +616,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Startup materialization deferral must not discard runtime-owned extension pages"
         )
         XCTAssertTrue(
-            delegateSource.contains("materializeExtensionOwnedTabIfNeeded"),
+            requestedTabLifecycleSource.contains("materializeExtensionOwnedTabIfNeeded"),
             "Background extension-created internal tabs must be materialized through the extension context"
         )
         XCTAssertFalse(

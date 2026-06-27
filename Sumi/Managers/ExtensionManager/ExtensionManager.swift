@@ -131,6 +131,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     let context: ModelContext
     let browserConfiguration: BrowserConfiguration
     let installationMetadataStore: ExtensionInstallationMetadataStore
+    let requestedTabLifecycleOwner = ExtensionRequestedTabLifecycleOwner()
     var controllerIdentifierStorage: UUID?
     var controllerIdentifier: UUID {
         ensureRuntimeControllerIdentifier()
@@ -198,11 +199,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     var profileExtensionStores: [UUID: WKWebsiteDataStore] = [:]
     var profileExtensionStoreOrder: [UUID] = []
     var privateExtensionRuntimeProfileIDs: Set<UUID> = []
-    var recentExtensionTabOpenRequests = BoundedRecentDateTracker(
-        ttl: ExtensionManager.recentExtensionTabOpenRequestTTL,
-        maxKeys: 128,
-        maxDatesPerKey: 4
-    )
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
     var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
@@ -221,8 +217,6 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     nonisolated static let profileExtensionStoreLimit = 4
     nonisolated static let maxLiveExtensionContexts = 8
-    nonisolated static let recentExtensionTabOpenRequestTTL: TimeInterval = 2
-
     init(
         context: ModelContext,
         initialProfile: Profile?,
