@@ -610,8 +610,7 @@ struct FloatingBarView: View {
             }
             guard !query.isEmpty else { return }
             let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
-            let navigatesCurrentTab = windowState.floatingBarDraftNavigatesCurrentTab
-                && browserManager.activePageTab(for: windowState) != nil
+            let navigatesCurrentTab = browserManager.floatingBarCommitNavigatesCurrentTab(in: windowState)
             text = ""
             activeSiteSearch = nil
             selectedSuggestionIndex = -1
@@ -644,8 +643,7 @@ struct FloatingBarView: View {
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion)
     {
-        let navigatesCurrentTab = windowState.floatingBarDraftNavigatesCurrentTab
-            && browserManager.activePageTab(for: windowState) != nil
+        let navigatesCurrentTab = browserManager.floatingBarCommitNavigatesCurrentTab(in: windowState)
         text = ""
         activeSiteSearch = nil
         selectedSuggestionIndex = -1

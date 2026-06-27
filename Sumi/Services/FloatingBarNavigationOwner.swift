@@ -3,12 +3,16 @@ import Foundation
 @MainActor
 struct FloatingBarNavigationOwner {
     struct Actions {
+        let activeWindow: @MainActor () -> BrowserWindowState?
+        let window: @MainActor (UUID) -> BrowserWindowState?
         let activePageTab: @MainActor (BrowserWindowState) -> Tab?
         let cancelEmptySplitPlaceholder: @MainActor (BrowserWindowState) -> Void
         let commitEmptySplitPlaceholder: @MainActor (UUID, BrowserWindowState) -> Void
         let replaceEmptySplitPlaceholder: @MainActor (Tab, BrowserWindowState) -> Bool
         let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
+        let createNewTab: @MainActor (BrowserWindowState, String) -> Void
         let createNewTabAfterSidebarInsertion: @MainActor (BrowserWindowState, String) -> Void
+        let configuredNewTabPageURL: @MainActor () -> String?
         let normalizeURL: @MainActor (String) -> String
         let dismissWorkspaceThemePickerIfNeededDiscarding: @MainActor () -> Void
         let persistWindowSession: @MainActor (BrowserWindowState) -> Void
@@ -35,6 +39,22 @@ struct FloatingBarNavigationOwner {
         actions.persistWindowSession(windowState)
     }
 
+    func focusActiveWindow(
+        prefill: String,
+        navigateCurrentTab: Bool,
+        presentationReason: FloatingBarPresentationReason,
+        actions: Actions
+    ) {
+        guard let activeWindow = actions.activeWindow() else { return }
+        focus(
+            in: activeWindow,
+            prefill: prefill,
+            navigateCurrentTab: navigateCurrentTab,
+            presentationReason: presentationReason,
+            actions: actions
+        )
+    }
+
     func showNewTab(
         in windowState: BrowserWindowState,
         actions: Actions
@@ -45,6 +65,17 @@ struct FloatingBarNavigationOwner {
         windowState.isFloatingBarVisible = true
         actions.dismissWorkspaceThemePickerIfNeededDiscarding()
         actions.persistWindowSession(windowState)
+    }
+
+    func openNewTabSurface(
+        in windowState: BrowserWindowState,
+        actions: Actions
+    ) {
+        if let configuredURL = actions.configuredNewTabPageURL() {
+            actions.createNewTab(windowState, configuredURL)
+        } else {
+            showNewTab(in: windowState, actions: actions)
+        }
     }
 
     func updateDraft(
@@ -73,6 +104,39 @@ struct FloatingBarNavigationOwner {
             windowState.floatingBarDraftNavigatesCurrentTab = false
         }
         actions.persistWindowSession(windowState)
+    }
+
+    func dismissActiveWindow(
+        preserveDraft: Bool,
+        actions: Actions
+    ) {
+        guard let activeWindow = actions.activeWindow(),
+              activeWindow.isFloatingBarVisible
+        else { return }
+
+        dismiss(in: activeWindow, preserveDraft: preserveDraft, actions: actions)
+    }
+
+    @discardableResult
+    func dismissIfVisible(
+        in windowId: UUID,
+        preserveDraft: Bool,
+        actions: Actions
+    ) -> Bool {
+        guard let windowState = actions.window(windowId),
+              windowState.isFloatingBarVisible
+        else { return false }
+
+        dismiss(in: windowState, preserveDraft: preserveDraft, actions: actions)
+        return true
+    }
+
+    func commitNavigatesCurrentTab(
+        in windowState: BrowserWindowState,
+        actions: Actions
+    ) -> Bool {
+        windowState.floatingBarDraftNavigatesCurrentTab
+            && actions.activePageTab(windowState) != nil
     }
 
     func commitSuggestion(
