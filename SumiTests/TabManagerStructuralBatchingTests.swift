@@ -7,6 +7,35 @@ import XCTest
 
 @MainActor
 final class TabManagerStructuralBatchingTests: XCTestCase {
+    func testStructuralPublishOwnerCoalescesNestedTransactionsAndFlushesBeforePublish() {
+        let changes = PassthroughSubject<Void, Never>()
+        let owner = TabStructuralPublishOwner(structuralChanges: changes)
+        var eventCount = 0
+        var flushCount = 0
+        var flushCountsAtPublish: [Int] = []
+        let cancellable = changes.sink {
+            eventCount += 1
+            flushCountsAtPublish.append(flushCount)
+        }
+
+        withExtendedLifetime(cancellable) {
+            owner.withTransaction(flushPendingLookupBatch: { flushCount += 1 }) {
+                owner.requestPublish()
+                owner.withTransaction(flushPendingLookupBatch: { flushCount += 1 }) {
+                    owner.requestPublish()
+                }
+
+                XCTAssertTrue(owner.isBatching)
+                XCTAssertEqual(eventCount, 0)
+                XCTAssertEqual(flushCount, 0)
+            }
+        }
+
+        XCTAssertEqual(flushCount, 1)
+        XCTAssertEqual(eventCount, 1)
+        XCTAssertEqual(flushCountsAtPublish, [1])
+    }
+
     func testNestedRegularMutationsPublishOnceAndPreserveFinalOrder() throws {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
