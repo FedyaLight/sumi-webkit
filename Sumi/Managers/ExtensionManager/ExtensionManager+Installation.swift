@@ -478,50 +478,13 @@ extension ExtensionManager {
         context extensionContext: WKWebExtensionContext,
         reason: ExtensionBackgroundWakeReason
     ) async throws -> Bool {
-        guard webExtension.hasBackgroundContent else { return false }
         let wakeKey = backgroundWakeKey(for: extensionContext)
-
-        switch backgroundRuntimeState(for: wakeKey) {
-        case .loaded:
-            extensionRuntimeTrace(
-                "Skipping required background wake for \(wakeKey): already loaded"
-            )
-            return false
-        case .wakeInFlight:
-            if let existingTask = backgroundWakeTasks[wakeKey] {
-                extensionRuntimeTrace(
-                    "Awaiting required background wake already in flight for \(wakeKey)"
-                )
-                try await existingTask.value
-                return false
-            }
-            setBackgroundRuntimeState(.neverLoaded, for: wakeKey)
-        case .neverLoaded, .loadFailed:
-            break
-        }
-
-        let task = startBackgroundWakeTask(
+        return try await backgroundRuntimeStateOwner.ensureBackgroundAvailableIfRequired(
             wakeKey: wakeKey,
-            extensionContext: extensionContext,
+            hasBackgroundContent: webExtension.hasBackgroundContent,
             reason: reason,
-            mode: "required"
-        )
-        try await task.value
-        return true
-    }
-
-    private func makeBackgroundWakeTask(
-        wakeKey: String,
-        extensionContext: WKWebExtensionContext,
-        reason: ExtensionBackgroundWakeReason
-    ) -> Task<Void, Error> {
-        Task { @MainActor in
-            defer {
-                self.backgroundWakeTasks.removeValue(forKey: wakeKey)
-            }
-
-            let wakeStart = CFAbsoluteTimeGetCurrent()
-            do {
+            trace: { extensionRuntimeTrace($0) },
+            loadBackgroundContent: {
                 #if DEBUG
                     if let backgroundContentWake = self.testHooks.backgroundContentWake {
                         try await backgroundContentWake(wakeKey, extensionContext)
@@ -531,47 +494,16 @@ extension ExtensionManager {
                 #else
                     try await extensionContext.loadBackgroundContent()
                 #endif
-
-                self.setBackgroundRuntimeState(.loaded, for: wakeKey)
+            },
+            recordWakeMetric: { duration, reason, didFail in
                 self.recordRuntimeMetric(for: wakeKey) {
-                    $0.backgroundWakeDuration =
-                        CFAbsoluteTimeGetCurrent() - wakeStart
+                    $0.backgroundWakeDuration = duration
                     $0.backgroundWakeCount += 1
                     $0.lastBackgroundWakeReason = reason
-                    $0.lastBackgroundWakeFailed = false
+                    $0.lastBackgroundWakeFailed = didFail
                 }
-            } catch {
-                self.setBackgroundRuntimeState(.loadFailed, for: wakeKey)
-                self.recordRuntimeMetric(for: wakeKey) {
-                    $0.backgroundWakeDuration =
-                        CFAbsoluteTimeGetCurrent() - wakeStart
-                    $0.backgroundWakeCount += 1
-                    $0.lastBackgroundWakeReason = reason
-                    $0.lastBackgroundWakeFailed = true
-                }
-                throw error
             }
-        }
-    }
-
-    @discardableResult
-    private func startBackgroundWakeTask(
-        wakeKey: String,
-        extensionContext: WKWebExtensionContext,
-        reason: ExtensionBackgroundWakeReason,
-        mode: String
-    ) -> Task<Void, Error> {
-        setBackgroundRuntimeState(.wakeInFlight, for: wakeKey)
-        extensionRuntimeTrace(
-            "Starting \(mode) background wake for \(wakeKey) reason=\(reason.rawValue)"
         )
-        let task = makeBackgroundWakeTask(
-            wakeKey: wakeKey,
-            extensionContext: extensionContext,
-            reason: reason
-        )
-        backgroundWakeTasks[wakeKey] = task
-        return task
     }
 
     private func backgroundWakeKey(
@@ -592,20 +524,11 @@ extension ExtensionManager {
         let resolvedProfileId =
             profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
         guard let resolvedProfileId else { return .neverLoaded }
-        return backgroundRuntimeStateByExtensionID[
-            backgroundScopedKey(extensionId: extensionId, profileId: resolvedProfileId)
-        ] ?? .neverLoaded
-    }
-
-    private func setBackgroundRuntimeState(
-        _ state: BackgroundRuntimeState,
-        for wakeKey: String
-    ) {
-        if state == .neverLoaded {
-            backgroundRuntimeStateByExtensionID.removeValue(forKey: wakeKey)
-        } else {
-            backgroundRuntimeStateByExtensionID[wakeKey] = state
-        }
+        let wakeKey = backgroundScopedKey(
+            extensionId: extensionId,
+            profileId: resolvedProfileId
+        )
+        return backgroundRuntimeStateOwner.state(for: wakeKey)
     }
 
     func performInstallation(

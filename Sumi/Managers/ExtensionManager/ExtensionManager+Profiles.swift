@@ -762,9 +762,7 @@ extension ExtensionManager {
 
         for profileId in extensionContextsByProfile.keys {
             let wakeKey = backgroundScopedKey(extensionId: extensionId, profileId: profileId)
-            backgroundWakeTasks[wakeKey]?.cancel()
-            backgroundWakeTasks.removeValue(forKey: wakeKey)
-            backgroundRuntimeStateByExtensionID.removeValue(forKey: wakeKey)
+            backgroundRuntimeStateOwner.cancelAndRemoveRuntime(for: wakeKey)
         }
         clearActionSurfaceState(for: extensionId)
         unloadExtensionContextIfNeeded(for: extensionId)
@@ -815,9 +813,7 @@ extension ExtensionManager {
         cachedWebExtensionRuntimeSourceKeysByID.removeAll()
         lastExtensionLoadErrors.removeAll()
         extensionRuntimeResidencyState.removeAll()
-        backgroundWakeTasks.values.forEach { $0.cancel() }
-        backgroundWakeTasks.removeAll()
-        backgroundRuntimeStateByExtensionID.removeAll()
+        backgroundRuntimeStateOwner.removeAll()
         requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
         clearPermissionsOriginsCompatibilityInstallations()
         extensionPageUserContentControllersByProfile.removeAll()
@@ -870,7 +866,7 @@ extension ExtensionManager {
         contentScriptContextLoadTasksByProfile.removeAll()
         initialDocumentNativeMessagingWarmupTasksByProfile.values.forEach { $0.cancel() }
         initialDocumentNativeMessagingWarmupTasksByProfile.removeAll()
-        backgroundWakeTasks.values.forEach { $0.cancel() }
+        backgroundRuntimeStateOwner.cancelAllWakeTasks()
 
         let uiStateIDs = removeUIState ? Array(actionAnchors.keys) : []
         let loadedIDs = allLoadedExtensionIDs()
@@ -908,8 +904,7 @@ extension ExtensionManager {
         cachedWebExtensionRuntimeSourceKeysByID.removeAll()
         lastExtensionLoadErrors.removeAll()
         extensionRuntimeResidencyState.removeAll()
-        backgroundWakeTasks.removeAll()
-        backgroundRuntimeStateByExtensionID.removeAll()
+        backgroundRuntimeStateOwner.removeAll()
         runtimeMetricsByExtensionID.removeAll()
         lastLoggedExtensionErrorFingerprints.removeAll()
         requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
@@ -1591,8 +1586,8 @@ extension ExtensionManager {
     private func unloadExtensionContextIfNeeded(for extensionId: String) {
         for (profileId, contexts) in extensionContextsByProfile {
             guard let context = contexts[extensionId] else { continue }
-            backgroundRuntimeStateByExtensionID.removeValue(
-                forKey: backgroundScopedKey(extensionId: extensionId, profileId: profileId)
+            backgroundRuntimeStateOwner.removeRuntimeState(
+                for: backgroundScopedKey(extensionId: extensionId, profileId: profileId)
             )
             removeExtensionContext(extensionId: extensionId, profileId: profileId)
             do {

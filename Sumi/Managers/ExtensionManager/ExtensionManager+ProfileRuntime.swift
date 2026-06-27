@@ -325,9 +325,7 @@ extension ExtensionManager {
         }
 
         let wakeKey = backgroundScopedKey(extensionId: extensionId, profileId: profileId)
-        backgroundWakeTasks[wakeKey]?.cancel()
-        backgroundWakeTasks.removeValue(forKey: wakeKey)
-        backgroundRuntimeStateByExtensionID.removeValue(forKey: wakeKey)
+        backgroundRuntimeStateOwner.cancelAndRemoveRuntime(for: wakeKey)
         extensionRuntimeResidencyState.remove(
             extensionId: extensionId,
             profileId: profileId
