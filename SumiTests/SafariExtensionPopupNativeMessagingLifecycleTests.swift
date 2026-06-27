@@ -190,6 +190,9 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         let uiSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
         )
+        let popupPresentationSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentationOwner.swift"
+        )
 
         XCTAssertTrue(uiSource.contains("func popoverDidClose(_ notification: Notification)"))
         XCTAssertTrue(uiSource.contains("pruneNativeMessagePortHandlerEntries("))
@@ -199,8 +202,8 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         XCTAssertTrue(profilesSource.contains("nativeMessagePortHandlers[handlerID]?.disconnect()"))
         XCTAssertTrue(uiSource.contains("clearLaunchSessionOnExtensionContextUnload("))
         XCTAssertTrue(uiSource.contains("scheduleOrPerformDeferredPopupContextUnload("))
-        XCTAssertTrue(uiSource.contains("ExtensionActionPopupUIDelegate"))
-        XCTAssertTrue(uiSource.contains("popover.close()"))
+        XCTAssertTrue(popupPresentationSource.contains("ExtensionActionPopupUIDelegate"))
+        XCTAssertTrue(popupPresentationSource.contains("popover.close()"))
         XCTAssertTrue(uiSource.contains("SumiNativeMessagingRuntimeCounters.recordPopupClosed"))
         XCTAssertFalse(uiSource.contains("BitwardenNativeMessagingAdapter"))
         XCTAssertFalse(uiSource.contains("com.bitwarden.desktop"))

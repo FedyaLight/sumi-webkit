@@ -1,124 +1,20 @@
 import AppKit
 import Foundation
-import SwiftUI
 import WebKit
-
-@available(macOS 15.5, *)
-@MainActor
-final class ExtensionActionPopupUIDelegate: NSObject, WKUIDelegate {
-    private weak var manager: ExtensionManager?
-    private weak var popover: NSPopover?
-
-    init(manager: ExtensionManager, popover: NSPopover) {
-        self.manager = manager
-        self.popover = popover
-        super.init()
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        createWebViewWith configuration: WKWebViewConfiguration,
-        for navigationAction: WKNavigationAction,
-        windowFeatures: WKWindowFeatures
-    ) -> WKWebView? {
-        manager?.createAuxiliaryWebViewFromActionPopup(
-            webView,
-            with: configuration,
-            for: navigationAction,
-            windowFeatures: windowFeatures
-        )
-    }
-
-    @objc(_webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:completionHandler:)
-    func webView(
-        _ webView: WKWebView,
-        createWebViewWithConfiguration configuration: WKWebViewConfiguration,
-        for navigationAction: WKNavigationAction,
-        windowFeatures: WKWindowFeatures,
-        completionHandler: @escaping (WKWebView?) -> Void
-    ) {
-        completionHandler(
-            manager?.createAuxiliaryWebViewFromActionPopup(
-                webView,
-                with: configuration,
-                for: navigationAction,
-                windowFeatures: windowFeatures
-            )
-        )
-    }
-
-    func webViewDidClose(_ webView: WKWebView) {
-        _ = webView
-        guard let popover, popover.isShown else { return }
-        popover.close()
-    }
-}
-
-@available(macOS 15.5, *)
-@MainActor
-final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDelegate {
-    private let extensionId: String
-    private weak var manager: ExtensionManager?
-    private weak var webView: WKWebView?
-    var isCleaningUp = false
-
-    init(
-        extensionId: String,
-        manager: ExtensionManager,
-        webView: WKWebView
-    ) {
-        self.extensionId = extensionId
-        self.manager = manager
-        self.webView = webView
-        super.init()
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        guard isCleaningUp == false else { return }
-        manager?.cleanupOptionsWindow(
-            for: extensionId,
-            window: notification.object as? NSWindow,
-            webView: webView,
-            shouldOrderOut: false
-        )
-    }
-
-    func webViewDidClose(_ webView: WKWebView) {
-        guard isCleaningUp == false else { return }
-        manager?.cleanupOptionsWindow(
-            for: extensionId,
-            window: webView.window,
-            webView: webView,
-            shouldOrderOut: true
-        )
-    }
-}
-
 
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager: NSPopoverDelegate {
 
-    static let extensionActionPopupMinimumContentSize = NSSize(width: 320, height: 480)
+    static let extensionActionPopupMinimumContentSize =
+        ExtensionActionPopupPresentationOwner.minimumContentSize
 
     func prepareExtensionActionPopupPresentation(_ popover: NSPopover) {
-        if popover.contentSize.width < 8 || popover.contentSize.height < 8 {
-            popover.contentSize = Self.extensionActionPopupMinimumContentSize
-        }
+        ExtensionActionPopupPresentationOwner.prepare(popover)
     }
 
     func extensionActionPopupAnchorRect(for anchorView: NSView) -> CGRect {
-        let bounds = anchorView.bounds
-        guard bounds.width < 4 || bounds.height < 4 else {
-            return bounds
-        }
-        let side = max(28, max(bounds.width, bounds.height))
-        return CGRect(
-            x: bounds.midX - side / 2,
-            y: bounds.midY - side / 2,
-            width: side,
-            height: side
-        )
+        ExtensionActionPopupPresentationOwner.anchorRect(for: anchorView)
     }
 
     func showExtensionActionPopup(
@@ -126,10 +22,9 @@ extension ExtensionManager: NSPopoverDelegate {
         relativeTo anchorView: NSView,
         preferredEdge: NSRectEdge
     ) {
-        prepareExtensionActionPopupPresentation(popover)
-        popover.show(
-            relativeTo: extensionActionPopupAnchorRect(for: anchorView),
-            of: anchorView,
+        ExtensionActionPopupPresentationOwner.show(
+            popover,
+            relativeTo: anchorView,
             preferredEdge: preferredEdge
         )
     }
@@ -138,20 +33,12 @@ extension ExtensionManager: NSPopoverDelegate {
         for action: WKWebExtension.Action,
         extensionContext: WKWebExtensionContext
     ) {
-        guard let extensionId = extensionID(for: extensionContext) else {
-            return
-        }
+        guard let update = ExtensionActionSurfaceStatePresenter.makeUpdate(
+            for: action,
+            extensionID: extensionID(for: extensionContext)
+        ) else { return }
 
-        actionStatesByExtensionID[extensionId] =
-            BrowserExtensionActionSurfaceState(
-                extensionID: extensionId,
-                label: action.label,
-                badgeText: action.badgeText,
-                hasUnreadBadgeText: action.hasUnreadBadgeText,
-                isEnabled: action.isEnabled,
-                presentsPopup: action.presentsPopup,
-                icon: action.icon(for: CGSize(width: 18, height: 18))
-            )
+        actionStatesByExtensionID[update.extensionID] = update.state
     }
 
     func clearActionSurfaceState(for extensionId: String) {
@@ -163,11 +50,12 @@ extension ExtensionManager: NSPopoverDelegate {
         _ extensionContext: WKWebExtensionContext,
         preferredTab: Tab? = nil
     ) {
-        guard extensionID(for: extensionContext) != nil else { return }
-
-        let tab = preferredTab ?? browserManager?.currentTabForActiveWindow()
-        let adapter = tab.flatMap { stableAdapter(for: $0) }
-        guard let action = extensionContext.action(for: adapter) else { return }
+        guard let action = ExtensionActionSurfaceStatePresenter.actionForLoadedContext(
+            extensionContext,
+            preferredTab: preferredTab,
+            currentTab: { browserManager?.currentTabForActiveWindow() },
+            stableAdapter: { stableAdapter(for: $0) }
+        ) else { return }
 
         updateActionSurfaceState(for: action, extensionContext: extensionContext)
     }
@@ -178,75 +66,12 @@ extension ExtensionManager: NSPopoverDelegate {
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        guard navigationAction.targetFrame == nil,
-              let browserManager
-        else {
-            return nil
-        }
-
-        let sourceURL = navigationAction.sumiWebKitSourceURL ?? popupWebView.url
-        let requestURL = navigationAction.request.url
-        let resolvedOwnerExtensionID = ownerExtensionID(extensionOwnedSourceURL: sourceURL)
-            ?? ownerExtensionID(extensionOwnedSourceURL: requestURL)
-            ?? activePopupExtensionID
-
-        guard resolvedOwnerExtensionID != nil
-            || Tab.isExtensionOriginatedPopupNavigation(
-                sourceURL: sourceURL,
-                requestURL: requestURL
-            )
-        else {
-            return nil
-        }
-
-        guard let openerTab = browserManager.currentTabForActiveWindow()
-            ?? browserManager.tabManager.currentTab
-        else {
-            return nil
-        }
-
-        if let requestURL,
-           Self.isExtensionExternalWebPopupURL(requestURL)
-        {
-            let profileId =
-                resolvedProfileId(for: openerTab)
-                ?? currentProfileId
-                ?? browserManager.currentProfile?.id
-            let controller =
-                popupWebView.configuration.webExtensionController
-                ?? configuration.webExtensionController
-                ?? profileId.map { ensureExtensionController(for: $0) }
-            guard let controller else { return nil }
-
-            do {
-                _ = try openExtensionRequestedTab(
-                    url: requestURL,
-                    shouldBeActive: true,
-                    shouldBePinned: false,
-                    requestedWindow: nil,
-                    controller: controller,
-                    extensionContext: resolvedOwnerExtensionID.flatMap {
-                        getExtensionContext(for: $0, profileId: profileId)
-                    },
-                    reason: "ExtensionManager.createNormalTabFromActionPopupExternalURL"
-                )
-                return nil
-            } catch {
-                RuntimeDiagnostics.debug(category: "SafariExtensionPermissions") {
-                    "Failed to open extension external URL in normal tab: \(error.localizedDescription)"
-                }
-                return nil
-            }
-        }
-
-        return browserManager.auxiliaryWindowManager.presentExtensionExternalWebPopup(
-            configuration: configuration,
-            request: navigationAction.request,
+        ExtensionActionPopupPresentationOwner.createAuxiliaryWebViewFromActionPopup(
+            popupWebView,
+            with: configuration,
+            for: navigationAction,
             windowFeatures: windowFeatures,
-            openerTab: openerTab,
-            shouldActivateApp: true,
-            extensionOwnedSourceURL: sourceURL,
-            ownerExtensionID: resolvedOwnerExtensionID
+            manager: self
         )
     }
 
@@ -817,11 +642,11 @@ extension ExtensionManager: NSPopoverDelegate {
     }
 
     func closeOptionsWindow(for extensionId: String) {
-        cleanupOptionsWindow(for: extensionId, shouldOrderOut: true)
+        ExtensionOptionsWindowPresenter.closeWindow(for: extensionId, manager: self)
     }
 
     func closeAllOptionsWindows() {
-        Array(optionsWindows.keys).forEach { closeOptionsWindow(for: $0) }
+        ExtensionOptionsWindowPresenter.closeAllWindows(manager: self)
     }
 
     func cleanupOptionsWindow(
@@ -830,33 +655,13 @@ extension ExtensionManager: NSPopoverDelegate {
         webView: WKWebView? = nil,
         shouldOrderOut: Bool
     ) {
-        guard let resolvedWindow = window ?? optionsWindows[extensionId] else {
-            optionsWindowDelegates.removeValue(forKey: extensionId)
-            return
-        }
-
-        let delegate = optionsWindowDelegates[extensionId]
-        delegate?.isCleaningUp = true
-
-        let resolvedWebView = webView ?? resolvedWindow.contentView.flatMap {
-            Self.firstWebView(in: $0)
-        }
-        if let resolvedWebView {
-            SumiAuxiliaryWebViewShutdown.perform(
-                on: resolvedWebView,
-                browserManager: browserManager,
-                reason: "Extension options window cleanup"
-            )
-        }
-
-        if shouldOrderOut {
-            resolvedWindow.orderOut(nil)
-        }
-        resolvedWindow.contentViewController = nil
-        resolvedWindow.contentView = nil
-        resolvedWindow.delegate = nil
-        optionsWindows.removeValue(forKey: extensionId)
-        optionsWindowDelegates.removeValue(forKey: extensionId)
+        ExtensionOptionsWindowPresenter.cleanupWindow(
+            for: extensionId,
+            manager: self,
+            window: window,
+            webView: webView,
+            shouldOrderOut: shouldOrderOut
+        )
     }
 
     func prepareWebViewForExtensionRuntime(
@@ -1083,152 +888,18 @@ extension ExtensionManager: NSPopoverDelegate {
     }
 
     private nonisolated static func isExtensionExternalWebPopupURL(_ url: URL?) -> Bool {
-        guard let url,
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              ExtensionUtils.isExtensionOwnedURL(url) == false
-        else {
-            return false
-        }
-
-        return true
+        ExtensionActionPopupPresentationOwner.isExtensionExternalWebPopupURL(url)
     }
 
     func presentOptionsPageWindow(
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        let displayName =
-            extensionContext.webExtension.displayName ?? "Extension"
-        guard let extensionId = extensionID(for: extensionContext),
-              let installedExtension = installedExtensions.first(where: { $0.id == extensionId })
-        else {
-            completionHandler(ExtensionUtils.optionsPageNotFoundError())
-            return
-        }
-
-        let extensionRoot = URL(
-            fileURLWithPath: installedExtension.packagePath,
-            isDirectory: true
-        ).resolvingSymlinksInPath().standardizedFileURL
-        let manifest = loadedExtensionManifests[extensionId] ?? installedExtension.manifest
-
-        let sdkURL = extensionContext.optionsPageURL
-        let manifestURL = computeOptionsPageURL(for: extensionContext)
-        let sdkResolvedURL = (try? ExtensionUtils.resolvedOptionsPageURL(
-            sdkURL: sdkURL,
-            persistedPath: nil,
-            manifest: manifest,
-            extensionRoot: extensionRoot
-        ))
-        let diskResolvedURL = try? ExtensionUtils.resolvedOptionsPageURL(
-            sdkURL: nil,
-            persistedPath: installedExtension.optionsPagePath,
-            manifest: manifest,
-            extensionRoot: extensionRoot
-        )
-        let optionsURL: URL?
-        if let sdkResolvedURL {
-            optionsURL = sdkResolvedURL
-        } else if let manifestURL {
-            optionsURL = manifestURL
-        } else if let diskResolvedURL {
-            optionsURL = diskResolvedURL
-        } else {
-            optionsURL = nil
-        }
-
-        guard let optionsURL else {
-            completionHandler(ExtensionUtils.optionsPageNotFoundError())
-            return
-        }
-
-        let optionsProfileId =
-            profileId(for: extensionContext)
-            ?? currentProfileId
-            ?? browserManager?.currentProfile?.id
-        let configuration: WKWebViewConfiguration
-        if let contextConfiguration = extensionContext.webViewConfiguration {
-            configuration = contextConfiguration
-        } else {
-            let baseConfiguration = browserConfiguration.webViewConfiguration
-            configuration = browserConfiguration.auxiliaryWebViewConfiguration(
-                from: baseConfiguration,
-                for: browserManager?.currentProfile,
-                surface: .extensionOptions,
-                additionalUserScripts: baseConfiguration.userContentController.userScripts
-            )
-        }
-        configuration.sumiIsNormalTabWebViewConfiguration = false
-        prepareWebViewConfigurationForExtensionRuntime(
-            configuration,
-            profileId: optionsProfileId,
-            reason: "ExtensionManager.openOptionsPage.configuration"
-        )
-
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
-            webView.isInspectable = true
-        }
-        webView.allowsBackForwardNavigationGestures = true
-        prepareWebViewForExtensionRuntime(
-            webView,
-            currentURL: optionsURL,
-            reason: "ExtensionManager.openOptionsPage"
-        )
-
-        if optionsURL.isFileURL {
-            do {
-                let validatedOptionsURL = try ExtensionUtils.validatedExtensionPageURL(
-                    optionsURL,
-                    within: extensionRoot
-                )
-                webView.loadFileURL(
-                    validatedOptionsURL,
-                    allowingReadAccessTo: extensionRoot
-                )
-            } catch {
-                completionHandler(error)
-                return
-            }
-        } else {
-            webView.load(URLRequest(url: optionsURL))
-        }
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "\(displayName) – Options"
-
-        let container = NSView(frame: window.contentView?.bounds ?? .zero)
-        container.translatesAutoresizingMaskIntoConstraints = false
-        webView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(webView)
-        NSLayoutConstraint.activate([
-            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: container.topAnchor),
-            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        window.contentView = container
-        window.center()
-
-        closeOptionsWindow(for: extensionId)
-        let delegate = ExtensionOptionsWindowDelegate(
-            extensionId: extensionId,
+        ExtensionOptionsWindowPresenter.presentOptionsPageWindow(
+            for: extensionContext,
             manager: self,
-            webView: webView
+            completionHandler: completionHandler
         )
-        webView.uiDelegate = delegate
-        window.delegate = delegate
-        optionsWindows[extensionId] = window
-        optionsWindowDelegates[extensionId] = delegate
-        window.orderFront(nil)
-
-        completionHandler(nil)
     }
 
     func restoreInlineUIHostingFocusIfNeeded() {
@@ -1485,19 +1156,6 @@ extension ExtensionManager: NSPopoverDelegate {
         } else {
             anchorObserverTokens[extensionId] = tokens
         }
-    }
-
-    private static func firstWebView(in root: NSView) -> WKWebView? {
-        if let webView = root as? WKWebView {
-            return webView
-        }
-
-        for subview in root.subviews {
-            if let webView = firstWebView(in: subview) {
-                return webView
-            }
-        }
-        return nil
     }
 
     private func showErrorAlert(_ error: ExtensionError) {

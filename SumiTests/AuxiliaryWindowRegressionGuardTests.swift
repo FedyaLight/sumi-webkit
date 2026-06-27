@@ -233,6 +233,7 @@ final class AuxiliaryWindowRegressionGuardTests: XCTestCase {
             "Sumi/Models/Tab/Navigation/SumiPopupHandlingNavigationResponder.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentationOwner.swift",
             "Sumi/Managers/ExtensionManager/ExtensionRequestedTabLifecycleOwner.swift",
             "Sumi/Managers/BrowserManager/BrowserManager.swift",
             "Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift",
@@ -249,10 +250,14 @@ final class AuxiliaryWindowRegressionGuardTests: XCTestCase {
             at: sumiRoot,
             includingPropertiesForKeys: nil
         )
+        let repoRootPath = repoRoot.standardizedFileURL.path
 
         while let next = enumerator?.nextObject() as? URL {
             guard next.pathExtension == "swift" else { continue }
-            let relative = next.path.replacingOccurrences(of: repoRoot.path + "/", with: "")
+            let relative = next.standardizedFileURL.path.replacingOccurrences(
+                of: repoRootPath + "/",
+                with: ""
+            )
             let fileSource = try String(contentsOf: next, encoding: .utf8)
             guard fileSource.contains("auxiliaryWindowManager")
                 || fileSource.contains("ExtensionMiniWindowAdapter")

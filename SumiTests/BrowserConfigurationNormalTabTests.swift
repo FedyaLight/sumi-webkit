@@ -628,7 +628,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
 
         for relativePath in [
-            "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
         ] {
             let source = try Self.source(named: relativePath)
             XCTAssertTrue(source.contains("auxiliaryWebViewConfiguration"), relativePath)

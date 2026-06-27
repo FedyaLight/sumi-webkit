@@ -24,6 +24,9 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
         "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionInstallCapabilityOwner.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentationOwner.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionActionSurfaceStatePresenter.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -403,6 +406,9 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/ExtensionManager+ProfileRuntime.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentationOwner.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionActionSurfaceStatePresenter.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicy.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionInstallCapabilityOwner.swift",
@@ -579,8 +585,8 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let routingSource = try source(
             named: "Sumi/Services/BrowserWebViewRoutingService.swift"
         )
-        let uiSource = try source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
+        let optionsPresenterSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift"
         )
         let browserManagerSource = try source(
             named: "Sumi/Managers/BrowserManager/BrowserManager.swift"
@@ -630,8 +636,8 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Pre-load runtime context preparation must not consume or mutate WebKit's extension page configuration"
         )
         XCTAssertTrue(
-            uiSource.contains("sdkResolvedURL")
-                && uiSource.contains("extensionContext.webViewConfiguration"),
+            optionsPresenterSource.contains("sdkResolvedURL")
+                && optionsPresenterSource.contains("extensionContext.webViewConfiguration"),
             "Options pages should prefer WebKit/context URLs and context-bound WebView configuration"
         )
     }
