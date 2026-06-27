@@ -51,6 +51,22 @@ final class GlanceWebsiteTimingCleanupTests: XCTestCase {
         )
     }
 
+    func testGlanceOverlayControllerDelegatesLayoutAndActionChromeToDedicatedOwners() throws {
+        let controllerSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayController.swift")
+        let layoutSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayLayout.swift")
+        let actionChromeSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayActionChrome.swift")
+        let rootViewSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayRootView.swift")
+
+        XCTAssertTrue(controllerSource.contains("private let overlayLayout = GlanceOverlayLayout()"))
+        XCTAssertTrue(controllerSource.contains("private lazy var actionChrome = GlanceOverlayActionChrome"))
+        XCTAssertTrue(layoutSource.contains("struct GlanceOverlayLayout"))
+        XCTAssertTrue(actionChromeSource.contains("final class GlanceOverlayActionChrome"))
+        XCTAssertTrue(rootViewSource.contains("enum GlanceOverlayCursorRegionLayout"))
+        XCTAssertFalse(controllerSource.contains("private enum Metrics"))
+        XCTAssertFalse(controllerSource.contains("private func targetContentFrame("))
+        XCTAssertFalse(controllerSource.contains("private func handleActionButtonHit"))
+    }
+
     func testSplitPreviewFadeOutCleanupIsCancellableAndGenerationGuarded() throws {
         let source = try Self.source(named: "Sumi/Components/WebsiteView/WebsiteView.swift")
         let overlaySource = try Self.slice(

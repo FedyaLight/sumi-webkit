@@ -68,13 +68,14 @@ final class ExtensionActionVisibilityTests: XCTestCase {
     func testSidebarHeaderHostsGridSurfaceBelowURLBar() throws {
         let header = try Self.source(named: "Navigation/Sidebar/SidebarHeader.swift")
         let spacesSidebar = try Self.source(named: "Navigation/Sidebar/SpacesSideBarView.swift")
+        let snapshotViews = try Self.source(named: "Navigation/Sidebar/SpaceSidebarSnapshotViews.swift")
 
         XCTAssertTrue(header.contains("sidebarURLBar"))
         XCTAssertFalse(header.contains("sidebarExtensionGrid"))
         XCTAssertTrue(spacesSidebar.contains("makeSidebarExtensionGrid"))
         XCTAssertTrue(spacesSidebar.contains("layout: .sidebarGrid"))
         XCTAssertTrue(spacesSidebar.contains("ExtensionActionPlacement.resolve"))
-        XCTAssertTrue(spacesSidebar.contains("ExtensionActionSnapshotGrid"))
+        XCTAssertTrue(snapshotViews.contains("ExtensionActionSnapshotGrid"))
     }
 
     func testURLBarHostsOnlyCompactExtensionActions() throws {

@@ -478,7 +478,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         let rowSurfaceSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SidebarRowLayout.swift")
         let regularTabSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpaceTab.swift")
         let shortcutRowSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift")
-        let snapshotRowsSource = try Self.source(named: "Navigation/Sidebar/SpacesSideBarView.swift")
+        let snapshotRowsSource = try Self.source(named: "Navigation/Sidebar/SpaceSidebarSnapshotViews.swift")
         let splitGroupSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SplitGroupSidebarRow.swift")
 
         XCTAssertTrue(rowSurfaceSource.contains("tokens.sidebarSelectionShadow"))
@@ -492,7 +492,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         let faviconSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SidebarTabFaviconView.swift")
         let indicatorStart = try XCTUnwrap(faviconSource.range(of: "struct SidebarUnloadedRegularTabFaviconIndicator"))
         let indicatorSource = String(faviconSource[indicatorStart.lowerBound...])
-        let snapshotRowsSource = try Self.source(named: "Navigation/Sidebar/SpacesSideBarView.swift")
+        let snapshotRowsSource = try Self.source(named: "Navigation/Sidebar/SpaceSidebarSnapshotViews.swift")
 
         XCTAssertFalse(indicatorSource.contains("HStack("))
         XCTAssertFalse(indicatorSource.contains(".fixedSize()"))
@@ -552,7 +552,10 @@ final class SidebarDDGHoverTests: XCTestCase {
         let pinnedTileSource = try Self.source(named: "Sumi/Components/Sidebar/PinnedButtons/PinnedTabView.swift")
         let shortcutPinSource = try Self.source(named: "Sumi/Models/Tab/ShortcutPin.swift")
         let shortcutRowSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift")
-        let transitionSnapshotSource = try Self.source(named: "Navigation/Sidebar/SpacesSideBarView.swift")
+        let transitionSnapshotSource = try [
+            Self.source(named: "Navigation/Sidebar/SpaceSidebarSnapshots.swift"),
+            Self.source(named: "Navigation/Sidebar/SpaceSidebarSnapshotViews.swift")
+        ].joined(separator: "\n")
         let transitionPinnedTileSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSnapshotPinnedTileView.swift")
 
         XCTAssertFalse(pinnedGridSource.contains("EssentialSplitBadge"))

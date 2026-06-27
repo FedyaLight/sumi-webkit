@@ -563,45 +563,71 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let source = try String(
+        let coordinatorSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
                 "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
             ),
             encoding: .utf8
         )
+        let ownerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCreationPlanningOwner.swift"
+            ),
+            encoding: .utf8
+        )
         let creationSlice = try sourceSlice(
-            source,
+            coordinatorSource,
             from: "func getOrCreateWebView",
-            to: "private func primaryWindowIdForClone"
+            to: "/// Creates the \"primary\" WebView"
         )
 
-        XCTAssertTrue(creationSlice.contains("normalTabWebViewCreationPlan"))
+        XCTAssertTrue(creationSlice.contains("webViewCreationPlanningOwner.creationPlan("))
         XCTAssertTrue(creationSlice.contains(".deferForInitialDocumentWarmup"))
-        XCTAssertTrue(creationSlice.contains("startInitialDocumentWarmupIfNeeded"))
-        XCTAssertTrue(creationSlice.contains("primaryWindowIdForClone"))
+        XCTAssertTrue(creationSlice.contains("webViewCreationPlanningOwner.startInitialDocumentWarmupIfNeeded"))
+        XCTAssertFalse(creationSlice.contains("InitialDocumentWarmupGate"))
+        XCTAssertFalse(creationSlice.contains("primaryWindowIdForClone"))
         XCTAssertFalse(creationSlice.contains("otherWindows.first"))
         XCTAssertFalse(creationSlice.contains("first!.key"))
 
         let policySlice = try sourceSlice(
-            source,
-            from: "private func primaryWindowIdForClone",
-            to: "private func startInitialDocumentWarmupIfNeeded"
+            ownerSource,
+            from: "static func primaryWindowIdForClone",
+            to: "private func adoptableExistingPrimaryWebView"
         )
 
-        XCTAssertTrue(policySlice.contains("tab.primaryWindowId"))
-        XCTAssertTrue(policySlice.contains("otherWindows[primaryWindowId] != nil"))
-        XCTAssertTrue(policySlice.contains("otherWindows.keys.min"))
+        XCTAssertTrue(policySlice.contains("preferredPrimaryWindowId"))
+        XCTAssertTrue(policySlice.contains("candidates.contains(preferredPrimaryWindowId)"))
+        XCTAssertTrue(policySlice.contains("candidates.min"))
         XCTAssertTrue(policySlice.contains("uuidString <"))
 
         let warmupGateSlice = try sourceSlice(
-            source,
-            from: "private enum InitialDocumentWarmupDeferral",
-            to: "private enum NormalTabWebViewCreationPlan"
+            ownerSource,
+            from: "private struct InitialDocumentWarmupGate",
+            to: "enum NormalTabWebViewCreationPlan"
         )
         XCTAssertTrue(warmupGateSlice.contains("private var inFlightProfileIds"))
         XCTAssertTrue(warmupGateSlice.contains("private var attemptedProfileIds"))
         XCTAssertTrue(warmupGateSlice.contains("needsInitialDocumentExtensionContextLoadIfNeeded"))
-        XCTAssertTrue(warmupGateSlice.contains("case waitForInFlight"))
+        XCTAssertTrue(ownerSource.contains("case waitForInFlight"))
+
+        let preferred = UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")!
+        let stableFallback = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let laterFallback = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+
+        XCTAssertEqual(
+            WebViewCreationPlanningOwner.primaryWindowIdForClone(
+                preferredPrimaryWindowId: preferred,
+                otherWindowIds: [stableFallback, preferred]
+            ),
+            preferred
+        )
+        XCTAssertEqual(
+            WebViewCreationPlanningOwner.primaryWindowIdForClone(
+                preferredPrimaryWindowId: nil,
+                otherWindowIds: [laterFallback, stableFallback]
+            ),
+            stableFallback
+        )
     }
 
     func testClosingAndSpaceSwitchPathsPerformVisualHandoffBeforeRuntimeCleanup() throws {
@@ -1021,6 +1047,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let commandSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/DeferredWebViewCommand.swift"
+            ),
+            encoding: .utf8
+        )
 
         let storeSource = try sourceSlice(
             ownerSource,
@@ -1028,6 +1060,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             to: "@MainActor\nfinal class WebViewProtectedCommandOwner"
         )
         XCTAssertTrue(storeSource.contains("private var buffersBySourceWebViewID"))
+        XCTAssertTrue(commandSource.contains("struct DeferredProtectedCommandBuffer"))
+        XCTAssertTrue(commandSource.contains("enum DeferredWebViewCommand"))
         XCTAssertFalse(storeSource.contains("activeHistorySwipeProtections"))
         XCTAssertFalse(storeSource.contains("visualHandoffProtectedWebViewIDs"))
         XCTAssertFalse(storeSource.contains("fullscreenProtection"))
@@ -1045,6 +1079,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(coordinatorClassSource.contains("private var visualHandoffProtectedWebViewIDs"))
         XCTAssertFalse(coordinatorClassSource.contains("private let fullscreenProtection"))
         XCTAssertFalse(coordinatorClassSource.contains("private var deferredProtectedWebViewCommands"))
+        XCTAssertFalse(coordinatorClassSource.contains("struct DeferredProtectedCommandBuffer"))
 
         let enqueueSource = try sourceSlice(
             coordinatorSource,

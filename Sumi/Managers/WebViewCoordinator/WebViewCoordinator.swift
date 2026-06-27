@@ -38,89 +38,6 @@ enum WebViewSyncLoadPolicy {
     }
 }
 
-enum VisibleTabPreparationPlan {
-    static func visibleTabIDs(
-        currentTabId: UUID?,
-        splitTabIds: [UUID]
-    ) -> [UUID] {
-        guard let currentTabId else { return [] }
-
-        guard splitTabIds.contains(currentTabId) else {
-            return [currentTabId]
-        }
-
-        var seenIDs = Set<UUID>()
-        var orderedIDs: [UUID] = []
-        for tabId in splitTabIds {
-            guard seenIDs.insert(tabId).inserted else { continue }
-            orderedIDs.append(tabId)
-        }
-        return orderedIDs.isEmpty ? [currentTabId] : orderedIDs
-    }
-}
-
-private enum InitialDocumentWarmupDeferral {
-    case waitForInFlight
-    case start(profileId: UUID, browserManager: BrowserManager, windowId: UUID)
-}
-
-@MainActor
-private struct InitialDocumentWarmupGate {
-    private var inFlightProfileIds: Set<UUID> = []
-    private var attemptedProfileIds: Set<UUID> = []
-
-    mutating func deferralIfNeeded(
-        for tab: Tab,
-        in windowId: UUID,
-        browserManager coordinatorBrowserManager: BrowserManager?
-    ) -> InitialDocumentWarmupDeferral? {
-        guard tab.isEphemeral == false,
-              Self.isWarmupURL(tab.url),
-              let profileId = tab.resolveProfile()?.id ?? tab.profileId,
-              let browserManager = tab.browserManager ?? coordinatorBrowserManager
-        else {
-            return nil
-        }
-
-        if inFlightProfileIds.contains(profileId) {
-            return .waitForInFlight
-        }
-
-        guard attemptedProfileIds.contains(profileId) == false,
-              browserManager.extensionsModule
-                .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
-        else {
-            return nil
-        }
-
-        attemptedProfileIds.insert(profileId)
-        inFlightProfileIds.insert(profileId)
-        return .start(
-            profileId: profileId,
-            browserManager: browserManager,
-            windowId: windowId
-        )
-    }
-
-    mutating func finish(profileId: UUID) {
-        inFlightProfileIds.remove(profileId)
-    }
-
-    private static func isWarmupURL(_ url: URL) -> Bool {
-        let scheme = url.scheme?.lowercased()
-        return scheme == "http" || scheme == "https"
-    }
-}
-
-private enum NormalTabWebViewCreationPlan {
-    case useExisting(WKWebView)
-    case adoptExistingPrimary(WKWebView)
-    case deferForInitialDocumentWarmup(InitialDocumentWarmupDeferral)
-    case createPrimary
-    case createClone(primaryWindowId: UUID)
-}
-
-
 enum CompositorPaneDestination: String, CaseIterable {
     case single
     case left
@@ -128,128 +45,6 @@ enum CompositorPaneDestination: String, CaseIterable {
 
     var viewIdentifier: NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("SumiCompositorPane.\(rawValue)")
-    }
-
-}
-
-enum DeferredWebViewCommandKey: Hashable {
-    case removeWebViewFromContainers(ObjectIdentifier)
-    case removeAllWebViews(UUID)
-    case removeTrackedWebView(ObjectIdentifier, UUID, UUID)
-    case closeWebViewFromWebKit(ObjectIdentifier)
-    case cleanupWindow(UUID)
-    case cleanupAllWebViews
-    case rebuildLiveWebViews(UUID)
-    case evictHiddenWebViews(UUID)
-    case cleanupTabWebView(ObjectIdentifier)
-    case performFallbackWebViewCleanup(ObjectIdentifier)
-}
-
-enum DeferredWebViewCommand {
-    case removeWebViewFromContainers(webViewID: ObjectIdentifier)
-    case removeAllWebViews(tabID: UUID)
-    case removeTrackedWebView(webViewID: ObjectIdentifier, tabID: UUID, windowID: UUID)
-    case closeWebViewFromWebKit(webViewID: ObjectIdentifier)
-    case cleanupWindow(windowID: UUID)
-    case cleanupAllWebViews
-    case rebuildLiveWebViews(tabID: UUID, preferredPrimaryWindowID: UUID?)
-    case evictHiddenWebViews(windowID: UUID)
-    case cleanupTabWebView(webViewID: ObjectIdentifier, tabID: UUID)
-    case performFallbackWebViewCleanup(webViewID: ObjectIdentifier, tabID: UUID)
-
-    var key: DeferredWebViewCommandKey {
-        switch self {
-        case .removeWebViewFromContainers(let webViewID):
-            return .removeWebViewFromContainers(webViewID)
-        case .removeAllWebViews(let tabID):
-            return .removeAllWebViews(tabID)
-        case .removeTrackedWebView(let webViewID, let tabID, let windowID):
-            return .removeTrackedWebView(webViewID, tabID, windowID)
-        case .closeWebViewFromWebKit(let webViewID):
-            return .closeWebViewFromWebKit(webViewID)
-        case .cleanupWindow(let windowID):
-            return .cleanupWindow(windowID)
-        case .cleanupAllWebViews:
-            return .cleanupAllWebViews
-        case .rebuildLiveWebViews(let tabID, _):
-            return .rebuildLiveWebViews(tabID)
-        case .evictHiddenWebViews(let windowID):
-            return .evictHiddenWebViews(windowID)
-        case .cleanupTabWebView(let webViewID, _):
-            return .cleanupTabWebView(webViewID)
-        case .performFallbackWebViewCleanup(let webViewID, _):
-            return .performFallbackWebViewCleanup(webViewID)
-        }
-    }
-
-    var debugSummary: String {
-        switch self {
-        case .removeWebViewFromContainers(let webViewID):
-            return "removeWebViewFromContainers webView=\(webViewID)"
-        case .removeAllWebViews(let tabID):
-            return "removeAllWebViews tab=\(tabID.uuidString.prefix(8))"
-        case .removeTrackedWebView(let webViewID, let tabID, let windowID):
-            return "removeTrackedWebView tab=\(tabID.uuidString.prefix(8)) window=\(windowID.uuidString.prefix(8)) webView=\(webViewID)"
-        case .closeWebViewFromWebKit(let webViewID):
-            return "closeWebViewFromWebKit webView=\(webViewID)"
-        case .cleanupWindow(let windowID):
-            return "cleanupWindow window=\(windowID.uuidString.prefix(8))"
-        case .cleanupAllWebViews:
-            return "cleanupAllWebViews"
-        case .rebuildLiveWebViews(let tabID, let preferredPrimaryWindowID):
-            return "rebuildLiveWebViews tab=\(tabID.uuidString.prefix(8)) preferredWindow=\(preferredPrimaryWindowID?.uuidString.prefix(8) ?? "nil")"
-        case .evictHiddenWebViews(let windowID):
-            return "evictHiddenWebViews window=\(windowID.uuidString.prefix(8))"
-        case .cleanupTabWebView(let webViewID, let tabID):
-            return "cleanupTabWebView tab=\(tabID.uuidString.prefix(8)) webView=\(webViewID)"
-        case .performFallbackWebViewCleanup(let webViewID, let tabID):
-            return "performFallbackWebViewCleanup tab=\(tabID.uuidString.prefix(8)) webView=\(webViewID)"
-        }
-    }
-}
-
-enum DeferredProtectedCommandEnqueueOutcome {
-    case enqueued
-    case collapsed
-    case droppedAtCapacity
-}
-
-struct DeferredProtectedCommandBuffer {
-    static let maxCommands = 8
-
-    private(set) var commands: [DeferredWebViewCommand] = []
-
-    var count: Int { commands.count }
-    var isEmpty: Bool { commands.isEmpty }
-
-    mutating func enqueue(_ command: DeferredWebViewCommand) -> DeferredProtectedCommandEnqueueOutcome {
-        if let index = commands.firstIndex(where: { $0.key == command.key }) {
-            commands[index] = command
-            return .collapsed
-        }
-        guard commands.count < Self.maxCommands else {
-            return .droppedAtCapacity
-        }
-        commands.append(command)
-        return .enqueued
-    }
-
-    mutating func prune(
-        where shouldDrop: (DeferredWebViewCommand) -> Bool
-    ) -> [DeferredWebViewCommand] {
-        var dropped: [DeferredWebViewCommand] = []
-        commands.removeAll { command in
-            guard shouldDrop(command) else { return false }
-            dropped.append(command)
-            return true
-        }
-        return dropped
-    }
-
-    mutating func drain() -> [DeferredWebViewCommand] {
-        let drained = commands
-        commands.removeAll(keepingCapacity: true)
-        return drained
     }
 
 }
@@ -272,7 +67,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private var scheduledPrepareWindowIds: Set<UUID> = []
 
     @ObservationIgnored
-    private var initialDocumentWarmupGate = InitialDocumentWarmupGate()
+    private let webViewCreationPlanningOwner = WebViewCreationPlanningOwner()
 
     @ObservationIgnored
     weak var browserManager: BrowserManager?
@@ -835,14 +630,20 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     /// - If another window is already displaying this tab, creates a "clone" WebView
     /// - Returns existing WebView if this window already has one
     func getOrCreateWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
-        switch normalTabWebViewCreationPlan(for: tab, in: windowId) {
+        switch webViewCreationPlanningOwner.creationPlan(
+            for: tab,
+            in: windowId,
+            browserManager: browserManager,
+            existingWebView: getWebView(for: tab.id, in: windowId),
+            windowWebViews: webViewRegistry.windowWebViews(for: tab.id)
+        ) {
         case .useExisting(let existing):
             return existing
         case .adoptExistingPrimary(let adoptedWebView):
             adoptExistingPrimaryWebView(adoptedWebView, for: tab, in: windowId)
             return adoptedWebView
         case .deferForInitialDocumentWarmup(let deferral):
-            startInitialDocumentWarmupIfNeeded(deferral)
+            webViewCreationPlanningOwner.startInitialDocumentWarmupIfNeeded(deferral)
             return nil
         case .createPrimary:
             return createPrimaryWebView(for: tab, in: windowId)
@@ -855,77 +656,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
     }
 
-    private func normalTabWebViewCreationPlan(
-        for tab: Tab,
-        in windowId: UUID
-    ) -> NormalTabWebViewCreationPlan {
-        let tabId = tab.id
-
-        if let existing = getWebView(for: tabId, in: windowId) {
-            return .useExisting(existing)
-        }
-
-        if let adoptableWebView = adoptableExistingPrimaryWebView(for: tab, in: windowId) {
-            return .adoptExistingPrimary(adoptableWebView)
-        }
-
-        if let deferral = initialDocumentWarmupGate.deferralIfNeeded(
-            for: tab,
-            in: windowId,
-            browserManager: browserManager
-        ) {
-            return .deferForInitialDocumentWarmup(deferral)
-        }
-
-        let allWindowsForTab = webViewRegistry.windowWebViews(for: tabId)
-        let otherWindows = allWindowsForTab.filter { $0.key != windowId }
-
-        if otherWindows.isEmpty {
-            return .createPrimary
-        }
-
-        return .createClone(
-            primaryWindowId: primaryWindowIdForClone(
-                of: tab,
-                otherWindows: otherWindows
-            )
-        )
-    }
-
-    private func primaryWindowIdForClone(
-        of tab: Tab,
-        otherWindows: [UUID: WKWebView]
-    ) -> UUID {
-        if let primaryWindowId = tab.primaryWindowId,
-           otherWindows[primaryWindowId] != nil
-        {
-            return primaryWindowId
-        }
-
-        return otherWindows.keys.min { $0.uuidString < $1.uuidString }!
-    }
-
-    private func startInitialDocumentWarmupIfNeeded(
-        _ deferral: InitialDocumentWarmupDeferral
-    ) {
-        guard case let .start(profileId, browserManager, windowId) = deferral else {
-            return
-        }
-        Task { @MainActor [weak self, weak browserManager] in
-            await browserManager?.extensionsModule
-                .ensureInitialDocumentExtensionContextsLoadedIfNeeded(
-                    profileId: profileId
-                )
-            guard let self else { return }
-            self.initialDocumentWarmupGate.finish(profileId: profileId)
-
-            guard let browserManager,
-                  let windowState = browserManager.windowRegistry?.windows[windowId]
-            else { return }
-            browserManager.refreshCompositor(for: windowState)
-        }
-    }
-    
     /// Creates the "primary" WebView - the first WebView for a tab
     /// This WebView is owned by the tab and is the "source of truth"
     private func createPrimaryWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
@@ -1142,16 +872,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     // MARK: - WebView Creation & Cross-Window Sync
-
-    private func adoptableExistingPrimaryWebView(
-        for tab: Tab,
-        in windowId: UUID
-    ) -> WKWebView? {
-        guard let existingWebView = tab.existingWebView else { return nil }
-        guard getAllWebViews(for: tab.id).isEmpty else { return nil }
-        guard tab.primaryWindowId == nil || tab.primaryWindowId == windowId else { return nil }
-        return existingWebView
-    }
 
     private func adoptExistingPrimaryWebView(
         _ webView: WKWebView,
