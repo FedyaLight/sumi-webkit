@@ -264,6 +264,24 @@ class BrowserManager: ObservableObject {
     lazy var tabCloseFallbackPlanner = BrowserTabCloseFallbackPlanner(
         selectionService: shellSelectionService
     )
+    lazy var tabOpeningOwner = BrowserTabOpeningOwner(
+        dependencies: BrowserTabOpeningOwner.Dependencies(
+            tabManager: { [unowned self] in self.tabManager },
+            browserManager: { [weak self] in self },
+            settings: { [weak self] in self?.sumiSettings },
+            activeWindow: { [weak self] in self?.windowRegistry?.activeWindow },
+            windowStateContainingTab: { [weak self] tab in self?.windowState(containing: tab) },
+            canMaterializeBackgroundTab: { [weak self] tab in
+                self?.canMaterializeNormalTabWebViewDuringStartup(tab) ?? true
+            },
+            deferBackgroundTabUntilStartupReady: { [weak self] tab in
+                self?.deferredStartupBackgroundTabIds.insert(tab.id)
+            },
+            selectTab: { [weak self] tab, windowState, loadPolicy in
+                self?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
+            }
+        )
+    )
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
             self?.tabManager.tab(for: tabId)
@@ -553,7 +571,7 @@ class BrowserManager: ObservableObject {
         deferredStartupBackgroundTabIds.removeAll()
         for tabId in deferredBackgroundTabs {
             guard let tab = tabManager.tab(for: tabId) else { continue }
-            prepareBackgroundTabIfNeeded(tab, in: nil)
+            tabOpeningOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
         }
 
         for windowState in windowRegistry?.allWindows ?? [] {
@@ -1005,65 +1023,17 @@ class BrowserManager: ObservableObject {
         case deferred
     }
 
-    enum TabOpenActivationPolicy {
-        case foreground(windowState: BrowserWindowState, loadPolicy: TabSelectionLoadPolicy)
-        case background
-    }
-
-    struct TabOpenContext {
-        let windowState: BrowserWindowState?
-        let sourceTab: Tab?
-        let preferredSpaceId: UUID?
-        let regularInsertionIndex: Int?
-        let activationPolicy: TabOpenActivationPolicy
-
-        static func foreground(
-            windowState: BrowserWindowState,
-            sourceTab: Tab? = nil,
-            preferredSpaceId: UUID? = nil,
-            regularInsertionIndex: Int? = nil,
-            loadPolicy: TabSelectionLoadPolicy = .deferred
-        ) -> TabOpenContext {
-            TabOpenContext(
-                windowState: windowState,
-                sourceTab: sourceTab,
-                preferredSpaceId: preferredSpaceId,
-                regularInsertionIndex: regularInsertionIndex,
-                activationPolicy: .foreground(windowState: windowState, loadPolicy: loadPolicy)
-            )
-        }
-
-        static func background(
-            windowState: BrowserWindowState? = nil,
-            sourceTab: Tab? = nil,
-            preferredSpaceId: UUID? = nil,
-            regularInsertionIndex: Int? = nil
-        ) -> TabOpenContext {
-            TabOpenContext(
-                windowState: windowState,
-                sourceTab: sourceTab,
-                preferredSpaceId: preferredSpaceId,
-                regularInsertionIndex: regularInsertionIndex,
-                activationPolicy: .background
-            )
-        }
-    }
+    typealias TabOpenActivationPolicy = BrowserTabOpenActivationPolicy
+    typealias TabOpenContext = BrowserTabOpenContext
 
     // MARK: - Tab Management (delegates to TabManager)
     func createNewTab() {
-        if let activeWindow = windowRegistry?.activeWindow {
-            _ = openNewTab(context: .foreground(windowState: activeWindow))
-        } else {
-            _ = tabManager.createNewTab()
-        }
+        tabOpeningOwner.createNewTab()
     }
 
     /// Create a new tab and set it as active in the specified window
     func createNewTab(in windowState: BrowserWindowState, url: String = SumiSurface.emptyTabURL.absoluteString) {
-        _ = openNewTab(
-            url: url,
-            context: .foreground(windowState: windowState)
-        )
+        tabOpeningOwner.createNewTab(in: windowState, url: url)
     }
 
     @discardableResult
@@ -1071,28 +1041,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         url: String = SumiSurface.emptyTabURL.absoluteString
     ) -> Tab {
-        guard !windowState.isIncognito else {
-            return openNewTab(
-                url: url,
-                context: .foreground(windowState: windowState)
-            )
-        }
-
-        let targetSpace = resolvedTabOpenSpace(
-            for: .foreground(windowState: windowState)
-        )
-        let newTab = tabManager.createNewTab(
-            url: url,
-            in: targetSpace,
-            activate: false
-        )
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + SidebarDropMotion.contentLayoutDuration) { [weak self, weak newTab] in
-            guard let self, let newTab, self.tabManager.tab(for: newTab.id) != nil else { return }
-            self.selectTab(newTab, in: windowState, loadPolicy: .deferred)
-        }
-
-        return newTab
+        tabOpeningOwner.createNewTabAfterSidebarInsertion(in: windowState, url: url)
     }
 
     @discardableResult
@@ -1100,111 +1049,11 @@ class BrowserManager: ObservableObject {
         url: String = SumiSurface.emptyTabURL.absoluteString,
         context: TabOpenContext
     ) -> Tab {
-        let resolvedWindowState = resolvedWindowState(for: context)
-
-        if let resolvedWindowState,
-           resolvedWindowState.isIncognito,
-           let profile = resolvedWindowState.ephemeralProfile {
-            let template = sumiSettings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
-            let normalizedURL = normalizeURL(url, queryTemplate: template)
-            guard let resolvedUrl = URL(string: normalizedURL) else {
-                return tabManager.createEphemeralTab(
-                    url: SumiSurface.emptyTabURL,
-                    in: resolvedWindowState,
-                    profile: profile
-                )
-            }
-
-            let previousTabId = resolvedWindowState.currentTabId
-            let newTab = tabManager.createEphemeralTab(
-                url: resolvedUrl,
-                in: resolvedWindowState,
-                profile: profile
-            )
-
-            switch context.activationPolicy {
-            case .foreground(let windowState, let loadPolicy):
-                selectTab(newTab, in: windowState, loadPolicy: loadPolicy)
-            case .background:
-                resolvedWindowState.currentTabId = previousTabId
-                prepareBackgroundTabIfNeeded(
-                    newTab,
-                    in: resolvedWindowState
-                )
-            }
-
-            return newTab
-        }
-
-        let targetSpace = resolvedTabOpenSpace(for: context)
-        let shouldActivateInTabManager = false
-        let regularInsertionIndex = context.regularInsertionIndex
-            ?? tabManager.regularChildInsertionIndex(
-                openedFrom: context.sourceTab,
-                in: targetSpace
-            )
-        let newTab = tabManager.createNewTab(
-            url: url,
-            in: targetSpace,
-            activate: shouldActivateInTabManager,
-            regularInsertionIndex: regularInsertionIndex
-        )
-
-        switch context.activationPolicy {
-        case .foreground(let windowState, let loadPolicy):
-            selectTab(newTab, in: windowState, loadPolicy: loadPolicy)
-        case .background:
-            prepareBackgroundTabIfNeeded(
-                newTab,
-                in: resolvedWindowState
-            )
-        }
-
-        return newTab
-    }
-
-    private func prepareBackgroundTabIfNeeded(
-        _ tab: Tab,
-        in windowState: BrowserWindowState?
-    ) {
-        guard tab.requiresPrimaryWebView else { return }
-        guard canMaterializeNormalTabWebViewDuringStartup(tab) else {
-            deferredStartupBackgroundTabIds.insert(tab.id)
-            return
-        }
-        _ = windowState
-        tab.loadWebViewIfNeeded()
+        tabOpeningOwner.openNewTab(url: url, context: context)
     }
 
     func resolvedTabOpenSpace(for context: TabOpenContext) -> Space? {
-        let resolvedWindowState = resolvedWindowState(for: context)
-
-        if let preferredSpaceId = context.preferredSpaceId,
-           let preferredSpace = tabManager.spaces.first(where: { $0.id == preferredSpaceId }) {
-            return preferredSpace
-        }
-
-        if let windowSpaceId = resolvedWindowState?.currentSpaceId,
-           let windowSpace = tabManager.spaces.first(where: { $0.id == windowSpaceId }) {
-            return windowSpace
-        }
-
-        if let sourceSpaceId = context.sourceTab?.spaceId,
-           let sourceSpace = tabManager.spaces.first(where: { $0.id == sourceSpaceId }) {
-            return sourceSpace
-        }
-
-        if let profileId = resolvedWindowState?.currentProfileId,
-           let profileSpace = tabManager.spaces.first(where: { $0.profileId == profileId }) {
-            return profileSpace
-        }
-
-        if let sourceProfileId = context.sourceTab?.profileId,
-           let sourceProfileSpace = tabManager.spaces.first(where: { $0.profileId == sourceProfileId }) {
-            return sourceProfileSpace
-        }
-
-        return tabManager.currentSpace ?? tabManager.spaces.first
+        tabOpeningOwner.resolvedTabOpenSpace(for: context)
     }
 
     @discardableResult
@@ -1213,60 +1062,11 @@ class BrowserManager: ObservableObject {
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         activate: Bool = true
     ) -> Tab? {
-        let sourceWindowState = windowState(containing: sourceTab)
-        if sourceTab.isEphemeral || sourceWindowState?.isIncognito == true {
-            guard let sourceWindowState,
-                  let profile = sourceWindowState.ephemeralProfile,
-                  let blankURL = URL(string: "about:blank")
-            else {
-                return nil
-            }
-
-            let previousTabId = sourceWindowState.currentTabId
-            let popupTab = tabManager.createEphemeralTab(
-                url: blankURL,
-                in: sourceWindowState,
-                profile: profile
-            )
-            popupTab.isPopupHost = true
-            if let webViewConfigurationOverride {
-                popupTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
-            }
-            if activate == false {
-                sourceWindowState.currentTabId = previousTabId
-            }
-            return popupTab
-        }
-
-        let context = TabOpenContext.background(
-            windowState: sourceWindowState,
-            sourceTab: sourceTab,
-            preferredSpaceId: sourceTab.spaceId
-        )
-        let targetSpace = resolvedTabOpenSpace(for: context)
-        let insertionIndex = tabManager.regularChildInsertionIndex(
-            openedFrom: sourceTab,
-            in: targetSpace
-        )
-        return tabManager.createPopupTab(
-            in: targetSpace,
-            activate: activate,
+        tabOpeningOwner.createPopupTab(
+            from: sourceTab,
             webViewConfigurationOverride: webViewConfigurationOverride,
-            regularInsertionIndex: insertionIndex
+            activate: activate
         )
-    }
-
-    private func resolvedWindowState(for context: TabOpenContext) -> BrowserWindowState? {
-        if let windowState = context.windowState {
-            return windowState
-        }
-
-        if let sourceTab = context.sourceTab,
-           let windowState = windowState(containing: sourceTab) {
-            return windowState
-        }
-
-        return windowRegistry?.activeWindow
     }
 
     /// Opens Sumi settings as a normal browser tab (one per space), optionally focusing a pane.
@@ -1345,31 +1145,7 @@ class BrowserManager: ObservableObject {
     }
 
     func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        let targetSpace =
-            windowState.currentSpaceId.flatMap { id in
-                tabManager.spaces.first(where: { $0.id == id })
-            }
-            ?? tab.spaceId.flatMap { id in tabManager.spaces.first(where: { $0.id == id }) }
-            ?? tabManager.currentSpace
-        let insertIndex = tabManager.regularChildInsertionIndex(
-            openedFrom: tab,
-            in: targetSpace
-        )
-
-        let newTab = Tab(
-            url: tab.url,
-            name: tab.name,
-            favicon: "globe",
-            spaceId: targetSpace?.id,
-            index: 0,
-            browserManager: self
-        )
-        newTab.favicon = tab.favicon
-        newTab.faviconIsTemplateGlobePlaceholder = tab.faviconIsTemplateGlobePlaceholder
-        newTab.profileId = tab.profileId
-
-        tabManager.addTab(newTab, regularInsertionIndex: insertIndex)
-        selectTab(newTab, in: windowState)
+        tabOpeningOwner.duplicateTab(tab, in: windowState)
     }
 
     func closeCurrentTab() {
