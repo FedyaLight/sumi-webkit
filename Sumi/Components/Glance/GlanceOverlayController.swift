@@ -167,8 +167,7 @@ final class GlanceOverlayController: NSObject {
     private var keyMonitor: Any?
     private var displayedSessionID: UUID?
     private var isAnimatingClose = false
-    private var isAnimatingPromotion = false
-    private var isCompletingPromotionHandoff = false
+    private let promotionHandoff = GlancePromotionHandoffOwner()
     private var isPresentationVisible = false
     private var closeConfirmationWorkItem: DispatchWorkItem?
     private var postAnimationCompletionTask: Task<Void, Never>?
@@ -259,8 +258,10 @@ final class GlanceOverlayController: NSObject {
             isAnimatingClose = false
             isPresentationVisible = false
             uninstallKeyMonitor()
-            tearDownPresentedViews(preservingPromotionHandoff: isCompletingPromotionHandoff)
-            isCompletingPromotionHandoff = false
+            tearDownPresentedViews(
+                preservingPromotionHandoff: promotionHandoff.preservesPresentedHostDuringTeardown
+            )
+            promotionHandoff.reset()
             self.session = nil
             displayedSessionID = nil
             return
@@ -311,8 +312,7 @@ final class GlanceOverlayController: NSObject {
         closeConfirmationWorkItem = nil
         pendingPresentation = nil
         isAnimatingClose = false
-        isAnimatingPromotion = false
-        isCompletingPromotionHandoff = false
+        promotionHandoff.reset()
         uninstallKeyMonitor()
         tearDownPresentedViews()
         rootView?.onLayout = nil
@@ -322,8 +322,7 @@ final class GlanceOverlayController: NSObject {
 
     private func rootViewDidLayout() {
         guard configuration?.isVisible == true,
-              !isAnimatingPromotion,
-              !isCompletingPromotionHandoff
+              !promotionHandoff.blocksPresentationUpdates
         else { return }
         if presentPendingIfPossible() {
             return
@@ -393,7 +392,7 @@ final class GlanceOverlayController: NSObject {
     private func apply(configuration: GlanceOverlayConfiguration) {
         contentShadowView.layer?.backgroundColor = configuration.surfaceColor.cgColor
         webClipView.layer?.backgroundColor = configuration.surfaceColor.cgColor
-        if !isAnimatingPromotion && !isCompletingPromotionHandoff {
+        if !promotionHandoff.blocksPresentationUpdates {
             applyContentVisualStyle(glanceContentVisualStyle(for: configuration))
         }
         [closeButton, openButton, splitButton].forEach {
@@ -904,8 +903,7 @@ final class GlanceOverlayController: NSObject {
               configuration.isVisible,
               session != nil,
               !isAnimatingClose,
-              !isAnimatingPromotion,
-              !isCompletingPromotionHandoff
+              !promotionHandoff.blocksPresentationUpdates
         else { return }
 
         let targetFrame = targetContentFrame(in: rootView.bounds, configuration: configuration)
@@ -1138,7 +1136,7 @@ final class GlanceOverlayController: NSObject {
     }
 
     private func closeFromBackdrop() {
-        guard !isAnimatingPromotion else { return }
+        guard !promotionHandoff.isAnimating else { return }
         guard let session = manager?.beginAnimatedDismissal(),
               let configuration
         else { return }
@@ -1189,7 +1187,7 @@ final class GlanceOverlayController: NSObject {
     }
 
     @objc private func closeButtonPressed() {
-        guard !isAnimatingPromotion else { return }
+        guard !promotionHandoff.isAnimating else { return }
         guard let manager,
               let session,
               let configuration
@@ -1211,20 +1209,19 @@ final class GlanceOverlayController: NSObject {
     }
 
     @objc private func splitButtonPressed() {
-        guard !isAnimatingPromotion else { return }
+        guard !promotionHandoff.isAnimating else { return }
         guard splitButton.isEnabled else { return }
         manager?.moveToSplitView()
     }
 
     private func animatePromotionToRegularTab() {
-        guard !isAnimatingPromotion,
-              let manager,
+        guard let manager,
               let session,
               let configuration,
               let rootView
         else { return }
+        guard promotionHandoff.beginAnimation() else { return }
 
-        isAnimatingPromotion = true
         resetCloseConfirmation()
         rootView.acceptsBackgroundMouseEvents = false
         [closeButton, openButton, splitButton].forEach { $0.isEnabled = false }
@@ -1259,7 +1256,7 @@ final class GlanceOverlayController: NSObject {
         ) { [weak self, weak manager, sessionID = session.id] in
             guard let self else { return }
             guard self.session?.id == sessionID else {
-                self.isAnimatingPromotion = false
+                self.promotionHandoff.cancelAnimation()
                 self.removeContentVisualStyleAnimations()
                 return
             }
@@ -1281,7 +1278,7 @@ final class GlanceOverlayController: NSObject {
         manager: GlanceManager?
     ) {
         guard session?.id == sessionID else {
-            isAnimatingPromotion = false
+            promotionHandoff.cancelAnimation()
             return
         }
 
@@ -1292,49 +1289,17 @@ final class GlanceOverlayController: NSObject {
         sessionID: UUID,
         manager: GlanceManager?
     ) {
-        guard session?.id == sessionID else {
-            isAnimatingPromotion = false
+        guard let session,
+              session.id == sessionID
+        else {
+            promotionHandoff.cancelAnimation()
             return
         }
 
-        guard registerPreviewHostForPromotion() else {
-            isAnimatingPromotion = false
-            [closeButton, openButton, splitButton].forEach { $0.isEnabled = true }
-            buttonStack.animator().alphaValue = 1
-            if let configuration {
-                removeContentVisualStyleAnimations()
-                applyContentVisualStyle(glanceContentVisualStyle(for: configuration))
-            }
-            return
-        }
-
-        isCompletingPromotionHandoff = true
-        isAnimatingPromotion = false
-        manager?.moveToNewTab(finishesAfterDisplayUpdate: true)
-    }
-
-    private func canRegisterPreviewHostForPromotion() -> Bool {
-        guard let previewHostView,
-              let session,
-              let webView = session.previewTab.existingWebView,
-              previewHostView.webView === webView
-        else { return false }
-
-        return true
-    }
-
-    private func registerPreviewHostForPromotion() -> Bool {
-        guard canRegisterPreviewHostForPromotion(),
-              let previewHostView,
-              let session,
-              let manager,
-              let webViewCoordinator = manager.browserManager?.webViewCoordinator
-        else { return false }
-
-        webViewCoordinator.registerPromotedHost(
+        guard promotionHandoff.registerPreviewHost(
             previewHostView,
-            for: session.previewTab.id,
-            in: session.windowId,
+            for: session,
+            manager: self.manager,
             attachmentCompletion: { [weak self, weak manager, sessionID = session.id] in
                 guard let self,
                       self.session?.id == sessionID
@@ -1344,9 +1309,19 @@ final class GlanceOverlayController: NSObject {
                 }
                 self.completePromotionAfterCompositorAttachment(sessionID: sessionID, manager: manager)
             }
-        )
-        previewHostView.prepareForSuperviewTransferPreservingDisplayedContent()
-        return true
+        ) else {
+            promotionHandoff.cancelAnimation()
+            [closeButton, openButton, splitButton].forEach { $0.isEnabled = true }
+            buttonStack.animator().alphaValue = 1
+            if let configuration {
+                removeContentVisualStyleAnimations()
+                applyContentVisualStyle(glanceContentVisualStyle(for: configuration))
+            }
+            return
+        }
+
+        promotionHandoff.beginCompositorHandoff()
+        manager?.moveToNewTab(finishesAfterDisplayUpdate: true)
     }
 
     private func completePromotionAfterCompositorAttachment(
@@ -1390,6 +1365,74 @@ final class GlanceOverlayController: NSObject {
         closeConfirmationWorkItem?.cancel()
         closeConfirmationWorkItem = nil
         closeButton.requiresSecondPress = false
+    }
+}
+
+@MainActor
+private final class GlancePromotionHandoffOwner {
+    private(set) var isAnimating = false
+    private var isCompletingHandoff = false
+
+    var blocksPresentationUpdates: Bool {
+        isAnimating || isCompletingHandoff
+    }
+
+    var preservesPresentedHostDuringTeardown: Bool {
+        isCompletingHandoff
+    }
+
+    @discardableResult
+    func beginAnimation() -> Bool {
+        guard !isAnimating else { return false }
+        isAnimating = true
+        return true
+    }
+
+    func cancelAnimation() {
+        isAnimating = false
+    }
+
+    func beginCompositorHandoff() {
+        isCompletingHandoff = true
+        isAnimating = false
+    }
+
+    func reset() {
+        isAnimating = false
+        isCompletingHandoff = false
+    }
+
+    func registerPreviewHost(
+        _ previewHostView: SumiWebViewContainerView?,
+        for session: GlanceSession,
+        manager: GlanceManager?,
+        attachmentCompletion: @escaping @MainActor () -> Void
+    ) -> Bool {
+        guard canRegisterPreviewHost(previewHostView, for: session),
+              let previewHostView,
+              let webViewCoordinator = manager?.browserManager?.webViewCoordinator
+        else { return false }
+
+        webViewCoordinator.registerPromotedHost(
+            previewHostView,
+            for: session.previewTab.id,
+            in: session.windowId,
+            attachmentCompletion: attachmentCompletion
+        )
+        previewHostView.prepareForSuperviewTransferPreservingDisplayedContent()
+        return true
+    }
+
+    private func canRegisterPreviewHost(
+        _ previewHostView: SumiWebViewContainerView?,
+        for session: GlanceSession
+    ) -> Bool {
+        guard let previewHostView,
+              let webView = session.previewTab.existingWebView,
+              previewHostView.webView === webView
+        else { return false }
+
+        return true
     }
 }
 

@@ -31,6 +31,26 @@ final class GlanceWebsiteTimingCleanupTests: XCTestCase {
         XCTAssertTrue(resetSource.contains("DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: item)"))
     }
 
+    func testGlancePromotionHandoffStateHasDedicatedOwner() throws {
+        let source = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayController.swift")
+        let controllerSource = try Self.slice(
+            source,
+            from: "final class GlanceOverlayController",
+            to: "private func webContentIsFocused()"
+        )
+
+        XCTAssertTrue(source.contains("private final class GlancePromotionHandoffOwner"))
+        XCTAssertTrue(controllerSource.contains("private let promotionHandoff = GlancePromotionHandoffOwner()"))
+        XCTAssertFalse(controllerSource.contains("private var isAnimatingPromotion"))
+        XCTAssertFalse(controllerSource.contains("private var isCompletingPromotionHandoff"))
+        XCTAssertTrue(controllerSource.contains("promotionHandoff.registerPreviewHost("))
+        XCTAssertTrue(
+            controllerSource.contains(
+                "preservingPromotionHandoff: promotionHandoff.preservesPresentedHostDuringTeardown"
+            )
+        )
+    }
+
     func testSplitPreviewFadeOutCleanupIsCancellableAndGenerationGuarded() throws {
         let source = try Self.source(named: "Sumi/Components/WebsiteView/WebsiteView.swift")
         let overlaySource = try Self.slice(
