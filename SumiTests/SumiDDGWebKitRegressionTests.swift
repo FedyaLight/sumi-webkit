@@ -448,6 +448,94 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertEqual(handoffCount, 1)
     }
 
+    func testWebViewCoordinatorVisibleRuntimeBookkeepingStaysBehindOwner() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let coordinatorSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+        let ownerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/VisibleWebViewRuntimeOwner.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(ownerSource.contains("final class VisibleWebViewRuntimeOwner"))
+        XCTAssertTrue(ownerSource.contains("private let compositorHandoffState = WebViewCompositorHandoffState()"))
+        XCTAssertTrue(ownerSource.contains("private var scheduledPrepareWindowIds"))
+
+        let ownerCleanupSource = try sourceSlice(
+            ownerSource,
+            from: "func removeCompositorContainerView(",
+            to: "func compositorContainers()"
+        )
+        try assertTokenOrder(
+            ownerCleanupSource,
+            [
+                "compositorHandoffState.removeContainerView",
+                "scheduledPrepareWindowIds.remove",
+                "webViewRegistry.removeVisibilityHistory",
+                "pruneInvalidDeferredCommands"
+            ]
+        )
+
+        let ownerPrepareSource = try sourceSlice(
+            ownerSource,
+            from: "func prepareVisibleWebViews(",
+            to: "func schedulePrepareVisibleWebViews("
+        )
+        try assertTokenOrder(
+            ownerPrepareSource,
+            [
+                "visibleTabIDs(",
+                "webViewRegistry.noteVisibleTabs",
+                "browserManager.compositorManager.markTabAccessed",
+                "createWebView(",
+                "evictHiddenWebViews(",
+                "scheduleProactiveTimerReconcile",
+                "backgroundMediaOptimizationService.scheduleReconcile"
+            ]
+        )
+
+        let ownerScheduleSource = try sourceSlice(
+            ownerSource,
+            from: "func schedulePrepareVisibleWebViews(",
+            to: "func visibleTabIDs("
+        )
+        try assertTokenOrder(
+            ownerScheduleSource,
+            [
+                "guard scheduledPrepareWindowIds.insert",
+                "DispatchQueue.main.async",
+                "self.scheduledPrepareWindowIds.remove",
+                "browserManager.refreshCompositor"
+            ]
+        )
+
+        let coordinatorStart = try XCTUnwrap(
+            coordinatorSource.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
+        ).lowerBound
+        let coordinatorClassSource = String(coordinatorSource[coordinatorStart...])
+        XCTAssertTrue(coordinatorClassSource.contains("private let visibleWebViewRuntimeOwner = VisibleWebViewRuntimeOwner()"))
+        XCTAssertFalse(coordinatorClassSource.contains("private let compositorHandoffState"))
+        XCTAssertFalse(coordinatorClassSource.contains("private var scheduledPrepareWindowIds"))
+
+        let coordinatorPrepareSource = try sourceSlice(
+            coordinatorSource,
+            from: "func prepareVisibleWebViews(",
+            to: "func schedulePrepareVisibleWebViews("
+        )
+        XCTAssertTrue(coordinatorPrepareSource.contains("visibleWebViewRuntimeOwner.prepareVisibleWebViews("))
+        XCTAssertFalse(coordinatorPrepareSource.contains("VisibleTabPreparationPlan.visibleTabIDs"))
+        XCTAssertFalse(coordinatorPrepareSource.contains("webViewRegistry.noteVisibleTabs"))
+        XCTAssertFalse(coordinatorPrepareSource.contains("scheduleProactiveTimerReconcile"))
+    }
+
     func testCompositorHandoffStatePromotedHostCompletionRunsOnceAfterMatchingTake() throws {
         let handoffState = WebViewCompositorHandoffState()
         let tab = Tab(url: try XCTUnwrap(URL(string: "https://example.com")))
