@@ -12,6 +12,22 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertEqual(directory.lastPathComponent, "SumiDownloads")
     }
 
+    func testTestIsolationIgnoresPersistedDownloadsSettings() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let userDownloadsURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+            .appendingPathComponent("Downloads", isDirectory: true)
+
+        let settings = SumiSettingsService(userDefaults: harness.defaults)
+        settings.downloadsAlwaysAskWhereToSave = true
+        settings.setDownloadsDirectory(userDownloadsURL)
+
+        XCTAssertNil(settings.resolvedDownloadsDirectoryURL())
+        XCTAssertFalse(settings.downloadsDestinationPreference.alwaysAskWhereToSave)
+        XCTAssertNil(settings.downloadsDestinationPreference.customDirectoryURL)
+        XCTAssertEqual(settings.downloadsDirectoryDisplayName, "SumiDownloads")
+    }
+
     func testSaveDownloadedDataCreatesCompletedItem() throws {
         let manager = DownloadManager()
         let sourceURL = URL(string: "https://example.com/report.txt")!

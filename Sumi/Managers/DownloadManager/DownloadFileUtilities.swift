@@ -5,7 +5,7 @@ import WebKit
 
 enum DownloadsDirectoryResolver {
     static func resolvedDownloadsDirectory(fileManager: FileManager = .default) -> URL {
-        if useIsolatedDirectory {
+        if usesIsolatedDirectory {
             let dir = isolatedRoot(fileManager: fileManager).appendingPathComponent("SumiDownloads", isDirectory: true)
             try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
             return dir
@@ -16,7 +16,7 @@ enum DownloadsDirectoryResolver {
         return fileManager.temporaryDirectory
     }
 
-    private static var useIsolatedDirectory: Bool {
+    static var usesIsolatedDirectory: Bool {
         let env = ProcessInfo.processInfo.environment
         if env["SUMI_TEST_DOWNLOADS_ISOLATION"] == "1" { return true }
         if ProcessInfo.processInfo.arguments.contains("--uitest-smoke") { return true }

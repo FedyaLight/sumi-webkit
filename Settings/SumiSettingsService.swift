@@ -350,7 +350,9 @@ class SumiSettingsService {
 
     var downloadsDestinationPreference: SumiDownloadDestinationPreference {
         SumiDownloadDestinationPreference(
-            alwaysAskWhereToSave: downloadsAlwaysAskWhereToSave,
+            alwaysAskWhereToSave: DownloadsDirectoryResolver.usesIsolatedDirectory
+                ? false
+                : downloadsAlwaysAskWhereToSave,
             customDirectoryURL: resolvedDownloadsDirectoryURL()
         )
     }
@@ -361,6 +363,10 @@ class SumiSettingsService {
     }
 
     func setDownloadsDirectory(_ url: URL) {
+        guard !DownloadsDirectoryResolver.usesIsolatedDirectory else {
+            downloadsDirectoryURL = url
+            return
+        }
         do {
             let bookmark = try url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
             userDefaults.set(bookmark, forKey: downloadsDirectoryBookmarkKey)
@@ -380,6 +386,9 @@ class SumiSettingsService {
     }
 
     func resolvedDownloadsDirectoryURL() -> URL? {
+        guard !DownloadsDirectoryResolver.usesIsolatedDirectory else {
+            return nil
+        }
         guard let bookmark = userDefaults.data(forKey: downloadsDirectoryBookmarkKey) else {
             return downloadsDirectoryURL
         }
