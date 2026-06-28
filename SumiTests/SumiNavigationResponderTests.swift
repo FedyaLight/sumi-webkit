@@ -2016,6 +2016,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
 
         XCTAssertNotNil(childWebView)
+        XCTAssertIdentical(childWebView?.configuration, configuration)
         XCTAssertEqual(
             childWebView?.configuration.userContentController.userScripts.map(\.source),
             [markerScript.source]
