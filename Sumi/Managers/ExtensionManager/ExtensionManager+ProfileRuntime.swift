@@ -5,15 +5,15 @@ import WebKit
 @MainActor
 extension ExtensionManager {
     var extensionController: WKWebExtensionController? {
-        profileRuntimeOwner.controllerForCurrentProfile()
+        profileRuntimeStateOwner.currentController
     }
 
     var extensionContexts: [String: WKWebExtensionContext] {
-        profileRuntimeOwner.contextsForCurrentProfile()
+        profileRuntimeStateOwner.currentContexts
     }
 
     func extensionContexts(for profileId: UUID) -> [String: WKWebExtensionContext] {
-        profileRuntimeOwner.contexts(for: profileId)
+        profileRuntimeStateOwner.contexts(for: profileId)
     }
 
     func setExtensionContext(
@@ -77,21 +77,21 @@ extension ExtensionManager {
     }
 
     func allLoadedExtensionIDs() -> Set<String> {
-        profileRuntimeOwner.allLoadedExtensionIDs()
+        profileRuntimeStateOwner.allLoadedExtensionIDs()
     }
 
     func profileId(for extensionContext: WKWebExtensionContext) -> UUID? {
-        profileRuntimeOwner.profileId(for: extensionContext)
+        profileRuntimeStateOwner.profileId(for: extensionContext)
     }
 
     func contextIdentity(
         for extensionContext: WKWebExtensionContext
     ) -> (extensionId: String, profileId: UUID)? {
-        profileRuntimeOwner.contextIdentity(for: extensionContext)
+        profileRuntimeStateOwner.contextIdentity(for: extensionContext)
     }
 
     func profileId(for controller: WKWebExtensionController) -> UUID? {
-        profileRuntimeOwner.profileId(for: controller)
+        profileRuntimeStateOwner.profileId(for: controller)
     }
 
     func resolvedProfileId(for tab: Tab?) -> UUID? {
@@ -191,28 +191,25 @@ extension ExtensionManager {
         for extensionId: String,
         profileId: UUID? = nil
     ) -> WKWebExtensionContext? {
-        let resolvedProfileId = profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: profileId,
-            browserManager: browserManager
-        )
-        guard let resolvedProfileId else { return nil }
-        return extensionContexts(for: resolvedProfileId)[extensionId]
+        profileRuntimeStateOwner.context(for: extensionId, profileId: profileId)
     }
 
     func missingEnabledExtensionIDs(for profileId: UUID) -> [String] {
-        extensionRuntimeReadinessContext(for: profileId).missingEnabledExtensionIDs
+        profileRuntimeStateOwner.missingEnabledExtensionIDs(for: profileId)
     }
 
     func isProfileExtensionRuntimeReady(for profileId: UUID) -> Bool {
-        extensionRuntimeReadinessContext(for: profileId).isProfileReady
+        profileRuntimeStateOwner.isProfileReady(for: profileId)
     }
 
     func isExtensionRuntimeReady(
         extensionId: String,
         profileId: UUID
     ) -> Bool {
-        extensionRuntimeReadinessContext(for: profileId)
-            .isExtensionReady(extensionID: extensionId)
+        profileRuntimeStateOwner.isExtensionReady(
+            extensionId: extensionId,
+            profileId: profileId
+        )
     }
 
     func markExtensionRuntimeReadyIfProfileContextsLoaded(for profileId: UUID) {
@@ -232,12 +229,7 @@ extension ExtensionManager {
     func extensionRuntimeReadinessContext(
         for profileId: UUID
     ) -> ExtensionRuntimeReadinessContext {
-        profileRuntimeOwner.readinessContext(
-            for: profileId,
-            hasEnabledExtensionDemand: hasEnabledInstalledExtensions,
-            enabledExtensionIDs: Set(enabledPersistedExtensionEntities().map(\.id)),
-            globalRuntimeReady: runtimeState == .ready
-        )
+        profileRuntimeStateOwner.readinessContext(for: profileId)
     }
 
     func recordExtensionLoadError(
@@ -266,7 +258,7 @@ extension ExtensionManager {
     }
 
     func countLoadedExtensionContexts() -> Int {
-        profileRuntimeOwner.countLoadedExtensionContexts()
+        profileRuntimeStateOwner.countLoadedContexts()
     }
 
     func touchLiveExtensionContext(extensionId: String, profileId: UUID) {
@@ -782,7 +774,11 @@ extension ExtensionManager {
             }
         }
 
-        let context = getExtensionContext(for: extensionId, profileId: profileId)
+        let snapshot = profileRuntimeStateOwner.extensionSnapshot(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        let context = snapshot.context
         if let context,
            let currentProfileId,
            currentProfileId != profileId,
@@ -824,8 +820,11 @@ extension ExtensionManager {
         failureBucket: ExtensionActionPopupRuntimeFailureBucket,
         lastLoadError: Error? = nil
     ) -> [String] {
-        let context = getExtensionContext(for: extensionId, profileId: profileId)
-        let controller = extensionControllersByProfile[profileId]
+        let snapshot = profileRuntimeStateOwner.extensionSnapshot(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        let context = snapshot.context
         let hasOriginalAppex =
             SafariAppExtensionResources.installedAppexBundleURL(
                 sourceKind: installedExtension.sourceKind,
@@ -848,11 +847,11 @@ extension ExtensionManager {
             "sourceKind=\(installedExtension.sourceKind.rawValue)",
             "hasOriginalAppex=\(hasOriginalAppex)",
             "sourceResourcesPresent=\(resourcesExist)",
-            "controllerExists=\(controller != nil)",
-            "contextExists=\(context != nil)",
-            "contextLoaded=\(context?.isLoaded ?? false)",
+            "controllerExists=\(snapshot.controllerExists)",
+            "contextExists=\(snapshot.contextExists)",
+            "contextLoaded=\(snapshot.contextLoaded)",
             "runtimeState=\(runtimeState.rawValue)",
-            "missingEnabledExtensionIDs=\(missingEnabledExtensionIDs(for: profileId).joined(separator: ","))",
+            "missingEnabledExtensionIDs=\(snapshot.missingEnabledExtensionIDs.joined(separator: ","))",
         ]
 
         if let lastLoadError {

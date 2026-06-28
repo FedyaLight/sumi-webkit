@@ -137,6 +137,9 @@ final class ExtensionManager: NSObject, ObservableObject {
     let extensionPreferences: UserDefaults
     let requestedTabLifecycleOwner = ExtensionRequestedTabLifecycleOwner()
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
+    var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
+        ExtensionProfileRuntimeStateOwner(manager: self)
+    }
     var controllerIdentifierStorage: UUID?
     var controllerIdentifier: UUID {
         ensureRuntimeControllerIdentifier()
