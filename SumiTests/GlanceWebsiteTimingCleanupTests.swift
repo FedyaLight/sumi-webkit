@@ -62,20 +62,35 @@ final class GlanceWebsiteTimingCleanupTests: XCTestCase {
         )
     }
 
-    func testGlanceOverlayControllerDelegatesLayoutAndActionChromeToDedicatedOwners() throws {
+    func testGlanceOverlayControllerDelegatesLayoutActionChromeAndVisualStyleToDedicatedOwners() throws {
         let controllerSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayController.swift")
         let layoutSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayLayout.swift")
         let actionChromeSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayActionChrome.swift")
         let rootViewSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayRootView.swift")
+        let controllerBodySource = try Self.slice(
+            controllerSource,
+            from: "final class GlanceOverlayController",
+            to: "@MainActor\nprivate final class GlanceOverlayContentVisualStyleOwner"
+        )
+        let visualStyleOwnerSource = try Self.slice(
+            controllerSource,
+            from: "private final class GlanceOverlayContentVisualStyleOwner",
+            to: "@MainActor\nprivate final class GlanceOverlayPresentationStateOwner"
+        )
 
         XCTAssertTrue(controllerSource.contains("private let overlayLayout = GlanceOverlayLayout()"))
         XCTAssertTrue(controllerSource.contains("private lazy var actionChrome = GlanceOverlayActionChrome"))
+        XCTAssertTrue(controllerBodySource.contains("private lazy var contentVisualStyleOwner = GlanceOverlayContentVisualStyleOwner"))
+        XCTAssertTrue(controllerBodySource.contains("contentVisualStyleOwner.animateToBrowserViewportStyle("))
+        XCTAssertTrue(visualStyleOwnerSource.contains("private struct Style"))
         XCTAssertTrue(layoutSource.contains("struct GlanceOverlayLayout"))
         XCTAssertTrue(actionChromeSource.contains("final class GlanceOverlayActionChrome"))
         XCTAssertTrue(rootViewSource.contains("enum GlanceOverlayCursorRegionLayout"))
-        XCTAssertFalse(controllerSource.contains("private enum Metrics"))
-        XCTAssertFalse(controllerSource.contains("private func targetContentFrame("))
-        XCTAssertFalse(controllerSource.contains("private func handleActionButtonHit"))
+        XCTAssertFalse(controllerBodySource.contains("private enum Metrics"))
+        XCTAssertFalse(controllerBodySource.contains("private func targetContentFrame("))
+        XCTAssertFalse(controllerBodySource.contains("private func handleActionButtonHit"))
+        XCTAssertFalse(controllerBodySource.contains("private struct ContentVisualStyle"))
+        XCTAssertFalse(controllerBodySource.contains("private func animateContentVisualStyle("))
     }
 
     func testSplitPreviewFadeOutCleanupIsCancellableAndGenerationGuarded() throws {
