@@ -67,6 +67,34 @@ class TabManager: ObservableObject {
         tabManager: self,
         structuralLookupOwner: structuralLookupOwner
     )
+    private lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
+        dependencies: TabTransientWebKitTabLifecycleOwner.Dependencies(
+            browserManager: { [unowned self] in self.browserManager },
+            settings: { [unowned self] in self.sumiSettings ?? self.runtimeContext?.settings },
+            runtimeContext: { [unowned self] in self.runtimeContext },
+            membershipOwner: { [unowned self] in self.tabCollectionMembershipOwner },
+            regularTabCollectionOwner: { [unowned self] in self.regularTabCollectionOwner },
+            attach: { [unowned self] tab in self.attach(tab) },
+            detach: { [unowned self] tab in self.detach(tab) },
+            targetSpace: { [unowned self] space, fallbackSpaceId in
+                self.resolvedTargetSpace(preferred: space, fallbackSpaceId: fallbackSpaceId)
+            },
+            spaceForID: { [unowned self] spaceId in
+                self.spaces.first { $0.id == spaceId }
+            },
+            currentSpace: { [unowned self] in self.currentSpace },
+            ensureDefaultSpace: { [unowned self] in self.ensureDefaultSpaceIfNeeded() },
+            backfillTargetSpaceProfileIfNeeded: { [unowned self] space, profileId in
+                self.backfillTargetSpaceProfileIfNeeded(space, profileId: profileId)
+            },
+            insertRegularTab: { [unowned self] tab, spaceId, insertionIndex in
+                self.insertRegularTab(tab, in: spaceId, at: insertionIndex)
+            },
+            scheduleStructuralPersistence: { [unowned self] in self.scheduleStructuralPersistence() },
+            setActiveTab: { [unowned self] tab in self.setActiveTab(tab) },
+            tabForID: { [unowned self] id in self.tab(for: id) }
+        )
+    )
     /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for persistence completion—`scheduleStructuralPersistence()` does not send this.
     let structuralChanges = PassthroughSubject<Void, Never>()
     private lazy var structuralPublishOwner = TabStructuralPublishOwner(structuralChanges: structuralChanges)
@@ -624,7 +652,7 @@ class TabManager: ObservableObject {
     }
 
     func isTransientExtensionTab(_ tab: Tab) -> Bool {
-        tabCollectionMembershipOwner.isTransientExtensionTab(tab)
+        transientWebKitTabLifecycleOwner.isTransientExtensionTab(tab)
     }
 
     @discardableResult
@@ -633,31 +661,11 @@ class TabManager: ObservableObject {
         in space: Space? = nil,
         webExtensionContextOverride: WKWebExtensionContext?
     ) -> Tab {
-        let settings = sumiSettings ?? runtimeContext?.settings
-        let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
-        let normalizedUrl = normalizeURL(url, queryTemplate: template)
-        let validURL = URL(string: normalizedUrl) ?? SumiSurface.emptyTabURL
-
-        let targetSpace = resolvedTargetSpace(preferred: space)
-        if backfillTargetSpaceProfileIfNeeded(targetSpace, profileId: defaultProfileIdForSpaceBootstrap) {
-            scheduleStructuralPersistence()
-        }
-
-        let sid = targetSpace.id
-        let nextIndex = regularTabCollectionOwner.appendIndex(in: sid)
-        let tab = Tab(
-            url: validURL,
-            name: "New Tab",
-            favicon: "globe",
-            spaceId: sid,
-            index: nextIndex,
-            browserManager: browserManager
+        transientWebKitTabLifecycleOwner.createTransientExtensionTab(
+            url: url,
+            in: space,
+            webExtensionContextOverride: webExtensionContextOverride
         )
-        tab.profileId = targetSpace.profileId
-        tab.webExtensionContextOverride = webExtensionContextOverride
-        attach(tab)
-        tabCollectionMembershipOwner.registerTransientExtensionTab(tab)
-        return tab
     }
 
     @discardableResult
@@ -667,45 +675,20 @@ class TabManager: ObservableObject {
         urlString: String? = nil,
         webExtensionContextOverride: WKWebExtensionContext? = nil
     ) -> Tab {
-        let blankURL = SumiSurface.emptyTabURL
-        let resolvedURL = urlString.flatMap { URL(string: $0) } ?? blankURL
-        let resolvedProfileId = profileId
-            ?? openerTab?.profileId
-            ?? openerTab?.resolveProfile()?.id
-            ?? runtimeContext?.currentProfileId
-
-        let tab = Tab(
-            url: resolvedURL,
-            name: "Popup",
-            favicon: "globe",
-            spaceId: openerTab?.spaceId,
-            index: -1,
-            browserManager: browserManager
+        transientWebKitTabLifecycleOwner.createAuxiliaryMiniWindowTab(
+            openerTab: openerTab,
+            profileId: profileId,
+            urlString: urlString,
+            webExtensionContextOverride: webExtensionContextOverride
         )
-        tab.isAuxiliaryMiniWindow = true
-        tab.profileId = resolvedProfileId
-        tab.webExtensionContextOverride = webExtensionContextOverride
-        attach(tab)
-        tabCollectionMembershipOwner.registerAuxiliaryMiniWindowTab(tab)
-        return tab
     }
 
     func removeAuxiliaryMiniWindowTab(_ tab: Tab) {
-        tabCollectionMembershipOwner.removeAuxiliaryMiniWindowTab(tab)
-        runtimeContext?.unloadTab(tab)
-        runtimeContext?.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: true
-        )
-        detach(tab)
-        NotificationCenter.default.post(
-            name: .sumiTabLifecycleDidChange,
-            object: tab
-        )
+        transientWebKitTabLifecycleOwner.removeAuxiliaryMiniWindowTab(tab)
     }
 
     func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool {
-        tabCollectionMembershipOwner.isAuxiliaryMiniWindowTab(tab)
+        transientWebKitTabLifecycleOwner.isAuxiliaryMiniWindowTab(tab)
     }
 
     @discardableResult
@@ -714,33 +697,10 @@ class TabManager: ObservableObject {
         in space: Space? = nil,
         activate: Bool = false
     ) -> Bool {
-        guard tabCollectionMembershipOwner.promoteTransientExtensionTab(tab) else { return false }
-
-        let targetSpace = space
-            ?? tab.spaceId.flatMap { spaceId in
-                spaces.first(where: { $0.id == spaceId })
-            }
-            ?? currentSpace
-            ?? ensureDefaultSpaceIfNeeded()
-        insertRegularTab(tab, in: targetSpace.id, at: nil)
-        scheduleStructuralPersistence()
-        if activate {
-            setActiveTab(tab)
-        }
-        return true
-    }
-
-    private func cleanupRemovedTransientExtensionTab(_ tab: Tab) {
-        runtimeContext?.notifyTabClosedIfLoaded(tab)
-        runtimeContext?.unloadTab(tab)
-        runtimeContext?.removeAllWebViews(
-            for: tab,
-            closeActiveFullscreenMedia: true
-        )
-        detach(tab)
-        NotificationCenter.default.post(
-            name: .sumiTabLifecycleDidChange,
-            object: tab
+        transientWebKitTabLifecycleOwner.promoteTransientExtensionTab(
+            tab,
+            in: space,
+            activate: activate
         )
     }
 
@@ -755,16 +715,11 @@ class TabManager: ObservableObject {
             var removedSpaceId: UUID?
             var removedIndexInCurrentSpace: Int?
 
-            if let transientExtensionTab = tabCollectionMembershipOwner.removeTransientExtensionTab(id: id) {
-                cleanupRemovedTransientExtensionTab(transientExtensionTab)
+            if transientWebKitTabLifecycleOwner.removeTransientExtensionTab(id: id) {
                 return
             }
 
-            if let auxiliaryTab = tabCollectionMembershipOwner.auxiliaryMiniWindowTab(for: id) {
-                runtimeContext?.closeAuxiliaryMiniWindow(
-                    for: tab(for: id) ?? auxiliaryTab,
-                    reason: .extensionRequestedClose
-                )
+            if transientWebKitTabLifecycleOwner.closeAuxiliaryMiniWindowTabIfPresent(id: id) {
                 return
             }
 
