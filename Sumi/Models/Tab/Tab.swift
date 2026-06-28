@@ -21,95 +21,6 @@ struct SumiGlanceOriginSnapshot {
     let timestamp: TimeInterval
 }
 
-enum SumiWebViewShutdown {
-    enum Scope {
-        case normal(tabId: UUID)
-        case auxiliary(reason: String)
-    }
-
-    @MainActor
-    static func perform(
-        on webView: WKWebView,
-        scope: Scope,
-        browserManager: BrowserManager?,
-        additionalTabCleanup: (() -> Void)? = nil
-    ) {
-        webView.stopLoading()
-        stopNativeMedia(on: webView)
-
-        if case .normal(let tabId) = scope {
-            browserManager?.userscriptsModule.cleanupWebViewIfLoaded(
-                controller: webView.configuration.userContentController,
-                webViewId: tabId
-            )
-        }
-
-        if let controller = webView.configuration.userContentController.sumiNormalTabUserContentController {
-            controller.cleanUpBeforeClosing()
-        }
-
-        prepareForReleaseIfNeeded(webView, scope: scope)
-        additionalTabCleanup?()
-
-        webView.navigationDelegate = nil
-        webView.uiDelegate = nil
-        webView.removeFromSuperview()
-
-        if case .normal = scope {
-            browserManager?.webViewCoordinator?.removeWebViewFromContainers(webView)
-        }
-    }
-
-    @MainActor
-    static func perform(
-        on webView: WKWebView,
-        tabId: UUID,
-        browserManager: BrowserManager?,
-        additionalTabCleanup: (() -> Void)? = nil
-    ) {
-        perform(
-            on: webView,
-            scope: .normal(tabId: tabId),
-            browserManager: browserManager,
-            additionalTabCleanup: additionalTabCleanup
-        )
-    }
-
-    @MainActor
-    private static func stopNativeMedia(on webView: WKWebView) {
-        webView.pauseAllMediaPlayback(completionHandler: nil)
-
-        if webView.cameraCaptureState != .none {
-            webView.setCameraCaptureState(.none, completionHandler: nil)
-        }
-        if webView.microphoneCaptureState != .none {
-            webView.setMicrophoneCaptureState(.none, completionHandler: nil)
-        }
-    }
-
-    @MainActor
-    private static func prepareForReleaseIfNeeded(_ webView: WKWebView, scope: Scope) {
-        guard case .normal = scope else { return }
-        guard webView.url?.absoluteString != SumiSurface.emptyTabURL.absoluteString else { return }
-        _ = webView.load(URLRequest(url: SumiSurface.emptyTabURL))
-    }
-}
-
-enum SumiAuxiliaryWebViewShutdown {
-    @MainActor
-    static func perform(
-        on webView: WKWebView,
-        browserManager: BrowserManager?,
-        reason: String
-    ) {
-        SumiWebViewShutdown.perform(
-            on: webView,
-            scope: .auxiliary(reason: reason),
-            browserManager: browserManager
-        )
-    }
-}
-
 @MainActor
 public class Tab: NSObject, Identifiable, ObservableObject {
     public let id: UUID
@@ -809,31 +720,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func unloadWebView() {
-        invalidateCurrentPermissionPageForWebViewReplacement(reason: "normal-tab-webview-unload")
-
-        let removedTrackedWebViews = browserManager?.webViewCoordinator?.removeAllWebViews(
-            for: self,
-            closeActiveFullscreenMedia: true
-        ) ?? false
-
-        guard removedTrackedWebViews || _webView != nil else {
-            SumiNativeNowPlayingController.shared.handleTabUnloaded(id)
-            SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
-            return
-        }
-
-        if let webView = _webView {
-            cleanupCloneWebView(webView)
-        }
-        _webView = nil
-
-        resetPlaybackActivity()
-
-        // Reset loading state
-        loadingState = .idle
-
-        SumiNativeNowPlayingController.shared.handleTabUnloaded(id)
-        SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+        TabWebViewCleanupOwner.unloadWebView(context: webViewCleanupContext())
     }
 
     func loadWebViewIfNeeded() {
@@ -1244,54 +1131,48 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     /// MEMORY LEAK FIX: Comprehensive WebView cleanup to prevent memory leaks
     func cleanupCloneWebView(_ webView: WKWebView) {
-        let pageId = currentPermissionPageId()
-        let tabId = id.uuidString.lowercased()
-        browserManager?.permissionLifecycleController.handle(
-            .webViewDeallocated(
-                pageId: pageId,
-                tabId: tabId,
-                profilePartitionId: resolveProfile()?.id.uuidString,
-                reason: "normal-tab-webview-cleanup"
-            )
-        )
-
-        if browserManager?.webViewCoordinator?.deferProtectedWebViewCleanup(
-            webView,
-            tabID: id,
-            reason: "Tab.cleanupCloneWebView",
-        ) == true {
-            return
-        }
-
-        SumiWebViewShutdown.perform(
-            on: webView,
-            tabId: id,
-            browserManager: browserManager
-        ) { [weak self, weak webView] in
-            guard let self, let webView else { return }
-            self.unbindAudioState(from: webView)
-            self.removeNavigationStateObservers(from: webView)
-            self.removeNavigationDelegateBundle(for: webView)
-        }
+        TabWebViewCleanupOwner.cleanupWebView(webView, context: webViewCleanupContext())
     }
 
     /// MEMORY LEAK FIX: Comprehensive cleanup for the main tab WebView
     public func performComprehensiveWebViewCleanup() {
-        let removedTrackedWebViews = browserManager?.webViewCoordinator?.removeAllWebViews(
-            for: self,
-            closeActiveFullscreenMedia: true
-        ) ?? false
-        guard removedTrackedWebViews || _webView != nil else { return }
+        TabWebViewCleanupOwner.performComprehensiveCleanup(context: webViewCleanupContext())
+    }
 
-        RuntimeDiagnostics.debug("Performing comprehensive WebView cleanup for '\(name)'.", category: "Tab")
-
-        if let webView = _webView {
-            cleanupCloneWebView(webView)
-        }
-
-        _webView = nil
-
-        RuntimeDiagnostics.debug("Completed WebView cleanup for '\(name)'.", category: "Tab")
+    private func webViewCleanupContext() -> TabWebViewCleanupOwner.Context {
+        TabWebViewCleanupOwner.Context(
+            tabId: id,
+            tabName: { self.name },
+            browserManager: browserManager,
+            currentWebView: { self._webView },
+            clearCurrentWebView: { self._webView = nil },
+            removeAllWebViews: { closeActiveFullscreenMedia in
+                self.browserManager?.webViewCoordinator?.removeAllWebViews(
+                    for: self,
+                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
+                ) ?? false
+            },
+            currentPermissionPageId: { self.currentPermissionPageId() },
+            profilePartitionId: { self.resolveProfile()?.id.uuidString },
+            invalidateCurrentPermissionPageForWebViewReplacement: { reason in
+                self.invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
+            },
+            unbindAudioState: { webView in
+                self.unbindAudioState(from: webView)
+            },
+            removeNavigationStateObservers: { webView in
+                self.removeNavigationStateObservers(from: webView)
+            },
+            removeNavigationDelegateBundle: { webView in
+                self.removeNavigationDelegateBundle(for: webView)
+            },
+            resetPlaybackActivity: {
+                self.resetPlaybackActivity()
+            },
+            setLoadingIdle: {
+                self.loadingState = .idle
+            }
+        )
     }
 
     func activate() {

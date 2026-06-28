@@ -1079,6 +1079,74 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
     }
 
+    func testTabWebViewCleanupOwnerPreservesShutdownOrdering() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Models/Tab/TabWebViewCleanupOwner.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let shutdown = try sourceSlice(
+            source,
+            from: "static func perform(\n        on webView: WKWebView,\n        scope: Scope,",
+            to: "@MainActor\n    static func perform(\n        on webView: WKWebView,\n        tabId: UUID,"
+        )
+        try assertTokenOrder(
+            shutdown,
+            [
+                "webView.stopLoading()",
+                "stopNativeMedia(on: webView)",
+                "cleanupWebViewIfLoaded(",
+                "controller.cleanUpBeforeClosing()",
+                "prepareForReleaseIfNeeded(webView, scope: scope)",
+                "additionalTabCleanup?()",
+                "webView.navigationDelegate = nil",
+                "webView.uiDelegate = nil",
+                "webView.removeFromSuperview()",
+                "removeWebViewFromContainers(webView)"
+            ]
+        )
+
+        let cleanup = try sourceSlice(
+            source,
+            from: "static func cleanupWebView(_ webView: WKWebView, context: Context)",
+            to: "@MainActor\n    static func performComprehensiveCleanup(context: Context)"
+        )
+        try assertTokenOrder(
+            cleanup,
+            [
+                ".webViewDeallocated(",
+                "deferProtectedWebViewCleanup(",
+                "SumiWebViewShutdown.perform(",
+                "context.unbindAudioState(webView)",
+                "context.removeNavigationStateObservers(webView)",
+                "context.removeNavigationDelegateBundle(webView)"
+            ]
+        )
+
+        let unload = try sourceSlice(
+            source,
+            from: "static func unloadWebView(context: Context)",
+            to: "@MainActor\n    private static func notifyNowPlayingTabUnloaded"
+        )
+        try assertTokenOrder(
+            unload,
+            [
+                "context.invalidateCurrentPermissionPageForWebViewReplacement",
+                "context.removeAllWebViews(true)",
+                "cleanupWebView(webView, context: context)",
+                "context.clearCurrentWebView()",
+                "context.resetPlaybackActivity()",
+                "context.setLoadingIdle()",
+                "notifyNowPlayingTabUnloaded(tabId: context.tabId)"
+            ]
+        )
+    }
+
     func testWebViewCoordinatorCleanupKeepsProtectedDeferralAndRefreshPolicySeparate() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
