@@ -4,19 +4,13 @@ actor SumiPermissionCoordinator {
     typealias NowProvider = @Sendable () -> Date
     private typealias DecisionContinuation = CheckedContinuation<SumiPermissionCoordinatorDecision, Never>
     private typealias PendingQuery = SumiPendingAuthorizationQuery
+    private typealias PolicyEvaluation = SumiPermissionDecisionResolutionOwner.PolicyEvaluation
 
-    private struct PolicyEvaluation: Sendable {
-        let permissionType: SumiPermissionType
-        let context: SumiPermissionSecurityContext
-        let result: SumiPermissionPolicyResult
-        let key: SumiPermissionKey
-    }
-
-    private let policyResolver: any SumiPermissionPolicyResolver
     private let memoryStore: InMemoryPermissionStore
     private let persistentStore: (any SumiPermissionStore)?
     private let antiAbuseStore: (any SumiPermissionAntiAbuseStoring)?
     private let antiAbusePolicy: SumiPermissionAntiAbusePolicy
+    private let decisionResolutionOwner: SumiPermissionDecisionResolutionOwner
     private let queue: SumiPermissionQueue
     private let settlementDecisionBuilder = SumiPermissionSettlementDecisionBuilder()
     private let sessionOwnerId: String?
@@ -36,7 +30,6 @@ actor SumiPermissionCoordinator {
         sessionOwnerId: String? = nil,
         now: @escaping NowProvider = { Date() }
     ) {
-        self.policyResolver = policyResolver
         self.memoryStore = memoryStore
         self.persistentStore = persistentStore
         self.antiAbuseStore = antiAbuseStore
@@ -44,120 +37,46 @@ actor SumiPermissionCoordinator {
         self.queue = queue
         self.sessionOwnerId = Self.normalizedOptionalId(sessionOwnerId)
         self.nowProvider = now
+        self.decisionResolutionOwner = SumiPermissionDecisionResolutionOwner(
+            policyResolver: policyResolver,
+            memoryStore: memoryStore,
+            persistentStore: persistentStore,
+            antiAbuseStore: antiAbuseStore,
+            antiAbusePolicy: antiAbusePolicy,
+            sessionOwnerId: Self.normalizedOptionalId(sessionOwnerId),
+            now: now
+        )
     }
 
     func requestPermission(
         _ context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision {
-        guard let concreteTypes = concretePermissionTypes(from: context.request.permissionTypes) else {
-            let result = await policyResolver.evaluate(context)
-            let decision = SumiPermissionCoordinatorDecision.fromPolicyResult(result, context: context)
+        switch await decisionResolutionOwner.resolveRequest(context) {
+        case .immediate(let decision):
             await emitPolicyEventIfNeeded(decision)
             return decision
-        }
-
-        var evaluations: [PolicyEvaluation] = []
-        evaluations.reserveCapacity(concreteTypes.count)
-        for permissionType in concreteTypes {
-            let concreteContext = context.replacingPermissionTypes([permissionType])
-            let result = await policyResolver.evaluate(concreteContext)
-            let key = permissionKey(for: permissionType, context: concreteContext)
-            guard result.isAllowedToProceed else {
-                let decision = SumiPermissionCoordinatorDecision.fromPolicyResult(
-                    result,
-                    context: concreteContext,
-                    permissionTypes: [permissionType]
-                )
-                await emitPolicyEventIfNeeded(decision)
-                return decision
-            }
-            evaluations.append(
-                PolicyEvaluation(
-                    permissionType: permissionType,
-                    context: concreteContext,
-                    result: result,
-                    key: key
-                )
+        case .promptRequired(let promptEvaluations):
+            return await enqueueAuthorizationQuery(
+                originalContext: context,
+                promptEvaluations: promptEvaluations
             )
-        }
-
-        let lookup = await storedDecisionLookup(for: evaluations)
-        if let deniedDecision = lookup.deniedDecision {
-            return deniedDecision
-        }
-        if lookup.promptEvaluations.isEmpty {
-            return aggregateGrantedDecision(
-                lookup.grantedRecords,
-                evaluations: evaluations,
-                context: context
+        case .promptSuppressed(let suppression, let decision):
+            await recordAntiAbuseEvents(
+                type: suppression.eventType,
+                keys: decision.keys,
+                reason: suppression.reason
             )
+            emit(.promptSuppressed(suppression, decision: decision))
+            return decision
         }
-
-        if let suppressedDecision = await promptSuppressedDecision(
-            originalContext: context,
-            promptEvaluations: lookup.promptEvaluations
-        ) {
-            return suppressedDecision
-        }
-
-        return await enqueueAuthorizationQuery(
-            originalContext: context,
-            promptEvaluations: lookup.promptEvaluations
-        )
     }
 
     func queryPermissionState(
         _ context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision {
-        guard let concreteTypes = concretePermissionTypes(from: context.request.permissionTypes) else {
-            let result = await policyResolver.evaluate(context)
-            let decision = SumiPermissionCoordinatorDecision.fromPolicyResult(result, context: context)
-            await emitPolicyEventIfNeeded(decision)
-            return decision
-        }
-
-        var evaluations: [PolicyEvaluation] = []
-        evaluations.reserveCapacity(concreteTypes.count)
-        for permissionType in concreteTypes {
-            let concreteContext = context.replacingPermissionTypes([permissionType])
-            let result = await policyResolver.evaluate(concreteContext)
-            let key = permissionKey(for: permissionType, context: concreteContext)
-            guard result.isAllowedToProceed else {
-                let decision = SumiPermissionCoordinatorDecision.fromPolicyResult(
-                    result,
-                    context: concreteContext,
-                    permissionTypes: [permissionType]
-                )
-                await emitPolicyEventIfNeeded(decision)
-                return decision
-            }
-            evaluations.append(
-                PolicyEvaluation(
-                    permissionType: permissionType,
-                    context: concreteContext,
-                    result: result,
-                    key: key
-                )
-            )
-        }
-
-        let lookup = await storedDecisionLookup(for: evaluations)
-        if let deniedDecision = lookup.deniedDecision {
-            return deniedDecision
-        }
-        if lookup.promptEvaluations.isEmpty {
-            return aggregateGrantedDecision(
-                lookup.grantedRecords,
-                evaluations: evaluations,
-                context: context
-            )
-        }
-
-        return promptRequiredDecision(
-            originalContext: context,
-            promptEvaluations: lookup.promptEvaluations,
-            reason: "permission-state-query-prompt-required"
-        )
+        let decision = await decisionResolutionOwner.resolveQuery(context)
+        await emitPolicyEventIfNeeded(decision)
+        return decision
     }
 
     func stateSnapshot() -> SumiPermissionCoordinatorState {
@@ -491,154 +410,6 @@ actor SumiPermissionCoordinator {
         return decision
     }
 
-    private func storedDecisionLookup(
-        for evaluations: [PolicyEvaluation]
-    ) async -> (
-        deniedDecision: SumiPermissionCoordinatorDecision?,
-        grantedRecords: [SumiPermissionStoreRecord],
-        promptEvaluations: [PolicyEvaluation]
-    ) {
-        var grantedRecords: [SumiPermissionStoreRecord] = []
-        var promptEvaluations: [PolicyEvaluation] = []
-
-        for evaluation in evaluations {
-            if let memoryRecord = try? await memoryStore.getDecision(
-                for: evaluation.key,
-                sessionOwnerId: sessionOwnerId
-            ) {
-                switch memoryRecord.decision.state {
-                case .allow:
-                    try? await memoryStore.recordLastUsed(
-                        for: evaluation.key,
-                        at: nowProvider(),
-                        sessionOwnerId: sessionOwnerId
-                    )
-                    grantedRecords.append(memoryRecord)
-                    continue
-                case .deny:
-                    try? await memoryStore.recordLastUsed(
-                        for: evaluation.key,
-                        at: nowProvider(),
-                        sessionOwnerId: sessionOwnerId
-                    )
-                    return (
-                        SumiPermissionCoordinatorDecision.fromStoredDecision(
-                            memoryRecord.decision,
-                            key: evaluation.key,
-                            reason: "stored-memory-deny"
-                        ),
-                        grantedRecords,
-                        []
-                    )
-                case .ask:
-                    promptEvaluations.append(evaluation)
-                    continue
-                }
-            }
-
-            if !evaluation.context.isEphemeralProfile,
-               evaluation.key.permissionType.canBePersisted,
-               let persistentStore,
-               let persistentRecord = try? await persistentStore.getDecision(for: evaluation.key)
-            {
-                switch persistentRecord.decision.state {
-                case .allow:
-                    try? await persistentStore.recordLastUsed(
-                        for: evaluation.key,
-                        at: nowProvider()
-                    )
-                    grantedRecords.append(persistentRecord)
-                case .deny:
-                    try? await persistentStore.recordLastUsed(
-                        for: evaluation.key,
-                        at: nowProvider()
-                    )
-                    return (
-                        SumiPermissionCoordinatorDecision.fromStoredDecision(
-                            persistentRecord.decision,
-                            key: evaluation.key,
-                            reason: "stored-persistent-deny"
-                        ),
-                        grantedRecords,
-                        []
-                    )
-                case .ask:
-                    promptEvaluations.append(evaluation)
-                }
-            } else {
-                promptEvaluations.append(evaluation)
-            }
-        }
-
-        return (nil, grantedRecords, promptEvaluations)
-    }
-
-    private func aggregateGrantedDecision(
-        _ records: [SumiPermissionStoreRecord],
-        evaluations: [PolicyEvaluation],
-        context: SumiPermissionSecurityContext
-    ) -> SumiPermissionCoordinatorDecision {
-        let firstDecision = records.first?.decision
-        let currentSystemSnapshot = evaluations
-            .compactMap(\.result.systemAuthorizationSnapshot)
-            .first
-        return SumiPermissionCoordinatorDecision(
-            outcome: .granted,
-            state: .allow,
-            persistence: firstDecision?.persistence,
-            source: firstDecision?.source ?? .user,
-            reason: "stored-allow",
-            permissionTypes: evaluations.map(\.permissionType),
-            keys: evaluations.map(\.key),
-            systemAuthorizationSnapshot: currentSystemSnapshot ?? firstDecision.flatMap {
-                SumiPermissionCoordinatorDecision.decodedSnapshot($0.systemAuthorizationSnapshot)
-            },
-            shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context.isEphemeralProfile
-        )
-    }
-
-    private func promptSuppressedDecision(
-        originalContext: SumiPermissionSecurityContext,
-        promptEvaluations: [PolicyEvaluation]
-    ) async -> SumiPermissionCoordinatorDecision? {
-        guard let antiAbuseStore else { return nil }
-        let now = nowProvider()
-        for evaluation in promptEvaluations {
-            let events = await antiAbuseStore.events(for: evaluation.key, now: now)
-            guard let suppression = antiAbusePolicy.suppression(
-                for: evaluation.key,
-                events: events,
-                now: now
-            ) else {
-                continue
-            }
-            let decision = SumiPermissionCoordinatorDecision(
-                outcome: .suppressed,
-                state: .ask,
-                persistence: nil,
-                source: suppression.decisionSource,
-                reason: suppression.reason,
-                permissionTypes: promptEvaluations.map(\.permissionType),
-                keys: promptEvaluations.map(\.key),
-                systemAuthorizationSnapshot: promptEvaluations
-                    .compactMap(\.result.systemAuthorizationSnapshot)
-                    .first,
-                shouldOfferSystemSettings: false,
-                disablesPersistentAllow: originalContext.isEphemeralProfile,
-                promptSuppression: suppression
-            )
-            await recordAntiAbuseEvents(
-                type: suppression.eventType,
-                keys: promptEvaluations.map(\.key),
-                reason: suppression.reason
-            )
-            emit(.promptSuppressed(suppression, decision: decision))
-            return decision
-        }
-        return nil
-    }
-
     private func enqueueAuthorizationQuery(
         originalContext: SumiPermissionSecurityContext,
         promptEvaluations: [PolicyEvaluation]
@@ -671,28 +442,6 @@ actor SumiPermissionCoordinator {
                 await self.cancel(requestId: promptRequest.id, reason: "task-cancelled")
             }
         }
-    }
-
-    private func promptRequiredDecision(
-        originalContext: SumiPermissionSecurityContext,
-        promptEvaluations: [PolicyEvaluation],
-        reason: String
-    ) -> SumiPermissionCoordinatorDecision {
-        let policyResults = promptEvaluations.map(\.result)
-        return SumiPermissionCoordinatorDecision(
-            outcome: .promptRequired,
-            state: .ask,
-            persistence: nil,
-            source: policyResults.first?.source ?? .defaultSetting,
-            reason: reason,
-            permissionTypes: promptEvaluations.map(\.permissionType),
-            keys: promptEvaluations.map(\.key),
-            queryId: nil,
-            systemAuthorizationSnapshot: policyResults.compactMap(\.systemAuthorizationSnapshot).first,
-            shouldOfferSystemSettings: policyResults.contains(where: \.mayOpenSystemSettings),
-            disablesPersistentAllow: originalContext.isEphemeralProfile
-                || !allowedPersistences(for: policyResults).contains(.persistent)
-        )
     }
 
     private func register(
@@ -1096,23 +845,6 @@ actor SumiPermissionCoordinator {
             : nil
     }
 
-    private func concretePermissionTypes(
-        from permissionTypes: [SumiPermissionType]
-    ) -> [SumiPermissionType]? {
-        if Set(permissionTypes) == Set([.camera, .microphone]), permissionTypes.count == 2 {
-            return [.camera, .microphone]
-        }
-        if Set(permissionTypes) == Set([.screenCapture, .microphone]), permissionTypes.count == 2 {
-            return [.screenCapture, .microphone]
-        }
-        guard permissionTypes.count == 1,
-              permissionTypes.first != .cameraAndMicrophone
-        else {
-            return nil
-        }
-        return permissionTypes
-    }
-
     private func request(
         from context: SumiPermissionSecurityContext,
         permissionTypes: [SumiPermissionType]
@@ -1130,20 +862,6 @@ actor SumiPermissionCoordinator {
             requestedAt: context.request.requestedAt,
             isEphemeralProfile: context.isEphemeralProfile,
             profilePartitionId: context.profilePartitionId
-        )
-    }
-
-    private func permissionKey(
-        for permissionType: SumiPermissionType,
-        context: SumiPermissionSecurityContext
-    ) -> SumiPermissionKey {
-        SumiPermissionKey(
-            requestingOrigin: context.requestingOrigin,
-            topOrigin: context.topOrigin,
-            permissionType: permissionType,
-            profilePartitionId: context.profilePartitionId,
-            transientPageId: context.transientPageId,
-            isEphemeralProfile: context.isEphemeralProfile
         )
     }
 
@@ -1277,44 +995,5 @@ actor SumiPermissionCoordinator {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
-    }
-}
-
-private extension SumiPermissionSecurityContext {
-    func replacingPermissionTypes(
-        _ permissionTypes: [SumiPermissionType]
-    ) -> SumiPermissionSecurityContext {
-        let replacementRequest = SumiPermissionRequest(
-            id: request.id,
-            tabId: request.tabId,
-            pageId: request.pageId,
-            frameId: request.frameId,
-            requestingOrigin: requestingOrigin,
-            topOrigin: topOrigin,
-            displayDomain: request.displayDomain,
-            permissionTypes: permissionTypes,
-            hasUserGesture: hasUserGesture ?? request.hasUserGesture,
-            requestedAt: request.requestedAt,
-            isEphemeralProfile: isEphemeralProfile,
-            profilePartitionId: profilePartitionId
-        )
-        return SumiPermissionSecurityContext(
-            request: replacementRequest,
-            requestingOrigin: requestingOrigin,
-            topOrigin: topOrigin,
-            committedURL: committedURL,
-            visibleURL: visibleURL,
-            mainFrameURL: mainFrameURL,
-            isMainFrame: isMainFrame,
-            isActiveTab: isActiveTab,
-            isVisibleTab: isVisibleTab,
-            hasUserGesture: hasUserGesture,
-            isEphemeralProfile: isEphemeralProfile,
-            profilePartitionId: profilePartitionId,
-            transientPageId: transientPageId,
-            surface: surface,
-            navigationOrPageGeneration: navigationOrPageGeneration,
-            now: now
-        )
     }
 }

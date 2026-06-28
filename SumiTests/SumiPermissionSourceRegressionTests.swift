@@ -176,15 +176,25 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
 
     func testAntiAbuseSuppressionAndCleanupDoNotPersistUnsafeSideEffects() throws {
         let coordinator = try sourceFile("Sumi/Permissions/SumiPermissionCoordinator.swift")
+        let decisionResolutionOwner = try sourceFile("Sumi/Permissions/SumiPermissionDecisionResolutionOwner.swift")
         let cleanup = try sourceFile("Sumi/Permissions/SumiPermissionCleanupService.swift")
-        let suppressionBody = try coordinator.slice(
+        let suppressionBody = try decisionResolutionOwner.slice(
             from: "private func promptSuppressedDecision",
-            to: "private func enqueueAuthorizationQuery"
+            to: "private func promptRequiredDecision"
+        )
+        let coordinatorSuppressionEmission = try coordinator.slice(
+            from: "case .promptSuppressed(let suppression, let decision):",
+            to: "func queryPermissionState("
         )
 
         XCTAssertTrue(suppressionBody.contains("outcome: .suppressed"))
         XCTAssertFalse(suppressionBody.contains("persistentStore.setDecision"))
         XCTAssertFalse(suppressionBody.contains("SumiPermissionDecision(\n            state: .deny"))
+        XCTAssertTrue(coordinatorSuppressionEmission.contains("recordAntiAbuseEvents("))
+        XCTAssertTrue(coordinatorSuppressionEmission.contains("type: suppression.eventType"))
+        XCTAssertTrue(coordinatorSuppressionEmission.contains("emit(.promptSuppressed(suppression, decision: decision))"))
+        XCTAssertFalse(coordinatorSuppressionEmission.contains("persistentStore.setDecision"))
+        XCTAssertFalse(coordinatorSuppressionEmission.contains("state: .deny"))
 
         XCTAssertTrue(cleanup.contains("store.resetDecision(for: record.key)"))
         XCTAssertFalse(cleanup.contains("removeWebsiteData"))

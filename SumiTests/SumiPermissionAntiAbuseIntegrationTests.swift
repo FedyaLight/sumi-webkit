@@ -111,10 +111,14 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
 
     func testSuppressionSourceDoesNotPersistDenyInCoordinatorOrBridgeCode() throws {
         let coordinatorSource = try sourceFile("Sumi/Permissions/SumiPermissionCoordinator.swift")
+        let decisionResolutionSource = try sourceFile("Sumi/Permissions/SumiPermissionDecisionResolutionOwner.swift")
         let notificationSource = try sourceFile("Sumi/Permissions/SumiNotificationPermissionBridge.swift")
 
-        let suppressionRange = try XCTUnwrap(coordinatorSource.range(of: "private func promptSuppressedDecision"))
-        let suppressionTail = coordinatorSource[suppressionRange.lowerBound...]
+        XCTAssertFalse(coordinatorSource.contains("private func promptSuppressedDecision"))
+        let suppressionRange = try XCTUnwrap(
+            decisionResolutionSource.range(of: "private func promptSuppressedDecision")
+        )
+        let suppressionTail = decisionResolutionSource[suppressionRange.lowerBound...]
         let suppressionBody = String(suppressionTail.prefix(2_400))
 
         XCTAssertTrue(suppressionBody.contains("outcome: .suppressed"))
