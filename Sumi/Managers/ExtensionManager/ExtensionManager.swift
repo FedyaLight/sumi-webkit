@@ -211,10 +211,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
     var retiredInitialDocumentNativeMessagingWarmupTaskTokens = Set<UUID>()
     var finishedUnregisteredInitialDocumentNativeMessagingWarmupTaskTokens = Set<UUID>()
-    var extensionPermissionPromptQueue: [@MainActor () -> Void] = []
-    var isPresentingExtensionPermissionPrompt = false
-    var extensionPermissionPromptWaitersByKey:
-        [String: [CheckedContinuation<ExtensionPermissionPromptDecision, Never>]] = [:]
+    let extensionPermissionPromptPresentationOwner =
+        ExtensionPermissionPromptPresentationOwner()
     var permissionsOriginsCompatibilityInstallations:
         [ObjectIdentifier: Set<String>] = [:]
     var extensionPageUserContentControllersByProfile:

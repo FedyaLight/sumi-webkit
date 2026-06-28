@@ -28,6 +28,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/ExtensionActionSurfaceStatePresenter.swift",
         "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
         "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptRoutingOwner.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptPresentationOwner.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -347,6 +348,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let controllerDelegateSource = try source(named: extensionManagerPaths[7])
         let storeSource = try source(named: extensionManagerPaths[17])
         let capabilityOwnerSource = try source(named: extensionManagerPaths[18])
+        let promptPresentationOwnerSource = try source(named: extensionManagerPaths[23])
         let siteAccessPolicyStoreSource = try source(
             named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicyStore.swift"
         )
@@ -382,9 +384,15 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             controllerDelegateSource.contains("promptForExtensionPermissionDecision")
                 && controllerDelegateSource.contains("promptForPermissionToAccess")
                 && controllerDelegateSource.contains("promptForPermissionMatchPatterns")
-                && controllerDelegateSource.contains("extensionPermissionPromptQueue")
-                && controllerDelegateSource.contains("extensionPermissionPromptWaitersByKey"),
-            "Safari/WebExtension host access requests must go through a serialized, deduplicated user permission prompt"
+                && promptPresentationOwnerSource.contains("promptQueue")
+                && promptPresentationOwnerSource.contains("promptWaitersByKey")
+                && promptPresentationOwnerSource.contains("isPresentingPrompt"),
+            "Safari/WebExtension host access requests must route through a serialized, deduplicated user permission prompt owner"
+        )
+        XCTAssertFalse(
+            controllerDelegateSource.contains("extensionPermissionPromptQueue")
+                || controllerDelegateSource.contains("extensionPermissionPromptWaitersByKey"),
+            "WKWebExtensionControllerDelegate should adapt WebKit prompts without owning prompt queue state"
         )
         XCTAssertTrue(
             storeSource.contains("extensionPermissionDecisionsStorageKey")
@@ -419,6 +427,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/ExtensionActionSurfaceStatePresenter.swift",
             "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
             "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptRoutingOwner.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptPresentationOwner.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicy.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicyStore.swift",
