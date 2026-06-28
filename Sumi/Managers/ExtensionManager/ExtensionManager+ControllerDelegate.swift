@@ -554,35 +554,27 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
         let extensionId = extensionID(for: extensionContext)
         let profileId = profileId(for: extensionContext)
-        var storedResolvedPermissions = Set<WKWebExtension.Permission>()
-        for permission in unresolvedPermissions {
-            guard let extensionId, let profileId,
-                  let stored = storedExtensionPermissionDecision(
-                      extensionId: extensionId,
-                      profileId: profileId,
-                      targetKind: .permission,
-                      target: permission.rawValue
-                  )
-            else { continue }
-            let status: WKWebExtensionContext.PermissionStatus =
-                stored.state == .allowed ? .grantedExplicitly : .deniedExplicitly
-            extensionContext.setPermissionStatus(
-                status,
-                for: permission,
-                expirationDate: stored.expiresAt
+        let storedResolvedPermissions = ExtensionPermissionPromptRoutingOwner
+            .applyStoredPermissionDecisions(
+                to: unresolvedPermissions,
+                in: extensionContext,
+                extensionId: extensionId,
+                profileId: profileId,
+                manager: self
             )
-            storedResolvedPermissions.insert(permission)
-        }
 
         let promptPermissions = unresolvedPermissions.subtracting(storedResolvedPermissions)
 
         guard promptPermissions.isEmpty == false else {
-            let grantedPermissions = permissions.filter {
-                isGrantedPermissionStatus(
-                    effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
-                )
-            }
-            completionHandler(grantedPermissions, nil)
+            completionHandler(
+                ExtensionPermissionPromptRoutingOwner.grantedPermissions(
+                    from: permissions,
+                    in: extensionContext,
+                    tab: tab,
+                    manager: self
+                ),
+                nil
+            )
             return
         }
 
@@ -619,12 +611,15 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                         )
                     }
                 }
-                let grantedPermissions = permissions.filter {
-                    self.isGrantedPermissionStatus(
-                        self.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
-                    )
-                }
-                completionHandler(grantedPermissions, expirationDate)
+                completionHandler(
+                    ExtensionPermissionPromptRoutingOwner.grantedPermissions(
+                        from: permissions,
+                        in: extensionContext,
+                        tab: tab,
+                        manager: self
+                    ),
+                    expirationDate
+                )
             case .deny:
                 for permission in promptPermissions {
                     extensionContext.setPermissionStatus(
@@ -643,12 +638,15 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                         )
                     }
                 }
-                let grantedPermissions = permissions.filter {
-                    self.isGrantedPermissionStatus(
-                        self.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
-                    )
-                }
-                completionHandler(grantedPermissions, nil)
+                completionHandler(
+                    ExtensionPermissionPromptRoutingOwner.grantedPermissions(
+                        from: permissions,
+                        in: extensionContext,
+                        tab: tab,
+                        manager: self
+                    ),
+                    nil
+                )
             }
         }
     }
@@ -667,41 +665,28 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
         let extensionId = extensionID(for: extensionContext)
         let profileId = profileId(for: extensionContext)
-        var policyResolvedMatches = Set<WKWebExtension.MatchPattern>()
-        for matchPattern in unresolvedMatches {
-            guard let extensionId, let profileId else { continue }
-            switch configuredSiteAccessLevel(
-                for: matchPattern,
+        let policyResolvedMatches = ExtensionPermissionPromptRoutingOwner
+            .applyConfiguredSiteAccessDecisions(
+                to: unresolvedMatches,
+                in: extensionContext,
                 extensionId: extensionId,
-                profileId: profileId
-            ) {
-            case .allow:
-                extensionContext.setPermissionStatus(
-                    .grantedExplicitly,
-                    for: matchPattern
-                )
-                policyResolvedMatches.insert(matchPattern)
-            case .deny:
-                extensionContext.setPermissionStatus(
-                    .deniedExplicitly,
-                    for: matchPattern
-                )
-                policyResolvedMatches.insert(matchPattern)
-            case .ask:
-                break
-            }
-        }
+                profileId: profileId,
+                manager: self
+            )
 
         let promptMatches = unresolvedMatches
             .subtracting(policyResolvedMatches)
 
         guard promptMatches.isEmpty == false else {
-            let grantedMatches = matchPatterns.filter {
-                isGrantedPermissionStatus(
-                    effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
-                )
-            }
-            completionHandler(grantedMatches, nil)
+            completionHandler(
+                ExtensionPermissionPromptRoutingOwner.grantedMatchPatterns(
+                    from: matchPatterns,
+                    in: extensionContext,
+                    tab: tab,
+                    manager: self
+                ),
+                nil
+            )
             return
         }
 
@@ -745,12 +730,15 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                         )
                     }
                 }
-                let grantedMatches = matchPatterns.filter {
-                    self.isGrantedPermissionStatus(
-                        self.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
-                    )
-                }
-                completionHandler(grantedMatches, expirationDate)
+                completionHandler(
+                    ExtensionPermissionPromptRoutingOwner.grantedMatchPatterns(
+                        from: matchPatterns,
+                        in: extensionContext,
+                        tab: tab,
+                        manager: self
+                    ),
+                    expirationDate
+                )
             case .deny:
                 for matchPattern in promptMatches {
                     extensionContext.setPermissionStatus(
@@ -775,12 +763,15 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                         )
                     }
                 }
-                let grantedMatches = matchPatterns.filter {
-                    self.isGrantedPermissionStatus(
-                        self.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
-                    )
-                }
-                completionHandler(grantedMatches, nil)
+                completionHandler(
+                    ExtensionPermissionPromptRoutingOwner.grantedMatchPatterns(
+                        from: matchPatterns,
+                        in: extensionContext,
+                        tab: tab,
+                        manager: self
+                    ),
+                    nil
+                )
             }
         }
     }
@@ -792,148 +783,44 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Set<URL>, Date?) -> Void
     ) {
-        var autoGranted = Set<URL>()
-        var unresolved = Set<URL>()
-
         let extensionId = extensionID(for: extensionContext)
         let profileId = profileId(for: extensionContext)
-        for url in urls {
-            let status = effectivePermissionStatus(for: url, in: extensionContext, tab: tab)
-            if isGrantedPermissionStatus(status) {
-                autoGranted.insert(url)
-                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
-                    granted: true,
-                    extensionId: extensionId,
-                    reason: "promptAlreadyGranted"
-                )
-            } else if status == .deniedExplicitly {
-                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
-                    granted: false,
-                    extensionId: extensionId,
-                    reason: "promptAlreadyDenied"
-                )
-            } else if explicitlyGrantURLIfCoveredByGrantedMatchPattern(
-                url,
-                in: extensionContext,
-                tab: tab
-            ) {
-                autoGranted.insert(url)
-                SafariExtensionAutofillFillDiagnostics.recordHostPermission(
-                    granted: true,
-                    extensionId: extensionId,
-                    reason: "promptMatchPattern"
-                )
-            } else if let extensionId,
-                      let profileId,
-                      ["http", "https"].contains(url.scheme?.lowercased() ?? "")
-            {
-                switch configuredSiteAccessLevel(
-                    for: url,
-                    extensionId: extensionId,
-                    profileId: profileId
-                ) {
-                case .allow:
-                    grantSiteAccess(
-                        to: url,
-                        in: extensionContext,
-                        extensionId: extensionId,
-                        profileId: profileId,
-                        persistPolicy: false
-                    )
-                    autoGranted.insert(url)
-                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
-                        granted: true,
-                        extensionId: extensionId,
-                        reason: "promptSiteAccessAllowed"
-                    )
-                case .deny:
-                    denySiteAccess(
-                        to: url,
-                        in: extensionContext,
-                        extensionId: extensionId,
-                        profileId: profileId,
-                        persistPolicy: false
-                    )
-                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
-                        granted: false,
-                        extensionId: extensionId,
-                        reason: "promptSiteAccessDenied"
-                    )
-                case .ask:
-                    unresolved.insert(url)
-                }
-            } else if let patternString = hostMatchPatternString(for: url),
-                      let extensionId,
-                      let profileId,
-                      let stored = storedExtensionPermissionDecision(
-                          extensionId: extensionId,
-                          profileId: profileId,
-                          targetKind: .matchPattern,
-                          target: patternString
-                      ),
-                      let matchPattern = try? WKWebExtension.MatchPattern(
-                          string: patternString
-                      )
-            {
-                let storedStatus: WKWebExtensionContext.PermissionStatus =
-                    stored.state == .allowed ? .grantedExplicitly : .deniedExplicitly
-                extensionContext.setPermissionStatus(
-                    storedStatus,
-                    for: matchPattern,
-                    expirationDate: stored.expiresAt
-                )
-                if stored.state == .allowed,
-                   explicitlyGrantURLIfCoveredByGrantedMatchPattern(
-                       url,
-                       in: extensionContext,
-                       tab: tab
-                   )
-                {
-                    autoGranted.insert(url)
-                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
-                        granted: true,
-                        extensionId: extensionId,
-                        reason: "promptStoredMatchPattern"
-                    )
-                } else {
-                    SafariExtensionAutofillFillDiagnostics.recordHostPermission(
-                        granted: false,
-                        extensionId: extensionId,
-                        reason: "promptStoredDeniedMatchPattern"
-                    )
-                }
-            } else {
-                unresolved.insert(url)
-            }
-        }
+        let resolution = ExtensionPermissionPromptRoutingOwner.resolveURLPermissionsBeforePrompt(
+            urls: urls,
+            in: extensionContext,
+            tab: tab,
+            extensionId: extensionId,
+            profileId: profileId,
+            manager: self
+        )
 
-        guard unresolved.isEmpty == false else {
-            completionHandler(autoGranted, nil)
+        guard resolution.unresolved.isEmpty == false else {
+            completionHandler(resolution.autoGranted, nil)
             return
         }
 
         Task { @MainActor [weak self] in
             guard let self else {
-                completionHandler(autoGranted, nil)
+                completionHandler(resolution.autoGranted, nil)
                 return
             }
-            let promptPatterns = unresolved.compactMap {
+            let promptPatterns = resolution.unresolved.compactMap {
                 self.hostMatchPatternString(for: $0)
             }
             let decision = await self.promptForExtensionPermissionDecision(
                 extensionContext: extensionContext,
-                targets: unresolved.map(Self.extensionPermissionTarget(for:)),
+                targets: resolution.unresolved.map(Self.extensionPermissionTarget(for:)),
                 reason: "promptForPermissionToAccess",
                 dedupeKey: self.permissionPromptDedupeKey(
                     extensionContext: extensionContext,
                     targets: promptPatterns.isEmpty
-                        ? unresolved.map(Self.extensionPermissionTarget(for:))
+                        ? resolution.unresolved.map(Self.extensionPermissionTarget(for:))
                         : promptPatterns
                 )
             )
             switch decision {
             case .allow(let expirationDate):
-                for url in unresolved {
+                for url in resolution.unresolved {
                     self.grantSiteAccess(
                         to: url,
                         in: extensionContext,
@@ -960,9 +847,12 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                         reason: "promptAllowed"
                     )
                 }
-                completionHandler(autoGranted.union(unresolved), expirationDate)
+                completionHandler(
+                    resolution.autoGranted.union(resolution.unresolved),
+                    expirationDate
+                )
             case .deny:
-                for url in unresolved {
+                for url in resolution.unresolved {
                     self.denySiteAccess(
                         to: url,
                         in: extensionContext,
@@ -988,7 +878,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                         reason: "promptDenied"
                     )
                 }
-                completionHandler(autoGranted, nil)
+                completionHandler(resolution.autoGranted, nil)
             }
         }
     }

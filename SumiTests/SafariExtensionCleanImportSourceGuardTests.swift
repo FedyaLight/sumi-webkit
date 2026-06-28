@@ -27,6 +27,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentationOwner.swift",
         "Sumi/Managers/ExtensionManager/ExtensionActionSurfaceStatePresenter.swift",
         "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
+        "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptRoutingOwner.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -417,6 +418,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentationOwner.swift",
             "Sumi/Managers/ExtensionManager/ExtensionActionSurfaceStatePresenter.swift",
             "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptRoutingOwner.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicy.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicyStore.swift",
@@ -532,6 +534,9 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let controllerSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
         )
+        let routingOwnerSource = try source(
+            named: "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptRoutingOwner.swift"
+        )
         let uiSource = try source(
             named: "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
         )
@@ -544,8 +549,12 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "The shared permission status helper must evaluate permissions, match patterns, and URLs in the supplied tab context"
         )
         XCTAssertTrue(
-            controllerSource.contains("effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)")
-                && controllerSource.contains("effectivePermissionStatus(for: url, in: extensionContext, tab: tab)")
+            routingOwnerSource.contains(
+                "manager.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)"
+            )
+                && routingOwnerSource.contains("manager.effectivePermissionStatus(")
+                && routingOwnerSource.contains("for: url,")
+                && routingOwnerSource.contains("tab: tab")
                 && uiSource.contains("effectivePermissionStatus("),
             "WebKit permission prompts and action access checks must fall back to global grants when tab-aware status is unknown"
         )
