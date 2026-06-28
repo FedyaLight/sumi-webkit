@@ -12,20 +12,6 @@ import Observation
 import QuartzCore
 import WebKit
 
-enum WebViewSyncLoadPolicy {
-    static func shouldLoadTarget(
-        desiredURL: URL,
-        targetURL: URL?,
-        targetHistoryURL: URL?,
-        isOriginatingWebView: Bool
-    ) -> Bool {
-        guard !isOriginatingWebView else { return false }
-        guard targetURL != desiredURL else { return false }
-        guard targetHistoryURL != desiredURL else { return false }
-        return true
-    }
-}
-
 enum CompositorPaneDestination: String, CaseIterable {
     case single
     case left
@@ -46,9 +32,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     @ObservationIgnored
     private let visibleWebViewRuntimeOwner = VisibleWebViewRuntimeOwner()
 
-    /// Prevent recursive sync calls
     @ObservationIgnored
-    private var isSyncingTab: Set<UUID> = []
+    private let crossWindowSyncOwner = WebViewCrossWindowSyncOwner()
 
     @ObservationIgnored
     private let webViewCreationPlanningOwner = WebViewCreationPlanningOwner()
@@ -1436,39 +1421,22 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     /// Sync a tab's URL across all windows displaying it
     func syncTab(_ tab: Tab, to url: URL, originatingWebView: WKWebView? = nil) {
         let tabId = tab.id
-        // Prevent recursive sync calls
-        guard !isSyncingTab.contains(tabId) else { return }
-
-        isSyncingTab.insert(tabId)
-        defer { isSyncingTab.remove(tabId) }
-
-        // Get all web views for this tab across all windows
-        let allWebViews = getAllWebViews(for: tabId)
-
-        for webView in allWebViews {
-            if isWebViewProtectedFromCompositorMutation(webView) {
-                RuntimeDiagnostics.protectedWebViewTrace(
-                    "skipSyncProtected webView=\(ObjectIdentifier(webView)) tab=\(tabId.uuidString.prefix(8))"
-                )
-                continue
+        crossWindowSyncOwner.syncTab(
+            tabId,
+            to: url,
+            webViews: getAllWebViews(for: tabId),
+            originatingWebView: originatingWebView,
+            isProtected: { [self] webView in
+                isWebViewProtectedFromCompositorMutation(webView)
+            },
+            load: { webView in
+                tab.performMainFrameNavigationAfterHydrationIfNeeded(
+                    on: webView
+                ) { resolvedWebView in
+                    resolvedWebView.load(URLRequest(url: url))
+                }
             }
-            let isOriginatingWebView = originatingWebView.map { $0 === webView } ?? false
-            let targetHistoryURL = webView.backForwardList.currentItem?.url
-            guard WebViewSyncLoadPolicy.shouldLoadTarget(
-                desiredURL: url,
-                targetURL: webView.url,
-                targetHistoryURL: targetHistoryURL,
-                isOriginatingWebView: isOriginatingWebView
-            ) else {
-                continue
-            }
-
-            tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                on: webView
-            ) { resolvedWebView in
-                resolvedWebView.load(URLRequest(url: url))
-            }
-        }
+        )
     }
 
     /// Reload a tab across all windows displaying it
@@ -1480,30 +1448,29 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return
         }
         let tabId = tab.id
-        let allWebViews = getAllWebViews(for: tabId)
-        for webView in allWebViews {
-            if isWebViewProtectedFromCompositorMutation(webView) {
-                RuntimeDiagnostics.protectedWebViewTrace(
-                    "skipReloadProtected webView=\(ObjectIdentifier(webView)) tab=\(tabId.uuidString.prefix(8))"
-                )
-                continue
+        crossWindowSyncOwner.reloadTab(
+            tabId,
+            webViews: getAllWebViews(for: tabId),
+            isProtected: { [self] webView in
+                isWebViewProtectedFromCompositorMutation(webView)
+            },
+            reload: { webView in
+                tab.performMainFrameNavigationAfterHydrationIfNeeded(
+                    on: webView
+                ) { resolvedWebView in
+                    resolvedWebView.reload()
+                }
             }
-            tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                on: webView
-            ) { resolvedWebView in
-                resolvedWebView.reload()
-            }
-        }
+        )
     }
 
     /// Set mute state for a tab across all windows
     func setMuteState(_ muted: Bool, for tabId: UUID) {
-        let windowWebViews = webViewRegistry.windowWebViews(for: tabId)
-        guard windowWebViews.isEmpty == false else { return }
-
-        for (_, webView) in windowWebViews {
-            webView.sumiSetAudioMuted(muted)
-        }
+        crossWindowSyncOwner.setMuteState(
+            muted,
+            for: tabId,
+            windowWebViews: webViewRegistry.windowWebViews(for: tabId)
+        )
     }
 
     private func resolveTab(

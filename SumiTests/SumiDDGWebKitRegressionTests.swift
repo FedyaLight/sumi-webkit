@@ -633,6 +633,89 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(coordinatorUnregisterSource.contains("webViewRegistry.assertTrackingConsistency(\"unregisterTrackedWebViewSlot\")"))
     }
 
+    func testWebViewCoordinatorCrossWindowSyncStaysBehindOwner() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let coordinatorSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+        let ownerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCrossWindowSyncOwner.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(ownerSource.contains("final class WebViewCrossWindowSyncOwner"))
+        XCTAssertTrue(ownerSource.contains("enum WebViewSyncLoadPolicy"))
+        XCTAssertTrue(ownerSource.contains("private var syncingTabIds"))
+
+        let ownerSyncSource = try sourceSlice(
+            ownerSource,
+            from: "func syncTab(",
+            to: "func reloadTab("
+        )
+        try assertTokenOrder(
+            ownerSyncSource,
+            [
+                "guard !syncingTabIds.contains(tabId)",
+                "syncingTabIds.insert(tabId)",
+                "defer { syncingTabIds.remove(tabId) }",
+                "isProtected(webView)",
+                "WebViewSyncLoadPolicy.shouldLoadTarget",
+                "load(webView)"
+            ]
+        )
+
+        let ownerReloadSource = try sourceSlice(
+            ownerSource,
+            from: "func reloadTab(",
+            to: "func setMuteState("
+        )
+        try assertTokenOrder(
+            ownerReloadSource,
+            [
+                "isProtected(webView)",
+                "reload(webView)"
+            ]
+        )
+
+        let coordinatorStart = try XCTUnwrap(
+            coordinatorSource.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
+        ).lowerBound
+        let coordinatorClassSource = String(coordinatorSource[coordinatorStart...])
+        XCTAssertTrue(coordinatorClassSource.contains("private let crossWindowSyncOwner = WebViewCrossWindowSyncOwner()"))
+        XCTAssertFalse(coordinatorClassSource.contains("private var isSyncingTab"))
+        XCTAssertFalse(coordinatorSource.contains("enum WebViewSyncLoadPolicy"))
+
+        let coordinatorSyncSource = try sourceSlice(
+            coordinatorSource,
+            from: "func syncTab(",
+            to: "/// Reload a tab"
+        )
+        XCTAssertTrue(coordinatorSyncSource.contains("crossWindowSyncOwner.syncTab("))
+        XCTAssertTrue(coordinatorSyncSource.contains("getAllWebViews(for: tabId)"))
+        XCTAssertTrue(coordinatorSyncSource.contains("isWebViewProtectedFromCompositorMutation"))
+        XCTAssertTrue(coordinatorSyncSource.contains("performMainFrameNavigationAfterHydrationIfNeeded"))
+        XCTAssertFalse(coordinatorSyncSource.contains("WebViewSyncLoadPolicy.shouldLoadTarget"))
+        XCTAssertFalse(coordinatorSyncSource.contains("syncingTabIds"))
+
+        let coordinatorReloadSource = try sourceSlice(
+            coordinatorSource,
+            from: "func reloadTab(",
+            to: "/// Set mute state"
+        )
+        XCTAssertTrue(coordinatorReloadSource.contains("tab.refresh()"))
+        XCTAssertTrue(coordinatorReloadSource.contains("crossWindowSyncOwner.reloadTab("))
+        XCTAssertTrue(coordinatorReloadSource.contains("getAllWebViews(for: tabId)"))
+        XCTAssertTrue(coordinatorReloadSource.contains("isWebViewProtectedFromCompositorMutation"))
+        XCTAssertTrue(coordinatorReloadSource.contains("performMainFrameNavigationAfterHydrationIfNeeded"))
+    }
+
     func testCompositorHandoffStatePromotedHostCompletionRunsOnceAfterMatchingTake() throws {
         let handoffState = WebViewCompositorHandoffState()
         let tab = Tab(url: try XCTUnwrap(URL(string: "https://example.com")))
