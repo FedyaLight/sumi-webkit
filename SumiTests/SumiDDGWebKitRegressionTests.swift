@@ -1375,6 +1375,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let hiddenCloneEvictionOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewHiddenCloneEvictionOwner.swift"
+            ),
+            encoding: .utf8
+        )
 
         let delegatedCallSites = [
             (
@@ -1386,6 +1392,11 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "func cleanupAllWebViews(tabManager: TabManager)",
                 "// MARK: - History Swipe Protection",
                 ["cleanupScopeOwner.cleanupAllWebViews("]
+            ),
+            (
+                "private func evictHiddenWebViewsIfNeeded(",
+                "private func notifyTabActivatedIfCurrent",
+                ["hiddenCloneEvictionOwner.evictHiddenWebViews("]
             ),
         ]
 
@@ -1399,11 +1410,6 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "func removeAllWebViews(\n        for tab: Tab,",
                 "@discardableResult\n    func suspendWebViews",
                 ["enqueueDeferredProtectedCommand(", "return false"]
-            ),
-            (
-                "private func evictHiddenWebViewsIfNeeded(",
-                "private func notifyTabActivatedIfCurrent",
-                ["enqueueDeferredProtectedCommand(", "continue"]
             ),
         ]
 
@@ -1434,6 +1440,38 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(cleanupScopeSource.contains("WebViewMediaProtectionOwner"))
         XCTAssertFalse(cleanupScopeSource.contains("WindowWebViewRegistry"))
         XCTAssertFalse(cleanupScopeSource.contains("WebViewTrackedCleanupExecutionOwner"))
+
+        XCTAssertTrue(hiddenCloneEvictionOwnerSource.contains("final class WebViewHiddenCloneEvictionOwner"))
+        XCTAssertTrue(hiddenCloneEvictionOwnerSource.contains("typealias LiveWebViews"))
+        XCTAssertTrue(hiddenCloneEvictionOwnerSource.contains("typealias ProtectedCommandEnqueuer"))
+
+        let hiddenCloneEvictionSource = try sourceSlice(
+            hiddenCloneEvictionOwnerSource,
+            from: "func evictHiddenWebViews(",
+            to: "\n    }\n}"
+        )
+        try assertTokenOrder(
+            hiddenCloneEvictionSource,
+            [
+                "let hiddenEntries = entries.filter",
+                "visibleTabIDs.contains(owner.tabID) == false",
+                "guard hiddenEntries.isEmpty == false else { return }",
+                "browserManager.tabSuspensionService",
+                "for (owner, webView) in hiddenEntries.sorted",
+                "guard globallyVisibleTabIDs.contains(owner.tabID) else { continue }",
+                "guard let tab = runtime.tabForID(owner.tabID) else { continue }",
+                "guard runtime.liveWebViews(tab).count > 1 else { continue }",
+                "runtime.isWebViewProtectedFromCompositorMutation(webView)",
+                "runtime.enqueueDeferredProtectedCommand(",
+                "continue",
+                "runtime.cleanupUnprotectedTrackedWebView(",
+                "runtime.refreshPrimaryTrackedWebView("
+            ]
+        )
+        XCTAssertFalse(hiddenCloneEvictionOwnerSource.contains("WebViewMediaProtectionOwner"))
+        XCTAssertFalse(hiddenCloneEvictionOwnerSource.contains("WindowWebViewRegistry"))
+        XCTAssertFalse(hiddenCloneEvictionOwnerSource.contains("WebViewTrackedCleanupExecutionOwner"))
+        XCTAssertFalse(hiddenCloneEvictionOwnerSource.contains("WebViewCleanupScopeOwner"))
 
         let deferredWrapper = try sourceSlice(
             source,

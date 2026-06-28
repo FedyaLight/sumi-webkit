@@ -48,6 +48,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private let cleanupScopeOwner = WebViewCleanupScopeOwner()
 
     @ObservationIgnored
+    private let hiddenCloneEvictionOwner = WebViewHiddenCloneEvictionOwner()
+
+    @ObservationIgnored
     weak var browserManager: BrowserManager?
 
     @ObservationIgnored
@@ -745,6 +748,34 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         )
     }
 
+    private func hiddenCloneEvictionRuntime() -> WebViewHiddenCloneEvictionOwner.Runtime {
+        WebViewHiddenCloneEvictionOwner.Runtime(
+            tabForID: { [self] tabID in
+                resolvedTab(with: tabID)
+            },
+            liveWebViews: { [self] tab in
+                liveWebViews(for: tab)
+            },
+            isWebViewProtectedFromCompositorMutation: { [self] webView in
+                isWebViewProtectedFromCompositorMutation(webView)
+            },
+            enqueueDeferredProtectedCommand: { [self] command, webView, reason in
+                enqueueDeferredProtectedCommand(command, for: webView, reason: reason)
+            },
+            cleanupUnprotectedTrackedWebView: { [self] webView, owner, tab, browserManager in
+                cleanupUnprotectedTrackedWebView(
+                    webView,
+                    owner: owner,
+                    tab: tab,
+                    browserManager: browserManager
+                )
+            },
+            refreshPrimaryTrackedWebView: { [self] tab, browserManager in
+                refreshPrimaryTrackedWebView(for: tab, browserManager: browserManager)
+            }
+        )
+    }
+
     @discardableResult
     private func performDeferredProtectedCommand(_ command: DeferredWebViewCommand) -> Bool {
         switch command {
@@ -1120,54 +1151,13 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         visibleTabIDs: Set<UUID>,
         tabManager: TabManager
     ) {
-        let signpostState = PerformanceTrace.beginInterval("WebViewCoordinator.evictHiddenWebViews")
-        defer {
-            PerformanceTrace.endInterval("WebViewCoordinator.evictHiddenWebViews", signpostState)
-        }
-
-        let trackedEntries = webViewRegistry.trackedWebViews(in: windowId)
-        let hiddenEntries = trackedEntries.filter { owner, _ in
-            visibleTabIDs.contains(owner.tabID) == false
-        }
-
-        guard hiddenEntries.isEmpty == false else { return }
-
-        guard let browserManager = tabManager.browserManager else { return }
-        let globallyVisibleTabIDs = browserManager.tabSuspensionService
-            .suspensionEvaluationContext()
-            .visibleTabIDs
-
-        for (owner, webView) in hiddenEntries.sorted(by: {
-            if $0.0.tabID != $1.0.tabID {
-                return $0.0.tabID.uuidString < $1.0.tabID.uuidString
-            }
-            return $0.0.windowID.uuidString < $1.0.windowID.uuidString
-        }) {
-            guard globallyVisibleTabIDs.contains(owner.tabID) else { continue }
-            guard let tab = resolvedTab(with: owner.tabID) else { continue }
-            guard liveWebViews(for: tab).count > 1 else { continue }
-
-            if isWebViewProtectedFromCompositorMutation(webView) {
-                _ = enqueueDeferredProtectedCommand(
-                    .evictHiddenWebViews(windowID: windowId),
-                    for: webView,
-                    reason: "hiddenCloneCleanup"
-                )
-                continue
-            }
-
-            cleanupUnprotectedTrackedWebView(
-                webView,
-                owner: owner,
-                tab: tab,
-                browserManager: browserManager
-            )
-            refreshPrimaryTrackedWebView(for: tab, browserManager: browserManager)
-
-            RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-                "Cleaned hidden clone for visible tab=\(owner.tabID.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))."
-            }
-        }
+        hiddenCloneEvictionOwner.evictHiddenWebViews(
+            in: windowId,
+            visibleTabIDs: visibleTabIDs,
+            entries: webViewRegistry.trackedWebViews(in: windowId),
+            tabManager: tabManager,
+            runtime: hiddenCloneEvictionRuntime()
+        )
     }
 
     private func notifyTabActivatedIfCurrent(_ tab: Tab, in windowId: UUID) {
