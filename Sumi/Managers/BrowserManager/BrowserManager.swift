@@ -278,6 +278,7 @@ class BrowserManager: ObservableObject {
     let workspaceAppearanceService = WorkspaceAppearanceService()
     let privacyService = BrowserPrivacyService()
     let liveFolderManager = SumiLiveFolderManager()
+    private let permissionSiteSettingsRoutingOwner = BrowserPermissionSiteSettingsRoutingOwner()
     private let tabSelectionOwner = BrowserTabSelectionOwner()
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
@@ -1179,7 +1180,7 @@ class BrowserManager: ObservableObject {
         guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }
         openNativeBrowserSurface(
             .settings,
-            url: settingsSurfaceURL(for: pane),
+            url: permissionSiteSettingsRoutingOwner.settingsSurfaceURL(for: pane),
             in: windowState
         )
     }
@@ -1190,54 +1191,11 @@ class BrowserManager: ObservableObject {
     ) {
         guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }
         let targetTab = tab ?? currentTab(for: windowState)
-        let mainURL = targetTab?.extensionRuntimeCommittedMainDocumentURL
-            ?? targetTab?.existingWebView?.url
-            ?? targetTab?.url
-        let origin = SumiPermissionOrigin(url: mainURL)
-        let displayDomain = SumiCurrentSitePermissionsViewModel.displayDomain(
-            for: origin,
-            fallbackURL: mainURL
-        )
-        let filter = origin.isWebOrigin
-            ? SumiSettingsSiteSettingsFilter(
-                requestingOrigin: origin,
-                topOrigin: origin,
-                displayDomain: displayDomain
-            )
-            : nil
 
         openNativeBrowserSurface(
             .settings,
-            url: privacySiteSettingsSurfaceURL(filter: filter),
+            url: permissionSiteSettingsRoutingOwner.privacySiteSettingsSurfaceURL(focusing: targetTab),
             in: windowState
-        )
-    }
-
-    private func settingsSurfaceURL(for pane: SettingsTabs) -> URL {
-        switch pane {
-        case .userScripts:
-            return SumiSurface.settingsSurfaceURL(paneQuery: SettingsTabs.userScripts.paneQueryValue)
-        default:
-            return pane.settingsSurfaceURL
-        }
-    }
-
-    private func privacySiteSettingsSurfaceURL(filter: SumiSettingsSiteSettingsFilter?) -> URL {
-        var extraQueryItems = [URLQueryItem(name: "section", value: "siteSettings")]
-        if let filter {
-            if let origin = filter.requestingOriginIdentity, !origin.isEmpty {
-                extraQueryItems.append(URLQueryItem(name: "origin", value: origin))
-            }
-            if let topOrigin = filter.topOriginIdentity, !topOrigin.isEmpty {
-                extraQueryItems.append(URLQueryItem(name: "topOrigin", value: topOrigin))
-            }
-            if let site = filter.displayDomain, !site.isEmpty {
-                extraQueryItems.append(URLQueryItem(name: "site", value: site))
-            }
-        }
-        return SumiSurface.settingsSurfaceURL(
-            paneQuery: SettingsTabs.privacy.paneQueryValue,
-            extraQueryItems: extraQueryItems
         )
     }
 
@@ -1316,38 +1274,16 @@ class BrowserManager: ObservableObject {
         permissionSidebarPinningController.reconcile(
             activeQueries: Array(state.activeQueriesByPageId.values),
             windowForPageId: { [weak self] pageId in
-                self?.windowState(displayingPermissionPageId: pageId)
+                self?.permissionSiteSettingsRoutingOwner.windowState(
+                    displayingPermissionPageId: pageId,
+                    in: self?.windowRegistry,
+                    tabsForDisplay: { windowState in
+                        self?.tabsForDisplay(in: windowState) ?? []
+                    }
+                )
             },
             reason: reason
         )
-    }
-
-    @MainActor
-    private func windowState(displayingPermissionPageId pageId: String) -> BrowserWindowState? {
-        guard let windowRegistry else { return nil }
-        let normalizedPageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-        if let activeWindow = windowRegistry.activeWindow,
-           windowState(activeWindow, displaysPermissionPageId: normalizedPageId)
-        {
-            return activeWindow
-        }
-
-        return windowRegistry.allWindows.first {
-            windowState($0, displaysPermissionPageId: normalizedPageId)
-        }
-    }
-
-    @MainActor
-    private func windowState(
-        _ windowState: BrowserWindowState,
-        displaysPermissionPageId pageId: String
-    ) -> Bool {
-        tabsForDisplay(in: windowState).contains { tab in
-            tab.currentPermissionPageId()
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .lowercased() == pageId
-        }
     }
 
     func windowState(containing tab: Tab) -> BrowserWindowState? {
