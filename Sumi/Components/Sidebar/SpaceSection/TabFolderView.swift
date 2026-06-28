@@ -34,7 +34,6 @@ struct TabFolderView: View {
     let onPerformShortcutRestoreWithPreparedGap: (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
 
     @State private var displayedCollapsedProjectionIDs: [UUID] = []
-    @State private var isFolderHeaderHovered = false
 
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var splitManager: SplitViewManager
@@ -103,11 +102,6 @@ struct TabFolderView: View {
         containerIndex
     }
 
-
-    private var folderDragHighlightHorizontalBleed: CGFloat {
-        8
-    }
-
     private func folderContentProjection(
         using projection: SidebarFolderViewProjection,
         dragSnapshot: SidebarFolderDragSnapshot
@@ -164,10 +158,6 @@ struct TabFolderView: View {
         return elevatedFolderIds.contains(folder.id)
     }
 
-    private var folderForegroundColor: Color {
-        tokens.primaryText
-    }
-
     private var folderShellPalette: SumiFolderGlyphPalette {
         let accent = themeContext.gradient.primaryColor
         let scheme = themeContext.chromeColorScheme
@@ -191,7 +181,7 @@ struct TabFolderView: View {
             stroke = accent.mixed(with: .black, amount: 0.5)
         }
 
-        let iconForeground = stroke.mixed(with: folderForegroundColor, amount: 0.35)
+        let iconForeground = stroke.mixed(with: tokens.primaryText, amount: 0.35)
 
         return SumiFolderGlyphPalette(
             backFill: backFill,
@@ -368,7 +358,16 @@ struct TabFolderView: View {
         contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
     ) -> some View {
-        folderHeaderRow(contentProjection: contentProjection, projection: projection)
+        TabFolderHeaderRow(
+            title: folder.name,
+            glyphPresentation: folderGlyphPresentation(
+                using: projection,
+                contentProjection: contentProjection
+            ),
+            glyphPalette: folderShellPalette,
+            isDropHighlighted: isFolderDropHighlighted,
+            isInteractive: isInteractive
+        )
         .sidebarFolderDropGeometry(
             folderId: folder.id,
             spaceId: space.id,
@@ -409,79 +408,6 @@ struct TabFolderView: View {
         .accessibilityIdentifier("folder-header-\(folder.id.uuidString)")
         .accessibilityLabel(folder.name)
         .accessibilityValue(folder.isOpen ? "expanded" : "collapsed")
-    }
-
-    private func folderHeaderRow(
-        contentProjection: SidebarFolderContentProjection,
-        projection: SidebarFolderViewProjection
-    ) -> some View {
-        HStack(spacing: 0) {
-            folderHeaderIconSlot(contentProjection: contentProjection, projection: projection)
-            folderTitleView
-            Spacer(minLength: 0)
-        }
-        .padding(.leading, SidebarRowLayout.leadingInset)
-        .padding(.trailing, SidebarRowLayout.trailingInset)
-        .frame(height: SidebarRowLayout.rowHeight)
-        .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .geometryGroup()
-        .background(alignment: .center) {
-            if isFolderDropHighlighted {
-                RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous)
-                    .fill(tokens.sidebarRowHover)
-                    .padding(.horizontal, -folderDragHighlightHorizontalBleed)
-            }
-        }
-        .sidebarRowSurface(
-            background: displayIsHovering ? tokens.sidebarRowHover : Color.clear,
-            cornerRadius: sumiSettings.resolvedCornerRadius(12),
-            tokens: tokens,
-            isVisible: displayIsHovering,
-            drawsSelectionShadow: false
-        )
-        .contentShape(RoundedRectangle(cornerRadius: sumiSettings.resolvedCornerRadius(12), style: .continuous))
-        .sidebarDDGHover($isFolderHeaderHovered, isEnabled: isInteractive)
-    }
-
-    private var folderTitleView: some View {
-        Text(folder.name)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(folderForegroundColor)
-            .lineLimit(1)
-            .truncationMode(.tail)
-    }
-
-    private func folderIconView(
-        contentProjection: SidebarFolderContentProjection,
-        projection: SidebarFolderViewProjection
-    ) -> some View {
-        SumiFolderGlyphView(
-            presentation: folderGlyphPresentation(
-                using: projection,
-                contentProjection: contentProjection
-            ),
-            palette: folderShellPalette
-        )
-        .frame(
-            width: SidebarRowLayout.folderGlyphSize,
-            height: SidebarRowLayout.folderGlyphSize,
-            alignment: .center
-        )
-    }
-
-    /// Full-size Zen glyph; horizontal center matches favicon column, layout width matches tab rows (`folderTitleLeading`).
-    private func folderHeaderIconSlot(
-        contentProjection: SidebarFolderContentProjection,
-        projection: SidebarFolderViewProjection
-    ) -> some View {
-        ZStack(alignment: .leading) {
-            Color.clear
-                .frame(width: SidebarRowLayout.folderTitleLeading, height: SidebarRowLayout.rowHeight)
-            folderIconView(contentProjection: contentProjection, projection: projection)
-                .offset(x: SidebarRowLayout.folderHeaderGlyphCenteringOffset)
-        }
-        .frame(width: SidebarRowLayout.folderTitleLeading, alignment: .leading)
     }
 
     private func folderBodyContent(
@@ -1008,17 +934,6 @@ struct TabFolderView: View {
 
     private var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)
-    }
-
-    private var freezesHoverState: Bool {
-        windowState.sidebarInteractionState.freezesSidebarHoverState
-    }
-
-    private var displayIsHovering: Bool {
-        SidebarHoverChrome.displayHover(
-            isFolderHeaderHovered,
-            freezesHoverState: freezesHoverState
-        )
     }
 
     private var folderHeaderSourceID: String {
