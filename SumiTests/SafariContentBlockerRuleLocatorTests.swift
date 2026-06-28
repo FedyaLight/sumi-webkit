@@ -133,6 +133,28 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
         XCTAssertNotEqual(first, second)
     }
 
+    func testSiteOverridePersistsAcrossModuleInstancesAndClearsToInherit() throws {
+        let defaults = UserDefaults(
+            suiteName: "SafariContentBlockerRuleLocatorTests.\(UUID().uuidString)"
+        )!
+        let url = try XCTUnwrap(URL(string: "https://example.com/article"))
+
+        let firstModule = try makeModule(defaults: defaults)
+        firstModule.setSafariContentBlockerSiteOverride(.disabled, for: url)
+
+        let reloadedModule = try makeModule(defaults: defaults)
+        XCTAssertFalse(
+            reloadedModule.safariContentBlockerSiteState(for: url).isEnabledForSite
+        )
+
+        reloadedModule.setSafariContentBlockerSiteOverride(.inherit, for: url)
+
+        let clearedModule = try makeModule(defaults: defaults)
+        XCTAssertTrue(
+            clearedModule.safariContentBlockerSiteState(for: url).isEnabledForSite
+        )
+    }
+
     private func makeContentBlockerCandidate(
         resourceFiles: [SafariExtensionScannerTestSupport.SyntheticResourceFile]
     ) throws -> DiscoveredSafariExtensionCandidate {
@@ -160,14 +182,15 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
         return try XCTUnwrap(candidates.first)
     }
 
-    private func makeModule() throws -> SumiExtensionsModule {
+    private func makeModule(
+        defaults: UserDefaults = UserDefaults(
+            suiteName: "SafariContentBlockerRuleLocatorTests.\(UUID().uuidString)"
+        )!
+    ) throws -> SumiExtensionsModule {
         let container = try ModelContainer(
             for: SafariContentBlockerEntity.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
-        let defaults = UserDefaults(
-            suiteName: "SafariContentBlockerRuleLocatorTests.\(UUID().uuidString)"
-        )!
         let registry = SumiModuleRegistry(
             settingsStore: SumiModuleSettingsStore(userDefaults: defaults)
         )
