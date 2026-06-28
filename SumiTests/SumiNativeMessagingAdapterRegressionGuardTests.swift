@@ -12,6 +12,7 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppResolver.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingOneShotRelayFlow.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortConnectRelayFlow.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingConnection.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/CompanionApplicationMessageRouter.swift",
@@ -143,16 +144,25 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         let oneShotFlowSource = try source(
             named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingOneShotRelayFlow.swift"
         )
+        let portConnectFlowSource = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortConnectRelayFlow.swift"
+        )
         XCTAssertTrue(relaySource.contains("SumiNativeMessagingRelayLoopGuard"))
         XCTAssertTrue(relaySource.contains("recordSuppressedRetry"))
         XCTAssertTrue(relaySource.contains("launchSuppressed"))
         XCTAssertTrue(relaySource.contains("SumiNativeMessagingAdapterRegistry"))
         XCTAssertTrue(relaySource.contains("CompanionApplicationMessageRouter"))
         XCTAssertTrue(relaySource.contains("SumiNativeMessagingOneShotRelayFlow"))
+        XCTAssertTrue(relaySource.contains("SumiNativeMessagingPortConnectRelayFlow"))
         XCTAssertTrue(oneShotFlowSource.contains("trackPendingOneShot"))
         XCTAssertTrue(oneShotFlowSource.contains("untrackPendingOneShot"))
         XCTAssertTrue(oneShotFlowSource.contains("recordCompanionAppProtocolUnknown"))
         XCTAssertTrue(oneShotFlowSource.contains("recordSupportedAdapterLaunchAttempt"))
+        XCTAssertTrue(portConnectFlowSource.contains("trackPortSession"))
+        XCTAssertTrue(portConnectFlowSource.contains("finalizePortSession"))
+        XCTAssertTrue(portConnectFlowSource.contains("recordSuppressedRetry"))
+        XCTAssertTrue(portConnectFlowSource.contains("launchSuppressed"))
+        XCTAssertTrue(portConnectFlowSource.contains("connectPort"))
         for forbidden in [
             "routeResolver",
             "SumiCompanionAppResolver.evaluate",
