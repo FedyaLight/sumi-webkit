@@ -331,27 +331,19 @@ extension ExtensionManager {
         operation: String
     ) {
         let wakeKey = backgroundWakeKey(for: extensionContext)
-        guard nativeMessagingBackgroundWakeTasksByKey[wakeKey] == nil else { return }
-
-        let token = UUID()
-        let task = Self.detachedMainActorRuntimeTask { [weak self] in
-            guard let self else { return }
-            defer {
-                if self.nativeMessagingBackgroundWakeTasksByKey[wakeKey]?.token == token {
-                    self.nativeMessagingBackgroundWakeTasksByKey.removeValue(
-                        forKey: wakeKey
-                    )
-                }
-            }
-            guard Task.isCancelled == false else { return }
-
-            do {
+        nativeMessagingBackgroundWakeOwner.scheduleWake(
+            wakeKey: wakeKey,
+            operation: operation,
+            wake: { [weak self] in
+                guard let self else { return }
                 _ = try await self.ensureBackgroundAvailableIfRequired(
                     for: extensionContext.webExtension,
                     context: extensionContext,
                     reason: .nativeMessaging
                 )
-            } catch {
+            },
+            logFailure: { [weak self] error, operation in
+                guard let self else { return }
                 self.logBackgroundWakeFailure(
                     error,
                     extensionContext: extensionContext,
@@ -359,24 +351,21 @@ extension ExtensionManager {
                     operation: operation
                 )
             }
-        }
-        nativeMessagingBackgroundWakeTasksByKey[wakeKey] = (token, task)
+        )
     }
 
     func cancelNativeMessagingBackgroundWakeTasks(forExtensionId extensionId: String) {
-        for (wakeKey, scheduledTask) in nativeMessagingBackgroundWakeTasksByKey {
-            guard ExtensionRuntimeResidencyState.parseScopedKey(wakeKey)?.extensionId
-                == extensionId
-            else { continue }
-
-            scheduledTask.task.cancel()
-            nativeMessagingBackgroundWakeTasksByKey.removeValue(forKey: wakeKey)
-        }
+        loadedNativeMessagingBackgroundWakeOwner?.cancelWakeTasks(
+            forExtensionId: extensionId,
+            wakeKeyBelongsToExtension: { wakeKey, extensionId in
+                ExtensionRuntimeResidencyState.parseScopedKey(wakeKey)?
+                    .extensionId == extensionId
+            }
+        )
     }
 
     func cancelNativeMessagingBackgroundWakeTasks() {
-        nativeMessagingBackgroundWakeTasksByKey.values.forEach { $0.task.cancel() }
-        nativeMessagingBackgroundWakeTasksByKey.removeAll()
+        loadedNativeMessagingBackgroundWakeOwner?.cancelAllWakeTasks()
     }
 
     private func backgroundWakeKey(

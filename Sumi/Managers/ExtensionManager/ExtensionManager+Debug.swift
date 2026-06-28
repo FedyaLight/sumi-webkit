@@ -69,7 +69,8 @@ extension ExtensionManager {
             let tasks =
                 (loadedInitialDocumentRuntimePreparationOwner?
                     .runtimeTasksForDrain() ?? [])
-                + nativeMessagingBackgroundWakeTasksByKey.values.map(\.task)
+                + (loadedNativeMessagingBackgroundWakeOwner?
+                    .runtimeTasksForDrain() ?? [])
             let didDrainWakeTask = await backgroundRuntimeStateOwner
                 .drainWakeTasksForTests()
 
