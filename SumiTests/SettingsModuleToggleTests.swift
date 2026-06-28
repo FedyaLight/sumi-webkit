@@ -48,13 +48,13 @@ final class SettingsModuleToggleTests: XCTestCase {
     }
 
     func testSettingsScreensStillGateExtensionsAndUserScripts() throws {
-        let settingsSource = try Self.source(named: "Sumi/Components/Settings/SettingsView.swift")
+        let extensionsSettingsSource = try Self.source(named: "Sumi/Components/Settings/SumiExtensionsSettingsPane.swift")
 
-        XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .extensions)"))
-        XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .userScripts)"))
-        XCTAssertFalse(settingsSource.contains("case .adBlocker"))
-        XCTAssertFalse(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .adBlocker)"))
-        XCTAssertFalse(settingsSource.contains("Extensions, ad blocker, and userscripts"))
+        XCTAssertTrue(extensionsSettingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .extensions)"))
+        XCTAssertTrue(extensionsSettingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .userScripts)"))
+        XCTAssertFalse(extensionsSettingsSource.contains("case .adBlocker"))
+        XCTAssertFalse(extensionsSettingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .adBlocker)"))
+        XCTAssertFalse(extensionsSettingsSource.contains("Extensions, ad blocker, and userscripts"))
     }
 
     func testModuleToggleSourceDoesNotConstructOptionalRuntimeTypes() throws {

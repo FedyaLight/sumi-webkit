@@ -139,14 +139,14 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
 
         let togglesSource = try Self.source(named: "Sumi/Components/Settings/SumiSettingsModuleToggles.swift")
         let privacySource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
-        let settingsSource = try Self.source(named: "Sumi/Components/Settings/SettingsView.swift")
+        let extensionsSettingsSource = try Self.source(named: "Sumi/Components/Settings/SumiExtensionsSettingsPane.swift")
 
         XCTAssertTrue(togglesSource.contains("SumiSettingsModuleToggleGate"))
-        XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .extensions)"))
-        XCTAssertTrue(settingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .userScripts)"))
+        XCTAssertTrue(extensionsSettingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .extensions)"))
+        XCTAssertTrue(extensionsSettingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .userScripts)"))
 
         assertSourceExcludes(
-            togglesSource + privacySource + settingsSource,
+            togglesSource + privacySource + extensionsSettingsSource,
             [
                 "SumiContentBlockingService(",
                 "ExtensionManager(",
@@ -560,7 +560,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             "Sumi/Managers/BrowserManager/BrowserManager.swift",
             "Sumi/Managers/BrowserManager/BrowserManager+DialogsUtilities.swift",
             "Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift",
-            "Sumi/Components/Settings/SettingsView.swift",
+            "Sumi/Components/Settings/SumiExtensionsSettingsPane.swift",
             "Sumi/Components/Settings/SumiSettingsModuleToggles.swift",
             "Sumi/Components/Extensions/ExtensionActionView.swift",
             "Navigation/Sidebar/SidebarHeader.swift",
