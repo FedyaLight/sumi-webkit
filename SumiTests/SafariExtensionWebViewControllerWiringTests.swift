@@ -152,6 +152,22 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertNil(manager.extensionWebView(for: tab, extensionContext: extensionContext))
     }
 
+    func testWebViewBindingPolicyOnlyLateBindsBlankTargets() {
+        XCTAssertTrue(
+            ExtensionRuntimeWebViewBindingPolicy.canLateBindController(currentURL: nil)
+        )
+        XCTAssertTrue(
+            ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
+                currentURL: URL(string: "about:blank")
+            )
+        )
+        XCTAssertFalse(
+            ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
+                currentURL: URL(string: "https://example.com")
+            )
+        )
+    }
+
     func testExtensionWebViewReturnsProfileMatchedController() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")

@@ -29,6 +29,10 @@ struct ExtensionProfileRuntimeState {
         contextsByProfile[profileId] ?? [:]
     }
 
+    func loadedExtensionStates(for profileId: UUID) -> [String: Bool] {
+        contexts(for: profileId).mapValues(\.isLoaded)
+    }
+
     mutating func setContext(
         _ context: WKWebExtensionContext,
         extensionId: String,
@@ -145,5 +149,32 @@ struct ExtensionProfileRuntimeState {
 
     func countLoadedExtensionContexts() -> Int {
         contextsByProfile.values.reduce(0) { $0 + $1.count }
+    }
+
+    func inactiveLoadedContextIdentities(
+        keepingProfileId: UUID
+    ) -> [(profileId: UUID, extensionId: String)] {
+        contextsByProfile
+            .filter { $0.key != keepingProfileId }
+            .flatMap { profileId, contexts in
+                contexts.keys.map { extensionId in
+                    (profileId: profileId, extensionId: extensionId)
+                }
+            }
+    }
+
+    func readinessContext(
+        for profileId: UUID,
+        hasEnabledExtensionDemand: Bool,
+        enabledExtensionIDs: Set<String>,
+        globalRuntimeReady: Bool
+    ) -> ExtensionRuntimeReadinessContext {
+        ExtensionRuntimeReadinessContext(
+            hasEnabledExtensionDemand: hasEnabledExtensionDemand,
+            enabledExtensionIDs: enabledExtensionIDs,
+            loadedExtensionStatesByID: loadedExtensionStates(for: profileId),
+            controllerExists: controller(for: profileId) != nil,
+            globalRuntimeReady: globalRuntimeReady
+        )
     }
 }

@@ -29,6 +29,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
 
     static let lateBindRequiredSymbols: [String] = [
         "func canLateBindExtensionController(to webView: WKWebView) -> Bool",
+        "enum ExtensionRuntimeWebViewBindingPolicy",
         "normalizedURL.isEmpty || normalizedURL == \"about:blank\"",
         "func tabNeedsExtensionContentScriptRebind(_ tab: Tab) -> Bool",
     ]
@@ -49,6 +50,9 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         let profiles = profilesSource ?? loadSource(
             relativeToExtensionManager: "ExtensionManager+Profiles.swift"
         )
+        let webViewBindingPolicy = loadSource(
+            relativeToExtensionManager: "ExtensionRuntimeWebViewBindingPolicy.swift"
+        )
         let navigation = navigationResponderSource ?? loadSource(
             relativeToTabNavigation: "SafariExtensionInlineUINavigationResponder.swift"
         )
@@ -59,7 +63,8 @@ enum SafariExtensionInlineUIInfrastructureProbe {
             container?.contains("layer?.masksToBounds = radius > 0") == true
         let lateBindBlocksLoadedPages =
             profiles?.contains("func canLateBindExtensionController(to webView: WKWebView) -> Bool") == true
-            && profiles?.contains("normalizedURL.isEmpty || normalizedURL == \"about:blank\"") == true
+            && webViewBindingPolicy?.contains("enum ExtensionRuntimeWebViewBindingPolicy") == true
+            && webViewBindingPolicy?.contains("normalizedURL.isEmpty || normalizedURL == \"about:blank\"") == true
         let inlineUINavigationResponderWired =
             navigationResponderRequiredSymbols.allSatisfy { navigation?.contains($0) == true }
 

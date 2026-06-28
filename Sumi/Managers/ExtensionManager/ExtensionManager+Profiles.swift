@@ -1137,18 +1137,10 @@ extension ExtensionManager {
     }
 
     func canLateBindExtensionController(to webView: WKWebView) -> Bool {
-        guard webView.configuration.webExtensionController == nil else {
-            return false
-        }
-
-        guard let currentURL = webView.url else {
-            return true
-        }
-
-        let normalizedURL = currentURL.absoluteString.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
-        return normalizedURL.isEmpty || normalizedURL == "about:blank"
+        webView.configuration.webExtensionController == nil
+            && ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
+                currentURL: webView.url
+            )
     }
 
     /// WebKit injects manifest `content_scripts` (including CSS) only when `didOpenTab`

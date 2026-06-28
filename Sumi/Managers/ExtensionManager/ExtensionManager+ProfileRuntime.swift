@@ -232,12 +232,10 @@ extension ExtensionManager {
     func extensionRuntimeReadinessContext(
         for profileId: UUID
     ) -> ExtensionRuntimeReadinessContext {
-        ExtensionRuntimeReadinessContext(
+        profileRuntimeOwner.readinessContext(
+            for: profileId,
             hasEnabledExtensionDemand: hasEnabledInstalledExtensions,
             enabledExtensionIDs: Set(enabledPersistedExtensionEntities().map(\.id)),
-            loadedExtensionStatesByID: extensionContexts(for: profileId)
-                .mapValues(\.isLoaded),
-            controllerExists: extensionControllersByProfile[profileId] != nil,
             globalRuntimeReady: runtimeState == .ready
         )
     }
@@ -299,15 +297,13 @@ extension ExtensionManager {
     }
 
     func unloadExtensionContextsForInactiveProfiles(keepingProfileId: UUID) {
-        for profileId in Array(extensionContextsByProfile.keys)
-        where profileId != keepingProfileId
-        {
-            for extensionId in Array(extensionContexts(for: profileId).keys) {
-                unloadExtensionContextIfLoaded(
-                    extensionId: extensionId,
-                    profileId: profileId
-                )
-            }
+        for identity in profileRuntimeOwner.inactiveLoadedContextIdentities(
+            keepingProfileId: keepingProfileId
+        ) {
+            unloadExtensionContextIfLoaded(
+                extensionId: identity.extensionId,
+                profileId: identity.profileId
+            )
         }
     }
 
@@ -884,21 +880,14 @@ extension ExtensionManager {
         _ webView: WKWebView,
         for tab: Tab
     ) -> Bool {
-        if webView.configuration.webExtensionController == nil,
-           canLateBindExtensionController(to: webView) == false
-        {
-            return true
+        let expectedController = resolvedProfileId(for: tab).flatMap {
+            extensionControllersByProfile[$0]
         }
-
-        guard let profileId = resolvedProfileId(for: tab),
-              let expectedController = extensionControllersByProfile[profileId],
-              let existingController = webView.configuration.webExtensionController,
-              existingController !== expectedController
-        else {
-            return false
-        }
-
-        return true
+        return ExtensionRuntimeWebViewBindingPolicy.needsRuntimeRebuild(
+            currentController: webView.configuration.webExtensionController,
+            expectedController: expectedController,
+            currentURL: webView.url
+        )
     }
 
     func updateWebViewsForProfile(

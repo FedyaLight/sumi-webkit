@@ -120,6 +120,26 @@ final class ExtensionProfileRuntimeOwner {
         state.countLoadedExtensionContexts()
     }
 
+    func inactiveLoadedContextIdentities(
+        keepingProfileId: UUID
+    ) -> [(profileId: UUID, extensionId: String)] {
+        state.inactiveLoadedContextIdentities(keepingProfileId: keepingProfileId)
+    }
+
+    func readinessContext(
+        for profileId: UUID,
+        hasEnabledExtensionDemand: Bool,
+        enabledExtensionIDs: Set<String>,
+        globalRuntimeReady: Bool
+    ) -> ExtensionRuntimeReadinessContext {
+        state.readinessContext(
+            for: profileId,
+            hasEnabledExtensionDemand: hasEnabledExtensionDemand,
+            enabledExtensionIDs: enabledExtensionIDs,
+            globalRuntimeReady: globalRuntimeReady
+        )
+    }
+
     func activateProfile(
         _ profileId: UUID,
         hasExtensionDemand: Bool,
