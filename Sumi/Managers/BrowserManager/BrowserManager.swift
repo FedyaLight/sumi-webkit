@@ -473,6 +473,16 @@ class BrowserManager: ObservableObject {
     let startupSessionCoordinator = SumiStartupSessionCoordinator()
 
     var auxiliaryWindowManager = AuxiliaryWindowManager()
+    private lazy var profileSwitchTransitionOwner = BrowserProfileSwitchTransitionOwner(
+        host: self,
+        dependencies: BrowserProfileSwitchTransitionOwner.Dependencies(
+            auxiliaryWindowManager: auxiliaryWindowManager,
+            bookmarkManager: bookmarkManager,
+            extensionsModule: extensionsModule,
+            historyManager: historyManager,
+            tabManager: tabManager
+        )
+    )
     let glanceManager = GlanceManager()
 
     /// Shared with app shell / `ContentView` via `.environment`; retained strongly so routing never sees a dangling coordinator.
@@ -776,76 +786,15 @@ class BrowserManager: ObservableObject {
         case recovery
     }
 
-    actor ProfileOps { func run(_ body: @MainActor () async -> Void) async { await body() } }
-    private let profileOps = ProfileOps()
-
     func switchToProfile(
         _ profile: Profile, context: ProfileSwitchContext = .userInitiated,
         in windowState: BrowserWindowState? = nil
     ) async {
-        await profileOps.run { [weak self] in
-            guard let self else { return }
-            if self.isSwitchingProfile {
-                RuntimeDiagnostics.emit {
-                    "⏳ [BrowserManager] Ignoring concurrent profile switch request"
-                }
-                return
-            }
-            self.isSwitchingProfile = true
-            defer { self.isSwitchingProfile = false }
-
-            let previousProfile = self.currentProfile
-            RuntimeDiagnostics.emit {
-                "🔀 [BrowserManager] Switching to profile: \(profile.name) (\(profile.id.uuidString)) from: \(previousProfile?.name ?? "none")"
-            }
-            let animateTransition = context.shouldAnimateTransition
-
-            let performUpdates = {
-                self.auxiliaryWindowManager.closeAll(reason: .profileSwitch)
-
-                if animateTransition {
-                    self.isTransitioningProfile = true
-                } else {
-                    self.isTransitioningProfile = false
-                }
-                self.currentProfile = profile
-                self.windowRegistry?.activeWindow?.currentProfileId = profile.id
-                self.bookmarkManager.setFaviconPrefetchPartition(
-                    SumiFaviconSystem.shared.partition(profile: profile)
-                )
-                self.extensionsModule.switchProfileIfLoaded(profile)
-                // Update history filtering
-                self.historyManager.switchProfile(profile.id)
-                // TabManager awareness (updates currentTab/currentSpace visibility)
-                self.tabManager.handleProfileSwitch()
-            }
-
-            if animateTransition {
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    performUpdates()
-                }
-            } else {
-                performUpdates()
-            }
-
-            if context.shouldProvideFeedback {
-                self.showProfileSwitchToast(
-                    to: profile,
-                    in: windowState ?? self.windowRegistry?.activeWindow
-                )
-                NSHapticFeedbackManager.defaultPerformer.perform(
-                    .generic, performanceTime: .drawCompleted)
-            }
-
-            if animateTransition {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                    self?.isTransitioningProfile = false
-                }
-            }
-
-            await self.runAutomaticPermissionCleanupIfNeeded(for: profile)
-            self.scheduleAutomaticBrowsingDataCleanup(reason: "profile-switch")
-        }
+        await profileSwitchTransitionOwner.switchToProfile(
+            profile,
+            context: context,
+            in: windowState
+        )
     }
 
     @discardableResult
