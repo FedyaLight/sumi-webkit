@@ -29,6 +29,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
         "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptRoutingOwner.swift",
         "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptPresentationOwner.swift",
+        "Sumi/Managers/ExtensionManager/WebExtensionStorageCleanupOwner.swift",
     ]
 
     private let deletedCompatArtifacts = [
@@ -429,6 +430,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
             "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptRoutingOwner.swift",
             "Sumi/Managers/ExtensionManager/ExtensionPermissionPromptPresentationOwner.swift",
+            "Sumi/Managers/ExtensionManager/WebExtensionStorageCleanupOwner.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicy.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicyStore.swift",
