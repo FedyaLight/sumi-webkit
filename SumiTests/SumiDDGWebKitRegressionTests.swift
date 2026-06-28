@@ -815,6 +815,69 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
     }
 
+    func testTabNormalWebViewPolicyRebuildsUseSharedReplacementFlow() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let tabSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Models/Tab/Tab.swift"
+            ),
+            encoding: .utf8
+        )
+
+        let contentBlockingRebuild = try sourceSlice(
+            tabSource,
+            from: "func rebuildNormalWebViewForContentBlockingPolicyIfNeeded",
+            to: "@discardableResult\n    func rebuildNormalWebViewForAutoplayIfNeeded"
+        )
+        let autoplayRebuild = try sourceSlice(
+            tabSource,
+            from: "func rebuildNormalWebViewForAutoplayIfNeeded",
+            to: "@discardableResult\n    private func rebuildNormalWebViewForConfigurationPolicy"
+        )
+        let sharedRebuild = try sourceSlice(
+            tabSource,
+            from: "private func rebuildNormalWebViewForConfigurationPolicy",
+            to: "private func desiredAutoplayPolicy"
+        )
+
+        XCTAssertTrue(contentBlockingRebuild.contains("rebuildNormalWebViewForConfigurationPolicy("))
+        XCTAssertTrue(autoplayRebuild.contains("rebuildNormalWebViewForConfigurationPolicy(reason: reason)"))
+        XCTAssertTrue(contentBlockingRebuild.contains("noteProtectionWebViewRebuildFailed"))
+        XCTAssertTrue(contentBlockingRebuild.contains("updateSafariContentBlockerReloadRequirementForCurrentSite()"))
+        XCTAssertTrue(contentBlockingRebuild.contains("updateProtectionReloadRequirementForCurrentSite()"))
+        XCTAssertTrue(contentBlockingRebuild.contains("noteProtectionWebViewRebuildSucceeded"))
+        XCTAssertTrue(contentBlockingRebuild.contains("updateAutoplayReloadRequirementForCurrentSite()"))
+        XCTAssertTrue(autoplayRebuild.contains("updateAutoplayReloadRequirementForCurrentSite()"))
+        XCTAssertFalse(autoplayRebuild.contains("updateProtectionReloadRequirementForCurrentSite()"))
+
+        XCTAssertFalse(contentBlockingRebuild.contains("coordinator?.removeAllWebViews"))
+        XCTAssertFalse(autoplayRebuild.contains("coordinator?.removeAllWebViews"))
+
+        try assertTokenOrder(
+            sharedRebuild,
+            [
+                "guard let previousWebView = existingWebView",
+                "let coordinator = browserManager?.webViewCoordinator",
+                "let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)",
+                "let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false",
+                "guard let replacementWebView = makeNormalTabWebView(reason: reason)",
+                "invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)",
+                "let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false",
+                "if hadTrackedWebViews && !removedTrackedWebViews",
+                "onTrackedWebViewRemovalFailure()",
+                "cleanupCloneWebView(previousWebView)",
+                "_webView = nil",
+                "primaryWindowId = nil",
+                "coordinator?.setWebView(replacementWebView, for: id, in: previousWindowId)",
+                "assignWebViewToWindow(replacementWebView, windowId: previousWindowId)",
+                "browserManager?.refreshCompositor(for: windowState)",
+                "_webView = replacementWebView"
+            ]
+        )
+    }
+
     func testClosingAndSpaceSwitchPathsPerformVisualHandoffBeforeRuntimeCleanup() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

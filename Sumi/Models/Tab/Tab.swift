@@ -929,43 +929,20 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         reason: String
     ) -> Bool {
         guard protectionAttachmentRequiresNormalWebViewRebuild(for: targetURL),
-              let previousWebView = existingWebView
+              existingWebView != nil
         else { return false }
 
         let rebuildStart = Date()
-        let coordinator = browserManager?.webViewCoordinator
-        let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
-        let hadTrackedWebViews = coordinator?.windowIDs(for: id).isEmpty == false
         let previousProtectionState = protectionAppliedAttachmentState
 
-        guard let replacementWebView = makeNormalTabWebView(reason: reason) else {
-            return false
-        }
-        invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
-
-        let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
-        if hadTrackedWebViews && !removedTrackedWebViews {
-            protectionAttachmentReloadOwner.noteProtectionWebViewRebuildFailed(
-                restoringAppliedState: previousProtectionState
-            )
-            return false
-        }
-
-        if !removedTrackedWebViews {
-            cleanupCloneWebView(previousWebView)
-            _webView = nil
-            primaryWindowId = nil
-        }
-
-        if let previousWindowId {
-            coordinator?.setWebView(replacementWebView, for: id, in: previousWindowId)
-            assignWebViewToWindow(replacementWebView, windowId: previousWindowId)
-            if let windowState = browserManager?.windowRegistry?.windows[previousWindowId] {
-                browserManager?.refreshCompositor(for: windowState)
+        guard rebuildNormalWebViewForConfigurationPolicy(
+            reason: reason,
+            onTrackedWebViewRemovalFailure: {
+                protectionAttachmentReloadOwner.noteProtectionWebViewRebuildFailed(
+                    restoringAppliedState: previousProtectionState
+                )
             }
-        } else {
-            _webView = replacementWebView
-        }
+        ) else { return false }
 
         updateSafariContentBlockerReloadRequirementForCurrentSite()
         updateProtectionReloadRequirementForCurrentSite()
@@ -980,8 +957,21 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         reason: String
     ) -> Bool {
         guard autoplayPolicyRequiresNormalWebViewRebuild(for: targetURL),
-              let previousWebView = existingWebView
+              existingWebView != nil
         else { return false }
+
+        guard rebuildNormalWebViewForConfigurationPolicy(reason: reason) else { return false }
+
+        updateAutoplayReloadRequirementForCurrentSite()
+        return true
+    }
+
+    @discardableResult
+    private func rebuildNormalWebViewForConfigurationPolicy(
+        reason: String,
+        onTrackedWebViewRemovalFailure: () -> Void = {}
+    ) -> Bool {
+        guard let previousWebView = existingWebView else { return false }
 
         let coordinator = browserManager?.webViewCoordinator
         let previousWindowId = primaryWindowId ?? coordinator?.windowID(containing: previousWebView)
@@ -994,6 +984,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
         let removedTrackedWebViews = coordinator?.removeAllWebViews(for: self) ?? false
         if hadTrackedWebViews && !removedTrackedWebViews {
+            onTrackedWebViewRemovalFailure()
             return false
         }
 
@@ -1013,7 +1004,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             _webView = replacementWebView
         }
 
-        updateAutoplayReloadRequirementForCurrentSite()
         return true
     }
 
