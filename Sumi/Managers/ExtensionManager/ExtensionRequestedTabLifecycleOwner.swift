@@ -140,7 +140,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         reason: String,
         manager: ExtensionManager
     ) throws -> Tab {
-        guard let browserManager = manager.browserManager else {
+        guard let browserContext = manager.browserBridgeContext else {
             throw NSError(
                 domain: "ExtensionManager",
                 code: 3,
@@ -176,21 +176,22 @@ final class ExtensionRequestedTabLifecycleOwner {
 
         let newTab: Tab
         if shouldUseTransientInternalTab, let loadURL = resolvedExtensionLoad.url {
-            newTab = browserManager.tabManager.createTransientExtensionTab(
-                url: loadURL.absoluteString,
+            newTab = browserContext.createTransientExtensionTab(
+                url: loadURL,
                 in: targetSpace,
                 webExtensionContextOverride: webExtensionContextOverride
             )
         } else if let loadURL = resolvedExtensionLoad.url {
             recordRecentlyOpenedTabRequest(for: url)
-            newTab = browserManager.tabManager.createNewTab(
-                url: loadURL.absoluteString,
+            newTab = browserContext.createExtensionTab(
+                url: loadURL,
                 in: targetSpace,
                 activate: shouldBeActive,
                 webExtensionContextOverride: webExtensionContextOverride
             )
         } else {
-            newTab = browserManager.tabManager.createNewTab(
+            newTab = browserContext.createExtensionTab(
+                url: nil,
                 in: targetSpace,
                 activate: shouldBeActive,
                 webExtensionContextOverride: webExtensionContextOverride
@@ -198,10 +199,10 @@ final class ExtensionRequestedTabLifecycleOwner {
         }
 
         if shouldBePinned {
-            let resolvedTargetSpaceId = targetSpace?.id ?? newTab.spaceId
-            browserManager.tabManager.pinTab(
+            browserContext.pinExtensionTab(
                 newTab,
-                context: .init(windowState: targetWindow, spaceId: resolvedTargetSpaceId)
+                targetWindow: targetWindow,
+                targetSpace: targetSpace
             )
         }
 
@@ -212,7 +213,7 @@ final class ExtensionRequestedTabLifecycleOwner {
             manager: manager
         )
         if shouldBeActive, let targetWindow {
-            browserManager.selectTab(newTab, in: targetWindow)
+            browserContext.selectExtensionTab(newTab, in: targetWindow)
         }
 
         registerCreatedTabWithExtensionRuntime(newTab, reason: reason, manager: manager)
@@ -255,8 +256,11 @@ final class ExtensionRequestedTabLifecycleOwner {
             return
         }
 
-        if let targetWindow, let browserManager = manager.browserManager {
-            browserManager.materializeVisibleTabWebViewIfNeeded(tab, in: targetWindow)
+        if let targetWindow {
+            manager.browserBridgeContext?.materializeVisibleExtensionTabWebViewIfNeeded(
+                tab,
+                in: targetWindow
+            )
         }
         if tab.isUnloaded {
             tab.loadWebViewIfNeeded()
@@ -310,7 +314,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         extensionContext: WKWebExtensionContext?,
         manager: ExtensionManager
     ) throws -> Target {
-        guard let browserManager = manager.browserManager else {
+        guard let browserContext = manager.browserBridgeContext else {
             throw NSError(
                 domain: "ExtensionManager",
                 code: 3,
@@ -319,9 +323,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         }
 
         if let miniWindowAdapter = requestedWindow as? ExtensionMiniWindowAdapter,
-           let session = browserManager.auxiliaryWindowManager.session(
-               for: miniWindowAdapter.sessionId
-           )
+           let session = browserContext.auxiliaryWindowSession(for: miniWindowAdapter.sessionId)
         {
             return Target(
                 window: requestedNormalWindow(
@@ -341,9 +343,7 @@ final class ExtensionRequestedTabLifecycleOwner {
                ownerExtensionID: ownerExtensionID,
                profileId: profileId
            ).first,
-           let session = browserManager.auxiliaryWindowManager.session(
-               for: miniWindowAdapter.sessionId
-           )
+           let session = browserContext.auxiliaryWindowSession(for: miniWindowAdapter.sessionId)
         {
             return Target(
                 window: requestedNormalWindow(
@@ -356,11 +356,9 @@ final class ExtensionRequestedTabLifecycleOwner {
         }
 
         let requestedWindowState = (requestedWindow as? ExtensionWindowAdapter)
-            .flatMap { browserManager.windowRegistry?.windows[$0.windowId] }
-        let targetWindow = requestedWindowState ?? browserManager.windowRegistry?.activeWindow
-        let targetSpace = targetWindow?.currentSpaceId.flatMap { spaceID in
-            browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-        } ?? browserManager.tabManager.currentSpace
+            .flatMap { browserContext.extensionWindowState(for: $0.windowId) }
+        let targetWindow = requestedWindowState ?? browserContext.activeExtensionWindowState
+        let targetSpace = browserContext.extensionTargetSpace(for: targetWindow)
         return Target(
             window: targetWindow,
             space: targetSpace
@@ -372,16 +370,16 @@ final class ExtensionRequestedTabLifecycleOwner {
         extensionContext: WKWebExtensionContext?,
         manager: ExtensionManager
     ) -> BrowserWindowState? {
-        guard let browserManager = manager.browserManager else { return nil }
+        guard let browserContext = manager.browserBridgeContext else { return nil }
         let targetProfileId =
             manager.resolvedProfileId(for: openerTab)
                 ?? extensionContext.flatMap { manager.profileId(for: $0) }
                 ?? manager.currentProfileId
-                ?? browserManager.currentProfile?.id
+                ?? manager.browserManager?.currentProfile?.id
 
         let candidates = [
-            browserManager.windowState(containing: openerTab),
-            browserManager.windowRegistry?.activeWindow
+            browserContext.extensionWindowState(containing: openerTab),
+            browserContext.activeExtensionWindowState
         ]
 
         return candidates.compactMap { $0 }.first { windowState in
@@ -393,10 +391,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         for tab: Tab,
         manager: ExtensionManager
     ) -> Space? {
-        guard let browserManager = manager.browserManager else { return nil }
-        return tab.spaceId.flatMap { spaceID in
-            browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-        } ?? browserManager.tabManager.currentSpace
+        manager.browserBridgeContext?.extensionTargetSpace(for: tab)
     }
 
     private func shouldPreloadContentScriptContexts(
@@ -475,10 +470,10 @@ final class ExtensionRequestedTabLifecycleOwner {
         let previousWebView = tab.existingWebView
         if let targetWindow {
             tab.assignWebViewToWindow(replacementWebView, windowId: targetWindow.id)
-            manager.browserManager?.webViewCoordinator?.setWebView(
+            manager.browserBridgeContext?.assignExtensionWebView(
                 replacementWebView,
-                for: tab.id,
-                in: targetWindow.id
+                to: tab,
+                in: targetWindow
             )
         } else {
             tab._webView = replacementWebView

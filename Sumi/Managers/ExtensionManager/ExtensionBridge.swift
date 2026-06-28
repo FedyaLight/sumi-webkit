@@ -14,22 +14,81 @@ import WebKit
 protocol ExtensionBrowserBridgeContext: AnyObject {
     func extensionWindowState(for windowId: UUID) -> BrowserWindowState?
     var activeExtensionWindowState: BrowserWindowState? { get }
+    var allExtensionWindowStates: [BrowserWindowState] { get }
     func extensionTab(for tabId: UUID) -> Tab?
+    func extensionWindowState(containing tab: Tab) -> BrowserWindowState?
+    func extensionWindowState(forAppKitWindow window: NSWindow) -> BrowserWindowState?
     func currentExtensionTab(in windowState: BrowserWindowState) -> Tab?
+    func currentExtensionTabForActiveWindow() -> Tab?
+    func currentExtensionTabForPopup() -> Tab?
     func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab]
+    func extensionSpace(for spaceId: UUID?) -> Space?
+    var currentExtensionSpace: Space? { get }
+    func extensionTargetSpace(for windowState: BrowserWindowState?) -> Space?
+    func extensionTargetSpace(for tab: Tab) -> Space?
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState?
     func setActiveExtensionWindow(_ windowState: BrowserWindowState)
+    func createExtensionWindow()
+    func awaitNextExtensionWindow(excluding existingWindowIDs: Set<UUID>) async -> BrowserWindowState?
+    func createExtensionTab(
+        url: URL?,
+        in space: Space?,
+        activate: Bool,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Tab
+    func createTransientExtensionTab(
+        url: URL,
+        in space: Space?,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Tab
+    func pinExtensionTab(
+        _ tab: Tab,
+        targetWindow: BrowserWindowState?,
+        targetSpace: Space?
+    )
     func isTransientExtensionTab(_ tab: Tab) -> Bool
     func promoteTransientExtensionTab(_ tab: Tab) -> Bool
     func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool
     func isPinnedExtensionTab(_ tab: Tab) -> Bool
     func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState?)
+    func materializeVisibleExtensionTabWebViewIfNeeded(
+        _ tab: Tab,
+        in windowState: BrowserWindowState
+    )
+    func assignExtensionWebView(
+        _ webView: WKWebView,
+        to tab: Tab,
+        in windowState: BrowserWindowState
+    )
     func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession?
     func auxiliaryWindowSession(for sessionId: UUID) -> AuxiliaryWindowSession?
+    func auxiliaryWindowSession(for window: NSWindow) -> AuxiliaryWindowSession?
+    func focusedExtensionMiniWindowAdapter(forOwnerExtensionID ownerExtensionID: String) -> ExtensionMiniWindowAdapter?
+    func recordAuxiliaryWindowSessionFocus(_ sessionId: UUID)
     func focusAuxiliaryWindowSession(_ sessionId: UUID)
     func closeAuxiliaryWindowSession(_ session: AuxiliaryWindowSession)
     func closeAuxiliaryWindowWebView(_ webView: WKWebView)
+    func closeAuxiliaryWindowSessions(
+        forExtensionId extensionId: String,
+        reason: AuxiliaryWindowCloseReason
+    )
     func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool
+    func presentExtensionExternalWebPopup(
+        configuration: WKWebViewConfiguration,
+        request: URLRequest?,
+        windowFeatures: WKWindowFeatures,
+        openerTab: Tab,
+        shouldActivateApp: Bool,
+        extensionOwnedSourceURL: URL?,
+        ownerExtensionID: String?
+    ) -> WKWebView?
+    func presentExtensionPopupWindow(
+        configuration: WKWebExtension.WindowConfiguration,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext,
+        extensionManager: ExtensionManager,
+        parentWindow: NSWindow?
+    ) async -> ExtensionMiniWindowAdapter?
 }
 
 @available(macOS 15.5, *)
@@ -41,6 +100,10 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
 
     var activeExtensionWindowState: BrowserWindowState? {
         windowRegistry?.activeWindow
+    }
+
+    var allExtensionWindowStates: [BrowserWindowState] {
+        windowRegistry?.allWindows ?? []
     }
 
     func extensionTab(for tabId: UUID) -> Tab? {
@@ -59,8 +122,24 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
         return nil
     }
 
+    func extensionWindowState(containing tab: Tab) -> BrowserWindowState? {
+        windowState(containing: tab)
+    }
+
+    func extensionWindowState(forAppKitWindow window: NSWindow) -> BrowserWindowState? {
+        windowRegistry?.windows.values.first { $0.window === window }
+    }
+
     func currentExtensionTab(in windowState: BrowserWindowState) -> Tab? {
         currentTab(for: windowState)
+    }
+
+    func currentExtensionTabForActiveWindow() -> Tab? {
+        currentTabForActiveWindow()
+    }
+
+    func currentExtensionTabForPopup() -> Tab? {
+        currentTabForActiveWindow() ?? tabManager.currentTab
     }
 
     func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab] {
@@ -68,6 +147,23 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
             in: windowState,
             tabStore: tabManager.runtimeStore
         )
+    }
+
+    func extensionSpace(for spaceId: UUID?) -> Space? {
+        guard let spaceId else { return nil }
+        return tabManager.spaces.first { $0.id == spaceId }
+    }
+
+    var currentExtensionSpace: Space? {
+        tabManager.currentSpace
+    }
+
+    func extensionTargetSpace(for windowState: BrowserWindowState?) -> Space? {
+        windowState?.currentSpaceId.flatMap(extensionSpace(for:)) ?? currentExtensionSpace
+    }
+
+    func extensionTargetSpace(for tab: Tab) -> Space? {
+        tab.spaceId.flatMap(extensionSpace(for:)) ?? currentExtensionSpace
     }
 
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState? {
@@ -94,6 +190,60 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
 
     func setActiveExtensionWindow(_ windowState: BrowserWindowState) {
         windowRegistry?.setActive(windowState)
+    }
+
+    func createExtensionWindow() {
+        createNewWindow()
+    }
+
+    func awaitNextExtensionWindow(excluding existingWindowIDs: Set<UUID>) async -> BrowserWindowState? {
+        await windowRegistry?.awaitNextRegisteredWindow(excluding: existingWindowIDs)
+    }
+
+    func createExtensionTab(
+        url: URL?,
+        in space: Space?,
+        activate: Bool,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Tab {
+        if let url {
+            return tabManager.createNewTab(
+                url: url.absoluteString,
+                in: space,
+                activate: activate,
+                webExtensionContextOverride: webExtensionContextOverride
+            )
+        }
+
+        return tabManager.createNewTab(
+            in: space,
+            activate: activate,
+            webExtensionContextOverride: webExtensionContextOverride
+        )
+    }
+
+    func createTransientExtensionTab(
+        url: URL,
+        in space: Space?,
+        webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Tab {
+        tabManager.createTransientExtensionTab(
+            url: url.absoluteString,
+            in: space,
+            webExtensionContextOverride: webExtensionContextOverride
+        )
+    }
+
+    func pinExtensionTab(
+        _ tab: Tab,
+        targetWindow: BrowserWindowState?,
+        targetSpace: Space?
+    ) {
+        let resolvedTargetSpaceId = targetSpace?.id ?? tab.spaceId
+        tabManager.pinTab(
+            tab,
+            context: .init(windowState: targetWindow, spaceId: resolvedTargetSpaceId)
+        )
     }
 
     func isTransientExtensionTab(_ tab: Tab) -> Bool {
@@ -133,12 +283,43 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
         }
     }
 
+    func materializeVisibleExtensionTabWebViewIfNeeded(
+        _ tab: Tab,
+        in windowState: BrowserWindowState
+    ) {
+        materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
+    }
+
+    func assignExtensionWebView(
+        _ webView: WKWebView,
+        to tab: Tab,
+        in windowState: BrowserWindowState
+    ) {
+        webViewCoordinator?.setWebView(webView, for: tab.id, in: windowState.id)
+    }
+
     func auxiliaryWindowSession(for tab: Tab) -> AuxiliaryWindowSession? {
         auxiliaryWindowManager.session(for: tab)
     }
 
     func auxiliaryWindowSession(for sessionId: UUID) -> AuxiliaryWindowSession? {
         auxiliaryWindowManager.session(for: sessionId)
+    }
+
+    func auxiliaryWindowSession(for window: NSWindow) -> AuxiliaryWindowSession? {
+        auxiliaryWindowManager.session(for: window)
+    }
+
+    func focusedExtensionMiniWindowAdapter(
+        forOwnerExtensionID ownerExtensionID: String
+    ) -> ExtensionMiniWindowAdapter? {
+        auxiliaryWindowManager.focusedMiniWindowAdapter(
+            forOwnerExtensionID: ownerExtensionID
+        )
+    }
+
+    func recordAuxiliaryWindowSessionFocus(_ sessionId: UUID) {
+        auxiliaryWindowManager.recordAuxiliarySessionFocus(sessionId)
     }
 
     func focusAuxiliaryWindowSession(_ sessionId: UUID) {
@@ -153,8 +334,51 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
         auxiliaryWindowManager.teardown(for: webView, reason: .extensionRequestedClose)
     }
 
+    func closeAuxiliaryWindowSessions(
+        forExtensionId extensionId: String,
+        reason: AuxiliaryWindowCloseReason
+    ) {
+        auxiliaryWindowManager.closeAll(forExtensionId: extensionId, reason: reason)
+    }
+
     func containsAuxiliaryWebView(_ webView: WKWebView) -> Bool {
         auxiliaryWindowManager.contains(webView: webView)
+    }
+
+    func presentExtensionExternalWebPopup(
+        configuration: WKWebViewConfiguration,
+        request: URLRequest?,
+        windowFeatures: WKWindowFeatures,
+        openerTab: Tab,
+        shouldActivateApp: Bool,
+        extensionOwnedSourceURL: URL?,
+        ownerExtensionID: String?
+    ) -> WKWebView? {
+        auxiliaryWindowManager.presentExtensionExternalWebPopup(
+            configuration: configuration,
+            request: request,
+            windowFeatures: windowFeatures,
+            openerTab: openerTab,
+            shouldActivateApp: shouldActivateApp,
+            extensionOwnedSourceURL: extensionOwnedSourceURL,
+            ownerExtensionID: ownerExtensionID
+        )
+    }
+
+    func presentExtensionPopupWindow(
+        configuration: WKWebExtension.WindowConfiguration,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext,
+        extensionManager: ExtensionManager,
+        parentWindow: NSWindow?
+    ) async -> ExtensionMiniWindowAdapter? {
+        await auxiliaryWindowManager.presentExtensionPopupWindow(
+            configuration: configuration,
+            controller: controller,
+            extensionContext: extensionContext,
+            extensionManager: extensionManager,
+            parentWindow: parentWindow
+        )
     }
 }
 

@@ -257,8 +257,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ controller: WKWebExtensionController,
         focusedWindowFor extensionContext: WKWebExtensionContext
     ) -> (any WKWebExtensionWindow)? {
-        guard let browserManager else { return nil }
-        let auxiliaryWindowManager = browserManager.auxiliaryWindowManager
+        guard let browserContext = browserBridgeContext else { return nil }
         let contextProfileId = profileId(for: extensionContext)
         let ownerExtensionId = extensionID(for: extensionContext)
         let ownerMiniWindowAdapters: [ExtensionMiniWindowAdapter] = {
@@ -270,29 +269,27 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }()
 
         if let keyWindow = NSApp.keyWindow,
-           let session = auxiliaryWindowManager.session(for: keyWindow),
+           let session = browserContext.auxiliaryWindowSession(for: keyWindow),
            let miniWindowAdapter = session.miniWindowAdapter,
            ownerMiniWindowAdapters.contains(where: { $0.sessionId == miniWindowAdapter.sessionId })
         {
-            auxiliaryWindowManager.recordAuxiliarySessionFocus(session.id)
+            browserContext.recordAuxiliaryWindowSessionFocus(session.id)
             return miniWindowAdapter
         }
 
         if let miniWindowAdapter = ownerMiniWindowAdapters.first {
-            auxiliaryWindowManager.recordAuxiliarySessionFocus(miniWindowAdapter.sessionId)
+            browserContext.recordAuxiliaryWindowSessionFocus(miniWindowAdapter.sessionId)
             return miniWindowAdapter
         }
 
         if let keyWindow = NSApp.keyWindow,
-           let mainWindowState = browserManager.windowRegistry?.windows.values.first(where: {
-               $0.window === keyWindow
-           }),
+           let mainWindowState = browserContext.extensionWindowState(forAppKitWindow: keyWindow),
            contextProfileId.map({ windowMatchesProfile(mainWindowState, profileId: $0) }) ?? true
         {
             return windowAdapter(for: mainWindowState.id)
         }
 
-        if let activeWindow = browserManager.windowRegistry?.activeWindow,
+        if let activeWindow = browserContext.activeExtensionWindowState,
            contextProfileId.map({ windowMatchesProfile(activeWindow, profileId: $0) }) ?? true
         {
             return windowAdapter(for: activeWindow.id)
@@ -304,7 +301,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         _ controller: WKWebExtensionController,
         openWindowsFor extensionContext: WKWebExtensionContext
     ) -> [any WKWebExtensionWindow] {
-        guard let browserManager,
+        guard let browserContext = browserBridgeContext,
               let contextProfileId = profileId(for: extensionContext)
         else { return [] }
 
@@ -317,12 +314,12 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }()
 
         var openWindows: [any WKWebExtensionWindow] = ownerMiniWindowAdapters
-        openWindows += browserManager.windowRegistry?.windows.compactMap { windowId, windowState -> (any WKWebExtensionWindow)? in
+        openWindows += browserContext.allExtensionWindowStates.compactMap { windowState -> (any WKWebExtensionWindow)? in
             guard windowMatchesProfile(windowState, profileId: contextProfileId) else {
                 return nil
             }
-            return windowAdapter(for: windowId)
-        } ?? []
+            return windowAdapter(for: windowState.id)
+        }
 
         return openWindows
     }
@@ -346,15 +343,14 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         ownerExtensionID: String,
         profileId: UUID?
     ) -> [ExtensionMiniWindowAdapter] {
-        guard let browserManager else { return [] }
+        guard let browserContext = browserBridgeContext else { return [] }
 
-        let auxiliaryWindowManager = browserManager.auxiliaryWindowManager
         var adapters = miniWindowAdapters.values.compactMap { adapter -> ExtensionMiniWindowAdapter? in
-            guard let session = auxiliaryWindowManager.session(for: adapter.sessionId),
+            guard let session = browserContext.auxiliaryWindowSession(for: adapter.sessionId),
                   session.ownerExtensionID == ownerExtensionID,
                   session.window.isVisible,
                   let sessionAdapter = session.miniWindowAdapter,
-                  let tab = browserManager.tabManager.tab(for: sessionAdapter.tabId)
+                  let tab = browserContext.extensionTab(for: sessionAdapter.tabId)
             else {
                 return nil
             }
@@ -368,7 +364,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             lhs.sessionId.uuidString < rhs.sessionId.uuidString
         }
 
-        if let focused = auxiliaryWindowManager.focusedMiniWindowAdapter(
+        if let focused = browserContext.focusedExtensionMiniWindowAdapter(
             forOwnerExtensionID: ownerExtensionID
         ),
            let focusedIndex = adapters.firstIndex(where: { $0.sessionId == focused.sessionId })
@@ -416,7 +412,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             to: extensionContext,
             webExtension: extensionContext.webExtension
         )
-        if let activeTab = browserManager?.currentTabForActiveWindow() {
+        if let activeTab = browserBridgeContext?.currentExtensionTabForActiveWindow() {
             let seesCurrentTab =
                 stableAdapter(for: activeTab) != nil
                 && isTabEligibleForCurrentExtensionRuntime(activeTab)
@@ -505,7 +501,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             }
 
             let profileId = self.profileId(for: extensionContext)
-            let preferredWindowId = self.browserManager?.windowRegistry?.activeWindow?.id
+            let preferredWindowId = self.browserBridgeContext?.activeExtensionWindowState?.id
             let resolution = self.presentResolvedExtensionActionPopup(
                 popover,
                 for: extensionId,
@@ -1064,8 +1060,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
 
         if configuration.windowType == .popup {
-            Task { @MainActor [weak self, weak browserManager] in
-                guard let self, let browserManager else {
+            Task { @MainActor [weak self] in
+                guard let self, let browserContext = self.browserBridgeContext else {
                     completionHandler(
                         nil,
                         NSError(
@@ -1077,8 +1073,8 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     return
                 }
 
-                let parentWindow = browserManager.windowRegistry?.activeWindow?.window
-                let adapter = await browserManager.auxiliaryWindowManager.presentExtensionPopupWindow(
+                let parentWindow = browserContext.activeExtensionWindowState?.window
+                let adapter = await browserContext.presentExtensionPopupWindow(
                     configuration: configuration,
                     controller: controller,
                     extensionContext: extensionContext,
@@ -1106,14 +1102,11 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             configuration.tabURLs,
             controller: controller,
             extensionContext: extensionContext,
-            createWindow: { [weak browserManager] in
-                browserManager?.createNewWindow()
+            createWindow: { [weak self] in
+                self?.browserBridgeContext?.createExtensionWindow()
             },
-            awaitWindowRegistration: { [weak browserManager] existingWindowIDs in
-                guard let windowRegistry = browserManager?.windowRegistry else {
-                    return nil
-                }
-                return await windowRegistry.awaitNextRegisteredWindow(
+            awaitWindowRegistration: { [weak self] existingWindowIDs in
+                await self?.browserBridgeContext?.awaitNextExtensionWindow(
                     excluding: existingWindowIDs
                 )
             },

@@ -646,7 +646,7 @@ extension ExtensionManager {
                   self.extensionLoadGeneration == scheduledGeneration
             else { return }
 
-            guard let resolvedTab = self.browserManager?.tabManager.tab(for: tabId) else { return }
+            guard let resolvedTab = self.browserBridgeContext?.extensionTab(for: tabId) else { return }
             self.reconcileTabAfterContentScriptContextsLoaded(
                 resolvedTab,
                 reason: "\(reason).afterContextLoad"

@@ -53,7 +53,7 @@ extension ExtensionManager: NSPopoverDelegate {
         guard let action = ExtensionActionSurfaceStatePresenter.actionForLoadedContext(
             extensionContext,
             preferredTab: preferredTab,
-            currentTab: { browserManager?.currentTabForActiveWindow() },
+            currentTab: { browserBridgeContext?.currentExtensionTabForActiveWindow() },
             stableAdapter: { stableAdapter(for: $0) }
         ) else { return }
 
@@ -170,7 +170,7 @@ extension ExtensionManager: NSPopoverDelegate {
         if actionPopupAnchorStore.latestSessionToken(for: extensionId) == nil {
             let windowId =
                 currentTab?.primaryWindowId
-                ?? browserManager?.windowRegistry?.activeWindow?.id
+                ?? browserBridgeContext?.activeExtensionWindowState?.id
             if let windowId {
                 _ = captureActionPopupAnchor(
                     extensionId: extensionId,
@@ -749,7 +749,7 @@ extension ExtensionManager: NSPopoverDelegate {
         awaitWindowRegistration: @escaping @MainActor (Set<UUID>) async -> BrowserWindowState?,
         completionHandler: @escaping ((any WKWebExtensionWindow)?, (any Error)?) -> Void
     ) {
-        guard let browserManager, let windowRegistry = browserManager.windowRegistry else {
+        guard let browserContext = browserBridgeContext else {
             completionHandler(
                 nil,
                 NSError(
@@ -764,10 +764,10 @@ extension ExtensionManager: NSPopoverDelegate {
         if let extensionContext,
            let firstURL = tabURLs.first,
            Self.isExtensionExternalWebPopupURL(firstURL),
-           let activeWindow = windowRegistry.activeWindow
+           let activeWindow = browserContext.activeExtensionWindowState
         {
-            Task { @MainActor [weak self, weak browserManager] in
-                guard let self, let browserManager else {
+            Task { @MainActor [weak self] in
+                guard let self, let browserContext = self.browserBridgeContext else {
                     completionHandler(
                         nil,
                         NSError(
@@ -778,9 +778,7 @@ extension ExtensionManager: NSPopoverDelegate {
                     )
                     return
                 }
-                let targetSpace = activeWindow.currentSpaceId.flatMap { spaceID in
-                    browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-                } ?? browserManager.tabManager.currentSpace
+                let targetSpace = browserContext.extensionTargetSpace(for: activeWindow)
 
                 let resolvedExtensionLoad = self.extensionLoadURL(
                     for: firstURL,
@@ -818,11 +816,11 @@ extension ExtensionManager: NSPopoverDelegate {
             return
         }
 
-        let existingWindowIDs = Set(windowRegistry.windows.keys)
+        let existingWindowIDs = Set(browserContext.allExtensionWindowStates.map(\.id))
         createWindow()
 
-        Task { @MainActor [weak self, weak browserManager] in
-            guard let self, let browserManager else {
+        Task { @MainActor [weak self] in
+            guard let self, let browserContext = self.browserBridgeContext else {
                 completionHandler(
                     nil,
                     NSError(
@@ -843,9 +841,7 @@ extension ExtensionManager: NSPopoverDelegate {
                 return
             }
 
-            let targetSpace = windowState.currentSpaceId.flatMap { spaceID in
-                browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-            } ?? browserManager.tabManager.currentSpace
+            let targetSpace = browserContext.extensionTargetSpace(for: windowState)
 
             let createdTab: Tab
             if let firstURL = tabURLs.first {
@@ -860,16 +856,18 @@ extension ExtensionManager: NSPopoverDelegate {
                     targetSpace: targetSpace,
                     controller: controller
                 )
-                createdTab = browserManager.tabManager.createNewTab(
-                    url: (resolvedExtensionLoad.url ?? firstURL).absoluteString,
+                createdTab = browserContext.createExtensionTab(
+                    url: resolvedExtensionLoad.url ?? firstURL,
                     in: targetSpace,
                     activate: false,
                     webExtensionContextOverride: resolvedExtensionLoad.context
                 )
             } else {
-                createdTab = browserManager.tabManager.createNewTab(
+                createdTab = browserContext.createExtensionTab(
+                    url: nil,
                     in: targetSpace,
-                    activate: false
+                    activate: false,
+                    webExtensionContextOverride: nil
                 )
             }
 
@@ -878,7 +876,7 @@ extension ExtensionManager: NSPopoverDelegate {
                 isActive: true,
                 targetWindow: windowState
             )
-            browserManager.selectTab(createdTab, in: windowState)
+            browserContext.selectExtensionTab(createdTab, in: windowState)
             self.registerExtensionCreatedTabWithExtensionRuntime(
                 createdTab,
                 reason: "webExtensionController.openNewWindowUsing"
@@ -908,7 +906,7 @@ extension ExtensionManager: NSPopoverDelegate {
         else {
             return
         }
-        guard let tab = browserManager?.currentTabForActiveWindow(),
+        guard let tab = browserBridgeContext?.currentExtensionTabForActiveWindow(),
               let webView = resolvedLiveWebView(for: tab),
               let window = webView.window,
               webView.superview != nil

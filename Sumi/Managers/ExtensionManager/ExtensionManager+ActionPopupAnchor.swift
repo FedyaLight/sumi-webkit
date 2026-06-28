@@ -12,7 +12,7 @@ extension ExtensionManager {
     ) -> UUID {
         let captureProfileId =
             profileId
-            ?? browserManager?.windowRegistry?.windows[windowId].flatMap {
+            ?? browserBridgeContext?.extensionWindowState(for: windowId).flatMap {
                 self.resolvedProfileId(for: $0)
             }
             ?? currentProfileId
@@ -67,8 +67,8 @@ extension ExtensionManager {
         let targetWindowId =
             pendingAnchor?.windowID
             ?? preferredWindowId
-            ?? pendingAnchor.flatMap { browserManager?.windowRegistry?.windows[$0.windowID]?.id }
-            ?? browserManager?.windowRegistry?.activeWindow?.id
+            ?? pendingAnchor.flatMap { browserBridgeContext?.extensionWindowState(for: $0.windowID)?.id }
+            ?? browserBridgeContext?.activeExtensionWindowState?.id
 
         if let pendingAnchor,
            let presentationProfileId,
@@ -83,14 +83,14 @@ extension ExtensionManager {
                   isActionPopupAnchorViewReady(buttonView),
                   let window = buttonView.window,
                   let targetWindowId,
-                  window === browserManager?.windowRegistry?.windows[targetWindowId]?.window
+                  window === browserBridgeContext?.extensionWindowState(for: targetWindowId)?.window
                      || window === NSApp.keyWindow
                      || window === NSApp.mainWindow
         {
             let resolution = ExtensionActionPopupAnchorResolution(
                 anchorResolved: true,
                 anchorSource: .button,
-                windowMatch: window === browserManager?.windowRegistry?.windows[pendingAnchor.windowID]?.window,
+                windowMatch: window === browserBridgeContext?.extensionWindowState(for: pendingAnchor.windowID)?.window,
                 profileMatch: presentationProfileId.map { pendingAnchor.profileID == $0 } ?? true,
                 sessionToken: pendingAnchor.sessionToken
             )
@@ -113,7 +113,7 @@ extension ExtensionManager {
         {
             let windowMatch =
                 currentView.window
-                === browserManager?.windowRegistry?.windows[targetWindowId]?.window
+                === browserBridgeContext?.extensionWindowState(for: targetWindowId)?.window
             let resolution = ExtensionActionPopupAnchorResolution(
                 anchorResolved: true,
                 anchorSource: .current,
@@ -206,7 +206,7 @@ extension ExtensionManager {
         anchors.removeAll { $0.view == nil || $0.view?.window == nil }
         actionAnchors[extensionId] = anchors.isEmpty ? nil : anchors
 
-        let targetWindow = browserManager?.windowRegistry?.windows[windowId]?.window
+        let targetWindow = browserBridgeContext?.extensionWindowState(for: windowId)?.window
         if let targetWindow,
            let match = anchors.first(where: {
                $0.window === targetWindow && isActionPopupAnchorViewReady($0.view)

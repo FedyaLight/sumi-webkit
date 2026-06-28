@@ -48,7 +48,7 @@ extension ExtensionManager {
 
         extensionContext.didOpenWindow(adapter)
         if session.shouldActivateApp {
-            browserManager?.auxiliaryWindowManager.recordAuxiliarySessionFocus(session.id)
+            browserBridgeContext?.recordAuxiliaryWindowSessionFocus(session.id)
             extensionContext.didFocusWindow(adapter)
         }
     }
@@ -81,7 +81,7 @@ extension ExtensionManager {
         }
 
         extensionContext.didCloseWindow(adapter)
-        if let activeWindow = browserManager?.windowRegistry?.activeWindow,
+        if let activeWindow = browserBridgeContext?.activeExtensionWindowState,
            let profileId = resolvedProfileId(for: session.tab),
            windowMatchesProfile(activeWindow, profileId: profileId),
            let focusedAdapter = windowAdapter(for: activeWindow.id)
@@ -112,9 +112,9 @@ extension ExtensionManager {
 
     func notifyWindowFocused(_ windowState: BrowserWindowState) {
         if let keyWindow = NSApp.keyWindow,
-           let auxiliarySession = browserManager?.auxiliaryWindowManager.session(for: keyWindow)
+           let auxiliarySession = browserBridgeContext?.auxiliaryWindowSession(for: keyWindow)
         {
-            browserManager?.auxiliaryWindowManager.focus(sessionID: auxiliarySession.id)
+            browserBridgeContext?.focusAuxiliaryWindowSession(auxiliarySession.id)
             return
         }
 
@@ -456,9 +456,9 @@ extension ExtensionManager {
             )
         }
 
-        if let browserManager,
-           let activeWindow = browserManager.windowRegistry?.activeWindow,
-           let currentTab = browserManager.currentTab(for: activeWindow),
+        if let browserContext = browserBridgeContext,
+           let activeWindow = browserContext.activeExtensionWindowState,
+           let currentTab = browserContext.currentExtensionTab(in: activeWindow),
            isTabEligibleForCurrentExtensionRuntime(currentTab)
         {
             notifyTabActivated(newTab: currentTab, previous: nil)
@@ -470,9 +470,9 @@ extension ExtensionManager {
     }
 
     func registerExistingWindowStateIfAttached() {
-        guard let browserManager else { return }
+        guard let browserContext = browserBridgeContext else { return }
 
-        let windows = browserManager.windowRegistry?.allWindows ?? []
+        let windows = browserContext.allExtensionWindowStates
         extensionRuntimeTrace(
             "registerExistingWindowState start generation=\(extensionLoadGeneration) notifyGeneration=\(tabOpenNotificationGeneration) windows=\(windows.count) controller=\(extensionRuntimeControllerDescription(extensionController))"
         )
@@ -481,7 +481,7 @@ extension ExtensionManager {
             notifyWindowOpened(windowState)
         }
 
-        if let activeWindow = browserManager.windowRegistry?.activeWindow {
+        if let activeWindow = browserContext.activeExtensionWindowState {
             notifyWindowFocused(activeWindow)
         }
 
@@ -731,7 +731,7 @@ extension ExtensionManager {
         for extensionId: String,
         removeUIState: Bool
     ) {
-        browserManager?.auxiliaryWindowManager.closeAll(
+        browserBridgeContext?.closeAuxiliaryWindowSessions(
             forExtensionId: extensionId,
             reason: .extensionDisable
         )

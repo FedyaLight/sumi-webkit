@@ -98,7 +98,7 @@ enum ExtensionActionPopupPresentationOwner {
         manager: ExtensionManager
     ) -> WKWebView? {
         guard navigationAction.targetFrame == nil,
-              let browserManager = manager.browserManager
+              let browserContext = manager.browserBridgeContext
         else {
             return nil
         }
@@ -118,9 +118,7 @@ enum ExtensionActionPopupPresentationOwner {
             return nil
         }
 
-        guard let openerTab = browserManager.currentTabForActiveWindow()
-            ?? browserManager.tabManager.currentTab
-        else {
+        guard let openerTab = browserContext.currentExtensionTabForPopup() else {
             return nil
         }
 
@@ -130,7 +128,7 @@ enum ExtensionActionPopupPresentationOwner {
             let profileId =
                 manager.resolvedProfileId(for: openerTab)
                 ?? manager.currentProfileId
-                ?? browserManager.currentProfile?.id
+                ?? manager.browserManager?.currentProfile?.id
             let controller =
                 popupWebView.configuration.webExtensionController
                 ?? configuration.webExtensionController
@@ -158,7 +156,7 @@ enum ExtensionActionPopupPresentationOwner {
             }
         }
 
-        return browserManager.auxiliaryWindowManager.presentExtensionExternalWebPopup(
+        return browserContext.presentExtensionExternalWebPopup(
             configuration: configuration,
             request: navigationAction.request,
             windowFeatures: windowFeatures,
