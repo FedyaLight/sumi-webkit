@@ -56,6 +56,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     @ObservationIgnored
     private let destructiveCleanupPreparationOwner = WebViewDestructiveCleanupPreparationOwner()
 
+    @ObservationIgnored
+    private let destructiveCleanupPreparationScanOwner = WebViewDestructiveCleanupPreparationScanOwner()
+
     // MARK: - Compositor Container Management
 
     func setCompositorContainerView(_ view: NSView?, for windowId: UUID) {
@@ -138,40 +141,21 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         guard !profileIDs.isEmpty else { return }
         guard let browserManager else { return }
 
-        var seenTabIDs = Set<UUID>()
-        var preparedWebViewCount = 0
-        var skippedProtectedWebViewCount = 0
-
-        func visit(_ tab: Tab) {
-            guard seenTabIDs.insert(tab.id).inserted else { return }
-            guard let profileId = tab.resolveProfile()?.id ?? tab.profileId,
-                  profileIDs.contains(profileId),
-                  !tab.representsSumiNativeSurface
-            else {
-                return
-            }
-
-            let liveWebViews = liveWebViews(for: tab)
-            let eligibleWebViews = liveWebViews.filter {
-                isWebViewProtectedFromCompositorMutation($0) == false
-            }
-            guard !eligibleWebViews.isEmpty else {
-                skippedProtectedWebViewCount += liveWebViews.count
-                return
-            }
-
-            tab.cancelPendingMainFrameNavigation()
-            for webView in eligibleWebViews {
-                destructiveCleanupPreparationOwner.prepare(webView, tab: tab)
-                preparedWebViewCount += 1
-            }
-        }
-
-        browserManager.tabManager.allPinnedTabsAllProfiles.forEach(visit)
-        browserManager.tabManager.allTabs().forEach(visit)
+        let preparationResult = destructiveCleanupPreparationScanOwner.prepare(
+            pinnedTabs: browserManager.tabManager.allPinnedTabsAllProfiles,
+            tabs: browserManager.tabManager.allTabs(),
+            profileIDs: profileIDs,
+            liveWebViews: { [self] tab in
+                liveWebViews(for: tab)
+            },
+            isWebViewProtectedFromCompositorMutation: { [self] webView in
+                isWebViewProtectedFromCompositorMutation(webView)
+            },
+            cleanupPreparationOwner: destructiveCleanupPreparationOwner
+        )
 
         RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-            "Prepared \(preparedWebViewCount) live WebView(s) for destructive data cleanup across \(profileIDs.count) profile(s); skipped \(skippedProtectedWebViewCount) protected WebView(s)."
+            "Prepared \(preparationResult.preparedWebViewCount) live WebView(s) for destructive data cleanup across \(profileIDs.count) profile(s); skipped \(preparationResult.skippedProtectedWebViewCount) protected WebView(s)."
         }
     }
 

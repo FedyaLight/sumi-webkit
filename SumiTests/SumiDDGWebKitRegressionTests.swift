@@ -2040,6 +2040,100 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
     }
 
+    func testWebViewCoordinatorDestructiveCleanupScanPolicyStaysBehindOwner() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let coordinatorSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+        let scanOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewDestructiveCleanupPreparationScanOwner.swift"
+            ),
+            encoding: .utf8
+        )
+        let preparationOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewDestructiveCleanupPreparationOwner.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(scanOwnerSource.contains("final class WebViewDestructiveCleanupPreparationScanOwner"))
+        XCTAssertTrue(scanOwnerSource.contains("typealias LiveWebViewsResolver = (Tab) -> [WKWebView]"))
+        XCTAssertTrue(scanOwnerSource.contains("typealias CompositorMutationProtectionChecker = (WKWebView) -> Bool"))
+
+        let scanSource = try sourceSlice(
+            scanOwnerSource,
+            from: "func prepare(",
+            to: "private func isTabEligible"
+        )
+        try assertTokenOrder(
+            scanSource,
+            [
+                "var seenTabIDs = Set<UUID>()",
+                "var result = PreparationResult()",
+                "guard seenTabIDs.insert(tab.id).inserted",
+                "guard isTabEligible(tab, profileIDs: profileIDs)",
+                "let tabLiveWebViews = liveWebViews(tab)",
+                "let eligibleWebViews = tabLiveWebViews.filter",
+                "isWebViewProtectedFromCompositorMutation(webView) == false",
+                "guard !eligibleWebViews.isEmpty else",
+                "result.skippedProtectedWebViewCount += tabLiveWebViews.count",
+                "tab.cancelPendingMainFrameNavigation()",
+                "cleanupPreparationOwner.prepare(webView, tab: tab)",
+                "result.preparedWebViewCount += 1"
+            ]
+        )
+
+        let eligibilitySource = try sourceSlice(
+            scanOwnerSource,
+            from: "private func isTabEligible",
+            to: "\n    }\n}"
+        )
+        try assertTokenOrder(
+            eligibilitySource,
+            [
+                "tab.resolveProfile()?.id ?? tab.profileId",
+                "profileIDs.contains(profileId)",
+                "tab.representsSumiNativeSurface == false"
+            ]
+        )
+
+        let coordinatorPreparationSource = try sourceSlice(
+            coordinatorSource,
+            from: "func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async",
+            to: "func windowIDs(for tabId: UUID) -> [UUID]"
+        )
+        try assertTokenOrder(
+            coordinatorPreparationSource,
+            [
+                "guard !profileIDs.isEmpty else { return }",
+                "guard let browserManager else { return }",
+                "destructiveCleanupPreparationScanOwner.prepare(",
+                "pinnedTabs: browserManager.tabManager.allPinnedTabsAllProfiles",
+                "tabs: browserManager.tabManager.allTabs()",
+                "liveWebViews(for: tab)",
+                "isWebViewProtectedFromCompositorMutation(webView)",
+                "cleanupPreparationOwner: destructiveCleanupPreparationOwner",
+                "RuntimeDiagnostics.debug(category: \"WebViewCoordinator\")"
+            ]
+        )
+        XCTAssertFalse(coordinatorPreparationSource.contains("var seenTabIDs"))
+        XCTAssertFalse(coordinatorPreparationSource.contains("tab.cancelPendingMainFrameNavigation()"))
+        XCTAssertFalse(coordinatorPreparationSource.contains("filter {"))
+
+        XCTAssertTrue(preparationOwnerSource.contains("private var blankingWebViewIDs"))
+        XCTAssertTrue(preparationOwnerSource.contains("func prepare(_ webView: WKWebView, tab: Tab)"))
+        XCTAssertFalse(scanOwnerSource.contains("blankingWebViewIDs"))
+        XCTAssertFalse(scanOwnerSource.contains("beginNavigationSuppression"))
+        XCTAssertFalse(scanOwnerSource.contains("finishNavigationSuppression"))
+    }
+
     func testWebViewContainerLayoutDoesNotReparentDisplayedContent() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
