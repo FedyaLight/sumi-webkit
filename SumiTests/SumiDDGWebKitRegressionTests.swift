@@ -1171,13 +1171,20 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let splitHostLayoutSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WindowWebContentSplitHostLayoutView.swift"
+            ),
+            encoding: .utf8
+        )
 
         XCTAssertTrue(source.contains("private lazy var hostLifecycleOwner = WindowWebContentHostLifecycleOwner("))
         XCTAssertTrue(source.contains("private final class WindowWebContentHostLifecycleOwner"))
         XCTAssertTrue(source.contains("private lazy var visualHandoffFlow = WindowWebContentVisualHandoffFlowOwner("))
         XCTAssertTrue(source.contains("private final class WindowWebContentVisualHandoffFlowOwner"))
         XCTAssertTrue(source.contains("WindowWebContentVisualHandoffCoverController("))
-        XCTAssertTrue(source.contains("private final class ContainerView: NSView, WindowWebContentVisualHandoffCoverContainer"))
+        XCTAssertTrue(source.contains("WindowWebContentSplitHostLayoutView("))
+        XCTAssertTrue(splitHostLayoutSource.contains("final class WindowWebContentSplitHostLayoutView: NSView, WindowWebContentVisualHandoffCoverContainer"))
         XCTAssertTrue(registrySource.contains("enum WindowWebContentPaneSlot"))
         XCTAssertTrue(registrySource.contains("final class WindowWebContentHostRegistry"))
         XCTAssertTrue(registrySource.contains("func protectedHost(for webView: WKWebView)"))
@@ -2220,11 +2227,11 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             .deletingLastPathComponent()
         let source = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
-                "Sumi/Components/WebsiteView/WebsiteCompositorView.swift"
+                "Sumi/Components/WebsiteView/WindowWebContentSplitHostLayoutView.swift"
             ),
             encoding: .utf8
         )
-        let start = try XCTUnwrap(source.range(of: "// MARK: - Container View"))
+        let start = try XCTUnwrap(source.range(of: "// MARK: - Split Host Layout View"))
             .lowerBound
         let containerSource = String(source[start...])
 
@@ -2246,6 +2253,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let splitHostLayoutSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WindowWebContentSplitHostLayoutView.swift"
+            ),
+            encoding: .utf8
+        )
         let nativeSplitSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
                 "Sumi/Components/WebsiteView/NativeSplitTreeView.swift"
@@ -2254,8 +2267,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         XCTAssertFalse(compositorSource.contains("final class NativeSplitTreeView"))
-        XCTAssertTrue(compositorSource.contains("NativeSplitTreeView(axis: axis"))
-        XCTAssertTrue(compositorSource.contains("splitView.updateStoredSizes"))
+        XCTAssertTrue(splitHostLayoutSource.contains("NativeSplitTreeView(axis: axis"))
+        XCTAssertTrue(splitHostLayoutSource.contains("splitView.updateStoredSizes"))
 
         XCTAssertTrue(nativeSplitSource.contains("final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate"))
         XCTAssertTrue(nativeSplitSource.contains("func updateStoredSizes"))
@@ -2309,6 +2322,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             "Sumi/Components/WebsiteView/BrowserContentViewportCutouts.swift",
             "Sumi/Components/WebsiteView/WebsiteView.swift",
             "Sumi/Components/WebsiteView/WebsiteCompositorView.swift",
+            "Sumi/Components/WebsiteView/WindowWebContentSplitHostLayoutView.swift",
             "Sumi/Components/WebsiteView/NativeSplitTreeView.swift",
             "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift",
             "Sumi/Managers/WebViewCoordinator/SumiWebViewContainerView.swift",
