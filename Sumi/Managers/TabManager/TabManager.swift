@@ -28,6 +28,7 @@ class TabManager: ObservableObject {
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
     lazy var folderMutationOwner = TabFolderMutationOwner(tabManager: self)
     lazy var regularTabCollectionOwner = RegularTabCollectionOwner(tabManager: self)
+    lazy var regularTabLifecycleOwner = TabRegularLifecycleOwner(tabManager: self)
     lazy var regularTabDragService = SidebarRegularTabDragService(tabManager: self)
     lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
     lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(tabManager: self)
@@ -88,7 +89,7 @@ class TabManager: ObservableObject {
                 self.backfillTargetSpaceProfileIfNeeded(space, profileId: profileId)
             },
             insertRegularTab: { [unowned self] tab, spaceId, insertionIndex in
-                self.insertRegularTab(tab, in: spaceId, at: insertionIndex)
+                self.regularTabLifecycleOwner.insertRegularTab(tab, in: spaceId, at: insertionIndex)
             },
             scheduleStructuralPersistence: { [unowned self] in self.scheduleStructuralPersistence() },
             setActiveTab: { [unowned self] tab in self.setActiveTab(tab) },
@@ -438,7 +439,7 @@ class TabManager: ObservableObject {
         tabCollectionMembershipOwner.allTabsForCurrentProfile()
     }
 
-    private func contains(_ tab: Tab) -> Bool {
+    func contains(_ tab: Tab) -> Bool {
         tabCollectionMembershipOwner.contains(tab)
     }
 
@@ -556,31 +557,7 @@ class TabManager: ObservableObject {
     // MARK: - Tab Management (Normal within current space)
 
     func addTab(_ tab: Tab, regularInsertionIndex: Int? = nil) {
-        withStructuralUpdateTransaction {
-            attach(tab)
-            if contains(tab) { return }
-
-            if tab.spaceId == nil {
-                tab.spaceId = currentSpace?.id
-            }
-            guard let sid = tab.spaceId else {
-                RuntimeDiagnostics.debug("Skipping addTab for '\(tab.name)' because no spaceId was resolved.", category: "TabManager")
-                return
-            }
-            insertRegularTab(tab, in: sid, at: regularInsertionIndex)
-        
-            // Load the tab in compositor if it's the current tab
-            if tab.id == currentTab?.id {
-                if let activeWindow = runtimeContext?.activeWindowState {
-                    runtimeContext?.materializeVisibleTabWebViewIfNeeded(tab, in: activeWindow)
-                } else {
-                    runtimeContext?.loadTab(tab)
-                }
-            }
-        
-            RuntimeDiagnostics.debug("Added regular tab '\(tab.name)' to space \(sid.uuidString).", category: "TabManager")
-            scheduleStructuralPersistence()
-        }
+        regularTabLifecycleOwner.addTab(tab, regularInsertionIndex: regularInsertionIndex)
     }
 
     @discardableResult
@@ -589,45 +566,10 @@ class TabManager: ObservableObject {
         sourceTab: Tab?,
         in space: Space? = nil
     ) -> Tab {
-        withStructuralUpdateTransaction {
-            attach(tab)
-            if contains(tab) { return tab }
-
-            let targetSpace = resolvedTargetSpace(
-                preferred: space,
-                fallbackSpaceId: sourceTab?.spaceId
-            )
-            backfillTargetSpaceProfileIfNeeded(
-                targetSpace,
-                profileId: tab.profileId ?? runtimeContext?.currentProfileId
-            )
-
-            let insertionIndex: Int? = {
-                if let sourceTab,
-                   sourceTab.spaceId == targetSpace.id,
-                   let sourceIndex = regularTabCollectionOwner.firstIndex(of: sourceTab, in: targetSpace.id) {
-                    return sourceIndex + 1
-                }
-                if sourceTab?.isPinned == true || sourceTab?.shortcutPinRole == .essential {
-                    return 0
-                }
-                return nil
-            }()
-
-            if let currentURL = tab.existingWebView?.url {
-                tab.url = currentURL
-            }
-            insertRegularTab(tab, in: targetSpace.id, at: insertionIndex)
-            scheduleStructuralPersistence()
-            return tab
-        }
+        regularTabLifecycleOwner.adoptGlanceTab(tab, sourceTab: sourceTab, in: space)
     }
 
-    private func insertRegularTab(_ tab: Tab, in spaceId: UUID, at insertionIndex: Int?) {
-        regularTabCollectionOwner.insert(tab, in: spaceId, at: insertionIndex)
-    }
-
-    private func resolvedTargetSpace(preferred space: Space?, fallbackSpaceId: UUID? = nil) -> Space {
+    func resolvedTargetSpace(preferred space: Space?, fallbackSpaceId: UUID? = nil) -> Space {
         space
             ?? fallbackSpaceId.flatMap { spaceId in
                 spaces.first(where: { $0.id == spaceId })
@@ -636,12 +578,12 @@ class TabManager: ObservableObject {
             ?? ensureDefaultSpaceIfNeeded()
     }
 
-    private var defaultProfileIdForSpaceBootstrap: UUID? {
+    var defaultProfileIdForSpaceBootstrap: UUID? {
         runtimeContext?.defaultProfileId
     }
 
     @discardableResult
-    private func backfillTargetSpaceProfileIfNeeded(
+    func backfillTargetSpaceProfileIfNeeded(
         _ targetSpace: Space,
         profileId: UUID?
     ) -> Bool {
@@ -893,50 +835,14 @@ class TabManager: ObservableObject {
         webExtensionContextOverride: WKWebExtensionContext? = nil,
         regularInsertionIndex: Int? = nil
     ) -> Tab {
-        return withStructuralUpdateTransaction {
-            let settings = sumiSettings ?? runtimeContext?.settings
-            let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
-            let normalizedUrl = normalizeURL(url, queryTemplate: template)
-            guard let validURL = URL(string: normalizedUrl)
-            else {
-                RuntimeDiagnostics.debug("Invalid URL '\(url)' while creating a new tab; falling back to Sumi empty surface.", category: "TabManager")
-                return createNewTab(
-                    in: space,
-                    activate: activate,
-                    webViewConfigurationOverride: webViewConfigurationOverride,
-                    webExtensionContextOverride: webExtensionContextOverride,
-                    regularInsertionIndex: regularInsertionIndex
-                )
-            }
-
-            let targetSpace = resolvedTargetSpace(preferred: space)
-            if backfillTargetSpaceProfileIfNeeded(targetSpace, profileId: defaultProfileIdForSpaceBootstrap) {
-                scheduleStructuralPersistence()
-            }
-            let sid = targetSpace.id
-
-            let nextIndex = regularInsertionIndex
-                ?? regularTabCollectionOwner.appendIndex(in: sid)
-
-            let newTab = Tab(
-                url: validURL,
-                name: "New Tab",
-                favicon: "globe",
-                spaceId: sid,
-                index: nextIndex,
-                browserManager: browserManager
-            )
-            newTab.profileId = targetSpace.profileId
-            newTab.webExtensionContextOverride = webExtensionContextOverride
-            if let webViewConfigurationOverride {
-                newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
-            }
-            addTab(newTab, regularInsertionIndex: regularInsertionIndex)
-            if activate {
-                setActiveTab(newTab)
-            }
-            return newTab
-        }
+        regularTabLifecycleOwner.createNewTab(
+            url: url,
+            in: space,
+            activate: activate,
+            webViewConfigurationOverride: webViewConfigurationOverride,
+            webExtensionContextOverride: webExtensionContextOverride,
+            regularInsertionIndex: regularInsertionIndex
+        )
     }
     
     // MARK: - Ephemeral Tab Creation (Incognito)
@@ -976,37 +882,11 @@ class TabManager: ObservableObject {
         in space: Space? = nil,
         existingWebView: WKWebView? = nil
     ) -> Tab {
-        return withStructuralUpdateTransaction {
-            let settings = sumiSettings ?? runtimeContext?.settings
-            let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
-            let normalizedUrl = normalizeURL(url, queryTemplate: template)
-            guard let validURL = URL(string: normalizedUrl)
-            else {
-                RuntimeDiagnostics.debug("Invalid URL '\(url)' while creating a WebView-backed tab; falling back to Sumi empty surface.", category: "TabManager")
-                return createNewTab(in: space)
-            }
-
-            let targetSpace = resolvedTargetSpace(preferred: space)
-            if backfillTargetSpaceProfileIfNeeded(targetSpace, profileId: defaultProfileIdForSpaceBootstrap) {
-                scheduleStructuralPersistence()
-            }
-            let sid = targetSpace.id
-
-            let nextIndex = regularTabCollectionOwner.appendIndex(in: sid)
-
-            let newTab = Tab(
-                url: validURL,
-                name: "New Tab",
-                favicon: "globe",
-                spaceId: sid,
-                index: nextIndex,
-                browserManager: browserManager,
-                existingWebView: existingWebView
-            )
-            addTab(newTab)
-            setActiveTab(newTab)
-            return newTab
-        }
+        regularTabLifecycleOwner.createNewTabWithWebView(
+            url: url,
+            in: space,
+            existingWebView: existingWebView
+        )
     }
 
     // Create a new blank tab intended to host a popup window. The returned tab's
@@ -1019,39 +899,12 @@ class TabManager: ObservableObject {
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         regularInsertionIndex: Int? = nil
     ) -> Tab {
-        return withStructuralUpdateTransaction {
-            let targetSpace = resolvedTargetSpace(preferred: space)
-            if backfillTargetSpaceProfileIfNeeded(targetSpace, profileId: defaultProfileIdForSpaceBootstrap) {
-                scheduleStructuralPersistence()
-            }
-            let sid = targetSpace.id
-            let resolvedIndex = regularInsertionIndex
-                .map { regularTabCollectionOwner.clampedInsertionIndex($0, in: sid) }
-                ?? regularTabCollectionOwner.appendIndex(in: sid)
-
-            guard let blankURL = URL(string: "about:blank") else {
-                preconditionFailure("TabManager: invalid about:blank URL")
-            }
-            let newTab = Tab(
-                url: blankURL,
-                name: "New Tab",
-                favicon: "globe",
-                spaceId: sid,
-                index: resolvedIndex,
-                browserManager: browserManager
-            )
-            newTab.isPopupHost = true
-            if let webViewConfigurationOverride {
-                newTab.applyWebViewConfigurationOverride(webViewConfigurationOverride)
-            }
-            attach(newTab)
-            insertRegularTab(newTab, in: sid, at: resolvedIndex)
-            scheduleStructuralPersistence()
-            if activate {
-                setActiveTab(newTab)
-            }
-            return newTab
-        }
+        regularTabLifecycleOwner.createPopupTab(
+            in: space,
+            activate: activate,
+            webViewConfigurationOverride: webViewConfigurationOverride,
+            regularInsertionIndex: regularInsertionIndex
+        )
     }
 
     // Ensure a default space exists and is active; create a Personal space if needed
