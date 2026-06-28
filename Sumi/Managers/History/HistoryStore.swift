@@ -16,29 +16,6 @@ actor HistoryStore {
 
     private let container: ModelContainer
 
-    private struct SiteAccumulator {
-        var bestEntry: HistoryEntryEntity
-        var visitCount: Int
-    }
-
-    private enum SiteEntrySource {
-        case resolvedSiteDomain
-        case missingSiteDomain
-    }
-
-    private struct SiteGroup {
-        let domain: String
-        let accumulator: SiteAccumulator
-    }
-
-    private struct SiteGroupCursor {
-        let source: SiteEntrySource
-        var rawOffset = 0
-        var bufferedEntries: [HistoryEntryEntity] = []
-        var bufferedIndex = 0
-        var pendingEntry: HistoryEntryEntity?
-    }
-
     init(container: ModelContainer) {
         self.container = container
     }
@@ -162,7 +139,11 @@ actor HistoryStore {
         var pageRecords: [HistoryVisitRecord] = []
         var seenVisibleKeys = Set<String>()
         let startOffset = max(0, offset)
-        let dateRange = dateRange(for: query, referenceDate: referenceDate, calendar: calendar)
+        let dateRange = HistoryStoreRecordAssembly.dateRange(
+            for: query,
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
 
         while true {
             let visits = try fetchVisitChunk(
@@ -183,8 +164,13 @@ actor HistoryStore {
             rawOffset += visits.count
             let records = try visitRecords(for: visits, in: ctx)
 
-            for record in records where visit(record, matches: query, referenceDate: referenceDate, calendar: calendar) {
-                let key = visibleKey(for: record, calendar: calendar)
+            for record in records where HistoryStoreRecordAssembly.visit(
+                record,
+                matches: query,
+                referenceDate: referenceDate,
+                calendar: calendar
+            ) {
+                let key = HistoryStoreRecordAssembly.visibleKey(for: record, calendar: calendar)
                 guard seenVisibleKeys.insert(key).inserted else { continue }
 
                 guard visibleOffset >= startOffset else {
@@ -279,7 +265,11 @@ actor HistoryStore {
             ctx.autosaveEnabled = false
             let descriptor = visitDescriptor(
                 profileId: profileId,
-                dateRange: dateRange(for: query, referenceDate: referenceDate, calendar: calendar),
+                dateRange: HistoryStoreRecordAssembly.dateRange(
+                    for: query,
+                    referenceDate: referenceDate,
+                    calendar: calendar
+                ),
                 sortByDateDescending: false
             )
             return try ctx.fetchCount(descriptor)
@@ -352,7 +342,11 @@ actor HistoryStore {
         ctx.autosaveEnabled = false
         var rawOffset = 0
         var records: [HistoryVisitRecord] = []
-        let dateRange = dateRange(for: query, referenceDate: referenceDate, calendar: calendar)
+        let dateRange = HistoryStoreRecordAssembly.dateRange(
+            for: query,
+            referenceDate: referenceDate,
+            calendar: calendar
+        )
 
         while true {
             let visits = try fetchVisitChunk(
@@ -365,7 +359,12 @@ actor HistoryStore {
             guard !visits.isEmpty else { break }
             rawOffset += visits.count
             records.append(contentsOf: try visitRecords(for: visits, in: ctx).filter {
-                visit($0, matches: query, referenceDate: referenceDate, calendar: calendar)
+                HistoryStoreRecordAssembly.visit(
+                    $0,
+                    matches: query,
+                    referenceDate: referenceDate,
+                    calendar: calendar
+                )
             })
         }
 
@@ -567,23 +566,10 @@ actor HistoryStore {
             entryIDs.contains(entry.id)
         }
         let entries = try ctx.fetch(FetchDescriptor(predicate: predicate))
-        let entriesByID = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0) })
-
-        return visits.compactMap { visit in
-            guard let entry = entriesByID[visit.entryID],
-                  let url = URL(string: entry.urlString)
-            else {
-                return nil
-            }
-            return HistoryVisitRecord(
-                id: visit.id,
-                url: url,
-                title: entry.title,
-                visitedAt: visit.visitedAt,
-                domain: entry.domain,
-                siteDomain: entry.siteDomain
-            )
-        }
+        return HistoryStoreRecordAssembly.visitRecords(
+            for: visits.map(HistoryStoreRecordAssembly.VisitSnapshot.init),
+            entries: entries.map(HistoryStoreRecordAssembly.EntrySnapshot.init)
+        )
     }
 
     private func fetchEntryChunk(
@@ -612,7 +598,7 @@ actor HistoryStore {
     private func fetchSiteEntryChunk(
         in ctx: ModelContext,
         profileId: UUID?,
-        source: SiteEntrySource,
+        source: HistoryStoreRecordAssembly.SiteEntrySource,
         limit: Int,
         offset: Int
     ) throws -> [HistoryEntryEntity] {
@@ -669,31 +655,34 @@ actor HistoryStore {
         limit: Int,
         offset: Int
     ) throws -> [HistorySiteRecord] {
-        var resolvedCursor = SiteGroupCursor(source: .resolvedSiteDomain)
-        var missingCursor = SiteGroupCursor(source: .missingSiteDomain)
+        var resolvedCursor = HistoryStoreRecordAssembly.SiteGroupCursor(source: .resolvedSiteDomain)
+        var missingCursor = HistoryStoreRecordAssembly.SiteGroupCursor(source: .missingSiteDomain)
         var resolvedGroup = try nextSiteGroup(from: &resolvedCursor, in: ctx, profileId: profileId)
         var missingGroup = try nextSiteGroup(from: &missingCursor, in: ctx, profileId: profileId)
         var visibleOffset = 0
         var page: [HistorySiteRecord] = []
 
-        while let domain = nextSiteDomain(resolvedGroup: resolvedGroup, missingGroup: missingGroup) {
-            var accumulator: SiteAccumulator?
+        while let domain = HistoryStoreRecordAssembly.nextSiteDomain(
+            resolvedGroup: resolvedGroup,
+            missingGroup: missingGroup
+        ) {
+            var accumulator: HistoryStoreRecordAssembly.SiteAccumulator?
             if let group = resolvedGroup, group.domain == domain {
-                merge(group.accumulator, into: &accumulator, domain: domain)
+                HistoryStoreRecordAssembly.merge(group.accumulator, into: &accumulator, domain: domain)
                 resolvedGroup = try nextSiteGroup(from: &resolvedCursor, in: ctx, profileId: profileId)
             }
             if let group = missingGroup, group.domain == domain {
-                merge(group.accumulator, into: &accumulator, domain: domain)
+                HistoryStoreRecordAssembly.merge(group.accumulator, into: &accumulator, domain: domain)
                 missingGroup = try nextSiteGroup(from: &missingCursor, in: ctx, profileId: profileId)
             }
 
             guard let accumulator,
-                  let record = siteRecord(domain: domain, accumulator: accumulator)
+                  let record = HistoryStoreRecordAssembly.siteRecord(domain: domain, accumulator: accumulator)
             else {
                 continue
             }
 
-            if let query, !query.isEmpty, !siteMatches(record, query: query) {
+            if let query, !query.isEmpty, !HistoryStoreRecordAssembly.siteMatches(record, query: query) {
                 continue
             }
 
@@ -711,58 +700,42 @@ actor HistoryStore {
         return page
     }
 
-    private func nextSiteDomain(
-        resolvedGroup: SiteGroup?,
-        missingGroup: SiteGroup?
-    ) -> String? {
-        switch (resolvedGroup?.domain, missingGroup?.domain) {
-        case (.some(let resolvedDomain), .some(let missingDomain)):
-            return min(resolvedDomain, missingDomain)
-        case (.some(let resolvedDomain), .none):
-            return resolvedDomain
-        case (.none, .some(let missingDomain)):
-            return missingDomain
-        case (.none, .none):
-            return nil
-        }
-    }
-
     private func nextSiteGroup(
-        from cursor: inout SiteGroupCursor,
+        from cursor: inout HistoryStoreRecordAssembly.SiteGroupCursor,
         in ctx: ModelContext,
         profileId: UUID?
-    ) throws -> SiteGroup? {
+    ) throws -> HistoryStoreRecordAssembly.SiteGroup? {
         guard let firstEntry = try nextSiteEntry(from: &cursor, in: ctx, profileId: profileId) else {
             return nil
         }
 
-        let domain = effectiveSiteDomain(for: firstEntry)
-        var accumulator = SiteAccumulator(
+        let domain = HistoryStoreRecordAssembly.effectiveSiteDomain(for: firstEntry)
+        var accumulator = HistoryStoreRecordAssembly.SiteAccumulator(
             bestEntry: firstEntry,
             visitCount: firstEntry.numberOfTotalVisits
         )
 
         while let entry = try nextSiteEntry(from: &cursor, in: ctx, profileId: profileId) {
-            let entryDomain = effectiveSiteDomain(for: entry)
+            let entryDomain = HistoryStoreRecordAssembly.effectiveSiteDomain(for: entry)
             guard entryDomain == domain else {
                 cursor.pendingEntry = entry
                 break
             }
 
             accumulator.visitCount += entry.numberOfTotalVisits
-            if comparePreferredEntries(entry, accumulator.bestEntry, for: domain) {
+            if HistoryStoreRecordAssembly.comparePreferredEntries(entry, accumulator.bestEntry, for: domain) {
                 accumulator.bestEntry = entry
             }
         }
 
-        return SiteGroup(domain: domain, accumulator: accumulator)
+        return HistoryStoreRecordAssembly.SiteGroup(domain: domain, accumulator: accumulator)
     }
 
     private func nextSiteEntry(
-        from cursor: inout SiteGroupCursor,
+        from cursor: inout HistoryStoreRecordAssembly.SiteGroupCursor,
         in ctx: ModelContext,
         profileId: UUID?
-    ) throws -> HistoryEntryEntity? {
+    ) throws -> HistoryStoreRecordAssembly.EntrySnapshot? {
         if let pendingEntry = cursor.pendingEntry {
             cursor.pendingEntry = nil
             return pendingEntry
@@ -778,7 +751,7 @@ actor HistoryStore {
             )
             guard !entries.isEmpty else { return nil }
             cursor.rawOffset += entries.count
-            cursor.bufferedEntries = entries
+            cursor.bufferedEntries = entries.map(HistoryStoreRecordAssembly.EntrySnapshot.init)
             cursor.bufferedIndex = 0
         }
 
@@ -787,50 +760,12 @@ actor HistoryStore {
         return entry
     }
 
-    private func merge(
-        _ incoming: SiteAccumulator,
-        into accumulator: inout SiteAccumulator?,
-        domain: String
-    ) {
-        guard var current = accumulator else {
-            accumulator = incoming
-            return
-        }
-
-        current.visitCount += incoming.visitCount
-        if comparePreferredEntries(incoming.bestEntry, current.bestEntry, for: domain) {
-            current.bestEntry = incoming.bestEntry
-        }
-        accumulator = current
-    }
-
-    private func siteRecord(
-        domain: String,
-        accumulator: SiteAccumulator
-    ) -> HistorySiteRecord? {
-        let bestEntry = accumulator.bestEntry
-        guard let url = URL(string: bestEntry.urlString) else { return nil }
-
-        let title = bestEntry.title.isEmpty ? bestEntry.urlString : bestEntry.title
-        return HistorySiteRecord(
-            id: domain,
-            domain: domain,
-            url: url,
-            title: title,
-            visitCount: accumulator.visitCount
-        )
-    }
-
-    private func effectiveSiteDomain(for entry: HistoryEntryEntity) -> String {
-        entry.siteDomain ?? entry.domain
-    }
-
     private func allSiteRecords(
         in ctx: ModelContext,
         profileId: UUID?
     ) throws -> [String: HistorySiteRecord] {
         var rawOffset = 0
-        var accumulators: [String: SiteAccumulator] = [:]
+        var accumulators: [String: HistoryStoreRecordAssembly.SiteAccumulator] = [:]
 
         while true {
             let entries = try fetchEntryChunk(
@@ -841,16 +776,16 @@ actor HistoryStore {
             )
             guard !entries.isEmpty else { break }
             rawOffset += entries.count
-            for entry in entries {
-                let domain = effectiveSiteDomain(for: entry)
+            for entry in entries.map(HistoryStoreRecordAssembly.EntrySnapshot.init) {
+                let domain = HistoryStoreRecordAssembly.effectiveSiteDomain(for: entry)
                 if var accumulator = accumulators[domain] {
                     accumulator.visitCount += entry.numberOfTotalVisits
-                    if comparePreferredEntries(entry, accumulator.bestEntry, for: domain) {
+                    if HistoryStoreRecordAssembly.comparePreferredEntries(entry, accumulator.bestEntry, for: domain) {
                         accumulator.bestEntry = entry
                     }
                     accumulators[domain] = accumulator
                 } else {
-                    accumulators[domain] = SiteAccumulator(
+                    accumulators[domain] = HistoryStoreRecordAssembly.SiteAccumulator(
                         bestEntry: entry,
                         visitCount: entry.numberOfTotalVisits
                     )
@@ -860,7 +795,7 @@ actor HistoryStore {
 
         var records: [String: HistorySiteRecord] = [:]
         for (domain, accumulator) in accumulators {
-            records[domain] = siteRecord(domain: domain, accumulator: accumulator)
+            records[domain] = HistoryStoreRecordAssembly.siteRecord(domain: domain, accumulator: accumulator)
         }
 
         return records
@@ -966,122 +901,8 @@ actor HistoryStore {
         }
     }
 
-    private func dateRange(
-        for query: HistoryQuery,
-        referenceDate: Date,
-        calendar: Calendar
-    ) -> Range<Date>? {
-        switch query {
-        case .rangeFilter(.all), .rangeFilter(.allSites), .searchTerm, .domainFilter, .visits:
-            return nil
-        case .rangeFilter(let range):
-            return range.dateRange(for: referenceDate, calendar: calendar)
-        case .dateFilter(let date):
-            let start = calendar.startOfDay(for: date)
-            guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
-                return nil
-            }
-            return start..<end
-        case .timeRange(let start, let end):
-            return start..<end
-        }
-    }
-
-    private func visit(
-        _ visit: HistoryVisitRecord,
-        matches query: HistoryQuery,
-        referenceDate: Date,
-        calendar: Calendar
-    ) -> Bool {
-        switch query {
-        case .rangeFilter(.all), .rangeFilter(.allSites):
-            return true
-        case .rangeFilter(let range):
-            guard let dateRange = range.dateRange(for: referenceDate, calendar: calendar) else {
-                return true
-            }
-            return dateRange.contains(visit.visitedAt)
-        case .dateFilter(let date):
-            let start = calendar.startOfDay(for: date)
-            guard let end = calendar.date(byAdding: .day, value: 1, to: start) else {
-                return false
-            }
-            return start..<end ~= visit.visitedAt
-        case .timeRange(let start, let end):
-            return start..<end ~= visit.visitedAt
-        case .searchTerm(let term):
-            let query = SearchTextQuery(term)
-            guard !query.isEmpty else { return true }
-            return query.matches(visit.title)
-                || query.matches(visit.url.absoluteString)
-                || query.matches(visit.domain)
-                || (visit.siteDomain.map(query.matches) ?? false)
-        case .domainFilter(let domains):
-            guard !domains.isEmpty else { return true }
-            return domains.contains(visit.siteDomain ?? visit.domain)
-        case .visits(let identifiers):
-            guard !identifiers.isEmpty else { return false }
-            return Set(identifiers).contains(
-                VisitIdentifier(uuid: visit.id.uuidString, url: visit.url, date: visit.visitedAt)
-            )
-        }
-    }
-
-    private func visibleKey(for record: HistoryVisitRecord, calendar: Calendar) -> String {
-        let dayKey = calendar.startOfDay(for: record.visitedAt).timeIntervalSince1970
-        return "\(dayKey)|\(record.url.absoluteString)"
-    }
-
-    private func siteMatches(_ site: HistorySiteRecord, query: SearchTextQuery) -> Bool {
-        query.matches(site.title)
-            || query.matches(site.url.absoluteString)
-            || query.matches(site.domain)
-    }
-
-    private func comparePreferredEntries(
-        _ lhs: HistoryEntryEntity,
-        _ rhs: HistoryEntryEntity,
-        for domain: String
-    ) -> Bool {
-        let lhsHasTitle = lhs.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        let rhsHasTitle = rhs.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
-        if lhsHasTitle != rhsHasTitle {
-            return lhsHasTitle && !rhsHasTitle
-        }
-
-        let lhsURL = URL(string: lhs.urlString)
-        let rhsURL = URL(string: rhs.urlString)
-        let lhsHTTPS = lhsURL?.scheme?.lowercased() == "https"
-        let rhsHTTPS = rhsURL?.scheme?.lowercased() == "https"
-        if lhsHTTPS != rhsHTTPS {
-            return lhsHTTPS && !rhsHTTPS
-        }
-
-        let lhsRoot = lhsURL.map { $0.path.isEmpty || $0.path == "/" } ?? false
-        let rhsRoot = rhsURL.map { $0.path.isEmpty || $0.path == "/" } ?? false
-        if lhsRoot != rhsRoot {
-            return lhsRoot && !rhsRoot
-        }
-
-        let lhsHost = lhsURL?.host?.lowercased().trimmingPrefix("www.") ?? ""
-        let rhsHost = rhsURL?.host?.lowercased().trimmingPrefix("www.") ?? ""
-        let lhsMatchesDomain = lhsHost == domain
-        let rhsMatchesDomain = rhsHost == domain
-        if lhsMatchesDomain != rhsMatchesDomain {
-            return lhsMatchesDomain && !rhsMatchesDomain
-        }
-
-        return lhs.lastVisit > rhs.lastVisit
-    }
-
     private static func entryKey(for url: URL, profileId: UUID?) -> String {
         let profileKey = profileId?.uuidString.lowercased() ?? "global"
         return "\(profileKey)|\(url.absoluteString)"
-    }
-}
-
-private extension String {
-    func trimmingPrefix(_ prefix: String) -> String {
-        hasPrefix(prefix) ? String(dropFirst(prefix.count)) : self
     }
 }
