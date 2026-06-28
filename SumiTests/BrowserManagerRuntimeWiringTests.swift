@@ -15,6 +15,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         XCTAssertTrue(browserManager.compositorManager.browserManager === browserManager)
         XCTAssertTrue(browserManager.tabManager.browserManager === browserManager)
+        XCTAssertTrue(browserManager.tabManager.runtimeContext is BrowserManagerTabRuntimeContext)
         XCTAssertTrue(browserManager.splitManager.browserManager === browserManager)
         XCTAssertTrue(browserManager.downloadManager.browserManager === browserManager)
         XCTAssertTrue(browserManager.extensionsModule.browserManager === browserManager)
@@ -92,6 +93,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             "browserManager.splitManager.browserManager = browserManager",
             "browserManager.splitManager.windowRegistry = browserManager.windowRegistry",
             "browserManager.tabManager.browserManager = browserManager",
+            "browserManager.tabManager.attachRuntimeContext(",
+            "BrowserManagerTabRuntimeContext(browserManager: browserManager)",
             "browserManager.tabManager.reattachBrowserManager(browserManager)",
             "browserManager.liveFolderManager.attach(browserManager: browserManager)",
             "browserManager.downloadManager.browserManager = browserManager",

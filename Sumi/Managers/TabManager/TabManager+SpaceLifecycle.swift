@@ -14,8 +14,7 @@ extension TabManager {
     ) -> Space {
         return withStructuralUpdateTransaction {
             let resolvedProfileId = profileId
-                ?? browserManager?.currentProfile?.id
-                ?? browserManager?.profileManager.profiles.first?.id
+                ?? runtimeContext?.defaultProfileId
             let defaultTheme = SumiWorkspaceThemePresets.rotatingTheme(at: spaces.count)
             let resolvedTheme = workspaceTheme ?? defaultTheme
 
@@ -83,7 +82,7 @@ extension TabManager {
             }
 
             scheduleStructuralPersistence()
-            browserManager?.validateWindowStates()
+            runtimeContext?.validateWindowStates()
         }
     }
 
@@ -121,8 +120,7 @@ extension TabManager {
         guard spaces.contains(where: { $0.id == space.id }) else { return }
 
         if space.profileId == nil {
-            let defaultProfileId = browserManager?.currentProfile?.id
-                ?? browserManager?.profileManager.profiles.first?.id
+            let defaultProfileId = runtimeContext?.defaultProfileId
             if let profileId = defaultProfileId {
                 assign(spaceId: space.id, toProfile: profileId)
             } else {
@@ -145,7 +143,7 @@ extension TabManager {
 
         let projection = launcherProjection(
             for: space.id,
-            in: browserManager?.windowRegistry?.activeWindow?.id
+            in: runtimeContext?.activeWindowId
         )
         let regularTabs = projection.regularTabs
         let persistedPins = spacePinnedPins(for: space.id)

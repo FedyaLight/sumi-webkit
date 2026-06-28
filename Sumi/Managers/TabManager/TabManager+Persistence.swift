@@ -766,8 +766,7 @@ extension TabManager {
         }
 
         do {
-            let defaultProfileId = browserManager?.currentProfile?.id
-                ?? browserManager?.profileManager.profiles.first?.id
+            let defaultProfileId = runtimeContext?.defaultProfileId
             if defaultProfileId == nil {
                 RuntimeDiagnostics.debug(
                     "No profiles available to assign to spaces during load; reconciliation deferred.",
@@ -847,8 +846,8 @@ extension TabManager {
             category: "TabManager"
         )
 
-        if let browserManager, let currentSpace {
-            browserManager.syncWorkspaceThemeAcrossWindows(for: currentSpace, animate: false)
+        if let currentSpace {
+            runtimeContext?.syncWorkspaceThemeAcrossWindows(for: currentSpace, animate: false)
         }
 
         let uniqueRepairReasons = Array(Set(restoredState.repairReasons)).sorted()

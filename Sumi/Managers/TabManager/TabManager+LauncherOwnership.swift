@@ -23,7 +23,7 @@ extension TabManager {
                 context: context
             )
 
-            if tab.id == currentTab?.id, let windowId = browserManager?.windowRegistry?.activeWindow?.id {
+            if tab.id == currentTab?.id, let windowId = runtimeContext?.activeWindowId {
                 convertTabToShortcutLiveInstance(tab, pin: insertedPin, in: windowId)
             } else {
                 removeTab(tab.id)
@@ -35,7 +35,7 @@ extension TabManager {
     func removeShortcutPin(_ pin: ShortcutPin) {
         withStructuralUpdateTransaction {
             if shortcutPin(by: pin.id) != nil {
-                browserManager?.recentlyClosedManager.captureDeletedShortcutLauncher(pin)
+                runtimeContext?.captureDeletedShortcutLauncher(pin)
             }
 
             if pin.role == .essential, let profileId = pin.profileId {
@@ -62,7 +62,7 @@ extension TabManager {
             for windowId in liveWindowIds {
                 deactivateShortcutLiveTab(pinId: pin.id, in: windowId)
             }
-            for windowState in browserManager?.windowRegistry?.allWindows ?? [] {
+            runtimeContext?.forEachWindowState { windowState in
                 windowState.removeFromShortcutLiveSelectionHistory(pin.id)
             }
             scheduleStructuralPersistence()
@@ -280,7 +280,7 @@ extension TabManager {
                     notifyTransientShortcutStateChanged()
 
                     tab.bindToShortcutPin(insertedPin)
-                    let currentSpaceId = browserManager?.windowRegistry?.windows[windowId]?.currentSpaceId
+                    let currentSpaceId = runtimeContext?.windowState(for: windowId)?.currentSpaceId
                     tab.spaceId = resolvedLiveSpaceId(for: insertedPin, currentSpaceId: currentSpaceId)
                     tab.folderId = nil
                     assignProfile(
@@ -288,7 +288,7 @@ extension TabManager {
                         to: tab
                     )
 
-                    if let windowState = browserManager?.windowRegistry?.windows[windowId],
+                    if let windowState = runtimeContext?.windowState(for: windowId),
                        windowState.currentShortcutPinId == sourcePin.id {
                         windowState.currentShortcutPinId = insertedPin.id
                         windowState.currentShortcutPinRole = insertedPin.role
@@ -332,7 +332,7 @@ extension TabManager {
         tab.isPinned = false
         tab.isSpacePinned = false
         tab.bindToShortcutPin(pin)
-        let currentSpaceId = browserManager?.windowRegistry?.windows[windowId]?.currentSpaceId
+        let currentSpaceId = runtimeContext?.windowState(for: windowId)?.currentSpaceId
         tab.spaceId = resolvedLiveSpaceId(for: pin, currentSpaceId: currentSpaceId)
         tab.folderId = pin.folderId
         var liveTabs = transientShortcutTabsByWindow[windowId] ?? [:]
@@ -340,7 +340,7 @@ extension TabManager {
         transientShortcutTabsByWindow[windowId] = liveTabs
         notifyTransientShortcutStateChanged()
 
-        if let windowState = browserManager?.windowRegistry?.windows[windowId] {
+        if let windowState = runtimeContext?.windowState(for: windowId) {
             windowState.currentShortcutPinId = pin.id
             windowState.currentShortcutPinRole = pin.role
             windowState.currentTabId = tab.id
@@ -406,7 +406,7 @@ extension TabManager {
             }
             notifyTransientShortcutStateChanged()
             tab.performComprehensiveWebViewCleanup()
-            browserManager?.compositorManager.unloadTab(tab)
+            runtimeContext?.unloadTab(tab)
             detach(tab)
             NotificationCenter.default.post(
                 name: .sumiTabLifecycleDidChange,
@@ -420,27 +420,29 @@ extension TabManager {
     }
 
     func windowIdDisplaying(tabId: UUID) -> UUID? {
-        guard let windows = browserManager?.windowRegistry?.windows else { return nil }
-        let splitManager = browserManager?.splitManager
+        guard let runtimeContext else { return nil }
 
         func windowDisplaysTab(_ windowId: UUID, _ windowState: BrowserWindowState) -> Bool {
             if windowState.currentTabId == tabId {
                 return true
             }
 
-            guard let splitManager else { return false }
-            return splitManager.visibleTabIds(for: windowId).contains(tabId)
+            return runtimeContext.visibleSplitTabIds(for: windowId).contains(tabId)
         }
 
-        if let activeWindowId = browserManager?.windowRegistry?.activeWindow?.id,
-           let activeWindow = windows[activeWindowId],
+        if let activeWindowId = runtimeContext.activeWindowId,
+           let activeWindow = runtimeContext.windowState(for: activeWindowId),
            windowDisplaysTab(activeWindowId, activeWindow) {
             return activeWindowId
         }
 
-        return windows.first(where: { windowId, windowState in
-            windowDisplaysTab(windowId, windowState)
-        })?.key
+        var matchedWindowId: UUID?
+        runtimeContext.forEachWindow { windowId, windowState in
+            if matchedWindowId == nil, windowDisplaysTab(windowId, windowState) {
+                matchedWindowId = windowId
+            }
+        }
+        return matchedWindowId
     }
 
     func removeFromCurrentContainer(_ tab: Tab) {

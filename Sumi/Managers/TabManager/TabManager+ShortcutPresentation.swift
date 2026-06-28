@@ -92,14 +92,14 @@ extension TabManager {
         guard let liveTabs = transientShortcutTabsByWindow[windowId], !liveTabs.isEmpty else {
             return nil
         }
-        if let currentTabId = browserManager?.windowRegistry?.windows[windowId]?.currentTabId,
+        if let currentTabId = runtimeContext?.windowState(for: windowId)?.currentTabId,
            let current = liveTabs.values.first(where: { $0.id == currentTabId }) {
             return current
         }
-        if browserManager?.windowRegistry?.windows[windowId]?.currentTabId != nil {
+        if runtimeContext?.windowState(for: windowId)?.currentTabId != nil {
             return nil
         }
-        if let currentShortcutPinId = browserManager?.windowRegistry?.windows[windowId]?.currentShortcutPinId,
+        if let currentShortcutPinId = runtimeContext?.windowState(for: windowId)?.currentShortcutPinId,
            let current = liveTabs[currentShortcutPinId] {
             return current
         }

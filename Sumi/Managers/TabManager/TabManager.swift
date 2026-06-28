@@ -19,6 +19,7 @@ class TabManager: ObservableObject {
         }
     }
     weak var browserManager: BrowserManager?
+    private(set) var runtimeContext: TabManagerRuntimeContext?
     weak var sumiSettings: SumiSettingsService?
     let context: ModelContext
     let persistence: TabSnapshotRepository
@@ -73,7 +74,7 @@ class TabManager: ObservableObject {
 
     // Live essentials API for shell views that still read a tab-backed collection.
     var pinnedTabs: [Tab] {
-        activeEssentialTabs(for: browserManager?.currentProfile?.id)
+        activeEssentialTabs(for: runtimeContext?.currentProfileId)
     }
     
     func essentialTabs(for profileId: UUID?) -> [Tab] {
@@ -103,7 +104,7 @@ class TabManager: ObservableObject {
 
     func selectionTabsForCurrentContext() -> [Tab] {
         let regularTabs = tabs
-        let activeWindowId = browserManager?.windowRegistry?.activeWindow?.id
+        let activeWindowId = runtimeContext?.activeWindowId
         let activeLauncherTab = activeWindowId
             .flatMap { activeShortcutTab(for: $0) }
             .flatMap { liveTab -> Tab? in
@@ -201,6 +202,7 @@ class TabManager: ObservableObject {
         loadPersistedState: Bool = true
     ) {
         self.browserManager = browserManager
+        self.runtimeContext = browserManager.map(BrowserManagerTabRuntimeContext.init)
         self.context = context
         let persistence = TabSnapshotRepository(container: context.container)
         self.persistence = persistence
@@ -251,6 +253,7 @@ class TabManager: ObservableObject {
             spaces.removeAll()
             currentTab = nil
             currentSpace = nil
+            runtimeContext = nil
             browserManager = nil
         }
 
@@ -577,7 +580,7 @@ class TabManager: ObservableObject {
 
     /// Profile-filtered union of pinned, space-pinned and regular tabs.
     func allTabsForCurrentProfile() -> [Tab] {
-        guard let pid = browserManager?.currentProfile?.id else {
+        guard let pid = runtimeContext?.currentProfileId else {
             return allTabs()
         }
         let spaceIds = Set(spaces.filter { $0.profileId == pid }.map { $0.id })
@@ -735,11 +738,10 @@ class TabManager: ObservableObject {
         
             // Load the tab in compositor if it's the current tab
             if tab.id == currentTab?.id {
-                if let browserManager,
-                   let activeWindow = browserManager.windowRegistry?.activeWindow {
-                    browserManager.materializeVisibleTabWebViewIfNeeded(tab, in: activeWindow)
+                if let activeWindow = runtimeContext?.activeWindowState {
+                    runtimeContext?.materializeVisibleTabWebViewIfNeeded(tab, in: activeWindow)
                 } else {
-                    browserManager?.compositorManager.loadTab(tab)
+                    runtimeContext?.loadTab(tab)
                 }
             }
         
@@ -764,7 +766,7 @@ class TabManager: ObservableObject {
             )
             backfillTargetSpaceProfileIfNeeded(
                 targetSpace,
-                profileId: tab.profileId ?? browserManager?.currentProfile?.id
+                profileId: tab.profileId ?? runtimeContext?.currentProfileId
             )
 
             let insertionIndex: Int? = {
@@ -802,8 +804,7 @@ class TabManager: ObservableObject {
     }
 
     private var defaultProfileIdForSpaceBootstrap: UUID? {
-        browserManager?.currentProfile?.id
-            ?? browserManager?.profileManager.profiles.first?.id
+        runtimeContext?.defaultProfileId
     }
 
     @discardableResult
@@ -827,7 +828,7 @@ class TabManager: ObservableObject {
         in space: Space? = nil,
         webExtensionContextOverride: WKWebExtensionContext?
     ) -> Tab {
-        let settings = sumiSettings ?? browserManager?.sumiSettings
+        let settings = sumiSettings ?? runtimeContext?.settings
         let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
         let normalizedUrl = normalizeURL(url, queryTemplate: template)
         let validURL = URL(string: normalizedUrl) ?? SumiSurface.emptyTabURL
@@ -867,7 +868,7 @@ class TabManager: ObservableObject {
         let resolvedProfileId = profileId
             ?? openerTab?.profileId
             ?? openerTab?.resolveProfile()?.id
-            ?? browserManager?.currentProfile?.id
+            ?? runtimeContext?.currentProfileId
 
         let tab = Tab(
             url: resolvedURL,
@@ -888,8 +889,8 @@ class TabManager: ObservableObject {
     func removeAuxiliaryMiniWindowTab(_ tab: Tab) {
         auxiliaryMiniWindowTabsByID.removeValue(forKey: tab.id)
         structuralLookupOwner.remove(tab.id)
-        browserManager?.compositorManager.unloadTab(tab)
-        browserManager?.webViewCoordinator?.removeAllWebViews(
+        runtimeContext?.unloadTab(tab)
+        runtimeContext?.removeAllWebViews(
             for: tab,
             closeActiveFullscreenMedia: true
         )
@@ -930,9 +931,9 @@ class TabManager: ObservableObject {
     }
 
     private func cleanupRemovedTransientExtensionTab(_ tab: Tab) {
-        browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)
-        browserManager?.compositorManager.unloadTab(tab)
-        browserManager?.webViewCoordinator?.removeAllWebViews(
+        runtimeContext?.notifyTabClosedIfLoaded(tab)
+        runtimeContext?.unloadTab(tab)
+        runtimeContext?.removeAllWebViews(
             for: tab,
             closeActiveFullscreenMedia: true
         )
@@ -946,7 +947,7 @@ class TabManager: ObservableObject {
     func removeTab(_ id: UUID) {
         withStructuralUpdateTransaction {
             // Notify SplitViewManager about tab closure to prevent zombie state
-            browserManager?.splitManager.handleTabClosure(id)
+            runtimeContext?.handleTabClosure(id)
             cancelRuntimeStatePersistence(for: id)
         
             let wasCurrent = (currentTab?.id == id)
@@ -961,7 +962,7 @@ class TabManager: ObservableObject {
             }
 
             if auxiliaryMiniWindowTabsByID[id] != nil {
-                browserManager?.closeAuxiliaryMiniWindow(
+                runtimeContext?.closeAuxiliaryMiniWindow(
                     for: tab(for: id) ?? auxiliaryMiniWindowTabsByID[id]!,
                     reason: .extensionRequestedClose
                 )
@@ -995,17 +996,17 @@ class TabManager: ObservableObject {
 
             guard let tab = removed else { return }
 
-            browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)
+            runtimeContext?.notifyTabClosedIfLoaded(tab)
 
-            browserManager?.windowRegistry?.windows.values.forEach { windowState in
+            runtimeContext?.forEachWindowState { windowState in
                 windowState.removeFromRegularTabHistory(tab.id)
             }
 
             captureRecentlyClosedTab(tab, spaceId: removedSpaceId)
 
             // Force unload the tab from compositor before removing
-            browserManager?.compositorManager.unloadTab(tab)
-            browserManager?.webViewCoordinator?.removeAllWebViews(
+            runtimeContext?.unloadTab(tab)
+            runtimeContext?.removeAllWebViews(
                 for: tab,
                 closeActiveFullscreenMedia: true
             )
@@ -1056,7 +1057,7 @@ class TabManager: ObservableObject {
             scheduleStructuralPersistence()
 
             // Validate window states after tab removal
-            browserManager?.validateWindowStates()
+            runtimeContext?.validateWindowStates()
         }
     }
 
@@ -1070,10 +1071,10 @@ class TabManager: ObservableObject {
         }
 
         // Update active split group state for windows that currently display this tab.
-        if let bm = browserManager {
-            for (windowId, windowState) in bm.windowRegistry?.windows ?? [:] {
-                if bm.splitManager.visibleTabIds(for: windowId).contains(tab.id) {
-                    bm.splitManager.updateActiveSide(for: tab.id, in: windowId)
+        if let runtimeContext {
+            runtimeContext.forEachWindow { windowId, windowState in
+                if runtimeContext.visibleSplitTabIds(for: windowId).contains(tab.id) {
+                    runtimeContext.updateActiveSplitSide(for: tab.id, in: windowId)
                     if windowState.currentTabId != tab.id {
                         windowState.currentTabId = tab.id
                     }
@@ -1084,7 +1085,7 @@ class TabManager: ObservableObject {
         updateActiveTabSpaceSelectionState(for: tab, refreshCurrentSpaceReference: false)
 
         if previous?.id != tab.id {
-            browserManager?.extensionsModule.notifyTabActivatedIfLoaded(
+            runtimeContext?.notifyTabActivatedIfLoaded(
                 newTab: tab,
                 previous: previous
             )
@@ -1139,7 +1140,7 @@ class TabManager: ObservableObject {
         regularInsertionIndex: Int? = nil
     ) -> Tab {
         return withStructuralUpdateTransaction {
-            let settings = sumiSettings ?? browserManager?.sumiSettings
+            let settings = sumiSettings ?? runtimeContext?.settings
             let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
             let normalizedUrl = normalizeURL(url, queryTemplate: template)
             guard let validURL = URL(string: normalizedUrl)
@@ -1222,7 +1223,7 @@ class TabManager: ObservableObject {
         existingWebView: WKWebView? = nil
     ) -> Tab {
         return withStructuralUpdateTransaction {
-            let settings = sumiSettings ?? browserManager?.sumiSettings
+            let settings = sumiSettings ?? runtimeContext?.settings
             let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
             let normalizedUrl = normalizeURL(url, queryTemplate: template)
             guard let validURL = URL(string: normalizedUrl)
@@ -1303,7 +1304,7 @@ class TabManager: ObservableObject {
     private func ensureDefaultSpaceIfNeeded() -> Space {
         if let cs = currentSpace { return cs }
         if spaces.isEmpty {
-            let resolvedProfileId = browserManager?.currentProfile?.id
+            let resolvedProfileId = runtimeContext?.currentProfileId
             let personal = Space(
                 name: "Personal",
                 icon: "🏠",
@@ -1356,6 +1357,10 @@ class TabManager: ObservableObject {
 }
 
 extension TabManager {
+    func attachRuntimeContext(_ context: TabManagerRuntimeContext?) {
+        runtimeContext = context
+    }
+
     nonisolated func reattachBrowserManager(_ bm: BrowserManager) {
         Task { @MainActor in
             await _reattachBrowserManager(bm)
@@ -1364,12 +1369,15 @@ extension TabManager {
     
     private func _reattachBrowserManager(_ bm: BrowserManager) async {
         self.browserManager = bm
+        if runtimeContext == nil {
+            attachRuntimeContext(BrowserManagerTabRuntimeContext(browserManager: bm))
+        }
         let visibleTabs = selectionTabsForCurrentContext()
         for t in visibleTabs {
             t.browserManager = bm
         }
         // Assign any pinned tabs that were loaded without a profile once currentProfile is known
-        if let currentProfileId = browserManager?.currentProfile?.id,
+        if let currentProfileId = runtimeContext?.currentProfileId,
            !pendingPinnedWithoutProfile.isEmpty {
             withPinnedArray(for: currentProfileId) { arr in
                 arr.append(contentsOf: pendingPinnedWithoutProfile)
@@ -1384,7 +1392,7 @@ extension TabManager {
         }
         // After reattaching, ensure gradient matches the restored current space.
         if let space = self.currentSpace {
-            bm.syncWorkspaceThemeAcrossWindows(for: space, animate: false)
+            runtimeContext?.syncWorkspaceThemeAcrossWindows(for: space, animate: false)
         }
 
         // After reattaching BrowserManager, backfill any missing space.profileId

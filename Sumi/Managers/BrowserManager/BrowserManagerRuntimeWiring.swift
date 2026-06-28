@@ -10,6 +10,9 @@ enum BrowserManagerRuntimeWiring {
         browserManager.splitManager.browserManager = browserManager
         browserManager.splitManager.windowRegistry = browserManager.windowRegistry
         browserManager.tabManager.browserManager = browserManager
+        browserManager.tabManager.attachRuntimeContext(
+            BrowserManagerTabRuntimeContext(browserManager: browserManager)
+        )
         browserManager.tabManager.reattachBrowserManager(browserManager)
         browserManager.liveFolderManager.attach(browserManager: browserManager)
         browserManager.downloadManager.browserManager = browserManager

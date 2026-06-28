@@ -71,7 +71,7 @@ extension TabManager {
             return EssentialsTargetResolution(profileId: profileId, source: .explicitProfile)
         }
 
-        if let profileId = browserManager?.currentProfile?.id {
+        if let profileId = runtimeContext?.currentProfileId {
             return EssentialsTargetResolution(profileId: profileId, source: .globalFallback)
         }
 
@@ -130,7 +130,7 @@ extension TabManager {
         guard resolution.source == .globalFallback,
               let resolvedProfileId = resolution.profileId,
               let visibleProfileId = context?.windowState?.currentProfileId
-                ?? browserManager?.windowRegistry?.activeWindow?.currentProfileId,
+                ?? runtimeContext?.activeWindowState?.currentProfileId,
               visibleProfileId != resolvedProfileId else {
             return
         }
@@ -202,7 +202,7 @@ extension TabManager {
     func resolvedFaviconPartition(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> SumiFaviconPartition {
         let profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
         guard let profileId,
-              let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId })
+              let profile = runtimeContext?.profile(with: profileId)
         else {
             return .regular(profileId)
         }
@@ -213,14 +213,14 @@ extension TabManager {
         for (windowId, tabsByPin) in transientShortcutTabsByWindow {
             if let tab = tabsByPin[pin.id] {
                 tab.bindToShortcutPin(pin)
-                let windowCurrentSpaceId = browserManager?.windowRegistry?.windows[windowId]?.currentSpaceId
+                let windowCurrentSpaceId = runtimeContext?.windowState(for: windowId)?.currentSpaceId
                 tab.spaceId = resolvedLiveSpaceId(for: pin, currentSpaceId: windowCurrentSpaceId)
                 tab.folderId = pin.folderId
                 assignProfile(
                     resolvedExecutionProfileId(for: pin, currentSpaceId: windowCurrentSpaceId),
                     to: tab
                 )
-                if let windowState = browserManager?.windowRegistry?.windows[windowId] {
+                if let windowState = runtimeContext?.windowState(for: windowId) {
                     if windowState.currentShortcutPinId == pin.id {
                         windowState.currentShortcutPinRole = pin.role
                     }
@@ -249,7 +249,7 @@ extension TabManager {
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
         if let folderId = pin.folderId,
-           browserManager?.liveFolderManager.isLiveFolder(folderId) == true {
+           runtimeContext?.isLiveFolder(folderId) == true {
             return nil
         }
 
@@ -599,7 +599,7 @@ private extension TabManager {
             existingLiveTab.isSpacePinned = false
             attach(existingLiveTab)
             regularTabCollectionOwner.insert(existingLiveTab, in: targetSpaceId, at: targetIndex)
-            if let windowState = browserManager?.windowRegistry?.windows[existingWindowId] {
+            if let windowState = runtimeContext?.windowState(for: existingWindowId) {
                 windowState.currentShortcutPinId = nil
                 windowState.currentShortcutPinRole = nil
                 windowState.currentSpaceId = targetSpaceId

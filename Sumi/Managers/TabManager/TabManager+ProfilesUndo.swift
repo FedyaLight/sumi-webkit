@@ -104,10 +104,10 @@ extension TabManager {
         let visible = selectionTabsForCurrentContext()
         if currentTab == nil || !(visible.contains { $0.id == currentTab!.id }) {
             currentTab = visible.first
-            browserManager?.compositorManager.updateTabVisibility()
+            runtimeContext?.updateTabVisibility()
             persistSelection()
         } else {
-            browserManager?.compositorManager.updateTabVisibility()
+            runtimeContext?.updateTabVisibility()
         }
     }
 }
@@ -115,8 +115,7 @@ extension TabManager {
 // MARK: - Profile Assignment Helpers
 extension TabManager {
     func reconcileSpaceProfilesIfNeeded() {
-        let defaultProfileId = browserManager?.currentProfile?.id
-            ?? browserManager?.profileManager.profiles.first?.id
+        let defaultProfileId = runtimeContext?.defaultProfileId
         guard let profileId = defaultProfileId else {
             RuntimeDiagnostics.debug(
                 "No profiles available for space reconciliation yet.",
@@ -142,7 +141,7 @@ extension TabManager {
 extension TabManager {
     func assign(spaceId: UUID, toProfile profileId: UUID) {
         if let index = spaces.firstIndex(where: { $0.id == spaceId }) {
-            let exists = browserManager?.profileManager.profiles.contains(where: { $0.id == profileId }) ?? false
+            let exists = runtimeContext?.profileExists(profileId) ?? false
             if !exists {
                 RuntimeDiagnostics.emit(
                     "⚠️ [TabManager] Attempted to assign space to unknown profile: \(profileId)"
@@ -198,15 +197,14 @@ extension TabManager {
         guard tab.profileId != profileId else { return }
 
         let targetURL = tab.existingWebView?.url ?? tab.url
-        let trackedWindowIds = browserManager?.webViewCoordinator?.windowIDs(for: tab.id) ?? []
+        let trackedWindowIds = runtimeContext?.windowIDsTrackingWebViews(for: tab.id) ?? []
         let hasTrackedWebViews = trackedWindowIds.isEmpty == false || tab.primaryWindowId != nil
         let hasUntrackedWebView = tab.existingWebView != nil && !hasTrackedWebViews
 
         if hasTrackedWebViews,
-           let webViewCoordinator = browserManager?.webViewCoordinator,
            #available(macOS 15.5, *) {
             tab.profileId = profileId
-            webViewCoordinator.rebuildLiveWebViews(
+            runtimeContext?.rebuildLiveWebViews(
                 for: tab,
                 preferredPrimaryWindowId: tab.primaryWindowId,
                 load: targetURL
@@ -221,37 +219,23 @@ extension TabManager {
     }
 
     func profileExists(_ profileId: UUID) -> Bool {
-        guard let browserManager else { return true }
-        return browserManager.profileManager.profiles.contains { $0.id == profileId }
+        runtimeContext?.profileExists(profileId) ?? true
     }
 }
 
 // MARK: - Tab Closure Undo
 extension TabManager {
     func captureRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
-        browserManager?.recentlyClosedManager.captureClosedTab(
-            tab,
-            sourceSpaceId: spaceId,
-            currentURL: tab.url,
-            canGoBack: tab.canGoBack,
-            canGoForward: tab.canGoForward
-        )
-
-        browserManager?.presentTabClosureToast(tabCount: 1)
+        runtimeContext?.captureClosedTab(tab, sourceSpaceId: spaceId)
+        runtimeContext?.presentTabClosureToast(tabCount: 1)
     }
 
     private func captureRecentlyClosedTabs(_ tabs: [(tab: Tab, spaceId: UUID?)], count: Int) {
         for (tab, spaceId) in tabs {
-            browserManager?.recentlyClosedManager.captureClosedTab(
-                tab,
-                sourceSpaceId: spaceId,
-                currentURL: tab.url,
-                canGoBack: tab.canGoBack,
-                canGoForward: tab.canGoForward
-            )
+            runtimeContext?.captureClosedTab(tab, sourceSpaceId: spaceId)
         }
 
-        browserManager?.presentTabClosureToast(tabCount: count)
+        runtimeContext?.presentTabClosureToast(tabCount: count)
     }
 
 }
@@ -315,13 +299,11 @@ extension TabManager {
 
         guard let tab = removed else { return }
 
-        browserManager?.compositorManager.unloadTab(tab)
-        if let browserManager {
-            browserManager.requireWebViewCoordinator().removeAllWebViews(
-                for: tab,
-                closeActiveFullscreenMedia: true
-            )
-        }
+        runtimeContext?.unloadTab(tab)
+        runtimeContext?.requireRemoveAllWebViews(
+            for: tab,
+            closeActiveFullscreenMedia: true
+        )
 
         NotificationCenter.default.post(
             name: .sumiTabLifecycleDidChange,
@@ -330,7 +312,7 @@ extension TabManager {
 
         if wasCurrent {
             if tab.spaceId == nil {
-                let tabs = essentialTabs(for: browserManager?.currentProfile?.id)
+                let tabs = essentialTabs(for: runtimeContext?.currentProfileId)
                 if let first = tabs.first {
                     setActiveTab(first)
                 }

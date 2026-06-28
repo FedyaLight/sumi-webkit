@@ -213,14 +213,12 @@ final class SidebarRegularTabDragService {
 
     private func dissolveActiveSplitIfNeeded(for tab: Tab) {
         guard !tab.isShortcutLiveInstance else { return }
-        guard let splitManager = tabManager.browserManager?.splitManager,
-              let browserManager = tabManager.browserManager,
-              let windows = browserManager.windowRegistry?.windows else {
-            return
-        }
+        guard let runtimeContext = tabManager.runtimeContext else { return }
 
-        for (windowId, _) in windows where splitManager.visibleTabIds(for: windowId).contains(tab.id) {
-            splitManager.handleTabClosure(tab.id)
+        runtimeContext.forEachWindow { windowId, _ in
+            if runtimeContext.visibleSplitTabIds(for: windowId).contains(tab.id) {
+                runtimeContext.handleTabClosure(tab.id)
+            }
         }
     }
 }

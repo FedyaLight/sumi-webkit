@@ -145,14 +145,14 @@ final class TabFolderService {
             )
 
             for pin in deletedPins {
-                tabManager.browserManager?.recentlyClosedManager.captureDeletedShortcutLauncher(pin)
+                tabManager.runtimeContext?.captureDeletedShortcutLauncher(pin)
                 let liveWindowIds = tabManager.transientShortcutTabsByWindow.compactMap { windowId, tabsByPin in
                     tabsByPin[pin.id] == nil ? nil : windowId
                 }
                 for windowId in liveWindowIds {
                     tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowId)
                 }
-                for windowState in tabManager.browserManager?.windowRegistry?.allWindows ?? [] {
+                tabManager.runtimeContext?.forEachWindowState { windowState in
                     windowState.removeFromShortcutLiveSelectionHistory(pin.id)
                 }
             }
@@ -161,7 +161,7 @@ final class TabFolderService {
                 tabManager.removeTab(tabId)
             }
 
-            tabManager.browserManager?.liveFolderManager.deleteState(forFolderIds: deletedFolderIds)
+            tabManager.runtimeContext?.deleteLiveFolderState(forFolderIds: deletedFolderIds)
             tabManager.scheduleStructuralPersistence()
         }
     }
@@ -199,7 +199,7 @@ final class TabFolderService {
                 tabManager.markRegularTabsStructurallyDirty(for: spaceId)
             }
 
-            tabManager.browserManager?.liveFolderManager.deleteState(forFolderIds: [folderId])
+            tabManager.runtimeContext?.deleteLiveFolderState(forFolderIds: [folderId])
             tabManager.scheduleStructuralPersistence()
         }
     }
@@ -233,7 +233,7 @@ final class TabFolderService {
     func moveTabToFolder(tab: Tab, folderId: UUID) {
         tabManager.withStructuralUpdateTransaction {
             guard let targetFolder = tabManager.folder(by: folderId) else { return }
-            guard tabManager.browserManager?.liveFolderManager.isLiveFolder(folderId) != true else { return }
+            guard tabManager.runtimeContext?.isLiveFolder(folderId) != true else { return }
 
             targetFolder.isOpen = true
             tabManager.markFoldersStructurallyDirty(for: targetFolder.spaceId)
@@ -270,7 +270,7 @@ final class TabFolderService {
         case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
             return tabManager.reorderFolderInTopLevelPinned(folder, in: toSpaceId, to: operation.toIndex)
         case (.spacePinned(let fromSpaceId), .folder(let targetFolderId)) where fromSpaceId == folder.spaceId:
-            guard tabManager.browserManager?.liveFolderManager.isLiveFolder(targetFolderId) != true else {
+            guard tabManager.runtimeContext?.isLiveFolder(targetFolderId) != true else {
                 return false
             }
             guard let targetSpaceId = tabManager.folderSpaceId(for: targetFolderId),
@@ -283,7 +283,7 @@ final class TabFolderService {
             return moveFolder(folder, toParentFolderId: nil, in: toSpaceId, to: operation.toIndex)
         case (.folder(let sourceParentId), .folder(let targetFolderId)):
             guard folder.parentFolderId == sourceParentId,
-                  tabManager.browserManager?.liveFolderManager.isLiveFolder(targetFolderId) != true,
+                  tabManager.runtimeContext?.isLiveFolder(targetFolderId) != true,
                   let targetSpaceId = tabManager.folderSpaceId(for: targetFolderId),
                   targetSpaceId == folder.spaceId else {
                 return false
