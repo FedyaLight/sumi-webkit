@@ -115,6 +115,7 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
             createNewTabAfterSidebarInsertion: { _, _ in },
             configuredNewTabPageURL: configuredNewTabPageURL,
             normalizeURL: { $0 },
+            applySettingsSurfaceNavigation: { _ in },
             dismissWorkspaceThemePickerIfNeededDiscarding: {},
             persistWindowSession: persistWindowSession,
             schedulePersistWindowSession: { _ in }

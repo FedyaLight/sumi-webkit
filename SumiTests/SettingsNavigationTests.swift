@@ -318,6 +318,32 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(settings.currentSettingsTab, .about)
     }
 
+    func testFloatingBarCurrentSettingsURLCommitAppliesPaneNavigation() {
+        let (browserManager, _, settings, windowState, space) = makeHarness()
+        let existing = browserManager.tabManager.createNewTab(
+            url: SettingsTabs.general.settingsSurfaceURL.absoluteString,
+            in: space,
+            activate: false
+        )
+        browserManager.selectTab(existing, in: windowState, loadPolicy: .deferred)
+        settings.currentSettingsTab = .general
+        settings.extensionsSettingsSubPane = .userScripts
+
+        browserManager.commitFloatingBarSuggestion(
+            SearchManager.SearchSuggestion(
+                text: "sumi://settings?pane=extensions",
+                type: .url
+            ),
+            in: windowState,
+            navigatesCurrentTab: true
+        )
+
+        XCTAssertEqual(existing.url, SettingsTabs.extensions.settingsSurfaceURL)
+        XCTAssertEqual(windowState.currentTabId, existing.id)
+        XCTAssertEqual(settings.currentSettingsTab, .extensions)
+        XCTAssertEqual(settings.extensionsSettingsSubPane, .extensions)
+    }
+
     private func makeHarness() -> (BrowserManager, WindowRegistry, SumiSettingsService, BrowserWindowState, Space) {
         let harness = TestDefaultsHarness()
         addTeardownBlock {

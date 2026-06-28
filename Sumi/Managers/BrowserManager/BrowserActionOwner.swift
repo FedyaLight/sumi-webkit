@@ -339,6 +339,15 @@ final class BrowserActionOwner {
                     ?? SearchProvider.google.queryTemplate
                 return Sumi.normalizeURL(text, queryTemplate: template)
             },
+            applySettingsSurfaceNavigation: { text in
+                let template = self.dependencies.settings()?.resolvedSearchEngineTemplate
+                    ?? SearchProvider.google.queryTemplate
+                let normalized = Sumi.normalizeURL(text, queryTemplate: template)
+                guard let url = URL(string: normalized),
+                      SumiSurface.isSettingsSurfaceURL(url)
+                else { return }
+                self.dependencies.settings()?.applyNavigationFromSettingsSurfaceURL(url)
+            },
             dismissWorkspaceThemePickerIfNeededDiscarding: dependencies.dismissWorkspaceThemePickerIfNeededDiscarding,
             persistWindowSession: dependencies.persistWindowSession,
             schedulePersistWindowSession: { windowState in

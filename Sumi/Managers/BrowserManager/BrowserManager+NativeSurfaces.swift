@@ -46,6 +46,7 @@ extension BrowserManager {
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             if let existing = windowState.ephemeralTabs.first(where: { kind.matches($0) }) {
                 kind.configure(existing, url: url)
+                applySettingsSurfaceNavigationIfNeeded(kind, url: url)
                 selectTab(existing, in: windowState)
             } else {
                 let newTab = tabManager.createEphemeralTab(
@@ -54,6 +55,7 @@ extension BrowserManager {
                     profile: profile
                 )
                 kind.configure(newTab, url: url)
+                applySettingsSurfaceNavigationIfNeeded(kind, url: url)
                 selectTab(newTab, in: windowState)
             }
             focusWindow(windowState)
@@ -71,6 +73,7 @@ extension BrowserManager {
            let existing = (tabManager.tabsBySpace[sid] ?? []).first(where: { kind.matches($0) })
         {
             kind.configure(existing, url: url)
+            applySettingsSurfaceNavigationIfNeeded(kind, url: url)
             selectTab(existing, in: windowState)
             tabManager.scheduleRuntimeStatePersistence(for: existing)
             focusWindow(windowState)
@@ -86,8 +89,14 @@ extension BrowserManager {
             )
         )
         kind.configure(newTab, url: url)
+        applySettingsSurfaceNavigationIfNeeded(kind, url: url)
         tabManager.scheduleRuntimeStatePersistence(for: newTab)
         focusWindow(windowState)
+    }
+
+    private func applySettingsSurfaceNavigationIfNeeded(_ kind: SumiNativeBrowserSurfaceKind, url: URL) {
+        guard case .settings = kind else { return }
+        sumiSettings?.applyNavigationFromSettingsSurfaceURL(url)
     }
 
     private func focusWindow(_ windowState: BrowserWindowState) {
