@@ -107,7 +107,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in extensionManager }
+            managerFactory: { _, _, _, _ in extensionManager }
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
@@ -162,7 +162,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in extensionManager }
+            managerFactory: { _, _, _, _ in extensionManager }
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
@@ -383,7 +383,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in extensionManager }
+            managerFactory: { _, _, _, _ in extensionManager }
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
@@ -443,7 +443,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in extensionManager }
+            managerFactory: { _, _, _, _ in extensionManager }
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
@@ -504,7 +504,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in extensionManager }
+            managerFactory: { _, _, _, _ in extensionManager }
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,
@@ -1028,7 +1028,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in extensionManager }
+            managerFactory: { _, _, _, _ in extensionManager }
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,

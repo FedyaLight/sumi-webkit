@@ -14,7 +14,8 @@ final class SumiExtensionsModule {
     private let managerFactory: @MainActor (
         ModelContext,
         Profile?,
-        BrowserConfiguration
+        BrowserConfiguration,
+        SumiModuleRegistry
     ) -> ExtensionManager
 
     let surfaceStore: BrowserExtensionSurfaceStore
@@ -32,12 +33,14 @@ final class SumiExtensionsModule {
         managerFactory: @escaping @MainActor (
             ModelContext,
             Profile?,
-            BrowserConfiguration
+            BrowserConfiguration,
+            SumiModuleRegistry
         ) -> ExtensionManager = {
             ExtensionManager(
                 context: $0,
                 initialProfile: $1,
-                browserConfiguration: $2
+                browserConfiguration: $2,
+                moduleRegistry: $3
             )
         },
         surfaceStore: BrowserExtensionSurfaceStore? = nil
@@ -105,7 +108,8 @@ final class SumiExtensionsModule {
         let manager = managerFactory(
             context,
             browserManager?.currentProfile ?? initialProfileProvider(),
-            browserConfiguration
+            browserConfiguration,
+            moduleRegistry
         )
         cachedManager = manager
         if let browserManager {

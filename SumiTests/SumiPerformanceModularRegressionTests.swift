@@ -762,12 +762,13 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: BrowserConfiguration(),
             initialProfileProvider: { initialProfile },
-            managerFactory: { context, initialProfile, browserConfiguration in
+            managerFactory: { context, initialProfile, browserConfiguration, moduleRegistry in
                 probe.managerCount += 1
                 return ExtensionManager(
                     context: context,
                     initialProfile: initialProfile,
-                    browserConfiguration: browserConfiguration
+                    browserConfiguration: browserConfiguration,
+                    moduleRegistry: moduleRegistry
                 )
             }
         )

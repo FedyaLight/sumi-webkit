@@ -606,7 +606,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in manager }
+            managerFactory: { _, _, _, _ in manager }
         )
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
@@ -687,7 +687,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in manager }
+            managerFactory: { _, _, _, _ in manager }
         )
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
@@ -791,7 +791,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in manager }
+            managerFactory: { _, _, _, _ in manager }
         )
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
@@ -869,7 +869,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in manager }
+            managerFactory: { _, _, _, _ in manager }
         )
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
@@ -977,7 +977,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in manager }
+            managerFactory: { _, _, _, _ in manager }
         )
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
@@ -1057,7 +1057,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in manager }
+            managerFactory: { _, _, _, _ in manager }
         )
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
@@ -1130,7 +1130,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in manager }
+            managerFactory: { _, _, _, _ in manager }
         )
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,
@@ -1854,7 +1854,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             moduleRegistry: registry,
             context: container.mainContext,
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in manager }
+            managerFactory: { _, _, _, _ in manager }
         )
         let browserManager = makeBrowserManager(
             moduleRegistry: registry,

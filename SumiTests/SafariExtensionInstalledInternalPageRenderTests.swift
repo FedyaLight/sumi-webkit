@@ -110,7 +110,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             context: container.mainContext,
             browserConfiguration: browserConfiguration,
             initialProfileProvider: { profile },
-            managerFactory: { _, _, _ in manager }
+            managerFactory: { _, _, _, _ in manager }
         )
         let browserManager = BrowserManager(
             moduleRegistry: registry,

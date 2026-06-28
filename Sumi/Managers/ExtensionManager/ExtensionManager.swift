@@ -132,6 +132,7 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     let context: ModelContext
     let browserConfiguration: BrowserConfiguration
+    let moduleRegistry: SumiModuleRegistry
     let installationMetadataStore: ExtensionInstallationMetadataStore
     let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
     let extensionPreferences: UserDefaults
@@ -266,6 +267,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         context: ModelContext,
         initialProfile: Profile?,
         browserConfiguration: BrowserConfiguration? = nil,
+        moduleRegistry: SumiModuleRegistry = .shared,
         extensionPreferences: UserDefaults = .standard
     ) {
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.init")
@@ -276,6 +278,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         _ = Self.registerSafariWebExtensionURLScheme
         self.context = context
         self.browserConfiguration = browserConfiguration ?? .shared
+        self.moduleRegistry = moduleRegistry
         self.extensionPreferences = extensionPreferences
         self.installationMetadataStore = ExtensionInstallationMetadataStore(
             context: context

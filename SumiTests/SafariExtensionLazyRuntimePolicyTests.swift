@@ -19,6 +19,46 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         XCTAssertTrue(manager.extensionContextsByProfile.isEmpty)
     }
 
+    func testDetachedDelegateModuleStateUsesInjectedRegistry() throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Scoped Delegate")
+        let sharedEnabled = SumiModuleRegistry.shared.isEnabled(.extensions)
+        let registry = makeScopedModuleRegistry()
+        registry.setEnabled(!sharedEnabled, for: .extensions)
+
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile,
+            moduleRegistry: registry
+        )
+
+        XCTAssertEqual(
+            manager.extensionsModuleEnabledForDelegateCallbacks,
+            !sharedEnabled
+        )
+    }
+
+    func testExtensionsModuleDefaultFactoryPassesScopedRegistryToManager() throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Scoped Module")
+        let sharedEnabled = SumiModuleRegistry.shared.isEnabled(.extensions)
+        let registry = makeScopedModuleRegistry()
+        registry.enable(.extensions)
+        let module = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            initialProfileProvider: { profile }
+        )
+
+        let manager = try XCTUnwrap(module.managerIfEnabled())
+        registry.setEnabled(!sharedEnabled, for: .extensions)
+
+        XCTAssertEqual(
+            manager.extensionsModuleEnabledForDelegateCallbacks,
+            !sharedEnabled
+        )
+    }
+
     func testDisabledInstallDoesNotCreateRuntimeControllerOrContext() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Disabled Install")
@@ -165,6 +205,17 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+    }
+
+    private func makeScopedModuleRegistry() -> SumiModuleRegistry {
+        let suiteName = UUID().uuidString
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        addTeardownBlock {
+            userDefaults.removePersistentDomain(forName: suiteName)
+        }
+        return SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: userDefaults)
         )
     }
 
