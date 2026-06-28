@@ -337,17 +337,13 @@ final class SumiContentBlockingService {
         let storeReadiness: RuleStoreReadiness
     }
 
-    private struct ScheduledTask {
-        let token: UUID
-        let task: Task<Void, Never>
-    }
-
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
 
     private let compiler: SumiContentRuleListCompiling
     private let updatesSubject: CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>
     private let ruleListProvider: SumiContentRuleListSetProviding?
     private let compiledRuleListCatalog: SumiCompiledContentRuleListCataloging
+    private let scheduledTasks = SumiContentBlockingScheduledTaskOwner()
     private var currentPolicy: SumiContentBlockingPolicy
     private var compiledRulesByIdentifier: [String: SumiContentBlockerRules] = [:]
     private var compilationGeneration = 0
@@ -355,15 +351,6 @@ final class SumiContentBlockingService {
     private var profileRefreshGenerations: [String: Int] = [:]
     private var profileUpdateSubjects: [String: CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>] = [:]
     private var cancellables = Set<AnyCancellable>()
-    private var compilationTask: ScheduledTask?
-    private var ruleListRefreshTask: ScheduledTask?
-    private var profileRefreshTasksByKey: [String: ScheduledTask] = [:]
-    private var retiredScheduledTaskTokens = Set<UUID>()
-    private var finishedUnregisteredScheduledTaskTokens = Set<UUID>()
-
-    #if DEBUG
-        private var retiredScheduledTasksByToken: [UUID: Task<Void, Never>] = [:]
-    #endif
 
     private(set) var latestUpdate: SumiContentBlockerRulesUpdate?
 
@@ -450,7 +437,7 @@ final class SumiContentBlockingService {
     func setPolicy(_ policy: SumiContentBlockingPolicy) {
         guard policy != currentPolicy else {
             if latestUpdate == nil, policy.ruleLists.isEmpty {
-                cancelCompilationTask()
+                scheduledTasks.cancelCompilationTask()
                 privacyConfigurationManager.setContentBlockingEnabled(false)
                 publish(Self.emptyUpdate(), cleaningUpAfter: nil)
             }
@@ -462,7 +449,7 @@ final class SumiContentBlockingService {
         privacyConfigurationManager.setContentBlockingEnabled(policy.shouldEnableContentBlockingFeature)
 
         if policy.ruleLists.isEmpty {
-            cancelCompilationTask()
+            scheduledTasks.cancelCompilationTask()
             publish(Self.emptyUpdate(), cleaningUpAfter: latestUpdate)
         } else {
             scheduleCompilation(for: policy, previousPolicy: previousPolicy)
@@ -541,42 +528,40 @@ final class SumiContentBlockingService {
     ) {
         ruleListRefreshGeneration += 1
         let generation = ruleListRefreshGeneration
-        retireScheduledTask(ruleListRefreshTask)
 
-        let token = UUID()
-        let task = Task { [weak self] in
-            if delayNanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: delayNanoseconds)
-            }
-            guard let self else { return }
-            defer {
-                self.finishRuleListRefreshTask(token: token)
-            }
-            guard !Task.isCancelled,
-                  generation == self.ruleListRefreshGeneration
-            else { return }
+        scheduledTasks.scheduleRuleListRefreshTask { token in
+            Task { [weak self] in
+                if delayNanoseconds > 0 {
+                    try? await Task.sleep(nanoseconds: delayNanoseconds)
+                }
+                guard let self else { return }
+                defer {
+                    self.scheduledTasks.finishRuleListRefreshTask(token: token)
+                }
+                guard !Task.isCancelled,
+                      generation == self.ruleListRefreshGeneration
+                else { return }
 
-            do {
-                let ruleLists = try self.ruleLists(profileId: nil)
-                guard generation == self.ruleListRefreshGeneration else { return }
-                self.setPolicy(ruleLists.isEmpty ? .disabled : .enabled(ruleLists: ruleLists))
-                if refreshProfileSubjects {
-                    self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
-                }
-            } catch {
-                guard generation == self.ruleListRefreshGeneration else { return }
-                if self.latestUpdate == nil {
-                    self.currentPolicy = .disabled
-                    self.privacyConfigurationManager.setContentBlockingEnabled(false)
-                    self.publish(Self.emptyUpdate(), cleaningUpAfter: nil)
-                }
-                if refreshProfileSubjects {
-                    self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
+                do {
+                    let ruleLists = try self.ruleLists(profileId: nil)
+                    guard generation == self.ruleListRefreshGeneration else { return }
+                    self.setPolicy(ruleLists.isEmpty ? .disabled : .enabled(ruleLists: ruleLists))
+                    if refreshProfileSubjects {
+                        self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
+                    }
+                } catch {
+                    guard generation == self.ruleListRefreshGeneration else { return }
+                    if self.latestUpdate == nil {
+                        self.currentPolicy = .disabled
+                        self.privacyConfigurationManager.setContentBlockingEnabled(false)
+                        self.publish(Self.emptyUpdate(), cleaningUpAfter: nil)
+                    }
+                    if refreshProfileSubjects {
+                        self.scheduleActiveProfilePolicyRefreshes(delayNanoseconds: 0)
+                    }
                 }
             }
         }
-        ruleListRefreshTask = ScheduledTask(token: token, task: task)
-        clearRuleListRefreshTaskIfFinishedBeforeRegistration(token: token)
     }
 
     private func scheduleActiveProfilePolicyRefreshes(delayNanoseconds: UInt64 = 150_000_000) {
@@ -597,42 +582,40 @@ final class SumiContentBlockingService {
         let key = profileId.uuidString.lowercased()
         let generation = (profileRefreshGenerations[key] ?? 0) + 1
         profileRefreshGenerations[key] = generation
-        retireScheduledTask(profileRefreshTasksByKey[key])
 
-        let token = UUID()
-        let task = Task { [weak self] in
-            if delayNanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: delayNanoseconds)
-            }
-            guard let self else { return }
-            defer {
-                self.finishProfileRefreshTask(key: key, token: token)
-            }
-            guard !Task.isCancelled,
-                  self.profileRefreshGenerations[key] == generation
-            else { return }
-
-            do {
-                let ruleLists = try self.ruleLists(profileId: profileId)
-                guard self.profileRefreshGenerations[key] == generation else { return }
-                let update = try await self.updateEvent(for: ruleLists)
-                guard self.profileRefreshGenerations[key] == generation else { return }
-                if !ruleLists.isEmpty {
-                    self.privacyConfigurationManager.setContentBlockingEnabled(true)
-                } else if self.currentPolicy.ruleLists.isEmpty {
-                    self.privacyConfigurationManager.setContentBlockingEnabled(false)
+        scheduledTasks.scheduleProfileRefreshTask(key: key) { token in
+            Task { [weak self] in
+                if delayNanoseconds > 0 {
+                    try? await Task.sleep(nanoseconds: delayNanoseconds)
                 }
-                self.publishProfileUpdate(update, for: profileId)
-            } catch {
-                guard self.profileRefreshGenerations[key] == generation else { return }
-                let subject = self.profileSubject(for: profileId)
-                if subject.value == nil {
-                    subject.send(Self.emptyUpdate())
+                guard let self else { return }
+                defer {
+                    self.scheduledTasks.finishProfileRefreshTask(key: key, token: token)
+                }
+                guard !Task.isCancelled,
+                      self.profileRefreshGenerations[key] == generation
+                else { return }
+
+                do {
+                    let ruleLists = try self.ruleLists(profileId: profileId)
+                    guard self.profileRefreshGenerations[key] == generation else { return }
+                    let update = try await self.updateEvent(for: ruleLists)
+                    guard self.profileRefreshGenerations[key] == generation else { return }
+                    if !ruleLists.isEmpty {
+                        self.privacyConfigurationManager.setContentBlockingEnabled(true)
+                    } else if self.currentPolicy.ruleLists.isEmpty {
+                        self.privacyConfigurationManager.setContentBlockingEnabled(false)
+                    }
+                    self.publishProfileUpdate(update, for: profileId)
+                } catch {
+                    guard self.profileRefreshGenerations[key] == generation else { return }
+                    let subject = self.profileSubject(for: profileId)
+                    if subject.value == nil {
+                        subject.send(Self.emptyUpdate())
+                    }
                 }
             }
         }
-        profileRefreshTasksByKey[key] = ScheduledTask(token: token, task: task)
-        clearProfileRefreshTaskIfFinishedBeforeRegistration(key: key, token: token)
     }
 
     private func ruleLists(profileId: UUID?) throws -> [SumiContentRuleListDefinition] {
@@ -649,149 +632,33 @@ final class SumiContentBlockingService {
     ) {
         compilationGeneration += 1
         let generation = compilationGeneration
-        retireScheduledTask(compilationTask)
 
-        let token = UUID()
-        let task = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                self.finishCompilationTask(token: token)
+        scheduledTasks.scheduleCompilationTask { token in
+            Task { [weak self] in
+                guard let self else { return }
+                defer {
+                    self.scheduledTasks.finishCompilationTask(token: token)
+                }
+                guard !Task.isCancelled else { return }
+                await self.compileAndPublish(
+                    policy: policy,
+                    generation: generation,
+                    previousPolicy: previousPolicy
+                )
             }
-            guard !Task.isCancelled else { return }
-            await self.compileAndPublish(
-                policy: policy,
-                generation: generation,
-                previousPolicy: previousPolicy
-            )
         }
-        compilationTask = ScheduledTask(token: token, task: task)
-        clearCompilationTaskIfFinishedBeforeRegistration(token: token)
-    }
-
-    private func cancelCompilationTask() {
-        retireScheduledTask(compilationTask)
-        compilationTask = nil
     }
 
     private func cancelScheduledTasksForShutdown() {
         compilationGeneration += 1
         ruleListRefreshGeneration += 1
-        retireScheduledTask(compilationTask)
-        retireScheduledTask(ruleListRefreshTask)
-        for scheduledTask in profileRefreshTasksByKey.values {
-            retireScheduledTask(scheduledTask)
-        }
-        compilationTask = nil
-        ruleListRefreshTask = nil
-        profileRefreshTasksByKey.removeAll(keepingCapacity: false)
+        scheduledTasks.cancelAllTasksForShutdown()
         profileRefreshGenerations = profileRefreshGenerations.mapValues { $0 + 1 }
-        finishedUnregisteredScheduledTaskTokens.removeAll(keepingCapacity: false)
-    }
-
-    private func retireScheduledTask(_ scheduledTask: ScheduledTask?) {
-        guard let scheduledTask else { return }
-        scheduledTask.task.cancel()
-        retiredScheduledTaskTokens.insert(scheduledTask.token)
-        #if DEBUG
-            retiredScheduledTasksByToken[scheduledTask.token] = scheduledTask.task
-        #endif
-    }
-
-    private func finishCompilationTask(token: UUID) {
-        var didResolveTask = false
-        if compilationTask?.token == token {
-            compilationTask = nil
-            didResolveTask = true
-        }
-        didResolveTask = resolveRetiredScheduledTask(token: token) || didResolveTask
-        rememberFinishedScheduledTaskIfUnregistered(token: token, didResolveTask: didResolveTask)
-    }
-
-    private func finishRuleListRefreshTask(token: UUID) {
-        var didResolveTask = false
-        if ruleListRefreshTask?.token == token {
-            ruleListRefreshTask = nil
-            didResolveTask = true
-        }
-        didResolveTask = resolveRetiredScheduledTask(token: token) || didResolveTask
-        rememberFinishedScheduledTaskIfUnregistered(token: token, didResolveTask: didResolveTask)
-    }
-
-    private func finishProfileRefreshTask(key: String, token: UUID) {
-        var didResolveTask = false
-        if profileRefreshTasksByKey[key]?.token == token {
-            profileRefreshTasksByKey.removeValue(forKey: key)
-            didResolveTask = true
-        }
-        didResolveTask = resolveRetiredScheduledTask(token: token) || didResolveTask
-        rememberFinishedScheduledTaskIfUnregistered(token: token, didResolveTask: didResolveTask)
-    }
-
-    private func resolveRetiredScheduledTask(token: UUID) -> Bool {
-        let didResolveTask = retiredScheduledTaskTokens.remove(token) != nil
-        #if DEBUG
-            retiredScheduledTasksByToken.removeValue(forKey: token)
-        #endif
-        return didResolveTask
-    }
-
-    private func rememberFinishedScheduledTaskIfUnregistered(
-        token: UUID,
-        didResolveTask: Bool
-    ) {
-        guard !didResolveTask else { return }
-        finishedUnregisteredScheduledTaskTokens.insert(token)
-    }
-
-    private func clearCompilationTaskIfFinishedBeforeRegistration(token: UUID) {
-        guard finishedUnregisteredScheduledTaskTokens.remove(token) != nil else { return }
-        if compilationTask?.token == token {
-            compilationTask = nil
-        }
-    }
-
-    private func clearRuleListRefreshTaskIfFinishedBeforeRegistration(token: UUID) {
-        guard finishedUnregisteredScheduledTaskTokens.remove(token) != nil else { return }
-        if ruleListRefreshTask?.token == token {
-            ruleListRefreshTask = nil
-        }
-    }
-
-    private func clearProfileRefreshTaskIfFinishedBeforeRegistration(
-        key: String,
-        token: UUID
-    ) {
-        guard finishedUnregisteredScheduledTaskTokens.remove(token) != nil else { return }
-        if profileRefreshTasksByKey[key]?.token == token {
-            profileRefreshTasksByKey.removeValue(forKey: key)
-        }
     }
 
     #if DEBUG
         func drainScheduledTasksForTests(cancel: Bool = false) async {
-            while true {
-                let tasks = scheduledTasksForTests()
-                guard tasks.isEmpty == false else { return }
-                if cancel {
-                    tasks.forEach { $0.cancel() }
-                }
-                for task in tasks {
-                    await task.value
-                }
-            }
-        }
-
-        private func scheduledTasksForTests() -> [Task<Void, Never>] {
-            var tasks: [Task<Void, Never>] = []
-            if let compilationTask {
-                tasks.append(compilationTask.task)
-            }
-            if let ruleListRefreshTask {
-                tasks.append(ruleListRefreshTask.task)
-            }
-            tasks.append(contentsOf: profileRefreshTasksByKey.values.map(\.task))
-            tasks.append(contentsOf: retiredScheduledTasksByToken.values)
-            return tasks
+            await scheduledTasks.drainScheduledTasksForTests(cancel: cancel)
         }
     #endif
 
