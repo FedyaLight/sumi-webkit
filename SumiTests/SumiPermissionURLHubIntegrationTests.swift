@@ -144,7 +144,7 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
     }
 
     func testUnsupportedContentSettingsRemainAbsentFromURLHubSource() throws {
-        let source = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
+        let source = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionRowsBuilder.swift")
 
         XCTAssertTrue(source.contains("appendSitePermissionRowIfRelevant(\n            .camera"))
         XCTAssertTrue(source.contains("appendSitePermissionRowIfRelevant(\n            .storageAccess"))

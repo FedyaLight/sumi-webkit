@@ -237,14 +237,14 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     }
 
     func testURLHubPermissionRowsUseCompactPolicySubtitles() throws {
-        let viewModel = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
+        let rowsBuilder = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionRowsBuilder.swift")
 
-        XCTAssertTrue(viewModel.contains("compactPolicySubtitle("))
-        XCTAssertTrue(viewModel.contains("SumiCurrentSitePermissionsStrings.policyOn"))
-        XCTAssertTrue(viewModel.contains("SumiCurrentSitePermissionsStrings.policyOff"))
-        XCTAssertFalse(viewModel.contains("Used by this site"))
-        XCTAssertFalse(viewModel.contains("Requested by this site"))
-        XCTAssertFalse(viewModel.contains("Saved setting on this site"))
+        XCTAssertTrue(rowsBuilder.contains("compactPolicySubtitle("))
+        XCTAssertTrue(rowsBuilder.contains("SumiCurrentSitePermissionsStrings.policyOn"))
+        XCTAssertTrue(rowsBuilder.contains("SumiCurrentSitePermissionsStrings.policyOff"))
+        XCTAssertFalse(rowsBuilder.contains("Used by this site"))
+        XCTAssertFalse(rowsBuilder.contains("Requested by this site"))
+        XCTAssertFalse(rowsBuilder.contains("Saved setting on this site"))
     }
 
     func testPermissionIndicatorIsHiddenWhileURLHubIsPresented() throws {
@@ -266,13 +266,15 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
     func testInlinePermissionsDoNotUseForbiddenAPIs() throws {
         let hub = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
         let viewModel = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
+        let rowsBuilder = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionRowsBuilder.swift")
+        let permissionsUI = [viewModel, rowsBuilder].joined(separator: "\n")
 
         XCTAssertFalse(hub.contains("SwiftData"))
         XCTAssertFalse(hub.contains("requestAuthorization"))
-        XCTAssertFalse(viewModel.contains("requestAuthorization"))
+        XCTAssertFalse(permissionsUI.contains("requestAuthorization"))
         XCTAssertFalse(hub.contains("WKPermissionDecision"))
-        XCTAssertFalse(viewModel.contains("WKPermissionDecision"))
-        XCTAssertFalse(viewModel.contains("UserDefaults"))
+        XCTAssertFalse(permissionsUI.contains("WKPermissionDecision"))
+        XCTAssertFalse(permissionsUI.contains("UserDefaults"))
     }
 
     func testURLHubInlinePermissionsCoalesceStoreDrivenReloads() throws {
@@ -285,15 +287,15 @@ final class SumiURLHubPermissionsSubmenuTests: XCTestCase {
 
     func testURLHubUsesDynamicHeightAndFilteredRows() throws {
         let view = try sourceFile("Sumi/Components/Sidebar/URLBarHubPopover.swift")
-        let viewModel = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
+        let rowsBuilder = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionRowsBuilder.swift")
 
         XCTAssertTrue(view.contains("URLBarHubPopoverContentSizePreferenceKey"))
         XCTAssertTrue(view.contains("onContentSizeChange(size)"))
         XCTAssertTrue(view.contains("!snapshot.settingsRows.isEmpty || !currentSitePermissionsModel.rows.isEmpty"))
-        XCTAssertTrue(viewModel.contains("appendSitePermissionRowIfRelevant("))
-        XCTAssertTrue(viewModel.contains("shouldShowSitePermissionRow("))
-        XCTAssertTrue(viewModel.contains("recentEventCount > 0 || runtimeStatus != nil || siteActivity != nil"))
-        XCTAssertTrue(viewModel.contains("hasResolvedDecision(for: key)"))
+        XCTAssertTrue(rowsBuilder.contains("appendSitePermissionRowIfRelevant("))
+        XCTAssertTrue(rowsBuilder.contains("shouldShowSitePermissionRow("))
+        XCTAssertTrue(rowsBuilder.contains("recentEventCount > 0 || runtimeStatus != nil || siteActivity != nil"))
+        XCTAssertTrue(rowsBuilder.contains("hasResolvedDecision(for: key)"))
     }
 
     @MainActor
