@@ -379,6 +379,39 @@ final class BrowserWindowChromeTests: XCTestCase {
         XCTAssertFalse(browserManagerSource.contains("NSApplication.shared.windows"))
     }
 
+    func testBrowserManagerWindowShellExtensionOwnsOnlyWindowLifecycleCommands() throws {
+        let windowShellSource = try Self.source(
+            named: "Sumi/Managers/BrowserManager/BrowserManager+WindowShell.swift"
+        )
+        let browserShellCommandsSource = try Self.source(
+            named: "Sumi/Managers/BrowserManager/BrowserManager+BrowserShellCommands.swift"
+        )
+
+        for expectedToken in [
+            "func createNewWindow()",
+            "func createIncognitoWindow()",
+            "func closeIncognitoWindow(",
+            "func closeActiveWindow()",
+            "func toggleFullScreenForActiveWindow()",
+            "private func makeWindowShellContext()"
+        ] {
+            XCTAssertTrue(windowShellSource.contains(expectedToken), expectedToken)
+        }
+
+        for browserShellToken in [
+            "func showDownloads()",
+            "func showHistory()",
+            "func toggleDownloadsPopover(",
+            "func closeDownloadsPopover(",
+            "func toggleURLBarHubPopover(",
+            "func presentURLBarHubPopover(",
+            "func closeURLBarHubPopover("
+        ] {
+            XCTAssertFalse(windowShellSource.contains(browserShellToken), browserShellToken)
+            XCTAssertTrue(browserShellCommandsSource.contains(browserShellToken), browserShellToken)
+        }
+    }
+
     func testContentViewCanBeConstructedWithWindowLifecycleHandlerProtocol() throws {
         let handler = try FakeWindowLifecycleHandler()
         let lifecycleHandler: any BrowserWindowLifecycleHandling = handler
