@@ -825,6 +825,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let browserWindowSpaceStateOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/BrowserManager/BrowserWindowSpaceStateOwner.swift"
+            ),
+            encoding: .utf8
+        )
         let splitShortcutsSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
                 "Sumi/Managers/BrowserManager/BrowserManager+SplitShortcuts.swift"
@@ -871,11 +877,24 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         let spaceSwitch = try sourceSlice(
-            browserManagerSource,
+            browserWindowSpaceStateOwnerSource,
             from: "func setActiveSpace(_ space: Space, in windowState: BrowserWindowState)",
-            to: "private func selectionTargetForSpaceActivation"
+            to: "func selectionTargetForSpaceActivation"
         )
-        XCTAssertTrue(spaceSwitch.contains("performImmediateVisualHandoffIfPossible(in: windowState)"))
+        try assertTokenOrder(
+            spaceSwitch,
+            [
+                "dependencies.applyTabSelection",
+                "dependencies.performImmediateVisualHandoffIfPossible(windowState)",
+                "dependencies.adoptProfileForSpaceChange(windowState)"
+            ]
+        )
+        let spaceStateOwnerWiring = try sourceSlice(
+            browserManagerSource,
+            from: "private lazy var windowSpaceStateOwner = BrowserWindowSpaceStateOwner",
+            to: "lazy var tabCloseFallbackPlanner"
+        )
+        XCTAssertTrue(spaceStateOwnerWiring.contains("_ = self.performImmediateVisualHandoffIfPossible(in: windowState)"))
 
         let splitUnload = try sourceSlice(
             splitShortcutsSource,
