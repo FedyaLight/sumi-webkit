@@ -295,8 +295,7 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
             return await fetchPublic(url: url)
         case .sessionProfileAware:
             if let reference = context.webViewReference,
-               let webView = await reference.webView
-            {
+               let webView = await reference.webView {
                 let result = await fetchSessionAware(
                     url: url,
                     webView: webView,
@@ -474,7 +473,7 @@ private final class SumiFaviconWebKitDownloader: NSObject, WKDownloadDelegate {
     func download(
         _ download: WKDownload,
         decideDestinationUsing response: URLResponse,
-        suggestedFilename: String
+        suggestedFilename _: String
     ) async -> URL? {
         guard var pending = pendingDownloads[download] else { return nil }
         if let httpResponse = response as? HTTPURLResponse {
@@ -518,7 +517,7 @@ private final class SumiFaviconWebKitDownloader: NSObject, WKDownloadDelegate {
         )
     }
 
-    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+    func download(_ download: WKDownload, didFailWithError _: Error, resumeData _: Data?) {
         guard let pending = pendingDownloads.removeValue(forKey: download) else { return }
         pending.destinationURL.flatMap { try? FileManager.default.removeItem(at: $0) }
         let failure: SumiFaviconValidationFailureKind = pending.statusCode == 404 ? .notFound : .transport

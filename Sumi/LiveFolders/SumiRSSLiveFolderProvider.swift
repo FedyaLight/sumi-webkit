@@ -124,10 +124,10 @@ final class SumiRSSFeedParser: NSObject, XMLParserDelegate {
     }
 
     func parser(
-        _ parser: XMLParser,
+        _: XMLParser,
         didStartElement elementName: String,
-        namespaceURI: String?,
-        qualifiedName qName: String?,
+        namespaceURI _: String?,
+        qualifiedName _: String?,
         attributes attributeDict: [String: String] = [:]
     ) {
         let name = normalized(elementName)
@@ -145,15 +145,15 @@ final class SumiRSSFeedParser: NSObject, XMLParserDelegate {
         }
     }
 
-    func parser(_ parser: XMLParser, foundCharacters string: String) {
+    func parser(_: XMLParser, foundCharacters string: String) {
         textBuffer.append(string)
     }
 
     func parser(
-        _ parser: XMLParser,
+        _: XMLParser,
         didEndElement elementName: String,
-        namespaceURI: String?,
-        qualifiedName qName: String?
+        namespaceURI _: String?,
+        qualifiedName _: String?
     ) {
         let name = normalized(elementName)
         let text = textBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -206,7 +206,7 @@ final class SumiRSSFeedParser: NSObject, XMLParserDelegate {
         }
 
         let stableId = draft.stableId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let id = stableId?.isEmpty == false ? stableId! : urlString
+        let id = stableId.flatMap { $0.isEmpty ? nil : $0 } ?? urlString
         let now = Date()
         let sortDate = draft.updatedAt ?? draft.publishedAt
         items.append(

@@ -52,7 +52,7 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
             case noIconUntilBySiteKey
         }
 
-        init() {}
+        init() { /* Uses property defaults for an empty metadata store. */ }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -714,8 +714,7 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         }
         if let siteKey = mapping.siteKey,
            let host = URL(string: siteKey)?.host?.lowercased(),
-           !host.isEmpty
-        {
+           !host.isEmpty {
             result.insert(host)
         }
         return result
@@ -759,8 +758,7 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         var keys = [pageKey(for: pageURL)]
         if let aliasTarget = metadata.pageAliases[keys[0]],
            aliasTarget != keys[0],
-           !keys.contains(aliasTarget)
-        {
+           !keys.contains(aliasTarget) {
             keys.append(aliasTarget)
         }
         if let siteKey = siteKey(for: pageURL), !keys.contains(siteKey) {

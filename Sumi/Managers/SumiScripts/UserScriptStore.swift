@@ -14,7 +14,6 @@ import SwiftData
 
 @MainActor
 final class UserScriptStore {
-
     // MARK: - Manifest
 
     struct Manifest: Codable {
@@ -34,7 +33,7 @@ final class UserScriptStore {
                 settings: [
                     "active": "true",
                     "autoUpdateInterval": "off",
-                    "lazyScriptBody": "false"
+                    "lazyScriptBody": "false",
                 ],
                 require: [:],
                 runMode: nil,
@@ -97,8 +96,8 @@ final class UserScriptStore {
         let fm = FileManager.default
         let bundleComponent = SumiAppIdentity.runtimeBundleIdentifier
         guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            // Fallback to Documents
-            return fm.urls(for: .documentDirectory, in: .userDomainMask).first!
+            return fm.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
                 .appendingPathComponent(bundleComponent, isDirectory: true)
         }
         return appSupport.appendingPathComponent(bundleComponent, isDirectory: true)
@@ -130,114 +129,6 @@ final class UserScriptStore {
                 return UserScriptMatchEngine.shouldInject(script: script, into: url)
             }
             .sorted { $0.effectiveWeight > $1.effectiveWeight }
-    }
-
-    // MARK: - Run mode & origin rules
-
-    var effectiveRunMode: UserScriptRunMode {
-        manifest.runMode ?? .alwaysMatch
-    }
-
-    var runMode: UserScriptRunMode {
-        get { effectiveRunMode }
-        set {
-            manifest.runMode = newValue == .alwaysMatch ? nil : newValue
-            saveManifest()
-        }
-    }
-
-    var lazyScriptBodyEnabled: Bool {
-        get { manifest.settings["lazyScriptBody"] == "true" }
-        set {
-            manifest.settings["lazyScriptBody"] = newValue ? "true" : "false"
-            saveManifest()
-        }
-    }
-
-    /// `off`, `startup`, `hourly`, `daily`
-    var autoUpdateInterval: String {
-        get { manifest.settings["autoUpdateInterval"] ?? "off" }
-        set {
-            manifest.settings["autoUpdateInterval"] = newValue
-            saveManifest()
-        }
-    }
-
-    func isOriginAllowed(filename: String, for url: URL) -> Bool {
-        let key = UserScriptOriginPolicy.originKey(from: url)
-        return manifest.originAllow?[filename]?.contains(key) == true
-    }
-
-    func isOriginDenied(filename: String, for url: URL) -> Bool {
-        let key = UserScriptOriginPolicy.originKey(from: url)
-        return manifest.originDeny?[filename]?.contains(key) == true
-    }
-
-    func setOriginAllow(_ allowed: Bool, filename: String, for url: URL) {
-        let key = UserScriptOriginPolicy.originKey(from: url)
-        guard !key.isEmpty else { return }
-        if manifest.originAllow == nil { manifest.originAllow = [:] }
-        if manifest.originDeny == nil { manifest.originDeny = [:] }
-        var allow = manifest.originAllow![filename] ?? []
-        var deny = manifest.originDeny![filename] ?? []
-        if allowed {
-            if !allow.contains(key) { allow.append(key) }
-            deny.removeAll { $0 == key }
-        } else {
-            allow.removeAll { $0 == key }
-        }
-        if allow.isEmpty {
-            manifest.originAllow!.removeValue(forKey: filename)
-        } else {
-            manifest.originAllow![filename] = allow
-        }
-        if deny.isEmpty {
-            manifest.originDeny!.removeValue(forKey: filename)
-        } else {
-            manifest.originDeny![filename] = deny
-        }
-        pruneEmptyOriginMaps()
-        saveManifest()
-    }
-
-    func setOriginDeny(_ denied: Bool, filename: String, for url: URL) {
-        let key = UserScriptOriginPolicy.originKey(from: url)
-        guard !key.isEmpty else { return }
-        if manifest.originAllow == nil { manifest.originAllow = [:] }
-        if manifest.originDeny == nil { manifest.originDeny = [:] }
-        var allow = manifest.originAllow![filename] ?? []
-        var deny = manifest.originDeny![filename] ?? []
-        if denied {
-            if !deny.contains(key) { deny.append(key) }
-            allow.removeAll { $0 == key }
-        } else {
-            deny.removeAll { $0 == key }
-        }
-        if allow.isEmpty {
-            manifest.originAllow!.removeValue(forKey: filename)
-        } else {
-            manifest.originAllow![filename] = allow
-        }
-        if deny.isEmpty {
-            manifest.originDeny!.removeValue(forKey: filename)
-        } else {
-            manifest.originDeny![filename] = deny
-        }
-        pruneEmptyOriginMaps()
-        saveManifest()
-    }
-
-    func pruneEmptyOriginMaps() {
-        manifest.originAllow = manifest.originAllow?.filter { !$0.value.isEmpty }
-        if manifest.originAllow?.isEmpty == true { manifest.originAllow = nil }
-        manifest.originDeny = manifest.originDeny?.filter { !$0.value.isEmpty }
-        if manifest.originDeny?.isEmpty == true { manifest.originDeny = nil }
-    }
-
-    private func removeOriginRules(for filename: String) {
-        manifest.originAllow?[filename] = nil
-        manifest.originDeny?[filename] = nil
-        pruneEmptyOriginMaps()
     }
 
     /// Toggle a script's enabled state.
@@ -428,8 +319,7 @@ final class UserScriptStore {
             let localFile = scriptRequireDir.appendingPathComponent(sanitizedName)
 
             if fileManager.fileExists(atPath: localFile.path),
-               let content = try? String(contentsOf: localFile, encoding: .utf8)
-            {
+               let content = try? String(contentsOf: localFile, encoding: .utf8) {
                 results.append(content)
             }
         }
@@ -452,8 +342,7 @@ final class UserScriptStore {
             let localFile = scriptResourceDir.appendingPathComponent(sanitizedName)
 
             if fileManager.fileExists(atPath: localFile.path),
-               let content = try? String(contentsOf: localFile, encoding: .utf8)
-            {
+               let content = try? String(contentsOf: localFile, encoding: .utf8) {
                 result[name] = content
             }
         }
@@ -658,12 +547,126 @@ final class UserScriptStore {
             "injectInto": metadata.injectInto.rawValue,
             "noframes": metadata.noframes,
             "unwrap": metadata.unwrap,
-            "topLevelAwait": metadata.topLevelAwait
+            "topLevelAwait": metadata.topLevelAwait,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: snapshot, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)
         else { return "{}" }
         return json
+    }
+}
+
+extension UserScriptStore {
+    // MARK: - Run mode & origin rules
+
+    var effectiveRunMode: UserScriptRunMode {
+        manifest.runMode ?? .alwaysMatch
+    }
+
+    var runMode: UserScriptRunMode {
+        get { effectiveRunMode }
+        set {
+            manifest.runMode = newValue == .alwaysMatch ? nil : newValue
+            saveManifest()
+        }
+    }
+
+    var lazyScriptBodyEnabled: Bool {
+        get { manifest.settings["lazyScriptBody"] == "true" }
+        set {
+            manifest.settings["lazyScriptBody"] = newValue ? "true" : "false"
+            saveManifest()
+        }
+    }
+
+    /// `off`, `startup`, `hourly`, `daily`
+    var autoUpdateInterval: String {
+        get { manifest.settings["autoUpdateInterval"] ?? "off" }
+        set {
+            manifest.settings["autoUpdateInterval"] = newValue
+            saveManifest()
+        }
+    }
+
+    func isOriginAllowed(filename: String, for url: URL) -> Bool {
+        let key = UserScriptOriginPolicy.originKey(from: url)
+        return manifest.originAllow?[filename]?.contains(key) == true
+    }
+
+    func isOriginDenied(filename: String, for url: URL) -> Bool {
+        let key = UserScriptOriginPolicy.originKey(from: url)
+        return manifest.originDeny?[filename]?.contains(key) == true
+    }
+
+    func setOriginAllow(_ allowed: Bool, filename: String, for url: URL) {
+        let key = UserScriptOriginPolicy.originKey(from: url)
+        guard !key.isEmpty else { return }
+        var originAllow = manifest.originAllow ?? [:]
+        var originDeny = manifest.originDeny ?? [:]
+        var allow = originAllow[filename] ?? []
+        var deny = originDeny[filename] ?? []
+        if allowed {
+            if !allow.contains(key) { allow.append(key) }
+            deny.removeAll { $0 == key }
+        } else {
+            allow.removeAll { $0 == key }
+        }
+        if allow.isEmpty {
+            originAllow.removeValue(forKey: filename)
+        } else {
+            originAllow[filename] = allow
+        }
+        if deny.isEmpty {
+            originDeny.removeValue(forKey: filename)
+        } else {
+            originDeny[filename] = deny
+        }
+        manifest.originAllow = originAllow.isEmpty ? nil : originAllow
+        manifest.originDeny = originDeny.isEmpty ? nil : originDeny
+        pruneEmptyOriginMaps()
+        saveManifest()
+    }
+
+    func setOriginDeny(_ denied: Bool, filename: String, for url: URL) {
+        let key = UserScriptOriginPolicy.originKey(from: url)
+        guard !key.isEmpty else { return }
+        var originAllow = manifest.originAllow ?? [:]
+        var originDeny = manifest.originDeny ?? [:]
+        var allow = originAllow[filename] ?? []
+        var deny = originDeny[filename] ?? []
+        if denied {
+            if !deny.contains(key) { deny.append(key) }
+            allow.removeAll { $0 == key }
+        } else {
+            deny.removeAll { $0 == key }
+        }
+        if allow.isEmpty {
+            originAllow.removeValue(forKey: filename)
+        } else {
+            originAllow[filename] = allow
+        }
+        if deny.isEmpty {
+            originDeny.removeValue(forKey: filename)
+        } else {
+            originDeny[filename] = deny
+        }
+        manifest.originAllow = originAllow.isEmpty ? nil : originAllow
+        manifest.originDeny = originDeny.isEmpty ? nil : originDeny
+        pruneEmptyOriginMaps()
+        saveManifest()
+    }
+
+    func pruneEmptyOriginMaps() {
+        manifest.originAllow = manifest.originAllow?.filter { !$0.value.isEmpty }
+        if manifest.originAllow?.isEmpty == true { manifest.originAllow = nil }
+        manifest.originDeny = manifest.originDeny?.filter { !$0.value.isEmpty }
+        if manifest.originDeny?.isEmpty == true { manifest.originDeny = nil }
+    }
+
+    private func removeOriginRules(for filename: String) {
+        manifest.originAllow?[filename] = nil
+        manifest.originDeny?[filename] = nil
+        pruneEmptyOriginMaps()
     }
 }
 

@@ -7,7 +7,9 @@ final class SumiFaviconAccentCache {
 
     private var colorsByKey: [String: Color] = [:]
 
-    private init() {}
+    private init() {
+        // Shared cache only.
+    }
 
     func color(forKey key: String) -> Color? {
         colorsByKey[key]
@@ -34,5 +36,4 @@ final class SumiFaviconAccentCache {
         }
         return domain
     }
-
 }

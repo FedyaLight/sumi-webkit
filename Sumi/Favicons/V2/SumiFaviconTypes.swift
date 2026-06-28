@@ -9,7 +9,11 @@ struct SumiFaviconPartition: Hashable, Codable, Sendable {
         let normalized = profileIdentifier?
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        self.profileIdentifier = normalized?.isEmpty == false ? normalized! : "default"
+        if let normalized, !normalized.isEmpty {
+            self.profileIdentifier = normalized
+        } else {
+            self.profileIdentifier = "default"
+        }
         self.isPrivate = isPrivate
     }
 
@@ -43,8 +47,7 @@ enum SumiFaviconCanonicalURL {
                 components.path = "/"
             }
             if (components.scheme == "https" && components.port == 443)
-                || (components.scheme == "http" && components.port == 80)
-            {
+                || (components.scheme == "http" && components.port == 80) {
                 components.port = nil
             }
         }

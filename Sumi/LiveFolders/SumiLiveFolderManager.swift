@@ -278,7 +278,7 @@ final class SumiLiveFolderManager: ObservableObject {
         sourcesByFolderId[latestSource.folderId] = latestSource
     }
 
-    private func refreshDueSources(reason: String) {
+    private func refreshDueSources(reason _: String) {
         let dueFolderIds = sourcesByFolderId.values
             .filter(\.isDueForRefresh)
             .map(\.folderId)

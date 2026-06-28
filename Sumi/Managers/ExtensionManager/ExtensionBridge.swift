@@ -168,8 +168,7 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
 
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState? {
         if let primaryWindowId = tab.primaryWindowId,
-           let primaryWindow = windowRegistry?.windows[primaryWindowId]
-        {
+           let primaryWindow = windowRegistry?.windows[primaryWindowId] {
             return primaryWindow
         }
 
@@ -178,8 +177,7 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
         }
 
         if let activeWindow = activeExtensionWindowState,
-           tabsForExtensionWindow(activeWindow).contains(where: { $0.id == tab.id })
-        {
+           tabsForExtensionWindow(activeWindow).contains(where: { $0.id == tab.id }) {
             return activeWindow
         }
 
@@ -486,16 +484,16 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         }
     }
 
-    func frame(for extensionContext: WKWebExtensionContext) -> CGRect {
+    func frame(for _: WKWebExtensionContext) -> CGRect {
         windowState?.window?.frame ?? .zero
     }
 
-    func screenFrame(for extensionContext: WKWebExtensionContext) -> CGRect {
+    func screenFrame(for _: WKWebExtensionContext) -> CGRect {
         windowState?.window?.screen?.frame ?? NSScreen.main?.frame ?? .zero
     }
 
     func focus(
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let windowState else {
@@ -517,15 +515,15 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 
-    func isPrivate(for extensionContext: WKWebExtensionContext) -> Bool {
+    func isPrivate(for _: WKWebExtensionContext) -> Bool {
         windowState?.isIncognito ?? false
     }
 
-    func windowType(for extensionContext: WKWebExtensionContext) -> WKWebExtension.WindowType {
+    func windowType(for _: WKWebExtensionContext) -> WKWebExtension.WindowType {
         .normal
     }
 
-    func windowState(for extensionContext: WKWebExtensionContext) -> WKWebExtension.WindowState {
+    func windowState(for _: WKWebExtensionContext) -> WKWebExtension.WindowState {
         guard let window = windowState?.window else { return .normal }
         if window.isMiniaturized { return .minimized }
         if window.styleMask.contains(.fullScreen) { return .fullscreen }
@@ -534,7 +532,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
     func setWindowState(
         _ windowState: WKWebExtension.WindowState,
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let window = self.windowState?.window else {
@@ -577,7 +575,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
     func setFrame(
         _ frame: CGRect,
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let window = windowState?.window else {
@@ -598,7 +596,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func close(
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let window = windowState?.window else {
@@ -663,7 +661,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         sessionId.hashValue
     }
 
-    func tabs(for extensionContext: WKWebExtensionContext) -> [any WKWebExtensionTab] {
+    func tabs(for _: WKWebExtensionContext) -> [any WKWebExtensionTab] {
         guard let extensionManager, let tab else { return [] }
         guard extensionManager.isTabEligibleForCurrentExtensionRuntime(tab) else { return [] }
         guard let adapter = extensionManager.stableAdapter(for: tab) else { return [] }
@@ -674,32 +672,32 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
         tabs(for: extensionContext).first
     }
 
-    func windowType(for extensionContext: WKWebExtensionContext) -> WKWebExtension.WindowType {
+    func windowType(for _: WKWebExtensionContext) -> WKWebExtension.WindowType {
         .popup
     }
 
-    func windowState(for extensionContext: WKWebExtensionContext) -> WKWebExtension.WindowState {
+    func windowState(for _: WKWebExtensionContext) -> WKWebExtension.WindowState {
         guard let window else { return .normal }
         if window.isMiniaturized { return .minimized }
         if window.styleMask.contains(.fullScreen) { return .fullscreen }
         return .normal
     }
 
-    func isPrivate(for extensionContext: WKWebExtensionContext) -> Bool {
+    func isPrivate(for _: WKWebExtensionContext) -> Bool {
         isPrivateWindow
     }
 
-    func screenFrame(for extensionContext: WKWebExtensionContext) -> CGRect {
+    func screenFrame(for _: WKWebExtensionContext) -> CGRect {
         window?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
     }
 
-    func frame(for extensionContext: WKWebExtensionContext) -> CGRect {
+    func frame(for _: WKWebExtensionContext) -> CGRect {
         window?.frame ?? .zero
     }
 
     func setWindowState(
         _ windowState: WKWebExtension.WindowState,
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let window else {
@@ -742,7 +740,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
 
     func setFrame(
         _ frame: CGRect,
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let window else {
@@ -763,7 +761,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func focus(
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         if shouldActivateApp {
@@ -775,7 +773,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func close(
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let browserContext,

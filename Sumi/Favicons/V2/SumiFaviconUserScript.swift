@@ -144,7 +144,7 @@ final class SumiFaviconTransportUserScript: NSObject, SumiUserScript, @MainActor
 
     @MainActor
     func userContentController(
-        _ userContentController: WKUserContentController,
+        _: WKUserContentController,
         didReceive message: WKScriptMessage
     ) async -> (Any?, String?) {
         let action = broker.messageHandlerFor(message)
@@ -173,7 +173,6 @@ final class SumiFaviconUserScripts {
         self.transportScript = transportScript
         transportScript.registerSubfeature(delegate: SumiFaviconSubfeature(faviconScript: faviconScript))
     }
-
 }
 
 protocol SumiFaviconUserScriptDelegate: AnyObject {

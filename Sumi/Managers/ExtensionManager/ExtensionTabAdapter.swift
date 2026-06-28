@@ -36,7 +36,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             domain: "ExtensionTabAdapter",
             code: 3,
             userInfo: [
-                NSLocalizedDescriptionKey: "Tab is not available to extensions until it is reloaded or navigates to a new document"
+                NSLocalizedDescriptionKey: "Tab is not available to extensions until it is reloaded or navigates to a new document",
             ]
         )
     }
@@ -78,15 +78,15 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         browserContext?.promoteTransientExtensionTab(tab) ?? false
     }
 
-    func url(for extensionContext: WKWebExtensionContext) -> URL? {
-        return eligibleTab()?.url
+    func url(for _: WKWebExtensionContext) -> URL? {
+        eligibleTab()?.url
     }
 
-    func title(for extensionContext: WKWebExtensionContext) -> String? {
-        return eligibleTab()?.name
+    func title(for _: WKWebExtensionContext) -> String? {
+        eligibleTab()?.name
     }
 
-    func isSelected(for extensionContext: WKWebExtensionContext) -> Bool {
+    func isSelected(for _: WKWebExtensionContext) -> Bool {
         guard
             let browserContext,
             let tab = eligibleTab(),
@@ -98,7 +98,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         return browserContext.currentExtensionTab(in: windowState)?.id == tab.id
     }
 
-    func indexInWindow(for extensionContext: WKWebExtensionContext) -> Int {
+    func indexInWindow(for _: WKWebExtensionContext) -> Int {
         guard
             let browserContext,
             let tab = eligibleTab(),
@@ -111,24 +111,24 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             .firstIndex(where: { $0.id == tab.id }) ?? 0
     }
 
-    func isLoadingComplete(for extensionContext: WKWebExtensionContext) -> Bool {
+    func isLoadingComplete(for _: WKWebExtensionContext) -> Bool {
         !(eligibleTab()?.isLoading ?? false)
     }
 
-    func isPinned(for extensionContext: WKWebExtensionContext) -> Bool {
+    func isPinned(for _: WKWebExtensionContext) -> Bool {
         guard let tab = eligibleTab() else { return false }
         return browserContext?.isPinnedExtensionTab(tab) == true
     }
 
-    func isMuted(for extensionContext: WKWebExtensionContext) -> Bool {
+    func isMuted(for _: WKWebExtensionContext) -> Bool {
         eligibleTab()?.audioState.isMuted ?? false
     }
 
-    func isPlayingAudio(for extensionContext: WKWebExtensionContext) -> Bool {
+    func isPlayingAudio(for _: WKWebExtensionContext) -> Bool {
         eligibleTab()?.audioState.isPlayingAudio ?? false
     }
 
-    func isReaderModeActive(for extensionContext: WKWebExtensionContext) -> Bool {
+    func isReaderModeActive(for _: WKWebExtensionContext) -> Bool {
         false
     }
 
@@ -156,7 +156,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     }
 
     func activate(
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let browserContext, let tab = eligibleTab() else {
@@ -174,7 +174,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     }
 
     func close(
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let tab = eligibleTab() else {
@@ -189,8 +189,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         if let browserContext,
            browserContext.isAuxiliaryMiniWindowTab(tab),
            let webView = tab.existingWebView,
-           browserContext.containsAuxiliaryWebView(webView)
-        {
+           browserContext.containsAuxiliaryWebView(webView) {
             browserContext.closeAuxiliaryWindowWebView(webView)
             ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
             return
@@ -241,7 +240,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
 
     func loadURL(
         _ url: URL,
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let tab = eligibleTab() else {
@@ -261,7 +260,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
 
     func setMuted(
         _ muted: Bool,
-        for extensionContext: WKWebExtensionContext,
+        for _: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
         guard let tab = eligibleTab() else {
@@ -297,15 +296,15 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
         Double(webView(for: extensionContext)?.pageZoom ?? 1)
     }
 
-    func shouldGrantPermissionsOnUserGesture(for extensionContext: WKWebExtensionContext) -> Bool {
+    func shouldGrantPermissionsOnUserGesture(for _: WKWebExtensionContext) -> Bool {
         true
     }
 
-    func shouldBypassPermissions(for extensionContext: WKWebExtensionContext) -> Bool {
+    func shouldBypassPermissions(for _: WKWebExtensionContext) -> Bool {
         false
     }
 
-    func window(for extensionContext: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
+    func window(for _: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
         guard let tab = eligibleTab() else { return nil }
         if browserContext?.isAuxiliaryMiniWindowTab(tab) == true {
             return extensionManager?.miniWindowAdapter(for: tab)

@@ -40,7 +40,7 @@ private enum SumiInstalledUserScriptJSONValue: Sendable {
         case let value as [String: Any]:
             self = .object(value.mapValues(SumiInstalledUserScriptJSONValue.init(foundationObject:)))
         default:
-            self = .string(String(describing: value!))
+            self = .string(value.map(String.init(describing:)) ?? "nil")
         }
     }
 
@@ -187,7 +187,7 @@ final class SumiInstalledUserScriptAdapter: NSObject, SumiUserScript, @MainActor
 
     @MainActor
     func userContentController(
-        _ userContentController: WKUserContentController,
+        _: WKUserContentController,
         didReceive message: WKScriptMessage
     ) async -> (Any?, String?) {
         let action = broker.messageHandlerFor(message)
@@ -385,7 +385,7 @@ private final class SumiGMSubfeature: NSObject, @MainActor SumiUserScriptSubfeat
                     "kind": payload.args["kind"] as? String ?? "error",
                     "message": payload.args["message"] as? String ?? "",
                     "location": payload.args["location"] as? String ?? "",
-                    "stack": payload.args["stack"] as? String ?? ""
+                    "stack": payload.args["stack"] as? String ?? "",
                 ]
             )
             return SumiJSONValue.object(["accepted": .bool(true)])

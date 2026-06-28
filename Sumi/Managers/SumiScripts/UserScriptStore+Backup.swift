@@ -20,7 +20,6 @@ private struct SumiUserscriptsBackupEnvelope: Codable {
 }
 
 extension UserScriptStore {
-
     /// Writes a zip containing script sources and `sumi-backup.json` (policy fields when requested).
     func exportBackupArchive(to zipURL: URL, includeOriginRules: Bool) throws {
         let fm = FileManager.default
@@ -69,8 +68,7 @@ extension UserScriptStore {
 
         if let backupURL = Self.findBackupJSONFile(named: "sumi-backup.json", under: temp),
            let data = try? Data(contentsOf: backupURL),
-           let env = try? JSONDecoder().decode(SumiUserscriptsBackupEnvelope.self, from: data)
-        {
+           let env = try? JSONDecoder().decode(SumiUserscriptsBackupEnvelope.self, from: data) {
             mergeImportedSumiEnvelope(env)
         }
 
@@ -103,27 +101,29 @@ extension UserScriptStore {
         if let rm = env.runMode {
             manifest.runMode = rm
         }
-        if let oa = env.originAllow {
-            if manifest.originAllow == nil { manifest.originAllow = [:] }
-            for (k, v) in oa {
-                let merged = Set(manifest.originAllow![k] ?? []).union(v)
+        if let originAllowEnvelope = env.originAllow {
+            var originAllow = manifest.originAllow ?? [:]
+            for (key, values) in originAllowEnvelope {
+                let merged = Set(originAllow[key] ?? []).union(values)
                 if merged.isEmpty {
-                    manifest.originAllow!.removeValue(forKey: k)
+                    originAllow.removeValue(forKey: key)
                 } else {
-                    manifest.originAllow![k] = Array(merged)
+                    originAllow[key] = Array(merged)
                 }
             }
+            manifest.originAllow = originAllow.isEmpty ? nil : originAllow
         }
-        if let od = env.originDeny {
-            if manifest.originDeny == nil { manifest.originDeny = [:] }
-            for (k, v) in od {
-                let merged = Set(manifest.originDeny![k] ?? []).union(v)
+        if let originDenyEnvelope = env.originDeny {
+            var originDeny = manifest.originDeny ?? [:]
+            for (key, values) in originDenyEnvelope {
+                let merged = Set(originDeny[key] ?? []).union(values)
                 if merged.isEmpty {
-                    manifest.originDeny!.removeValue(forKey: k)
+                    originDeny.removeValue(forKey: key)
                 } else {
-                    manifest.originDeny![k] = Array(merged)
+                    originDeny[key] = Array(merged)
                 }
             }
+            manifest.originDeny = originDeny.isEmpty ? nil : originDeny
         }
         for fn in env.disabled where manifest.disabled.contains(fn) == false {
             manifest.disabled.append(fn)

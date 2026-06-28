@@ -48,7 +48,9 @@ actor SumiLiveFolderStore {
                 .appendingPathComponent("live-folders.json", isDirectory: false)
         }
 
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support", isDirectory: true)
         let directory = base.appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
         return directory.appendingPathComponent("live-folders.json", isDirectory: false)
     }
