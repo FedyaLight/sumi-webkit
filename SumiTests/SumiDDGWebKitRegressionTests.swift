@@ -831,6 +831,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let tabCloseOrchestrationOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/BrowserManager/BrowserTabCloseOrchestrationOwner.swift"
+            ),
+            encoding: .utf8
+        )
         let splitShortcutsSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
                 "Sumi/Managers/BrowserManager/BrowserManager+SplitShortcuts.swift"
@@ -857,9 +863,9 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         let regularClose = try sourceSlice(
-            browserManagerSource,
-            from: "func closeTab(_ tab: Tab, in windowState: BrowserWindowState)",
-            to: "isolated deinit"
+            tabCloseOrchestrationOwnerSource,
+            from: "private func closeRegularTab(_ tab: Tab, in windowState: BrowserWindowState)",
+            to: "private func closeIncognitoTab"
         )
         XCTAssertLessThan(
             try XCTUnwrap(regularClose.range(of: "performImmediateVisualHandoffIfPossible")).lowerBound,

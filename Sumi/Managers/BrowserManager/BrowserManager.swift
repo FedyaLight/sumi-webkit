@@ -337,6 +337,30 @@ class BrowserManager: ObservableObject {
             }
         )
     )
+    private lazy var tabCloseOrchestrationOwner = BrowserTabCloseOrchestrationOwner(
+        dependencies: BrowserTabCloseOrchestrationOwner.Dependencies(
+            activeWindow: { [unowned self] in self.windowRegistry?.activeWindow },
+            currentTab: { [unowned self] windowState in
+                self.currentTab(for: windowState)
+            },
+            glanceManager: glanceManager,
+            tabManager: { [unowned self] in self.tabManager },
+            fallbackPlanner: { [unowned self] in self.tabCloseFallbackPlanner },
+            shortcutLiveTabCloseOwner: { [unowned self] in self.shortcutLiveTabCloseOwner },
+            selectTab: { [unowned self] tab, windowState in
+                self.selectTab(tab, in: windowState)
+            },
+            performImmediateVisualHandoffIfPossible: { [unowned self] windowState in
+                _ = self.performImmediateVisualHandoffIfPossible(in: windowState)
+            },
+            showEmptyState: { [unowned self] windowState in
+                self.showEmptyState(in: windowState)
+            },
+            persistWindowSession: { [unowned self] windowState in
+                self.persistWindowSession(for: windowState)
+            }
+        )
+    )
     lazy var tabOpeningOwner = BrowserTabOpeningOwner(
         dependencies: BrowserTabOpeningOwner.Dependencies(
             tabManager: { [unowned self] in self.tabManager },
@@ -1249,61 +1273,11 @@ class BrowserManager: ObservableObject {
     }
 
     func closeCurrentTab() {
-        if let activeWindow = windowRegistry?.activeWindow,
-            activeWindow.isFloatingBarVisible
-        {
-            return
-        }
-        if let activeWindow = windowRegistry?.activeWindow,
-           glanceManager.activePreviewTab(for: activeWindow) != nil {
-            glanceManager.dismissGlance()
-            return
-        }
-        if let activeWindow = windowRegistry?.activeWindow,
-           let currentTab = currentTab(for: activeWindow) {
-            closeTab(currentTab, in: activeWindow)
-        } else if let activeWindow = windowRegistry?.activeWindow {
-            showEmptyState(in: activeWindow)
-        }
+        tabCloseOrchestrationOwner.closeCurrentTab()
     }
 
     func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        if glanceManager.currentSession?.sourceTab?.id == tab.id {
-            glanceManager.dismissGlance()
-        }
-
-        if windowState.isIncognito {
-            closeIncognitoTab(tab, in: windowState)
-            return
-        }
-
-        if tab.isShortcutLiveInstance {
-            shortcutLiveTabCloseOwner.close(tab, in: windowState)
-            return
-        }
-
-        let wasCurrent = windowState.currentTabId == tab.id
-        let fallback = wasCurrent
-            ? tabCloseFallbackPlanner.fallbackAfterClosingRegularTab(
-                tab,
-                in: windowState,
-                tabStore: tabManager.runtimeStore
-            )
-            : nil
-        if let fallback {
-            selectTab(fallback, in: windowState)
-            performImmediateVisualHandoffIfPossible(in: windowState)
-        }
-        tabManager.removeTab(tab.id)
-        windowState.removeFromRegularTabHistory(tab.id)
-
-        if wasCurrent {
-            if fallback == nil {
-                showEmptyState(in: windowState)
-            }
-        } else {
-            persistWindowSession(for: windowState)
-        }
+        tabCloseOrchestrationOwner.closeTab(tab, in: windowState)
     }
     isolated deinit {
         permissionRuntime.cancelPermissionEventObservation()
@@ -1687,20 +1661,6 @@ class BrowserManager: ObservableObject {
             for: windowState,
             actions: tabSelectionActions
         )
-    }
-
-    private func closeIncognitoTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        tab.performComprehensiveWebViewCleanup()
-
-        if let index = windowState.ephemeralTabs.firstIndex(where: { $0.id == tab.id }) {
-            windowState.ephemeralTabs.remove(at: index)
-        }
-
-        if let nextTab = windowState.ephemeralTabs.last {
-            selectTab(nextTab, in: windowState)
-        } else {
-            showEmptyState(in: windowState)
-        }
     }
 
     func showEmptyState(in windowState: BrowserWindowState) {
