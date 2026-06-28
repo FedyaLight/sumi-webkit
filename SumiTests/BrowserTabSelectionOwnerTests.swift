@@ -187,15 +187,15 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             clearFindManagerCurrentTab: { probe.events.append("clearFind") },
             schedulePrepareVisibleWebViews: { _ in probe.events.append("prepareVisibleWebViews") },
             refreshCompositor: { _ in probe.events.append("refreshCompositor") },
-            notifyTabActivated: { _, previousTab in
-                probe.events.append("notifyActivated:\(previousTab?.id.uuidString ?? "nil")")
-            },
-            scheduleTabSuspensionReconcile: { reason in
-                probe.events.append("tabSuspension:\(reason)")
-            },
-            scheduleBackgroundMediaReconcile: { reason in
-                probe.events.append("backgroundMedia:\(reason)")
-            },
+            runtimeNotifications: BrowserTabSelectionOwner.RuntimeNotifications(
+                tabActivated: { _, previousTab in
+                    probe.events.append("notifyActivated:\(previousTab?.id.uuidString ?? "nil")")
+                },
+                tabSelectionChanged: { reason in
+                    probe.events.append("tabSuspension:\(reason)")
+                    probe.events.append("backgroundMedia:\(reason)")
+                }
+            ),
             updateActiveTabState: { _ in probe.events.append("updateActiveTabState") },
             persistWindowSession: { _ in probe.events.append("persistWindowSession") },
             selectionTargetForSpaceActivation: { _, _ in selectionTarget },

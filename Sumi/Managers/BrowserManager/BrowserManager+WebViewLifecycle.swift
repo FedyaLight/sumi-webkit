@@ -30,6 +30,6 @@ extension BrowserManager {
         }
 
         tabManager.removeAuxiliaryMiniWindowTab(tab)
-        extensionsModule.notifyTabClosedIfLoaded(tab)
+        BrowserManagerRuntimeWiring.notifyExtensionTabClosed(tab, for: self)
     }
 }

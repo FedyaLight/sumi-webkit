@@ -62,6 +62,27 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(browserManager.externalSchemeSessionStore === externalSchemeSessionStore)
     }
 
+    func testRuntimeNotificationsPreserveLazyExtensionRuntime() throws {
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        let windowState = BrowserWindowState()
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let runtimeNotifications = BrowserManagerRuntimeWiring.tabSelectionRuntimeNotifications(
+            for: browserManager
+        )
+
+        BrowserManagerRuntimeWiring.notifyExtensionWindowOpened(windowState, for: browserManager)
+        BrowserManagerRuntimeWiring.notifyExtensionWindowFocused(windowState, for: browserManager)
+        runtimeNotifications.tabActivated(tab, nil)
+        runtimeNotifications.tabSelectionChanged("test-tab-selection")
+        BrowserManagerRuntimeWiring.notifyExtensionTabClosed(tab, for: browserManager)
+
+        XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
+    }
+
     func testRuntimeWiringSourceOwnsPhase2AttachmentOrder() throws {
         let source = try source(named: "Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift")
         let orderedTokens = [
@@ -84,6 +105,34 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         ]
 
         try assertTokensAppearInOrder(orderedTokens, in: source)
+    }
+
+    func testRuntimeWiringSourceOwnsBrowserExtensionNotificationGlue() throws {
+        let runtimeWiringSource = try source(named: "Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift")
+        let browserManagerSource = try source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
+        let webViewLifecycleSource = try source(
+            named: "Sumi/Managers/BrowserManager/BrowserManager+WebViewLifecycle.swift"
+        )
+
+        for expectedToken in [
+            "func tabSelectionRuntimeNotifications(",
+            "browserManager.extensionsModule.notifyTabActivatedIfLoaded",
+            "browserManager.extensionsModule.notifyWindowOpenedIfLoaded",
+            "browserManager.extensionsModule.notifyWindowFocusedIfLoaded",
+            "browserManager.extensionsModule.notifyTabClosedIfLoaded",
+            "scheduleTabRuntimeReconcile(for: browserManager, reason: reason)"
+        ] {
+            XCTAssertTrue(runtimeWiringSource.contains(expectedToken), expectedToken)
+        }
+
+        for forbiddenToken in [
+            "extensionsModule.notifyTabActivatedIfLoaded",
+            "extensionsModule.notifyWindowOpenedIfLoaded",
+            "extensionsModule.notifyWindowFocusedIfLoaded"
+        ] {
+            XCTAssertFalse(browserManagerSource.contains(forbiddenToken), forbiddenToken)
+        }
+        XCTAssertFalse(webViewLifecycleSource.contains("extensionsModule.notifyTabClosedIfLoaded"))
     }
 
     func testBrowserManagerInitDelegatesPhase2Wiring() throws {

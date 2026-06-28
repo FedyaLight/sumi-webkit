@@ -868,15 +868,7 @@ class BrowserManager: ObservableObject {
             refreshCompositor: { [weak self] windowState in
                 self?.refreshCompositor(for: windowState)
             },
-            notifyTabActivated: { [weak self] newTab, previousTab in
-                self?.extensionsModule.notifyTabActivatedIfLoaded(newTab: newTab, previous: previousTab)
-            },
-            scheduleTabSuspensionReconcile: { [weak self] reason in
-                self?.tabSuspensionService.scheduleProactiveTimerReconcile(reason: reason)
-            },
-            scheduleBackgroundMediaReconcile: { [weak self] reason in
-                self?.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
-            },
+            runtimeNotifications: BrowserManagerRuntimeWiring.tabSelectionRuntimeNotifications(for: self),
             updateActiveTabState: { [weak self] tab in
                 self?.tabManager.updateActiveTabState(tab)
             },
@@ -1275,7 +1267,7 @@ class BrowserManager: ObservableObject {
     /// and by `BrowserWindowShellService` for BrowserManager-created windows.
     func setupWindowState(_ windowState: BrowserWindowState) {
         windowSessionService.setupWindowState(windowState, delegate: self)
-        extensionsModule.notifyWindowOpenedIfLoaded(windowState)
+        BrowserManagerRuntimeWiring.notifyExtensionWindowOpened(windowState, for: self)
         reconcileStartupSessionIfPossible()
     }
 
@@ -1288,7 +1280,7 @@ class BrowserManager: ObservableObject {
         splitManager.refreshPublishedState(for: windowState.id)
         windowSessionService.setActiveWindowState(windowState, delegate: self)
         updateFindManagerCurrentTab()
-        extensionsModule.notifyWindowFocusedIfLoaded(windowState)
+        BrowserManagerRuntimeWiring.notifyExtensionWindowFocused(windowState, for: self)
         adoptProfileIfNeeded(for: windowState, context: .windowActivation)
         SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
         backgroundMediaOptimizationService.scheduleReconcile(reason: "window-activated")

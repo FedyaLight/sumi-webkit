@@ -2,6 +2,11 @@ import Foundation
 
 @MainActor
 final class BrowserTabSelectionOwner {
+    struct RuntimeNotifications {
+        let tabActivated: (Tab, Tab?) -> Void
+        let tabSelectionChanged: (String) -> Void
+    }
+
     struct Actions {
         let activeWindowId: () -> UUID?
         let tab: (UUID) -> Tab?
@@ -23,9 +28,7 @@ final class BrowserTabSelectionOwner {
         let clearFindManagerCurrentTab: () -> Void
         let schedulePrepareVisibleWebViews: (BrowserWindowState) -> Void
         let refreshCompositor: (BrowserWindowState) -> Void
-        let notifyTabActivated: (Tab, Tab?) -> Void
-        let scheduleTabSuspensionReconcile: (String) -> Void
-        let scheduleBackgroundMediaReconcile: (String) -> Void
+        let runtimeNotifications: RuntimeNotifications
         let updateActiveTabState: (Tab) -> Void
         let persistWindowSession: (BrowserWindowState) -> Void
         let selectionTargetForSpaceActivation: (Space, BrowserWindowState) -> Tab?
@@ -112,9 +115,8 @@ final class BrowserTabSelectionOwner {
         let previousTab = selectionApplication.previousTabId.flatMap { previousId in
             actions.tab(previousId)
         }
-        actions.notifyTabActivated(tab, previousTab)
-        actions.scheduleTabSuspensionReconcile("tab-selection-changed")
-        actions.scheduleBackgroundMediaReconcile("tab-selection-changed")
+        actions.runtimeNotifications.tabActivated(tab, previousTab)
+        actions.runtimeNotifications.tabSelectionChanged("tab-selection-changed")
 
         if actions.activeWindowId() == windowState.id {
             actions.updateActiveTabState(tab)
