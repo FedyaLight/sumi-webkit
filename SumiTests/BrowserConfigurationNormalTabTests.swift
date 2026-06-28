@@ -719,22 +719,28 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(lifecycleSource.contains("evaluateJavaScript"))
     }
 
-    func testCoordinatorDoesNotCreateNormalWebViewsOrFallbackToGlance() throws {
+    func testCoordinatorDelegatesNormalWebViewCreationWithoutFallbackToGlance() throws {
         let testURL = URL(fileURLWithPath: #filePath)
         let repoRoot = testURL
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let sourceURL = repoRoot
+        let coordinatorSourceURL = repoRoot
             .appendingPathComponent("Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let ownerSourceURL = repoRoot
+            .appendingPathComponent("Sumi/Managers/WebViewCoordinator/WebViewAssignmentRebuildOwner.swift")
+        let coordinatorSource = try String(contentsOf: coordinatorSourceURL, encoding: .utf8)
+        let ownerSource = try String(contentsOf: ownerSourceURL, encoding: .utf8)
+        let combinedSource = coordinatorSource + "\n" + ownerSource
 
-        XCTAssertFalse(source.contains("createWebViewInternal"))
-        XCTAssertFalse(source.contains("normalTabWebViewConfiguration"))
-        XCTAssertFalse(source.contains("auxiliaryWebViewConfiguration"))
-        XCTAssertFalse(source.contains("surface: .glance"))
-        XCTAssertFalse(source.contains("FocusableWKWebView(frame: .zero"))
-        XCTAssertTrue(source.contains("tab.ensureWebView()"))
-        XCTAssertTrue(source.contains("tab.makeNormalTabWebView"))
+        XCTAssertFalse(combinedSource.contains("createWebViewInternal"))
+        XCTAssertFalse(combinedSource.contains("normalTabWebViewConfiguration"))
+        XCTAssertFalse(combinedSource.contains("auxiliaryWebViewConfiguration"))
+        XCTAssertFalse(combinedSource.contains("surface: .glance"))
+        XCTAssertFalse(combinedSource.contains("FocusableWKWebView(frame: .zero"))
+        XCTAssertFalse(coordinatorSource.contains("tab.ensureWebView()"))
+        XCTAssertFalse(coordinatorSource.contains("tab.makeNormalTabWebView"))
+        XCTAssertTrue(ownerSource.contains("tab.ensureWebView()"))
+        XCTAssertTrue(ownerSource.contains("tab.makeNormalTabWebView"))
     }
 
     func testBrowserConfigurationDoesNotExposeLegacyCompatibilityAliases() throws {
