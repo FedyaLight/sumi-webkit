@@ -545,6 +545,45 @@ class BrowserManager: ObservableObject {
     private var startupProtectionRuntime: BrowserStartupProtectionRuntime!
     private let windowTabActivationBatcher = WindowTabActivationBatcher()
     private let historySwipeWindowMutationFlushOwner = HistorySwipeWindowMutationFlushOwner()
+    private lazy var windowSessionActivationOwner = BrowserWindowSessionActivationOwner(
+        dependencies: BrowserWindowSessionActivationOwner.Dependencies(
+            windowSessionService: windowSessionService,
+            delegate: { [unowned self] in self },
+            refreshSplitPublishedState: { [unowned self] windowId in
+                self.splitManager.refreshPublishedState(for: windowId)
+            },
+            updateFindManagerCurrentTab: { [unowned self] in
+                self.updateFindManagerCurrentTab()
+            },
+            notifyExtensionWindowOpened: { [unowned self] windowState in
+                BrowserManagerRuntimeWiring.notifyExtensionWindowOpened(windowState, for: self)
+            },
+            notifyExtensionWindowFocused: { [unowned self] windowState in
+                BrowserManagerRuntimeWiring.notifyExtensionWindowFocused(windowState, for: self)
+            },
+            reconcileStartupSessionIfPossible: { [unowned self] in
+                self.reconcileStartupSessionIfPossible()
+            },
+            adoptProfileForWindowActivation: { [unowned self] windowState in
+                self.adoptProfileIfNeeded(for: windowState, context: .windowActivation)
+            },
+            scheduleNativeNowPlayingRefresh: { delayNanoseconds in
+                SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: delayNanoseconds)
+            },
+            scheduleBackgroundMediaReconcile: { [unowned self] reason in
+                self.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
+            },
+            pauseGeolocationForApplicationBackgroundIfNeeded: { [unowned self] in
+                self.permissionRuntime.pauseGeolocationForApplicationBackgroundIfNeeded()
+            },
+            resumeGeolocationForApplicationForegroundIfNeeded: { [unowned self] in
+                self.permissionRuntime.resumeGeolocationForApplicationForegroundIfNeeded()
+            },
+            refreshLastSessionWindowsStore: { [unowned self] in
+                self.refreshLastSessionWindowsStore(excludingWindowID: nil)
+            }
+        )
+    )
 
     private func adoptProfileIfNeeded(
         for windowState: BrowserWindowState, context: ProfileSwitchContext
@@ -1249,9 +1288,7 @@ class BrowserManager: ObservableObject {
     /// Window ↔ `NSWindow` association is owned by `BrowserWindowBridge` for SwiftUI scene windows
     /// and by `BrowserWindowShellService` for BrowserManager-created windows.
     func setupWindowState(_ windowState: BrowserWindowState) {
-        windowSessionService.setupWindowState(windowState, delegate: self)
-        BrowserManagerRuntimeWiring.notifyExtensionWindowOpened(windowState, for: self)
-        reconcileStartupSessionIfPossible()
+        windowSessionActivationOwner.setupWindowState(windowState)
     }
 
 
@@ -1260,13 +1297,7 @@ class BrowserManager: ObservableObject {
     func setActiveWindowState(_ windowState: BrowserWindowState) {
         // DO NOT call windowRegistry?.setActive(windowState) here - that would cause infinite recursion!
         // This method is called FROM the onActiveWindowChange callback
-        splitManager.refreshPublishedState(for: windowState.id)
-        windowSessionService.setActiveWindowState(windowState, delegate: self)
-        updateFindManagerCurrentTab()
-        BrowserManagerRuntimeWiring.notifyExtensionWindowFocused(windowState, for: self)
-        adoptProfileIfNeeded(for: windowState, context: .windowActivation)
-        SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
-        backgroundMediaOptimizationService.scheduleReconcile(reason: "window-activated")
+        windowSessionActivationOwner.setActiveWindowState(windowState)
     }
 
     // MARK: - Window-Aware Tab Operations
@@ -1541,41 +1572,21 @@ class BrowserManager: ObservableObject {
     }
 
     func persistWindowSession(for windowState: BrowserWindowState) {
-        persistWindowSessionNow(for: windowState)
+        windowSessionActivationOwner.persistWindowSession(for: windowState)
     }
 
     func schedulePersistWindowSession(
         for windowState: BrowserWindowState,
         delayNanoseconds: UInt64 = 450_000_000
     ) {
-        windowSessionService.schedulePersistWindowSession(
+        windowSessionActivationOwner.schedulePersistWindowSession(
             for: windowState,
             delayNanoseconds: delayNanoseconds
-        ) { [weak self] windowState in
-            guard let self else {
-                return
-            }
-            self.persistWindowSessionNow(for: windowState)
-        }
+        )
     }
 
     func flushPendingWindowSessionPersistence() {
-        windowSessionService.flushPendingWindowSessionPersistence { [weak self] windowState in
-            guard let self else {
-                return
-            }
-            persistWindowSessionNow(for: windowState)
-        }
-    }
-
-    private func persistWindowSessionNow(for windowState: BrowserWindowState) {
-        let signpostState = PerformanceTrace.beginInterval("WindowSession.persist")
-        defer {
-            PerformanceTrace.endInterval("WindowSession.persist", signpostState)
-        }
-
-        windowSessionService.persistWindowSession(for: windowState, delegate: self)
-        refreshLastSessionWindowsStore(excludingWindowID: nil)
+        windowSessionActivationOwner.flushPendingWindowSessionPersistence()
     }
 
     func syncShortcutSelectionState(for windowState: BrowserWindowState) {
@@ -1604,18 +1615,15 @@ extension BrowserManager: SumiProfileRoutingSupport {}
 
 extension BrowserManager: BrowserAppLifecycleHandling {
     func handleApplicationWillResignActive() {
-        backgroundMediaOptimizationService.scheduleReconcile(reason: "app-will-resign-active")
-        permissionRuntime.pauseGeolocationForApplicationBackgroundIfNeeded()
+        windowSessionActivationOwner.handleApplicationWillResignActive()
     }
 
     func handleApplicationDidBecomeActive() {
-        backgroundMediaOptimizationService.scheduleReconcile(reason: "app-did-become-active")
-        permissionRuntime.resumeGeolocationForApplicationForegroundIfNeeded()
+        windowSessionActivationOwner.handleApplicationDidBecomeActive()
     }
 
     func handleWindowVisibilityChanged(_ windowState: BrowserWindowState) {
-        _ = windowState
-        backgroundMediaOptimizationService.scheduleReconcile(reason: "window-visibility-changed")
+        windowSessionActivationOwner.handleWindowVisibilityChanged(windowState)
     }
 }
 

@@ -160,6 +160,35 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         }
     }
 
+    func testBrowserManagerDelegatesWindowSessionActivationFacadeToOwner() throws {
+        let browserManagerSource = try source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
+        let ownerSource = try source(named: "Sumi/Managers/BrowserManager/BrowserWindowSessionActivationOwner.swift")
+        let expectedBrowserManagerTokens = [
+            "private lazy var windowSessionActivationOwner = BrowserWindowSessionActivationOwner(",
+            "func setupWindowState(_ windowState: BrowserWindowState) {\n        windowSessionActivationOwner.setupWindowState(windowState)\n    }",
+            "func setActiveWindowState(_ windowState: BrowserWindowState) {",
+            "windowSessionActivationOwner.setActiveWindowState(windowState)",
+            "func persistWindowSession(for windowState: BrowserWindowState) {\n        windowSessionActivationOwner.persistWindowSession(for: windowState)\n    }",
+            "windowSessionActivationOwner.flushPendingWindowSessionPersistence()",
+            "scheduleNativeNowPlayingRefresh: { delayNanoseconds in"
+        ]
+
+        XCTAssertFalse(
+            browserManagerSource.contains("final class BrowserWindowSessionActivationOwner")
+        )
+        for expectedToken in expectedBrowserManagerTokens {
+            XCTAssertTrue(browserManagerSource.contains(expectedToken), expectedToken)
+        }
+        for expectedOwnerToken in [
+            "final class BrowserWindowSessionActivationOwner",
+            "let scheduleNativeNowPlayingRefresh: @MainActor (UInt64) -> Void",
+            "dependencies.scheduleNativeNowPlayingRefresh(0)",
+            "dependencies.windowSessionService.persistWindowSession("
+        ] {
+            XCTAssertTrue(ownerSource.contains(expectedOwnerToken), expectedOwnerToken)
+        }
+    }
+
     private func makeInMemoryStartupContainer() throws -> ModelContainer {
         try ModelContainer(
             for: SumiStartupPersistence.schema,
