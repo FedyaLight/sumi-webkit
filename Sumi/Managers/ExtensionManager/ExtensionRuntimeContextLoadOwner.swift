@@ -121,7 +121,7 @@ final class ExtensionRuntimeContextLoadOwner {
         let operation: Operation
     }
 
-    private unowned let manager: ExtensionManager
+    private let manager: ExtensionManager
 
     init(manager: ExtensionManager) {
         self.manager = manager
