@@ -140,13 +140,19 @@ final class WindowWebContentController: NSViewController {
     private var lastHoverTabId: UUID?
     private var pendingSplitRepairGroupId: UUID?
     private var hoveredLinkHandler: ((String?) -> Void)?
-    private let hostRegistry = WindowWebContentHostRegistry()
+    private lazy var hostLifecycleOwner = WindowWebContentHostLifecycleOwner(
+        containerView: containerView,
+        webViewCoordinator: webViewCoordinator,
+        windowID: windowState.id,
+        chromeGeometry: chromeGeometry,
+        contentBackgroundColor: contentBackgroundColor
+    )
     private lazy var visualHandoffCovers = WindowWebContentVisualHandoffCoverController(
         containerView: containerView,
         releaseCover: { [weak self] webViewID, host in
             guard let self else { return }
             self.containerView.removeVisualHandoffCover(host)
-            self.hostRegistry.removeParkedProtectedHost(for: webViewID)
+            self.hostLifecycleOwner.removeParkedProtectedHost(for: webViewID)
             self.webViewCoordinator.finishVisualHandoffProtection(for: host.webView)
         }
     )
@@ -194,8 +200,8 @@ final class WindowWebContentController: NSViewController {
             webViewCoordinator.closeActiveFullscreenMedia(in: windowState.id)
         }
         releaseVisualHandoffCovers()
-        clearSinglePane()
-        clearAllSplitPaneHosts()
+        hostLifecycleOwner.clearSinglePane()
+        hostLifecycleOwner.clearAllSplitPaneHosts()
         mediaTouchBarRecoveryController.stop()
         webViewCoordinator.setImmediateVisualHandoffHandler(nil, for: windowState.id)
         webViewCoordinator.removeCompositorContainerView(for: windowState.id)
@@ -234,7 +240,10 @@ final class WindowWebContentController: NSViewController {
         if self.chromeGeometry != chromeGeometry || bgChanged {
             self.chromeGeometry = chromeGeometry
             containerView.setChromeGeometry(chromeGeometry)
-            updateDisplayedHostViewportStyles()
+            hostLifecycleOwner.updateViewportStyle(
+                chromeGeometry: chromeGeometry,
+                contentBackgroundColor: contentBackgroundColor
+            )
         }
 
         pendingDisplayState = displayState
@@ -245,7 +254,12 @@ final class WindowWebContentController: NSViewController {
             lastHoverTabId = nil
         }
 
-        if !displayState.visibleTabIds.isEmpty && missingPreparedWebViews(for: displayState.visibleTabIds) {
+        if !displayState.visibleTabIds.isEmpty
+            && hostLifecycleOwner.missingPreparedWebViews(
+                for: displayState.visibleTabIds,
+                browserContext: browserContext
+            )
+        {
             browserContext.schedulePrepareVisibleWebViews(for: windowState)
         }
 
@@ -341,19 +355,19 @@ final class WindowWebContentController: NSViewController {
             scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
         }
 
-        return displayedHost(for: currentTab.id) != nil
+        return hostLifecycleOwner.displayedHost(for: currentTab.id) != nil
     }
 
     private func beginSinglePaneVisualHandoffIfNeeded(to tab: Tab?) -> Bool {
         guard let tab, tab.requiresPrimaryWebView else { return false }
-        guard displayedHost(for: tab.id) == nil else { return false }
+        guard hostLifecycleOwner.displayedHost(for: tab.id) == nil else { return false }
         return beginVisualHandoffCovers(excluding: [tab.id])
     }
 
     @discardableResult
     private func beginVisualHandoffCovers(excluding incomingTabIDs: Set<UUID>) -> Bool {
         var seenWebViewIDs = Set<ObjectIdentifier>()
-        let outgoingHosts = hostRegistry.displayedHosts(excluding: incomingTabIDs)
+        let outgoingHosts = hostLifecycleOwner.displayedHosts(excluding: incomingTabIDs)
         guard !outgoingHosts.isEmpty else { return false }
 
         releaseVisualHandoffCovers()
@@ -364,8 +378,7 @@ final class WindowWebContentController: NSViewController {
 
             let frameInContainer = host.convert(host.bounds, to: containerView)
             webViewCoordinator.beginVisualHandoffProtection(for: host.webView)
-            hostRegistry.clearReferences(to: host)
-            hostRegistry.parkProtectedHost(host)
+            hostLifecycleOwner.prepareForVisualHandoff(host)
             visualHandoffCovers.placeCover(host, frameInContainer: frameInContainer)
         }
 
@@ -401,7 +414,7 @@ final class WindowWebContentController: NSViewController {
         }
 
         if hostedWebViewCount(in: containerView.singlePaneView, stoppingAfter: 0) > 0 { return true }
-        for tabId in hostRegistry.splitPaneTabIds where activeSplitGroup.contains(tabId) == false {
+        for tabId in hostLifecycleOwner.splitPaneTabIds where activeSplitGroup.contains(tabId) == false {
             return true
         }
         return false
@@ -413,16 +426,16 @@ final class WindowWebContentController: NSViewController {
         containerView.singlePaneView.isHidden = false
 
         if let tab, let host = webViewHost(for: tab, slot: .single) {
-            attach(host, to: containerView.singlePaneView)
+            hostLifecycleOwner.attach(host, to: containerView.singlePaneView)
             containerView.singlePaneView.removeHostedSubviews(
                 keeping: host,
-                shouldRemove: shouldRemoveHostedSubview
+                shouldRemove: hostLifecycleOwner.shouldRemoveHostedSubview
             )
         } else {
-            clearSinglePane()
+            hostLifecycleOwner.clearSinglePane()
         }
 
-        clearAllSplitPaneHosts()
+        hostLifecycleOwner.clearAllSplitPaneHosts()
     }
 
     private func showSplitGroup(_ group: SplitGroup, tabs: [Tab]) {
@@ -430,13 +443,13 @@ final class WindowWebContentController: NSViewController {
         containerView.layoutSubtreeIfNeeded()
 
         let visibleIds = Set(group.tabIds)
-        for tabId in hostRegistry.splitPaneTabIds where visibleIds.contains(tabId) == false {
-            clearSplitPaneHost(tabId)
+        for tabId in hostLifecycleOwner.splitPaneTabIds where visibleIds.contains(tabId) == false {
+            hostLifecycleOwner.clearSplitPaneHost(tabId)
         }
 
         for tab in tabs {
             guard let paneView = containerView.paneView(for: tab.id) else {
-                clearSplitPaneHost(tab.id)
+                hostLifecycleOwner.clearSplitPaneHost(tab.id)
                 continue
             }
             if let host = webViewHost(for: tab, slot: .split(tab.id)) {
@@ -445,25 +458,25 @@ final class WindowWebContentController: NSViewController {
                     browserContext: browserContext,
                     windowState: windowState
                 )
-                attach(host, to: paneView)
+                hostLifecycleOwner.attach(host, to: paneView)
                 paneView.removeHostedSubviews(
                     keeping: host,
-                    shouldRemove: shouldRemoveHostedSubview
+                    shouldRemove: hostLifecycleOwner.shouldRemoveHostedSubview
                 )
             } else {
                 paneView.clearSplitControls()
-                clearSplitPaneHost(tab.id)
+                hostLifecycleOwner.clearSplitPaneHost(tab.id)
             }
         }
 
-        clearSinglePane()
+        hostLifecycleOwner.clearSinglePane()
     }
 
     private func restoreFocusIfNeeded(for tabId: UUID?) {
         guard webViewCoordinator.hasActiveHistorySwipe(in: windowState.id) == false else { return }
         guard let tabId,
               let window = view.window,
-              let host = displayedHost(for: tabId),
+              let host = hostLifecycleOwner.displayedHost(for: tabId),
               host.window === window
         else {
             return
@@ -489,13 +502,13 @@ final class WindowWebContentController: NSViewController {
             return
         }
 
-        if displayedHost(for: currentTab.id) == nil,
+        if hostLifecycleOwner.displayedHost(for: currentTab.id) == nil,
            let displayState = pendingDisplayState ?? appliedDisplayState {
             apply(displayState: displayState, currentTab: currentTab)
             appliedDisplayState = displayState
         }
 
-        guard let host = displayedHost(for: currentTab.id),
+        guard let host = hostLifecycleOwner.displayedHost(for: currentTab.id),
               host.webView === webView
         else {
             return
@@ -534,17 +547,17 @@ final class WindowWebContentController: NSViewController {
 
     private func webViewHost(for tab: Tab, slot: WindowWebContentPaneSlot) -> SumiWebViewContainerView? {
         guard tab.requiresPrimaryWebView else {
-            clearPaneHost(slot)
+            hostLifecycleOwner.clearPaneHost(slot)
             return nil
         }
         let webView = webViewCoordinator.getWebView(for: tab.id, in: windowState.id)
             ?? webViewCoordinator.getOrCreateWebView(for: tab, in: windowState.id)
         guard let webView else {
-            clearPaneHost(slot)
+            hostLifecycleOwner.clearPaneHost(slot)
             return nil
         }
 
-        if let host = hostRegistry.host(for: slot),
+        if let host = hostLifecycleOwner.host(for: slot),
            host.tabID == tab.id,
            host.webView === webView {
             return host
@@ -555,38 +568,96 @@ final class WindowWebContentController: NSViewController {
             in: windowState.id,
             expectedWebView: webView
         ) {
-            clearPaneHost(slot)
-            configureViewportStyle(on: promotedHost)
-            hostRegistry.setHost(promotedHost, for: slot)
+            hostLifecycleOwner.replaceHost(promotedHost, in: slot)
             return promotedHost
         }
 
-        if let displayedHost = hostRegistry.displayedHost(for: tab.id),
+        if let displayedHost = hostLifecycleOwner.displayedHost(for: tab.id),
            displayedHost.webView === webView {
-            clearPaneHost(slot)
-            configureViewportStyle(on: displayedHost)
-            hostRegistry.clearReferences(to: displayedHost)
-            hostRegistry.setHost(displayedHost, for: slot)
+            hostLifecycleOwner.moveDisplayedHost(displayedHost, to: slot)
             return displayedHost
         }
 
         if webViewCoordinator.isWebViewProtectedFromCompositorMutation(webView),
-           let existingHost = hostRegistry.protectedHost(for: webView) {
-            clearPaneHost(slot)
-            configureViewportStyle(on: existingHost)
-            hostRegistry.clearReferences(to: existingHost)
-            hostRegistry.setHost(existingHost, for: slot)
+           let existingHost = hostLifecycleOwner.protectedHost(for: webView) {
+            hostLifecycleOwner.moveDisplayedHost(existingHost, to: slot)
             return existingHost
         }
 
-        clearPaneHost(slot)
         let host = SumiWebViewContainerView(tab: tab, webView: webView)
-        configureViewportStyle(on: host)
-        hostRegistry.setHost(host, for: slot)
+        hostLifecycleOwner.replaceHost(host, in: slot)
         return host
     }
 
-    private func attach(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
+    private func scheduleSplitRepair(groupId: UUID) {
+        guard pendingSplitRepairGroupId != groupId else { return }
+        pendingSplitRepairGroupId = groupId
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.browserContext.removeSplitGroup(id: groupId)
+            self.pendingSplitRepairGroupId = nil
+        }
+    }
+}
+
+@MainActor
+private final class WindowWebContentHostLifecycleOwner {
+    private let containerView: ContainerView
+    private let webViewCoordinator: WebViewCoordinator
+    private let windowID: UUID
+    private let hostRegistry = WindowWebContentHostRegistry()
+    private var chromeGeometry: BrowserChromeGeometry
+    private var contentBackgroundColor: Color
+
+    var splitPaneTabIds: [UUID] {
+        hostRegistry.splitPaneTabIds
+    }
+
+    init(
+        containerView: ContainerView,
+        webViewCoordinator: WebViewCoordinator,
+        windowID: UUID,
+        chromeGeometry: BrowserChromeGeometry,
+        contentBackgroundColor: Color
+    ) {
+        self.containerView = containerView
+        self.webViewCoordinator = webViewCoordinator
+        self.windowID = windowID
+        self.chromeGeometry = chromeGeometry
+        self.contentBackgroundColor = contentBackgroundColor
+    }
+
+    func host(for slot: WindowWebContentPaneSlot) -> SumiWebViewContainerView? {
+        hostRegistry.host(for: slot)
+    }
+
+    func displayedHost(for tabId: UUID) -> SumiWebViewContainerView? {
+        hostRegistry.displayedHost(for: tabId)
+    }
+
+    func displayedHosts(excluding incomingTabIDs: Set<UUID>) -> [SumiWebViewContainerView] {
+        hostRegistry.displayedHosts(excluding: incomingTabIDs)
+    }
+
+    func protectedHost(for webView: WKWebView) -> SumiWebViewContainerView? {
+        hostRegistry.protectedHost(for: webView)
+    }
+
+    func replaceHost(_ host: SumiWebViewContainerView, in slot: WindowWebContentPaneSlot) {
+        clearPaneHost(slot)
+        configureViewportStyle(on: host)
+        hostRegistry.setHost(host, for: slot)
+    }
+
+    func moveDisplayedHost(_ host: SumiWebViewContainerView, to slot: WindowWebContentPaneSlot) {
+        clearPaneHost(slot)
+        configureViewportStyle(on: host)
+        hostRegistry.clearReferences(to: host)
+        hostRegistry.setHost(host, for: slot)
+    }
+
+    func attach(_ host: SumiWebViewContainerView, to paneView: PaneContainerView) {
         let isProtected = webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView)
         performWithoutImplicitAnimations {
             hostRegistry.removeParkedProtectedHost(for: host.webView)
@@ -600,16 +671,16 @@ final class WindowWebContentController: NSViewController {
             host.frame = paneView.bounds
             host.autoresizingMask = [.width, .height]
             configureViewportStyle(on: host)
-            
+
             // Temporary drawsBackground = false transition gate to guarantee zero white flashes
             host.webView.setValue(false, forKey: "drawsBackground")
-            
+
             host.attachDisplayedContentIfNeeded()
             host.isHidden = false
             paneView.layoutSubtreeIfNeeded()
             host.layoutSubtreeIfNeeded()
         }
-        
+
         let webView = host.webView
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak webView] in
             webView?.setValue(true, forKey: "drawsBackground")
@@ -618,21 +689,10 @@ final class WindowWebContentController: NSViewController {
         if isProtected {
             hostRegistry.parkProtectedHost(host)
         }
-        webViewCoordinator.completePromotedHostAttachment(for: host.tabID, in: windowState.id)
+        webViewCoordinator.completePromotedHostAttachment(for: host.tabID, in: windowID)
     }
 
-    private func performWithoutImplicitAnimations(_ updates: () -> Void) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0
-            context.allowsImplicitAnimation = false
-            updates()
-        }
-        CATransaction.commit()
-    }
-
-    private func clearPaneHost(_ slot: WindowWebContentPaneSlot) {
+    func clearPaneHost(_ slot: WindowWebContentPaneSlot) {
         switch slot {
         case .single:
             clearSinglePane()
@@ -641,7 +701,7 @@ final class WindowWebContentController: NSViewController {
         }
     }
 
-    private func clearSinglePane() {
+    func clearSinglePane() {
         if let host = hostRegistry.removeSinglePaneHost() {
             removeHostFromDisplay(host)
         }
@@ -651,7 +711,7 @@ final class WindowWebContentController: NSViewController {
         )
     }
 
-    private func clearSplitPaneHost(_ tabId: UUID) {
+    func clearSplitPaneHost(_ tabId: UUID) {
         if let host = hostRegistry.removeSplitPaneHost(for: tabId) {
             removeHostFromDisplay(host)
         }
@@ -664,23 +724,23 @@ final class WindowWebContentController: NSViewController {
         }
     }
 
-    private func clearAllSplitPaneHosts() {
+    func clearAllSplitPaneHosts() {
         for tabId in hostRegistry.splitPaneTabIds {
             clearSplitPaneHost(tabId)
         }
         containerView.clearSplitTree()
     }
 
-    private func removeHostFromDisplay(_ host: SumiWebViewContainerView) {
-        if webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView) {
-            parkProtectedHost(host)
-        } else {
-            hostRegistry.removeParkedProtectedHost(for: host.webView)
-            host.removeFromSuperview()
-        }
+    func prepareForVisualHandoff(_ host: SumiWebViewContainerView) {
+        hostRegistry.clearReferences(to: host)
+        hostRegistry.parkProtectedHost(host)
     }
 
-    private func shouldRemoveHostedSubview(_ subview: NSView) -> Bool {
+    func removeParkedProtectedHost(for webViewID: ObjectIdentifier) {
+        hostRegistry.removeParkedProtectedHost(for: webViewID)
+    }
+
+    func shouldRemoveHostedSubview(_ subview: NSView) -> Bool {
         guard let host = subview as? SumiWebViewContainerView else {
             return true
         }
@@ -692,29 +752,42 @@ final class WindowWebContentController: NSViewController {
         return true
     }
 
-    private func parkProtectedHost(_ host: SumiWebViewContainerView) {
-        hostRegistry.parkProtectedHost(host)
-        host.isHidden = true
-    }
-
-    private func displayedHost(for tabId: UUID) -> SumiWebViewContainerView? {
-        hostRegistry.displayedHost(for: tabId)
-    }
-
-    private func missingPreparedWebViews(for visibleTabIds: Set<UUID>) -> Bool {
+    func missingPreparedWebViews(
+        for visibleTabIds: Set<UUID>,
+        browserContext: any WindowWebContentBrowserContext
+    ) -> Bool {
         visibleTabIds.contains { tabId in
             if let tab = browserContext.tab(for: tabId),
                tab.requiresPrimaryWebView == false {
                 return false
             }
-            return webViewCoordinator.getWebView(for: tabId, in: windowState.id) == nil
+            return webViewCoordinator.getWebView(for: tabId, in: windowID) == nil
         }
     }
 
-    private func updateDisplayedHostViewportStyles() {
+    func updateViewportStyle(
+        chromeGeometry: BrowserChromeGeometry,
+        contentBackgroundColor: Color
+    ) {
+        self.chromeGeometry = chromeGeometry
+        self.contentBackgroundColor = contentBackgroundColor
         for host in hostRegistry.displayedHosts {
             configureViewportStyle(on: host)
         }
+    }
+
+    private func removeHostFromDisplay(_ host: SumiWebViewContainerView) {
+        if webViewCoordinator.isWebViewProtectedFromCompositorMutation(host.webView) {
+            parkProtectedHost(host)
+        } else {
+            hostRegistry.removeParkedProtectedHost(for: host.webView)
+            host.removeFromSuperview()
+        }
+    }
+
+    private func parkProtectedHost(_ host: SumiWebViewContainerView) {
+        hostRegistry.parkProtectedHost(host)
+        host.isHidden = true
     }
 
     private func configureViewportStyle(on host: SumiWebViewContainerView) {
@@ -725,15 +798,15 @@ final class WindowWebContentController: NSViewController {
         host.layer?.backgroundColor = nsColor.cgColor
     }
 
-    private func scheduleSplitRepair(groupId: UUID) {
-        guard pendingSplitRepairGroupId != groupId else { return }
-        pendingSplitRepairGroupId = groupId
-
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.browserContext.removeSplitGroup(id: groupId)
-            self.pendingSplitRepairGroupId = nil
+    private func performWithoutImplicitAnimations(_ updates: () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            updates()
         }
+        CATransaction.commit()
     }
 }
 

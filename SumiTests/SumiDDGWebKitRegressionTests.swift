@@ -936,7 +936,11 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
         XCTAssertTrue(compositorApply.contains("beginSinglePaneVisualHandoffIfNeeded"))
         XCTAssertTrue(compositorApply.contains("beginVisualHandoffCovers(excluding: Set(group.tabIds))"))
-        XCTAssertTrue(compositorSource.contains("guard displayedHost(for: tab.id) == nil else { return false }"))
+        XCTAssertTrue(
+            compositorSource.contains(
+                "guard hostLifecycleOwner.displayedHost(for: tab.id) == nil else { return false }"
+            )
+        )
 
         let coverRelease = try sourceSlice(
             coverSource,
@@ -960,9 +964,9 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let webViewHost = try sourceSlice(
             compositorSource,
             from: "private func webViewHost(for tab: Tab, slot: WindowWebContentPaneSlot)",
-            to: "private func attach(_ host: SumiWebViewContainerView"
+            to: "private func scheduleSplitRepair(groupId: UUID)"
         )
-        XCTAssertTrue(webViewHost.contains("if let displayedHost = hostRegistry.displayedHost(for: tab.id)"))
+        XCTAssertTrue(webViewHost.contains("if let displayedHost = hostLifecycleOwner.displayedHost(for: tab.id)"))
     }
 
     func testWebsiteCompositorVisualHandoffOwnerKeepsPresentationOrderingExplicit() throws {
@@ -988,7 +992,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             encoding: .utf8
         )
 
-        XCTAssertTrue(source.contains("private let hostRegistry = WindowWebContentHostRegistry()"))
+        XCTAssertTrue(source.contains("private lazy var hostLifecycleOwner = WindowWebContentHostLifecycleOwner("))
+        XCTAssertTrue(source.contains("private final class WindowWebContentHostLifecycleOwner"))
         XCTAssertTrue(source.contains("WindowWebContentVisualHandoffCoverController("))
         XCTAssertTrue(source.contains("private final class ContainerView: NSView, WindowWebContentVisualHandoffCoverContainer"))
         XCTAssertTrue(registrySource.contains("enum WindowWebContentPaneSlot"))
@@ -1009,7 +1014,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             releaseCallback,
             [
                 "containerView.removeVisualHandoffCover(host)",
-                "hostRegistry.removeParkedProtectedHost(for: webViewID)",
+                "hostLifecycleOwner.removeParkedProtectedHost(for: webViewID)",
                 "webViewCoordinator.finishVisualHandoffProtection(for: host.webView)"
             ]
         )
@@ -1023,9 +1028,21 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             visualHandoff,
             [
                 "webViewCoordinator.beginVisualHandoffProtection(for: host.webView)",
-                "hostRegistry.clearReferences(to: host)",
-                "hostRegistry.parkProtectedHost(host)",
+                "hostLifecycleOwner.prepareForVisualHandoff(host)",
                 "visualHandoffCovers.placeCover(host"
+            ]
+        )
+        let hostOwner = try sourceSlice(
+            source,
+            from: "private final class WindowWebContentHostLifecycleOwner",
+            to: "struct TabCompositorWrapper"
+        )
+        try assertTokenOrder(
+            hostOwner,
+            [
+                "func prepareForVisualHandoff(_ host: SumiWebViewContainerView)",
+                "hostRegistry.clearReferences(to: host)",
+                "hostRegistry.parkProtectedHost(host)"
             ]
         )
 
@@ -1063,9 +1080,9 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         let attach = try sourceSlice(
-            source,
-            from: "private func attach(_ host: SumiWebViewContainerView",
-            to: "private func performWithoutImplicitAnimations"
+            String(hostOwner),
+            from: "func attach(_ host: SumiWebViewContainerView",
+            to: "func clearPaneHost(_ slot: WindowWebContentPaneSlot)"
         )
         try assertTokenOrder(
             attach,
@@ -2036,7 +2053,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(featureSource.contains("layer.maskedCorners = radii.caCornerMask"))
         XCTAssertTrue(featureSource.contains("setAccessibilityElement(false)"))
         XCTAssertTrue(featureSource.contains("setAccessibilityHidden(true)"))
-        XCTAssertTrue(featureSource.contains("updateDisplayedHostViewportStyles()"))
+        XCTAssertTrue(featureSource.contains("hostLifecycleOwner.updateViewportStyle("))
         XCTAssertFalse(featureSource.contains("BrowserContentCornerCutoutView"))
         XCTAssertFalse(featureSource.contains("BrowserContentViewportCutoutBackgroundSampler"))
         XCTAssertFalse(featureSource.contains("drawViewportShadow"))
