@@ -1157,6 +1157,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let cleanupOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewTrackedCleanupExecutionOwner.swift"
+            ),
+            encoding: .utf8
+        )
 
         let callSites = [
             (
@@ -1212,20 +1218,29 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         try assertTokenOrder(
             unprotectedHelper,
             [
-                "finishDestructiveDataCleanupNavigation(on: webView)",
-                "removeWebViewFromContainers(webView)",
-                "unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)",
+                "trackedCleanupExecutionOwner.cleanupUnprotectedTrackedWebView(",
+                "runtime: trackedCleanupExecutionRuntime()"
+            ]
+        )
+        XCTAssertFalse(unprotectedHelper.contains("refreshPrimaryTrackedWebView"))
+
+        try assertTokenOrder(
+            cleanupOwnerSource[...],
+            [
+                "runtime.finishDestructiveCleanupSuppression(webView)",
+                "runtime.removeFromContainers(webView)",
+                "trackingLifecycleOwner.unregisterTrackedWebViewSlot(",
                 "tab.cleanupCloneWebView(webView)"
             ]
         )
         try assertTokenOrder(
-            unprotectedHelper,
+            cleanupOwnerSource[...],
             [
-                "unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)",
-                "performFallbackWebViewCleanup("
+                "trackingLifecycleOwner.unregisterTrackedWebViewSlot(",
+                "runtime.fallbackCleanup(webView, owner.tabID, browserManager)"
             ]
         )
-        XCTAssertFalse(unprotectedHelper.contains("refreshPrimaryTrackedWebView"))
+        XCTAssertFalse(cleanupOwnerSource.contains("refreshPrimaryTrackedWebView"))
     }
 
     func testDeferredProtectedCommandBufferCollapsesDuplicateKeysInPlace() {
@@ -1783,6 +1798,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let cleanupOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewTrackedCleanupExecutionOwner.swift"
+            ),
+            encoding: .utf8
+        )
 
         let suppressionSource = try sourceSlice(
             ownerSource,
@@ -1816,16 +1837,16 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(coordinatorClassSource.contains("private var blankingWebViewIDs"))
 
         let cleanupSource = try sourceSlice(
-            coordinatorSource,
-            from: "private func cleanupUnprotectedTrackedWebView(",
-            to: "@discardableResult\n    private func closeTrackedWebViewFromWebKit"
+            cleanupOwnerSource,
+            from: "func cleanupUnprotectedTrackedWebView(",
+            to: "    }\n}"
         )
         try assertTokenOrder(
             cleanupSource,
             [
-                "finishDestructiveDataCleanupNavigation(on: webView)",
-                "removeWebViewFromContainers(webView)",
-                "unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)"
+                "runtime.finishDestructiveCleanupSuppression(webView)",
+                "runtime.removeFromContainers(webView)",
+                "trackingLifecycleOwner.unregisterTrackedWebViewSlot("
             ]
         )
 

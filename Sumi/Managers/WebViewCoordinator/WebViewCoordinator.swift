@@ -57,6 +57,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private let webViewTrackingLifecycleOwner = WebViewTrackingLifecycleOwner()
 
     @ObservationIgnored
+    private let trackedCleanupExecutionOwner = WebViewTrackedCleanupExecutionOwner()
+
+    @ObservationIgnored
     weak var browserManager: BrowserManager?
 
     @ObservationIgnored
@@ -1097,19 +1100,39 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         tab: Tab?,
         browserManager: BrowserManager?
     ) {
-        finishDestructiveDataCleanupNavigation(on: webView)
-        removeWebViewFromContainers(webView)
-        _ = unregisterTrackedWebViewSlot(owner: owner, expectedWebView: webView)
+        trackedCleanupExecutionOwner.cleanupUnprotectedTrackedWebView(
+            webView,
+            owner: owner,
+            tab: tab,
+            browserManager: browserManager,
+            webViewRegistry: webViewRegistry,
+            trackingLifecycleOwner: webViewTrackingLifecycleOwner,
+            runtime: trackedCleanupExecutionRuntime()
+        )
+    }
 
-        if let tab {
-            tab.cleanupCloneWebView(webView)
-        } else {
-            performFallbackWebViewCleanup(
-                webView,
-                tabId: owner.tabID,
-                browserManager: browserManager
-            )
-        }
+    private func trackedCleanupExecutionRuntime() -> WebViewTrackedCleanupExecutionOwner.Runtime {
+        WebViewTrackedCleanupExecutionOwner.Runtime(
+            finishDestructiveCleanupSuppression: { [self] webView in
+                finishDestructiveDataCleanupNavigation(on: webView)
+            },
+            removeFromContainers: { [self] webView in
+                removeWebViewFromContainers(webView)
+            },
+            uninstallRuntimeObservationsIfUntracked: { [self] webView in
+                uninstallMediaProtectionObservationsIfUntracked(webView)
+            },
+            pruneInvalidDeferredCommands: { [self] reason in
+                pruneInvalidDeferredProtectedCommands(reason: reason)
+            },
+            fallbackCleanup: { [self] webView, tabID, browserManager in
+                performFallbackWebViewCleanup(
+                    webView,
+                    tabId: tabID,
+                    browserManager: browserManager
+                )
+            }
+        )
     }
 
     @discardableResult
