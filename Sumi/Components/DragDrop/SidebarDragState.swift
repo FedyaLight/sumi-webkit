@@ -2,20 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-private enum SidebarDragGeometryMutationKey: Hashable {
-    case page(SidebarPageGeometryKey)
-    case section(SidebarSectionGeometryKey)
-    case folder(UUID, SidebarFolderDragRegion)
-    case topLevelPinnedItem(UUID)
-    case folderChild(UUID)
-    case regularList(UUID)
-    case essentials(UUID)
-}
-
-private struct SidebarDragGeometryMutation {
-    let apply: @MainActor (SidebarDragState) -> Void
-}
-
 @MainActor
 final class SidebarDragState: ObservableObject {
     static let shared = SidebarDragState()
@@ -66,8 +52,7 @@ final class SidebarDragState: ObservableObject {
     private var pendingGeometryRefreshRequested = false
     private var isGeometryRefreshFlushScheduled = false
     private var isGeometrySnapshotPublishScheduled = false
-    private var deferredGeometryMutations: [SidebarDragGeometryMutationKey: SidebarDragGeometryMutation] = [:]
-    private var isDeferredGeometryMutationFlushScheduled = false
+    private let geometryMutationBuffer = SidebarDragGeometryMutationBuffer()
     
     init() {}
 
@@ -157,31 +142,13 @@ final class SidebarDragState: ObservableObject {
 
     private func enqueueDeferredGeometryMutation(
         key: SidebarDragGeometryMutationKey,
-        reporterSection: String,
         apply: @escaping @MainActor (SidebarDragState) -> Void
     ) {
-        _ = reporterSection
-
-        deferredGeometryMutations[key] = SidebarDragGeometryMutation(apply: apply)
-
-        guard !isDeferredGeometryMutationFlushScheduled else { return }
-        isDeferredGeometryMutationFlushScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.flushDeferredGeometryMutations()
-        }
+        geometryMutationBuffer.enqueue(key: key, state: self, apply: apply)
     }
 
     private func flushDeferredGeometryMutations() {
-        isDeferredGeometryMutationFlushScheduled = false
-        guard !deferredGeometryMutations.isEmpty else { return }
-
-        let mutations = Array(deferredGeometryMutations.values)
-        deferredGeometryMutations = [:]
-
-        for mutation in mutations {
-            mutation.apply(self)
-        }
+        geometryMutationBuffer.flush(into: self)
     }
 
     func flushDeferredGeometryForDragStart() {
@@ -197,8 +164,7 @@ final class SidebarDragState: ObservableObject {
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
-            key: .page(SidebarPageGeometryKey(spaceId: spaceId, profileId: profileId)),
-            reporterSection: "page"
+            key: .page(SidebarPageGeometryKey(spaceId: spaceId, profileId: profileId))
         ) { state in
             state.applyPageGeometry(
                 spaceId: spaceId,
@@ -217,8 +183,7 @@ final class SidebarDragState: ObservableObject {
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
-            key: .section(SidebarSectionGeometryKey(spaceId: spaceId, section: section)),
-            reporterSection: "section"
+            key: .section(SidebarSectionGeometryKey(spaceId: spaceId, section: section))
         ) { state in
             state.applySectionFrame(
                 spaceId: spaceId,
@@ -242,8 +207,7 @@ final class SidebarDragState: ObservableObject {
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
-            key: .folder(folderId, region),
-            reporterSection: "folder"
+            key: .folder(folderId, region)
         ) { state in
             state.applyFolderDropTarget(
                 folderId: folderId,
@@ -269,8 +233,7 @@ final class SidebarDragState: ObservableObject {
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
-            key: .topLevelPinnedItem(itemId),
-            reporterSection: "topLevelPinned"
+            key: .topLevelPinnedItem(itemId)
         ) { state in
             state.applyTopLevelPinnedItemTarget(
                 itemId: itemId,
@@ -292,8 +255,7 @@ final class SidebarDragState: ObservableObject {
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
-            key: .folderChild(childId),
-            reporterSection: "folderChild"
+            key: .folderChild(childId)
         ) { state in
             state.applyFolderChildDropTarget(
                 folderId: folderId,
@@ -313,8 +275,7 @@ final class SidebarDragState: ObservableObject {
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
-            key: .regularList(spaceId),
-            reporterSection: "regular"
+            key: .regularList(spaceId)
         ) { state in
             state.applyRegularListHitTarget(
                 spaceId: spaceId,
@@ -344,8 +305,7 @@ final class SidebarDragState: ObservableObject {
         generation: Int
     ) {
         enqueueDeferredGeometryMutation(
-            key: .essentials(spaceId),
-            reporterSection: "essentials"
+            key: .essentials(spaceId)
         ) { state in
             state.applyEssentialsLayoutMetrics(
                 spaceId: spaceId,

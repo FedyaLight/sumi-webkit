@@ -132,6 +132,53 @@ struct SidebarRuntimeGeometryStore {
 
 }
 
+enum SidebarDragGeometryMutationKey: Hashable {
+    case page(SidebarPageGeometryKey)
+    case section(SidebarSectionGeometryKey)
+    case folder(UUID, SidebarFolderDragRegion)
+    case topLevelPinnedItem(UUID)
+    case folderChild(UUID)
+    case regularList(UUID)
+    case essentials(UUID)
+}
+
+private struct SidebarDragGeometryMutation {
+    let apply: @MainActor (SidebarDragState) -> Void
+}
+
+@MainActor
+final class SidebarDragGeometryMutationBuffer {
+    private var mutations: [SidebarDragGeometryMutationKey: SidebarDragGeometryMutation] = [:]
+    private var isFlushScheduled = false
+
+    func enqueue(
+        key: SidebarDragGeometryMutationKey,
+        state: SidebarDragState,
+        apply: @escaping @MainActor (SidebarDragState) -> Void
+    ) {
+        mutations[key] = SidebarDragGeometryMutation(apply: apply)
+
+        guard !isFlushScheduled else { return }
+        isFlushScheduled = true
+        DispatchQueue.main.async { [weak self, weak state] in
+            guard let self, let state else { return }
+            self.flush(into: state)
+        }
+    }
+
+    func flush(into state: SidebarDragState) {
+        isFlushScheduled = false
+        guard !mutations.isEmpty else { return }
+
+        let pendingMutations = Array(mutations.values)
+        mutations = [:]
+
+        for mutation in pendingMutations {
+            mutation.apply(state)
+        }
+    }
+}
+
 struct SidebarGeometrySnapshot: Equatable {
     var pageGeometryByKey: [SidebarPageGeometryKey: SidebarPageGeometryMetrics] = [:]
     var sectionFramesBySpace: [SidebarSectionGeometryKey: CGRect] = [:]

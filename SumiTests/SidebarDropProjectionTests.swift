@@ -575,6 +575,34 @@ final class SidebarDropProjectionTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testSidebarDragGeometryMutationBufferCoalescesLatestMutationForKey() {
+        let buffer = SidebarDragGeometryMutationBuffer()
+        let state = SidebarDragState()
+        let spaceId = UUID()
+        var appliedValues: [Int] = []
+
+        buffer.enqueue(key: .regularList(spaceId), state: state) { _ in
+            appliedValues.append(1)
+        }
+        buffer.enqueue(key: .regularList(spaceId), state: state) { _ in
+            appliedValues.append(2)
+        }
+        buffer.enqueue(
+            key: .section(SidebarSectionGeometryKey(spaceId: spaceId, section: .spacePinned)),
+            state: state
+        ) { _ in
+            appliedValues.append(3)
+        }
+
+        buffer.flush(into: state)
+
+        XCTAssertEqual(appliedValues.count, 2)
+        XCTAssertTrue(appliedValues.contains(2))
+        XCTAssertTrue(appliedValues.contains(3))
+        XCTAssertFalse(appliedValues.contains(1))
+    }
+
     private func makeScrollView(frame: NSRect) -> NSScrollView {
         let scrollView = NSScrollView(frame: frame)
         scrollView.borderType = .noBorder
