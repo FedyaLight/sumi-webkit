@@ -7,6 +7,7 @@ struct GlanceOverlayConfiguration {
     let sidebarPosition: SidebarPosition
     let cornerRadius: CGFloat
     let browserContentCornerRadius: CGFloat
+    let browserContentInset: CGFloat
     let accentColor: NSColor
     let surfaceColor: NSColor
     let reduceMotion: Bool
@@ -20,6 +21,7 @@ extension GlanceOverlayConfiguration: Equatable {
             && lhs.sidebarPosition == rhs.sidebarPosition
             && lhs.cornerRadius == rhs.cornerRadius
             && lhs.browserContentCornerRadius == rhs.browserContentCornerRadius
+            && lhs.browserContentInset == rhs.browserContentInset
             && lhs.accentColor.isEqual(rhs.accentColor)
             && lhs.surfaceColor.isEqual(rhs.surfaceColor)
             && lhs.reduceMotion == rhs.reduceMotion

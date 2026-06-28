@@ -1,8 +1,7 @@
-import AppKit
+import CoreGraphics
 
 struct GlanceOverlayLayout {
     enum Metrics {
-        static let webAreaHorizontalInset: CGFloat = BrowserChromeGeometry.elementSeparation
         static let webAreaVerticalInset: CGFloat = 12
         static let minimumContentWidth: CGFloat = 320
         static let contentWidthFraction: CGFloat = 0.8
@@ -40,8 +39,9 @@ struct GlanceOverlayLayout {
     ) -> CGRect {
         guard bounds.width > 0, bounds.height > 0 else { return .zero }
 
+        let horizontalInset = max(0, configuration.browserContentInset)
         var webArea = bounds.insetBy(
-            dx: Metrics.webAreaHorizontalInset,
+            dx: horizontalInset,
             dy: Metrics.webAreaVerticalInset
         )
         if configuration.isSidebarVisible {
@@ -66,21 +66,22 @@ struct GlanceOverlayLayout {
             in: bounds,
             isSidebarVisible: configuration.isSidebarVisible,
             sidebarWidth: configuration.sidebarWidth,
-            sidebarPosition: configuration.sidebarPosition
+            sidebarPosition: configuration.sidebarPosition,
+            elementSeparation: configuration.browserContentInset
         )
     }
 
     func startContentFrame(
-        for session: GlanceSession,
-        in rootView: NSView,
+        originFrameInRootBounds: CGRect,
+        rootBounds: CGRect,
         targetFrame: CGRect
     ) -> CGRect {
-        let converted = rootView.convert(session.originRectInWindow, from: nil).standardized
+        let converted = originFrameInRootBounds.standardized
         guard converted.width > 0,
               converted.height > 0,
-              rootView.bounds.intersects(converted)
+              rootBounds.intersects(converted)
         else {
-            return clampedOriginFrame(converted, in: rootView.bounds, fallback: targetFrame)
+            return clampedOriginFrame(converted, in: rootBounds, fallback: targetFrame)
         }
         return converted
     }
@@ -136,20 +137,22 @@ struct GlanceOverlayLayout {
         )
     }
 
-    func swiftUIContentFrame(_ frame: CGRect?, in rootView: NSView?) -> CGRect? {
-        guard let frame,
-              let rootView
-        else {
+    func swiftUIContentFrame(
+        _ frame: CGRect?,
+        rootBoundsHeight: CGFloat,
+        isRootViewFlipped: Bool
+    ) -> CGRect? {
+        guard let frame else {
             return nil
         }
 
-        if rootView.isFlipped {
+        if isRootViewFlipped {
             return frame
         }
 
         return CGRect(
             x: frame.minX,
-            y: rootView.bounds.height - frame.maxY,
+            y: rootBoundsHeight - frame.maxY,
             width: frame.width,
             height: frame.height
         )
@@ -183,7 +186,7 @@ enum GlancePromotionTargetLayout {
         isSidebarVisible: Bool,
         sidebarWidth: CGFloat,
         sidebarPosition: SidebarPosition,
-        elementSeparation: CGFloat = BrowserChromeGeometry.elementSeparation
+        elementSeparation: CGFloat
     ) -> CGRect {
         guard bounds.width > 0, bounds.height > 0 else { return .zero }
 

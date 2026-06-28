@@ -362,8 +362,8 @@ final class GlanceOverlayController: NSObject {
 
         let targetFrame = overlayLayout.targetContentFrame(in: rootView.bounds, configuration: configuration)
         let startFrame = overlayLayout.startContentFrame(
-            for: session,
-            in: rootView,
+            originFrameInRootBounds: rootView.convert(session.originRectInWindow, from: nil),
+            rootBounds: rootView.bounds,
             targetFrame: targetFrame
         )
         publishContentFrame(targetFrame, in: rootView)
@@ -458,8 +458,8 @@ final class GlanceOverlayController: NSObject {
 
         let targetFrame = overlayLayout.targetContentFrame(in: rootView.bounds, configuration: configuration)
         let endFrame = overlayLayout.startContentFrame(
-            for: session,
-            in: rootView,
+            originFrameInRootBounds: rootView.convert(session.originRectInWindow, from: nil),
+            rootBounds: rootView.bounds,
             targetFrame: targetFrame
         )
         let duration = configuration.reduceMotion ? Motion.reducedMotionDuration : Motion.glanceDuration
@@ -772,7 +772,13 @@ final class GlanceOverlayController: NSObject {
               let session
         else { return }
 
-        guard let swiftUIFrame = overlayLayout.swiftUIContentFrame(frame, in: rootView) else {
+        guard let rootView,
+              let swiftUIFrame = overlayLayout.swiftUIContentFrame(
+                  frame,
+                  rootBoundsHeight: rootView.bounds.height,
+                  isRootViewFlipped: rootView.isFlipped
+              )
+        else {
             manager.updateContentFrameInWindowSpace(nil, sessionID: session.id)
             return
         }
