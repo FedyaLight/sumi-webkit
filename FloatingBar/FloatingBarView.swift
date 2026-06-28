@@ -336,7 +336,6 @@ struct FloatingBarView: View {
                 }
                 Spacer()
             }
-
         }
         .allowsHitTesting(isVisible)
         .opacity(isVisible ? 1.0 : 0.0)
@@ -391,8 +390,7 @@ struct FloatingBarView: View {
 
     private func availableWindowWidth(from layoutWidth: CGFloat) -> CGFloat {
         if let contentWidth = windowState.window?.contentView?.bounds.width,
-           contentWidth > 0
-        {
+           contentWidth > 0 {
             return contentWidth
         }
         if layoutWidth > 0 {
@@ -625,8 +623,7 @@ struct FloatingBarView: View {
         }
 
         if selectedSuggestionIndex >= 0
-            && selectedSuggestionIndex < visibleSuggestions.count
-        {
+            && selectedSuggestionIndex < visibleSuggestions.count {
             let suggestion = visibleSuggestions[selectedSuggestionIndex]
             selectSuggestion(suggestion)
         } else {
@@ -641,8 +638,7 @@ struct FloatingBarView: View {
         }
     }
 
-    private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion)
-    {
+    private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion) {
         let navigatesCurrentTab = browserManager.floatingBarCommitNavigatesCurrentTab(in: windowState)
         text = ""
         activeSiteSearch = nil
@@ -728,7 +724,6 @@ struct FloatingBarView: View {
     private func removeOutsideClickMonitor() {
         outsideClickMonitor.remove()
     }
-
 }
 
 private struct FloatingBarInlineCompletionTextField: NSViewRepresentable {
@@ -906,7 +901,7 @@ private final class FloatingBarInlineCompletionTextFieldView: NSView {
             textField.leadingAnchor.constraint(equalTo: leadingAnchor),
             textField.trailingAnchor.constraint(equalTo: trailingAnchor),
             textField.centerYAnchor.constraint(equalTo: centerYAnchor),
-            textField.heightAnchor.constraint(equalTo: heightAnchor)
+            textField.heightAnchor.constraint(equalTo: heightAnchor),
         ])
     }
 
@@ -928,8 +923,7 @@ private final class FloatingBarInlineCompletionTextFieldView: NSView {
     func focusTextFieldIfNeeded() {
         guard wantsTextFocus, let window else { return }
         if window.firstResponder !== textField,
-           window.firstResponder !== textField.currentEditor()
-        {
+           window.firstResponder !== textField.currentEditor() {
             window.makeFirstResponder(textField)
         }
     }
@@ -955,8 +949,7 @@ private final class FloatingBarInlineCompletionTextFieldView: NSView {
         }
 
         if window.firstResponder !== textField.currentEditor(),
-           window.firstResponder !== textField
-        {
+           window.firstResponder !== textField {
             DispatchQueue.main.async { [weak self] in
                 self?.focusTextField(selectAll: selectAll, remainingRetries: remainingRetries - 1)
             }

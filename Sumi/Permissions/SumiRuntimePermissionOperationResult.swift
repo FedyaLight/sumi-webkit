@@ -7,5 +7,4 @@ enum SumiRuntimePermissionOperationResult: Equatable, Hashable, Sendable {
     case deniedByRuntime(reason: String)
     case noOp
     case failed(reason: String)
-
 }

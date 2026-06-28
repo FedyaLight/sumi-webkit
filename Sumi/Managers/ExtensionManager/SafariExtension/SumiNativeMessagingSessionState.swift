@@ -61,8 +61,7 @@ enum SumiNativeMessagingSessionStateMachine {
         }
 
         if loopEvaluation.isWithinCooldown == false,
-           loopEvaluation.retryCountBucket != .none
-        {
+           loopEvaluation.retryCountBucket != .none {
             return .unknownProtocolCooldown
         }
 

@@ -41,7 +41,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .browser,
                 keywords: [
                     "quit", "url", "glance", "search", "engine",
-                    "site search", "floating bar"
+                    "site search", "floating bar",
                 ]
             )
         case .startup:
@@ -53,7 +53,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .browser,
                 keywords: [
                     "startup", "launch", "restore", "previous session",
-                    "pinned", "essential", "launcher", "homepage", "start page"
+                    "pinned", "essential", "launcher", "homepage", "start page",
                 ]
             )
         case .downloads:
@@ -65,7 +65,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .browser,
                 keywords: [
                     "downloads", "folder", "save files", "applications",
-                    "handlers", "open file", "mime", "content type"
+                    "handlers", "open file", "mime", "content type",
                 ]
             )
         case .appearance:
@@ -78,7 +78,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 keywords: [
                     "sidebar", "side", "compact spaces", "new tab",
                     "toggle button", "tab list", "button position",
-                    "hover", "preview link", "status area"
+                    "hover", "preview link", "status area",
                 ]
             )
         case .performance:
@@ -91,7 +91,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 keywords: [
                     "memory", "saver", "inactive", "deactivate", "tabs",
                     "reload", "custom delay", "essentials", "energy", "battery",
-                    "low power", "thermal", "animations", "transparency", "gradient"
+                    "low power", "thermal", "animations", "transparency", "gradient",
                 ]
             )
         case .privacy:
@@ -107,7 +107,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                     "site overrides", "rules", "privacy", "security",
                     "site settings", "permissions", "camera", "microphone",
                     "location", "notifications", "popups", "pop-ups",
-                    "autoplay", "storage access", "screen sharing"
+                    "autoplay", "storage access", "screen sharing",
                 ]
             )
         case .profiles:
@@ -119,7 +119,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .browsing,
                 keywords: [
                     "profiles", "spaces", "website data", "cookies",
-                    "cache", "local storage", "history"
+                    "cache", "local storage", "history",
                 ]
             )
         case .shortcuts:
@@ -131,7 +131,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .system,
                 keywords: [
                     "keyboard", "shortcuts", "hotkeys", "commands", "reset",
-                    "customize", "navigation"
+                    "customize", "navigation",
                 ]
             )
         case .userScripts:
@@ -152,7 +152,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .system,
                 keywords: [
                     "extensions", "webextension", "manifest", "safari",
-                    "userscripts", "uninstall"
+                    "userscripts", "uninstall",
                 ]
             )
         case .advanced:
@@ -164,7 +164,7 @@ struct SettingsPaneDescriptor: Identifiable, Hashable {
                 group: .support,
                 keywords: [
                     "data", "recovery", "backup", "export", "folder",
-                    "application support", "swiftdata"
+                    "application support", "swiftdata",
                 ]
             )
         case .about:

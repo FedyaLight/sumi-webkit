@@ -1,0 +1,159 @@
+strict: true
+baseline: .swiftlint-baseline.json
+
+included:
+  - App
+  - FloatingBar
+  - Navigation
+  - Settings
+  - Sumi
+  - UI
+  - SumiTests
+  - SumiUITests
+
+excluded:
+  - .build
+  - .diagnostics
+  - .git
+  - .swiftpm
+  - build
+  - debug-pages
+  - DerivedData
+  - docs
+  - ManualTests
+  - release
+  - Sumi.xcodeproj
+  - Vendor
+
+opt_in_rules:
+  - accessibility_label_for_image
+  - accessibility_trait_for_button
+  - array_init
+  - balanced_xctest_lifecycle
+  - closure_end_indentation
+  - closure_spacing
+  - collection_alignment
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - contains_over_range_nil_comparison
+  - discarded_notification_center_observer
+  - discouraged_assert
+  - discouraged_optional_boolean
+  - discouraged_optional_collection
+  - empty_collection_literal
+  - empty_string
+  - empty_xctest_method
+  - fatal_error_message
+  - first_where
+  - flatmap_over_map_reduce
+  - force_unwrapping
+  - identical_operands
+  - implicitly_unwrapped_optional
+  - incompatible_concurrency_annotation
+  - legacy_multiple
+  - literal_expression_end_indentation
+  - lower_acl_than_parent
+  - modifier_order
+  - no_empty_block
+  - operator_usage_whitespace
+  - orphaned_doc_comment
+  - overridden_super_call
+  - override_in_extension
+  - prefer_key_path
+  - prefer_self_type_over_type_of_self
+  - prefer_zero_over_explicit_init
+  - private_action
+  - private_outlet
+  - private_swiftui_state
+  - prohibited_interface_builder
+  - prohibited_super_call
+  - reduce_boolean
+  - reduce_into
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - sorted_first_last
+  - sorted_imports
+  - static_over_final_class
+  - toggle_bool
+  - unavailable_function
+  - unhandled_throwing_task
+  - unneeded_escaping
+  - unneeded_parentheses_in_closure_argument
+  - unneeded_throws_rethrows
+  - unowned_variable_capture
+  - unused_parameter
+  - vertical_parameter_alignment_on_call
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
+  - weak_delegate
+  - xct_specific_matcher
+  - xctfail_message
+  - yoda_condition
+
+analyzer_rules:
+  - capture_variable
+  - typesafe_array_init
+  - unused_declaration
+  - unused_import
+
+trailing_comma:
+  mandatory_comma: true
+
+line_length:
+  warning: 160
+  error: 220
+  ignores_comments: true
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_interpolated_strings: true
+
+file_length:
+  warning: 800
+  error: 1200
+  ignore_comment_only_lines: true
+
+type_body_length:
+  warning: 500
+  error: 800
+
+function_body_length:
+  warning: 80
+  error: 140
+
+function_parameter_count:
+  warning: 6
+  error: 8
+
+cyclomatic_complexity:
+  warning: 15
+  error: 25
+  ignores_case_statements: true
+
+nesting:
+  type_level:
+    warning: 3
+    error: 4
+  function_level:
+    warning: 5
+    error: 7
+
+identifier_name:
+  min_length:
+    warning: 2
+    error: 1
+  excluded:
+    - id
+    - x
+    - y
+    - z
+    - dx
+    - dy
+    - dz
+    - i
+    - j
+    - k
+    - r
+    - g
+    - b
+    - a

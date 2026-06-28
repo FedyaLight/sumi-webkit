@@ -20,7 +20,6 @@ import AppKit
 
 /// Receives dragging events when registered with `.registerForDraggedTypes` and passes them to its next responder (superview or view controller)
 class DraggingDestinationView: NSView {
-
     override func draggingEntered(_ draggingInfo: NSDraggingInfo) -> NSDragOperation {
         (nextResponder as? NSDraggingDestination)?.draggingEntered?(draggingInfo) ?? []
     }

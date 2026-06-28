@@ -67,16 +67,14 @@ final class SumiNativeMessagingAdapterRegistry {
     }
 
     func adapter(forHostBundleIdentifier hostBundleIdentifier: String)
-        -> SumiNativeMessagingProtocolAdapter?
-    {
+        -> SumiNativeMessagingProtocolAdapter? {
         let normalized = SumiCompanionAppIdentityMetadata
             .normalizedHostBundleIdentifier(hostBundleIdentifier)
         return adapters.first { $0.supports(hostBundleIdentifier: normalized) }
     }
 
     func adapter(forApplicationIdentifier applicationIdentifier: String?)
-        -> SumiNativeMessagingProtocolAdapter?
-    {
+        -> SumiNativeMessagingProtocolAdapter? {
         guard let applicationIdentifier else { return nil }
         let normalized = SumiCompanionAppIdentityMetadata
             .normalizedHostBundleIdentifier(applicationIdentifier)
@@ -104,8 +102,7 @@ final class SumiNativeMessagingAdapterRegistry {
     }
 
     func adapter(forProtocolIdentifier protocolIdentifier: String)
-        -> SumiNativeMessagingProtocolAdapter?
-    {
+        -> SumiNativeMessagingProtocolAdapter? {
         adaptersByProtocolIdentifier[protocolIdentifier]
     }
 

@@ -25,8 +25,7 @@ actor InMemoryPermissionStore: SumiPermissionStore {
         try await expireDecisions(now: Date())
 
         if let pageMemoryKey = oneTimeMemoryKey(for: key),
-           let record = records[pageMemoryKey]
-        {
+           let record = records[pageMemoryKey] {
             return record
         }
 

@@ -20,7 +20,6 @@ enum CompositorPaneDestination: String, CaseIterable {
     var viewIdentifier: NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("SumiCompositorPane.\(rawValue)")
     }
-
 }
 
 @MainActor
@@ -392,7 +391,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     // MARK: - Smart WebView Assignment (Memory Optimization)
-    
+
     /// Gets or creates a WebView for the specified tab and window.
     /// Implements smart assignment to prevent duplicate WebViews:
     /// - If no window is displaying this tab yet, creates a "primary" WebView
@@ -424,8 +423,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private func removeMatchingWebView(_ webView: WKWebView, from root: NSView) {
         for subview in Array(root.subviews) {
             if let host = subview as? SumiWebViewContainerView,
-               host.webView === webView
-            {
+               host.webView === webView {
                 host.removeFromSuperview()
             } else if subview === webView {
                 subview.removeFromSuperview()
@@ -1164,8 +1162,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         guard let browserManager = tab.browserManager else { return }
 
         if let windowState = browserManager.windowRegistry?.windows[windowId],
-           browserManager.currentTab(for: windowState)?.id == tab.id
-        {
+           browserManager.currentTab(for: windowState)?.id == tab.id {
             browserManager.extensionsModule.notifyTabActivatedIfLoaded(
                 newTab: tab,
                 previous: nil
@@ -1267,8 +1264,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         browserManager: BrowserManager
     ) -> Tab? {
         if windowState.isIncognito,
-           let ephemeralTab = windowState.ephemeralTabs.first(where: { $0.id == tabId })
-        {
+           let ephemeralTab = windowState.ephemeralTabs.first(where: { $0.id == tabId }) {
             return ephemeralTab
         }
         return browserManager.tabManager.tab(for: tabId)

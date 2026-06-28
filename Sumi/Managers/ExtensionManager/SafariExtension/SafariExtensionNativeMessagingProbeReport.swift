@@ -45,8 +45,7 @@ struct SafariExtensionNativeMessagingProbeEntry: Codable, Equatable, Sendable, I
 
 /// Per-target adapter boundary status for DEBUG compatibility reports (Raindrop / PM targets).
 struct SafariExtensionNativeMessagingAdapterCompatibilityStatus: Codable, Equatable, Sendable,
-    Identifiable
-{
+    Identifiable {
     var id: String { targetKey }
 
     let targetKey: String

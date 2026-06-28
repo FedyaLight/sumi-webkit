@@ -62,8 +62,7 @@ final class SumiBookmarkManager: ObservableObject {
         for variant in url.sumiBookmarkButtonURLVariants() {
             let key = Self.urlKey(variant)
             if let id = bookmarkIDByURLKey[key],
-               let bookmark = bookmarksByID[id]
-            {
+               let bookmark = bookmarksByID[id] {
                 return bookmark
             }
         }
@@ -172,8 +171,7 @@ final class SumiBookmarkManager: ObservableObject {
     ) throws -> SumiBookmark {
         guard Self.canBookmark(url) else { throw SumiBookmarkError.unsupportedURL }
         if let duplicate = bookmark(for: url),
-           duplicate.id != id
-        {
+           duplicate.id != id {
             throw SumiBookmarkError.duplicateURL
         }
 

@@ -15,15 +15,13 @@ struct SumiScriptsInstallPreview {
 }
 
 enum SumiScriptsRemoteInstall {
-
     static func isUserscriptURL(_ url: URL) -> Bool {
         let path = url.path.lowercased()
         let absolute = url.absoluteString.lowercased()
         if path.hasSuffix(".user.js")
             || path.hasSuffix(".user.css")
             || absolute.contains(".user.js?")
-            || absolute.contains(".user.css?")
-        {
+            || absolute.contains(".user.css?") {
             return true
         }
 
@@ -32,8 +30,7 @@ enum SumiScriptsRemoteInstall {
         if (host.contains("greasyfork.org") || host.contains("sleazyfork.org"))
             && path.contains("/scripts/")
             && path.contains("/code/")
-            && (path.contains(".user.js") || absolute.contains(".user.js"))
-        {
+            && (path.contains(".user.js") || absolute.contains(".user.js")) {
             return true
         }
 

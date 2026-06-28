@@ -11,7 +11,6 @@ struct SumiPermissionSettingsProfileContext: Equatable, Hashable, Sendable {
         self.isEphemeralProfile = profile.isEphemeral
         self.profileName = profile.name
     }
-
 }
 
 enum SumiSiteSettingsPermissionCategory: String, CaseIterable, Identifiable, Hashable, Sendable {
@@ -347,8 +346,8 @@ struct SumiSiteSettingsRecentActivityItem: Identifiable, Equatable, Sendable {
     let timestamp: Date
     let systemImage: String
     let count: Int
-    var customTitle: String? = nil
-    var customSubtitle: String? = nil
+    var customTitle: String?
+    var customSubtitle: String?
 
     var title: String {
         if let customTitle { return customTitle }

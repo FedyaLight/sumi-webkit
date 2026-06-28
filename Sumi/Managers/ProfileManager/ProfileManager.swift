@@ -6,18 +6,18 @@
 //
 
 import Foundation
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 @MainActor
 final class ProfileManager: ObservableObject {
     let context: ModelContext
     @Published var profiles: [Profile] = []
-    
+
     // MARK: - Ephemeral Profiles (Incognito)
     /// Active ephemeral profiles (one per incognito window)
-    private var ephemeralProfiles: [UUID: Profile] = [:]  // windowId -> profile
-    
+    private var ephemeralProfiles: [UUID: Profile] = [:] // windowId -> profile
+
     init(context: ModelContext) {
         self.context = context
         loadProfiles()
@@ -110,9 +110,9 @@ final class ProfileManager: ObservableObject {
             _ = createProfile(name: "Default", icon: SumiProfileIcon.defaultIcon)
         }
     }
-    
+
     // MARK: - Ephemeral Profile Management
-    
+
     /// Create a new ephemeral profile for an incognito window
     func createEphemeralProfile(for windowId: UUID) -> Profile {
         if ephemeralProfiles.isEmpty {
@@ -126,14 +126,14 @@ final class ProfileManager: ObservableObject {
         RuntimeDiagnostics.emit("🔒 [ProfileManager] Created ephemeral profile for window: \(windowId)")
         return profile
     }
-    
+
     /// Remove an ephemeral profile when incognito window closes
     /// This destroys the data store to ensure complete privacy
     func removeEphemeralProfile(for windowId: UUID) async {
         guard let profile = ephemeralProfiles[windowId] else { return }
-        
+
         RuntimeDiagnostics.emit("🔒 [ProfileManager] Removing ephemeral profile: \(profile.id) for window: \(windowId)")
-        
+
         // Remove from tracking immediately to stop tracking
         ephemeralProfiles.removeValue(forKey: windowId)
         SharedVisitedLinkStoreProvider.shared.discardStore(for: profile.id)
@@ -144,8 +144,7 @@ final class ProfileManager: ObservableObject {
 
         SumiFaviconSystem.shared.clearFaviconPartition(for: profile)
         profile.destroyEphemeralDataStore()
-        
+
         RuntimeDiagnostics.emit("🔒 [ProfileManager] Ephemeral profile removed: \(profile.id) for window: \(windowId)")
     }
-    
 }

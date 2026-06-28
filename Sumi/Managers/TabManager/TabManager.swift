@@ -110,7 +110,7 @@ class TabManager: ObservableObject {
     var pinnedTabs: [Tab] {
         activeEssentialTabs(for: runtimeContext?.currentProfileId)
     }
-    
+
     func essentialTabs(for profileId: UUID?) -> [Tab] {
         activeEssentialTabs(for: profileId)
     }
@@ -212,7 +212,7 @@ class TabManager: ObservableObject {
             return splitGroup(with: item.tabId).map { .splitGroup($0) }
         }
     }
-    
+
     // Flattened pinned across all profiles for internal ops
     var allPinnedTabsAllProfiles: [Tab] {
         activeShortcutTabs(role: .essential)
@@ -446,7 +446,7 @@ class TabManager: ObservableObject {
     // MARK: - Container Membership Helpers
     /// True if the tab is globally pinned (Essentials) in any profile.
     func isGlobalPinned(_ tab: Tab) -> Bool {
-        return allPinnedTabsAllProfiles.contains { $0.id == tab.id }
+        allPinnedTabsAllProfiles.contains { $0.id == tab.id }
     }
 
     /// True if the tab is pinned at the space level within its space.
@@ -471,7 +471,7 @@ class TabManager: ObservableObject {
     /// - Returns: The newly created regular Tab.
     @discardableResult
     func duplicateAsRegularForSplit(from source: Tab, anchor: Tab?, placeAfterAnchor: Bool = true) -> Tab {
-        return withStructuralUpdateTransaction {
+        withStructuralUpdateTransaction {
             // Resolve target space: prefer the anchor's space, else currentSpace.
             let targetSpace: Space = {
                 if let a = anchor, let sid = a.spaceId, let sp = spaces.first(where: { $0.id == sid }) { return sp }
@@ -651,7 +651,7 @@ class TabManager: ObservableObject {
             // Notify SplitViewManager about tab closure to prevent zombie state
             runtimeContext?.handleTabClosure(id)
             cancelRuntimeStatePersistence(for: id)
-        
+
             let wasCurrent = (currentTab?.id == id)
             var removed: Tab?
             var removedSpaceId: UUID?
@@ -680,8 +680,7 @@ class TabManager: ObservableObject {
                         guard let match = tabsByPin.first(where: { $0.value.id == id }) else { return nil }
                         return (windowId, match.key, match.value)
                     })
-                    .first
-            {
+                    .first {
                 transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId)
                 if transientShortcutTabsByWindow[windowId]?.isEmpty == true {
                     transientShortcutTabsByWindow.removeValue(forKey: windowId)
@@ -786,10 +785,10 @@ class TabManager: ObservableObject {
                 previous: previous
             )
         }
-        
+
         persistSelection()
     }
-    
+
     /// Update only the global tab state without triggering UI operations
     /// Used when BrowserManager.selectTab() has already handled all UI concerns
     func updateActiveTabState(_ tab: Tab) {
@@ -798,7 +797,7 @@ class TabManager: ObservableObject {
         }
         currentTab = tab
         updateActiveTabSpaceSelectionState(for: tab, refreshCurrentSpaceReference: true)
-        
+
         persistSelection()
     }
 
@@ -844,9 +843,9 @@ class TabManager: ObservableObject {
             regularInsertionIndex: regularInsertionIndex
         )
     }
-    
+
     // MARK: - Ephemeral Tab Creation (Incognito)
-    
+
     /// Create a new ephemeral tab in an incognito window
     /// These tabs are NOT persisted and are stored in window state
     @discardableResult
@@ -865,13 +864,13 @@ class TabManager: ObservableObject {
             browserManager: browserManager
         )
         newTab.profileId = profile.id
-        
+
         // Add to window's ephemeral tabs (NOT to persistent tabs)
         windowState.ephemeralTabs.append(newTab)
         windowState.currentTabId = newTab.id
-        
+
         RuntimeDiagnostics.emit("🔒 [TabManager] Created ephemeral tab: \(newTab.id) in window: \(windowState.id)")
-        
+
         return newTab
     }
 
@@ -951,7 +950,7 @@ class TabManager: ObservableObject {
             }
         }
     }
-    
+
     // Helper to safely mutate current profile's pinned array with reindexing
     var structuralPersistenceGeneration: Int = 0
     var scheduledStructuralPersistTask: Task<Void, Never>?
@@ -973,7 +972,7 @@ extension TabManager {
             await _reattachBrowserManager(bm)
         }
     }
-    
+
     private func _reattachBrowserManager(_ bm: BrowserManager) async {
         self.browserManager = bm
         if runtimeContext == nil {

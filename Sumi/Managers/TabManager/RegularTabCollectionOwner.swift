@@ -51,8 +51,7 @@ final class RegularTabCollectionOwner {
             || sourceTab.isSpacePinned
             || sourceTab.shortcutPinRole != nil
             || tabManager.isGlobalPinned(sourceTab)
-            || tabManager.isSpacePinned(sourceTab)
-        {
+            || tabManager.isSpacePinned(sourceTab) {
             return 0
         }
 

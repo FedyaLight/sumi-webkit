@@ -8,9 +8,9 @@ extension TabManager {
     }
 
     struct EssentialsTargetContext {
-        var windowState: BrowserWindowState? = nil
-        var spaceId: UUID? = nil
-        var profileId: UUID? = nil
+        var windowState: BrowserWindowState?
+        var spaceId: UUID?
+        var profileId: UUID?
 
         init(
             windowState: BrowserWindowState? = nil,
@@ -37,9 +37,9 @@ extension TabManager {
     }
 
     struct EssentialsInsertionContext {
-        var target: EssentialsTargetContext? = nil
-        var targetIndex: Int? = nil
-        var movingPinId: UUID? = nil
+        var target: EssentialsTargetContext?
+        var targetIndex: Int?
+        var movingPinId: UUID?
     }
 
     struct EssentialsInsertionPlan {
@@ -299,7 +299,7 @@ extension TabManager {
         index: Int,
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
-        return withStructuralUpdateTransaction {
+        withStructuralUpdateTransaction {
             let adjustedIndex = adjustedShortcutMoveIndex(
                 pin,
                 to: role,
@@ -340,7 +340,7 @@ extension TabManager {
         at targetIndex: Int,
         openTargetFolder: Bool = true
     ) -> ShortcutPin? {
-        return withStructuralUpdateTransaction {
+        withStructuralUpdateTransaction {
             let pin = makeShortcutPin(
                 from: tab,
                 role: role,

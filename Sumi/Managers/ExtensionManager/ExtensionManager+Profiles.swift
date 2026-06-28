@@ -10,8 +10,7 @@ extension ExtensionManager {
         browserBridgeContext = browserManager
 
         if browserManager.windowRegistry?.activeWindow == nil,
-           let currentProfile = browserManager.currentProfile
-        {
+           let currentProfile = browserManager.currentProfile {
             switchProfile(profileId: currentProfile.id)
         }
 
@@ -84,8 +83,7 @@ extension ExtensionManager {
         if let activeWindow = browserBridgeContext?.activeExtensionWindowState,
            let profileId = resolvedProfileId(for: session.tab),
            windowMatchesProfile(activeWindow, profileId: profileId),
-           let focusedAdapter = windowAdapter(for: activeWindow.id)
-        {
+           let focusedAdapter = windowAdapter(for: activeWindow.id) {
             extensionContext.didFocusWindow(focusedAdapter)
         } else {
             extensionContext.didFocusWindow(nil)
@@ -112,8 +110,7 @@ extension ExtensionManager {
 
     func notifyWindowFocused(_ windowState: BrowserWindowState) {
         if let keyWindow = NSApp.keyWindow,
-           let auxiliarySession = browserBridgeContext?.auxiliaryWindowSession(for: keyWindow)
-        {
+           let auxiliarySession = browserBridgeContext?.auxiliaryWindowSession(for: keyWindow) {
             browserBridgeContext?.focusAuxiliaryWindowSession(auxiliarySession.id)
             return
         }
@@ -121,8 +118,7 @@ extension ExtensionManager {
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             switchProfile(profileId: profile.id)
         } else if let profileId = windowState.currentProfileId,
-                  let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId })
-        {
+                  let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
             switchProfile(profileId: profile.id)
         } else if let currentProfile = browserManager?.currentProfile {
             switchProfile(profileId: currentProfile.id)
@@ -255,8 +251,7 @@ extension ExtensionManager {
         if let browserContext = browserBridgeContext,
            let activeWindow = browserContext.activeExtensionWindowState,
            let currentTab = browserContext.currentExtensionTab(in: activeWindow),
-           isTabEligibleForCurrentExtensionRuntime(currentTab)
-        {
+           isTabEligibleForCurrentExtensionRuntime(currentTab) {
             notifyTabActivated(newTab: currentTab, previous: nil)
         }
 
@@ -383,8 +378,7 @@ extension ExtensionManager {
         if forceReload == false,
            let resolvedProfileId,
            extensionRuntimeReadinessContext(for: resolvedProfileId)
-            .canUseExistingRuntime(extensionID: extensionId)
-        {
+            .canUseExistingRuntime(extensionID: extensionId) {
             markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
             return true
         }
@@ -404,16 +398,14 @@ extension ExtensionManager {
 
         if let resolvedProfileId,
            extensionRuntimeReadinessContext(for: resolvedProfileId)
-            .isReadyAfterRuntimeRequest(extensionID: extensionId)
-        {
+            .isReadyAfterRuntimeRequest(extensionID: extensionId) {
             markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
             return true
         }
 
         if let resolvedProfileId,
            extensionRuntimeReadinessContext(for: resolvedProfileId)
-            .allowsReadyControllerFallback(extensionID: extensionId)
-        {
+            .allowsReadyControllerFallback(extensionID: extensionId) {
             return true
         }
 
@@ -732,16 +724,14 @@ extension ExtensionManager {
             guard seenTabIds.insert(tab.id).inserted else { continue }
 
             if tab.webExtensionContextOverride != nil
-                || tab.webViewConfigurationOverride?.webExtensionController != nil
-            {
+                || tab.webViewConfigurationOverride?.webExtensionController != nil {
                 affectedTabs.append(tab)
                 continue
             }
 
             let liveWebViews = liveWebViews(for: tab)
             if tab.isEphemeral == false,
-               liveWebViews.isEmpty == false
-            {
+               liveWebViews.isEmpty == false {
                 affectedTabs.append(tab)
                 continue
             }
@@ -883,8 +873,7 @@ extension ExtensionManager {
         )
         guard let resolvedProfileId else { return nil }
         if let store = extensionControllersByProfile[resolvedProfileId]?
-            .configuration.defaultWebsiteDataStore
-        {
+            .configuration.defaultWebsiteDataStore {
             return store
         }
         return getExtensionDataStore(for: resolvedProfileId)
@@ -954,8 +943,7 @@ extension ExtensionManager {
         var webViews = [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
 
         if let browserManager,
-           let coordinator = browserManager.webViewCoordinator
-        {
+           let coordinator = browserManager.webViewCoordinator {
             webViews.append(contentsOf: coordinator.getAllWebViews(for: tab.id))
         }
 
@@ -1036,8 +1024,7 @@ extension ExtensionManager {
 
             if JSONSerialization.isValidJSONObject(userInfo),
                let data = try? JSONSerialization.data(withJSONObject: userInfo, options: [.sortedKeys]),
-               let string = String(data: data, encoding: .utf8)
-            {
+               let string = String(data: data, encoding: .utf8) {
                 return string
             }
 

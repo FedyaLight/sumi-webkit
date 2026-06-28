@@ -14,5 +14,4 @@ extension NSApplication {
         else { return false }
         return event.keyCode == 36 || event.keyCode == 76
     }
-
 }

@@ -20,5 +20,4 @@ extension URLBarView {
         closeZoomPopover()
         browserManager.presentURLBarHubPopover(in: windowState)
     }
-
 }

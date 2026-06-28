@@ -381,8 +381,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
         adapterRegistry: SumiNativeMessagingAdapterRegistry
     ) -> SafariExtensionNativeMessagingErrorBucket {
         if let hostBundleIdentifier,
-           adapterRegistry.adapter(forHostBundleIdentifier: hostBundleIdentifier) != nil
-        {
+           adapterRegistry.adapter(forHostBundleIdentifier: hostBundleIdentifier) != nil {
             return .none
         }
         return .companionAppProtocolUnknown
@@ -405,8 +404,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
                extensionId: installed.id,
                installedExtensions: [installed],
                importStore: importStore
-           )
-        {
+           ) {
             return identity.resolvedBundleIdentifier
         }
         return target.nativeMessagingHostBundleIdentifier

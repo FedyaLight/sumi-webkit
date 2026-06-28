@@ -176,8 +176,7 @@ final class SafariContentBlockerRuntimeOwner {
                 if located.resourceFingerprint != record.resourceFingerprint,
                    let entity = try? entity(
                        forBundleIdentifier: record.extensionBundleIdentifier
-                   )
-                {
+                   ) {
                     entity.resourceFingerprint = located.resourceFingerprint
                     entity.ruleListCount = located.definitions.count
                     entity.ignoredEmptyRuleListCount = located.ignoredEmptyRuleListCount
@@ -192,8 +191,7 @@ final class SafariContentBlockerRuntimeOwner {
         guard definitions.isEmpty == false else { return [] }
         let cacheKey = cacheParts.sorted().joined(separator: "|")
         if let service,
-           serviceCacheKey == cacheKey
-        {
+           serviceCacheKey == cacheKey {
             return [service]
         }
 

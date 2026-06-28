@@ -66,7 +66,7 @@ enum URLBarHubScreenshotSettingsPresenter {
         alert.accessoryView = makeAccessoryView(rows: [
             ("Capture", targetPopup),
             ("Save To", destinationPopup),
-            ("Scale", scalePopup)
+            ("Scale", scalePopup),
         ])
         alert.addButton(withTitle: "Capture")
 

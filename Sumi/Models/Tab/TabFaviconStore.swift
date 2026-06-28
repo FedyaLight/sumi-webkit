@@ -142,5 +142,4 @@ enum TabFaviconStore {
     private static func sameFileURL(_ lhs: URL, _ rhs: URL) -> Bool {
         lhs.standardizedFileURL.path == rhs.standardizedFileURL.path
     }
-
 }

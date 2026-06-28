@@ -11,7 +11,6 @@ private enum RegularExternalDropGapPlacement: Equatable {
     case bottom
 }
 
-
 private let regularDragProjectionGapId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
 extension SpaceView {
@@ -760,11 +759,11 @@ extension SpaceView {
     }
 
     private func isFirstTab(_ tab: Tab) -> Bool {
-        return tabs.first?.id == tab.id
+        tabs.first?.id == tab.id
     }
 
     private func isLastTab(_ tab: Tab) -> Bool {
-        return tabs.last?.id == tab.id
+        tabs.last?.id == tab.id
     }
 
     private func handleUserTabActivation(_ tab: Tab) {

@@ -191,8 +191,7 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
         }
         if let pageId,
            !pageId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           !geolocationProvider.containsAllowedRequest(pageId: pageId)
-        {
+           !geolocationProvider.containsAllowedRequest(pageId: pageId) {
             return .none
         }
         switch geolocationProvider.currentState {
@@ -226,8 +225,7 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
         if requiresActivePage,
            let pageId,
            !pageId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           !pageWasAllowed
-        {
+           !pageWasAllowed {
             return .deniedByRuntime(reason: "geolocation-runtime-page-not-active")
         }
 
@@ -236,8 +234,7 @@ final class SumiRuntimePermissionController: SumiRuntimePermissionControlling {
         if nextState == previousState {
             if let pageId,
                pageWasAllowed,
-               !geolocationProvider.containsAllowedRequest(pageId: pageId)
-            {
+               !geolocationProvider.containsAllowedRequest(pageId: pageId) {
                 return .applied
             }
             return .noOp

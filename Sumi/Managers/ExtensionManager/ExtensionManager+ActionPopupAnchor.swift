@@ -72,8 +72,7 @@ extension ExtensionManager {
 
         if let pendingAnchor,
            let presentationProfileId,
-           pendingAnchor.profileID != presentationProfileId
-        {
+           pendingAnchor.profileID != presentationProfileId {
             actionPopupAnchorStore.consume(sessionToken: pendingAnchor.sessionToken)
             extensionRuntimeTrace(
                 "actionPopupAnchor stale session extensionId=\(extensionId) reason=profileMismatch capturedProfile=\(pendingAnchor.profileID.uuidString) resolvedProfile=\(presentationProfileId.uuidString)"
@@ -85,8 +84,7 @@ extension ExtensionManager {
                   let targetWindowId,
                   window === browserBridgeContext?.extensionWindowState(for: targetWindowId)?.window
                      || window === NSApp.keyWindow
-                     || window === NSApp.mainWindow
-        {
+                     || window === NSApp.mainWindow {
             let resolution = ExtensionActionPopupAnchorResolution(
                 anchorResolved: true,
                 anchorSource: .button,
@@ -100,8 +98,7 @@ extension ExtensionManager {
             return (buttonView, .button, resolution)
         } else if let pendingAnchor,
                   pendingAnchor.buttonView != nil,
-                  pendingAnchor.validatedRectInWindow != nil
-        {
+                  pendingAnchor.validatedRectInWindow != nil {
             extensionRuntimeTrace(
                 "actionPopupAnchor stale session extensionId=\(extensionId) sessionToken=\(pendingAnchor.sessionToken.uuidString)"
             )
@@ -109,8 +106,7 @@ extension ExtensionManager {
 
         if let targetWindowId,
            let currentView = liveActionAnchorView(for: extensionId, windowId: targetWindowId),
-           isActionPopupAnchorViewReady(currentView)
-        {
+           isActionPopupAnchorViewReady(currentView) {
             let windowMatch =
                 currentView.window
                 === browserBridgeContext?.extensionWindowState(for: targetWindowId)?.window
@@ -131,8 +127,7 @@ extension ExtensionManager {
 
         if let targetWindowId,
            let fallbackView = urlHubFallbackAnchorView(for: targetWindowId),
-           isActionPopupAnchorViewReady(fallbackView)
-        {
+           isActionPopupAnchorViewReady(fallbackView) {
             let resolution = ExtensionActionPopupAnchorResolution(
                 anchorResolved: true,
                 anchorSource: .fallback,
@@ -211,8 +206,7 @@ extension ExtensionManager {
            let match = anchors.first(where: {
                $0.window === targetWindow && isActionPopupAnchorViewReady($0.view)
            }),
-           let view = match.view
-        {
+           let view = match.view {
             return view
         }
 

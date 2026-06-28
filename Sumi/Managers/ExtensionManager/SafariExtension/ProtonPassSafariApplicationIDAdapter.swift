@@ -268,8 +268,7 @@ final class ProtonPassSafariApplicationIDAdapter: CompanionApplicationMessageBac
         if let encodedString = object as? String,
            let encodedData = encodedString.data(using: .utf8),
            let nestedObject = try? JSONSerialization.jsonObject(with: encodedData),
-           let dictionary = nestedObject as? [String: Any]
-        {
+           let dictionary = nestedObject as? [String: Any] {
             return shape(
                 payloadClass: "String",
                 encoding: "doubleEncodedJSONString",

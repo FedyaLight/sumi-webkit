@@ -254,8 +254,7 @@ enum SafariExtensionNativeMessagingRoutingProbe {
         }
         if trimmed.isEmpty == false,
            SumiCompanionAppIdentityMetadata.isRecognizedPublicIdentity(trimmed) == false,
-           resolvedHostBundleIdentifier == nil
-        {
+           resolvedHostBundleIdentifier == nil {
             return true
         }
         return false

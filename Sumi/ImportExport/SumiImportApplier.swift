@@ -475,7 +475,7 @@ final class SumiImportApplier {
                             isPrimary: true,
                             algorithm: .floating,
                             position: .monochrome
-                        )
+                        ),
                     ],
                     opacity: 0.62,
                     texture: 1.0 / 16.0

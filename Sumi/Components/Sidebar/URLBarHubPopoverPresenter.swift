@@ -132,8 +132,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     func present(in windowState: BrowserWindowState, browserManager: BrowserManager) {
         if let session = activeSessions[windowState.id],
-           let registration = anchors[windowState.id]
-        {
+           let registration = anchors[windowState.id] {
             update(session, using: registration)
             return
         }

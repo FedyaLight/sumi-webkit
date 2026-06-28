@@ -237,7 +237,6 @@ extension TabManager {
 
         runtimeContext?.presentTabClosureToast(tabCount: count)
     }
-
 }
 
 // MARK: - Navigation State Management
@@ -287,8 +286,7 @@ extension TabManager {
                     guard let match = tabsByPin.first(where: { $0.value.id == id }) else { return nil }
                     return (windowId, match.key, match.value)
                 })
-                .first
-        {
+                .first {
             transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId)
             if transientShortcutTabsByWindow[windowId]?.isEmpty == true {
                 transientShortcutTabsByWindow.removeValue(forKey: windowId)

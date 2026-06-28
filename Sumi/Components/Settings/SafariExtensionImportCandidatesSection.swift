@@ -45,8 +45,7 @@ struct SafariExtensionImportCandidatesSection: View {
                     .controlSize(.small)
             } else if webExtensionCandidates.isEmpty
                 && contentBlockerCandidates.isEmpty
-                && legacySafariExtensionCandidates.isEmpty
-            {
+                && legacySafariExtensionCandidates.isEmpty {
                 Text("No Safari extension candidates were found.")
                     .foregroundStyle(.secondary)
             } else {

@@ -7,7 +7,7 @@ struct GradientEditorView: View {
     static let panelWidth: CGFloat = 380
 
     @Binding var workspaceTheme: WorkspaceTheme
-    var onThemeChange: ((WorkspaceTheme) -> Void)? = nil
+    var onThemeChange: ((WorkspaceTheme) -> Void)?
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext

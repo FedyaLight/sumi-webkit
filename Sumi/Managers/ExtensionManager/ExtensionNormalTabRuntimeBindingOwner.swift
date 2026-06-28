@@ -203,14 +203,12 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         if let openBinding = tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration,
            let profileId = manager.resolvedProfileId(for: tab),
-           openBinding != manager.extensionContextBindingGeneration(for: profileId)
-        {
+           openBinding != manager.extensionContextBindingGeneration(for: profileId) {
             return true
         }
 
         for webView in manager.liveWebViews(for: tab)
-            where manager.webViewNeedsExtensionRuntimeRebuild(webView, for: tab)
-        {
+            where manager.webViewNeedsExtensionRuntimeRebuild(webView, for: tab) {
             return true
         }
 
@@ -257,8 +255,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         guard isExtensionInjectableCommittedURL(destinationURL) else { return }
         if tab.extensionRuntimeDocumentSequence == 0,
            tab.extensionRuntimeOpenNotifiedDocumentSequence == 0,
-           tab.extensionRuntimeOpenNotifiedWithLoadedContexts == true
-        {
+           tab.extensionRuntimeOpenNotifiedWithLoadedContexts == true {
             return
         }
 
@@ -284,8 +281,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         if let profileId = manager.resolvedProfileId(for: tab),
            manager.profileNeedsInitialDocumentExtensionContextLoad(
                profileId: profileId
-           )
-        {
+           ) {
             manager.scheduleDeferredTabNotificationAfterContextLoad(
                 tab,
                 profileId: profileId,
@@ -301,8 +297,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         if shouldCycleTabLifecycle,
            let controller = manager.extensionController(for: tab),
-           let adapter = manager.stableAdapter(for: tab)
-        {
+           let adapter = manager.stableAdapter(for: tab) {
             manager.extensionRuntimeTrace(
                 "rebindExtensionTabBeforeCommittedNavigation didCloseTab reason=\(reason) \(manager.extensionRuntimeTabDescription(tab))"
             )

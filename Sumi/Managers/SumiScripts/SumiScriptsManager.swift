@@ -25,14 +25,13 @@
 //
 
 import AppKit
-import Foundation
-import WebKit
 import Combine
+import Foundation
 import SwiftData
+import WebKit
 
 @MainActor
 final class SumiScriptsManager: ObservableObject {
-
     // MARK: - Published State
 
     /// Total number of loaded (not necessarily injected) scripts.
@@ -418,7 +417,6 @@ final class SumiScriptsManager: ObservableObject {
     func executeMenuCommand(script: SumiInstalledUserScript, commandId: String, webView: WKWebView?) {
         injector?.executeMenuCommand(script: script, commandId: commandId, webView: webView)
     }
-
 }
 
 enum SumiScriptsManagerError: LocalizedError {

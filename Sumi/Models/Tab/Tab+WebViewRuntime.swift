@@ -148,8 +148,7 @@ extension Tab {
         if let browserManager,
            let windowId = primaryWindowId,
            let windowState = browserManager.windowRegistry?.windows[windowId],
-           browserManager.currentTab(for: windowState)?.id == id
-        {
+           browserManager.currentTab(for: windowState)?.id == id {
             browserManager.extensionsModule.notifyTabActivatedIfLoaded(
                 newTab: self,
                 previous: nil
@@ -331,8 +330,7 @@ extension Tab {
 
         if didCreateAuxiliaryOverrideWebView,
            ExtensionUtils.isExtensionOwnedURL(url),
-           let webView = _webView
-        {
+           let webView = _webView {
             loadExtensionOwnedInitialURL(url, on: webView)
             finishSuspendedRestoreIfNeeded()
             return
@@ -348,8 +346,7 @@ extension Tab {
                         await controller.waitForInitialUserContentInstallation()
                     }
                     if let profileId,
-                       let extensionsModule = self?.browserManager?.extensionsModule
-                    {
+                       let extensionsModule = self?.browserManager?.extensionsModule {
                         await extensionsModule.ensureInitialDocumentExtensionContextsLoadedIfNeeded(
                             profileId: profileId
                         )
@@ -371,8 +368,7 @@ extension Tab {
                 let profileId = resolveProfile()?.id ?? profileId
                 Task { @MainActor [weak self] in
                     if let profileId,
-                       let extensionsModule = self?.browserManager?.extensionsModule
-                    {
+                       let extensionsModule = self?.browserManager?.extensionsModule {
                         await extensionsModule.ensureInitialDocumentExtensionContextsLoadedIfNeeded(
                             profileId: profileId
                         )
@@ -410,8 +406,7 @@ extension Tab {
                 window.ephemeralTabs.contains(where: { $0.id == self.id })
             }),
                let ephemeralProfile = windowState.ephemeralProfile,
-               ephemeralProfile.id == pid
-            {
+               ephemeralProfile.id == pid {
                 return ephemeralProfile
             }
 
@@ -423,8 +418,7 @@ extension Tab {
         if let sid = spaceId,
            let space = browserManager?.tabManager.spaces.first(where: { $0.id == sid }),
            let pid = space.profileId,
-           let profile = browserManager?.profileManager.profiles.first(where: { $0.id == pid })
-        {
+           let profile = browserManager?.profileManager.profiles.first(where: { $0.id == pid }) {
             return profile
         }
 
@@ -492,7 +486,6 @@ extension Tab {
             contentBlockingService: protectionDecision?.contentBlockingService
         )
     }
-
 
     private func deferNormalTabWebViewCreationUntilProfileAvailable() {
         guard profileAwaitCancellable == nil else { return }

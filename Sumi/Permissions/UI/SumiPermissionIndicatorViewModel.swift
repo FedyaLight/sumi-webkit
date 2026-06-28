@@ -306,8 +306,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         }
 
         if runtimeState.camera.hasActiveStream,
-           runtimeState.microphone.hasActiveStream
-        {
+           runtimeState.microphone.hasActiveStream {
             candidates.append(
                 activeRuntimeState(
                     .cameraAndMicrophone,
@@ -447,7 +446,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
                 visualStyle: .blocked,
                 badgeCount: attemptCount > 1 ? attemptCount : nil,
                 latestEventReason: records.last?.reason.rawValue
-            )
+            ),
         ]
     }
 
@@ -489,7 +488,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
                 latestEventReason: records.last?.reason,
                 title: title,
                 accessibilityLabel: accessibilityLabel
-            )
+            ),
         ]
     }
 
@@ -540,8 +539,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
         }
         let identities = Set(permissionTypes.map(\.identity))
         if identities.contains(SumiPermissionType.camera.identity),
-           identities.contains(SumiPermissionType.microphone.identity)
-        {
+           identities.contains(SumiPermissionType.microphone.identity) {
             return .cameraAndMicrophone
         }
 

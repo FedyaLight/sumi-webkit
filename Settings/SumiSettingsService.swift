@@ -124,7 +124,7 @@ class SumiSettingsService {
         }
         return SearchProvider.google.displayName
     }
-    
+
     var tabUnloadTimeout: TimeInterval {
         didSet {
             userDefaults.set(tabUnloadTimeout, forKey: tabUnloadTimeoutKey)
@@ -132,13 +132,13 @@ class SumiSettingsService {
             NotificationCenter.default.post(name: .tabUnloadTimeoutChanged, object: nil, userInfo: ["timeout": tabUnloadTimeout])
         }
     }
-    
+
     var askBeforeQuit: Bool {
         didSet {
             userDefaults.set(askBeforeQuit, forKey: askBeforeQuitKey)
         }
     }
-    
+
     var sidebarPosition: SidebarPosition {
         didSet {
             userDefaults.set(sidebarPosition.rawValue, forKey: sidebarPositionKey)
@@ -157,7 +157,7 @@ class SumiSettingsService {
             SumiNativeNowPlayingController.shared.setFeatureEnabled(sidebarMiniPlayerEnabled)
         }
     }
-    
+
     var glanceEnabled: Bool {
         didSet {
             userDefaults.set(glanceEnabled, forKey: glanceEnabledKey)
@@ -223,7 +223,7 @@ class SumiSettingsService {
     var resolvedNewTabPageURL: URL {
         SumiNewTabPageURL.runtimeURL(from: newTabPageURLString)
     }
-    
+
     var didFinishOnboarding: Bool {
         didSet {
             userDefaults.set(didFinishOnboarding, forKey: didFinishOnboardingKey)
@@ -473,7 +473,7 @@ class SumiSettingsService {
 
         let storedSearchEngineID = userDefaults.string(forKey: searchEngineKey) ?? SearchProvider.google.rawValue
         self.searchEngineId = storedSearchEngineID
-        
+
         // Initialize tab unload timeout
         self.tabUnloadTimeout = userDefaults.double(forKey: tabUnloadTimeoutKey)
         self.askBeforeQuit = userDefaults.bool(forKey: askBeforeQuitKey)

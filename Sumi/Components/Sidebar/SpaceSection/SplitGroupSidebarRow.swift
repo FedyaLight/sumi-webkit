@@ -307,7 +307,7 @@ struct SplitGroupSidebarRow: View {
                     })),
                     .action(.init(title: "Horizontal", systemImage: "rectangle.split.1x2", onAction: {
                         splitManager.setLayoutKind(.horizontal, for: windowState.id)
-                    }))
+                    })),
                 ]
             ),
             .submenu(
@@ -332,7 +332,7 @@ struct SplitGroupSidebarRow: View {
                 performSplitSidebarMutation {
                     splitManager.unsplitActiveGroup(for: windowState.id)
                 }
-            }))
+            })),
         ]
         entries.append(.separator)
         entries.append(contentsOf: splitEntries)

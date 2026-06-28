@@ -1,5 +1,5 @@
-import SwiftUI
 import Foundation
+import SwiftUI
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -126,12 +126,11 @@ extension Color {
             opacity: Double(a) / 255
         )
     }
-    
+
     func toHexString(includeAlpha: Bool = false) -> String? {
         let ns = NSColor(self)
         return ns.toHexString(includeAlpha: includeAlpha)
     }
-    
 }
 
 extension NSColor {

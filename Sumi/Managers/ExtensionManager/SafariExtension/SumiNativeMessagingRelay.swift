@@ -841,8 +841,7 @@ final class SumiNativeMessagingRelay {
     ) -> Void = { diagnostic in
         guard RuntimeDiagnostics.isVerboseEnabled else { return }
         if diagnostic.outcome == .relayCancelled,
-           SafariExtensionAutofillFillDiagnostics.shouldRecordRelayCancellation()
-        {
+           SafariExtensionAutofillFillDiagnostics.shouldRecordRelayCancellation() {
             SafariExtensionAutofillFillDiagnostics.recordNativeMessagingRelayCancelled(
                 extensionId: diagnostic.extensionId
             )
@@ -880,8 +879,7 @@ final class SumiNativeMessagingRelay {
     }
 
     private static func outcome(forAdapterError error: NSError)
-        -> SafariExtensionNativeMessagingOutcome
-    {
+        -> SafariExtensionNativeMessagingOutcome {
         guard error.domain == Self.errorDomain,
               let code = ErrorCode(rawValue: error.code)
         else {

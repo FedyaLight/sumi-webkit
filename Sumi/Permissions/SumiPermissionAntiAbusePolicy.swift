@@ -10,8 +10,7 @@ struct SumiPermissionAntiAbusePolicy: Sendable {
 
         if let deny = scopedEvents
             .filter({ $0.type == .userDenied })
-            .max(by: { $0.createdAt < $1.createdAt })
-        {
+            .max(by: { $0.createdAt < $1.createdAt }) {
             let cooldown = SumiPermissionPromptCooldown(
                 startedAt: deny.createdAt,
                 duration: SumiPermissionPromptCooldown.explicitDenyCooldown

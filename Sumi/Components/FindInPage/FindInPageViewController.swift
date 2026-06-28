@@ -132,7 +132,6 @@ protocol FindInPageDelegate: AnyObject {
 }
 
 final class FindInPageViewController: NSViewController {
-
     weak var delegate: FindInPageDelegate?
 
     var model: FindInPageModel? {
@@ -533,7 +532,6 @@ final class FindInPageViewController: NSViewController {
 }
 
 extension FindInPageViewController: NSTextFieldDelegate {
-
     func controlTextDidChange(_ obj: Notification) {
         model?.find(textField.stringValue)
     }

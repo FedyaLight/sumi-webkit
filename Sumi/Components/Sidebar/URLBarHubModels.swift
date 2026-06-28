@@ -238,7 +238,7 @@ struct SiteControlsSnapshot: Equatable {
                     title: "Page Type",
                     subtitle: "Local file or bundled resource",
                     kind: .localPage
-                )
+                ),
             ]
         case .internalPage:
             settingsRows = []

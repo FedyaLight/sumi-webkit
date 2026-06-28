@@ -323,8 +323,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         }
 
         if let miniWindowAdapter = requestedWindow as? ExtensionMiniWindowAdapter,
-           let session = browserContext.auxiliaryWindowSession(for: miniWindowAdapter.sessionId)
-        {
+           let session = browserContext.auxiliaryWindowSession(for: miniWindowAdapter.sessionId) {
             return Target(
                 window: requestedNormalWindow(
                     for: session.tab,
@@ -343,8 +342,7 @@ final class ExtensionRequestedTabLifecycleOwner {
                ownerExtensionID: ownerExtensionID,
                profileId: profileId
            ).first,
-           let session = browserContext.auxiliaryWindowSession(for: miniWindowAdapter.sessionId)
-        {
+           let session = browserContext.auxiliaryWindowSession(for: miniWindowAdapter.sessionId) {
             return Target(
                 window: requestedNormalWindow(
                     for: session.tab,
@@ -379,7 +377,7 @@ final class ExtensionRequestedTabLifecycleOwner {
 
         let candidates = [
             browserContext.extensionWindowState(containing: openerTab),
-            browserContext.activeExtensionWindowState
+            browserContext.activeExtensionWindowState,
         ]
 
         return candidates.compactMap { $0 }.first { windowState in

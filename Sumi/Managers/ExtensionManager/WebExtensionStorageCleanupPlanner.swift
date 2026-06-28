@@ -205,15 +205,13 @@ struct WebExtensionStorageCleanupPlanner {
         if diagnostic.isGenericSQLiteStoreCreationFailure,
            snapshotShowsOnlyOptionalStoreGap,
            hasNonOptionalFailureSignals == false,
-           extensionMatches || diagnostic.referencesOptionalStore
-        {
+           extensionMatches || diagnostic.referencesOptionalStore {
             return true
         }
 
         if diagnostic.isWebKitExtensionStorageComputationFailure,
            snapshotShowsOnlyOptionalStoreGap,
-           hasNonOptionalFailureSignals == false
-        {
+           hasNonOptionalFailureSignals == false {
             return true
         }
 

@@ -48,7 +48,7 @@ struct SpaceSeparator: View {
         .frame(height: 2)
         .frame(maxWidth: .infinity)
     }
-    
+
     var foregroundColor: Color {
         switch isClearHovered {
             case true:
@@ -62,4 +62,3 @@ struct SpaceSeparator: View {
         themeContext.tokens(settings: sumiSettings)
     }
 }
- 

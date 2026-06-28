@@ -13,5 +13,4 @@ extension NSAppearance {
     static func sumi_chromeWithAppAppearance(_ body: () -> Void) {
         NSApp.effectiveAppearance.performAsCurrentDrawingAppearance(body)
     }
-
 }

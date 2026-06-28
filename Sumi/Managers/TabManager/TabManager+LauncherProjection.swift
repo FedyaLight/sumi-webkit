@@ -17,7 +17,6 @@ extension TabManager {
         var userVisibleTabCount: Int {
             regularTabs.count + launcherCount
         }
-
     }
 
     func launcherProjection(

@@ -202,7 +202,6 @@ struct SumiProtectionRulePlan: Equatable, Sendable {
     var adblockGroupActive: Bool {
         activeGroups.contains(.adblockAdsPrivacyNetwork)
     }
-
 }
 
 struct SumiProtectionNormalTabDecision: Equatable, Sendable {

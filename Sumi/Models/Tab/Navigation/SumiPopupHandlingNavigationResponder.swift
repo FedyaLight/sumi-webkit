@@ -501,8 +501,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
            Tab.isExtensionOriginatedExternalPopupNavigation(
                sourceURL: sourceURL,
                requestURL: requestURL
-           )
-        {
+           ) {
             let targetSpace = tab.spaceId.flatMap { spaceID in
                 browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
             } ?? browserManager.tabManager.currentSpace
@@ -591,8 +590,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                 window.ephemeralTabs.contains(where: { $0.id == tab.id })
             }),
                let ephemeralProfile = windowState.ephemeralProfile,
-               ephemeralProfile.id == profileId
-            {
+               ephemeralProfile.id == profileId {
                 return ephemeralProfile
             }
 

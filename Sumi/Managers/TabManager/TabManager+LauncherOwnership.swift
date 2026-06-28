@@ -77,7 +77,7 @@ extension TabManager {
         iconAsset: String?? = nil,
         executionProfileId: UUID?? = nil
     ) -> ShortcutPin? {
-        return withStructuralUpdateTransaction {
+        withStructuralUpdateTransaction {
             let updatedPin = pin.updated(
                 title: title,
                 launchURL: launchURL,
@@ -154,7 +154,7 @@ extension TabManager {
         in windowState: BrowserWindowState,
         preserveCurrentPage: Bool = false
     ) -> ShortcutPin? {
-        return withStructuralUpdateTransaction {
+        withStructuralUpdateTransaction {
             guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
                 return nil
             }
@@ -357,7 +357,7 @@ extension TabManager {
 
     @discardableResult
     func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
-        return withStructuralUpdateTransaction {
+        withStructuralUpdateTransaction {
             if let existing = transientShortcutTabsByWindow[windowId]?[pin.id] {
                 existing.bindToShortcutPin(pin)
                 existing.spaceId = resolvedLiveSpaceId(for: pin, currentSpaceId: currentSpaceId)

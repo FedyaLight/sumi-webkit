@@ -35,7 +35,7 @@ enum NativeChromeMaterialRole {
 
 struct NativeChromeMaterialBackground: View {
     let role: NativeChromeMaterialRole
-    var colorScheme: ColorScheme? = nil
+    var colorScheme: ColorScheme?
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext

@@ -119,8 +119,7 @@ extension BrowserManager {
         switch preferredOpenMode {
         case .currentTab:
             if let currentTab = activePageTab(for: windowState),
-               !currentTab.representsSumiEmptySurface
-            {
+               !currentTab.representsSumiEmptySurface {
                 if currentTab.representsSumiHistorySurface {
                     replaceNativeHistoryTab(currentTab, with: url, in: windowState)
                 } else {
@@ -292,8 +291,7 @@ extension BrowserManager {
 
     func refreshLastSessionWindowsStore(excludingWindowID: UUID?) {
         if canOfferStartupLastSessionRestoreShortcut,
-           let startupLastSessionTabSnapshot
-        {
+           let startupLastSessionTabSnapshot {
             lastSessionWindowsStore.updateSnapshots(
                 startupLastSessionWindowSnapshots,
                 tabSnapshot: startupLastSessionTabSnapshot

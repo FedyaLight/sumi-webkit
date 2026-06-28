@@ -805,5 +805,4 @@ private struct SearchEngineEditor: View {
     private func normalizedURLTemplate(_ template: String) -> String {
         SumiURLNormalization.normalizedSearchEngineTemplate(template)
     }
-
 }

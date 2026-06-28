@@ -63,5 +63,4 @@ struct SumiContentBlockingPrivacyConfiguration: SumiPrivacyConfiguration, Privac
         _ = defaultValue
         return featureKey == .contentBlocking ? isContentBlockingEnabled : false
     }
-
 }

@@ -11,7 +11,6 @@ import Foundation
 import SwiftData
 
 extension UserScriptStore {
-
     func persist(
         script: SumiInstalledUserScript,
         sourceURL: URL

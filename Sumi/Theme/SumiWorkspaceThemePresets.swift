@@ -26,7 +26,7 @@ struct SumiWorkspaceThemePreset: Identifiable, Hashable {
                             lightness: lightness,
                             position: position,
                             type: type
-                        )
+                        ),
                     ],
                     opacity: opacity,
                     texture: texture

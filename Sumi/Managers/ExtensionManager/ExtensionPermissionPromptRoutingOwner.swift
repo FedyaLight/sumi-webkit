@@ -142,8 +142,7 @@ enum ExtensionPermissionPromptRoutingOwner {
                 )
             } else if let extensionId,
                       let profileId,
-                      ["http", "https"].contains(url.scheme?.lowercased() ?? "")
-            {
+                      ["http", "https"].contains(url.scheme?.lowercased() ?? "") {
                 switch manager.configuredSiteAccessLevel(
                     for: url,
                     extensionId: extensionId,
@@ -190,8 +189,7 @@ enum ExtensionPermissionPromptRoutingOwner {
                       ),
                       let matchPattern = try? WKWebExtension.MatchPattern(
                           string: patternString
-                      )
-            {
+                      ) {
                 let storedStatus: WKWebExtensionContext.PermissionStatus =
                     stored.state == .allowed ? .grantedExplicitly : .deniedExplicitly
                 extensionContext.setPermissionStatus(
@@ -204,8 +202,7 @@ enum ExtensionPermissionPromptRoutingOwner {
                        url,
                        in: extensionContext,
                        tab: tab
-                   )
-                {
+                   ) {
                     autoGranted.insert(url)
                     SafariExtensionAutofillFillDiagnostics.recordHostPermission(
                         granted: true,

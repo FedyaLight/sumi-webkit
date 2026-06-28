@@ -142,8 +142,7 @@ final class WebViewCreationPlanningOwner {
     ) -> UUID? where S.Element == UUID {
         let candidates = Array(otherWindowIds)
         if let preferredPrimaryWindowId,
-           candidates.contains(preferredPrimaryWindowId)
-        {
+           candidates.contains(preferredPrimaryWindowId) {
             return preferredPrimaryWindowId
         }
 

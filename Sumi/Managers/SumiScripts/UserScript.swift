@@ -20,7 +20,7 @@ final class SumiInstalledUserScript: Identifiable {
     var allowPrivateBrowsing: Bool
     /// Bundled Sumi compat preludes from `// @sumi-compat` (after GM shim, before @require).
     var compatPreludeFragments: [String]
-    var requiredCode: [String]  // Contents of @require resources, in order
+    var requiredCode: [String] // Contents of @require resources, in order
     var resourceData: [String: String] // Contents of @resource resources, mapped by name
     var menuCommands: [String: String] = [:] // caption: uuid/id for callback
 

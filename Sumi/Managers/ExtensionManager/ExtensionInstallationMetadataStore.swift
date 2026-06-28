@@ -128,8 +128,7 @@ final class ExtensionInstallationMetadataStore {
                 at: packageURL.appendingPathComponent("manifest.json")
             ),
                let refreshed = try? refreshedRecord(for: entity, manifest: manifest),
-               extensionMetadataNeedsRefresh(entity, refreshedRecord: refreshed)
-            {
+               extensionMetadataNeedsRefresh(entity, refreshedRecord: refreshed) {
                 update(entity, from: refreshed)
                 record = refreshed
                 didMutatePersistence = true

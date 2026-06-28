@@ -84,8 +84,7 @@ enum SumiCompanionAppResolver {
 
         if let trimmedRequest, trimmedRequest.isEmpty == false {
             if SafariExtensionNativeMessagingRoutingProbe
-                .isSafariContainingApplicationRequest(trimmedRequest)
-            {
+                .isSafariContainingApplicationRequest(trimmedRequest) {
                 return containingApplicationIdentity(
                     extensionId: extensionId,
                     installedExtensions: installedExtensions,
@@ -136,9 +135,8 @@ enum SumiCompanionAppResolver {
         let trimmedRequest = requestedApplicationIdentifier?
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if (trimmedRequest == nil || trimmedRequest?.isEmpty == true),
-           (extensionId == nil || extensionId?.isEmpty == true)
-        {
+        if trimmedRequest == nil || trimmedRequest?.isEmpty == true,
+           extensionId == nil || extensionId?.isEmpty == true {
             return .notRequested
         }
 
@@ -304,8 +302,7 @@ enum SumiCompanionAppResolver {
            }),
            let containing = containingApplicationBundleIdentifier(
                forAppexPath: discovered.appexPath
-           )
-        {
+           ) {
             return IdentityResolution(
                 resolvedBundleIdentifier: SumiCompanionAppIdentityMetadata
                     .normalizedHostBundleIdentifier(containing),

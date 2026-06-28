@@ -81,8 +81,7 @@ final class SidebarHostRecoveryCoordinator: SidebarHostRecoveryHandling {
         let currentWindowID = window.map(ObjectIdentifier.init)
 
         if let previousWindowID = anchorWindowIDs[anchorID],
-           previousWindowID != currentWindowID
-        {
+           previousWindowID != currentWindowID {
             removeAnchor(anchorID, fromWindowID: previousWindowID)
             anchorWindowIDs.removeValue(forKey: anchorID)
         }

@@ -264,8 +264,7 @@ enum SafariExtensionAutofillFillDiagnostics {
             for: WKWebExtension.Permission.scripting
         )
         if permissionStatus == .grantedExplicitly
-            || permissionStatus == .grantedImplicitly
-        {
+            || permissionStatus == .grantedImplicitly {
             record(.scriptingExecuteSucceeded, note: "scriptingPermissionGranted")
         } else {
             record(.scriptingExecuteFailed, note: "scriptingPermissionDenied")

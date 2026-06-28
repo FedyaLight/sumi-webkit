@@ -57,8 +57,7 @@ final class SumiPermissionCleanupService {
             return .disabled(profilePartitionId: profile.profilePartitionId, now: currentDate)
         }
         if let lastRun = lastRunAt(profilePartitionId: profile.profilePartitionId),
-           currentDate.timeIntervalSince(lastRun) < Constants.throttleInterval
-        {
+           currentDate.timeIntervalSince(lastRun) < Constants.throttleInterval {
             return .throttled(profilePartitionId: profile.profilePartitionId, now: currentDate)
         }
         return await run(profile: profile, settings: settings, force: true)
@@ -76,8 +75,7 @@ final class SumiPermissionCleanupService {
         }
         if !force,
            let lastRun = lastRunAt(profilePartitionId: profile.profilePartitionId),
-           startedAt.timeIntervalSince(lastRun) < Constants.throttleInterval
-        {
+           startedAt.timeIntervalSince(lastRun) < Constants.throttleInterval {
             return .throttled(profilePartitionId: profile.profilePartitionId, now: startedAt)
         }
 

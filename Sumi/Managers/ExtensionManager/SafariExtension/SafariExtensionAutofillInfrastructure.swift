@@ -208,8 +208,7 @@ enum SafariExtensionAutofillInfrastructureClassifier {
 
         if installedExtension.manifestDeclaresScriptingPermission,
            extensionContext.webExtension.requestedPermissions
-               .contains(where: { $0.rawValue == WKWebExtension.Permission.scripting.rawValue }) == false
-        {
+               .contains(where: { $0.rawValue == WKWebExtension.Permission.scripting.rawValue }) == false {
             return classification(
                 .scriptingExecuteScriptTargetMissing,
                 detail: "Extension declares scripting permission but WebKit has not granted it"

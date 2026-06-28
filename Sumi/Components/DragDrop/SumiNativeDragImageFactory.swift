@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 enum SumiNativeDragPreviewStyle {
     case essentialsTile

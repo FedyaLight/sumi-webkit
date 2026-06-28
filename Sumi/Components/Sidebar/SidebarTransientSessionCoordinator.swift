@@ -281,8 +281,7 @@ final class SidebarTransientSessionCoordinator {
         preferPending: Bool = true
     ) -> SidebarTransientPresentationSource {
         if preferPending,
-           let pendingPresentationSource
-        {
+           let pendingPresentationSource {
             pendingPresentationSource.refresh(
                 window: window ?? pendingPresentationSource.window,
                 originOwnerView: ownerView ?? pendingPresentationSource.originOwnerView
@@ -438,8 +437,7 @@ final class SidebarTransientSessionCoordinator {
             self.pendingCleanupScheduled = false
             if self.activePinnedSessionRecords.isEmpty,
                self.pendingMenuActionCount == 0,
-               self.pendingRecoveriesByWindowID.isEmpty
-            {
+               self.pendingRecoveriesByWindowID.isEmpty {
                 self.pendingPresentationSource = nil
             }
         }
@@ -519,8 +517,7 @@ final class SidebarTransientSessionCoordinator {
         if effectiveTier == .soft,
            source.interactiveOwnerRecoveryMetadata != nil,
            recoverSidebarInteractiveOwners != nil,
-           !recoveryResult.sourceOwnerResolved
-        {
+           !recoveryResult.sourceOwnerResolved {
             effectiveTier = .hardRehydrate
             hardRehydrateReason = .ownerUnresolvedAfterSoftRecovery
         }
@@ -566,8 +563,7 @@ final class SidebarTransientSessionCoordinator {
         }
 
         if let previousFirstResponder = validPreviousFirstResponder(source.previousFirstResponder, in: window),
-           window.makeFirstResponder(previousFirstResponder)
-        {
+           window.makeFirstResponder(previousFirstResponder) {
             return
         }
 
@@ -586,5 +582,4 @@ final class SidebarTransientSessionCoordinator {
 
         return responder
     }
-
 }

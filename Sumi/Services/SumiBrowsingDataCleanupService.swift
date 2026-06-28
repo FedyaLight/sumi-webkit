@@ -122,7 +122,6 @@ struct SumiBrowsingDataSummary: Equatable {
     var historyVisitCount: Int = 0
     var siteDataSiteCount: Int = 0
     var cacheSiteCount: Int = 0
-
 }
 
 struct SumiAutomaticBrowsingDataCleanupResult: Equatable {

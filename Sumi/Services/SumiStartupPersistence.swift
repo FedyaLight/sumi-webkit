@@ -165,8 +165,7 @@ final class SumiStartupPersistence {
             return .permissionDenied
         }
         if domain == NSCocoaErrorDomain
-            && (code == NSFileReadNoPermissionError || code == NSFileWriteNoPermissionError)
-        {
+            && (code == NSFileReadNoPermissionError || code == NSFileWriteNoPermissionError) {
             return .permissionDenied
         }
         if lower.contains("permission denied") || lower.contains("operation not permitted") {

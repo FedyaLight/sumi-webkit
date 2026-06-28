@@ -282,7 +282,7 @@ struct FindInPageChromeRepresentable: NSViewControllerRepresentable {
         let displayModel = visible ? model : context.coordinator.lastVisibleModel
         let shouldRender = visible || (keepsChromeMounted && displayModel != nil)
 
-        if (!visible || !isInteractive), let window = container.view.window,
+        if !visible || !isInteractive, let window = container.view.window,
            let responder = window.firstResponder as? NSView,
            responder.isDescendant(of: container.view) {
             window.makeFirstResponder(nil)

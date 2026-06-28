@@ -126,8 +126,7 @@ struct SafariExtensionScanner {
                 )
                 for candidate in discovered {
                     if let previous = seenExtensionIDs[candidate.extensionBundleIdentifier],
-                       previous != candidate.appexURL
-                    {
+                       previous != candidate.appexURL {
                         issues.append(
                             .duplicateExtensionIdentifier(
                                 candidate.extensionBundleIdentifier
@@ -289,13 +288,11 @@ struct SafariExtensionScanner {
 
     private func bundleDisplayName(at bundleURL: URL) -> String? {
         if let displayName = plistValue(at: bundleURL, keyPath: ["CFBundleDisplayName"]) as? String,
-           displayName.isEmpty == false
-        {
+           displayName.isEmpty == false {
             return displayName
         }
         if let name = plistValue(at: bundleURL, keyPath: ["CFBundleName"]) as? String,
-           name.isEmpty == false
-        {
+           name.isEmpty == false {
             return name
         }
         return nil

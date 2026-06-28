@@ -163,7 +163,7 @@ enum SplitLayoutGeometry {
         includeChildPlanes: Bool
     ) -> [SplitTilePlaneHit] {
         var planes = [
-            SplitTilePlaneHit(path: path, rect: rect, tabIds: tree.tabIds)
+            SplitTilePlaneHit(path: path, rect: rect, tabIds: tree.tabIds),
         ]
         guard includeChildPlanes,
               case .split(let axis, _, let children) = tree

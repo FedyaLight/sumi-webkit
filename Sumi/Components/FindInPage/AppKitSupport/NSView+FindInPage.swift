@@ -8,7 +8,6 @@
 import AppKit
 
 extension NSView {
-
     func sumi_chromeVisibleRectClampedToBounds() -> NSRect {
         var visibleRect = self.visibleRect
 
@@ -51,5 +50,4 @@ extension NSView {
 
         window.makeFirstResponder(self)
     }
-
 }

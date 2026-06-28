@@ -196,7 +196,7 @@ struct SumiBookmarksTabRootView: View {
                 // ensuring the search field is mathematically centered in the space.
                 Color.clear
                     .frame(width: 28, height: 28)
-                
+
                 Spacer()
 
                 searchField
@@ -211,9 +211,9 @@ struct SumiBookmarksTabRootView: View {
                     Button("New Folder…") {
                         folderDraft = viewModel.folderDraft()
                     }
-                    
+
                     Divider()
-                    
+
                     Menu("Sort") {
                         ForEach(SumiBookmarkSortMode.allCases) { mode in
                             Button {
@@ -227,13 +227,13 @@ struct SumiBookmarksTabRootView: View {
                             }
                         }
                     }
-                    
+
                     Divider()
-                    
+
                     Button("Import Bookmarks…") {
                         viewModel.importBookmarksFromMenu()
                     }
-                    
+
                     Button("Export Bookmarks…") {
                         viewModel.exportBookmarksFromMenu()
                     }
@@ -256,18 +256,18 @@ struct SumiBookmarksTabRootView: View {
                 HStack(spacing: 12) {
                     Text("\(viewModel.selectionCount) Selected")
                         .foregroundStyle(tokens.secondaryText)
-                    
+
                     Button("Open") {
                         viewModel.openSelected()
                     }
                     .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
-                    
+
                     Button("Delete") {
                         viewModel.deleteSelected()
                     }
                     .disabled(!viewModel.canDeleteSelection)
                     .chromeCursor(.pointingHand, isEnabled: scrollHoverCoordinator.hoverUpdatesEnabled)
-                    
+
                     Button("Clear Selection") {
                         viewModel.clearSelection()
                     }

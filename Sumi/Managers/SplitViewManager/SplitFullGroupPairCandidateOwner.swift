@@ -147,8 +147,8 @@ struct SplitFullGroupPairCandidateOwner {
                         axis: rootAxis,
                         size: 1,
                         children: [
-                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[0 ..< 2]), size: 0.5),
-                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[2 ..< 4]), size: 0.5)
+                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[0..<2]), size: 0.5),
+                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[2..<4]), size: 0.5),
                         ]
                     )
                 )
@@ -158,8 +158,8 @@ struct SplitFullGroupPairCandidateOwner {
                         axis: rootAxis,
                         size: 1,
                         children: [
-                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[0 ..< 3]), size: 0.5),
-                            SplitLayoutTree.leaf(tabId: ids[3], size: 0.5)
+                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[0..<3]), size: 0.5),
+                            SplitLayoutTree.leaf(tabId: ids[3], size: 0.5),
                         ]
                     )
                 )
@@ -169,18 +169,18 @@ struct SplitFullGroupPairCandidateOwner {
                         size: 1,
                         children: [
                             SplitLayoutTree.leaf(tabId: ids[0], size: 0.5),
-                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[1 ..< 4]), size: 0.5)
+                            equalLeafSplit(axis: childAxis, tabIds: Array(ids[1..<4]), size: 0.5),
                         ]
                     )
                 )
 
-                for splitIndex in 0 ..< 3 {
+                for splitIndex in 0..<3 {
                     var cursor = 0
-                    let children: [SplitLayoutTree] = (0 ..< 3).map { index in
+                    let children: [SplitLayoutTree] = (0..<3).map { index in
                         if index == splitIndex {
                             let split = equalLeafSplit(
                                 axis: childAxis,
-                                tabIds: Array(ids[cursor ..< cursor + 2]),
+                                tabIds: Array(ids[cursor..<cursor + 2]),
                                 size: 1.0 / 3.0
                             )
                             cursor += 2
@@ -223,7 +223,7 @@ struct SplitFullGroupPairCandidateOwner {
                 return
             }
 
-            for index in startIndex ..< values.count {
+            for index in startIndex..<values.count {
                 values.swapAt(startIndex, index)
                 permute(from: startIndex + 1)
                 values.swapAt(startIndex, index)

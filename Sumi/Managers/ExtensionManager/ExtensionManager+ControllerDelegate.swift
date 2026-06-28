@@ -144,8 +144,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         if let keyWindow = NSApp.keyWindow,
            let session = browserContext.auxiliaryWindowSession(for: keyWindow),
            let miniWindowAdapter = session.miniWindowAdapter,
-           ownerMiniWindowAdapters.contains(where: { $0.sessionId == miniWindowAdapter.sessionId })
-        {
+           ownerMiniWindowAdapters.contains(where: { $0.sessionId == miniWindowAdapter.sessionId }) {
             browserContext.recordAuxiliaryWindowSessionFocus(session.id)
             return miniWindowAdapter
         }
@@ -157,14 +156,12 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
         if let keyWindow = NSApp.keyWindow,
            let mainWindowState = browserContext.extensionWindowState(forAppKitWindow: keyWindow),
-           contextProfileId.map({ windowMatchesProfile(mainWindowState, profileId: $0) }) ?? true
-        {
+           contextProfileId.map({ windowMatchesProfile(mainWindowState, profileId: $0) }) ?? true {
             return windowAdapter(for: mainWindowState.id)
         }
 
         if let activeWindow = browserContext.activeExtensionWindowState,
-           contextProfileId.map({ windowMatchesProfile(activeWindow, profileId: $0) }) ?? true
-        {
+           contextProfileId.map({ windowMatchesProfile(activeWindow, profileId: $0) }) ?? true {
             return windowAdapter(for: activeWindow.id)
         }
         return nil
@@ -240,8 +237,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         if let focused = browserContext.focusedExtensionMiniWindowAdapter(
             forOwnerExtensionID: ownerExtensionID
         ),
-           let focusedIndex = adapters.firstIndex(where: { $0.sessionId == focused.sessionId })
-        {
+           let focusedIndex = adapters.firstIndex(where: { $0.sessionId == focused.sessionId }) {
             adapters.insert(adapters.remove(at: focusedIndex), at: 0)
         }
 
@@ -703,8 +699,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     )
                     if let patternString = self.hostMatchPatternString(for: url),
                        let extensionId,
-                       let profileId
-                    {
+                       let profileId {
                         self.persistExtensionPermissionDecision(
                             extensionId: extensionId,
                             profileId: profileId,
@@ -734,8 +729,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     )
                     if let patternString = self.hostMatchPatternString(for: url),
                        let extensionId,
-                       let profileId
-                    {
+                       let profileId {
                         self.persistExtensionPermissionDecision(
                             extensionId: extensionId,
                             profileId: profileId,
@@ -815,7 +809,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                     code: 7,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Sumi does not support private extension windows without an isolated private extension runtime"
+                            "Sumi does not support private extension windows without an isolated private extension runtime",
                     ]
                 )
             )
@@ -1024,8 +1018,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             unregisterHandler: { [weak self] handler in
                 guard let self else { return }
                 if let current = self.nativeMessagePortHandlers[portKey],
-                   current !== handler
-                {
+                   current !== handler {
                     return
                 }
                 self.nativeMessagePortHandlers.removeValue(forKey: portKey)

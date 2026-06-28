@@ -194,5 +194,4 @@ final class SumiWebViewContainerView: NSView {
             bottomTrailing: clamp(viewportCornerRadii.bottomTrailing)
         )
     }
-
 }

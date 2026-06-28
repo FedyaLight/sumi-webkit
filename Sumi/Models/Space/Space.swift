@@ -6,7 +6,7 @@
 
 import AppKit
 import SwiftUI
- 
+
 enum SumiProfileRuntimeState: String, Codable, CaseIterable {
     case dormant
     case loadedInactive
@@ -24,7 +24,7 @@ public class Space: NSObject, Identifiable {
     var activeTabId: UUID?
     var profileId: UUID?
     var profileRuntimeState: SumiProfileRuntimeState = .dormant
-    
+
     /// Whether this space belongs to an ephemeral/incognito profile
     var isEphemeral: Bool = false
 

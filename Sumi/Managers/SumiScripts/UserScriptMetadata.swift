@@ -124,7 +124,6 @@ struct UserScriptMetadata {
 // MARK: - Parser
 
 enum UserScriptMetadataParser {
-
     // RE for full metablock extraction
     // Group 1/2/3: SumiInstalledUserScript format (metablock, metas, code)
     // Group 4/5/6: UserStyle format (metablock, metas, code)
@@ -195,21 +194,18 @@ enum UserScriptMetadataParser {
 
                 if let m = resourceRE.firstMatch(in: lineStr, options: [], range: lineRange),
                    let nameRange = Range(m.range(at: 1), in: lineStr),
-                   let urlRange = Range(m.range(at: 2), in: lineStr)
-                {
+                   let urlRange = Range(m.range(at: 2), in: lineStr) {
                     let name = String(lineStr[nameRange])
                     let url = String(lineStr[urlRange])
                     resources[name] = url
                 } else if let m = metaLineRE.firstMatch(in: lineStr, options: [], range: lineRange),
                    let keyRange = Range(m.range(at: 1), in: lineStr),
-                   let valueRange = Range(m.range(at: 2), in: lineStr)
-                {
+                   let valueRange = Range(m.range(at: 2), in: lineStr) {
                     let key = String(lineStr[keyRange])
                     let value = String(lineStr[valueRange])
                     rawMetadata[key, default: []].append(value)
                 } else if let m2 = metaKeyOnlyRE.firstMatch(in: lineStr, options: [], range: lineRange),
-                          let keyRange = Range(m2.range(at: 1), in: lineStr)
-                {
+                          let keyRange = Range(m2.range(at: 1), in: lineStr) {
                     let key = String(lineStr[keyRange])
                     rawMetadata[key] = rawMetadata[key] ?? []
                 }
@@ -280,7 +276,6 @@ enum UserScriptMetadataParser {
             code: code,
             rawMetadata: rawMetadata
         )
-
     }
 
     private static func normalizeWeight(_ str: String) -> Int {

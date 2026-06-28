@@ -353,8 +353,7 @@ final class SafariExtensionInstallCapabilityOwner {
             if isGrantedPermissionStatus(extensionContext.permissionStatus(for: pattern)) {
                 grantedPatterns.insert(pattern)
             } else if let tab,
-                      isGrantedPermissionStatus(extensionContext.permissionStatus(for: pattern, in: tab))
-            {
+                      isGrantedPermissionStatus(extensionContext.permissionStatus(for: pattern, in: tab)) {
                 tabScopedGrantedPatterns.insert(pattern)
             }
         }

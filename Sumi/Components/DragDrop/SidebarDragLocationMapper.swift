@@ -22,7 +22,7 @@ enum SidebarDragLocationMapper {
         fromWindowPoint windowPoint: CGPoint,
         in window: NSWindow
     ) -> CGPoint {
-        return swiftUITopLeftPoint(
+        swiftUITopLeftPoint(
             windowPoint: windowPoint,
             topBoundaryY: swiftUITopBoundaryY(in: window)
         )

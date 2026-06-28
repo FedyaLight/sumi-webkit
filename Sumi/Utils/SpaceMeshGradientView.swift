@@ -7,7 +7,7 @@ import SwiftUI
 @MainActor
 struct SpaceMeshGradientView: View {
     var gradient: WorkspaceResolvedGradient
-    var primaryStopID: UUID? = nil
+    var primaryStopID: UUID?
 
     var body: some View {
         let stops = resolvedStops()
@@ -48,7 +48,7 @@ struct SpaceMeshGradientView: View {
             SIMD2<Float>(0, 0),
             SIMD2<Float>(1, 0),
             SIMD2<Float>(0, 1),
-            SIMD2<Float>(1, 1)
+            SIMD2<Float>(1, 1),
         ]
     }
 
@@ -61,7 +61,7 @@ struct SpaceMeshGradientView: View {
             SIMD2<Double>(0, 0),
             SIMD2<Double>(1, 0),
             SIMD2<Double>(0, 1),
-            SIMD2<Double>(1, 1)
+            SIMD2<Double>(1, 1),
         ]
         let center = SIMD2<Double>(0.5, 0.5)
         let projections = corners.map { corner in
@@ -91,7 +91,7 @@ struct SpaceMeshGradientView: View {
             SIMD2<Float>(1, 0.5 - driftY * 0.5),
             SIMD2<Float>(0, 1),
             SIMD2<Float>(0.5 - driftX * 0.5, 1),
-            SIMD2<Float>(1, 1)
+            SIMD2<Float>(1, 1),
         ].map { point in
             SIMD2<Float>(
                 min(max(point.x, 0), 1),
@@ -114,7 +114,7 @@ struct SpaceMeshGradientView: View {
             blend(second, third, amount: 0.45).color,
             third.color,
             blend(third, first, amount: 0.25).color,
-            blend(third, second, amount: 0.35).color
+            blend(third, second, amount: 0.35).color,
         ]
     }
 

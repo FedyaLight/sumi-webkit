@@ -5,8 +5,8 @@
 //
 
 import Foundation
-import WebKit
 import SwiftUI
+import WebKit
 
 @MainActor
 class GlanceSession: ObservableObject, Identifiable {

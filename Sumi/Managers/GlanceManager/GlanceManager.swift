@@ -4,8 +4,8 @@
 //
 //
 
-import SwiftUI
 import AppKit
+import SwiftUI
 import WebKit
 
 enum GlancePresentationPhase: Equatable {
@@ -98,7 +98,7 @@ final class GlanceManager: ObservableObject {
         }
 
         let sourceTab = restoredSourceTab(for: snapshot, in: windowState, browserManager: browserManager)
-        if (snapshot.sourceTabId != nil || snapshot.sourceShortcutPinId != nil),
+        if snapshot.sourceTabId != nil || snapshot.sourceShortcutPinId != nil,
            sourceTab == nil {
             if !browserManager.tabManager.hasLoadedInitialData {
                 return

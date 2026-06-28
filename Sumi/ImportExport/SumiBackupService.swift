@@ -20,7 +20,7 @@ final class SumiBackupService {
         return SumiPortableArchive(
             includedCategories: Array(data.nonEmptyCategories).sorted { $0.rawValue < $1.rawValue },
             warnings: [
-                "Backup v1 contains logical Sumi data only. Cookies, passwords, WebKit website data, caches, downloads, history, and extension payloads are not included."
+                "Backup v1 contains logical Sumi data only. Cookies, passwords, WebKit website data, caches, downloads, history, and extension payloads are not included.",
             ],
             settings: [:],
             data: data

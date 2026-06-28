@@ -342,7 +342,6 @@ struct SumiSettingsTabRootView: View {
         tab.url = newURL
         browserManager.tabManager.scheduleRuntimeStatePersistence(for: tab)
     }
-
 }
 
 private struct SettingsPaneIcon: View {

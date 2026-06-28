@@ -329,5 +329,4 @@ extension TabManager {
         regularTabCollectionOwner.insert(tab, in: toSpaceId, at: toIndex)
         scheduleStructuralPersistence()
     }
-
 }

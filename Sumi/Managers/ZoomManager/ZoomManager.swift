@@ -4,9 +4,9 @@
 //
 //
 
+import Combine
 import Foundation
 import WebKit
-import Combine
 
 @Observable
 @MainActor
@@ -71,7 +71,7 @@ class ZoomManager: ObservableObject {
 
     /// Get zoom level for a specific tab
     func getZoomLevel(for tabId: UUID) -> Double {
-        return tabZoomLevels[tabId] ?? Self.defaultZoomLevel
+        tabZoomLevels[tabId] ?? Self.defaultZoomLevel
     }
 
     /// Set zoom level for a specific tab
@@ -165,7 +165,7 @@ class ZoomManager: ObservableObject {
     }
 
     func getZoomPercentageDisplay(for tabId: UUID) -> String {
-        return "\(Int((getZoomLevel(for: tabId) * 100).rounded()))%"
+        "\(Int((getZoomLevel(for: tabId) * 100).rounded()))%"
     }
 
     func isDefaultZoom(for tabId: UUID) -> Bool {
@@ -243,14 +243,13 @@ class ZoomManager: ObservableObject {
     func removeTabZoomLevel(for tabId: UUID) {
         tabZoomLevels.removeValue(forKey: tabId)
     }
-
 }
 
 // MARK: - Supporting Types
 
 enum ZoomStepDirection {
-    case up    // Zoom in
-    case down  // Zoom out
+    case up // Zoom in
+    case down // Zoom out
 }
 
 // MARK: - Extensions

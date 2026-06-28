@@ -24,5 +24,4 @@ enum SumiFilePickerDecisionMapper {
             return .deny(reason: decision.reason)
         }
     }
-
 }

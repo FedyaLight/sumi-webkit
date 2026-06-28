@@ -131,8 +131,7 @@ final class SumiProtectionAttachmentOwner {
         if !loadRuleDefinitions,
            !includeExpensiveDiagnostics,
            let cachedAttachmentPlan = attachmentServiceCache.attachmentPlan,
-           cachedAttachmentPlanMatches(cachedAttachmentPlan, level: level, manifest: manifest)
-        {
+           cachedAttachmentPlanMatches(cachedAttachmentPlan, level: level, manifest: manifest) {
             return metadataOnlyGlobalAttachmentPlan(cachedAttachmentPlan)
         }
 
@@ -276,8 +275,7 @@ final class SumiProtectionAttachmentOwner {
             manifest: ruleProvider.activeManifestIfLoaded()
         )
         if metadataOnlyDefinitions.map(\.webKitStoreIdentifier).sorted()
-            == metadataPlan.expectedRuleListIdentifiers.sorted()
-        {
+            == metadataPlan.expectedRuleListIdentifiers.sorted() {
             do {
                 let preparedUpdate = try await service.prepareExistingRuleListUpdate(
                     ruleLists: metadataOnlyDefinitions
@@ -332,8 +330,7 @@ final class SumiProtectionAttachmentOwner {
         in plan: SumiProtectionGlobalAttachmentPlan
     ) throws {
         if let requiredProfileId = plan.requiredBundleProfileId,
-           plan.bundleProfileId != requiredProfileId
-        {
+           plan.bundleProfileId != requiredProfileId {
             throw SumiProtectionApplyError.requiredPreparedBundleUnavailable(
                 profileId: requiredProfileId,
                 detail: "The active prepared bundle after install is \(plan.bundleProfileId ?? "nil")."

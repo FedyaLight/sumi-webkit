@@ -11,8 +11,7 @@ import Foundation
 enum BrowserExtensionActionPopupBlocker:
     String,
     Codable,
-    Equatable
-{
+    Equatable {
     case moduleDisabled
     case extensionNotInstalled
     case extensionDisabled
@@ -47,8 +46,7 @@ enum ExtensionActionPopupRuntimeFailureBucket: String, Codable, CaseIterable, Se
 
 struct BrowserExtensionActionPopupRequestResult:
     Codable,
-    Equatable
-{
+    Equatable {
     var opened: Bool
     var blocker: BrowserExtensionActionPopupBlocker?
     var message: String

@@ -4,8 +4,8 @@
 //
 //
 
-import SwiftUI
 import AppKit
+import SwiftUI
 
 struct HoverSidebarEventMonitorClient {
     let addLocalMonitor: (

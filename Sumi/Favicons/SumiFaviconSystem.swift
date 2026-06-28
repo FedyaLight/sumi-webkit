@@ -10,8 +10,7 @@ enum SumiFaviconLookupKey {
         }
 
         if let host = url.host?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !host.isEmpty
-        {
+           !host.isEmpty {
             return host.lowercased()
         }
 
@@ -29,8 +28,7 @@ enum SumiFaviconLookupKey {
 
         if let explicitURL = URL(string: trimmed),
            let scheme = explicitURL.scheme?.lowercased(),
-           isCacheableScheme(scheme)
-        {
+           isCacheableScheme(scheme) {
             return explicitURL
         }
 

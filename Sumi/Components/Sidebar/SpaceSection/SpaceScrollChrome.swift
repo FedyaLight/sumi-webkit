@@ -3,8 +3,8 @@
 //  Sumi
 //
 
-import SwiftUI
 import AppKit
+import SwiftUI
 
 extension SpaceView {
     var mainContentContainer: some View {
@@ -206,7 +206,7 @@ private final class SidebarPassiveScrollIndicatorView: NSView {
             thumbView.layer?.backgroundColor = indicatorColor.cgColor
         }
     }
-    
+
     private let thumbView = NSView()
     private var currentMetrics: SidebarPassiveScrollIndicatorMetrics?
 
@@ -217,7 +217,7 @@ private final class SidebarPassiveScrollIndicatorView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        
+
         thumbView.wantsLayer = true
         thumbView.layer?.masksToBounds = true
         addSubview(thumbView)
@@ -235,14 +235,14 @@ private final class SidebarPassiveScrollIndicatorView: NSView {
 
     private func updateThumbLayout(animated: Bool) {
         guard let metrics = currentMetrics else { return }
-        
+
         let targetWidth: CGFloat = SidebarPassiveScrollIndicatorLayout.width
         let targetOpacity: Float = 0.28
         let targetX = bounds.width - targetWidth // Align to the right
         let targetY = metrics.thumbOffsetY
-        
+
         let targetFrame = NSRect(x: targetX, y: targetY, width: targetWidth, height: metrics.thumbHeight)
-        
+
         if animated {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.12
@@ -284,12 +284,12 @@ private final class SidebarTabListScrollRegistrationView: NSView {
     private var lastScrollIndicatorState: SidebarPassiveScrollIndicatorState?
     private var hideScrollIndicatorWorkItem: DispatchWorkItem?
     private var scrollIndicatorVisibilityGeneration = 0
-    
+
     private var boundsObserver: NSObjectProtocol?
     private var documentFrameObserver: NSObjectProtocol?
     private var didEnableBoundsChangedNotifications = false
     private var didEnableDocumentFrameChangedNotifications = false
-    
+
     override var isOpaque: Bool { false }
 
     override func viewDidMoveToSuperview() {
@@ -537,7 +537,7 @@ private final class SidebarTabListScrollRegistrationView: NSView {
             width: width,
             height: visibleHeight
         )
-        
+
         indicatorView.updateThumb(metrics: metrics)
 
         if shouldReveal {
@@ -608,5 +608,4 @@ private final class SidebarTabListScrollRegistrationView: NSView {
         hideScrollIndicatorWorkItem?.cancel()
         hideScrollIndicatorWorkItem = nil
     }
-
 }

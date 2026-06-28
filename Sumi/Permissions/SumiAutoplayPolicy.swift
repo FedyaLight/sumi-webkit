@@ -76,5 +76,4 @@ enum SumiAutoplayPolicy: String, Codable, CaseIterable, Hashable, Sendable {
             return .allowAll
         }
     }
-
 }

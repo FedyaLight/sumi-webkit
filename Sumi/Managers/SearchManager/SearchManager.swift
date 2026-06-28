@@ -32,7 +32,7 @@ struct DuckDuckGoSearchSuggestionDataProvider: SearchSuggestionDataProviding {
 class SearchManager {
     var suggestions: [SearchSuggestion] = []
     var isLoadingSuggestions = false
-    
+
     private let suggestionDataProvider: SearchSuggestionDataProviding
     private var webSuggestionTask: Task<Void, Never>?
     private var historySuggestionTask: Task<Void, Never>?
@@ -67,12 +67,12 @@ class SearchManager {
     init(suggestionDataProvider: SearchSuggestionDataProviding = DuckDuckGoSearchSuggestionDataProvider()) {
         self.suggestionDataProvider = suggestionDataProvider
     }
-    
+
     struct SearchSuggestion: Identifiable, Equatable {
         let id = UUID()
         let text: String
         let type: SuggestionType
-        
+
         enum SuggestionType {
             case search
             case url
@@ -80,7 +80,7 @@ class SearchManager {
             case history(HistoryListItem)
             case bookmark(SumiBookmark)
         }
-        
+
         static func == (lhs: SearchSuggestion, rhs: SearchSuggestion) -> Bool {
             switch (lhs.type, rhs.type) {
             case (.search, .search), (.url, .url):
@@ -101,7 +101,7 @@ class SearchManager {
         self.tabManager = tabManager
         updateProfileContext()
     }
-    
+
     func setHistoryManager(_ historyManager: HistoryManager?) {
         self.historyManager = historyManager
     }
@@ -148,7 +148,7 @@ class SearchManager {
         if let pid { RuntimeDiagnostics.emit("🔎 [SearchManager] Profile context updated: \(pid.uuidString)") }
         #endif
     }
-    
+
     @MainActor func searchSuggestions(for query: String) {
         // Cancel previous request
         webSuggestionTask?.cancel()
@@ -159,14 +159,14 @@ class SearchManager {
         let generation = activeWebSuggestionGeneration
 
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         // Clear suggestions if query is empty
         guard !normalizedQuery.isEmpty else {
             isLoadingSuggestions = false
             clearSuggestionResults()
             return
         }
-        
+
         if let directURLSuggestion = directURLSuggestion(for: normalizedQuery) {
             updateSuggestionsIfNeeded([directURLSuggestion])
         }
@@ -261,7 +261,7 @@ class SearchManager {
             failedToLoad: false
         )
     }
-    
+
     private func fetchWebSuggestions(
         for query: String,
         context: SuggestionQueryContext,
@@ -673,7 +673,7 @@ class SearchManager {
             cachedWebSuggestions.removeValue(forKey: evictedQuery)
         }
     }
-    
+
     private func updateSuggestionsIfNeeded(_ newSuggestions: [SearchSuggestion]) {
         guard suggestions != newSuggestions else { return }
         suggestions = newSuggestions

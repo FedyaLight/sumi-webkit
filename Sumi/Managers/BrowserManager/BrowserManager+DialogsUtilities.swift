@@ -207,8 +207,7 @@ extension BrowserManager {
         nativeModalPresentation = nil
 
         if let transientSessionToken = presentation.transientSessionToken,
-           let coordinator = presentation.source?.coordinator
-        {
+           let coordinator = presentation.source?.coordinator {
             coordinator.finishSession(
                 transientSessionToken,
                 reason: reason
@@ -249,8 +248,7 @@ extension BrowserManager {
            ownerView.window != nil,
            ownerView.superview != nil,
            !ownerView.isHiddenOrHasHiddenAncestor,
-           ownerView.alphaValue > 0
-        {
+           ownerView.alphaValue > 0 {
             anchorView = ownerView
             anchorRect = ownerView.bounds
         } else {
@@ -517,5 +515,4 @@ extension BrowserManager {
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
-
 }

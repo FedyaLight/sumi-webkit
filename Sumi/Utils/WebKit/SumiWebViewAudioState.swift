@@ -87,7 +87,7 @@ extension WKWebView {
     static func keyPathsForValuesAffectingSumiAudioIsPlayingAudio() -> Set<String> {
         [
             NSStringFromSelector(SumiAudioSelector.mediaMutedState),
-            SumiAudioSelector.isPlayingAudio
+            SumiAudioSelector.isPlayingAudio,
         ]
     }
 

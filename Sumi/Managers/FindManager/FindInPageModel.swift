@@ -21,7 +21,6 @@ import Foundation
 import WebKit
 
 final class FindInPageModel {
-
     @Published private(set) var text: String = ""
     @Published private(set) var currentSelection: UInt?
     @Published private(set) var matchesFound: UInt?
@@ -43,5 +42,4 @@ final class FindInPageModel {
     func find(_ text: String) {
         self.text = text
     }
-
 }

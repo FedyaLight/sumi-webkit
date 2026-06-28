@@ -163,8 +163,7 @@ final class ExtensionProfileRuntimeOwner {
             return profile.id
         }
         if let windowId = tab.primaryWindowId,
-           let windowState = browserManager?.windowRegistry?.windows[windowId]
-        {
+           let windowState = browserManager?.windowRegistry?.windows[windowId] {
             return resolvedProfileId(
                 for: windowState,
                 browserManager: browserManager

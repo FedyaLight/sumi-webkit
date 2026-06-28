@@ -52,8 +52,8 @@ struct ChromeCornerRadii: Equatable, Sendable {
     /// so visually-top corners correspond to the `MaxY` mask constants.
     var caCornerMask: CACornerMask {
         var mask: CACornerMask = []
-        if topLeading > 0    { mask.insert(.layerMinXMaxYCorner) }
-        if topTrailing > 0   { mask.insert(.layerMaxXMaxYCorner) }
+        if topLeading > 0 { mask.insert(.layerMinXMaxYCorner) }
+        if topTrailing > 0 { mask.insert(.layerMaxXMaxYCorner) }
         if bottomLeading > 0 { mask.insert(.layerMinXMinYCorner) }
         if bottomTrailing > 0 { mask.insert(.layerMaxXMinYCorner) }
         return mask

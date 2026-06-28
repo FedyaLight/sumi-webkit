@@ -189,7 +189,7 @@ private extension SumiTabTitleView {
             titleTextField.topAnchor.constraint(equalTo: topAnchor),
             titleTextField.bottomAnchor.constraint(equalTo: bottomAnchor),
             titleTextField.leadingAnchor.constraint(equalTo: leadingAnchor),
-            titleTrailing
+            titleTrailing,
         ])
 
         previousTextField.translatesAutoresizingMaskIntoConstraints = false
@@ -199,7 +199,7 @@ private extension SumiTabTitleView {
             previousTextField.topAnchor.constraint(equalTo: topAnchor),
             previousTextField.bottomAnchor.constraint(equalTo: bottomAnchor),
             previousTextField.leadingAnchor.constraint(equalTo: leadingAnchor),
-            previousTrailing
+            previousTrailing,
         ])
     }
 
@@ -272,7 +272,7 @@ private extension SumiTabTitleView {
                 duration: SumiTabTitleAnimation.duration,
                 fromValue: SumiTabTitleAnimation.slidingOutStartX,
                 toValue: SumiTabTitleAnimation.slidingOutLastX
-            )
+            ),
         ]
 
         previousTitleLayer.opacity = 0

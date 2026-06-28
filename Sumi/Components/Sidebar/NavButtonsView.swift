@@ -3,8 +3,8 @@
 //  Sumi
 //
 //
-import Combine
 import AppKit
+import Combine
 import SwiftUI
 import WebKit
 
@@ -118,7 +118,7 @@ struct NavButtonsView: View {
             }
         }
     }
-    
+
     private func updateCurrentTab() {
         tabWrapper.updateTab(browserManager.currentTab(for: windowState))
     }
@@ -135,7 +135,7 @@ struct NavButtonsView: View {
     private func activeWebView() -> WKWebView? {
         tabWrapper.activeWebView()
     }
-    
+
     private func goBack() {
         let webView = activeWebView()
         if SumiNavigationHistoryMenuModel.openURLIfModifiedClick(
@@ -154,7 +154,7 @@ struct NavButtonsView: View {
             tabWrapper.tab?.goBack()
         }
     }
-    
+
     private func goForward() {
         let webView = activeWebView()
         if SumiNavigationHistoryMenuModel.openURLIfModifiedClick(
@@ -173,7 +173,7 @@ struct NavButtonsView: View {
             tabWrapper.tab?.goForward()
         }
     }
-    
+
     private func reloadOrStopCurrentTab() {
         guard let tab = tabWrapper.tab else { return }
 
@@ -183,5 +183,4 @@ struct NavButtonsView: View {
             tab.refresh()
         }
     }
-    
 }

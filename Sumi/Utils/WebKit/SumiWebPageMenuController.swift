@@ -1,6 +1,6 @@
 import AppKit
-import WebKit
 import SwiftUI
+import WebKit
 
 /// Shapes the contextual menu after WebKit has resolved the page element under
 /// the pointer. Element commands keep their native WebKit actions and targets.
@@ -378,8 +378,7 @@ private struct SumiWebPageMenuComposer {
 
     private func removeOwnedPageItems() {
         for item in menu.items.reversed()
-            where SumiWebPageMenuCommand(item.identifier)?.isPageBackgroundCommand == true
-        {
+            where SumiWebPageMenuCommand(item.identifier)?.isPageBackgroundCommand == true {
             menu.removeItem(item)
         }
         menu.sumiNormalizeSeparators()
@@ -398,8 +397,7 @@ private struct SumiWebPageMenuComposer {
             ))
         }
         if context.canCopyLinkToSelectedText,
-           !context.identifiers.contains(.copyLinkWithHighlight)
-        {
+           !context.identifiers.contains(.copyLinkWithHighlight) {
             items.append(makeItem(
                 title: "Copy Link to Selected Text",
                 command: .copyLinkToSelectedText,
@@ -601,8 +599,7 @@ struct SumiWebPageMenuContext {
         var lastElementIndex = -1
         for (index, item) in menu.items.enumerated() {
             if let identifier = SumiWebKitMenuItemIdentifier(item.identifier),
-               identifier.belongsToElementContext
-            {
+               identifier.belongsToElementContext {
                 lastElementIndex = index
             }
             if SumiWebPageMenuCommand(item.identifier)?.belongsToElementContext == true {

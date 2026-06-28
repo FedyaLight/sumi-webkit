@@ -132,8 +132,7 @@ enum SumiNativeMessagingCapabilityPolicy {
                 || input.applicationIdentifier?.isEmpty == false
 
         if hasIdentity || input.sourceKind != .unknown
-            || input.isNativeMacBundle != nil || input.isMacCatalystBundle != nil
-        {
+            || input.isNativeMacBundle != nil || input.isMacCatalystBundle != nil {
             return .unsupportedNoBackend
         }
 
@@ -146,8 +145,7 @@ enum SumiNativeMessagingAdapterTransport {
     static let defaultOneShotTimeout: Duration = SumiNativeMessagingConnection.defaultReplyTimeout
 
     static func relayErrorCode(for capability: SumiNativeMessagingAdapterCapability)
-        -> SumiNativeMessagingRelay.ErrorCode
-    {
+        -> SumiNativeMessagingRelay.ErrorCode {
         switch capability {
         case .adapterAvailable:
             return .companionAppProtocolUnknown

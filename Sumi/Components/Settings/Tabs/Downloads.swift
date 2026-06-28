@@ -162,4 +162,3 @@ struct SettingsDownloadsTab: View {
         return panel.url
     }
 }
-

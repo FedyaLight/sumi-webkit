@@ -595,7 +595,6 @@ class BrowserManager: ObservableObject {
         )
     }
 
-
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
         startupPersistence: BrowserManagerStartupPersistence = .production,
@@ -794,7 +793,7 @@ class BrowserManager: ObservableObject {
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
-    
+
     /// Called when TabManager finishes loading initial data from persistence
     private func handleTabManagerDataLoaded() {
         windowSessionService.handleTabManagerDataLoaded(delegate: self)
@@ -1001,7 +1000,6 @@ class BrowserManager: ObservableObject {
             }
         )
     }
-
 
     func focusFloatingBarForActiveWindow(
         prefill: String = "",
@@ -1290,7 +1288,6 @@ class BrowserManager: ObservableObject {
     func setupWindowState(_ windowState: BrowserWindowState) {
         windowSessionActivationOwner.setupWindowState(windowState)
     }
-
 
     /// Set the active window state (called when a window gains focus)
     /// NOTE: This is called BY the WindowRegistry callback, so we don't call setActive again
@@ -1651,8 +1648,7 @@ extension BrowserManager {
 }
 
 extension BrowserManager: BrowserCommandRouting, WindowCommandRouting, BrowserWindowLifecycleHandling,
-    ExternalURLHandling, BrowserPersistenceHandling, WebViewLookup
-{
+    ExternalURLHandling, BrowserPersistenceHandling, WebViewLookup {
     func flushRuntimeStatePersistenceAwaitingResult() async -> Int {
         await tabManager.flushRuntimeStatePersistenceAwaitingResult()
     }
@@ -1668,6 +1664,6 @@ extension BrowserManager: BrowserCommandRouting, WindowCommandRouting, BrowserWi
 
 extension Array {
     subscript(safe index: Int) -> Element? {
-        return indices.contains(index) ? self[index] : nil
+        indices.contains(index) ? self[index] : nil
     }
 }

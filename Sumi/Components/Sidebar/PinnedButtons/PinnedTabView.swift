@@ -19,13 +19,13 @@ struct PinnedTabView: View {
     }
 
     var tabIcon: SwiftUI.Image
-    var glyphText: String? = nil
+    var glyphText: String?
     /// Draw with `ChromeThemeTokens.primaryText` + monochrome (new-tab globe, settings gear, uncached globe fallback).
-    var chromeTemplateSystemImageName: String? = nil
+    var chromeTemplateSystemImageName: String?
     var presentationState: ShortcutPresentationState
-    var liveTab: Tab? = nil
-    var dragSourceConfiguration: SidebarDragSourceConfiguration? = nil
-    var accessibilityID: String? = nil
+    var liveTab: Tab?
+    var dragSourceConfiguration: SidebarDragSourceConfiguration?
+    var accessibilityID: String?
     var isAppKitInteractionEnabled: Bool = true
     var showsUnloadIndicator: Bool = false
     var showsSplitGroupOutline: Bool = false
@@ -33,8 +33,8 @@ struct PinnedTabView: View {
     var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     var action: () -> Void
     var onUnload: () -> Void
-    var accentSourceURL: URL? = nil
-    var accentSourcePartition: SumiFaviconPartition? = nil
+    var accentSourceURL: URL?
+    var accentSourcePartition: SumiFaviconPartition?
 
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
@@ -139,8 +139,8 @@ struct PinnedTabView: View {
             y: presentationState.isSelected ? 1 : 0
         )
     }
-    
-    //MARK: - Colors
+
+    // MARK: - Colors
     private var backgroundColor: Color {
         let state = backgroundState
         switch state {
@@ -222,15 +222,15 @@ struct PinnedTileVisual: View {
     }
 
     var tabIcon: SwiftUI.Image
-    var glyphText: String? = nil
-    var chromeTemplateSystemImageName: String? = nil
+    var glyphText: String?
+    var chromeTemplateSystemImageName: String?
     var presentationState: ShortcutPresentationState
     var isHovered: Bool = false
     var showsSplitGroupOutline: Bool = false
     var faviconOpacity: Double = 1
-    var configuration: PinnedTabsConfiguration? = nil
-    var accentSourceURL: URL? = nil
-    var accentSourcePartition: SumiFaviconPartition? = nil
+    var configuration: PinnedTabsConfiguration?
+    var accentSourceURL: URL?
+    var accentSourcePartition: SumiFaviconPartition?
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -487,8 +487,6 @@ struct PinnedTileSplitGroupOutlineMask: View {
         .stroke(strokeColor, style: style)
     }
 }
-
-
 
 private struct PinnedTileAudioButton: View {
     @ObservedObject var tab: Tab

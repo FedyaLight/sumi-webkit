@@ -347,7 +347,6 @@ struct TabFolderView: View {
             .allowsHitTesting(false)
     }
 
-
     private func folderHeader(
         contentProjection: SidebarFolderContentProjection,
         projection: SidebarFolderViewProjection
@@ -813,5 +812,4 @@ struct TabFolderView: View {
             update()
         }
     }
-
 }

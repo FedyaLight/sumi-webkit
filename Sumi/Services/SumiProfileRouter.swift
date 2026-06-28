@@ -49,8 +49,7 @@ final class SumiProfileRouter {
             )
             await MainActor.run {
                 if let activeId = support?.windowRegistry?.activeWindow?.id,
-                   activeId == windowState.id
-                {
+                   activeId == windowState.id {
                     support?.windowRegistry?.activeWindow?.currentProfileId = targetProfileId
                 }
             }

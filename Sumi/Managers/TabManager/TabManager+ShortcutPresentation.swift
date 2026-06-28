@@ -138,5 +138,4 @@ extension TabManager {
             .flatMap(\.values)
             .filter { role == nil || $0.shortcutPinRole == role }
     }
-
 }

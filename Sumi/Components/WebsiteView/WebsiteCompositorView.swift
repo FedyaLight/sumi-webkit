@@ -180,8 +180,7 @@ private final class WindowWebContentVisualHandoffFlowOwner {
         }
 
         if let group = runtime.splitGroup(),
-           group.contains(currentTab.id)
-        {
+           group.contains(currentTab.id) {
             let tabs = group.tabIds.compactMap { runtime.tab($0) }
             guard tabs.count == group.tabIds.count else { return nil }
             return .split(group: group, tabs: tabs)
@@ -399,14 +398,12 @@ final class WindowWebContentController: NSViewController {
             && hostLifecycleOwner.missingPreparedWebViews(
                 for: displayState.visibleTabIds,
                 browserContext: browserContext
-            )
-        {
+            ) {
             browserContext.schedulePrepareVisibleWebViews(for: windowState)
         }
 
         if lastHoverTabId != displayState.currentId,
-           let currentTab
-        {
+           let currentTab {
             setupHoverCallbacks(for: currentTab)
             lastHoverTabId = displayState.currentId
         }

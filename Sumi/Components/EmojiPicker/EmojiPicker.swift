@@ -210,8 +210,7 @@ extension EmojiPickerManager: NSPopoverDelegate {
         }
 
         if let coordinator = activePresentationSource?.coordinator,
-           let transientSessionToken
-        {
+           let transientSessionToken {
             coordinator.finishSession(
                 transientSessionToken,
                 reason: "EmojiPickerManager.popoverDidClose",

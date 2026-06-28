@@ -112,8 +112,7 @@ enum BitwardenDesktopTransportDiagnostics {
     ) {
         let now = ContinuousClock.now
         if let last = lastUnsupportedCommandLog[command],
-           now - last < unsupportedCommandCoalesceWindow
-        {
+           now - last < unsupportedCommandCoalesceWindow {
             return
         }
         lastUnsupportedCommandLog[command] = now
@@ -156,8 +155,7 @@ final class BitwardenDesktopProxyProcessTransport: BitwardenDesktopProxyTranspor
         } catch {
             let nsError = error as NSError
             if nsError.domain == NSPOSIXErrorDomain,
-               nsError.code == EPERM || nsError.code == EACCES
-            {
+               nsError.code == EPERM || nsError.code == EACCES {
                 BitwardenDesktopTransportDiagnostics.log(outcome: .desktopPermissionDenied)
                 throw BitwardenDesktopProxyTransportError.permissionDenied
             }
@@ -356,8 +354,7 @@ enum BitwardenDesktopProxyTransportErrorMapper {
     }
 
     static func capability(for error: BitwardenDesktopProxyTransportError)
-        -> SumiNativeMessagingAdapterCapability
-    {
+        -> SumiNativeMessagingAdapterCapability {
         switch error {
         case .appNotInstalled, .proxyBinaryMissing:
             return .appNotInstalled
@@ -375,8 +372,7 @@ enum BitwardenDesktopProxyTransportErrorMapper {
     }
 
     static func outcome(for error: BitwardenDesktopProxyTransportError)
-        -> BitwardenDesktopTransportOutcome
-    {
+        -> BitwardenDesktopTransportOutcome {
         switch error {
         case .appNotInstalled, .proxyBinaryMissing:
             return .desktopAppNotInstalled

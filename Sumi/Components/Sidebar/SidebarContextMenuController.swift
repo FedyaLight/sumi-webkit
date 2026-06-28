@@ -72,8 +72,7 @@ final class SidebarInteractionState {
     func reconcileSessions(_ activeTokenIDsByKind: [SidebarTransientUIKind: Set<UUID>]) {
         activeSessionTokenIDsByKind = activeTokenIDsByKind.filter { !$0.value.isEmpty }
         if let dragTokenID,
-           activeSessionTokenIDsByKind[.drag]?.contains(dragTokenID) != true
-        {
+           activeSessionTokenIDsByKind[.drag]?.contains(dragTokenID) != true {
             self.dragTokenID = nil
         }
         if freezesSidebarHoverState {
@@ -139,8 +138,7 @@ final class SidebarInteractiveOwnerRegistry {
             if let current = bestCandidate {
                 if priority > current.priority
                     || (priority == current.priority && depth > current.depth)
-                    || (priority == current.priority && depth == current.depth && orderIndex > current.orderIndex)
-                {
+                    || (priority == current.priority && depth == current.depth && orderIndex > current.orderIndex) {
                     bestCandidate = (owner, priority, depth, orderIndex)
                 }
             } else {
@@ -170,8 +168,7 @@ final class SidebarInteractiveOwnerRegistry {
 
             if !sourceOwnerResolved,
                let sourceMetadata,
-               owner.recoveryResolutionReason(matching: sourceMetadata) != nil
-            {
+               owner.recoveryResolutionReason(matching: sourceMetadata) != nil {
                 sourceOwnerResolved = true
             }
         }
@@ -207,8 +204,7 @@ final class SidebarInteractiveOwnerRegistry {
             return false
         }
         if let hostedSidebarView,
-           owner.isDescendant(of: hostedSidebarView) != true
-        {
+           owner.isDescendant(of: hostedSidebarView) != true {
             return false
         }
         return true
@@ -329,8 +325,7 @@ final class SidebarContextMenuController {
             return false
         }
         if let hostedSidebarView,
-           ownerView.isDescendant(of: hostedSidebarView) != true
-        {
+           ownerView.isDescendant(of: hostedSidebarView) != true {
             return false
         }
 

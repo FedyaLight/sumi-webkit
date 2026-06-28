@@ -8,7 +8,7 @@ final class WebViewCompositorHandoffState {
     private var containerViews: [UUID: WeakNSView] = [:]
     private var immediateVisualHandoffHandlersByWindow: [UUID: @MainActor () -> Bool] = [:]
     private var promotedHostsByTabAndWindow: [UUID: [UUID: SumiWebViewContainerView]] = [:]
-    private var promotedHostAttachmentCompletionsByTabAndWindow: [UUID: [UUID: (@MainActor () -> Void)]] = [:]
+    private var promotedHostAttachmentCompletionsByTabAndWindow: [UUID: [UUID: @MainActor () -> Void]] = [:]
 
     func setContainerView(_ view: NSView?, for windowID: UUID) {
         if let view {

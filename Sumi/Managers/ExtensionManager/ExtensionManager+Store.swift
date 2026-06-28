@@ -257,14 +257,12 @@ extension ExtensionManager {
         extensionOwnedSourceURL: URL? = nil
     ) -> String? {
         if let extensionContext,
-           let extensionId = extensionID(for: extensionContext)
-        {
+           let extensionId = extensionID(for: extensionContext) {
             return extensionId
         }
 
         if let override = openerTab?.webExtensionContextOverride,
-           let extensionId = extensionID(for: override)
-        {
+           let extensionId = extensionID(for: override) {
             return extensionId
         }
 
@@ -445,8 +443,7 @@ extension ExtensionManager {
     }
 
     private func loadStoredExtensionPermissionDecisions()
-        -> [String: ExtensionStoredPermissionDecision]
-    {
+        -> [String: ExtensionStoredPermissionDecision] {
         guard let data = extensionPreferences.data(
             forKey: Self.extensionPermissionDecisionsStorageKey
         ),
@@ -656,8 +653,7 @@ extension ExtensionManager {
         if let patternString = hostMatchPatternString(for: url),
            let matchPattern = try? WKWebExtension.MatchPattern(
                string: patternString
-           )
-        {
+           ) {
             extensionContext.setPermissionStatus(
                 .grantedExplicitly,
                 for: matchPattern,
@@ -690,8 +686,7 @@ extension ExtensionManager {
         if let patternString = hostMatchPatternString(for: url),
            let matchPattern = try? WKWebExtension.MatchPattern(
                string: patternString
-           )
-        {
+           ) {
             extensionContext.setPermissionStatus(
                 .deniedExplicitly,
                 for: matchPattern,
@@ -789,15 +784,13 @@ extension ExtensionManager {
            let normalizedPath = ExtensionUtils.existingValidatedOptionsPagePath(
                persistedPath,
                in: extensionRoot
-           )
-        {
+           ) {
             pagePath = normalizedPath
         } else if let declaredPath = ExtensionUtils.optionsPagePath(from: manifest),
                   let normalizedPath = ExtensionUtils.existingValidatedOptionsPagePath(
                       declaredPath,
                       in: extensionRoot
-                  )
-        {
+                  ) {
             pagePath = normalizedPath
         } else {
             pagePath = ExtensionUtils.storedOptionsPagePath(

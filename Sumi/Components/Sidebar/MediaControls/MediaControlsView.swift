@@ -251,8 +251,7 @@ private struct SumiMediaSourceIconView: View {
     var body: some View {
         Group {
             if let faviconKey = cardState.favicon,
-               let icon = TabFaviconStore.getCachedImage(for: faviconKey)
-            {
+               let icon = TabFaviconStore.getCachedImage(for: faviconKey) {
                 Image(nsImage: icon)
                     .resizable()
                     .scaledToFit()

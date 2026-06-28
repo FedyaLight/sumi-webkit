@@ -522,7 +522,6 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
         return "dragKey"
     }
-
 }
 
 private extension SidebarInteractiveItemView {

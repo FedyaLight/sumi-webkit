@@ -24,7 +24,6 @@ enum SumiExternalSchemeUserActivationState: Equatable, Sendable {
             return false
         }
     }
-
 }
 
 struct SumiExternalSchemePermissionTabContext: Sendable {
@@ -227,5 +226,4 @@ struct SumiExternalSchemePermissionRequest: Sendable {
     private static func permissionOrigin(from origin: SumiSecurityOrigin) -> SumiPermissionOrigin {
         origin.permissionOrigin(missingReason: "missing-navigation-external-scheme-security-origin")
     }
-
 }

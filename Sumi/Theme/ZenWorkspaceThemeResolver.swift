@@ -173,7 +173,7 @@ enum ZenWorkspaceThemeResolver {
                     hex: hexString(from: resolvedRGB),
                     location: 0,
                     position: .monochrome
-                )
+                ),
             ],
             texture: 0,
             opacity: 1

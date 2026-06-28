@@ -6,13 +6,13 @@ import SwiftUI
 final class SplitViewManager: ObservableObject {
     struct WindowSplitPreviewState: Equatable {
         var isActive: Bool = false
-        var targetRect: CGRect? = nil
+        var targetRect: CGRect?
         var style: SplitDropPreviewStyle = .edge
     }
 
     private struct TransientWindowSplitState: Equatable {
         var isPreviewActive: Bool = false
-        var previewTargetRect: CGRect? = nil
+        var previewTargetRect: CGRect?
         var previewStyle: SplitDropPreviewStyle = .edge
     }
 
@@ -675,7 +675,7 @@ final class SplitViewManager: ObservableObject {
         let candidateGroups: [SplitGroup?] = [
             sourceGroup,
             tm.splitGroup(containing: tab.id),
-            pinId.flatMap { tm.splitGroup(containingPinId: $0) }
+            pinId.flatMap { tm.splitGroup(containingPinId: $0) },
         ]
         var seenGroupIds = Set<UUID>()
         for group in candidateGroups.compactMap({ $0 }) where seenGroupIds.insert(group.id).inserted {
@@ -765,7 +765,7 @@ final class SplitViewManager: ObservableObject {
     ) -> Tab? {
         let candidateIds = [
             windowState.currentTabId,
-            group.activeTabId
+            group.activeTabId,
         ] + group.tabIds.map(Optional.some)
 
         for candidateId in candidateIds {
@@ -837,5 +837,4 @@ final class SplitViewManager: ObservableObject {
             browserManager?.schedulePersistWindowSession(for: windowState)
         }
     }
-
 }

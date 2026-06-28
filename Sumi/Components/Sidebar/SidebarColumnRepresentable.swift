@@ -63,12 +63,12 @@ struct SidebarColumnHostedRootView: View {
             if usesTransition && context.sourceChromeColorScheme != context.targetChromeColorScheme {
                 ZStack {
                     NativeChromeMaterialBackground(role: .collapsedSidebar)
-                    
+
                     let currentScheme = context.nativeSurfaceColorScheme
                     let isCurrentLight = currentScheme == .light
                     let maxOpacity: Double = isCurrentLight ? 0.35 : 0.20
                     let overlayColor = isCurrentLight ? Color.black : Color.white
-                    
+
                     let factor: Double = {
                         if context.transitionProgress < 0.5 {
                             return context.transitionProgress / 0.5
@@ -76,7 +76,7 @@ struct SidebarColumnHostedRootView: View {
                             return (1.0 - context.transitionProgress) / 0.5
                         }
                     }()
-                    
+
                     overlayColor
                         .opacity(factor * maxOpacity)
                 }

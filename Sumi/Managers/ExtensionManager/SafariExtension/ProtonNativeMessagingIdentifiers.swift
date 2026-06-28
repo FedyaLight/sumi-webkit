@@ -18,8 +18,7 @@ enum ProtonNativeMessagingIdentifiers {
 
     static func isSafariExtensionIdentity(sourceBundlePath: String) -> Bool {
         if SumiCompanionAppResolver.appexBundleIdentifier(at: sourceBundlePath)
-            == safariExtensionBundleIdentifier
-        {
+            == safariExtensionBundleIdentifier {
             return true
         }
         return SumiCompanionAppResolver.containingApplicationBundleIdentifier(

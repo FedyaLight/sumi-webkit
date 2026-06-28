@@ -10,7 +10,7 @@ final class TabFolderMutationOwner {
     }
 
     func createFolder(for spaceId: UUID, name: String = "New Folder") -> TabFolder {
-        return tabManager.withStructuralUpdateTransaction {
+        tabManager.withStructuralUpdateTransaction {
             RuntimeDiagnostics.emit("📁 Creating folder for spaceId: \(spaceId.uuidString)")
             let folder = TabFolder(
                 name: name,
@@ -244,8 +244,7 @@ final class TabFolderMutationOwner {
             let targetIndex = tabManager.folderPinnedPins(for: folderId, in: targetFolder.spaceId).count
 
             if let shortcutId = tab.shortcutPinId,
-               let pin = tabManager.shortcutPin(by: shortcutId)
-            {
+               let pin = tabManager.shortcutPin(by: shortcutId) {
                 _ = tabManager.moveShortcutPin(
                     pin,
                     to: .spacePinned,

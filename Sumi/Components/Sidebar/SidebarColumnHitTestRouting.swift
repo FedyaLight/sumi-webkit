@@ -12,8 +12,7 @@ enum SidebarColumnHitTestRouting {
         capturesOverlayBackgroundPointerEvents: Bool = false
     ) -> NSView? {
         if eventType == .leftMouseDragged || eventType == .leftMouseUp,
-           let owner = contextMenuController?.primaryMouseTrackingOwner(in: containerView.window)
-        {
+           let owner = contextMenuController?.primaryMouseTrackingOwner(in: containerView.window) {
             return owner
         }
 
@@ -35,8 +34,7 @@ enum SidebarColumnHitTestRouting {
                in: containerView.window,
                eventType: eventType,
                hostedSidebarView: hostedSidebarView
-           ) == true
-        {
+           ) == true {
             let originalPoint = originalOwner.convert(windowPoint, from: nil)
             originalOwnerPriority = originalOwner.routingPriority(
                 at: originalPoint,
@@ -52,8 +50,7 @@ enum SidebarColumnHitTestRouting {
         ) {
             if let originalOwner,
                originalOwner !== owner,
-               let originalOwnerPriority
-            {
+               let originalOwnerPriority {
                 let ownerPoint = owner.convert(windowPoint, from: nil)
                 let ownerPriority = owner.routingPriority(
                     at: ownerPoint,
@@ -68,8 +65,7 @@ enum SidebarColumnHitTestRouting {
         }
 
         if let originalOwner,
-           originalOwnerPriority != nil
-        {
+           originalOwnerPriority != nil {
             return originalOwner
         }
 
@@ -87,14 +83,12 @@ enum SidebarColumnHitTestRouting {
         }
 
         if originalHit?.nearestAncestor(of: SidebarInteractiveItemView.self) != nil,
-           originalHit?.isDescendant(of: hostedSidebarView) != true
-        {
+           originalHit?.isDescendant(of: hostedSidebarView) != true {
             return originalHit
         }
 
         if let originalHit,
-           originalHit === hostedSidebarView || originalHit.isDescendant(of: hostedSidebarView)
-        {
+           originalHit === hostedSidebarView || originalHit.isDescendant(of: hostedSidebarView) {
             return containerView
         }
 

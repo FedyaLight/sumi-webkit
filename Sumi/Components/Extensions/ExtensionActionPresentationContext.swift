@@ -83,8 +83,7 @@ struct ExtensionActionPresentationContext {
                 return currentTab
             }
             if !windowState.isAwaitingInitialSessionResolution
-                && browserManager.tabManager.hasLoadedInitialData
-            {
+                && browserManager.tabManager.hasLoadedInitialData {
                 return nil
             }
         }

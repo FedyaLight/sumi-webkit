@@ -61,5 +61,4 @@ final class SumiModuleRegistry {
     func disable(_ moduleID: SumiModuleID) {
         setEnabled(false, for: moduleID)
     }
-
 }

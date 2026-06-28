@@ -220,8 +220,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             source: source
         )
         if source?.interactiveOwnerRecoveryMetadata != nil,
-           !recoveryResult.sourceOwnerResolved
-        {
+           !recoveryResult.sourceOwnerResolved {
             windowState.scheduleSidebarInputRehydrate(
                 reason: .ownerUnresolvedAfterSoftRecovery
             )
@@ -256,8 +255,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
            ownerView.window != nil,
            ownerView.superview != nil,
            !ownerView.isHiddenOrHasHiddenAncestor,
-           ownerView.alphaValue > 0
-        {
+           ownerView.alphaValue > 0 {
             return (ownerView, ownerView.bounds, preferredEdge)
         }
 
@@ -327,8 +325,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         }
 
         if let coordinator = closedSession.transientCoordinator,
-           let transientSessionToken = closedSession.transientSessionToken
-        {
+           let transientSessionToken = closedSession.transientSessionToken {
             coordinator.finishSession(
                 transientSessionToken,
                 reason: reason,
@@ -359,8 +356,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         }
 
         if let coordinator = session.presentationSource?.coordinator,
-           let transientSessionToken = session.transientSessionToken
-        {
+           let transientSessionToken = session.transientSessionToken {
             coordinator.finishSession(
                 transientSessionToken,
                 reason: reason,
@@ -596,7 +592,7 @@ private final class WorkspaceThemePickerPopoverContentView: NSView {
             hostingView.leadingAnchor.constraint(equalTo: leadingAnchor),
             hostingView.trailingAnchor.constraint(equalTo: trailingAnchor),
             hostingView.topAnchor.constraint(equalTo: topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            hostingView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 }

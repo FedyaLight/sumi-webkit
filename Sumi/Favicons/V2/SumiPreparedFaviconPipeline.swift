@@ -74,7 +74,7 @@ final class SumiPreparedFaviconPipeline: @unchecked Sendable {
 
     private func renderRaster(data: Data, request: SumiPreparedFaviconRequest) -> NSImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, [
-            kCGImageSourceShouldCache: false
+            kCGImageSourceShouldCache: false,
         ] as CFDictionary) else {
             return nil
         }

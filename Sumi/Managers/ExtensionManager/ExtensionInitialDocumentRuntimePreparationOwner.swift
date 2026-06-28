@@ -67,8 +67,7 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
             guard Task.isCancelled == false else { return }
 
             for entity in manager.enabledPersistedExtensionEntities()
-                where entity.isEnabled && entity.hasContentScripts
-            {
+                where entity.isEnabled && entity.hasContentScripts {
                 guard Task.isCancelled == false else { return }
                 do {
                     _ = try await manager.ensureExtensionLoaded(

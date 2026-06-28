@@ -35,7 +35,6 @@ extension FocusableWKWebView: FindInPageWebView {}
 
 @MainActor
 final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocumentNavigationResponding {
-
     let model = FindInPageModel()
     private weak var webView: (any FindInPageWebView)?
     private var cancellable: AnyCancellable?
@@ -219,7 +218,7 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
             await find(model.text, with: model.isVisible ? .showOverlay : [], generation: generation)
             await doItOneMoreTimeForPdf(
                 with: model.text,
-                oldValue: (isActive ? model.text : ""),
+                oldValue: isActive ? model.text : "",
                 generation: generation
             )
         }
@@ -246,5 +245,4 @@ final class FindInPageTabExtension: SumiNavigationStartResponding, SumiSameDocum
             close()
         }
     }
-
 }

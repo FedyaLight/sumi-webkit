@@ -38,7 +38,7 @@ enum SettingsSurfaceStyle {
 
 struct SettingsSection<Content: View>: View {
     let title: String
-    var subtitle: String? = nil
+    var subtitle: String?
     @ViewBuilder var content: Content
 
     init(
@@ -84,8 +84,8 @@ struct SettingsSection<Content: View>: View {
 
 struct SettingsRow<Control: View>: View {
     let title: String
-    var subtitle: String? = nil
-    var systemImage: String? = nil
+    var subtitle: String?
+    var systemImage: String?
     @ViewBuilder var control: Control
 
     init(
@@ -136,10 +136,10 @@ struct SettingsRow<Control: View>: View {
 
 struct SettingsActionRow: View {
     let title: String
-    var subtitle: String? = nil
-    var systemImage: String? = nil
+    var subtitle: String?
+    var systemImage: String?
     let buttonTitle: String
-    var role: ButtonRole? = nil
+    var role: ButtonRole?
     let action: () -> Void
 
     var body: some View {
@@ -183,7 +183,7 @@ struct SettingsEmptyState: View {
 }
 struct SettingsSectionFooter: View {
     var buttonTitle: String = "Restore Defaults"
-    var infoText: String? = nil
+    var infoText: String?
     let action: () -> Void
 
     var body: some View {
@@ -206,7 +206,6 @@ struct SettingsSectionFooter: View {
         }
     }
 }
-
 
 extension View {
     func settingsTrailingControl(width: CGFloat) -> some View {

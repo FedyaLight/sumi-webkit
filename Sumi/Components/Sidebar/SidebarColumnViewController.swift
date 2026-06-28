@@ -105,8 +105,7 @@ final class SidebarColumnViewController: NSViewController {
         }
 
         if let registeredRecoveryAnchor,
-           registeredRecoveryAnchor !== anchor
-        {
+           registeredRecoveryAnchor !== anchor {
             sidebarRecoveryCoordinator.unregister(anchor: registeredRecoveryAnchor)
         }
 

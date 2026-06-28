@@ -1,15 +1,14 @@
 import AppKit
 import Carbon
 import Combine
-import WebKit
 import ObjectiveC.runtime
+import WebKit
 
 enum SumiWebViewInteractionEvent {
     case mouseDown(NSEvent)
     case middleMouseDown(NSEvent)
     case keyDown(NSEvent)
     case scrollWheel(NSEvent)
-
 }
 
 @MainActor
@@ -640,7 +639,6 @@ extension WKWebView {
         }
         return windowController
     }
-
 }
 
 // MARK: - Find In Page
@@ -705,7 +703,7 @@ extension FocusableWKWebView {
             }
         }
 
-        _=Self.swizzleFindStringOnce
+        _ = Self.swizzleFindStringOnce
 
         // receive _WKFindDelegate calls and call completion handler
         NSException.try {

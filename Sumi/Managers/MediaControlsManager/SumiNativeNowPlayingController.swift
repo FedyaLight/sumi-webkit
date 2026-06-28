@@ -94,8 +94,7 @@ final class SumiNativeNowPlayingController: ObservableObject {
 
         if currentOwner == nil,
            pausedCardOwner == nil,
-           !candidateProvider(browserManager).contains(where: { $0.tab.audioState.isPlayingAudio })
-        {
+           !candidateProvider(browserManager).contains(where: { $0.tab.audioState.isPlayingAudio }) {
             clearCardState()
             return
         }
@@ -105,8 +104,7 @@ final class SumiNativeNowPlayingController: ObservableObject {
             using: browserManager,
             preferCurrentOwner: false,
             allowsPausedRetention: false
-           )
-        {
+           ) {
             apply(cardState: discoveredOwner)
             return
         }
@@ -387,8 +385,7 @@ final class SumiNativeNowPlayingController: ObservableObject {
         }
 
         if let visibleTab = browserManager.windowScopedMediaCandidateTabs(in: windowState)
-            .first(where: { $0.id == tabId })
-        {
+            .first(where: { $0.id == tabId }) {
             return visibleTab
         }
 
@@ -573,8 +570,7 @@ final class SumiBackgroundMediaCardStore: ObservableObject {
         guard let globalState else { return nil }
 
         if globalState.windowId == windowState.id,
-           globalState.tabId == windowState.currentTabId
-        {
+           globalState.tabId == windowState.currentTabId {
             return nil
         }
 

@@ -46,7 +46,7 @@ enum DefaultKeyboardShortcuts {
         KeyboardShortcut(action: .hardReload, keyCombination: KeyCombination(key: "r", modifiers: [.command, .shift])),
         KeyboardShortcut(action: .toggleReaderMode, keyCombination: nil),
         KeyboardShortcut(action: .muteUnmuteAudio, keyCombination: nil),
-        KeyboardShortcut(action: .customizeSpaceGradient, keyCombination: KeyCombination(key: "g", modifiers: [.command, .shift]))
+        KeyboardShortcut(action: .customizeSpaceGradient, keyCombination: KeyCombination(key: "g", modifiers: [.command, .shift])),
     ]
 
     static var shortcutsByAction: [ShortcutAction: KeyboardShortcut] {

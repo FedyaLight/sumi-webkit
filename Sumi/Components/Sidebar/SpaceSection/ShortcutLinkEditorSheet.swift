@@ -177,8 +177,7 @@ private struct ShortcutLinkEditorIcon: View {
     @ViewBuilder
     private var icon: some View {
         if let iconAsset,
-           SumiPersistentGlyph.presentsAsEmoji(iconAsset)
-        {
+           SumiPersistentGlyph.presentsAsEmoji(iconAsset) {
             Text(iconAsset)
                 .font(.system(size: 17))
         } else if let iconAsset {

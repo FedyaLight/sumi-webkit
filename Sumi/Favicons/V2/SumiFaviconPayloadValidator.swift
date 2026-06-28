@@ -56,7 +56,7 @@ enum SumiFaviconPayloadValidator {
         candidate: SumiFaviconCandidate
     ) -> SumiFaviconValidationResult {
         guard let source = CGImageSourceCreateWithData(data as CFData, [
-            kCGImageSourceShouldCache: false
+            kCGImageSourceShouldCache: false,
         ] as CFDictionary) else {
             return .invalid(.invalidPayload)
         }

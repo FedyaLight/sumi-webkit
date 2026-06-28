@@ -84,7 +84,7 @@ enum SumiDownloadSafety {
             kLSQuarantineAgentNameKey as String: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Sumi",
             kLSQuarantineAgentBundleIdentifierKey as String: SumiAppIdentity.runtimeBundleIdentifier,
             kLSQuarantineTimeStampKey as String: Date(),
-            kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String
+            kLSQuarantineTypeKey as String: kLSQuarantineTypeWebDownload as String,
         ]
         if let sourceURL {
             properties[kLSQuarantineDataURLKey as String] = sourceURL
@@ -103,12 +103,12 @@ enum SumiDownloadSafety {
     private static let dangerousExtensions: Set<String> = [
         "app", "applescript", "bash", "csh", "command", "dmg", "exe", "inetloc",
         "jar", "ksh", "mpkg", "pkg", "scpt", "scptd", "sh", "terminal", "tool",
-        "url", "webloc", "workflow", "zsh"
+        "url", "webloc", "workflow", "zsh",
     ]
 
     private static let dangerousTypeIdentifiers: Set<String> = [
         "com.apple.installer-package-archive",
         "com.apple.installer-package",
-        "com.apple.web-internet-location"
+        "com.apple.web-internet-location",
     ]
 }

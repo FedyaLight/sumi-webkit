@@ -103,8 +103,7 @@ struct ExtensionProfileRuntimeState {
         var webExtensionMatches = Set<String>()
         for contexts in contextsByProfile.values {
             for (extensionId, context) in contexts
-            where context.webExtension === extensionContext.webExtension
-            {
+            where context.webExtension === extensionContext.webExtension {
                 webExtensionMatches.insert(extensionId)
             }
         }
@@ -123,8 +122,7 @@ struct ExtensionProfileRuntimeState {
         var baseURLMatches: [(extensionId: String, profileId: UUID)] = []
         for (profileId, contexts) in contextsByProfile {
             for (extensionId, context) in contexts
-            where context.baseURL == extensionContext.baseURL
-            {
+            where context.baseURL == extensionContext.baseURL {
                 baseURLMatches.append((extensionId, profileId))
             }
         }
@@ -135,8 +133,7 @@ struct ExtensionProfileRuntimeState {
         var webExtensionMatches: [(extensionId: String, profileId: UUID)] = []
         for (profileId, contexts) in contextsByProfile {
             for (extensionId, context) in contexts
-            where context.webExtension === extensionContext.webExtension
-            {
+            where context.webExtension === extensionContext.webExtension {
                 webExtensionMatches.append((extensionId, profileId))
             }
         }

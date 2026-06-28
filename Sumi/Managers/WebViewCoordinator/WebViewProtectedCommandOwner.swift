@@ -428,8 +428,7 @@ final class WebViewProtectedCommandOwner {
         guard let context else { return false }
         if let originHistoryItem = context.originHistoryItem,
            let currentHistoryItem,
-           originHistoryItem === currentHistoryItem
-        {
+           originHistoryItem === currentHistoryItem {
             return true
         }
         let originURL = context.originHistoryURL ?? context.originURL

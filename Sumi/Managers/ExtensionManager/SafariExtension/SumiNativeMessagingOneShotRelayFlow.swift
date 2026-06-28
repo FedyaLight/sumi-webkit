@@ -65,8 +65,7 @@ final class SumiNativeMessagingOneShotRelayFlow {
                     let nsError = error as NSError
                     if nsError.domain == SumiNativeMessagingRelay.errorDomain,
                        nsError.code == SumiNativeMessagingRelay.ErrorCode
-                           .companionAppProtocolUnknown.rawValue
-                    {
+                           .companionAppProtocolUnknown.rawValue {
                         self.loopGuard.recordCompanionAppProtocolUnknown(
                             key: loopKey,
                             launchAttempted: true

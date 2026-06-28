@@ -169,7 +169,6 @@ struct SpaceSidebarTransitionSnapshot {
     func matches(sourceSpaceId: UUID, destinationSpaceId: UUID) -> Bool {
         source.spaceId == sourceSpaceId && destination.spaceId == destinationSpaceId
     }
-
 }
 
 @MainActor

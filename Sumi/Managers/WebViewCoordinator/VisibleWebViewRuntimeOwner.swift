@@ -130,8 +130,7 @@ final class VisibleWebViewRuntimeOwner {
 
             browserManager.compositorManager.markTabAccessed(tab.id)
             if existingWebView(tab.id, windowState.id) == nil,
-               createWebView(tab, windowState.id) != nil
-            {
+               createWebView(tab, windowState.id) != nil {
                 didCreateWebView = true
             }
         }
@@ -244,8 +243,7 @@ final class VisibleWebViewRuntimeOwner {
                for: windowState,
                browserManager: browserManager,
                resolveTab: resolveTab
-           ).contains(owner.tabID)
-        {
+           ).contains(owner.tabID) {
             visibleRank = 0
         } else {
             visibleRank = 1

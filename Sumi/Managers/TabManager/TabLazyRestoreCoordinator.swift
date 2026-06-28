@@ -212,8 +212,7 @@ final class TabLazyRestoreCoordinator {
 
     private func startQueuedLoadsIfNeeded() {
         while inFlightTabIDs.count < policy.maxConcurrentLoads,
-              let nextTabID = queuedTabIDs.first
-        {
+              let nextTabID = queuedTabIDs.first {
             queuedTabIDs.removeFirst()
             guard startedTabIDs.insert(nextTabID).inserted else { continue }
             guard let tab = tabManager.tab(for: nextTabID) else {
@@ -276,12 +275,10 @@ extension TabManager {
         if let currentTab, currentTab.spaceId == spaceId {
             regularTabId = currentTab.id
         } else if let rememberedTabID = windowState.activeTabForSpace[spaceId],
-                  tabsBySpace[spaceId]?.contains(where: { $0.id == rememberedTabID }) == true
-        {
+                  tabsBySpace[spaceId]?.contains(where: { $0.id == rememberedTabID }) == true {
             regularTabId = rememberedTabID
         } else if let activeTabID = spaces.first(where: { $0.id == spaceId })?.activeTabId,
-                  tabsBySpace[spaceId]?.contains(where: { $0.id == activeTabID }) == true
-        {
+                  tabsBySpace[spaceId]?.contains(where: { $0.id == activeTabID }) == true {
             regularTabId = activeTabID
         } else {
             regularTabId = tabsBySpace[spaceId]?.first?.id

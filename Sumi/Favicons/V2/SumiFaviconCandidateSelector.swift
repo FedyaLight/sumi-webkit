@@ -53,8 +53,7 @@ enum SumiFaviconCandidateSelector {
 
         if !hasGoodDeclaredSize,
            candidate.sourceKind == .documentLink,
-           candidate.declaredSizes.contains(where: { $0.longestSide <= 16 })
-        {
+           candidate.declaredSizes.contains(where: { $0.longestSide <= 16 }) {
             sourceRank += 2
         }
 

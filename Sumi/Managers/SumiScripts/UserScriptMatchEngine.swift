@@ -13,7 +13,6 @@ import WebKit
 
 @MainActor
 enum UserScriptMatchEngine {
-
     // MARK: - Public API
 
     /// Returns true if the given URL matches a script's match/include/exclude rules.
@@ -122,7 +121,7 @@ enum UserScriptMatchEngine {
     private static func compileRegexInclude(_ pattern: String) -> NSRegularExpression? {
         // Strip leading and trailing slashes, handle flags
         var p = pattern
-        p.removeFirst()  // Remove leading /
+        p.removeFirst() // Remove leading /
 
         var options: NSRegularExpression.Options = []
         if let lastSlash = p.lastIndex(of: "/") {

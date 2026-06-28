@@ -55,8 +55,7 @@ struct SumiPermissionDecisionResolutionOwner {
            let suppressedDecision = await promptSuppressedDecision(
             originalContext: context,
             promptEvaluations: promptEvaluations
-           )
-        {
+           ) {
             return .promptSuppressed(
                 suppressedDecision.suppression,
                 decision: suppressedDecision.decision
@@ -198,8 +197,7 @@ struct SumiPermissionDecisionResolutionOwner {
             if !evaluation.context.isEphemeralProfile,
                evaluation.key.permissionType.canBePersisted,
                let persistentStore,
-               let persistentRecord = try? await persistentStore.getDecision(for: evaluation.key)
-            {
+               let persistentRecord = try? await persistentStore.getDecision(for: evaluation.key) {
                 switch persistentRecord.decision.state {
                 case .allow:
                     try? await persistentStore.recordLastUsed(

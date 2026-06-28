@@ -905,8 +905,7 @@ indirect enum SplitLayoutTree: Codable, Equatable, Hashable, Sendable {
 
         case .split(let axis, let size, let children):
             if axis == insertionAxis,
-               let targetIndex = children.firstIndex(where: { $0.contains(targetTabId) && $0.leafCount == 1 })
-            {
+               let targetIndex = children.firstIndex(where: { $0.contains(targetTabId) && $0.leafCount == 1 }) {
                 var updated = children
                 let insertionIndex = before ? targetIndex : targetIndex + 1
                 updated.insert(.leaf(tabId: tabId, size: 1), at: insertionIndex)
@@ -968,7 +967,7 @@ indirect enum SplitLayoutTree: Codable, Equatable, Hashable, Sendable {
         while cursor < tabIds.count {
             let remaining = tabIds.count - cursor
             let take = remaining == 3 ? 1 : min(2, remaining)
-            let columnIds = Array(tabIds[cursor ..< cursor + take])
+            let columnIds = Array(tabIds[cursor..<cursor + take])
             let column = take == 1
                 ? SplitLayoutTree.leaf(tabId: columnIds[0], size: 1)
                 : equalSplit(axis: .column, tabIds: columnIds)

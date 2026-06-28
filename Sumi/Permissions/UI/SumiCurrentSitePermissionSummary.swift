@@ -18,8 +18,7 @@ struct SumiCurrentSitePermissionSummary: Equatable, Sendable {
             if let runtimeStatus = row.runtimeStatus,
                runtimeStatus.localizedCaseInsensitiveContains("active")
                 || runtimeStatus.localizedCaseInsensitiveContains("muted")
-                || runtimeStatus.localizedCaseInsensitiveContains("paused")
-            {
+                || runtimeStatus.localizedCaseInsensitiveContains("paused") {
                 items.append("\(row.title.lowercased()) \(runtimeStatus.lowercased())")
             }
         }
@@ -63,7 +62,6 @@ struct SumiCurrentSitePermissionSummary: Equatable, Sendable {
             activityText: compactItems.count > 1 ? subtitle : first.capitalizingFirstLetter()
         )
     }
-
 }
 
 private extension String {

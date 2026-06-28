@@ -78,7 +78,6 @@ enum KeyboardShortcutPresentation {
             return key.uppercased()
         }
     }
-
 }
 
 extension Modifiers {

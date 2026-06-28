@@ -99,7 +99,6 @@ extension NSWindow {
             )
         }
     }
-
 }
 
 final class SumiBrowserWindow: NSWindow {
@@ -146,7 +145,6 @@ final class SumiBrowserWindow: NSWindow {
         let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
         return key == "f"
     }
-
 }
 
 @MainActor

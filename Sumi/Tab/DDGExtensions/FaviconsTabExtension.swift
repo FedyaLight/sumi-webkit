@@ -111,8 +111,7 @@ extension FaviconsTabExtension: SumiFaviconUserScriptDelegate {
             if let image,
                !Task.isCancelled,
                let tab = self.tab,
-               Self.documentURL(documentUrl, matches: tab.existingWebView?.url ?? tab.url)
-            {
+               Self.documentURL(documentUrl, matches: tab.existingWebView?.url ?? tab.url) {
                 self.favicon = image
             }
         }
@@ -125,8 +124,7 @@ extension FaviconsTabExtension: SumiFaviconUserScriptDelegate {
     private func aliasPageURLs(for tab: Tab, currentURL: URL) -> [URL] {
         var urls = [currentURL, tab.url]
         if let shortcutPinId = tab.shortcutPinId,
-           let launchURL = tab.browserManager?.tabManager.shortcutPin(by: shortcutPinId)?.launchURL
-        {
+           let launchURL = tab.browserManager?.tabManager.shortcutPin(by: shortcutPinId)?.launchURL {
             urls.append(launchURL)
         }
 

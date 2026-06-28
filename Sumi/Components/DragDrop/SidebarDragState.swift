@@ -5,7 +5,7 @@ import SwiftUI
 @MainActor
 final class SidebarDragState: ObservableObject {
     static let shared = SidebarDragState()
-    
+
     @Published var isDragging: Bool = false
     @Published var hoveredSlot: DropZoneSlot = .empty
     @Published var folderDropIntent: FolderDropIntent = .none
@@ -33,11 +33,11 @@ final class SidebarDragState: ObservableObject {
     private var completingDropSlot: DropZoneSlot = .empty
     private var completingDropFolderIntent: FolderDropIntent = .none
     private(set) var isInternalDragGeometryArmed: Bool = false
-    private(set) var armedDragScope: SidebarDragScope? = nil
-    
+    private(set) var armedDragScope: SidebarDragScope?
+
     // For Zen's auto workspace switch
     @Published var isHoveringNearEdge: Bool = false
-    
+
     // Global coordinate mapping
     @Published private(set) var geometrySnapshot: SidebarGeometrySnapshot = .empty
     @Published private(set) var geometryRevision: Int = 0
@@ -45,15 +45,15 @@ final class SidebarDragState: ObservableObject {
     @Published var sidebarGeometryGeneration: Int = 0
     @Published private(set) var activeGeometryGeneration: Int = 0
     @Published private(set) var pendingGeometryGeneration: Int? = nil
-    
+
     private var activeGeometryStore = SidebarRuntimeGeometryStore()
-    private var pendingGeometryStore: SidebarRuntimeGeometryStore? = nil
-    private var pendingInteractivePageKey: SidebarPageGeometryKey? = nil
+    private var pendingGeometryStore: SidebarRuntimeGeometryStore?
+    private var pendingInteractivePageKey: SidebarPageGeometryKey?
     private var pendingGeometryRefreshRequested = false
     private var isGeometryRefreshFlushScheduled = false
     private var isGeometrySnapshotPublishScheduled = false
     private let geometryMutationBuffer = SidebarDragGeometryMutationBuffer()
-    
+
     init() {}
 
     var shouldAnimateDropLayout: Bool {
@@ -432,7 +432,7 @@ final class SidebarDragState: ObservableObject {
         completingDropFolderIntent = folderDropIntent
         isCompletingDrop = true
     }
-    
+
     func resetInteractionState() {
         isDragging = false
         clearHoverState()
@@ -628,7 +628,7 @@ final class SidebarDragState: ObservableObject {
             hoveredPage.spaceId: SidebarEssentialsPreviewState(
                 expandedDropRowCount: metrics.maxDropRowCount,
                 gapSlot: slot
-            )
+            ),
         ]
     }
 
@@ -967,7 +967,7 @@ final class SidebarDragState: ObservableObject {
             updated.frame.origin.y -= deltaY
             activeGeometryStore.topLevelPinnedItemTargets[id] = updated
         }
-        
+
         for (id, metrics) in activeGeometryStore.folderDropTargets {
             var updated = metrics
             if let h = updated.headerFrame {
@@ -987,25 +987,25 @@ final class SidebarDragState: ObservableObject {
             }
             activeGeometryStore.folderDropTargets[id] = updated
         }
-        
+
         for (id, metrics) in activeGeometryStore.folderChildDropTargets {
             var updated = metrics
             updated.frame.origin.y -= deltaY
             activeGeometryStore.folderChildDropTargets[id] = updated
         }
-        
+
         for (key, rect) in activeGeometryStore.sectionFramesBySpace {
             var updated = rect
             updated.origin.y -= deltaY
             activeGeometryStore.sectionFramesBySpace[key] = updated
         }
-        
+
         for (id, metrics) in activeGeometryStore.regularListHitTargets {
             var updated = metrics
             updated.frame.origin.y -= deltaY
             activeGeometryStore.regularListHitTargets[id] = updated
         }
-        
+
         for (spaceId, metrics) in activeGeometryStore.essentialsLayoutMetricsBySpace {
             var updated = metrics
             updated.frame.origin.y -= deltaY
@@ -1017,13 +1017,13 @@ final class SidebarDragState: ObservableObject {
             }
             activeGeometryStore.essentialsLayoutMetricsBySpace[spaceId] = updated
         }
-        
+
         for (key, metrics) in activeGeometryStore.pageGeometryByKey {
             var updated = metrics
             updated.frame.origin.y -= deltaY
             activeGeometryStore.pageGeometryByKey[key] = updated
         }
-        
+
         geometrySnapshot = snapshot(from: activeGeometryStore)
         geometryRevision &+= 1
     }

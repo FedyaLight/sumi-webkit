@@ -662,7 +662,7 @@ extension WKWebsiteDataStore {
             "_WKWebsiteDataTypeCredentials",
             "_WKWebsiteDataTypeAdClickAttributions",
             "_WKWebsiteDataTypePrivateClickMeasurements",
-            "_WKWebsiteDataTypeAlternativeServices"
+            "_WKWebsiteDataTypeAlternativeServices",
         ]
     }()
 
@@ -685,7 +685,7 @@ extension WKWebsiteDataStore {
             WKWebsiteDataTypeFetchCache,
             WKWebsiteDataTypeServiceWorkerRegistrations,
             "_WKWebsiteDataTypeAlternativeServices",
-            "_WKWebsiteDataTypeHSTSCache"
+            "_WKWebsiteDataTypeHSTSCache",
         ]).union(sumiOfflineWebApplicationCacheDataTypes)
     }()
 
@@ -701,7 +701,7 @@ extension WKWebsiteDataStore {
             WKWebsiteDataTypeServiceWorkerRegistrations,
             WKWebsiteDataTypeMediaKeys,
             WKWebsiteDataTypeHashSalt,
-            "_WKWebsiteDataTypeCredentials"
+            "_WKWebsiteDataTypeCredentials",
         ]
     }()
 
@@ -710,7 +710,7 @@ extension WKWebsiteDataStore {
             WKWebsiteDataTypeSearchFieldRecentSearches,
             "_WKWebsiteDataTypeResourceLoadStatistics",
             "_WKWebsiteDataTypeAdClickAttributions",
-            "_WKWebsiteDataTypePrivateClickMeasurements"
+            "_WKWebsiteDataTypePrivateClickMeasurements",
         ]
     }()
 
@@ -726,10 +726,9 @@ extension WKWebsiteDataStore {
             "_WKWebsiteDataTypePrivateClickMeasurements",
             "_WKWebsiteDataTypeAlternativeServices",
             "_WKWebsiteDataTypeHSTSCache",
-            "_WKWebsiteDataTypeResourceLoadStatistics"
+            "_WKWebsiteDataTypeResourceLoadStatistics",
         ]).union(sumiOfflineWebApplicationCacheDataTypes)
     }()
-
 }
 
 extension HTTPCookie {

@@ -60,8 +60,7 @@ final class BrowserPermissionSiteSettingsRoutingOwner {
         let normalizedPageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         if let activeWindow = windowRegistry.activeWindow,
-           windowState(activeWindow, displaysPermissionPageId: normalizedPageId, tabsForDisplay: tabsForDisplay)
-        {
+           windowState(activeWindow, displaysPermissionPageId: normalizedPageId, tabsForDisplay: tabsForDisplay) {
             return activeWindow
         }
 

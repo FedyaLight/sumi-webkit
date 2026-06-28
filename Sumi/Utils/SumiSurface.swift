@@ -90,5 +90,4 @@ enum SumiSurface {
             .first(where: { $0.name == "folder" })?
             .value
     }
-
 }

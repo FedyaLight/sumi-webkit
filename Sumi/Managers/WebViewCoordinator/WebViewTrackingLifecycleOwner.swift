@@ -25,8 +25,7 @@ final class WebViewTrackingLifecycleOwner {
         pruneInvalidDeferredCommands: DeferredCommandPruner
     ) {
         if let existingOwner = webViewRegistry.indexedOwner(containing: webView),
-           existingOwner != owner
-        {
+           existingOwner != owner {
             _ = unregisterTrackedWebViewSlot(
                 owner: existingOwner,
                 expectedWebView: webView,
@@ -39,8 +38,7 @@ final class WebViewTrackingLifecycleOwner {
         }
 
         if let existingWebView = webViewRegistry.webView(for: owner),
-           existingWebView !== webView
-        {
+           existingWebView !== webView {
             _ = unregisterTrackedWebViewSlot(
                 owner: owner,
                 expectedWebView: existingWebView,
@@ -72,8 +70,7 @@ final class WebViewTrackingLifecycleOwner {
         let trackedWebView = webViewRegistry.webView(for: owner)
         if let expectedWebView,
            let trackedWebView,
-           trackedWebView !== expectedWebView
-        {
+           trackedWebView !== expectedWebView {
             webViewRegistry.removeReverseIndex(for: expectedWebView, ifOwnedBy: owner)
             return nil
         }
@@ -81,8 +78,7 @@ final class WebViewTrackingLifecycleOwner {
         let resolvedWebView = trackedWebView ?? expectedWebView
 
         if removeFromSuperview,
-           let resolvedWebView
-        {
+           let resolvedWebView {
             removeFromContainers(resolvedWebView)
         }
 

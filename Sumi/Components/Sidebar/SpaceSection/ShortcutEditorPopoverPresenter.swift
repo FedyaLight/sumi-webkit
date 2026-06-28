@@ -204,8 +204,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
            ownerView.window != nil,
            ownerView.superview != nil,
            !ownerView.isHiddenOrHasHiddenAncestor,
-           ownerView.alphaValue > 0
-        {
+           ownerView.alphaValue > 0 {
             return (ownerView, ownerView.bounds, preferredEdge)
         }
 

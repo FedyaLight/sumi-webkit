@@ -792,7 +792,7 @@ struct SplitDropTargetResolver {
             (.left, location.x - rect.minX, rect.width),
             (.right, rect.maxX - location.x, rect.width),
             (.top, rect.maxY - location.y, rect.height),
-            (.bottom, location.y - rect.minY, rect.height)
+            (.bottom, location.y - rect.minY, rect.height),
         ]
         return candidates
             .compactMap { side, distance, length -> (side: SplitDropSide, distance: CGFloat)? in

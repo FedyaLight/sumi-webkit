@@ -250,7 +250,6 @@ extension URLBarView {
             badgeCount: viewModel.permissionTypes.count > 1 ? viewModel.permissionTypes.count : nil
         )
     }
-
 }
 
 private struct SumiPermissionIndicatorActionPopover: View {

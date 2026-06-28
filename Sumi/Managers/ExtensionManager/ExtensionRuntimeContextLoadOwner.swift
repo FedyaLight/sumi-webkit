@@ -304,8 +304,7 @@ final class ExtensionRuntimeContextLoadOwner {
             packageRootPath: packageRoot.standardizedFileURL.path
         )
         if let cached = manager.cachedWebExtensionsByID[extensionId],
-           manager.cachedWebExtensionRuntimeSourceKeysByID[extensionId] == sourceKey
-        {
+           manager.cachedWebExtensionRuntimeSourceKeysByID[extensionId] == sourceKey {
             let loadSource: SafariAppExtensionRuntimeLoadSource =
                 runtimeSourceKind == .safariAppExtension
                     ? .originalAppexBundle

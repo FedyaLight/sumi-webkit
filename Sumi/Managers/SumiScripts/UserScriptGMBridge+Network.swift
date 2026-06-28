@@ -9,7 +9,6 @@ import Foundation
 import WebKit
 
 extension UserScriptGMBridge {
-
     // MARK: - GM_xmlhttpRequest (native URLSession, bypasses CORS)
 
     func performXMLHttpRequest(args: [String: Any], callbackId: String, webView: WKWebView?) {
@@ -62,7 +61,7 @@ extension UserScriptGMBridge {
                             "status": 0,
                             "statusText": "abort",
                             "responseText": "",
-                            "readyState": 4
+                            "readyState": 4,
                         ], webView: webView)
                         return
                     }
@@ -71,7 +70,7 @@ extension UserScriptGMBridge {
                         "status": 0,
                         "statusText": error.localizedDescription,
                         "responseText": "",
-                        "readyState": 4
+                        "readyState": 4,
                     ], webView: webView)
                     return
                 }
@@ -80,7 +79,7 @@ extension UserScriptGMBridge {
                     self.sendXHREvent("onerror", callbackId: callbackId, response: [
                         "status": 0,
                         "statusText": "No response",
-                        "readyState": 4
+                        "readyState": 4,
                     ], webView: webView)
                     return
                 }
@@ -113,7 +112,7 @@ extension UserScriptGMBridge {
                     "responseType": responseType,
                     "responseURL": httpResponse.url?.absoluteString ?? urlString,
                     "finalUrl": httpResponse.url?.absoluteString ?? urlString,
-                    "readyState": 4
+                    "readyState": 4,
                 ]
 
                 self.sendXHREvent("onload", callbackId: callbackId, response: responseObj, webView: webView)
@@ -126,7 +125,7 @@ extension UserScriptGMBridge {
         sendXHREvent("onloadstart", callbackId: callbackId, response: [
             "readyState": 1,
             "status": 0,
-            "statusText": ""
+            "statusText": "",
         ], webView: webView)
     }
 
@@ -187,7 +186,7 @@ extension UserScriptGMBridge {
                         self.resolveCallback(requestId, result: [
                             "status": 200,
                             "filename": destination.path,
-                            "finalUrl": response?.url?.absoluteString ?? url.absoluteString
+                            "finalUrl": response?.url?.absoluteString ?? url.absoluteString,
                         ], webView: webView)
                     case .failure(let error):
                         self.rejectCallback(requestId, error: error.localizedDescription, webView: webView)
@@ -218,7 +217,7 @@ extension UserScriptGMBridge {
             arguments: [
                 "callbackId": callbackId,
                 "eventName": event,
-                "response": response
+                "response": response,
             ],
             webView: webView
         )

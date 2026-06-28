@@ -83,5 +83,4 @@ extension Tab {
 
         return await perform(focusedWebView)
     }
-
 }

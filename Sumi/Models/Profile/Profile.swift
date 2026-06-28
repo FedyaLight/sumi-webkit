@@ -8,8 +8,8 @@
 //
 
 import Foundation
-import WebKit
 import Observation
+import WebKit
 
 @MainActor
 @Observable
@@ -34,10 +34,10 @@ final class Profile: NSObject, Identifiable {
     // Metadata (not yet persisted)
     var createdDate: Date = Date()
     var lastUsed: Date = Date()
-    
+
     /// Whether this is an ephemeral/incognito profile (no disk persistence)
     var isEphemeral: Bool = false
-    
+
     // Cached stats
     private(set) var cachedCookieCount: Int = 0
     private(set) var cachedRecordCount: Int = 0
@@ -108,7 +108,7 @@ final class Profile: NSObject, Identifiable {
             WKWebsiteDataTypeLocalStorage,
             WKWebsiteDataTypeIndexedDBDatabases,
             WKWebsiteDataTypeFetchCache,
-            WKWebsiteDataTypeServiceWorkerRegistrations
+            WKWebsiteDataTypeServiceWorkerRegistrations,
         ]
         cachedRecordCount = await SumiWebsiteDataCleanupService.shared
             .fetchWebsiteDataRecords(ofTypes: types, in: dataStore)
@@ -131,7 +131,7 @@ final class Profile: NSObject, Identifiable {
         return await SumiWebsiteDataCleanupService.shared
             .removePersistentDataStore(forIdentifier: id)
     }
-    
+
     /// Releases the ephemeral profile's non-persistent store ownership.
     /// Ephemeral profiles use `WKWebsiteDataStore.nonPersistent()` through the
     /// normal BrowserConfiguration path, so teardown must not synchronously scan

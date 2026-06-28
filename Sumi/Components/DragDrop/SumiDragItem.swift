@@ -3,8 +3,8 @@
 //  Sumi
 //
 
-import Foundation
 import AppKit
+import Foundation
 
 extension NSPasteboard.PasteboardType {
     static let sumiSidebarDragPayload = NSPasteboard.PasteboardType("com.sumi.sidebar-drag-payload")

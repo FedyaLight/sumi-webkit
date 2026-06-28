@@ -882,5 +882,4 @@ extension TabManager {
             _ = await persistence.persistFullReconcile(snapshot: snapshot, generation: generation)
         }
     }
-
 }

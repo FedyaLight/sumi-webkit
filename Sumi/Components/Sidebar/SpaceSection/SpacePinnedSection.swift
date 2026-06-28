@@ -56,12 +56,9 @@ extension SpaceView {
         return sid == space.id
     }
 
-
     private var dropGuideEdgeAllowance: CGFloat {
         SidebarInsertionGuide.visualCenterY
     }
-
-
 
     private var spacePinnedItems: [SpacePinnedListItem] {
         guard !windowState.isIncognito else { return [] }
@@ -247,7 +244,7 @@ extension SpaceView {
         let allItems = projectedSpacePinnedDisplayEntries
         let foldersById = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
         let pinsById = Dictionary(uniqueKeysWithValues: topLevelPinnedPins.map { ($0.id, $0) })
-        
+
         return LazyVStack(spacing: 0) {
             Color.clear
                 .frame(height: dropGuideEdgeAllowance)
@@ -630,8 +627,6 @@ extension SpaceView {
         return group.contains(currentTabId)
             || group.member(forPinId: pin.id)?.tabId == currentTabId
     }
-
-
 
     private func activateShortcutPin(_ pin: ShortcutPin) {
         let tab = browserManager.tabManager.activateShortcutPin(

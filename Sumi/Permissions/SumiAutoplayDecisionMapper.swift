@@ -23,8 +23,7 @@ enum SumiAutoplayDecisionMapper {
 
     static func policy(from decision: SumiPermissionDecision) -> SumiAutoplayPolicy {
         if let rawPolicy = decision.metadata?[metadataKey],
-           let policy = SumiAutoplayPolicy(rawValue: rawPolicy)
-        {
+           let policy = SumiAutoplayPolicy(rawValue: rawPolicy) {
             return policy
         }
 

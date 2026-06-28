@@ -22,9 +22,9 @@ struct SidebarSpaceMenuActions {
 struct SidebarShellMenuActions {
     let newTab: () -> Void
     let newFolder: (() -> Void)?
-    var newRSSLiveFolder: (() -> Void)? = nil
-    var newGitHubPullRequestsLiveFolder: (() -> Void)? = nil
-    var newGitHubIssuesLiveFolder: (() -> Void)? = nil
+    var newRSSLiveFolder: (() -> Void)?
+    var newGitHubPullRequestsLiveFolder: (() -> Void)?
+    var newGitHubIssuesLiveFolder: (() -> Void)?
     let changeTheme: (() -> Void)?
     let toggleCompactMode: () -> Void
     let openSettings: () -> Void
@@ -68,25 +68,25 @@ struct SidebarSavedURLDriftActions {
 }
 
 struct SidebarTabContextMenuActions {
-    var duplicate: (() -> Void)? = nil
-    var copyLink: (() -> Void)? = nil
-    var share: (() -> Void)? = nil
-    var edit: (() -> Void)? = nil
-    var rename: (() -> Void)? = nil
-    var folderTarget: SidebarChoiceMenuAction? = nil
-    var moveToSpace: SidebarSpaceDestinationAction? = nil
-    var profileTarget: SidebarChoiceMenuAction? = nil
-    var moveUp: (() -> Void)? = nil
-    var moveDown: (() -> Void)? = nil
-    var pinToSpace: (() -> Void)? = nil
-    var addToEssentials: (() -> Void)? = nil
-    var savedURLDrift: SidebarSavedURLDriftActions? = nil
-    var changeIcon: (() -> Void)? = nil
-    var editURL: (() -> Void)? = nil
-    var unload: (() -> Void)? = nil
-    var closeTabsBelow: (() -> Void)? = nil
-    var close: (() -> Void)? = nil
-    var deleteSavedTab: (() -> Void)? = nil
+    var duplicate: (() -> Void)?
+    var copyLink: (() -> Void)?
+    var share: (() -> Void)?
+    var edit: (() -> Void)?
+    var rename: (() -> Void)?
+    var folderTarget: SidebarChoiceMenuAction?
+    var moveToSpace: SidebarSpaceDestinationAction?
+    var profileTarget: SidebarChoiceMenuAction?
+    var moveUp: (() -> Void)?
+    var moveDown: (() -> Void)?
+    var pinToSpace: (() -> Void)?
+    var addToEssentials: (() -> Void)?
+    var savedURLDrift: SidebarSavedURLDriftActions?
+    var changeIcon: (() -> Void)?
+    var editURL: (() -> Void)?
+    var unload: (() -> Void)?
+    var closeTabsBelow: (() -> Void)?
+    var close: (() -> Void)?
+    var deleteSavedTab: (() -> Void)?
 }
 
 private enum SidebarChoiceSubmenuAvailability {
@@ -506,7 +506,7 @@ func makeFolderHeaderContextMenuEntries(actions: SidebarFolderHeaderMenuActions)
 }
 
 func makeSpaceContextMenuEntries(actions: SidebarSpaceMenuActions) -> [SidebarContextMenuEntry] {
-    return joinSidebarMenuSections(
+    joinSidebarMenuSections(
         [
             [
                 .action(.init(title: "Edit", systemImage: "pencil", classification: .presentationOnly, onAction: actions.edit)),

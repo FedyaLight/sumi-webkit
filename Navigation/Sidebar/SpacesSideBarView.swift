@@ -242,8 +242,7 @@ struct SpacesSideBarView: View {
         ZStack(alignment: .topLeading) {
             if SpaceSidebarRenderPolicy.shouldUseTransitionLayers(for: transitionState),
                let sourceSpace = space(for: transitionState.sourceSpaceId, in: spaces),
-               let destinationSpace = space(for: transitionState.destinationSpaceId, in: spaces)
-            {
+               let destinationSpace = space(for: transitionState.destinationSpaceId, in: spaces) {
                 if usesSharedPinnedGrid(
                     sourceSpace: sourceSpace,
                     destinationSpace: destinationSpace
@@ -278,8 +277,7 @@ struct SpacesSideBarView: View {
                     )
                 }
             } else if transitionState.isGestureActive,
-                      transitionState.destinationSpaceId == nil
-            {
+                      transitionState.destinationSpaceId == nil {
                 committedSidebarPage(spaces: spaces, width: width)
             } else {
                 committedSidebarPage(spaces: spaces, width: width)
@@ -411,8 +409,7 @@ struct SpacesSideBarView: View {
         includesPinnedGrid: Bool
     ) -> some View {
         if pageRenderMode == .transitionSnapshot,
-           let pageSnapshot = transitionSnapshot?.page(for: space.id)
-        {
+           let pageSnapshot = transitionSnapshot?.page(for: space.id) {
             EquatableView(content: SpaceTransitionSnapshotPageView(
                 snapshot: pageSnapshot,
                 includesEssentials: includesPinnedGrid,
@@ -743,8 +740,7 @@ struct SpacesSideBarView: View {
         }
 
         if let destinationSpaceId = transitionState.destinationSpaceId,
-           let destinationSpace = space(for: destinationSpaceId, in: spaces)
-        {
+           let destinationSpace = space(for: destinationSpaceId, in: spaces) {
             if previousDestinationSpaceId != destinationSpaceId || !windowState.isInteractiveSpaceTransition {
                 cancelPendingSpaceTransition()
                 captureTransitionSnapshot(sourceSpace: sourceSpace, destinationSpace: destinationSpace)
@@ -775,8 +771,7 @@ struct SpacesSideBarView: View {
 
         if commit,
            let destinationSpaceId = completedDestinationSpaceId ?? destinationSpaceId,
-           let destinationSpace = space(for: destinationSpaceId, in: availableSpaces)
-        {
+           let destinationSpace = space(for: destinationSpaceId, in: availableSpaces) {
             browserManager.setActiveSpace(destinationSpace, in: windowState)
         } else {
             cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: hadThemeTransition)

@@ -29,8 +29,8 @@ struct SumiButtonStyle: ButtonStyle {
     private let disabledOpacity: CGFloat = 0.3
 
     enum Variant {
-        case secondary  // Regular button
-        case primary    // Prominent button
+        case secondary // Regular button
+        case primary // Prominent button
     }
 
     // MARK: - Body
@@ -178,7 +178,7 @@ private struct ButtonPreviewSection: View {
                     hex: hex,
                     location: 1,
                     position: .bottom
-                )
+                ),
             ],
             texture: 0.05,
             opacity: 1

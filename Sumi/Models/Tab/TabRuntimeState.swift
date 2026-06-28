@@ -1,5 +1,5 @@
-import Combine
 import AppKit
+import Combine
 import Foundation
 import ObjectiveC.runtime
 import OSLog
@@ -43,8 +43,7 @@ enum BackForwardNavigationSettleDecision {
     ) -> Bool {
         if let originHistoryItem,
            let currentHistoryItem,
-           originHistoryItem === currentHistoryItem
-        {
+           originHistoryItem === currentHistoryItem {
             return false
         }
 

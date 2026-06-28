@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 import UniformTypeIdentifiers
 
 struct SidebarGlobalDragOverlay: NSViewRepresentable {
@@ -45,7 +45,7 @@ class SidebarDragNSView: NSView {
             .string,
             .URL,
             .fileURL,
-            NSPasteboard.PasteboardType.sumiSidebarDragPayload
+            NSPasteboard.PasteboardType.sumiSidebarDragPayload,
         ])
     }
 
@@ -54,7 +54,7 @@ class SidebarDragNSView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        return nil // Pass through all normal mouse events
+        nil // Pass through all normal mouse events
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -208,7 +208,6 @@ class SidebarDragNSView: NSView {
             in: self
         )
     }
-
 }
 
 enum SidebarTabListAutoscrollDirection: Equatable {

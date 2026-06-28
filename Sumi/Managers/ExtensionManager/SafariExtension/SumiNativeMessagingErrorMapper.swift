@@ -16,8 +16,7 @@ enum SumiNativeMessagingErrorMapper {
     ) -> NSError {
         let code: SumiNativeMessagingRelay.ErrorCode
         if source.domain == relayErrorDomain,
-           let mapped = SumiNativeMessagingRelay.ErrorCode(rawValue: source.code)
-        {
+           let mapped = SumiNativeMessagingRelay.ErrorCode(rawValue: source.code) {
             code = mapped
         } else {
             code = .hostLaunchFailed

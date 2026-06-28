@@ -292,7 +292,7 @@ final class SumiDDGBookmarkRepository: SumiBookmarkRepository, @unchecked Sendab
                 throw SumiBookmarkError.cannotDeleteRootFolder
             }
             if entity.isFolder,
-               (entity == targetParent || isDescendant(targetParent, of: entity)) {
+               entity == targetParent || isDescendant(targetParent, of: entity) {
                 throw SumiBookmarkError.cannotMoveFolderIntoDescendant
             }
         }

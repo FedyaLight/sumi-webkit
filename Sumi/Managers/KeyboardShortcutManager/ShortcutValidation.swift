@@ -28,7 +28,7 @@ struct ShortcutValidator {
     private static let modifierOptionalKeys: Set<String> = [
         "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12",
         "escape", "delete", "forwarddelete", "home", "end", "pageup", "pagedown",
-        "help", "tab", "return", "space", "uparrow", "downarrow", "leftarrow", "rightarrow"
+        "help", "tab", "return", "space", "uparrow", "downarrow", "leftarrow", "rightarrow",
     ]
 
     let systemOwnedShortcuts: Set<KeyCombination>

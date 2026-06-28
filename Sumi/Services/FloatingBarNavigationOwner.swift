@@ -175,8 +175,7 @@ struct FloatingBarNavigationOwner {
         )
 
         if navigatesCurrentTab,
-           let navigationTargetTab
-        {
+           let navigationTargetTab {
             actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
             navigationTargetTab.loadURL(urlString)
             actions.applySettingsSurfaceNavigation(urlString)
@@ -204,8 +203,7 @@ struct FloatingBarNavigationOwner {
             )
         case .history(let historyEntry):
             if navigatesCurrentTab,
-               let navigationTargetTab
-            {
+               let navigationTargetTab {
                 actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
                 navigationTargetTab.loadURL(historyEntry.url.absoluteString)
                 actions.applySettingsSurfaceNavigation(historyEntry.url.absoluteString)
@@ -222,8 +220,7 @@ struct FloatingBarNavigationOwner {
             }
         case .bookmark(let bookmark):
             if navigatesCurrentTab,
-               let navigationTargetTab
-            {
+               let navigationTargetTab {
                 actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
                 navigationTargetTab.loadURL(bookmark.url.absoluteString)
                 actions.applySettingsSurfaceNavigation(bookmark.url.absoluteString)
@@ -240,8 +237,7 @@ struct FloatingBarNavigationOwner {
             }
         case .url, .search:
             if navigatesCurrentTab,
-               let navigationTargetTab
-            {
+               let navigationTargetTab {
                 actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
                 navigationTargetTab.navigateToURL(suggestion.text)
                 actions.applySettingsSurfaceNavigation(suggestion.text)

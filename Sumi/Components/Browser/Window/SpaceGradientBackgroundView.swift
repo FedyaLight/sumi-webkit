@@ -48,7 +48,7 @@ struct SpaceGradientBackgroundView: View {
     var surface: SpaceGradientBackgroundSurface = .browser
     var base: SpaceGradientBackgroundBase = .native
     var nativeMaterialRole: NativeChromeMaterialRole = .windowChrome
-    var gradientFieldSize: CGSize? = nil
+    var gradientFieldSize: CGSize?
     var viewport: SpaceGradientViewport = .full
 
     @Environment(\.resolvedThemeContext) private var themeContext

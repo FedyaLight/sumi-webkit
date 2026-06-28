@@ -84,7 +84,7 @@ struct ExtensionProfileRuntimeStateOwner {
     func readinessContext(
         for profileId: UUID
     ) -> ExtensionRuntimeReadinessContext {
-        return manager.profileRuntimeOwner.readinessContext(
+        manager.profileRuntimeOwner.readinessContext(
             for: profileId,
             hasEnabledExtensionDemand: manager.hasEnabledInstalledExtensions,
             enabledExtensionIDs: Set(manager.enabledPersistedExtensionEntities().map(\.id)),

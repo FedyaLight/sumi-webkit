@@ -53,5 +53,4 @@ final class SumiMemoryPressureMonitor: SumiMemoryPressureMonitoring {
             eventHandler?(.warning)
         }
     }
-
 }

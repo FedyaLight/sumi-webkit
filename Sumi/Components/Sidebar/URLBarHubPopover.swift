@@ -761,7 +761,6 @@ struct URLBarHubPopover: View {
         }
     }
 
-
     private func handleSettingAction(_ row: SiteControlsSettingRowModel) {
         switch row.kind {
         case .protection:
@@ -876,8 +875,7 @@ struct URLBarHubPopover: View {
         schedulePermissionsReloadAfterStoreChange()
         if case .bookmark(let state) = mode,
            state.tabID == tab.id,
-           state.pageURL.absoluteString != tab.url.absoluteString
-        {
+           state.pageURL.absoluteString != tab.url.absoluteString {
             resetToControls()
         }
     }
@@ -914,8 +912,8 @@ struct URLBarHubPopover: View {
 
 private struct HubSectionHeader: View {
     let title: String
-    var actionTitle: String? = nil
-    var action: (() -> Void)? = nil
+    var actionTitle: String?
+    var action: (() -> Void)?
     var isSectionHovered: Bool = true
 
     @State private var isHovering = false

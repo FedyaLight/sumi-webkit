@@ -91,8 +91,7 @@ enum SumiNativeMessagingRelayPolicy {
         }
 
         if SafariExtensionNativeMessagingRoutingProbe
-            .isSafariContainingApplicationRequest(requested)
-        {
+            .isSafariContainingApplicationRequest(requested) {
             return false
         }
 
@@ -100,16 +99,14 @@ enum SumiNativeMessagingRelayPolicy {
         if let containing = SumiNativeMessagingAppResolver.containingApplicationBundleIdentifier(
             forAppexPath: installed.sourceBundlePath
         ),
-            normalized == containing
-        {
+            normalized == containing {
             return false
         }
 
         if let appexBundleID = SumiNativeMessagingAppResolver.appexBundleIdentifier(
             at: installed.sourceBundlePath
         ),
-            normalized == appexBundleID
-        {
+            normalized == appexBundleID {
             return false
         }
 

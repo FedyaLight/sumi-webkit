@@ -13,7 +13,7 @@ struct ContentView: View {
     private let providedWindowState: BrowserWindowState?
 
     @State private var defaultWindowState: BrowserWindowState
-    
+
     init(
         windowLifecycleHandler: any BrowserWindowLifecycleHandling,
         windowState: BrowserWindowState? = nil,
@@ -28,7 +28,7 @@ struct ContentView: View {
             )
         )
     }
-    
+
     private var windowState: BrowserWindowState {
         providedWindowState ?? defaultWindowState
     }

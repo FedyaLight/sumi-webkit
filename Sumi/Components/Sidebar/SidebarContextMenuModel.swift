@@ -26,7 +26,7 @@ enum SidebarContextMenuActionClassification: String {
 struct SidebarContextMenuChoice: Identifiable, Equatable {
     let id: UUID
     let title: String
-    var icon: SidebarContextMenuIcon? = nil
+    var icon: SidebarContextMenuIcon?
     var isSelected: Bool = false
 }
 
@@ -158,13 +158,13 @@ struct SidebarContextMenuLeafConfiguration {
 
 struct SidebarAppKitItemConfiguration {
     var isInteractionEnabled: Bool = true
-    var interactionState: SidebarInteractionState? = nil
-    var menu: SidebarContextMenuLeafConfiguration? = nil
-    var dragSource: SidebarDragSourceConfiguration? = nil
-    var dragScope: SidebarDragScope? = nil
-    var primaryAction: (() -> Void)? = nil
-    var onMiddleClick: (() -> Void)? = nil
-    var sourceID: String? = nil
+    var interactionState: SidebarInteractionState?
+    var menu: SidebarContextMenuLeafConfiguration?
+    var dragSource: SidebarDragSourceConfiguration?
+    var dragScope: SidebarDragScope?
+    var primaryAction: (() -> Void)?
+    var onMiddleClick: (() -> Void)?
+    var sourceID: String?
     var suppressesPrimaryActionAnimation: Bool = false
     var presentationMode: SidebarPresentationMode = .docked
 
@@ -227,7 +227,6 @@ enum SidebarItemInputRouting {
         }
         return .appKitOwner(.unavailableLeanContextMenu)
     }
-
 }
 
 struct SidebarContextMenuResolvedTarget {

@@ -181,8 +181,7 @@ extension BrowserManager {
             )
 
             if let startupWindow,
-               let primarySnapshot = restorationPlan.primarySnapshotForStartupWindow
-            {
+               let primarySnapshot = restorationPlan.primarySnapshotForStartupWindow {
                 self.windowSessionService.applyWindowSessionSnapshot(
                     primarySnapshot.session,
                     to: startupWindow,

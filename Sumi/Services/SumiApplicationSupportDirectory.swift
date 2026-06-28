@@ -7,8 +7,7 @@ enum SumiApplicationSupportDirectory {
 
     static func appRootURL() -> URL {
         if let overridePath = ProcessInfo.processInfo.environment[overrideEnvironmentKey],
-           !overridePath.isEmpty
-        {
+           !overridePath.isEmpty {
             let overrideURL = URL(fileURLWithPath: overridePath, isDirectory: true)
             createDirectory(overrideURL, description: "overridden Application Support directory")
             return overrideURL

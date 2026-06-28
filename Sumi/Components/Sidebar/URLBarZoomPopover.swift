@@ -121,7 +121,6 @@ extension URLBarView {
         zoomPopoverHideTask?.cancel()
         zoomPopoverHideTask = nil
     }
-
 }
 
 struct URLBarZoomButtonVisibility {

@@ -21,9 +21,9 @@ struct SidebarFolderDropTargetMetrics: Equatable {
     var topLevelIndex: Int
     var childCount: Int
     var isOpen: Bool
-    var headerFrame: CGRect? = nil
-    var bodyFrame: CGRect? = nil
-    var afterFrame: CGRect? = nil
+    var headerFrame: CGRect?
+    var bodyFrame: CGRect?
+    var afterFrame: CGRect?
 }
 
 struct SidebarFolderChildDropTargetMetrics: Equatable {
@@ -129,7 +129,6 @@ struct SidebarRuntimeGeometryStore {
     var folderChildDropTargets: [UUID: SidebarFolderChildDropTargetMetrics] = [:]
     var regularListHitTargets: [UUID: SidebarRegularListHitMetrics] = [:]
     var essentialsLayoutMetricsBySpace: [UUID: SidebarEssentialsLayoutMetrics] = [:]
-
 }
 
 enum SidebarDragGeometryMutationKey: Hashable {

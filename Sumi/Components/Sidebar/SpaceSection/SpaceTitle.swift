@@ -18,7 +18,7 @@ struct SpaceTitle: View {
     @State private var draftName: String = ""
     @State private var isRowHovered = false
     @FocusState private var nameFieldFocused: Bool
-    
+
     @StateObject private var emojiManager = EmojiPickerManager()
 
     var body: some View {
@@ -97,7 +97,6 @@ struct SpaceTitle: View {
                 triggers: [.leftClick],
                 entries: { spaceContextMenuEntries() }
             )
-
         }
         .padding(.leading, SidebarRowLayout.leadingInset)
         .padding(.trailing, SidebarRowLayout.trailingInset)
@@ -121,9 +120,9 @@ struct SpaceTitle: View {
             }
         )
     }
-    
-    //MARK: - Colors
-    
+
+    // MARK: - Colors
+
     private var hoverColor: Color {
         if displayIsHovering {
             return tokens.sidebarRowHover
@@ -235,7 +234,6 @@ struct SpaceTitle: View {
             RuntimeDiagnostics.emit("⚠️ Failed to update space icon \(space.id.uuidString):", error)
         }
     }
-
 }
 
 // MARK: - Emoji picker

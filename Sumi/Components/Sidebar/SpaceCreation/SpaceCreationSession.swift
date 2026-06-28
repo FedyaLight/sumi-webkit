@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 @MainActor
 final class SpaceCreationSession: ObservableObject, Identifiable {

@@ -133,10 +133,10 @@ final class ExtensionIconCache {
 struct ExtensionActionView: View {
     let extensions: [InstalledExtension]
     var layout: ExtensionActionLayout = .compactStrip
-    var visibleActionLimit: Int? = nil
-    var profileId: UUID? = nil
+    var visibleActionLimit: Int?
+    var profileId: UUID?
     @EnvironmentObject var browserManager: BrowserManager
-    
+
     var body: some View {
         switch layout {
         case .compactStrip:
@@ -162,7 +162,6 @@ struct ExtensionActionView: View {
                     ExtensionActionButton(ext: ext, layout: .hubTiles)
                         .environmentObject(browserManager)
                 }
-
             }
         }
     }
@@ -447,7 +446,7 @@ private struct ExtensionActionContextMenuModifier: ViewModifier {
 struct ExtensionActionButton: View {
     let ext: InstalledExtension
     var layout: ExtensionActionLayout = .compactStrip
-    var profileId: UUID? = nil
+    var profileId: UUID?
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore:
         BrowserExtensionSurfaceStore
@@ -456,7 +455,7 @@ struct ExtensionActionButton: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering: Bool = false
     @State private var isPressed = false
-    
+
     var body: some View {
         Group {
             if layout == .sidebarGrid {
@@ -577,8 +576,7 @@ struct ExtensionActionButton: View {
            let nsImage = ExtensionIconCache.shared.image(
                extensionId: ext.id,
                iconPath: iconPath
-           )
-        {
+           ) {
             Image(nsImage: nsImage)
                 .resizable()
                 .interpolation(.high)

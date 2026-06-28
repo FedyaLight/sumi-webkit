@@ -20,7 +20,7 @@ struct URLBarSiteDataDetailsView: View {
         [
             profile?.id.uuidString ?? "none",
             currentTab?.id.uuidString ?? "none",
-            currentTab?.url.host ?? currentTab?.url.absoluteString ?? "none"
+            currentTab?.url.host ?? currentTab?.url.absoluteString ?? "none",
         ].joined(separator: "|")
     }
 

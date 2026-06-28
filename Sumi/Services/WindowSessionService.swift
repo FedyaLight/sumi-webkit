@@ -179,21 +179,18 @@ final class WindowSessionService {
 
         for (_, windowState) in windowRegistry.windows {
             if windowState.currentSpaceId == nil
-                || delegate.tabManager.spaces.first(where: { $0.id == windowState.currentSpaceId }) == nil
-            {
+                || delegate.tabManager.spaces.first(where: { $0.id == windowState.currentSpaceId }) == nil {
                 windowState.currentSpaceId = delegate.tabManager.currentSpace?.id
                     ?? delegate.tabManager.spaces.first?.id
             }
 
             if let shortcutPinId = windowState.currentShortcutPinId,
-               let pin = delegate.tabManager.shortcutPin(by: shortcutPinId)
-            {
+               let pin = delegate.tabManager.shortcutPin(by: shortcutPinId) {
                 materializeShortcutSelection(pin, in: windowState, delegate: delegate)
             } else if materializeRememberedSpaceShortcut(in: windowState, delegate: delegate) {
                 // Restored from the per-space launcher selection snapshot.
             } else if let currentTabId = windowState.currentTabId,
-                      delegate.tabManager.allTabs().contains(where: { $0.id == currentTabId }) == false
-            {
+                      delegate.tabManager.allTabs().contains(where: { $0.id == currentTabId }) == false {
                 windowState.currentTabId = nil
             }
 
@@ -282,15 +279,13 @@ final class WindowSessionService {
         delegate.glanceManager.restorePendingSessionIfPossible(in: windowState)
 
         if !windowState.isShowingEmptyState,
-           !delegate.hasValidCurrentSelection(in: windowState)
-        {
+           !delegate.hasValidCurrentSelection(in: windowState) {
             if let currentSpace = delegate.space(for: windowState.currentSpaceId),
                let preferred = delegate.shellSelectionService.preferredTabForSpace(
                     currentSpace,
                     in: windowState,
                     tabStore: delegate.tabManager.runtimeStore
-               )
-            {
+               ) {
                 delegate.applyTabSelection(
                     preferred,
                     in: windowState,
@@ -335,8 +330,7 @@ final class WindowSessionService {
             && delegate.shellSelectionService.preferredTabForWindow(
                 windowState,
                 tabStore: delegate.tabManager.runtimeStore
-            ) == nil
-        {
+            ) == nil {
             windowState.isShowingEmptyState = true
         }
 
@@ -366,8 +360,7 @@ final class WindowSessionService {
         delegate: WindowSessionServiceDelegate
     ) -> Bool {
         if let shortcutPinId = windowState.currentShortcutPinId,
-           let pin = delegate.tabManager.shortcutPin(by: shortcutPinId)
-        {
+           let pin = delegate.tabManager.shortcutPin(by: shortcutPinId) {
             materializeShortcutSelection(pin, in: windowState, delegate: delegate)
             return true
         }
@@ -420,16 +413,14 @@ final class WindowSessionService {
         source: String
     ) {
         if let spaceId = windowState.currentSpaceId,
-           let space = delegate.tabManager.spaces.first(where: { $0.id == spaceId })
-        {
+           let space = delegate.tabManager.spaces.first(where: { $0.id == spaceId }) {
             windowState.currentProfileId = space.profileId ?? delegate.currentProfile?.id
             delegate.commitWorkspaceTheme(space.workspaceTheme, for: windowState)
             return
         }
 
         if let spaceId = windowState.currentSpaceId,
-           !delegate.tabManager.hasLoadedInitialData
-        {
+           !delegate.tabManager.hasLoadedInitialData {
             RuntimeDiagnostics.debug(
                 "Preserving bootstrap workspace theme for window \(windowState.id.uuidString) while waiting for initial TabManager data; source=\(source) currentSpace=\(spaceId.uuidString)",
                 category: "WindowSessionService"

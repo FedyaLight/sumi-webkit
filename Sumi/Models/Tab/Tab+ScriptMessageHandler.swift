@@ -257,7 +257,6 @@ private final class SumiLinkInteractionSubfeature: NSObject, @MainActor SumiUser
             return nil
         }
     }
-
 }
 
 private struct SumiHrefPayload {

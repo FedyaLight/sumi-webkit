@@ -123,8 +123,7 @@ enum ExtensionActionPopupPresentationOwner {
         }
 
         if let requestURL,
-           isExtensionExternalWebPopupURL(requestURL)
-        {
+           isExtensionExternalWebPopupURL(requestURL) {
             let profileId =
                 manager.resolvedProfileId(for: openerTab)
                 ?? manager.currentProfileId
@@ -230,8 +229,7 @@ extension ExtensionManager: NSPopoverDelegate {
                 )
                 SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled(diagnostic)
                 if SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
-                    == false
-                {
+                    == false {
                     self.activePopupExtensionID = nil
                 }
             }

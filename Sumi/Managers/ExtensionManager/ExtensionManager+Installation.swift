@@ -137,8 +137,7 @@ extension ExtensionManager {
             let sourceKind = WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
             let packageURL = URL(fileURLWithPath: entity.packagePath, isDirectory: true)
             if sourceKind == .directory,
-               FileManager.default.fileExists(atPath: packageURL.path)
-            {
+               FileManager.default.fileExists(atPath: packageURL.path) {
                 try FileManager.default.removeItem(at: packageURL)
             }
             context.delete(entity)
@@ -371,8 +370,7 @@ extension ExtensionManager {
     private func backgroundWakeKey(
         for extensionContext: WKWebExtensionContext
     ) -> String {
-        if let identity = contextIdentity(for: extensionContext)
-        {
+        if let identity = contextIdentity(for: extensionContext) {
             return backgroundScopedKey(
                 extensionId: identity.extensionId,
                 profileId: identity.profileId
@@ -654,13 +652,11 @@ extension ExtensionManager {
         if let existingEntityBySource {
             rawExtensionId = existingEntityBySource.id
         } else if let bundleIdentifier = bundle.bundleIdentifier,
-                  bundleIdentifier.isEmpty == false
-        {
+                  bundleIdentifier.isEmpty == false {
             rawExtensionId = bundleIdentifier
         } else if let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any],
                   let gecko = browserSpecificSettings["gecko"] as? [String: Any],
-                  let geckoId = gecko["id"] as? String
-        {
+                  let geckoId = gecko["id"] as? String {
             rawExtensionId = geckoId
         } else {
             rawExtensionId = UUID().uuidString

@@ -157,8 +157,7 @@ struct SumiPendingAuthorizationQueryIndex {
         let normalizedPageId = Self.normalizedPageId(pageId)
         if let active = snapshot.active,
            let queryId = queryIdByRequestId[active.request.id],
-           let query = queryById[queryId]?.query
-        {
+           let query = queryById[queryId]?.query {
             activeQueriesByPageId[normalizedPageId] = query
         } else {
             activeQueriesByPageId.removeValue(forKey: normalizedPageId)

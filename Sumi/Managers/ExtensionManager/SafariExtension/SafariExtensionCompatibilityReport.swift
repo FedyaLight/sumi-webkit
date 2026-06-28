@@ -317,8 +317,7 @@ enum SafariExtensionCompatibilityReportBuilder {
 
         if let installed,
            let popupPath = installed.defaultPopupPath,
-           popupPath.isEmpty == false
-        {
+           popupPath.isEmpty == false {
             let popupURL = URL(fileURLWithPath: installed.packagePath, isDirectory: true)
                 .appendingPathComponent(popupPath)
             if FileManager.default.fileExists(atPath: popupURL.path) {

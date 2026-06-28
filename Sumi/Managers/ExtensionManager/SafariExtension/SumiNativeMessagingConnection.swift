@@ -435,8 +435,7 @@ enum SumiNativeMessagingConnection {
 
     private static func relayCode(for error: NSError) -> SumiNativeMessagingRelay.ErrorCode {
         if error.domain == SumiNativeMessagingRelay.errorDomain,
-           let mapped = SumiNativeMessagingRelay.ErrorCode(rawValue: error.code)
-        {
+           let mapped = SumiNativeMessagingRelay.ErrorCode(rawValue: error.code) {
             return mapped
         }
         return .hostLaunchFailed

@@ -173,8 +173,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var nativeMessagingBackgroundWakeOwnerStorage:
         ExtensionNativeMessagingBackgroundWakeOwner?
     var nativeMessagingBackgroundWakeOwner:
-        ExtensionNativeMessagingBackgroundWakeOwner
-    {
+        ExtensionNativeMessagingBackgroundWakeOwner {
         if let nativeMessagingBackgroundWakeOwnerStorage {
             return nativeMessagingBackgroundWakeOwnerStorage
         }
@@ -183,15 +182,13 @@ final class ExtensionManager: NSObject, ObservableObject {
         return owner
     }
     var loadedNativeMessagingBackgroundWakeOwner:
-        ExtensionNativeMessagingBackgroundWakeOwner?
-    {
+        ExtensionNativeMessagingBackgroundWakeOwner? {
         nativeMessagingBackgroundWakeOwnerStorage
     }
     var initialDocumentRuntimePreparationOwnerStorage:
         ExtensionInitialDocumentRuntimePreparationOwner?
     var initialDocumentRuntimePreparationOwner:
-        ExtensionInitialDocumentRuntimePreparationOwner
-    {
+        ExtensionInitialDocumentRuntimePreparationOwner {
         if let initialDocumentRuntimePreparationOwnerStorage {
             return initialDocumentRuntimePreparationOwnerStorage
         }
@@ -200,15 +197,13 @@ final class ExtensionManager: NSObject, ObservableObject {
         return owner
     }
     var loadedInitialDocumentRuntimePreparationOwner:
-        ExtensionInitialDocumentRuntimePreparationOwner?
-    {
+        ExtensionInitialDocumentRuntimePreparationOwner? {
         initialDocumentRuntimePreparationOwnerStorage
     }
     var normalTabRuntimeBindingOwnerStorage:
         ExtensionNormalTabRuntimeBindingOwner?
     var normalTabRuntimeBindingOwner:
-        ExtensionNormalTabRuntimeBindingOwner
-    {
+        ExtensionNormalTabRuntimeBindingOwner {
         if let normalTabRuntimeBindingOwnerStorage {
             return normalTabRuntimeBindingOwnerStorage
         }
@@ -340,8 +335,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         #endif
 
         if let raw = UserDefaults.standard.string(forKey: controllerIdentifierKey),
-           let uuid = UUID(uuidString: raw)
-        {
+           let uuid = UUID(uuidString: raw) {
             return uuid
         }
 

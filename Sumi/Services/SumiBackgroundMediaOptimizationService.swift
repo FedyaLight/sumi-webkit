@@ -204,7 +204,7 @@ final class SumiBackgroundMediaOptimizationService {
         let arguments: [String: Any] = [
             "mode": mode.rawValue,
             "graceMs": graceMilliseconds,
-            "reason": reason
+            "reason": reason,
         ]
 
         webView.callAsyncJavaScript(

@@ -1,6 +1,6 @@
 import Foundation
-import SwiftData
 import OSLog
+import SwiftData
 
 // MARK: - Tab Repository
 
@@ -682,8 +682,7 @@ actor TabSnapshotRepository {
     private func validateDelta(_ delta: StructuralDelta) throws {
         if delta.tabs.contains(where: { $0.index < 0 })
             || delta.folders.contains(where: { $0.index < 0 })
-            || delta.spaces.contains(where: { $0.index < 0 })
-        {
+            || delta.spaces.contains(where: { $0.index < 0 }) {
             throw PersistenceError.invalidModelState
         }
 
@@ -835,8 +834,7 @@ actor TabSnapshotRepository {
         if domain.contains("swiftdata") || domain.contains("coredata") {
             if description.contains("conflict")
                 || description.contains("busy")
-                || description.contains("locked")
-            {
+                || description.contains("locked") {
                 return .concurrencyConflict
             }
             if description.contains("corrupt") || description.contains("malformed") {

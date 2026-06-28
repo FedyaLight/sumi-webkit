@@ -321,8 +321,7 @@ final class SumiFaviconService: @unchecked Sendable {
                 priority: .visibleSidebarOrTabStrip
             )
             if case .success(let response) = result,
-               response.data.count <= SumiFaviconConstants.maxPayloadBytes
-            {
+               response.data.count <= SumiFaviconConstants.maxPayloadBytes {
                 candidates.append(
                     contentsOf: SumiWebAppManifestIconDiscovery.candidates(
                         from: response.data,
@@ -353,8 +352,7 @@ final class SumiFaviconService: @unchecked Sendable {
         guard let partition = candidates.first?.partition else { return nil }
         let cachedSelection = blobStore.cachedSelection(for: pageURL, partition: partition)
         if let cachedSelection,
-           shouldUseCachedSelection(cachedSelection, over: candidates)
-        {
+           shouldUseCachedSelection(cachedSelection, over: candidates) {
             publishAliasUpdatesIfNeeded(
                 blobStore.associatePageAliases(aliasPageURLs, to: cachedSelection),
                 selection: cachedSelection
@@ -364,8 +362,7 @@ final class SumiFaviconService: @unchecked Sendable {
 
         let hasExplicitCandidates = candidates.contains(where: Self.isExplicitCandidate)
         if !hasExplicitCandidates,
-           blobStore.isNoIconFresh(for: pageURL, partition: partition)
-        {
+           blobStore.isNoIconFresh(for: pageURL, partition: partition) {
             return nil
         }
 
@@ -380,8 +377,7 @@ final class SumiFaviconService: @unchecked Sendable {
             }
             if let cachedSelection,
                Self.sameFaviconURL(candidate.iconURL, cachedSelection.sourceURL),
-               blobStore.isPositiveCandidateFresh(candidate.iconURL, partition: candidate.partition)
-            {
+               blobStore.isPositiveCandidateFresh(candidate.iconURL, partition: candidate.partition) {
                 publishAliasUpdatesIfNeeded(
                     blobStore.associatePageAliases(aliasPageURLs, to: cachedSelection),
                     selection: cachedSelection

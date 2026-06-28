@@ -207,5 +207,4 @@ struct URLBarView: View {
             safariContentBlockerReloadRequired: currentTab?.isSafariContentBlockerReloadRequired == true
         )
     }
-
 }

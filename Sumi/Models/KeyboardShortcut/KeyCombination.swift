@@ -28,11 +28,11 @@ struct KeyCombination: Hashable, Codable {
         0x21: "[", 0x22: "i", 0x23: "p", 0x24: "return", 0x25: "l", 0x26: "j", 0x27: "'",
         0x28: "k", 0x29: ";", 0x2A: "\\", 0x2B: ",", 0x2C: "/", 0x2D: "n", 0x2E: "m", 0x2F: ".",
         0x30: "tab", 0x31: "space", 0x33: "delete", 0x35: "escape", 0x7B: "leftarrow",
-        0x7C: "rightarrow", 0x7D: "downarrow", 0x7E: "uparrow"
+        0x7C: "rightarrow", 0x7D: "downarrow", 0x7E: "uparrow",
     ]
 
     private static let namedPhysicalKeys: Set<String> = [
-        "return", "tab", "space", "delete", "escape", "leftarrow", "rightarrow", "downarrow", "uparrow"
+        "return", "tab", "space", "delete", "escape", "leftarrow", "rightarrow", "downarrow", "uparrow",
     ]
 
     init?(from event: NSEvent) {

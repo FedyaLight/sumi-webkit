@@ -6,8 +6,6 @@
 import SwiftUI
 
 extension SpaceView {
-
-
     var sidebarContentMutationAnimation: Animation? {
         guard isInteractive,
               !reduceMotion,
@@ -22,8 +20,6 @@ extension SpaceView {
             )
         )
     }
-
-
 
     var tokens: ChromeThemeTokens {
         themeContext.tokens(settings: sumiSettings)

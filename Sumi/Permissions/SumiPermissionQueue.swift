@@ -63,8 +63,7 @@ actor SumiPermissionQueue {
         var pageQueue = queuesByPageId[pageId] ?? PageQueue()
 
         if var active = pageQueue.active,
-           isDuplicate(request, of: active.request)
-        {
+           isDuplicate(request, of: active.request) {
             active.coalesce(requestId: request.id)
             pageQueue.active = active
             queuesByPageId[pageId] = pageQueue

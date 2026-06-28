@@ -682,8 +682,7 @@ enum BitwardenSafariOneShotHandler {
         var blobData: Data?
         if let blobOptions = object["blobOptions"] as? [String: Any],
            blobOptions["type"] as? String == "text/plain",
-           let blob = object["blobData"] as? String
-        {
+           let blob = object["blobData"] as? String {
             blobData = blob.data(using: .utf8)
         } else if let blob = object["blobData"] as? String {
             blobData = Data(base64Encoded: blob)

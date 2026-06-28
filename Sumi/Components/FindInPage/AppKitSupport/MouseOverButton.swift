@@ -19,17 +19,14 @@
 import AppKit
 
 @objc protocol MouseOverButtonDelegate: AnyObject {
-
     @objc optional func mouseOverButton(_ sender: MouseOverButton, draggingEntered info: NSDraggingInfo, isMouseOver: UnsafeMutablePointer<Bool>) -> NSDragOperation
     @objc optional func mouseOverButton(_ sender: MouseOverButton, draggingUpdatedWith info: NSDraggingInfo, isMouseOver: UnsafeMutablePointer<Bool>) -> NSDragOperation
     @objc optional func mouseOverButton(_ sender: MouseOverButton, draggingEndedWith info: NSDraggingInfo)
     @objc optional func mouseOverButton(_ sender: MouseOverButton, draggingExitedWith info: NSDraggingInfo?)
     @objc optional func mouseOverButton(_ sender: MouseOverButton, performDragOperation info: NSDraggingInfo) -> Bool
-
 }
 
 class MouseOverButton: NSButton, Hoverable {
-
     @IBOutlet weak var delegate: MouseOverButtonDelegate?
 
     private var hoverBackgroundLayer: CALayer?

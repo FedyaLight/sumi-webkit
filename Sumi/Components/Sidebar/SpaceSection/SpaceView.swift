@@ -12,7 +12,6 @@ enum SpaceViewRenderMode {
     var isInteractive: Bool {
         self == .interactive
     }
-
 }
 
 struct ShortcutRestoreGap: Identifiable, Hashable {
@@ -69,7 +68,6 @@ struct SpaceView: View {
     var isInteractive: Bool {
         renderMode.isInteractive && allowsInteraction
     }
-
 
     var body: some View {
         SidebarTabStructuralRevisionReader(browserManager: browserManager) { _ in

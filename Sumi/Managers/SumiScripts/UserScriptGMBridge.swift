@@ -15,7 +15,6 @@ import WebKit
 
 @MainActor
 final class UserScriptGMBridge: NSObject {
-
     let script: SumiInstalledUserScript
     private let contentWorld: WKContentWorld
     private weak var tabOpenHandler: SumiScriptsTabHandler?
@@ -286,7 +285,7 @@ final class UserScriptGMBridge: NSObject {
         tabOpenHandler?.openTab(url: url, background: active == false)
         resolveCallback(callbackId, result: [
             "closed": false,
-            "id": UUID().uuidString
+            "id": UUID().uuidString,
         ], webView: webView)
     }
 
@@ -348,7 +347,7 @@ final class UserScriptGMBridge: NSObject {
                 "delivered": result.delivered,
                 "permission": result.permission.rawValue,
                 "reason": result.reason,
-                "identifier": result.identifier?.rawValue ?? ""
+                "identifier": result.identifier?.rawValue ?? "",
             ]
             if result.delivered {
                 self.resolveCallback(callbackId, result: payload, webView: webView)
@@ -373,7 +372,7 @@ final class UserScriptGMBridge: NSObject {
             """,
             arguments: [
                 "callbackId": callbackId,
-                "result": result ?? NSNull()
+                "result": result ?? NSNull(),
             ],
             webView: webView
         )
@@ -387,7 +386,7 @@ final class UserScriptGMBridge: NSObject {
             """,
             arguments: [
                 "callbackId": callbackId,
-                "errorMessage": error
+                "errorMessage": error,
             ],
             webView: webView
         )
@@ -410,7 +409,6 @@ final class UserScriptGMBridge: NSObject {
             )
         }
     }
-
 }
 
 // MARK: - Tab Handler Protocol

@@ -33,8 +33,7 @@ final class ShellSelectionService {
         if let tabId = windowState.currentTabId,
            let current = tabStore.tab(for: tabId),
            isSelectableTab(current),
-           tabBelongsToDisplayedContext(current, in: windowState)
-        {
+           tabBelongsToDisplayedContext(current, in: windowState) {
             return current
         }
 
@@ -53,16 +52,14 @@ final class ShellSelectionService {
         if !windowState.isAwaitingInitialSessionResolution,
            windowState.currentSpaceId == space.id,
            hasValidCurrentSelection(in: windowState, tabStore: tabStore),
-           let currentTab = currentTab(for: windowState, tabStore: tabStore)
-        {
+           let currentTab = currentTab(for: windowState, tabStore: tabStore) {
             return currentTab
         }
 
         if let currentTabId = windowState.currentTabId,
            let currentTab = tabStore.tab(for: currentTabId),
            currentTab.isShortcutLiveInstance,
-           currentTab.shortcutPinRole == .essential
-        {
+           currentTab.shortcutPinRole == .essential {
             return currentTab
         }
 
@@ -78,8 +75,7 @@ final class ShellSelectionService {
         }
 
         if let shortcutPinId = windowState.currentShortcutPinId,
-           let pin = tabStore.shortcutPin(by: shortcutPinId)
-        {
+           let pin = tabStore.shortcutPin(by: shortcutPinId) {
             // Selection reads are used from SwiftUI body; activation must stay in explicit actions/restoration.
             return tabStore.activeShortcutTab(for: windowState.id)
                 ?? tabStore.shortcutLiveTab(for: pin.id, in: windowState.id)
@@ -88,8 +84,7 @@ final class ShellSelectionService {
         if let currentSpaceId = windowState.currentSpaceId,
            let tabId = windowState.activeTabForSpace[currentSpaceId],
            let remembered = tabStore.tab(for: tabId),
-           isSelectableTab(remembered)
-        {
+           isSelectableTab(remembered) {
             return remembered
         }
 
@@ -97,8 +92,7 @@ final class ShellSelectionService {
            let space = tabStore.spaces.first(where: { $0.id == currentSpaceId }),
            let activeTabId = space.activeTabId,
            let active = tabStore.tab(for: activeTabId),
-           isSelectableTab(active)
-        {
+           isSelectableTab(active) {
             return active
         }
 
@@ -110,8 +104,7 @@ final class ShellSelectionService {
         tabStore: ShellSelectionTabStore
     ) -> Tab? {
         if let currentSpaceId = windowState.currentSpaceId,
-           let space = tabStore.spaces.first(where: { $0.id == currentSpaceId })
-        {
+           let space = tabStore.spaces.first(where: { $0.id == currentSpaceId }) {
             let regularTabs = tabStore.tabs(in: space)
             let regularTabById = tabLookup(for: regularTabs)
             if let historyMatch = firstTab(
@@ -122,14 +115,12 @@ final class ShellSelectionService {
             }
 
             if let rememberedId = windowState.activeTabForSpace[currentSpaceId],
-               let remembered = regularTabById[rememberedId]
-            {
+               let remembered = regularTabById[rememberedId] {
                 return remembered
             }
 
             if let activeId = space.activeTabId,
-               let active = regularTabById[activeId]
-            {
+               let active = regularTabById[activeId] {
                 return active
             }
 
@@ -145,8 +136,7 @@ final class ShellSelectionService {
         tabStore: ShellSelectionTabStore
     ) -> Tab? {
         if let shortcutPinId = windowState.selectedShortcutPinForSpace[space.id],
-           let liveShortcut = tabStore.shortcutLiveTab(for: shortcutPinId, in: windowState.id)
-        {
+           let liveShortcut = tabStore.shortcutLiveTab(for: shortcutPinId, in: windowState.id) {
             return liveShortcut
         }
 
@@ -160,20 +150,17 @@ final class ShellSelectionService {
         }
 
         if let rememberedId = windowState.activeTabForSpace[space.id],
-           let remembered = regularTabById[rememberedId]
-        {
+           let remembered = regularTabById[rememberedId] {
             return remembered
         }
 
         if let activeId = space.activeTabId,
-           let active = regularTabById[activeId]
-        {
+           let active = regularTabById[activeId] {
             return active
         }
 
         if let backgroundShortcut = tabStore.liveShortcutTabs(in: windowState.id)
-            .first(where: { $0.shortcutPinRole != .essential && $0.spaceId == space.id })
-        {
+            .first(where: { $0.shortcutPinRole != .essential && $0.spaceId == space.id }) {
             return backgroundShortcut
         }
 
@@ -195,8 +182,7 @@ final class ShellSelectionService {
         let activeShortcut = tabStore.activeShortcutTab(for: windowState.id)
 
         if let activeShortcut,
-           activeShortcut.spaceId == nil || activeShortcut.spaceId == currentSpace?.id
-        {
+           activeShortcut.spaceId == nil || activeShortcut.spaceId == currentSpace?.id {
             return [activeShortcut] + regularTabs
         }
 

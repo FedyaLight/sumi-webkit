@@ -75,7 +75,6 @@ extension UserScriptGMBridge {
 /// Central entry: routes `method` from the JS shim to the appropriate handler on `UserScriptGMBridge`.
 @MainActor
 enum UserScriptGMDispatch {
-
     static func route(
         bridge: UserScriptGMBridge,
         method: String,

@@ -1022,5 +1022,4 @@ final class SumiContentBlockingService {
             ruleListLookupDuration: update.ruleListLookupDuration
         )
     }
-
 }

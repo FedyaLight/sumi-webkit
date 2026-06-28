@@ -1,5 +1,5 @@
-import WebKit
 import Foundation
+import WebKit
 
 enum SumiUserAgent {
     private static let fallbackSafariVersion = "26.5"
@@ -35,17 +35,16 @@ enum SumiUserAgent {
         guard let userAgent = webView.value(forKey: "userAgent") as? String else {
             return nil
         }
-        
+
         let pattern = #"AppleWebKit\s*\/\s*([\d.]+)"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
               let match = regex.firstMatch(in: userAgent, options: [], range: NSRange(userAgent.startIndex..., in: userAgent)) else {
             return nil
         }
-        
+
         if let range = Range(match.range(at: 1), in: userAgent) {
             return String(userAgent[range])
         }
         return nil
     }
 }
-

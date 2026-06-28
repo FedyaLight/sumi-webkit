@@ -81,7 +81,7 @@ final class NativeSplitTreeView: NSSplitView, NSSplitViewDelegate {
         storedSizes = normalized
         lastReportedSizes = normalized
         var accumulated: CGFloat = 0
-        for index in 0 ..< subviews.count - 1 {
+        for index in 0..<subviews.count - 1 {
             let fraction = CGFloat(normalized[index])
             accumulated += totalLength * fraction
             setPosition(accumulated, ofDividerAt: index)

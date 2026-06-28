@@ -307,8 +307,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
         let sourceId = candidate.id
         if sidebarPinningSourceId == sourceId,
            sidebarPinningWindowID == windowState.id,
-           sidebarPinningToken != nil
-        {
+           sidebarPinningToken != nil {
             return
         }
 

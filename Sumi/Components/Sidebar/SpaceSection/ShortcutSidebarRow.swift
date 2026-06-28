@@ -7,11 +7,11 @@ import SwiftUI
 
 struct ShortcutSidebarRow: View {
     @ObservedObject var pin: ShortcutPin
-    var liveTab: Tab? = nil
-    var accessibilityID: String? = nil
+    var liveTab: Tab?
+    var accessibilityID: String?
     var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     let action: () -> Void
-    var dragSourceZone: DropZoneID? = nil
+    var dragSourceZone: DropZoneID?
     var dragHasTrailingActionExclusion: Bool = true
     var dragIsEnabled: Bool = true
     let onResetToLaunchURL: (() -> Void)?
@@ -141,10 +141,10 @@ private struct ShortcutSidebarRowChrome: View {
     let faviconPartition: SumiFaviconPartition
     let resolvedTitle: String
     let runtimeAffordance: SumiLauncherRuntimeAffordanceState
-    var accessibilityID: String? = nil
+    var accessibilityID: String?
     var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     let action: () -> Void
-    var dragSourceZone: DropZoneID? = nil
+    var dragSourceZone: DropZoneID?
     var dragHasTrailingActionExclusion: Bool = true
     var dragIsEnabled: Bool = true
     let onResetToLaunchURL: (() -> Void)?

@@ -19,8 +19,7 @@ enum SumiWebExtensionCallbackErrorMapper {
     static func webExtensionCallbackError(from error: any Error) -> NSError {
         let nsError = error as NSError
         if isWebKitRecognizedCallbackError(nsError),
-           hasSerializableMessage(nsError)
-        {
+           hasSerializableMessage(nsError) {
             return nsError
         }
 
@@ -52,8 +51,7 @@ enum SumiWebExtensionCallbackErrorMapper {
         }
 
         if error.domain == SumiNativeMessagingErrorMapper.relayErrorDomain,
-           let code = SumiNativeMessagingRelay.ErrorCode(rawValue: error.code)
-        {
+           let code = SumiNativeMessagingRelay.ErrorCode(rawValue: error.code) {
             return SumiNativeMessagingErrorMapper.relayError(
                 code: code,
                 diagnostic: nil

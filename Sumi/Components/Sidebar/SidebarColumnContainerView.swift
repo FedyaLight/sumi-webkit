@@ -84,8 +84,7 @@ final class SidebarColumnContainerView: SidebarColumnBaseContainerView {
             in: self,
             hostedSidebarView: hostedSidebarView
            ),
-           let targetWindow = window
-        {
+           let targetWindow = window {
             onPointerDown?()
             targetWindow.performZoom(nil)
             return

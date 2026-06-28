@@ -19,7 +19,6 @@
 import AppKit
 
 final class FocusRingView: NSView {
-
     enum Size: CGFloat {
         case shadow = 2.5
         case stroke = 0.5
@@ -126,5 +125,4 @@ final class FocusRingView: NSView {
         shadowColor = paint.accentShadow
         refreshLayerColors()
     }
-
 }

@@ -33,5 +33,4 @@ final class DefaultTabRuntimeStore: ShellSelectionTabStore {
     func shortcutLiveTab(for pinId: UUID, in windowId: UUID) -> Tab? {
         tabManager.shortcutLiveTab(for: pinId, in: windowId)
     }
-
 }

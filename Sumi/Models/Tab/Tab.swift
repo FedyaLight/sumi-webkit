@@ -46,17 +46,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     private let webViewRuntime = TabWebViewRuntime()
 
     // MARK: - Pin State
-    var isPinned: Bool = false  // Global pinned (essentials)
-    var isSpacePinned: Bool = false  // Space-level pinned
-    var folderId: UUID?  // Folder membership for tabs within spacepinned area
+    var isPinned: Bool = false // Global pinned (essentials)
+    var isSpacePinned: Bool = false // Space-level pinned
+    var folderId: UUID? // Folder membership for tabs within spacepinned area
     var shortcutPinId: UUID?
     var shortcutPinRole: ShortcutPinRole?
     var isShortcutLiveInstance: Bool = false
-    
+
     // MARK: - Ephemeral State
     /// Whether this tab belongs to an ephemeral/incognito session
     var isEphemeral: Bool {
-        return resolveProfile()?.isEphemeral ?? false
+        resolveProfile()?.isEphemeral ?? false
     }
 
     // MARK: - Loading State
@@ -200,7 +200,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
     // MARK: - Tab State
     var isUnloaded: Bool {
-        return _webView == nil
+        _webView == nil
     }
 
     /// True when the tab row should show the web-content-unloaded favicon affordance.
@@ -328,7 +328,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.extensionRuntimeState.eligibleGeneration }
         set { webViewRuntime.extensionRuntimeState.eligibleGeneration = newValue }
     }
-    
+
     // MARK: - WebView Ownership Tracking (Memory Optimization)
     /// The window ID that currently "owns" the primary WebView for this tab
     /// If nil, no window is displaying this tab yet
@@ -372,13 +372,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { webViewRuntime.webViewInteractionCancellables }
         set { webViewRuntime.webViewInteractionCancellables = newValue }
     }
-    
+
     weak var browserManager: BrowserManager?
     weak var sumiSettings: SumiSettingsService?
 
     // MARK: - Link Hover Callback
-    var onLinkHover: ((String?) -> Void)? = nil
-    var lastHoveredLinkURL: URL? = nil
+    var onLinkHover: ((String?) -> Void)?
+    var lastHoveredLinkURL: URL?
     var lastWebPageContextMenuTarget: SumiWebPageContextMenuTargetSnapshot?
     var lastGlanceMouseDownOrigin: SumiGlanceOriginSnapshot?
 
@@ -486,7 +486,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     var isLoading: Bool {
-        return loadingState.isLoading
+        loadingState.isLoading
     }
 
     var representsSumiEmptySurface: Bool {
@@ -741,8 +741,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         isDisplayingPDFDocument = false
     }
 
-
-
     func safariContentBlockerDesiredAttachmentState(
         for targetURL: URL?
     ) -> SumiSafariContentBlockerAttachmentState {
@@ -891,8 +889,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         )
     }
 
-
-
     func protectionAttachmentRequiresNormalWebViewRebuild(
         for targetURL: URL?
     ) -> Bool {
@@ -914,7 +910,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             profile: resolveProfile()
         )
     }
-
 
     @discardableResult
     func rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
@@ -1201,7 +1196,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         applyAudioState(audioState.withPlayingAudio(false))
         lastMediaActivityAt = .distantPast
     }
-
 }
 
 // MARK: - Hashable & Equatable
@@ -1212,7 +1206,7 @@ extension Tab {
     }
 
     public override var hash: Int {
-        return id.hashValue
+        id.hashValue
     }
 }
 

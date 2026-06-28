@@ -444,7 +444,7 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
     ) {
         self.manifest = manifest
         self.compiledDefinitionsByIdentifier = Dictionary(
-            uniqueKeysWithValues: compiledDefinitions.map { (($0.storeIdentifierOverride ?? $0.name), $0) }
+            uniqueKeysWithValues: compiledDefinitions.map { ($0.storeIdentifierOverride ?? $0.name, $0) }
         )
         self.compiledDefinitionLoader = compiledDefinitionLoader
     }
@@ -458,7 +458,7 @@ final class AdblockManifestRuleListProvider: SumiContentRuleListSetProviding {
         compiledDefinitions: [SumiContentRuleListDefinition] = []
     ) {
         let definitionsByIdentifier = Dictionary(
-            uniqueKeysWithValues: compiledDefinitions.map { (($0.storeIdentifierOverride ?? $0.name), $0) }
+            uniqueKeysWithValues: compiledDefinitions.map { ($0.storeIdentifierOverride ?? $0.name, $0) }
         )
         guard self.manifest != manifest || compiledDefinitionsByIdentifier != definitionsByIdentifier else { return }
         self.manifest = manifest

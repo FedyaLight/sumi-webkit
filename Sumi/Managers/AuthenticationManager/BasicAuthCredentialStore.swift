@@ -53,7 +53,7 @@ struct BasicAuthCredentialKey: Hashable, Sendable {
             "method=\(Self.encode(authenticationMethod))",
             "profile=\(Self.encode(profilePartitionId))",
             "ephemeral=\(isEphemeralProfile ? "1" : "0")",
-            "store=\(Self.encodeOptional(websiteDataStoreIdentifier))"
+            "store=\(Self.encodeOptional(websiteDataStoreIdentifier))",
         ].joined(separator: "|")
     }
 
@@ -159,7 +159,7 @@ final class BasicAuthCredentialStore: SumiBasicAuthCredentialCleaning {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
+            kSecMatchLimit as String: kSecMatchLimitOne,
         ]
 
         var item: CFTypeRef?
@@ -195,7 +195,7 @@ final class BasicAuthCredentialStore: SumiBasicAuthCredentialCleaning {
             let query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service,
-                kSecAttrAccount as String: account
+                kSecAttrAccount as String: account,
             ]
 
             let attributes: [String: Any] = [kSecValueData as String: data]
@@ -227,7 +227,7 @@ final class BasicAuthCredentialStore: SumiBasicAuthCredentialCleaning {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account
+            kSecAttrAccount as String: account,
         ]
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
@@ -257,7 +257,7 @@ final class BasicAuthCredentialStore: SumiBasicAuthCredentialCleaning {
             let query: [String: Any] = [
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service,
-                kSecAttrAccount as String: account
+                kSecAttrAccount as String: account,
             ]
             let status = SecItemDelete(query as CFDictionary)
             if status != errSecSuccess, status != errSecItemNotFound {
@@ -284,7 +284,7 @@ final class BasicAuthCredentialStore: SumiBasicAuthCredentialCleaning {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitAll,
-            kSecReturnAttributes as String: true
+            kSecReturnAttributes as String: true,
         ]
 
         var item: CFTypeRef?

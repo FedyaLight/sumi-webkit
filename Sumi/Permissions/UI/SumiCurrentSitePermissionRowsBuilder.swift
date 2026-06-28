@@ -44,8 +44,7 @@ struct SumiCurrentSitePermissionRowsBuilder {
             for record in transientRecords
                 where record.key.transientPageId == context.pageId
                     && record.decision.persistence == .oneTime
-                    && record.decision.state == .allow
-            {
+                    && record.decision.state == .allow {
                 let lookupIdentity = Self.lookupIdentity(for: record.key)
                 if oneTimeRecordsByIdentity[lookupIdentity] == nil {
                     oneTimeRecordsByIdentity[lookupIdentity] = record
@@ -71,8 +70,7 @@ struct SumiCurrentSitePermissionRowsBuilder {
             if let pageId {
                 var seenIds = Set<String>()
                 for record in indicatorEventStore.recordsSnapshot(forPageId: pageId)
-                    where seenIds.insert(record.id).inserted
-                {
+                    where seenIds.insert(record.id).inserted {
                     for permissionType in record.permissionTypes {
                         recentEventCountsByPermissionIdentity[permissionType.identity, default: 0] += record.attemptCount
                     }
@@ -569,7 +567,7 @@ struct SumiCurrentSitePermissionRowsBuilder {
         for option: SumiCurrentSitePermissionOption,
         isEphemeralProfile _: Bool
     ) -> String {
-        return compactPolicySubtitle(for: option)
+        compactPolicySubtitle(for: option)
     }
 
     private static func compactPolicySubtitle(

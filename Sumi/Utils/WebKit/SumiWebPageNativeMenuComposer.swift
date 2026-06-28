@@ -166,8 +166,7 @@ struct SumiWebPageNativeMenuComposer {
     private func removeSuppressedWebKitItems(in menu: NSMenu) {
         for item in menu.items.reversed() {
             if let identifier = SumiWebKitMenuItemIdentifier(item.identifier),
-               identifier.isSuppressedBySumi
-            {
+               identifier.isSuppressedBySumi {
                 menu.removeItem(item)
                 continue
             }
@@ -257,8 +256,7 @@ struct SumiWebPageNativeMenuComposer {
         for item in menu.items {
             if let identifier = SumiWebKitMenuItemIdentifier(item.identifier),
                item.image == nil,
-               let symbolName = identifier.symbolName
-            {
+               let symbolName = identifier.symbolName {
                 item.image = SumiWebPageMenuIcon.make(symbolName, title: item.title)
             }
 

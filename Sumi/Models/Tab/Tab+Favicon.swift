@@ -44,5 +44,4 @@ extension Tab {
     static func getCachedFavicon(for key: String) -> SwiftUI.Image? {
         getCachedFavicon(forReferenceKey: key)
     }
-
 }

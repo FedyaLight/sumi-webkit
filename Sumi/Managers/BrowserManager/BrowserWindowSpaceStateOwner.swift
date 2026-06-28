@@ -57,8 +57,7 @@ final class BrowserWindowSpaceStateOwner {
         let isSameSpace = windowState.currentSpaceId == space.id
         if isSameSpace,
            hasValidCurrentSelection(in: windowState),
-           currentTabIfSessionResolved(for: windowState) != nil
-        {
+           currentTabIfSessionResolved(for: windowState) != nil {
             dependencies.sanitizeFloatingBarState(windowState)
             applySpaceContext(space, to: windowState)
             dependencies.syncShortcutSelectionState(windowState)
@@ -119,23 +118,20 @@ final class BrowserWindowSpaceStateOwner {
         for (_, windowState) in dependencies.windowRegistry()?.windows ?? [:] {
             var needsUpdate = false
             if let currentTabId = windowState.currentTabId,
-               tabManager.tab(for: currentTabId) == nil
-            {
+               tabManager.tab(for: currentTabId) == nil {
                 windowState.currentTabId = nil
                 needsUpdate = true
             }
 
             if let currentSpaceId = windowState.currentSpaceId,
-               tabManager.spaces.first(where: { $0.id == currentSpaceId }) == nil
-            {
+               tabManager.spaces.first(where: { $0.id == currentSpaceId }) == nil {
                 windowState.currentSpaceId = tabManager.spaces.first?.id
                 needsUpdate = true
             }
 
             if !windowState.isShowingEmptyState && !hasValidCurrentSelection(in: windowState) {
                 if let currentSpace = space(for: windowState.currentSpaceId),
-                   let preferred = preferredTabForSpace(currentSpace, in: windowState)
-                {
+                   let preferred = preferredTabForSpace(currentSpace, in: windowState) {
                     dependencies.applyTabSelection(
                         preferred,
                         windowState,

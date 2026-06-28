@@ -107,7 +107,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
                         permissionType: permissionType,
                         source: override.source,
                         reason: override.reason,
-                        systemAuthorizationSnapshot: snapshot,
+                        systemAuthorizationSnapshot: snapshot
                     )
                 }
                 return proceed(
@@ -115,7 +115,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
                     permissionType: permissionType,
                     source: .system,
                     reason: SumiPermissionPolicyReason.systemAuthorizationNotDetermined,
-                    systemAuthorizationSnapshot: snapshot,
+                    systemAuthorizationSnapshot: snapshot
                 )
             case .denied,
                  .restricted,

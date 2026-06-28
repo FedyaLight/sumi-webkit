@@ -11,5 +11,4 @@ extension NSTextField {
     var sumi_chromeIsFirstResponder: Bool {
         window?.firstResponder === currentEditor()
     }
-
 }

@@ -102,7 +102,7 @@ struct SumiHistoryTabRootView: View {
         isSelected: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        return Button {
+        Button {
             action()
         } label: {
             HStack(spacing: 10) {
@@ -303,7 +303,6 @@ struct SumiHistoryTabRootView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 260)
     }
-
 }
 
 private struct HistoryRow: View {
@@ -469,7 +468,6 @@ private struct HistoryRow: View {
         }
         return Color.clear
     }
-
 }
 
 private struct HistoryFaviconView: View {

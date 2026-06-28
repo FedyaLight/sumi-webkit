@@ -22,7 +22,6 @@ extension SumiSystemPermissionService {
         let state = await authorizationState(for: kind)
         return SumiSystemPermissionSnapshot(kind: kind, state: state)
     }
-
 }
 
 struct MacSumiSystemPermissionService: SumiSystemPermissionService {

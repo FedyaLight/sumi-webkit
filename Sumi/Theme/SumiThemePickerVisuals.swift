@@ -3,7 +3,6 @@ import SwiftUI
 import AppKit
 #endif
 
-
 enum SumiTextureRingMetrics {
     static let stepCount = 16
     static let dotSize: CGFloat = 4

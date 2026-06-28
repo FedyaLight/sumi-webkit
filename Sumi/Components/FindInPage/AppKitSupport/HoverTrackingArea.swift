@@ -26,7 +26,6 @@ private let hoverTrackingAreaLog = Logger(subsystem: "Sumi", category: "FindInPa
 /// Used in `MouseOverButton` to automatically manage `isMouseOver` state and update layer when needed
 @MainActor
 final class HoverTrackingArea: NSTrackingArea {
-
     static func updateTrackingAreas(in view: NSView & Hoverable) {
         for trackingArea in view.trackingAreas where trackingArea is HoverTrackingArea {
             view.removeTrackingArea(trackingArea)
@@ -203,7 +202,6 @@ final class HoverTrackingArea: NSTrackingArea {
         if view.isMouseOver,
            view.window?.isKeyWindow != true || view.sumi_chromeIsMouseLocationInsideBounds() != true,
            let event = NSApp.currentEvent {
-
             mouseExited(event)
         } else {
             updateLayer(animated: !view.isMouseDown && !view.sumi_chromeIsMouseLocationInsideBounds())
@@ -218,7 +216,6 @@ final class HoverTrackingArea: NSTrackingArea {
 }
 
 private extension HoverTrackingArea {
-
     func processMouseOverEvent(isMouseOver: Bool) {
         let mustAnimateOnMouseOver = view?.mustAnimateOnMouseOver ?? false
         let animated = !isMouseOver || mustAnimateOnMouseOver
@@ -228,7 +225,6 @@ private extension HoverTrackingArea {
 }
 
 extension NSTrackingArea {
-
     @MainActor @objc dynamic fileprivate func swizzled_mouseExited(_ event: NSEvent) {
         self.swizzled_mouseExited(event)
         if let hoverTrackingArea = self as? HoverTrackingArea,
@@ -239,7 +235,6 @@ extension NSTrackingArea {
 }
 
 @MainActor @objc protocol HoverableProperties {
-
     @objc dynamic var backgroundColor: NSColor? { get }
 
     @objc dynamic var mouseOverColor: NSColor? { get }
@@ -258,7 +253,6 @@ extension NSTrackingArea {
 }
 
 @MainActor protocol Hoverable: NSView, HoverableProperties {
-
     func backgroundLayer(createIfNeeded: Bool) -> CALayer?
 
     func mouseEntered(with event: NSEvent)
@@ -297,7 +291,6 @@ extension Hoverable {
 }
 
 private final class ClosureKeyValueObserver: NSObject {
-
     private weak var object: NSObject?
     private let keyPath: String
     private let onChange: () -> Void

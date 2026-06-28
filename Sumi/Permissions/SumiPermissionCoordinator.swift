@@ -544,8 +544,7 @@ actor SumiPermissionCoordinator {
         case .persistent:
             guard let persistentStore else { return }
             for key in pending.keys
-                where !key.isEphemeralProfile && key.permissionType.canBePersisted
-            {
+                where !key.isEphemeralProfile && key.permissionType.canBePersisted {
                 do {
                     try await persistentStore.setDecision(for: key, decision: storedDecision)
                 } catch {

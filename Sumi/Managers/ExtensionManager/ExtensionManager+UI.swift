@@ -5,7 +5,6 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager {
-
     static let extensionActionPopupMinimumContentSize =
         ExtensionActionPopupPresentationOwner.minimumContentSize
 
@@ -413,8 +412,7 @@ extension ExtensionManager {
 
         let decisionProfileId = tab.profileId ?? resolvedProfileId(for: tab) ?? currentProfileId
         if let extensionId = extensionID(for: extensionContext),
-           let decisionProfileId
-        {
+           let decisionProfileId {
             switch configuredSiteAccessLevel(
                 for: currentURL,
                 extensionId: extensionId,
@@ -678,8 +676,7 @@ extension ExtensionManager {
         if let owningTab,
            didAttach == false,
            webViewNeedsExtensionRuntimeRebuild(webView, for: owningTab),
-           let coordinator = browserManager?.webViewCoordinator
-        {
+           let coordinator = browserManager?.webViewCoordinator {
             SafariExtensionPermissionLifecycleDiagnostics.logReloadRebuild(
                 SafariExtensionReloadRebuildSnapshot(
                     triggerReason: reason,
@@ -714,8 +711,7 @@ extension ExtensionManager {
 
         webView.configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         if let owningTab,
-           let profileId = resolvedProfileId(for: owningTab)
-        {
+           let profileId = resolvedProfileId(for: owningTab) {
             installPermissionsOriginsCompatibilityPreludes(
                 into: webView.configuration.userContentController,
                 profileId: profileId
@@ -764,8 +760,7 @@ extension ExtensionManager {
         if let extensionContext,
            let firstURL = tabURLs.first,
            Self.isExtensionExternalWebPopupURL(firstURL),
-           let activeWindow = browserContext.activeExtensionWindowState
-        {
+           let activeWindow = browserContext.activeExtensionWindowState {
             Task { @MainActor [weak self] in
                 guard let self, let browserContext = self.browserBridgeContext else {
                     completionHandler(

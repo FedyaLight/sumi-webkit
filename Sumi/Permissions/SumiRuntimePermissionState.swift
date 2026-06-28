@@ -90,5 +90,4 @@ struct SumiRuntimePermissionState: Codable, Equatable, Hashable, Sendable {
         self.filePicker = filePicker
         self.storageAccess = storageAccess
     }
-
 }

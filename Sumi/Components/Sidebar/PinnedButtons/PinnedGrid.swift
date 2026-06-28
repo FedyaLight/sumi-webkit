@@ -15,7 +15,6 @@ struct PinnedGrid: View {
     let reportsGeometry: Bool
     let isAppKitInteractionEnabled: Bool
 
-
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -156,7 +155,7 @@ struct PinnedGrid: View {
                                     renderDropGap(
                                         tileSize: row.tileSize
                                     )
-                                case .spacer(_):
+                                case .spacer:
                                     Color.clear
                                         .frame(width: row.tileSize.width, height: row.tileSize.height)
                                 }
@@ -427,7 +426,7 @@ struct PinnedGrid: View {
     }
 
     private func profileChoices(for pin: ShortcutPin) -> [SidebarContextMenuChoice] {
-        return makeSidebarContextMenuProfileChoices(
+        makeSidebarContextMenuProfileChoices(
             profiles: browserManager.profileManager.profiles,
             selectedProfileId: browserManager.tabManager.resolvedExecutionProfileId(
                 for: pin,
@@ -550,7 +549,6 @@ struct PinnedGrid: View {
             ?? browserManager.tabManager.spaces.first?.id
             ?? UUID()
     }
-
 }
 
 private struct PinnedSplitPlaceholderTile: View {

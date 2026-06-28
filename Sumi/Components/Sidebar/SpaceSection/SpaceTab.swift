@@ -9,7 +9,7 @@ import SwiftUI
 
 struct SpaceTab: View {
     @ObservedObject var tab: Tab
-    var dragSourceConfiguration: SidebarDragSourceConfiguration? = nil
+    var dragSourceConfiguration: SidebarDragSourceConfiguration?
     var isAppKitInteractionEnabled: Bool = true
     var action: () -> Void
     var onClose: () -> Void
@@ -77,7 +77,7 @@ struct SpaceTab: View {
                     )
                     .help(tab.audioState.isMuted ? "Unmute Audio" : "Mute Audio")
                 }
-                
+
                 if tab.isRenaming {
                     TextField("", text: $tab.editingName)
                         .font(.system(size: 13, weight: .medium))
@@ -184,9 +184,9 @@ struct SpaceTab: View {
     private var rowSourceID: String {
         "tab-row-\(tab.id.uuidString)"
     }
-    
+
     private var isCurrentTab: Bool {
-        return browserManager.currentTab(for: windowState)?.id == tab.id
+        browserManager.currentTab(for: windowState)?.id == tab.id
     }
 
     private var rowCornerRadius: CGFloat {
@@ -208,7 +208,7 @@ struct SpaceTab: View {
     }
 
     private var textTab: Color {
-        return tokens.primaryText
+        tokens.primaryText
     }
 
     @ViewBuilder
@@ -287,7 +287,7 @@ struct SpaceTab: View {
 
         return dragSourceConfiguration.replacingExclusionZones(
             dragSourceConfiguration.exclusionZones + [
-                .trailingStrip(trailingActivationExclusionWidth)
+                .trailingStrip(trailingActivationExclusionWidth),
             ]
         )
     }
@@ -395,7 +395,6 @@ struct SpaceTab: View {
             action: onClose
         )
     }
-
 }
 
 struct SidebarGlanceTrailingAccessory: View {

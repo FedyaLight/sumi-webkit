@@ -106,7 +106,6 @@ struct HistoryListItem: Identifiable, Equatable, Hashable {
             || domain.lowercased().contains(needle)
             || (siteDomain?.lowercased().contains(needle) ?? false)
     }
-
 }
 
 enum HistoryRange: String, Codable, CaseIterable, Equatable, Hashable {
@@ -213,7 +212,6 @@ enum HistoryRange: String, Codable, CaseIterable, Equatable, Hashable {
             return 7
         }
     }
-
 }
 
 struct HistoryRangeCount: Equatable, Hashable, Identifiable {
@@ -318,7 +316,6 @@ enum RecentlyClosedItem: Identifiable, Equatable {
             return window.id
         }
     }
-
 }
 
 struct LastSessionWindowSnapshot: Identifiable, Codable, Equatable, Hashable {

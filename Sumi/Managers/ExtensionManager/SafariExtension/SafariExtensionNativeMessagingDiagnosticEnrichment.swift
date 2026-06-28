@@ -51,8 +51,7 @@ enum SafariExtensionNativeMessagingDiagnosticEnrichment {
             if diagnostic.adapterSelected == true,
                let errorCode = diagnostic.errorCode,
                diagnostic.errorDomain == SumiNativeMessagingRelay.errorDomain,
-               let relayCode = SumiNativeMessagingRelay.ErrorCode(rawValue: errorCode)
-            {
+               let relayCode = SumiNativeMessagingRelay.ErrorCode(rawValue: errorCode) {
                 switch relayCode {
                 case .relayTimeout:
                     return .relayTimeout

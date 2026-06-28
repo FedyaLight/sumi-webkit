@@ -80,5 +80,4 @@ extension URLBarView {
             ? String(host.dropFirst(4))
             : host
     }
-
 }

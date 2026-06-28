@@ -4,8 +4,8 @@
 //
 //
 
-import SwiftUI
 import AppKit
+import SwiftUI
 
 // MARK: - Status Bar View
 struct LinkStatusBar: View {
@@ -15,7 +15,7 @@ struct LinkStatusBar: View {
     @State private var shouldShow: Bool = false
     @State private var hoverTask: Task<Void, Never>?
     @State private var displayedLink: String? = nil
-    
+
     var body: some View {
         Group {
             if let link = displayedLink, !link.isEmpty {
@@ -48,20 +48,20 @@ struct LinkStatusBar: View {
             displayedLink = nil
         }
     }
-    
+
     private func displayText(for link: String) -> String {
         truncateLink(link)
     }
-    
+
     private func handleHoverChange(newLink: String?) {
         // Cancel any existing task
         hoverTask?.cancel()
         hoverTask = nil
-        
+
         if let link = newLink, !link.isEmpty {
             // New link - update displayed link immediately
             displayedLink = link
-            
+
             // Wait then show if not already showing
             if !shouldShow {
                 hoverTask = Task {
@@ -90,7 +90,7 @@ struct LinkStatusBar: View {
             }
         }
     }
-    
+
     private func truncateLink(_ link: String) -> String {
         if link.count > 60 {
             let firstPart = String(link.prefix(30))
@@ -99,15 +99,15 @@ struct LinkStatusBar: View {
         }
         return link
     }
-    
+
     private var backgroundColor: Color {
         tokens.statusPanelBackground
     }
-    
+
     private var textColor: Color {
         tokens.statusPanelText
     }
-    
+
     private var borderColor: Color {
         tokens.statusPanelBorder
     }
@@ -159,7 +159,7 @@ struct WebsiteView: View {
     var body: some View {
         let nativeSurfaceKind = activeNativeSurfaceKind
 
-        ZStack() {
+        ZStack {
             tabCompositor
                 .allowsHitTesting(nativeSurfaceKind == nil)
 
@@ -175,17 +175,15 @@ struct WebsiteView: View {
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                
             }
             .allowsHitTesting(false)
-            
+
             // Native edge preview for sidebar-to-content split drops.
             SplitPreviewOverlay()
                 .environmentObject(splitManager)
                 .environment(windowState)
                 .coordinateSpace(name: dragCoordinateSpace)
                 .allowsHitTesting(false)
-            
         }
     }
 
@@ -275,7 +273,6 @@ struct WebsiteView: View {
             EmptyView()
         }
     }
-
 }
 
 // MARK: - Split Preview Overlay
@@ -288,7 +285,7 @@ private struct SplitPreviewOverlay: View {
     @State private var renderedOpacity: Double = 0
     @State private var renderGeneration: UInt = 0
     @State private var fadeOutCleanupTask: Task<Void, Never>?
-    
+
     var body: some View {
         GeometryReader { geometry in
             let previewState = splitManager.previewState(for: windowState.id)

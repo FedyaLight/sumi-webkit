@@ -118,8 +118,7 @@ final class WindowWebViewRegistry {
     ) {
         webViewsByTabAndWindow[owner.tabID]?[owner.windowID] = nil
         if let resolvedIdentifier = resolvedWebView.map(ObjectIdentifier.init),
-           webViewOwnersByIdentifier[resolvedIdentifier] == owner
-        {
+           webViewOwnersByIdentifier[resolvedIdentifier] == owner {
             webViewOwnersByIdentifier.removeValue(forKey: resolvedIdentifier)
         }
         if removeRecentVisibility {

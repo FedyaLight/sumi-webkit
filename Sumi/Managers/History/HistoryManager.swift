@@ -232,7 +232,7 @@ final class HistoryManager: ObservableObject {
         switch query {
         case .domainFilter(let domains):
             return domains
-        case .dateFilter(_), .timeRange(_, _):
+        case .dateFilter(_), .timeRange:
             return await dataProvider.visitDomains(for: query)
         case .rangeFilter(let range) where range != .all && range != .allSites:
             return await dataProvider.visitDomains(for: query)

@@ -381,8 +381,7 @@ enum SumiZenFolderIconCatalog {
 
     private static func loadImage(from url: URL) -> NSImage? {
         if url.pathExtension.lowercased() == "svg",
-           let source = try? String(contentsOf: url, encoding: .utf8)
-        {
+           let source = try? String(contentsOf: url, encoding: .utf8) {
             return nsImageFromZenSVGSource(source)
         }
         return NSImage(contentsOf: url)
@@ -452,7 +451,7 @@ enum ResolvedFolderIcon: Equatable {
 struct SumiZenBundledIconView: View {
     let image: NSImage?
     let size: CGFloat
-    var tint: Color? = nil
+    var tint: Color?
 
     var body: some View {
         if let image {

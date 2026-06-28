@@ -108,7 +108,6 @@ struct SumiExtensionsSettingsPane: View {
         siteAccessPoliciesByExtensionID: [String: SafariExtensionSiteAccessPolicy]
     ) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-
             SettingsSection(
                 title: "Installed Extensions",
                 subtitle: installedExtensions.isEmpty
@@ -617,8 +616,7 @@ private struct ExtensionCatalogDetailsPopover: View {
         let candidates = ["mac", "default", "chromeos", "linux", "windows"]
         for key in candidates {
             if let raw = dictionary[key] as? String,
-               raw.isEmpty == false
-            {
+               raw.isEmpty == false {
                 return raw
             }
         }

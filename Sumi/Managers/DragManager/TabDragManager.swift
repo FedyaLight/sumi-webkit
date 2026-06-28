@@ -121,5 +121,4 @@ struct DragOperation {
         guard case .pin(let pin) = payload else { return nil }
         return pin
     }
-
 }

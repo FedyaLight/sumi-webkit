@@ -106,16 +106,14 @@ final class WebViewAssignmentRebuildOwner {
         let targetURL = url ?? tab.existingWebView?.url ?? tab.url
         let preferredPrimaryWindowIdCandidate: UUID?
         if let preferredPrimaryWindowId,
-           targetWindowIds.contains(preferredPrimaryWindowId)
-        {
+           targetWindowIds.contains(preferredPrimaryWindowId) {
             preferredPrimaryWindowIdCandidate = preferredPrimaryWindowId
         } else {
             preferredPrimaryWindowIdCandidate = nil
         }
         let existingPrimaryWindowIdCandidate: UUID?
         if let existingPrimaryWindowId = tab.primaryWindowId,
-           targetWindowIds.contains(existingPrimaryWindowId)
-        {
+           targetWindowIds.contains(existingPrimaryWindowId) {
             existingPrimaryWindowIdCandidate = existingPrimaryWindowId
         } else {
             existingPrimaryWindowIdCandidate = nil
@@ -176,8 +174,7 @@ final class WebViewAssignmentRebuildOwner {
 
         for windowId in targetWindowIds
             .filter({ $0 != primaryWindowId })
-            .sorted(by: { $0.uuidString < $1.uuidString })
-        {
+            .sorted(by: { $0.uuidString < $1.uuidString }) {
             _ = createCloneWebView(
                 for: tab,
                 in: windowId,
@@ -246,13 +243,11 @@ final class WebViewAssignmentRebuildOwner {
             Task { @MainActor [weak tab] in
                 if let controller = webView.configuration.userContentController
                     .sumiNormalTabUserContentController,
-                    controller.hasInstalledInitialUserContent == false
-                {
+                    controller.hasInstalledInitialUserContent == false {
                     await controller.waitForInitialUserContentInstallation()
                 }
                 if let profileId,
-                   let extensionsModule = tab?.browserManager?.extensionsModule
-                {
+                   let extensionsModule = tab?.browserManager?.extensionsModule {
                     await extensionsModule.ensureInitialDocumentExtensionContextsLoadedIfNeeded(
                         profileId: profileId
                     )

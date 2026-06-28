@@ -12,7 +12,7 @@ extension TabManager {
         workspaceTheme: WorkspaceTheme? = nil,
         profileId: UUID? = nil
     ) -> Space {
-        return withStructuralUpdateTransaction {
+        withStructuralUpdateTransaction {
             let resolvedProfileId = profileId
                 ?? runtimeContext?.defaultProfileId
             let defaultTheme = SumiWorkspaceThemePresets.rotatingTheme(at: spaces.count)
@@ -195,7 +195,6 @@ extension TabManager {
             markSpacesSnapshotDirty()
         }
         persistSelection()
-
     }
 
     func renameSpace(spaceId: UUID, newName: String) throws {

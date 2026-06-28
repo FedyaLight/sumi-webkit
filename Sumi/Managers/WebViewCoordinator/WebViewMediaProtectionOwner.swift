@@ -302,7 +302,7 @@ final class WebViewMediaProtectionOwner {
     ) {
         guard let windowID = owner?.windowID ?? fallbackWindowID else { return }
         var userInfo: [String: Any] = [
-            SumiMediaTouchBarRecoveryNotificationKey.windowID: windowID
+            SumiMediaTouchBarRecoveryNotificationKey.windowID: windowID,
         ]
         if let tabID = owner?.tabID {
             userInfo[SumiMediaTouchBarRecoveryNotificationKey.tabID] = tabID

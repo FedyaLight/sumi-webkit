@@ -153,7 +153,7 @@ struct SidebarEssentialsGridProjection {
                 SidebarEssentialsDropSlotMetrics(
                     slot: 0,
                     frame: CGRect(origin: .zero, size: revealTileSize)
-                )
+                ),
             ]
         }
 

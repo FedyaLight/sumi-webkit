@@ -327,7 +327,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
                 includeAllProfiles: clearsAllProfiles
             )
             guard !Task.isCancelled else { return }
-            
+
             self.loadingDelayTask?.cancel()
             self.isLoadingSummary = false
             self.summary = latestSummary

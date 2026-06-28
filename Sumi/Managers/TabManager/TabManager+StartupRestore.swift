@@ -295,8 +295,7 @@ extension TabManager {
         from snapshotSpace: TabSnapshotRepository.SnapshotSpace
     ) -> WorkspaceTheme {
         if let data = snapshotSpace.workspaceThemeData,
-           let theme = WorkspaceTheme.decode(data)
-        {
+           let theme = WorkspaceTheme.decode(data) {
             return theme
         }
         return .default

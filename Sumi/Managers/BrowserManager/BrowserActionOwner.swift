@@ -146,5 +146,4 @@ final class BrowserActionOwner {
 
         return nil
     }
-
 }

@@ -538,5 +538,4 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             && key.requestingOrigin.identity == context.origin.identity
             && key.topOrigin.identity == context.origin.identity
     }
-
 }

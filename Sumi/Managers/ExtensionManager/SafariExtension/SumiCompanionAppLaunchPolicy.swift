@@ -142,8 +142,7 @@ final class SumiCompanionAppLaunchPolicy {
                 switch launchReason {
                 case .adapterConnect, .adapterOneShot:
                     if let sessionKey,
-                       sessionStateByKey[sessionKey]?.launchAttempted == true
-                    {
+                       sessionStateByKey[sessionKey]?.launchAttempted == true {
                         return .suppressedSessionLaunchAttempted
                     }
                 default:
@@ -159,14 +158,12 @@ final class SumiCompanionAppLaunchPolicy {
         if let sessionKey,
            let sessionState = sessionStateByKey[sessionKey],
            let lastAttempt = sessionState.lastLaunchAttemptAt,
-           now.timeIntervalSince(lastAttempt) < minimumLaunchInterval
-        {
+           now.timeIntervalSince(lastAttempt) < minimumLaunchInterval {
             return .rateLimited
         }
 
         if let lastAttempt = lastLaunchAttemptByBundleID[hostBundleIdentifier],
-           now.timeIntervalSince(lastAttempt) < minimumLaunchInterval
-        {
+           now.timeIntervalSince(lastAttempt) < minimumLaunchInterval {
             return .rateLimited
         }
 
@@ -215,13 +212,11 @@ final class SumiCompanionAppLaunchPolicy {
     ) -> SumiNativeMessagingRetryCountBucket {
         if let sessionKey,
            let lastAttempt = sessionStateByKey[sessionKey]?.lastLaunchAttemptAt,
-           now.timeIntervalSince(lastAttempt) < minimumLaunchInterval
-        {
+           now.timeIntervalSince(lastAttempt) < minimumLaunchInterval {
             return .first
         }
         if let lastAttempt = lastLaunchAttemptByBundleID[hostBundleIdentifier],
-           now.timeIntervalSince(lastAttempt) < minimumLaunchInterval
-        {
+           now.timeIntervalSince(lastAttempt) < minimumLaunchInterval {
             return .first
         }
         return .none

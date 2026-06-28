@@ -20,7 +20,6 @@ enum SumiEssentialRuntimeState {
             return false
         }
     }
-
 }
 
 enum ShortcutPresentationState {

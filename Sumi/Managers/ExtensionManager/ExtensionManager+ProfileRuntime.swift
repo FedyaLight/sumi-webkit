@@ -346,8 +346,7 @@ extension ExtensionManager {
         _ = ensureExtensionController(for: profileId)
 
         if let context = getExtensionContext(for: extensionId, profileId: profileId),
-           context.isLoaded
-        {
+           context.isLoaded {
             touchLiveExtensionContext(extensionId: extensionId, profileId: profileId)
             enforceBoundedLiveExtensionContexts(
                 keepingProfileId: profileId,
@@ -468,14 +467,12 @@ extension ExtensionManager {
         guard tab.isEphemeral == false else { return }
         if tab.lastExtensionOpenNotificationGeneration == tabOpenNotificationGeneration,
            tab.extensionRuntimeOpenNotifiedDocumentSequence == tab.extensionRuntimeDocumentSequence,
-           tab.extensionRuntimeOpenNotifiedWithLoadedContexts == true
-        {
+           tab.extensionRuntimeOpenNotifiedWithLoadedContexts == true {
             return
         }
 
         if tab.extensionRuntimeDocumentSequence > 0,
-           tabNeedsExtensionContentScriptRebind(tab)
-        {
+           tabNeedsExtensionContentScriptRebind(tab) {
             ensureExtensionControllerAttachedForTab(tab, reason: reason)
             return
         }
@@ -533,8 +530,7 @@ extension ExtensionManager {
 
         if let browserManager,
            let windowState = browserManager.windowState(containing: tab)
-           ?? tab.primaryWindowId.flatMap({ browserManager.windowRegistry?.windows[$0] })
-        {
+           ?? tab.primaryWindowId.flatMap({ browserManager.windowRegistry?.windows[$0] }) {
             if let webView = browserManager.getWebView(
                 for: tab.id,
                 in: windowState.id
@@ -558,8 +554,7 @@ extension ExtensionManager {
         if let existing = extensionControllersByProfile[profileId] {
             expectedController = existing
         } else if hasEnabledInstalledExtensions
-            || extensionRuntimeAllowsWithoutEnabledExtensions
-        {
+            || extensionRuntimeAllowsWithoutEnabledExtensions {
             expectedController = ensureExtensionController(for: profileId)
         } else {
             return false
@@ -639,16 +634,14 @@ extension ExtensionManager {
                 "ensureExtensionControllerAttachedForTab webView=\(extensionRuntimeWebViewDescription(webView)) attached=\(attached) \(extensionRuntimeTabDescription(tab))"
             )
             if attached == false,
-               webViewNeedsExtensionRuntimeRebuild(webView, for: tab)
-            {
+               webViewNeedsExtensionRuntimeRebuild(webView, for: tab) {
                 needsRebuild = true
                 break
             }
         }
 
         if needsRebuild,
-           let coordinator = browserManager?.webViewCoordinator
-        {
+           let coordinator = browserManager?.webViewCoordinator {
             extensionRuntimeTrace(
                 "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) controllerMismatch=true contentScriptRebind=\(tabNeedsExtensionContentScriptRebind(tab)) \(extensionRuntimeTabDescription(tab))"
             )
@@ -745,8 +738,7 @@ extension ExtensionManager {
                 sourceBundlePath: installed.sourceBundlePath
             ) != nil
         if installed.sourceKind == .safariAppExtension,
-           hasOriginalAppex == false
-        {
+           hasOriginalAppex == false {
             return .originalAppExtensionBundleMissing
         }
         let resourcesRoot = try? extensionResourcesRoot(
@@ -782,8 +774,7 @@ extension ExtensionManager {
         if let context,
            let currentProfileId,
            currentProfileId != profileId,
-           self.profileId(for: context) != profileId
-        {
+           self.profileId(for: context) != profileId {
             return .wrongProfileRuntimeLookup
         }
 

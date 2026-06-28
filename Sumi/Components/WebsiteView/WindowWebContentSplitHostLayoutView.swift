@@ -331,8 +331,7 @@ final class PaneContainerView: NSView {
         shouldRemove: (NSView) -> Bool = { _ in true }
     ) {
         for subview in subviews
-            where subview !== keepView && subview !== chromeShadowView && subview !== splitControlsView
-        {
+            where subview !== keepView && subview !== chromeShadowView && subview !== splitControlsView {
             if shouldRemove(subview) {
                 subview.removeFromSuperview()
             }

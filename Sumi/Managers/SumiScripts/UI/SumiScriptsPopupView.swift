@@ -31,7 +31,7 @@ struct SumiScriptsPopupView: View {
     var body: some View {
         VStack(spacing: 0) {
             headerView
-            
+
             Divider()
 
             if !manager.isEnabled {
@@ -43,7 +43,7 @@ struct SumiScriptsPopupView: View {
             }
 
             Divider()
-            
+
             footerView
         }
         .frame(width: 320)
@@ -187,7 +187,6 @@ struct SumiScriptsPopupView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(FloatingChromeSurfaceFill(.panel))
     }
-
 }
 
 // MARK: - Subviews
@@ -283,9 +282,9 @@ struct ScriptRow: View {
                         }
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Toggle("", isOn: scriptToggleBinding)
                     .toggleStyle(SwitchToggleStyle(tint: .accentColor))
                     .labelsHidden()
@@ -326,7 +325,6 @@ struct ScriptRow: View {
 
         manager.executeMenuCommand(script: script, commandId: commandId, webView: webView)
     }
-
 }
 
 // MARK: - View Modifiers

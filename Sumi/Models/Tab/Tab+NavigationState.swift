@@ -44,8 +44,7 @@ extension Tab {
                 targetURL: targetURL
             )
         }
-        if let webView = _webView
-        {
+        if let webView = _webView {
             if rebuiltForConfigurationPolicy {
                 performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
                     on: webView,

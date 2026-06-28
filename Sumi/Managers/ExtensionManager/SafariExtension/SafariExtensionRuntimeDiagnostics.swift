@@ -228,8 +228,7 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
             if target.key == "bitwarden",
                SumiNativeMessagingAdapterRegistry.shared.adapter(
                    forHostBundleIdentifier: BitwardenNativeMessagingIdentifiers.hostBundleIdentifier
-               ) != nil
-            {
+               ) != nil {
                 notes.append(
                     "Bitwarden adapter registered; use adapterCompatibility routing fields and failure buckets instead of companionAppProtocolUnknown"
                 )

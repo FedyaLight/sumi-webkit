@@ -197,8 +197,8 @@ private struct MacOSSoftwareUpdateCheckmarkIcon: View {
                 .fill(
                     LinearGradient(
                         colors: [
-                            Color(nsColor: NSColor(red: 52/255, green: 199/255, blue: 89/255, alpha: 1)),
-                            Color(nsColor: NSColor(red: 46/255, green: 180/255, blue: 80/255, alpha: 1))
+                            Color(nsColor: NSColor(red: 52 / 255, green: 199 / 255, blue: 89 / 255, alpha: 1)),
+                            Color(nsColor: NSColor(red: 46 / 255, green: 180 / 255, blue: 80 / 255, alpha: 1)),
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -224,7 +224,7 @@ private struct SumiAboutUpdateStatusRow: View {
     let subtitle: String
     var progress = false
     var symbolStyle: Color = .secondary
-    var customIcon: AnyView? = nil
+    var customIcon: AnyView?
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {

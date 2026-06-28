@@ -136,8 +136,7 @@ struct SpaceSidebarTransitionState: Equatable {
 
         if phase == .interactive,
            trigger == .swipe,
-           sourceSpaceId == resolvedSourceSpaceId
-        {
+           sourceSpaceId == resolvedSourceSpaceId {
             return true
         }
 
@@ -232,8 +231,7 @@ struct SpaceSidebarTransitionState: Equatable {
         if trigger == .swipe,
            phase == .interactive,
            let committedSpaceId,
-           committedSpaceId != sourceSpaceId
-        {
+           committedSpaceId != sourceSpaceId {
             reset()
             return
         }

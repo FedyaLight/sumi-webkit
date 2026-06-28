@@ -70,8 +70,7 @@ extension BrowserManager {
 
         let spaceIdForLookup = targetSpace?.id ?? tabManager.currentSpace?.id
         if let sid = spaceIdForLookup,
-           let existing = (tabManager.tabsBySpace[sid] ?? []).first(where: { kind.matches($0) })
-        {
+           let existing = (tabManager.tabsBySpace[sid] ?? []).first(where: { kind.matches($0) }) {
             kind.configure(existing, url: url)
             applySettingsSurfaceNavigationIfNeeded(kind, url: url)
             selectTab(existing, in: windowState)

@@ -79,8 +79,7 @@ struct SumiPermissionIndicatorEventRecord: Identifiable, Equatable, Sendable {
     ) -> SumiPermissionType {
         let identities = Set(permissionTypes.map(\.identity))
         if identities.contains(SumiPermissionType.camera.identity),
-           identities.contains(SumiPermissionType.microphone.identity)
-        {
+           identities.contains(SumiPermissionType.microphone.identity) {
             return .cameraAndMicrophone
         }
         return permissionTypes.first ?? .notifications

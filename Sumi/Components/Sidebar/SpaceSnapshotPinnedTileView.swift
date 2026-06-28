@@ -31,7 +31,6 @@ struct SpaceSnapshotPinnedTileView: View {
                 }
                 .padding(6)
             }
-
         }
         .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
         .shadow(

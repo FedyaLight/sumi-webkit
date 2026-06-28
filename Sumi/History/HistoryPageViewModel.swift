@@ -340,8 +340,7 @@ final class HistoryPageViewModel: ObservableObject {
             return "Today - \(fullDate)"
         }
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: referenceDate),
-           calendar.isDate(day, inSameDayAs: yesterday)
-        {
+           calendar.isDate(day, inSameDayAs: yesterday) {
             return "Yesterday - \(fullDate)"
         }
         return fullDate
@@ -404,8 +403,7 @@ final class HistoryPageViewModel: ObservableObject {
            !confirmDeletion(
             "Delete Selected History",
             "This will permanently remove the selected history entries."
-           )
-        {
+           ) {
             return
         }
 

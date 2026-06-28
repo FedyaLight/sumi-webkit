@@ -205,11 +205,11 @@ final class MouseEventShieldNSView: NSView, SidebarTransientInteractionDisarmabl
 }
 
 struct MouseEventShieldView: NSViewRepresentable {
-    var onClick: (() -> Void)? = nil
+    var onClick: (() -> Void)?
     var isInteractive: Bool = true
     var suppressesUnderlyingWebContentHover: Bool = false
     var cursorPolicy: MouseEventShieldCursorPolicy = .arrow
-    var handle: SidebarTransientInteractionHandle? = nil
+    var handle: SidebarTransientInteractionHandle?
 
     func makeNSView(context: Context) -> NSView {
         let view = MouseEventShieldNSView(frame: .zero)

@@ -111,8 +111,7 @@ final class SumiNativeMessagingRelayRouteResolver {
         let byHost = adapterRegistry.adapter(forHostBundleIdentifier: hostBundleIdentifier)
         let byApplication = adapterRegistry.adapter(forApplicationIdentifier: applicationIdentifier)
         if SafariExtensionNativeMessagingRoutingProbe
-            .isSafariContainingApplicationRequest(applicationIdentifier)
-        {
+            .isSafariContainingApplicationRequest(applicationIdentifier) {
             return SumiNativeMessagingRelayAdapterLookup(
                 adapter: byApplication,
                 adapterByApplicationIdentifier: byApplication

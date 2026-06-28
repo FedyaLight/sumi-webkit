@@ -124,7 +124,7 @@ enum TabWebViewCleanupOwner {
         if context.browserManager?.webViewCoordinator?.deferProtectedWebViewCleanup(
             webView,
             tabID: context.tabId,
-            reason: "Tab.cleanupCloneWebView",
+            reason: "Tab.cleanupCloneWebView"
         ) == true {
             return
         }

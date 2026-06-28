@@ -147,8 +147,7 @@ final class BrowserTabSelectionOwner {
         }
 
         if let liveShortcutTab = actions.liveShortcutTabs(windowState.id)
-            .first(where: { $0.id == currentTabId && $0.isShortcutLiveInstance })
-        {
+            .first(where: { $0.id == currentTabId && $0.isShortcutLiveInstance }) {
             windowState.currentShortcutPinId = liveShortcutTab.shortcutPinId
             windowState.currentShortcutPinRole = liveShortcutTab.shortcutPinRole
         } else {
@@ -162,8 +161,7 @@ final class BrowserTabSelectionOwner {
         actions: Actions
     ) {
         if let currentSpace = actions.space(windowState.currentSpaceId),
-           let selectableTab = actions.selectionTargetForSpaceActivation(currentSpace, windowState)
-        {
+           let selectableTab = actions.selectionTargetForSpaceActivation(currentSpace, windowState) {
             applyTabSelection(
                 selectableTab,
                 in: windowState,

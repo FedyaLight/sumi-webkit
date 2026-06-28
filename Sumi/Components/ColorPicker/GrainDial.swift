@@ -23,7 +23,6 @@ struct GrainDial: View {
         SumiTextureRingMetrics.quantized(grain)
     }
 
-
     var body: some View {
         GeometryReader { proxy in
             let dialSize = CGSize(

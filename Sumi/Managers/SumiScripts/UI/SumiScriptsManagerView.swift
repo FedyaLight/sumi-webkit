@@ -49,7 +49,7 @@ struct SumiScriptsManagerView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
-            
+
             Spacer()
         }
     }
@@ -230,7 +230,7 @@ struct SumiScriptsManagerView: View {
                 .scaledToFit()
                 .frame(width: 64, height: 64)
                 .foregroundColor(.secondary.opacity(0.3))
-            
+
             VStack(spacing: 8) {
                 Text("No Userscripts Installed")
                     .font(.headline)
@@ -239,7 +239,7 @@ struct SumiScriptsManagerView: View {
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
             }
-            
+
             Button("Open Scripts Folder") {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: manager.scriptsDirectory.path)
             }
@@ -262,7 +262,7 @@ struct SumiScriptsManagerView: View {
                 .padding(8)
                 .background(Color(NSColor.controlBackgroundColor))
                 .cornerRadius(8)
-                
+
                 Button("Reload All") {
                     manager.reloadScripts()
                 }
@@ -284,7 +284,7 @@ struct SumiScriptsManagerView: View {
         if searchText.isEmpty {
             return manager.allScripts
         }
-        return manager.allScripts.filter { 
+        return manager.allScripts.filter {
             $0.name.localizedCaseInsensitiveContains(searchText) ||
             $0.filename.localizedCaseInsensitiveContains(searchText)
         }
@@ -294,7 +294,7 @@ struct SumiScriptsManagerView: View {
 private struct ScriptManagerRow: View {
     @ObservedObject var manager: SumiScriptsManager
     let script: SumiInstalledUserScript
-    
+
     @State private var isEnabled: Bool
 
     init(manager: SumiScriptsManager, script: SumiInstalledUserScript) {
@@ -310,7 +310,7 @@ private struct ScriptManagerRow: View {
                     HStack {
                         Text(script.name)
                             .font(.headline)
-                        
+
                         if let version = script.metadata.version {
                             Text("v\(version)")
                                 .font(.caption2)
@@ -320,22 +320,22 @@ private struct ScriptManagerRow: View {
                                 .cornerRadius(4)
                         }
                     }
-                    
+
                     if let desc = script.metadata.description {
                         Text(desc)
                             .font(.caption)
                             .foregroundColor(.secondary)
                             .lineLimit(2)
                     }
-                    
+
                     Text(script.filename)
                         .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(.secondary.opacity(0.7))
                         .padding(.top, 4)
                 }
-                
+
                 Spacer()
-                
+
                 VStack(alignment: .trailing, spacing: 8) {
                     Toggle("", isOn: $isEnabled)
                         .toggleStyle(SwitchToggleStyle(tint: .accentColor))
@@ -343,7 +343,7 @@ private struct ScriptManagerRow: View {
                         .onChange(of: isEnabled) { _, newValue in
                             manager.setScriptEnabled(newValue, filename: script.filename)
                         }
-                    
+
                     HStack(spacing: 12) {
                         Button {
                             NSWorkspace.shared.open(manager.scriptsDirectory.appendingPathComponent(script.filename))
@@ -376,7 +376,7 @@ private struct ScriptManagerRow: View {
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
             .cornerRadius(8)
-            
+
             // Stats / Info Badge
             HStack(spacing: 16) {
                 InfoBadge(icon: "clock", text: "\(script.metadata.runAt.rawValue)")
@@ -401,7 +401,7 @@ private struct ScriptManagerRow: View {
 private struct InfoBadge: View {
     let icon: String
     let text: String
-    
+
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: icon)

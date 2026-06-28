@@ -460,8 +460,7 @@ final class AuxiliaryWindowManager {
             .notifyAuxiliaryWindowClosed(session)
 
         if let ownerExtensionID = session.ownerExtensionID,
-           recentAuxiliarySessionIDByOwnerExtensionID[ownerExtensionID] == sessionID
-        {
+           recentAuxiliarySessionIDByOwnerExtensionID[ownerExtensionID] == sessionID {
             recentAuxiliarySessionIDByOwnerExtensionID.removeValue(forKey: ownerExtensionID)
         }
 
@@ -475,8 +474,7 @@ final class AuxiliaryWindowManager {
 
         if shouldActivateApp,
            let openerWindow,
-           openerWindow.isVisible
-        {
+           openerWindow.isVisible {
             openerWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         }
@@ -596,8 +594,7 @@ final class AuxiliaryWindowManager {
 
         let miniWindowAdapter: ExtensionMiniWindowAdapter?
         if let extensionManager,
-           extensionContext != nil || registerExtensionMiniWindowAdapter
-        {
+           extensionContext != nil || registerExtensionMiniWindowAdapter {
             miniWindowAdapter = extensionManager.miniWindowAdapter(
                 for: sessionID,
                 tab: tab,

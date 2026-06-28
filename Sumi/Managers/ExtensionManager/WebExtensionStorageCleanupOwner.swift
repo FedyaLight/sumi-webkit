@@ -43,8 +43,7 @@ final class WebExtensionStorageCleanupOwner {
 
         #if DEBUG
             if let webExtensionDataCleanup = manager.testHooks.webExtensionDataCleanup,
-               await webExtensionDataCleanup(extensionId)
-            {
+               await webExtensionDataCleanup(extensionId) {
                 finalizeCleanup(for: extensionId, mode: mode)
                 traceLifecycle(
                     phase: "cleanup-finished-test-hook",

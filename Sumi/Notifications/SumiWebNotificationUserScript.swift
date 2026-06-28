@@ -399,7 +399,7 @@ private final class SumiWebNotificationSubfeature: NSObject, @MainActor SumiUser
                 "permission": .string(SumiWebNotificationPermissionState.denied.rawValue),
                 "permissionsAPIState": .string("denied"),
                 "delivered": .bool(false),
-                "reason": .string("notification-context-unavailable")
+                "reason": .string("notification-context-unavailable"),
             ])
         }
 
@@ -456,7 +456,7 @@ private final class SumiWebNotificationSubfeature: NSObject, @MainActor SumiUser
         SumiJSONValue.object([
             "permission": .string(state.rawValue),
             "permissionsAPIState": .string(state.permissionsAPIState),
-            "reason": .string(reason)
+            "reason": .string(reason),
         ])
     }
 
@@ -466,7 +466,7 @@ private final class SumiWebNotificationSubfeature: NSObject, @MainActor SumiUser
             "permission": .string(result.permission.rawValue),
             "permissionsAPIState": .string(result.permission.permissionsAPIState),
             "reason": .string(result.reason),
-            "identifier": .string(result.identifier?.rawValue ?? "")
+            "identifier": .string(result.identifier?.rawValue ?? ""),
         ])
     }
 }

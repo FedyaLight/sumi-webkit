@@ -64,7 +64,6 @@ struct PrivacySettingsView: View {
         }
         return browserManager.currentProfile
     }
-
 }
 
 private struct AdblockProtectionSettingsView: View {

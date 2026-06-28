@@ -129,7 +129,7 @@ struct WorkspaceResolvedGradient: Hashable, Sendable {
                 hex: defaultPrimaryHex,
                 location: 0,
                 position: .monochrome
-            )
+            ),
         ],
         texture: 1.0 / 16.0,
         opacity: 0.62
@@ -149,7 +149,7 @@ struct WorkspaceResolvedGradient: Hashable, Sendable {
                 hex: "#2C2C2E",
                 location: 1,
                 position: .bottom
-            )
+            ),
         ],
         texture: 0,
         opacity: 1
@@ -332,7 +332,7 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
                     hex: WorkspaceResolvedGradient.defaultPrimaryHex,
                     isPrimary: true,
                     position: .monochrome
-                )
+                ),
             ],
             opacity: 0.62,
             texture: 1.0 / 16.0
@@ -352,7 +352,7 @@ struct WorkspaceGradientTheme: Codable, Hashable, Sendable {
                     hex: "#2C2C2E",
                     algorithm: .analogous,
                     position: .bottom
-                )
+                ),
             ],
             opacity: 1,
             texture: 0

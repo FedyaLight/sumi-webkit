@@ -191,8 +191,7 @@ final class SafariExtensionSiteAccessPolicyStore {
     }
 
     private func loadLegacyPermissionDecisions()
-        -> [String: LegacyStoredPermissionDecision]
-    {
+        -> [String: LegacyStoredPermissionDecision] {
         guard let data = preferences.data(
             forKey: Self.legacyPermissionDecisionsStorageKey
         ),

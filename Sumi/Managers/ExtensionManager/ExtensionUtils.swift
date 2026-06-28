@@ -150,8 +150,7 @@ struct ExtensionUtils {
 
     static func iconPath(for installedExtension: InstalledExtension) -> String? {
         if let iconPath = installedExtension.iconPath,
-           FileManager.default.fileExists(atPath: iconPath)
-        {
+           FileManager.default.fileExists(atPath: iconPath) {
             return iconPath
         }
 
@@ -443,15 +442,13 @@ struct ExtensionUtils {
     static func defaultPopupPath(from manifest: [String: Any]) -> String? {
         if let action = manifest["action"] as? [String: Any],
            let popup = action["default_popup"] as? String,
-           popup.isEmpty == false
-        {
+           popup.isEmpty == false {
             return popup
         }
 
         if let browserAction = manifest["browser_action"] as? [String: Any],
            let popup = browserAction["default_popup"] as? String,
-           popup.isEmpty == false
-        {
+           popup.isEmpty == false {
             return popup
         }
 
@@ -461,8 +458,7 @@ struct ExtensionUtils {
     static func optionsPagePath(from manifest: [String: Any]) -> String? {
         if let options = manifest["options_ui"] as? [String: Any],
            let page = options["page"] as? String,
-           page.isEmpty == false
-        {
+           page.isEmpty == false {
             return page
         }
 
@@ -472,8 +468,7 @@ struct ExtensionUtils {
 
         if let overrides = manifest["chrome_url_overrides"] as? [String: Any],
            let page = overrides["options"] as? String,
-           page.isEmpty == false
-        {
+           page.isEmpty == false {
             return page
         }
 
@@ -488,8 +483,7 @@ struct ExtensionUtils {
            let normalizedPath = existingValidatedOptionsPagePath(
                declaredPath,
                in: extensionRoot
-           )
-        {
+           ) {
             return normalizedPath
         }
 

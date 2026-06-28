@@ -34,5 +34,4 @@ enum PerformanceTrace {
         defer { endInterval(name, state) }
         return try operation()
     }
-
 }

@@ -4,8 +4,8 @@
 //
 //
 
-import SwiftUI
 import Foundation
+import SwiftUI
 
 struct SidebarFolderProjectionState: Equatable {
     var projectedChildIDs: [UUID] = []
@@ -159,7 +159,7 @@ class BrowserWindowState {
 
     /// Lightweight, per-window chrome feedback. Only one toast is mounted at a time.
     var toast: BrowserToast?
-    
+
     /// Compositor version counter for this window (incremented when tab ownership changes)
     var compositorVersion: Int = 0
 
@@ -184,23 +184,23 @@ class BrowserWindowState {
     weak var tabManager: TabManager?
 
     // MARK: - Incognito/Ephemeral State
-    
+
     /// Whether this window is an incognito/private browsing window
     var isIncognito: Bool = false
-    
+
     /// The ephemeral profile associated with this incognito window
     /// Only set when isIncognito is true
     var ephemeralProfile: Profile?
-    
+
     /// Ephemeral spaces created in this incognito session
     var ephemeralSpaces: [Space] = []
-    
+
     /// Ephemeral tabs created in this incognito session
     var ephemeralTabs: [Tab] = []
-    
+
     /// Whether the download warning has been shown in this incognito session
     var hasShownDownloadWarning: Bool = false
-    
+
     init(
         id: UUID = UUID(),
         initialWorkspaceTheme: WorkspaceTheme? = nil,
@@ -314,8 +314,7 @@ class BrowserWindowState {
         )
 
         if sidebarFolderProjectionStore.projection(for: folderID) == projection,
-           pendingSidebarFolderProjectionUpdates[folderID] == nil
-        {
+           pendingSidebarFolderProjectionUpdates[folderID] == nil {
             return
         }
 
@@ -347,7 +346,7 @@ class BrowserWindowState {
             self.sidebarFolderProjectionStore = nextStore
         }
     }
-    
+
     /// Coalesce compositor invalidations so repeated same-turn calls trigger one UI update.
     func refreshCompositor() {
         guard !isCompositorRefreshScheduled else { return }
@@ -438,5 +437,4 @@ class BrowserWindowState {
             }
         }
     }
-
 }
