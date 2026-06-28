@@ -163,6 +163,17 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
         XCTAssertFalse(resetSitePermissions.contains("deleteSiteData"))
     }
 
+    func testCoordinatorContractStaysOutOfWebKitBridgePolicy() throws {
+        let coordinatorContract = try sourceFile("Sumi/Permissions/SumiPermissionCoordinating.swift")
+        let webKitBridge = try sourceFile("Sumi/Permissions/SumiWebKitPermissionBridge.swift")
+
+        XCTAssertTrue(coordinatorContract.contains("protocol SumiPermissionCoordinating"))
+        XCTAssertTrue(coordinatorContract.contains("extension SumiPermissionCoordinator: SumiPermissionCoordinating"))
+        XCTAssertTrue(coordinatorContract.contains("enum SumiPermissionSiteDecisionError"))
+        XCTAssertFalse(webKitBridge.contains("protocol SumiPermissionCoordinating"))
+        XCTAssertFalse(webKitBridge.contains("enum SumiPermissionSiteDecisionError"))
+    }
+
     func testAntiAbuseSuppressionAndCleanupDoNotPersistUnsafeSideEffects() throws {
         let coordinator = try sourceFile("Sumi/Permissions/SumiPermissionCoordinator.swift")
         let cleanup = try sourceFile("Sumi/Permissions/SumiPermissionCleanupService.swift")
