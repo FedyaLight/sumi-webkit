@@ -547,6 +547,92 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(coordinatorPrepareSource.contains("scheduleProactiveTimerReconcile"))
     }
 
+    func testWebViewCoordinatorTrackingLifecycleStaysBehindOwner() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let coordinatorSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift"
+            ),
+            encoding: .utf8
+        )
+        let ownerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewTrackingLifecycleOwner.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(ownerSource.contains("final class WebViewTrackingLifecycleOwner"))
+        XCTAssertTrue(ownerSource.contains("typealias ContainerRemoval"))
+        XCTAssertTrue(ownerSource.contains("typealias RuntimeObservationInstaller"))
+        XCTAssertTrue(ownerSource.contains("typealias RuntimeObservationUninstaller"))
+        XCTAssertTrue(ownerSource.contains("typealias DeferredCommandPruner"))
+
+        let ownerRegisterSource = try sourceSlice(
+            ownerSource,
+            from: "func registerTrackedWebView(",
+            to: "@discardableResult\n    func unregisterTrackedWebViewSlot"
+        )
+        try assertTokenOrder(
+            ownerRegisterSource,
+            [
+                "webViewRegistry.indexedOwner(containing: webView)",
+                "unregisterTrackedWebViewSlot(",
+                "removeFromSuperview: true",
+                "webViewRegistry.webView(for: owner)",
+                "removeRecentVisibility: false",
+                "webViewRegistry.setWebView(webView, for: owner)",
+                "installRuntimeObservations(webView)",
+                "webViewRegistry.assertTrackingConsistency(\"registerTrackedWebView\")"
+            ]
+        )
+
+        let ownerUnregisterSource = try sourceSlice(
+            ownerSource,
+            from: "func unregisterTrackedWebViewSlot(",
+            to: "\n    }\n}"
+        )
+        try assertTokenOrder(
+            ownerUnregisterSource,
+            [
+                "let trackedWebView = webViewRegistry.webView(for: owner)",
+                "webViewRegistry.removeReverseIndex(for: expectedWebView, ifOwnedBy: owner)",
+                "let resolvedWebView = trackedWebView ?? expectedWebView",
+                "removeFromContainers(resolvedWebView)",
+                "webViewRegistry.removeWebView(",
+                "uninstallRuntimeObservationsIfUntracked(resolvedWebView)",
+                "pruneInvalidDeferredCommands(\"unregisterTrackedWebViewSlot\")",
+                "webViewRegistry.assertTrackingConsistency(\"unregisterTrackedWebViewSlot\")"
+            ]
+        )
+
+        let coordinatorStart = try XCTUnwrap(
+            coordinatorSource.range(of: "@MainActor\n@Observable\nclass WebViewCoordinator")
+        ).lowerBound
+        let coordinatorClassSource = String(coordinatorSource[coordinatorStart...])
+        XCTAssertTrue(coordinatorClassSource.contains("private let webViewTrackingLifecycleOwner = WebViewTrackingLifecycleOwner()"))
+
+        let coordinatorRegisterSource = try sourceSlice(
+            coordinatorSource,
+            from: "private func registerTrackedWebView(",
+            to: "@discardableResult\n    private func unregisterTrackedWebViewSlot"
+        )
+        XCTAssertTrue(coordinatorRegisterSource.contains("webViewTrackingLifecycleOwner.registerTrackedWebView("))
+        XCTAssertFalse(coordinatorRegisterSource.contains("webViewRegistry.indexedOwner(containing: webView)"))
+        XCTAssertFalse(coordinatorRegisterSource.contains("webViewRegistry.setWebView(webView, for: owner)"))
+
+        let coordinatorUnregisterSource = try sourceSlice(
+            coordinatorSource,
+            from: "@discardableResult\n    private func unregisterTrackedWebViewSlot",
+            to: "private func trackedOwner(containing webView: WKWebView)"
+        )
+        XCTAssertTrue(coordinatorUnregisterSource.contains("webViewTrackingLifecycleOwner.unregisterTrackedWebViewSlot("))
+        XCTAssertFalse(coordinatorUnregisterSource.contains("webViewRegistry.removeWebView("))
+        XCTAssertFalse(coordinatorUnregisterSource.contains("webViewRegistry.assertTrackingConsistency(\"unregisterTrackedWebViewSlot\")"))
+    }
+
     func testCompositorHandoffStatePromotedHostCompletionRunsOnceAfterMatchingTake() throws {
         let handoffState = WebViewCompositorHandoffState()
         let tab = Tab(url: try XCTUnwrap(URL(string: "https://example.com")))

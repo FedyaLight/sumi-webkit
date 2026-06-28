@@ -54,6 +54,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private let webViewCreationPlanningOwner = WebViewCreationPlanningOwner()
 
     @ObservationIgnored
+    private let webViewTrackingLifecycleOwner = WebViewTrackingLifecycleOwner()
+
+    @ObservationIgnored
     weak var browserManager: BrowserManager?
 
     @ObservationIgnored
@@ -1299,31 +1302,23 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     ) {
         let owner = TrackedWebViewOwner(tabID: tabId, windowID: windowId)
         mediaProtectionOwner.note(webView)
-
-        if let existingOwner = webViewRegistry.indexedOwner(containing: webView),
-           existingOwner != owner
-        {
-            _ = unregisterTrackedWebViewSlot(
-                owner: existingOwner,
-                expectedWebView: webView,
-                removeFromSuperview: true
-            )
-        }
-
-        if let existingWebView = webViewRegistry.webView(for: owner),
-           existingWebView !== webView
-        {
-            _ = unregisterTrackedWebViewSlot(
-                owner: owner,
-                expectedWebView: existingWebView,
-                removeFromSuperview: true,
-                removeRecentVisibility: false
-            )
-        }
-
-        webViewRegistry.setWebView(webView, for: owner)
-        installMediaProtectionObservationsIfNeeded(on: webView)
-        webViewRegistry.assertTrackingConsistency("registerTrackedWebView")
+        webViewTrackingLifecycleOwner.registerTrackedWebView(
+            webView,
+            for: owner,
+            in: webViewRegistry,
+            removeFromContainers: { [self] webView in
+                removeWebViewFromContainers(webView)
+            },
+            installRuntimeObservations: { [self] webView in
+                installMediaProtectionObservationsIfNeeded(on: webView)
+            },
+            uninstallRuntimeObservationsIfUntracked: { [self] webView in
+                uninstallMediaProtectionObservationsIfUntracked(webView)
+            },
+            pruneInvalidDeferredCommands: { [self] reason in
+                pruneInvalidDeferredProtectedCommands(reason: reason)
+            }
+        )
     }
 
     @discardableResult
@@ -1333,34 +1328,22 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         removeFromSuperview: Bool = false,
         removeRecentVisibility: Bool = true
     ) -> WKWebView? {
-        let trackedWebView = webViewRegistry.webView(for: owner)
-        if let expectedWebView,
-           let trackedWebView,
-           trackedWebView !== expectedWebView
-        {
-            webViewRegistry.removeReverseIndex(for: expectedWebView, ifOwnedBy: owner)
-            return nil
-        }
-
-        let resolvedWebView = trackedWebView ?? expectedWebView
-
-        if removeFromSuperview,
-           let resolvedWebView
-        {
-            removeWebViewFromContainers(resolvedWebView)
-        }
-
-        webViewRegistry.removeWebView(
+        webViewTrackingLifecycleOwner.unregisterTrackedWebViewSlot(
             owner: owner,
-            resolvedWebView: resolvedWebView,
-            removeRecentVisibility: removeRecentVisibility
+            expectedWebView: expectedWebView,
+            removeFromSuperview: removeFromSuperview,
+            removeRecentVisibility: removeRecentVisibility,
+            in: webViewRegistry,
+            removeFromContainers: { [self] webView in
+                removeWebViewFromContainers(webView)
+            },
+            uninstallRuntimeObservationsIfUntracked: { [self] webView in
+                uninstallMediaProtectionObservationsIfUntracked(webView)
+            },
+            pruneInvalidDeferredCommands: { [self] reason in
+                pruneInvalidDeferredProtectedCommands(reason: reason)
+            }
         )
-        if let resolvedWebView {
-            uninstallMediaProtectionObservationsIfUntracked(resolvedWebView)
-        }
-        pruneInvalidDeferredProtectedCommands(reason: "unregisterTrackedWebViewSlot")
-        webViewRegistry.assertTrackingConsistency("unregisterTrackedWebViewSlot")
-        return resolvedWebView
     }
 
     private func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
