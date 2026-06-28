@@ -240,7 +240,7 @@ extension TabManager {
     }
 
     func alphabetizeFolderPins(_ folderId: UUID, in spaceId: UUID) {
-        folderService.alphabetizeFolderPins(folderId, in: spaceId)
+        folderMutationOwner.alphabetizeFolderPins(folderId, in: spaceId)
     }
 
     @discardableResult
@@ -288,7 +288,7 @@ extension TabManager {
 
     @discardableResult
     private func handleFolderDragOperation(_ folder: TabFolder, operation: DragOperation) -> Bool {
-        folderService.handleFolderDragOperation(folder, operation: operation)
+        folderMutationOwner.handleFolderDragOperation(folder, operation: operation)
     }
 
     private func validateSidebarDragOperation(_ operation: DragOperation) -> Bool {

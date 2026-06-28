@@ -286,6 +286,49 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         }
     }
 
+    func testFolderLifecycleAndMembershipMutationsAreOwnedByFolderMutationOwner() throws {
+        let tabManagerSource = try Self.source(named: "Sumi/Managers/TabManager/TabManager.swift")
+        let folderFacadeSource = try Self.sourceRange(
+            in: tabManagerSource,
+            from: "// MARK: - Folder Management",
+            to: "// MARK: - Tab Management"
+        )
+        let ownerSource = try Self.source(named: "Sumi/Managers/TabManager/TabFolderMutationOwner.swift")
+
+        XCTAssertTrue(tabManagerSource.contains("lazy var folderMutationOwner = TabFolderMutationOwner(tabManager: self)"))
+        XCTAssertFalse(tabManagerSource.contains("TabFolderService"))
+        XCTAssertTrue(ownerSource.contains("final class TabFolderMutationOwner"))
+        XCTAssertTrue(ownerSource.contains("private enum FolderContainerItem"))
+        XCTAssertTrue(ownerSource.contains("private func descendantFolderIds"))
+
+        for method in [
+            "createFolder(for: spaceId",
+            "createFolder(for: spaceId, parentFolderId:",
+            "renameFolder(folderId",
+            "updateFolderIcon(folderId",
+            "setFolder(folderId",
+            "toggleFolderOpenState(folderId",
+            "deleteFolder(folderId",
+            "ungroupFolder(folderId",
+            "folders(for: spaceId",
+            "openFolderIfNeeded(folderId",
+            "setAllFolders(open: isOpen",
+            "moveTabToFolder(tab: tab"
+        ] {
+            XCTAssertTrue(folderFacadeSource.contains("folderMutationOwner.\(method)"))
+        }
+
+        for forbidden in [
+            "withStructuralUpdateTransaction",
+            "foldersBySpace",
+            "spacePinnedShortcuts",
+            "convertTabToShortcutPin",
+            "deleteLiveFolderState"
+        ] {
+            XCTAssertFalse(folderFacadeSource.contains(forbidden), "TabManager folder facade should not own \(forbidden)")
+        }
+    }
+
     func testTopLevelFolderPositionPersistsAfterSpacePinnedShortcuts() async throws {
         let container = try makeInMemoryContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
@@ -1272,5 +1315,29 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     private func waitPastStructuralDebounce() async throws {
         try await Task.sleep(nanoseconds: 350_000_000)
+    }
+
+    private static func sourceRange(
+        in source: String,
+        from startMarker: String,
+        to endMarker: String
+    ) throws -> String {
+        let start = try XCTUnwrap(source.range(of: startMarker)?.lowerBound)
+        let end = try XCTUnwrap(
+            source.range(of: endMarker, range: start..<source.endIndex)?.lowerBound
+        )
+        return String(source[start..<end])
+    }
+
+    private static func source(named path: String) throws -> String {
+        let url = repoRoot.appendingPathComponent(path)
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    private static var repoRoot: URL {
+        var url = URL(fileURLWithPath: #filePath)
+        url.deleteLastPathComponent()
+        url.deleteLastPathComponent()
+        return url
     }
 }

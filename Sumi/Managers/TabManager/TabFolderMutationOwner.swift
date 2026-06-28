@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 @MainActor
-final class TabFolderService {
+final class TabFolderMutationOwner {
     unowned let tabManager: TabManager
 
     init(tabManager: TabManager) {
@@ -230,6 +230,10 @@ final class TabFolderService {
         }
     }
 
+    func openFolderIfNeeded(_ folderId: UUID) {
+        setFolder(folderId, open: true)
+    }
+
     func moveTabToFolder(tab: Tab, folderId: UUID) {
         tabManager.withStructuralUpdateTransaction {
             guard let targetFolder = tabManager.folder(by: folderId) else { return }
@@ -356,7 +360,7 @@ final class TabFolderService {
             applyChildItems(targetItems, in: parentFolderId, spaceId: spaceId)
 
             if let parentFolderId {
-                tabManager.openFolderIfNeeded(parentFolderId)
+                openFolderIfNeeded(parentFolderId)
             }
             tabManager.scheduleStructuralPersistence()
             return true

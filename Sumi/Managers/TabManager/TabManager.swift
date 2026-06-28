@@ -26,7 +26,7 @@ class TabManager: ObservableObject {
     let runtimeStateCoalescer: RuntimeStateCoalescer
 
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
-    lazy var folderService = TabFolderService(tabManager: self)
+    lazy var folderMutationOwner = TabFolderMutationOwner(tabManager: self)
     lazy var regularTabCollectionOwner = RegularTabCollectionOwner(tabManager: self)
     lazy var regularTabDragService = SidebarRegularTabDragService(tabManager: self)
     lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
@@ -501,7 +501,7 @@ class TabManager: ObservableObject {
     // MARK: - Folder Management
 
     func createFolder(for spaceId: UUID, name: String = "New Folder") -> TabFolder {
-        folderService.createFolder(for: spaceId, name: name)
+        folderMutationOwner.createFolder(for: spaceId, name: name)
     }
 
     @discardableResult
@@ -510,47 +510,47 @@ class TabManager: ObservableObject {
         parentFolderId: UUID?,
         name: String = "New Folder"
     ) -> TabFolder? {
-        folderService.createFolder(for: spaceId, parentFolderId: parentFolderId, name: name)
+        folderMutationOwner.createFolder(for: spaceId, parentFolderId: parentFolderId, name: name)
     }
 
     func renameFolder(_ folderId: UUID, newName: String) {
-        folderService.renameFolder(folderId, newName: newName)
+        folderMutationOwner.renameFolder(folderId, newName: newName)
     }
 
     func updateFolderIcon(_ folderId: UUID, icon: String) {
-        folderService.updateFolderIcon(folderId, icon: icon)
+        folderMutationOwner.updateFolderIcon(folderId, icon: icon)
     }
 
     func setFolder(_ folderId: UUID, open isOpen: Bool) {
-        folderService.setFolder(folderId, open: isOpen)
+        folderMutationOwner.setFolder(folderId, open: isOpen)
     }
 
     func toggleFolderOpenState(_ folderId: UUID) {
-        folderService.toggleFolderOpenState(folderId)
+        folderMutationOwner.toggleFolderOpenState(folderId)
     }
 
     func deleteFolder(_ folderId: UUID) {
-        folderService.deleteFolder(folderId)
+        folderMutationOwner.deleteFolder(folderId)
     }
 
     func ungroupFolder(_ folderId: UUID) {
-        folderService.ungroupFolder(folderId)
+        folderMutationOwner.ungroupFolder(folderId)
     }
 
     func folders(for spaceId: UUID) -> [TabFolder] {
-        folderService.folders(for: spaceId)
+        folderMutationOwner.folders(for: spaceId)
     }
 
     func openFolderIfNeeded(_ folderId: UUID) {
-        folderService.setFolder(folderId, open: true)
+        folderMutationOwner.openFolderIfNeeded(folderId)
     }
 
     func setAllFolders(open isOpen: Bool, in spaceId: UUID) {
-        folderService.setAllFolders(open: isOpen, in: spaceId)
+        folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
     }
 
     func moveTabToFolder(tab: Tab, folderId: UUID) {
-        folderService.moveTabToFolder(tab: tab, folderId: folderId)
+        folderMutationOwner.moveTabToFolder(tab: tab, folderId: folderId)
     }
 
     // MARK: - Tab Management (Normal within current space)
