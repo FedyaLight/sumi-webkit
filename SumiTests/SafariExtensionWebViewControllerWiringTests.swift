@@ -269,6 +269,40 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertFalse(manager.isTabEligibleForCurrentExtensionRuntime(tab))
     }
 
+    func testNotifyTabActivatedSkipsGenerationEligibleEphemeralTabs() throws {
+        let container = try makeTestContainer()
+        let ephemeralProfile = Profile.createEphemeral()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: ephemeralProfile
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        _ = manager.ensureExtensionController(for: ephemeralProfile.id)
+        manager.extensionsLoaded = true
+        manager.tabOpenNotificationGeneration = 9
+
+        let browserManager = makeBrowserManager(profile: ephemeralProfile)
+        manager.attach(browserManager: browserManager)
+
+        let tab = makeTab(
+            profileId: ephemeralProfile.id,
+            url: URL(string: "https://example.com")!
+        )
+        tab.browserManager = browserManager
+        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+
+        var activatedTabIDs: [UUID] = []
+        manager.testHooks.didActivateTab = { activatedTabIDs.append($0) }
+
+        XCTAssertTrue(tab.isEphemeral)
+        manager.notifyTabActivated(newTab: tab, previous: nil)
+
+        XCTAssertTrue(activatedTabIDs.isEmpty)
+    }
+
     func testExtensionTabAdapterDoesNotReturnWebViewWithoutController() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")

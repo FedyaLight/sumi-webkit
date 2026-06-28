@@ -44,6 +44,7 @@ extension ExtensionManager {
         var didOpenTab: ((UUID) -> Void)?
         var didDeferOpenTab: ((UUID, String) -> Void)?
         var didCloseTab: ((UUID) -> Void)?
+        var didActivateTab: ((UUID) -> Void)?
         var didChangeTabProperties:
             ((UUID, WKWebExtension.TabChangedProperties) -> Void)?
     }

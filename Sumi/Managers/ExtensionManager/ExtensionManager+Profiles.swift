@@ -181,6 +181,9 @@ extension ExtensionManager {
                 : nil
         }
         controller.didActivateTab(newAdapter, previousActiveTab: previousAdapter)
+        #if DEBUG
+            testHooks.didActivateTab?(newTab.id)
+        #endif
         controller.didSelectTabs([newAdapter])
         if let previousAdapter {
             controller.didDeselectTabs([previousAdapter])
