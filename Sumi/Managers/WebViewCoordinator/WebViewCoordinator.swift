@@ -63,6 +63,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private let mediaProtectionOwner = WebViewMediaProtectionOwner()
 
     @ObservationIgnored
+    private let deferredProtectedCommandExecutionOwner = WebViewDeferredProtectedCommandExecutionOwner()
+
+    @ObservationIgnored
     private let destructiveCleanupPreparationOwner = WebViewDestructiveCleanupPreparationOwner()
 
     // MARK: - Compositor Container Management
@@ -457,54 +460,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
-        let commands = mediaProtectionOwner.commandsToFlushIfUnprotected(
+        deferredProtectedCommandExecutionOwner.flushCommandsIfUnprotected(
             for: webViewID,
-            resolveWebView: { [self] webViewID in
-                resolveWebView(with: webViewID)
-            },
-            isCommandValid: { [self] command in
-                isDeferredProtectedCommandValid(command)
-            },
-            dropCommand: { [self] command, sourceWebViewID, reason in
-                dropDeferredProtectedCommand(
-                    command,
-                    sourceWebViewID: sourceWebViewID,
-                    reason: reason
-                )
-            },
-            didPruneStaleWebViewIDs: { [self] webViewIDs in
-                finishDestructiveCleanupSuppression(for: webViewIDs)
-            }
+            mediaProtectionOwner: mediaProtectionOwner,
+            runtime: deferredProtectedCommandRuntime()
         )
-        guard !commands.isEmpty else { return }
-        Task { @MainActor in
-            let signpostState = PerformanceTrace.beginInterval(
-                "WebViewCoordinator.flushDeferredProtectedCommands"
-            )
-            defer {
-                PerformanceTrace.endInterval(
-                    "WebViewCoordinator.flushDeferredProtectedCommands",
-                    signpostState
-                )
-            }
-
-            RuntimeDiagnostics.protectedWebViewTrace(
-                "flushDeferredCommands sourceWebView=\(webViewID) count=\(commands.count)"
-            )
-
-            for command in commands {
-                if executeDeferredProtectedCommand(
-                    command,
-                    sourceWebViewID: webViewID
-                ) == false {
-                    dropDeferredProtectedCommand(
-                        command,
-                        sourceWebViewID: webViewID,
-                        reason: "flush.invalidTarget"
-                    )
-                }
-            }
-        }
     }
 
     // MARK: - Smart WebView Assignment (Memory Optimization)
@@ -902,26 +862,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         for webView: WKWebView,
         reason: String
     ) -> Bool {
-        mediaProtectionOwner.enqueueDeferredCommandIfNeeded(
+        deferredProtectedCommandExecutionOwner.enqueue(
             command,
             for: webView,
             reason: reason,
-            resolveWebView: { [self] webViewID in
-                resolveWebView(with: webViewID)
-            },
-            isCommandValid: { [self] command in
-                isDeferredProtectedCommandValid(command)
-            },
-            dropCommand: { [self] command, sourceWebViewID, reason in
-                dropDeferredProtectedCommand(
-                    command,
-                    sourceWebViewID: sourceWebViewID,
-                    reason: reason
-                )
-            },
-            didPruneStaleWebViewIDs: { [self] webViewIDs in
-                finishDestructiveCleanupSuppression(for: webViewIDs)
-            }
+            mediaProtectionOwner: mediaProtectionOwner,
+            runtime: deferredProtectedCommandRuntime()
         )
     }
 
@@ -996,23 +942,43 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func pruneInvalidDeferredProtectedCommands(reason: String) {
-        finishDestructiveCleanupSuppression(
-            for: mediaProtectionOwner.pruneInvalidDeferredCommands(
-                reason: reason,
-                resolveWebView: { [self] webViewID in
-                    resolveWebView(with: webViewID)
-                },
-                isCommandValid: { [self] command in
-                    isDeferredProtectedCommandValid(command)
-                },
-                dropCommand: { [self] command, sourceWebViewID, reason in
-                    dropDeferredProtectedCommand(
-                        command,
-                        sourceWebViewID: sourceWebViewID,
-                        reason: reason
-                    )
-                }
-            )
+        deferredProtectedCommandExecutionOwner.pruneInvalidCommands(
+            reason: reason,
+            mediaProtectionOwner: mediaProtectionOwner,
+            runtime: deferredProtectedCommandRuntime()
+        )
+    }
+
+    private func deferredProtectedCommandRuntime() -> WebViewDeferredProtectedCommandExecutionOwner.Runtime {
+        let validationContext = WebViewDeferredProtectedCommandExecutionOwner.ValidationContext(
+            resolveWebView: { [self] webViewID in
+                resolveWebView(with: webViewID)
+            },
+            resolveTab: { [self] tabID in
+                resolvedTab(with: tabID)
+            },
+            hasTabManager: { [self] in
+                browserManager?.tabManager != nil
+            },
+            hasCleanupWindowTarget: { [self] windowID in
+                webViewRegistry.trackedWebViews(in: windowID).isEmpty == false
+                    || compositorContainerView(for: windowID) != nil
+            },
+            hasTrackedWebViews: { [self] in
+                webViewRegistry.isEmpty == false
+            },
+            hasWindow: { [self] windowID in
+                browserManager?.windowRegistry?.windows[windowID] != nil
+            }
+        )
+        return WebViewDeferredProtectedCommandExecutionOwner.Runtime(
+            validationContext: validationContext,
+            executeCommand: { [self] command in
+                performDeferredProtectedCommand(command)
+            },
+            finishCleanupSuppression: { [self] webViewIDs in
+                finishDestructiveCleanupSuppression(for: webViewIDs)
+            }
         )
     }
 
@@ -1023,52 +989,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
     }
 
-    private func isDeferredProtectedCommandValid(
-        _ command: DeferredWebViewCommand
-    ) -> Bool {
-        switch command {
-        case .removeWebViewFromContainers(let webViewID):
-            return resolveWebView(with: webViewID) != nil
-        case .removeAllWebViews(let tabID):
-            return resolvedTab(with: tabID) != nil
-        case .removeTrackedWebView(let webViewID, _, _):
-            return resolveWebView(with: webViewID) != nil
-        case .closeWebViewFromWebKit(let webViewID):
-            return resolveWebView(with: webViewID) != nil
-        case .cleanupWindow(let windowID):
-            return browserManager?.tabManager != nil
-                && (
-                    webViewRegistry.trackedWebViews(in: windowID).isEmpty == false
-                        || compositorContainerView(for: windowID) != nil
-                )
-        case .cleanupAllWebViews:
-            return browserManager?.tabManager != nil
-                && webViewRegistry.isEmpty == false
-        case .rebuildLiveWebViews(let tabID, _):
-            return resolvedTab(with: tabID) != nil
-        case .evictHiddenWebViews(let windowID):
-            return browserManager?.tabManager != nil
-                && browserManager?.windowRegistry?.windows[windowID] != nil
-        case .cleanupTabWebView(let webViewID, _):
-            return resolveWebView(with: webViewID) != nil
-        case .performFallbackWebViewCleanup(let webViewID, _):
-            return resolveWebView(with: webViewID) != nil
-        }
-    }
-
     @discardableResult
-    private func executeDeferredProtectedCommand(
-        _ command: DeferredWebViewCommand,
-        sourceWebViewID: ObjectIdentifier
-    ) -> Bool {
-        guard isDeferredProtectedCommandValid(command) else {
-            return false
-        }
-
-        RuntimeDiagnostics.protectedWebViewTrace(
-            "executeDeferredCommand sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)}"
-        )
-
+    private func performDeferredProtectedCommand(_ command: DeferredWebViewCommand) -> Bool {
         switch command {
         case .removeWebViewFromContainers(let webViewID):
             guard let webView = resolveWebView(with: webViewID) else {
@@ -1150,17 +1072,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
 
         return true
-    }
-
-    private func dropDeferredProtectedCommand(
-        _ command: DeferredWebViewCommand,
-        sourceWebViewID: ObjectIdentifier,
-        reason: String
-    ) {
-        PerformanceTrace.emitEvent("WebViewCoordinator.dropDeferredProtectedCommand")
-        RuntimeDiagnostics.protectedWebViewTrace(
-            "dropDeferredCommand reason=\(reason) sourceWebView=\(sourceWebViewID) command={\(command.debugSummary)}"
-        )
     }
 
     private func cleanupTrackedWebView(
