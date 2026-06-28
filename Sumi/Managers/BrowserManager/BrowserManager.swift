@@ -252,6 +252,58 @@ class BrowserManager: ObservableObject {
         guard let self else { return [] }
         return self.splitManager.visibleTabIds(for: windowId)
     }
+    private lazy var windowSpaceStateOwner = BrowserWindowSpaceStateOwner(
+        dependencies: BrowserWindowSpaceStateOwner.Dependencies(
+            tabManager: { [unowned self] in self.tabManager },
+            windowRegistry: { [unowned self] in self.windowRegistry },
+            currentProfile: { [unowned self] in self.currentProfile },
+            profileRouter: sumiProfileRouter,
+            selectionService: shellSelectionService,
+            sanitizeFloatingBarState: { [unowned self] windowState in
+                self.sanitizeFloatingBarState(in: windowState)
+            },
+            syncShortcutSelectionState: { [unowned self] windowState in
+                self.syncShortcutSelectionState(for: windowState)
+            },
+            updateWorkspaceTheme: { [unowned self] windowState, theme, animate in
+                self.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
+            },
+            commitWorkspaceTheme: { [unowned self] theme, windowState in
+                self.commitWorkspaceTheme(theme, for: windowState)
+            },
+            finishInteractiveSpaceTransition: { [unowned self] space, windowState in
+                self.finishInteractiveSpaceTransition(to: space, in: windowState)
+            },
+            applyTabSelection: { [unowned self] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
+                self.applyTabSelection(
+                    tab,
+                    in: windowState,
+                    updateSpaceFromTab: updateSpaceFromTab,
+                    updateTheme: updateTheme,
+                    rememberSelection: rememberSelection,
+                    persistSelection: persistSelection
+                )
+            },
+            performImmediateVisualHandoffIfPossible: { [unowned self] windowState in
+                _ = self.performImmediateVisualHandoffIfPossible(in: windowState)
+            },
+            showEmptyState: { [unowned self] windowState in
+                self.showEmptyState(in: windowState)
+            },
+            adoptProfileForSpaceChange: { [unowned self] windowState in
+                self.adoptProfileIfNeeded(for: windowState, context: .spaceChange)
+            },
+            persistWindowSession: { [unowned self] windowState in
+                self.persistWindowSession(for: windowState)
+            },
+            completePendingSplitGroupFocusIfReady: { [unowned self] windowState, spaceId in
+                self.completePendingSplitGroupFocusIfReady(in: windowState, spaceId: spaceId)
+            },
+            refreshCompositor: { [unowned self] windowState in
+                self.refreshCompositor(for: windowState)
+            }
+        )
+    )
     lazy var tabCloseFallbackPlanner = BrowserTabCloseFallbackPlanner(
         selectionService: shellSelectionService
     )
@@ -821,7 +873,10 @@ class BrowserManager: ObservableObject {
                 self?.splitManager.updateActiveSide(for: tabId, in: windowId)
             },
             syncWindowSpaceContext: { [weak self] windowState, animateTheme in
-                self?.syncWindowSpaceContext(in: windowState, animateTheme: animateTheme)
+                self?.windowSpaceStateOwner.syncWindowSpaceContext(
+                    in: windowState,
+                    animateTheme: animateTheme
+                )
             },
             space: { [weak self] spaceId in
                 self?.space(for: spaceId)
@@ -876,10 +931,13 @@ class BrowserManager: ObservableObject {
                 self?.persistWindowSession(for: windowState)
             },
             selectionTargetForSpaceActivation: { [weak self] space, windowState in
-                self?.selectionTargetForSpaceActivation(in: space, windowState: windowState)
+                self?.windowSpaceStateOwner.selectionTargetForSpaceActivation(
+                    in: space,
+                    windowState: windowState
+                )
             },
             updateProfileRuntimeStates: { [weak self] windowState in
-                self?.updateProfileRuntimeStates(activeWindowState: windowState)
+                self?.windowSpaceStateOwner.updateProfileRuntimeStates(activeWindowState: windowState)
             },
             showNewTabFloatingBar: { [weak self] windowState in
                 self?.browserActionOwner.showNewTabFloatingBar(in: windowState)
@@ -1536,21 +1594,7 @@ class BrowserManager: ObservableObject {
     }
 
     func space(for spaceId: UUID?) -> Space? {
-        guard let spaceId else { return nil }
-        return tabManager.spaces.first(where: { $0.id == spaceId })
-    }
-
-    private func syncWindowSpaceContext(in windowState: BrowserWindowState, animateTheme: Bool) {
-        _ = animateTheme
-        let currentSpace = space(for: windowState.currentSpaceId)
-        let activeProfileId = sumiProfileRouter.activeProfileId(
-            for: currentSpace,
-            currentProfile: currentProfile
-        )
-        if windowState.currentProfileId != activeProfileId {
-            windowState.currentProfileId = activeProfileId
-        }
-        updateProfileRuntimeStates(activeWindowState: windowState)
+        windowSpaceStateOwner.space(for: spaceId)
     }
 
     private func isBackForwardGestureActive(in windowState: BrowserWindowState) -> Bool {
@@ -1587,165 +1631,17 @@ class BrowserManager: ObservableObject {
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
-        shellSelectionService.hasValidCurrentSelection(
-            in: windowState,
-            tabStore: tabManager.runtimeStore
-        )
+        windowSpaceStateOwner.hasValidCurrentSelection(in: windowState)
     }
 
     /// Set active space for a specific window
     func setActiveSpace(_ space: Space, in windowState: BrowserWindowState) {
-        let isSameSpace = windowState.currentSpaceId == space.id
-        if isSameSpace,
-           hasValidCurrentSelection(in: windowState),
-           currentTab(for: windowState) != nil
-        {
-            sanitizeFloatingBarState(in: windowState)
-            applySpaceContext(space, to: windowState)
-            syncShortcutSelectionState(for: windowState)
-            persistWindowSession(for: windowState)
-            return
-        }
-
-        let selectedTargetTab = selectionTargetForSpaceActivation(
-            in: space,
-            windowState: windowState
-        )
-        let isActiveWindow = windowRegistry?.activeWindow?.id == windowState.id
-        if isActiveWindow {
-            tabManager.setActiveSpace(space, preferredTab: selectedTargetTab)
-        }
-
-        applySpaceContext(
-            space,
-            to: windowState
-        )
-        if windowState.spaceTransitionDestinationSpaceId == space.id {
-            finishInteractiveSpaceTransition(to: space, in: windowState)
-        } else if !windowState.isInteractiveSpaceTransition {
-            updateWorkspaceTheme(for: windowState, to: space.workspaceTheme, animate: true)
-        }
-
-        if let selectedTargetTab {
-            applyTabSelection(
-                selectedTargetTab,
-                in: windowState,
-                updateSpaceFromTab: false,
-                updateTheme: false,
-                rememberSelection: true,
-                persistSelection: false
-            )
-            performImmediateVisualHandoffIfPossible(in: windowState)
-        } else {
-            showEmptyState(in: windowState)
-        }
-
-        if isActiveWindow {
-            adoptProfileIfNeeded(for: windowState, context: .spaceChange)
-        }
-        persistWindowSession(for: windowState)
-        completePendingSplitGroupFocusIfReady(in: windowState, spaceId: space.id)
-    }
-
-    private func selectionTargetForSpaceActivation(
-        in space: Space,
-        windowState: BrowserWindowState
-    ) -> Tab? {
-        shellSelectionService.selectionTargetForSpaceActivation(
-            in: space,
-            windowState: windowState,
-            tabStore: tabManager.runtimeStore
-        )
-    }
-
-    private func applySpaceContext(
-        _ space: Space,
-        to windowState: BrowserWindowState
-    ) {
-        if windowState.currentSpaceId != space.id {
-            windowState.currentSpaceId = space.id
-        }
-        let profileId = space.profileId ?? currentProfile?.id
-        if windowState.currentProfileId != profileId {
-            windowState.currentProfileId = profileId
-        }
-        updateProfileRuntimeStates(activeWindowState: windowState)
+        windowSpaceStateOwner.setActiveSpace(space, in: windowState)
     }
 
     /// Validate and fix window states after tab/space mutations
     func validateWindowStates() {
-        for (_, windowState) in windowRegistry?.windows ?? [:] {
-            var needsUpdate = false
-            // Check if current tab still exists
-            if let currentTabId = windowState.currentTabId {
-                if tabManager.tab(for: currentTabId) == nil {
-                    windowState.currentTabId = nil
-                    needsUpdate = true
-                }
-            }
-
-            // Check if current space still exists
-            if let currentSpaceId = windowState.currentSpaceId {
-                if tabManager.spaces.first(where: { $0.id == currentSpaceId }) == nil {
-                    windowState.currentSpaceId = tabManager.spaces.first?.id
-                    needsUpdate = true
-                }
-            }
-
-            if !windowState.isShowingEmptyState && !hasValidCurrentSelection(in: windowState) {
-                if let currentSpace = space(for: windowState.currentSpaceId),
-                   let preferred = preferredTabForSpace(currentSpace, in: windowState)
-                {
-                    applyTabSelection(
-                        preferred,
-                        in: windowState,
-                        updateSpaceFromTab: false,
-                        updateTheme: false,
-                        rememberSelection: false,
-                        persistSelection: false
-                    )
-                } else if let fallback = preferredTabForWindow(windowState) {
-                    applyTabSelection(
-                        fallback,
-                        in: windowState,
-                        updateSpaceFromTab: false,
-                        updateTheme: false,
-                        rememberSelection: false,
-                        persistSelection: false
-                    )
-                } else {
-                    showEmptyState(in: windowState)
-                }
-                needsUpdate = true
-            }
-
-            let previousShortcutSelection = windowState.currentShortcutPinId
-            syncShortcutSelectionState(for: windowState)
-            if previousShortcutSelection != windowState.currentShortcutPinId {
-                needsUpdate = true
-            }
-
-            // If no current space, use the first available space
-            if windowState.currentSpaceId == nil {
-                windowState.currentSpaceId = tabManager.spaces.first?.id
-                needsUpdate = true
-            }
-
-            if let currentSpace = space(for: windowState.currentSpaceId) {
-                commitWorkspaceTheme(currentSpace.workspaceTheme, for: windowState)
-                windowState.currentProfileId = currentSpace.profileId ?? currentProfile?.id
-            } else if windowState.currentSpaceId == nil {
-                commitWorkspaceTheme(.default, for: windowState)
-                windowState.currentProfileId = currentProfile?.id
-            }
-
-            if needsUpdate {
-                refreshCompositor(for: windowState)
-                persistWindowSession(for: windowState)
-            }
-        }
-
-        // Note: No need to clean up tab display owners since they're no longer used
+        windowSpaceStateOwner.validateWindowStates()
     }
 
     func persistWindowSession(for windowState: BrowserWindowState) {
@@ -1786,28 +1682,6 @@ class BrowserManager: ObservableObject {
         refreshLastSessionWindowsStore(excludingWindowID: nil)
     }
 
-    private func preferredTabForWindow(_ windowState: BrowserWindowState) -> Tab? {
-        shellSelectionService.preferredTabForWindow(
-            windowState,
-            tabStore: tabManager.runtimeStore
-        )
-    }
-
-    private func preferredRegularTabForWindow(_ windowState: BrowserWindowState) -> Tab? {
-        shellSelectionService.preferredRegularTabForWindow(
-            windowState,
-            tabStore: tabManager.runtimeStore
-        )
-    }
-
-    private func preferredTabForSpace(_ space: Space, in windowState: BrowserWindowState) -> Tab? {
-        shellSelectionService.preferredTabForSpace(
-            space,
-            in: windowState,
-            tabStore: tabManager.runtimeStore
-        )
-    }
-
     func syncShortcutSelectionState(for windowState: BrowserWindowState) {
         tabSelectionOwner.syncShortcutSelectionState(
             for: windowState,
@@ -1834,34 +1708,6 @@ class BrowserManager: ObservableObject {
             in: windowState,
             actions: tabSelectionActions
         )
-    }
-
-    private func updateProfileRuntimeStates(activeWindowState: BrowserWindowState? = nil) {
-        let focusedWindow = activeWindowState ?? windowRegistry?.activeWindow
-        let focusedWindowId = focusedWindow?.id
-
-        for space in tabManager.spaces {
-            let isFocusedSpace = focusedWindow?.currentSpaceId == space.id
-            let hasRegularTabs = !tabManager.tabs(in: space).isEmpty
-            let hasPinnedLiveShortcut: Bool
-            if let windowId = focusedWindowId {
-                hasPinnedLiveShortcut = tabManager.liveShortcutTabs(in: windowId)
-                    .contains(where: { $0.spaceId == space.id && $0.shortcutPinRole != .essential })
-            } else {
-                hasPinnedLiveShortcut = false
-            }
-            let hasActiveShortcutSelection = focusedWindow?.selectedShortcutPinForSpace[space.id] != nil
-
-            if isFocusedSpace {
-                space.profileRuntimeState = hasRegularTabs || hasPinnedLiveShortcut || hasActiveShortcutSelection
-                    ? .active
-                    : .dormant
-            } else if hasRegularTabs || hasPinnedLiveShortcut || hasActiveShortcutSelection {
-                space.profileRuntimeState = .loadedInactive
-            } else {
-                space.profileRuntimeState = .dormant
-            }
-        }
     }
 }
 
