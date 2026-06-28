@@ -141,7 +141,7 @@ final class WindowWebContentController: NSViewController {
     private var pendingSplitRepairGroupId: UUID?
     private var hoveredLinkHandler: ((String?) -> Void)?
     private let hostRegistry = WindowWebContentHostRegistry()
-    private lazy var visualHandoffCovers = VisualHandoffCoverController(
+    private lazy var visualHandoffCovers = WindowWebContentVisualHandoffCoverController(
         containerView: containerView,
         releaseCover: { [weak self] webViewID, host in
             guard let self else { return }
@@ -737,81 +737,6 @@ final class WindowWebContentController: NSViewController {
     }
 }
 
-@MainActor
-private final class VisualHandoffCoverController {
-    private static let releaseDelay: TimeInterval = 0.1
-
-    private let containerView: ContainerView
-    private let releaseCover: (ObjectIdentifier, SumiWebViewContainerView) -> Void
-    private var coverHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]
-    private var releaseWorkItem: DispatchWorkItem?
-    private var releaseGeneration = 0
-
-    var hasCovers: Bool {
-        !coverHosts.isEmpty
-    }
-
-    init(
-        containerView: ContainerView,
-        releaseCover: @escaping (ObjectIdentifier, SumiWebViewContainerView) -> Void
-    ) {
-        self.containerView = containerView
-        self.releaseCover = releaseCover
-    }
-
-    func placeCover(
-        _ host: SumiWebViewContainerView,
-        frameInContainer: NSRect
-    ) {
-        containerView.placeVisualHandoffCover(host, frameInContainer: frameInContainer)
-        coverHosts[ObjectIdentifier(host.webView)] = host
-    }
-
-    func scheduleRelease() {
-        guard !coverHosts.isEmpty else { return }
-
-        releaseWorkItem?.cancel()
-        releaseGeneration &+= 1
-        let generation = releaseGeneration
-        CATransaction.flush()
-
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self,
-                  self.releaseGeneration == generation
-            else {
-                return
-            }
-            self.containerView.layoutSubtreeIfNeeded()
-            self.containerView.displayIfNeeded()
-            DispatchQueue.main.async { [weak self] in
-                guard let self,
-                      self.releaseGeneration == generation
-                else {
-                    return
-                }
-                self.releaseCovers()
-            }
-        }
-        releaseWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.releaseDelay,
-            execute: workItem
-        )
-    }
-
-    func releaseCovers() {
-        releaseGeneration &+= 1
-        releaseWorkItem?.cancel()
-        releaseWorkItem = nil
-
-        let covers = coverHosts
-        coverHosts.removeAll(keepingCapacity: true)
-        for (webViewID, host) in covers {
-            releaseCover(webViewID, host)
-        }
-    }
-}
-
 struct TabCompositorWrapper: NSViewControllerRepresentable {
     let browserContext: any WindowWebContentBrowserContext
     let webViewCoordinator: WebViewCoordinator
@@ -911,7 +836,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
 // MARK: - Container View
 
-private final class ContainerView: NSView {
+private final class ContainerView: NSView, WindowWebContentVisualHandoffCoverContainer {
     enum PaneLayout: Equatable {
         case single
         case split(SplitGroup)

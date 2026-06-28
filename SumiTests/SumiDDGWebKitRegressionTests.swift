@@ -843,6 +843,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let coverSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WindowWebContentVisualHandoffCoverController.swift"
+            ),
+            encoding: .utf8
+        )
 
         let regularClose = try sourceSlice(
             browserManagerSource,
@@ -895,6 +901,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(compositorSource.contains("private func performImmediateVisualHandoffIfPossible()"))
         XCTAssertTrue(compositorSource.contains("placeVisualHandoffCover"))
         XCTAssertTrue(compositorSource.contains("scheduleVisualHandoffCoverRelease"))
+        XCTAssertFalse(compositorSource.contains("final class WindowWebContentVisualHandoffCoverController"))
+        XCTAssertTrue(coverSource.contains("final class WindowWebContentVisualHandoffCoverController"))
 
         let compositorApply = try sourceSlice(
             compositorSource,
@@ -906,9 +914,9 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(compositorSource.contains("guard displayedHost(for: tab.id) == nil else { return false }"))
 
         let coverRelease = try sourceSlice(
-            compositorSource,
-            from: "private final class VisualHandoffCoverController",
-            to: "struct TabCompositorWrapper"
+            coverSource,
+            from: "func scheduleRelease()",
+            to: "func releaseCovers()"
         )
         XCTAssertTrue(coverRelease.contains("CATransaction.flush()"))
         XCTAssertTrue(coverRelease.contains("containerView.displayIfNeeded()"))
@@ -948,14 +956,24 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let coverSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Components/WebsiteView/WindowWebContentVisualHandoffCoverController.swift"
+            ),
+            encoding: .utf8
+        )
 
         XCTAssertTrue(source.contains("private let hostRegistry = WindowWebContentHostRegistry()"))
+        XCTAssertTrue(source.contains("WindowWebContentVisualHandoffCoverController("))
+        XCTAssertTrue(source.contains("private final class ContainerView: NSView, WindowWebContentVisualHandoffCoverContainer"))
         XCTAssertTrue(registrySource.contains("enum WindowWebContentPaneSlot"))
         XCTAssertTrue(registrySource.contains("final class WindowWebContentHostRegistry"))
         XCTAssertTrue(registrySource.contains("func protectedHost(for webView: WKWebView)"))
         XCTAssertFalse(registrySource.contains("DispatchWorkItem"))
         XCTAssertFalse(registrySource.contains("CATransaction"))
         XCTAssertFalse(registrySource.contains("placeVisualHandoffCover"))
+        XCTAssertTrue(coverSource.contains("protocol WindowWebContentVisualHandoffCoverContainer"))
+        XCTAssertTrue(coverSource.contains("final class WindowWebContentVisualHandoffCoverController"))
 
         let releaseCallback = try sourceSlice(
             source,
@@ -987,9 +1005,9 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         )
 
         let coverController = try sourceSlice(
-            source,
-            from: "private final class VisualHandoffCoverController",
-            to: "struct TabCompositorWrapper"
+            coverSource,
+            from: "final class WindowWebContentVisualHandoffCoverController",
+            to: "func releaseCovers()"
         )
         XCTAssertTrue(coverController.contains("private var coverHosts: [ObjectIdentifier: SumiWebViewContainerView] = [:]"))
         XCTAssertTrue(coverController.contains("private var releaseWorkItem: DispatchWorkItem?"))
@@ -1011,7 +1029,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ]
         )
         try assertTokenOrder(
-            coverController,
+            coverSource[coverSource.startIndex..<coverSource.endIndex],
             [
                 "let covers = coverHosts",
                 "coverHosts.removeAll(keepingCapacity: true)",
