@@ -1070,6 +1070,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         XCTAssertTrue(compositorSource.contains("setImmediateVisualHandoffHandler"))
         XCTAssertTrue(compositorSource.contains("private func performImmediateVisualHandoffIfPossible()"))
+        XCTAssertTrue(compositorSource.contains("private final class WindowWebContentVisualHandoffFlowOwner"))
         XCTAssertTrue(compositorSource.contains("placeVisualHandoffCover"))
         XCTAssertTrue(compositorSource.contains("scheduleVisualHandoffCoverRelease"))
         XCTAssertFalse(compositorSource.contains("final class WindowWebContentVisualHandoffCoverController"))
@@ -1080,12 +1081,36 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             from: "private func apply(displayState: WebsiteDisplayState, currentTab: Tab?)",
             to: "private func performImmediateVisualHandoffIfPossible()"
         )
-        XCTAssertTrue(compositorApply.contains("beginSinglePaneVisualHandoffIfNeeded"))
-        XCTAssertTrue(compositorApply.contains("beginVisualHandoffCovers(excluding: Set(group.tabIds))"))
+        XCTAssertTrue(compositorApply.contains("visualHandoffFlow.presentationDecision"))
+        XCTAssertTrue(compositorApply.contains("beginVisualHandoffCovers(for: decision)"))
+        XCTAssertTrue(compositorApply.contains("scheduleSplitRepair(groupId: repairSplitGroupId)"))
+        try assertTokenOrder(
+            compositorApply,
+            [
+                "let didBeginVisualHandoff = beginVisualHandoffCovers(for: decision)",
+                "scheduleSplitRepair(groupId: repairSplitGroupId)",
+                "showSinglePane(tab: tab)",
+                "scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)"
+            ]
+        )
+        try assertTokenOrder(
+            compositorApply,
+            [
+                "showSplitGroup(group, tabs: tabs)",
+                "scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)"
+            ]
+        )
+
+        let visualHandoffFlow = try sourceSlice(
+            compositorSource,
+            from: "private final class WindowWebContentVisualHandoffFlowOwner",
+            to: "@MainActor\nfinal class WindowWebContentController"
+        )
         XCTAssertTrue(
-            compositorSource.contains(
-                "guard hostLifecycleOwner.displayedHost(for: tab.id) == nil else { return false }"
-            )
+            visualHandoffFlow.contains("runtime.displayedHost(tab.id) == nil")
+        )
+        XCTAssertTrue(
+            visualHandoffFlow.contains("hostedWebViewCount(in: singlePaneRoot")
         )
 
         let coverRelease = try sourceSlice(
@@ -1140,6 +1165,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
         XCTAssertTrue(source.contains("private lazy var hostLifecycleOwner = WindowWebContentHostLifecycleOwner("))
         XCTAssertTrue(source.contains("private final class WindowWebContentHostLifecycleOwner"))
+        XCTAssertTrue(source.contains("private lazy var visualHandoffFlow = WindowWebContentVisualHandoffFlowOwner("))
+        XCTAssertTrue(source.contains("private final class WindowWebContentVisualHandoffFlowOwner"))
         XCTAssertTrue(source.contains("WindowWebContentVisualHandoffCoverController("))
         XCTAssertTrue(source.contains("private final class ContainerView: NSView, WindowWebContentVisualHandoffCoverContainer"))
         XCTAssertTrue(registrySource.contains("enum WindowWebContentPaneSlot"))

@@ -121,6 +121,121 @@ extension BrowserManager: WindowWebContentBrowserContext {
     }
 }
 
+private enum WindowWebContentPresentationDecision {
+    case single(tab: Tab?, repairSplitGroupId: UUID?)
+    case split(group: SplitGroup, tabs: [Tab])
+}
+
+@MainActor
+private final class WindowWebContentVisualHandoffFlowOwner {
+    struct Runtime {
+        let hasActiveHistorySwipe: () -> Bool
+        let tab: (UUID) -> Tab?
+        let splitGroup: () -> SplitGroup?
+        let displayedHost: (UUID) -> SumiWebViewContainerView?
+        let splitPaneTabIds: () -> [UUID]
+        let singlePaneRoot: () -> NSView?
+        let hasHostedSplitWebViews: () -> Bool
+    }
+
+    private let runtime: Runtime
+
+    init(runtime: Runtime) {
+        self.runtime = runtime
+    }
+
+    func needsDisplayStateApply(
+        appliedDisplayState: WebsiteDisplayState?,
+        displayState: WebsiteDisplayState,
+        currentTab: Tab?
+    ) -> Bool {
+        appliedDisplayState != displayState
+            || hasStaleHostedWebViews(currentTab: currentTab, displayState: displayState)
+    }
+
+    func presentationDecision(
+        for displayState: WebsiteDisplayState,
+        currentTab: Tab?
+    ) -> WindowWebContentPresentationDecision {
+        guard let group = displayState.activeSplitGroup else {
+            return .single(tab: currentTab, repairSplitGroupId: nil)
+        }
+
+        let tabs = group.tabIds.compactMap { runtime.tab($0) }
+        guard tabs.count == group.tabIds.count else {
+            return .single(tab: currentTab, repairSplitGroupId: group.id)
+        }
+
+        return .split(group: group, tabs: tabs)
+    }
+
+    func immediatePresentationDecision(
+        currentTab: Tab?
+    ) -> WindowWebContentPresentationDecision? {
+        guard !runtime.hasActiveHistorySwipe(),
+              let currentTab,
+              currentTab.requiresPrimaryWebView
+        else {
+            return nil
+        }
+
+        if let group = runtime.splitGroup(),
+           group.contains(currentTab.id)
+        {
+            let tabs = group.tabIds.compactMap { runtime.tab($0) }
+            guard tabs.count == group.tabIds.count else { return nil }
+            return .split(group: group, tabs: tabs)
+        }
+
+        return .single(tab: currentTab, repairSplitGroupId: nil)
+    }
+
+    func incomingTabIDsForVisualHandoff(
+        _ decision: WindowWebContentPresentationDecision
+    ) -> Set<UUID>? {
+        switch decision {
+        case .single(let tab, _):
+            guard let tab,
+                  tab.requiresPrimaryWebView,
+                  runtime.displayedHost(tab.id) == nil
+            else {
+                return nil
+            }
+            return [tab.id]
+        case .split(let group, _):
+            return Set(group.tabIds)
+        }
+    }
+
+    private func hasStaleHostedWebViews(
+        currentTab: Tab?,
+        displayState: WebsiteDisplayState
+    ) -> Bool {
+        guard !runtime.hasActiveHistorySwipe() else {
+            return false
+        }
+
+        guard let activeSplitGroup = displayState.activeSplitGroup else {
+            let expected = (currentTab != nil && displayState.currentTabUnloaded == false) ? 1 : 0
+            if let singlePaneRoot = runtime.singlePaneRoot(),
+               hostedWebViewCount(in: singlePaneRoot, stoppingAfter: expected) > expected {
+                return true
+            }
+            if runtime.hasHostedSplitWebViews() { return true }
+            return false
+        }
+
+        if let singlePaneRoot = runtime.singlePaneRoot(),
+           hostedWebViewCount(in: singlePaneRoot, stoppingAfter: 0) > 0 {
+            return true
+        }
+        for tabId in runtime.splitPaneTabIds() where activeSplitGroup.contains(tabId) == false {
+            return true
+        }
+        return false
+    }
+}
+
 @MainActor
 final class WindowWebContentController: NSViewController {
     private let browserContext: any WindowWebContentBrowserContext
@@ -155,6 +270,33 @@ final class WindowWebContentController: NSViewController {
             self.hostLifecycleOwner.removeParkedProtectedHost(for: webViewID)
             self.webViewCoordinator.finishVisualHandoffProtection(for: host.webView)
         }
+    )
+    private lazy var visualHandoffFlow = WindowWebContentVisualHandoffFlowOwner(
+        runtime: .init(
+            hasActiveHistorySwipe: { [weak self] in
+                guard let self else { return true }
+                return self.webViewCoordinator.hasActiveHistorySwipe(in: self.windowState.id)
+            },
+            tab: { [weak self] tabId in
+                self?.browserContext.tab(for: tabId)
+            },
+            splitGroup: { [weak self] in
+                guard let self else { return nil }
+                return self.browserContext.splitGroup(for: self.windowState.id)
+            },
+            displayedHost: { [weak self] tabId in
+                self?.hostLifecycleOwner.displayedHost(for: tabId)
+            },
+            splitPaneTabIds: { [weak self] in
+                self?.hostLifecycleOwner.splitPaneTabIds ?? []
+            },
+            singlePaneRoot: { [weak self] in
+                self?.containerView.singlePaneView
+            },
+            hasHostedSplitWebViews: { [weak self] in
+                self?.containerView.hasHostedSplitWebViews ?? false
+            }
+        )
     )
     private lazy var mediaTouchBarRecoveryController = WindowMediaTouchBarRecoveryController(
         windowID: windowState.id,
@@ -226,12 +368,11 @@ final class WindowWebContentController: NSViewController {
         contentBackgroundColor: Color
     ) {
         let currentTab = browserContext.currentTab(for: windowState)
-        let displayStateChanged = appliedDisplayState != displayState
-        let hasStaleSubviews = compositorSubtreeHasStaleWebViews(
-            currentTab: currentTab,
-            displayState: displayState
+        let needsDisplayStateApply = visualHandoffFlow.needsDisplayStateApply(
+            appliedDisplayState: appliedDisplayState,
+            displayState: displayState,
+            currentTab: currentTab
         )
-        let needsDisplayStateApply = displayStateChanged || hasStaleSubviews
 
         let previousBg = self.contentBackgroundColor
         self.contentBackgroundColor = contentBackgroundColor
@@ -295,11 +436,11 @@ final class WindowWebContentController: NSViewController {
         }
 
         let currentTab = browserContext.currentTab(for: windowState)
-        let hasStaleSubviews = compositorSubtreeHasStaleWebViews(
-            currentTab: currentTab,
-            displayState: displayState
-        )
-        guard appliedDisplayState != displayState || hasStaleSubviews else { return }
+        guard visualHandoffFlow.needsDisplayStateApply(
+            appliedDisplayState: appliedDisplayState,
+            displayState: displayState,
+            currentTab: currentTab
+        ) else { return }
 
         let previousCurrentId = appliedDisplayState?.currentId
         apply(displayState: displayState, currentTab: currentTab)
@@ -312,56 +453,43 @@ final class WindowWebContentController: NSViewController {
 
     private func apply(displayState: WebsiteDisplayState, currentTab: Tab?) {
         containerView.setSplitDropCaptureActive(displayState.isSplitDropCaptureActive)
+        apply(visualHandoffFlow.presentationDecision(for: displayState, currentTab: currentTab))
+    }
 
-        if let group = displayState.activeSplitGroup {
-            let tabs = group.tabIds.compactMap { browserContext.tab(for: $0) }
-            guard tabs.count == group.tabIds.count else {
-                let didBeginVisualHandoff = beginSinglePaneVisualHandoffIfNeeded(to: currentTab)
-                scheduleSplitRepair(groupId: group.id)
-                showSinglePane(tab: currentTab)
-                scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
-                return
+    private func apply(_ decision: WindowWebContentPresentationDecision) {
+        let didBeginVisualHandoff = beginVisualHandoffCovers(for: decision)
+
+        switch decision {
+        case .single(let tab, let repairSplitGroupId):
+            if let repairSplitGroupId {
+                scheduleSplitRepair(groupId: repairSplitGroupId)
             }
-            let didBeginVisualHandoff = beginVisualHandoffCovers(excluding: Set(group.tabIds))
+            showSinglePane(tab: tab)
+        case .split(let group, let tabs):
             showSplitGroup(group, tabs: tabs)
-            scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
-            return
         }
 
-        let didBeginVisualHandoff = beginSinglePaneVisualHandoffIfNeeded(to: currentTab)
-        showSinglePane(tab: currentTab)
         scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
     }
 
     private func performImmediateVisualHandoffIfPossible() -> Bool {
-        guard !webViewCoordinator.hasActiveHistorySwipe(in: windowState.id),
-              let currentTab = browserContext.currentTab(for: windowState),
-              currentTab.requiresPrimaryWebView
+        let currentTab = browserContext.currentTab(for: windowState)
+        guard let decision = visualHandoffFlow.immediatePresentationDecision(currentTab: currentTab)
         else {
             return false
         }
 
-        if let group = browserContext.splitGroup(for: windowState.id),
-           group.contains(currentTab.id)
-        {
-            let tabs = group.tabIds.compactMap { browserContext.tab(for: $0) }
-            guard tabs.count == group.tabIds.count else { return false }
-            let didBeginVisualHandoff = beginVisualHandoffCovers(excluding: Set(group.tabIds))
-            showSplitGroup(group, tabs: tabs)
-            scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
-        } else {
-            let didBeginVisualHandoff = beginSinglePaneVisualHandoffIfNeeded(to: currentTab)
-            showSinglePane(tab: currentTab)
-            scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)
-        }
+        apply(decision)
 
+        guard let currentTab else { return false }
         return hostLifecycleOwner.displayedHost(for: currentTab.id) != nil
     }
 
-    private func beginSinglePaneVisualHandoffIfNeeded(to tab: Tab?) -> Bool {
-        guard let tab, tab.requiresPrimaryWebView else { return false }
-        guard hostLifecycleOwner.displayedHost(for: tab.id) == nil else { return false }
-        return beginVisualHandoffCovers(excluding: [tab.id])
+    private func beginVisualHandoffCovers(for decision: WindowWebContentPresentationDecision) -> Bool {
+        guard let incomingTabIDs = visualHandoffFlow.incomingTabIDsForVisualHandoff(decision) else {
+            return false
+        }
+        return beginVisualHandoffCovers(excluding: incomingTabIDs)
     }
 
     @discardableResult
@@ -396,28 +524,6 @@ final class WindowWebContentController: NSViewController {
 
     private func releaseVisualHandoffCovers() {
         visualHandoffCovers.releaseCovers()
-    }
-
-    private func compositorSubtreeHasStaleWebViews(
-        currentTab: Tab?,
-        displayState: WebsiteDisplayState
-    ) -> Bool {
-        guard !webViewCoordinator.hasActiveHistorySwipe(in: windowState.id) else {
-            return false
-        }
-
-        guard let activeSplitGroup = displayState.activeSplitGroup else {
-            let expected = (currentTab != nil && displayState.currentTabUnloaded == false) ? 1 : 0
-            if hostedWebViewCount(in: containerView.singlePaneView, stoppingAfter: expected) > expected { return true }
-            if containerView.hasHostedSplitWebViews { return true }
-            return false
-        }
-
-        if hostedWebViewCount(in: containerView.singlePaneView, stoppingAfter: 0) > 0 { return true }
-        for tabId in hostLifecycleOwner.splitPaneTabIds where activeSplitGroup.contains(tabId) == false {
-            return true
-        }
-        return false
     }
 
     private func showSinglePane(tab: Tab?) {
