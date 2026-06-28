@@ -62,6 +62,31 @@ final class GlanceWebsiteTimingCleanupTests: XCTestCase {
         )
     }
 
+    func testGlanceOverlayControllerDelegatesPreviewHostAttachmentToDedicatedOwner() throws {
+        let controllerSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayController.swift")
+        let attachmentSource = try Self.source(named: "Sumi/Components/Glance/GlancePreviewHostAttachmentOwner.swift")
+        let controllerBodySource = try Self.slice(
+            controllerSource,
+            from: "final class GlanceOverlayController",
+            to: "@MainActor\nprivate final class GlanceOverlayContentVisualStyleOwner"
+        )
+
+        XCTAssertTrue(controllerBodySource.contains("private lazy var previewHostAttachment = GlancePreviewHostAttachmentOwner"))
+        XCTAssertTrue(controllerBodySource.contains("previewHostAttachment.attachIfAvailable(for:"))
+        XCTAssertTrue(controllerBodySource.contains("previewHostAttachment.clear(preservingDisplayedContent: preservingPromotionHandoff)"))
+        XCTAssertTrue(controllerBodySource.contains("previewHostAttachment.promotedHostCandidate"))
+        XCTAssertTrue(attachmentSource.contains("final class GlancePreviewHostAttachmentOwner"))
+        XCTAssertTrue(attachmentSource.contains("private weak var previewWebView: FocusableWKWebView?"))
+        XCTAssertTrue(attachmentSource.contains("private var previewHostView: SumiWebViewContainerView?"))
+        XCTAssertTrue(attachmentSource.contains("func attachIfAvailable(for session: GlanceSession?)"))
+        XCTAssertTrue(attachmentSource.contains("func clear(preservingDisplayedContent: Bool)"))
+        XCTAssertTrue(attachmentSource.contains("WebContentMouseTrackingShield.refresh(for: webContentShieldAnchorView)"))
+        XCTAssertFalse(controllerBodySource.contains("private weak var previewWebView"))
+        XCTAssertFalse(controllerBodySource.contains("private var previewHostView"))
+        XCTAssertFalse(controllerBodySource.contains("private func markPreviewWebView"))
+        XCTAssertFalse(controllerBodySource.contains("private func clearPreviewWebView"))
+    }
+
     func testGlanceOverlayControllerDelegatesLayoutActionChromeAndVisualStyleToDedicatedOwners() throws {
         let controllerSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayController.swift")
         let layoutSource = try Self.source(named: "Sumi/Components/Glance/GlanceOverlayLayout.swift")

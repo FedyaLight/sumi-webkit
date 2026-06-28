@@ -1,6 +1,5 @@
 import AppKit
 import QuartzCore
-import WebKit
 
 @MainActor
 final class GlanceOverlayController: NSObject {
@@ -12,16 +11,18 @@ final class GlanceOverlayController: NSObject {
     private let presentationState = GlanceOverlayPresentationStateOwner()
     private let promotionHandoff = GlancePromotionHandoffOwner()
     private let overlayLayout = GlanceOverlayLayout()
-    private lazy var contentVisualStyleOwner = GlanceOverlayContentVisualStyleOwner(
-        contentShadowView: contentShadowView,
-        webClipView: webClipView
-    )
-    private weak var previewWebView: FocusableWKWebView?
-    private var previewHostView: SumiWebViewContainerView?
 
     private let webContentShieldAnchorView = GlanceWebContentShieldAnchorView(frame: .zero)
     private let contentShadowView = NSView(frame: .zero)
     private let webClipView = NSView(frame: .zero)
+    private lazy var contentVisualStyleOwner = GlanceOverlayContentVisualStyleOwner(
+        contentShadowView: contentShadowView,
+        webClipView: webClipView
+    )
+    private lazy var previewHostAttachment = GlancePreviewHostAttachmentOwner(
+        webClipView: webClipView,
+        webContentShieldAnchorView: webContentShieldAnchorView
+    )
     private lazy var actionChrome = GlanceOverlayActionChrome { [weak self] action in
         self?.handleActionChromeAction(action)
     }
@@ -86,7 +87,7 @@ final class GlanceOverlayController: NSObject {
                 presentWhenReady(session: session, configuration: configuration)
             } else {
                 installViewsIfNeeded()
-                attachPreviewWebViewIfAvailable(for: session)
+                previewHostAttachment.attachIfAvailable(for: session)
                 setPresentationVisible(false)
             }
             return
@@ -112,7 +113,7 @@ final class GlanceOverlayController: NSObject {
             presentationState.queuePendingPresentation(session: session, configuration: configuration)
             _ = presentPendingIfPossible()
         } else if phase == .opening {
-            attachPreviewWebViewIfAvailable(for: session)
+            previewHostAttachment.attachIfAvailable(for: session)
         } else {
             layoutForCurrentBounds(animated: phase == .open && !configuration.reduceMotion)
         }
@@ -136,7 +137,7 @@ final class GlanceOverlayController: NSObject {
             return
         }
         if manager?.phase == .opening {
-            attachPreviewWebViewIfAvailable(for: session)
+            previewHostAttachment.attachIfAvailable(for: session)
             return
         }
         layoutForCurrentBounds(animated: false)
@@ -193,7 +194,7 @@ final class GlanceOverlayController: NSObject {
         webContentShieldAnchorView.isHidden = false
         installKeyMonitorIfNeeded()
         resetCloseConfirmation()
-        attachPreviewWebViewIfAvailable(for: session)
+        previewHostAttachment.attachIfAvailable(for: session)
 
         let targetFrame = overlayLayout.targetContentFrame(in: rootView.bounds, configuration: configuration)
         let startFrame = overlayLayout.startContentFrame(
@@ -422,13 +423,7 @@ final class GlanceOverlayController: NSObject {
         rootView?.sidebarPassthroughRect = nil
         rootView?.webContentCursorExclusionRect = nil
         rootView?.chromeCursorExclusionRect = nil
-        clearPreviewWebView()
-        if preservingPromotionHandoff {
-            previewHostView?.prepareForSuperviewTransferPreservingDisplayedContent()
-        } else {
-            webClipView.subviews.forEach { $0.removeFromSuperview() }
-        }
-        previewHostView = nil
+        previewHostAttachment.clear(preservingDisplayedContent: preservingPromotionHandoff)
         webContentShieldAnchorView.removeFromSuperview()
         actionChrome.removeFromSuperview()
         contentShadowView.removeFromSuperview()
@@ -456,70 +451,6 @@ final class GlanceOverlayController: NSObject {
         }
     }
 
-    private func attachPreviewWebViewIfAvailable(for session: GlanceSession?) {
-        guard let session,
-              let webView = session.previewTab.existingWebView
-        else { return }
-
-        markPreviewWebView(webView)
-        let hostView: SumiWebViewContainerView
-        if let existingHost = previewHostView,
-           existingHost.tabID == session.previewTab.id,
-           existingHost.webView === webView {
-            hostView = existingHost
-        } else {
-            webClipView.subviews.forEach { $0.removeFromSuperview() }
-            hostView = SumiWebViewContainerView(tab: session.previewTab, webView: webView)
-            previewHostView = hostView
-        }
-
-        guard hostView.superview !== webClipView else {
-            hostView.frame = webClipView.bounds
-            hostView.attachDisplayedContentIfNeeded()
-            return
-        }
-
-        hostView.prepareForSuperviewTransferPreservingDisplayedContent()
-        hostView.removeFromSuperview()
-        webClipView.addSubview(hostView)
-        hostView.frame = webClipView.bounds
-        hostView.autoresizingMask = [.width, .height]
-        hostView.attachDisplayedContentIfNeeded()
-        WebContentMouseTrackingShield.refresh(for: webContentShieldAnchorView)
-    }
-
-    private func markPreviewWebView(_ webView: WKWebView) {
-        guard let focusableWebView = webView as? FocusableWKWebView else { return }
-        let alreadyPrepared = previewWebView === focusableWebView
-            && focusableWebView.isTransientChromeMouseTrackingSuppressionExempt
-            && focusableWebView.keepsWebKitMouseTrackingDuringLoad
-            && focusableWebView.stabilizesCursorDuringGlancePresentation
-        guard !alreadyPrepared else {
-            return
-        }
-
-        if previewWebView !== focusableWebView {
-            clearPreviewWebView()
-            previewWebView = focusableWebView
-        }
-
-        let needsManualRefresh = focusableWebView.stabilizesCursorDuringGlancePresentation
-        focusableWebView.isTransientChromeMouseTrackingSuppressionExempt = true
-        focusableWebView.keepsWebKitMouseTrackingDuringLoad = true
-        focusableWebView.stabilizesCursorDuringGlancePresentation = true
-        if needsManualRefresh {
-            focusableWebView.refreshMouseTrackingForGlancePresentation()
-        }
-    }
-
-    private func clearPreviewWebView() {
-        guard let previewWebView else { return }
-        self.previewWebView = nil
-        previewWebView.stabilizesCursorDuringGlancePresentation = false
-        previewWebView.isTransientChromeMouseTrackingSuppressionExempt = false
-        previewWebView.keepsWebKitMouseTrackingDuringLoad = false
-    }
-
     private func layoutForCurrentBounds(animated: Bool) {
         guard let rootView,
               let configuration,
@@ -531,7 +462,7 @@ final class GlanceOverlayController: NSObject {
 
         let targetFrame = overlayLayout.targetContentFrame(in: rootView.bounds, configuration: configuration)
         let updates = {
-            self.attachPreviewWebViewIfAvailable(for: self.session)
+            self.previewHostAttachment.attachIfAvailable(for: self.session)
             self.contentShadowView.frame = targetFrame
             self.webClipView.frame = self.contentShadowView.bounds
             self.publishContentFrame(targetFrame, in: rootView)
@@ -687,7 +618,7 @@ final class GlanceOverlayController: NSObject {
         rootView.acceptsBackgroundMouseEvents = false
         actionChrome.setButtonsEnabled(false)
 
-        attachPreviewWebViewIfAvailable(for: session)
+        previewHostAttachment.attachIfAvailable(for: session)
 
         let targetFrame = overlayLayout.promotionContentFrame(in: rootView.bounds, configuration: configuration)
         publishContentFrame(targetFrame, in: rootView)
@@ -756,7 +687,7 @@ final class GlanceOverlayController: NSObject {
         }
 
         guard promotionHandoff.registerPreviewHost(
-            previewHostView,
+            previewHostAttachment.promotedHostCandidate,
             for: session,
             manager: self.manager,
             attachmentCompletion: { [weak self, weak manager, sessionID = session.id] in
