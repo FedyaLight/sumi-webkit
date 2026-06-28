@@ -440,19 +440,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertTrue(tab.didNotifyOpenToExtensions)
         XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
 
-        for _ in 0..<5 {
-            await Task.yield()
-            if let contentScriptTask =
-                manager.contentScriptContextLoadTasksByProfile[profile.id]
-            {
-                await contentScriptTask.value
-            }
-            if let nativeMessagingTask =
-                manager.initialDocumentNativeMessagingWarmupTasksByProfile[profile.id]
-            {
-                await nativeMessagingTask.task.value
-            }
-        }
+        await manager.drainExtensionRuntimeTasksForTests()
         webView.stopLoading()
     }
 

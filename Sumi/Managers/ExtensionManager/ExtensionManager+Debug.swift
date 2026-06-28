@@ -67,9 +67,8 @@ extension ExtensionManager {
     func drainExtensionRuntimeTasksForTests() async {
         while true {
             let tasks =
-                deferredTabNotificationTasksByTabID.values.map(\.task)
-                + Array(contentScriptContextLoadTasksByProfile.values)
-                + initialDocumentNativeMessagingWarmupTasksByProfile.values.map(\.task)
+                (loadedInitialDocumentRuntimePreparationOwner?
+                    .runtimeTasksForDrain() ?? [])
                 + nativeMessagingBackgroundWakeTasksByKey.values.map(\.task)
             let didDrainWakeTask = await backgroundRuntimeStateOwner
                 .drainWakeTasksForTests()

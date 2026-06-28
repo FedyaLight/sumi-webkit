@@ -804,8 +804,8 @@ extension ExtensionManager {
         requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
         clearPermissionsOriginsCompatibilityInstallations()
         extensionPageUserContentControllersByProfile.removeAll()
-        deferredTabNotificationTasksByTabID.values.forEach { $0.task.cancel() }
-        deferredTabNotificationTasksByTabID.removeAll()
+        loadedInitialDocumentRuntimePreparationOwner?
+            .cancelDeferredTabNotificationTasks()
         cancelInitialDocumentNativeMessagingWarmupTasks()
         cancelNativeMessagingBackgroundWakeTasks()
         cancelNativeMessagingSessions(reason: "resetLoadedExtensionRuntimeStateForReload")
@@ -857,11 +857,11 @@ extension ExtensionManager {
         extensionLoadGeneration &+= 1
         runtimeInitializationTask?.cancel()
         runtimeInitializationTask = nil
-        contentScriptContextLoadTasksByProfile.values.forEach { $0.cancel() }
-        contentScriptContextLoadTasksByProfile.removeAll()
+        loadedInitialDocumentRuntimePreparationOwner?
+            .cancelContentScriptContextLoadTasks()
         cancelInitialDocumentNativeMessagingWarmupTasks()
-        deferredTabNotificationTasksByTabID.values.forEach { $0.task.cancel() }
-        deferredTabNotificationTasksByTabID.removeAll()
+        loadedInitialDocumentRuntimePreparationOwner?
+            .cancelDeferredTabNotificationTasks()
         cancelNativeMessagingBackgroundWakeTasks()
         backgroundRuntimeStateOwner.cancelAllWakeTasks()
 

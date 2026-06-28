@@ -384,177 +384,33 @@ extension ExtensionManager {
     }
 
     func profileHasLoadedContentScriptContexts(profileId: UUID) -> Bool {
-        guard extensionsModuleEnabledForRuntimeBoundary() else { return true }
-
-        let contentScriptEntities = enabledPersistedExtensionEntities().filter {
-            $0.isEnabled && $0.hasContentScripts
-        }
-        guard contentScriptEntities.isEmpty == false else { return true }
-
-        return contentScriptEntities.allSatisfy { entity in
-            guard let context = getExtensionContext(for: entity.id, profileId: profileId) else {
-                return false
-            }
-            return context.isLoaded
-        }
+        initialDocumentRuntimePreparationOwner
+            .profileHasLoadedContentScriptContexts(profileId: profileId)
     }
 
     func profileNeedsContentScriptContextLoad(profileId: UUID) -> Bool {
-        profileHasLoadedContentScriptContexts(profileId: profileId) == false
+        initialDocumentRuntimePreparationOwner
+            .profileNeedsContentScriptContextLoad(profileId: profileId)
     }
 
     func profileNeedsInitialDocumentExtensionContextLoad(profileId: UUID) -> Bool {
-        return profileNeedsContentScriptContextLoad(profileId: profileId)
-            || profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profileId)
+        initialDocumentRuntimePreparationOwner
+            .profileNeedsInitialDocumentExtensionContextLoad(profileId: profileId)
     }
 
     func ensureContentScriptContextsLoaded(for profileId: UUID) async {
-        guard extensionsModuleEnabledForRuntimeBoundary() else { return }
-        guard profileNeedsContentScriptContextLoad(profileId: profileId) else { return }
-
-        if let existingTask = contentScriptContextLoadTasksByProfile[profileId] {
-            await existingTask.value
-            return
-        }
-
-        let task = Self.detachedMainActorRuntimeTask { [weak self] in
-            guard let self else { return }
-            defer { self.contentScriptContextLoadTasksByProfile.removeValue(forKey: profileId) }
-            guard Task.isCancelled == false else { return }
-
-            for entity in self.enabledPersistedExtensionEntities()
-                where entity.isEnabled && entity.hasContentScripts
-            {
-                guard Task.isCancelled == false else { return }
-                do {
-                    _ = try await self.ensureExtensionLoaded(
-                        extensionId: entity.id,
-                        profileId: profileId
-                    )
-                } catch {
-                    self.logExtensionLoadFailure(
-                        error,
-                        extensionId: entity.id,
-                        profileId: profileId,
-                        operation: "preload content-script context"
-                    )
-                }
-            }
-        }
-        contentScriptContextLoadTasksByProfile[profileId] = task
-        await task.value
+        await initialDocumentRuntimePreparationOwner
+            .ensureContentScriptContextsLoaded(for: profileId)
     }
 
-    /// Prepares extension contexts needed by the first normal-tab document.
-    ///
-    /// Manifest content scripts are still loaded lazily, but extensions that combine
-    /// `content_scripts`, background content, and the required `nativeMessaging`
-    /// permission need their background page/service worker ready before the first
-    /// content-script message. Chrome/Firefox route native messaging through that
-    /// background context, and WebKit exposes `loadBackgroundContent` for the same
-    /// app-owned preflight without opening the action popup.
     func ensureInitialDocumentExtensionContextsLoaded(for profileId: UUID) async {
-        guard extensionsModuleEnabledForRuntimeBoundary() else { return }
-        await ensureContentScriptContextsLoaded(for: profileId)
-        await ensureInitialDocumentNativeMessagingBackgroundsLoaded(for: profileId)
-    }
-
-    private func ensureInitialDocumentNativeMessagingBackgroundsLoaded(
-        for profileId: UUID
-    ) async {
-        guard extensionsModuleEnabledForRuntimeBoundary() else { return }
-        guard profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profileId)
-        else { return }
-
-        if let existingTask =
-            initialDocumentNativeMessagingWarmupTasksByProfile[profileId]
-        {
-            await existingTask.task.value
-            return
-        }
-
-        let token = UUID()
-        let task = Self.detachedMainActorRuntimeTask { [weak self] in
-            guard let self else { return }
-            defer {
-                self.finishInitialDocumentNativeMessagingWarmupTask(
-                    profileId: profileId,
-                    token: token
-                )
-            }
-            guard Task.isCancelled == false else { return }
-
-            for entity in self.initialDocumentNativeMessagingWarmupEntities(
-                profileId: profileId
-            ) {
-                guard Task.isCancelled == false else { return }
-                do {
-                    guard let extensionContext = try await self.ensureExtensionLoaded(
-                        extensionId: entity.id,
-                        profileId: profileId
-                    ) else {
-                        continue
-                    }
-                    _ = try await self.ensureBackgroundAvailableIfRequired(
-                        for: extensionContext.webExtension,
-                        context: extensionContext,
-                        reason: .nativeMessaging
-                    )
-                } catch {
-                    self.logExtensionLoadFailure(
-                        error,
-                        extensionId: entity.id,
-                        profileId: profileId,
-                        operation: "warm initial-document native messaging runtime"
-                    )
-                }
-            }
-        }
-        initialDocumentNativeMessagingWarmupTasksByProfile[profileId] = (token, task)
-        clearInitialDocumentNativeMessagingWarmupTaskIfFinishedBeforeRegistration(
-            profileId: profileId,
-            token: token
-        )
-        await task.value
-    }
-
-    private func finishInitialDocumentNativeMessagingWarmupTask(
-        profileId: UUID,
-        token: UUID
-    ) {
-        var didResolveTask = false
-        if initialDocumentNativeMessagingWarmupTasksByProfile[profileId]?.token == token {
-            initialDocumentNativeMessagingWarmupTasksByProfile.removeValue(forKey: profileId)
-            didResolveTask = true
-        }
-        if retiredInitialDocumentNativeMessagingWarmupTaskTokens.remove(token) != nil {
-            didResolveTask = true
-        }
-        guard !didResolveTask else { return }
-        finishedUnregisteredInitialDocumentNativeMessagingWarmupTaskTokens.insert(token)
-    }
-
-    private func clearInitialDocumentNativeMessagingWarmupTaskIfFinishedBeforeRegistration(
-        profileId: UUID,
-        token: UUID
-    ) {
-        guard
-            finishedUnregisteredInitialDocumentNativeMessagingWarmupTaskTokens
-                .remove(token) != nil
-        else { return }
-
-        if initialDocumentNativeMessagingWarmupTasksByProfile[profileId]?.token == token {
-            initialDocumentNativeMessagingWarmupTasksByProfile.removeValue(forKey: profileId)
-        }
+        await initialDocumentRuntimePreparationOwner
+            .ensureInitialDocumentExtensionContextsLoaded(for: profileId)
     }
 
     func cancelInitialDocumentNativeMessagingWarmupTasks() {
-        for scheduledTask in initialDocumentNativeMessagingWarmupTasksByProfile.values {
-            scheduledTask.task.cancel()
-            retiredInitialDocumentNativeMessagingWarmupTaskTokens.insert(scheduledTask.token)
-        }
-        initialDocumentNativeMessagingWarmupTasksByProfile.removeAll()
-        finishedUnregisteredInitialDocumentNativeMessagingWarmupTaskTokens.removeAll()
+        loadedInitialDocumentRuntimePreparationOwner?
+            .cancelInitialDocumentNativeMessagingWarmupTasks()
     }
 
     func logExtensionLoadFailure(
@@ -582,37 +438,8 @@ extension ExtensionManager {
     }
 
     func profileNeedsInitialDocumentNativeMessagingWarmup(profileId: UUID) -> Bool {
-        initialDocumentNativeMessagingWarmupEntities(profileId: profileId).contains {
-            backgroundRuntimeState(for: $0.id, profileId: profileId) != .loaded
-        }
-    }
-
-    private func initialDocumentNativeMessagingWarmupEntities(
-        profileId: UUID
-    ) -> [ExtensionEntity] {
-        guard extensionsModuleEnabledForRuntimeBoundary() else { return [] }
-
-        return enabledPersistedExtensionEntities().filter { entity in
-            entity.isEnabled
-                && entity.hasContentScripts
-                && entity.hasBackground
-                && extensionDeclaresNativeMessaging(entity)
-                && backgroundRuntimeState(for: entity.id, profileId: profileId) != .loaded
-        }
-    }
-
-    private func extensionDeclaresNativeMessaging(_ entity: ExtensionEntity) -> Bool {
-        let manifest =
-            loadedExtensionManifests[entity.id]
-            ?? installedExtensions.first(where: { $0.id == entity.id })?.manifest
-            ?? InstalledExtensionRecord(from: entity)?.manifest
-            ?? [:]
-        let permissions = Self.manifestStringArray(from: manifest["permissions"])
-        return permissions.contains("nativeMessaging")
-    }
-
-    private nonisolated static func manifestStringArray(from value: Any?) -> [String] {
-        value as? [String] ?? []
+        initialDocumentRuntimePreparationOwner
+            .profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profileId)
     }
 
     @discardableResult
@@ -621,40 +448,17 @@ extension ExtensionManager {
         profileId: UUID,
         reason: String = #function
     ) -> Task<Void, Never> {
-        let tabId = tab.id
-        let scheduledGeneration = extensionLoadGeneration
-        let token = UUID()
-        let task = Self.detachedMainActorRuntimeTask { [weak self] in
-            guard let self else { return }
-            defer {
-                if self.deferredTabNotificationTasksByTabID[tabId]?.token == token {
-                    self.deferredTabNotificationTasksByTabID.removeValue(forKey: tabId)
-                }
-            }
-
-            guard Task.isCancelled == false,
-                  self.extensionLoadGeneration == scheduledGeneration
-            else { return }
-
-            await self.ensureInitialDocumentExtensionContextsLoaded(for: profileId)
-
-            guard Task.isCancelled == false,
-                  self.extensionLoadGeneration == scheduledGeneration
-            else { return }
-
-            guard let resolvedTab = self.browserBridgeContext?.extensionTab(for: tabId) else { return }
-            self.reconcileTabAfterContentScriptContextsLoaded(
-                resolvedTab,
-                reason: "\(reason).afterContextLoad"
+        initialDocumentRuntimePreparationOwner
+            .scheduleDeferredTabNotificationAfterContextLoad(
+                tab,
+                profileId: profileId,
+                extensionLoadGeneration: extensionLoadGeneration,
+                reason: reason
             )
-        }
-        deferredTabNotificationTasksByTabID[tabId]?.task.cancel()
-        deferredTabNotificationTasksByTabID[tabId] = (token, task)
-        return task
     }
 
     func deferredTabNotificationTask(for tabId: UUID) -> Task<Void, Never>? {
-        deferredTabNotificationTasksByTabID[tabId]?.task
+        initialDocumentRuntimePreparationOwner.deferredTabNotificationTask(for: tabId)
     }
 
     nonisolated static func detachedMainActorRuntimeTask(

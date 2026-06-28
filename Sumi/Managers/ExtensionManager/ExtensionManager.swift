@@ -165,12 +165,27 @@ final class ExtensionManager: NSObject, ObservableObject {
     var extensionRuntimeAllowsWithoutEnabledExtensions = false
     var runtimeInitializationTask: Task<Void, Never>?
     var loadedExtensionManifests: [String: [String: Any]] = [:]
-    var deferredTabNotificationTasksByTabID:
-        [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
     var nativeMessagingBackgroundWakeTasksByKey:
         [String: (token: UUID, task: Task<Void, Never>)] = [:]
     let installCapabilityOwner = SafariExtensionInstallCapabilityOwner()
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
+    var initialDocumentRuntimePreparationOwnerStorage:
+        ExtensionInitialDocumentRuntimePreparationOwner?
+    var initialDocumentRuntimePreparationOwner:
+        ExtensionInitialDocumentRuntimePreparationOwner
+    {
+        if let initialDocumentRuntimePreparationOwnerStorage {
+            return initialDocumentRuntimePreparationOwnerStorage
+        }
+        let owner = ExtensionInitialDocumentRuntimePreparationOwner(manager: self)
+        initialDocumentRuntimePreparationOwnerStorage = owner
+        return owner
+    }
+    var loadedInitialDocumentRuntimePreparationOwner:
+        ExtensionInitialDocumentRuntimePreparationOwner?
+    {
+        initialDocumentRuntimePreparationOwnerStorage
+    }
     var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] = [:]
     var actionAnchors: [String: [WeakAnchor]] = [:]
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()
@@ -206,11 +221,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
     var extensionLoadGeneration: UInt64 = 0
     var tabOpenNotificationGeneration: UInt64 = 1
-    var contentScriptContextLoadTasksByProfile: [UUID: Task<Void, Never>] = [:]
-    var initialDocumentNativeMessagingWarmupTasksByProfile:
-        [UUID: (token: UUID, task: Task<Void, Never>)] = [:]
-    var retiredInitialDocumentNativeMessagingWarmupTaskTokens = Set<UUID>()
-    var finishedUnregisteredInitialDocumentNativeMessagingWarmupTaskTokens = Set<UUID>()
     let extensionPermissionPromptPresentationOwner =
         ExtensionPermissionPromptPresentationOwner()
     var permissionsOriginsCompatibilityInstallations:
