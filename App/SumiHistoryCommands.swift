@@ -23,11 +23,19 @@ struct SumiHistoryCommands: Commands {
         )
     }
 
+    private var historyMenuFaviconPartition: SumiFaviconPartition {
+        _ = menuFaviconInvalidator.revision
+        return SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
+    }
+
+    private var recentVisitedItems: [HistoryListItem] {
+        _ = historyManager.revision
+        return historyManager.recentVisitedItems(maxCount: 12)
+    }
+
     var body: some Commands {
         CommandMenu("History") {
-            let _ = historyManager.revision
-            let _ = menuFaviconInvalidator.revision
-            let faviconPartition = SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
+            let faviconPartition = historyMenuFaviconPartition
 
             Button("Back") {
                 browserManager.goBackInActiveWindow()
@@ -58,7 +66,7 @@ struct SumiHistoryCommands: Commands {
             Menu("Recently Closed") {
                 let recentlyClosedItems = Array(recentlyClosedManager.items.prefix(30))
                 if recentlyClosedItems.isEmpty {
-                    Button("No Recently Closed Items") {}
+                    Text("No Recently Closed Items")
                         .disabled(true)
                 } else {
                     ForEach(recentlyClosedItems) { item in
@@ -103,9 +111,9 @@ struct SumiHistoryCommands: Commands {
 
             Divider()
 
-            let visits = historyManager.recentVisitedItems(maxCount: 12)
+            let visits = recentVisitedItems
             if !visits.isEmpty {
-                Button("Recently Visited") {}
+                Text("Recently Visited")
                     .disabled(true)
 
                 ForEach(visits) { visit in

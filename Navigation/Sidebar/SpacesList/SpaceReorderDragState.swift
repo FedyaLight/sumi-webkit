@@ -94,7 +94,7 @@ struct SpaceStripLayout: Layout {
     func sizeThatFits(
         proposal: ProposedViewSize,
         subviews: Subviews,
-        cache: inout ()
+        cache _: inout ()
     ) -> CGSize {
         let minimumWidth = (CGFloat(subviews.count) * metrics.slotSize)
             + (CGFloat(max(subviews.count - 1, 0)) * metrics.minSpacing)
@@ -106,9 +106,9 @@ struct SpaceStripLayout: Layout {
 
     func placeSubviews(
         in bounds: CGRect,
-        proposal: ProposedViewSize,
+        proposal _: ProposedViewSize,
         subviews: Subviews,
-        cache: inout ()
+        cache _: inout ()
     ) {
         let geometry = SpaceStripGeometry.make(
             itemCount: subviews.count,
@@ -195,8 +195,7 @@ struct SpaceReorderDragState: Equatable {
         currentLocation = location
         let crossedBefore = hasCrossedDragThreshold
         if !hasCrossedDragThreshold,
-           distance(from: startLocation, to: location) >= Self.dragThreshold
-        {
+           distance(from: startLocation, to: location) >= Self.dragThreshold {
             hasCrossedDragThreshold = true
             visualOrder = originOrder
         }

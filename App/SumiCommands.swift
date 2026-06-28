@@ -78,7 +78,9 @@ struct SumiCommands: Commands {
             .keyboardShortcut(",", modifiers: .command)
         }
 
-        CommandGroup(replacing: .saveItem) {}
+        CommandGroup(replacing: .saveItem) {
+            EmptyView()
+        }
     }
 
     @CommandsBuilder
@@ -132,14 +134,18 @@ struct SumiCommands: Commands {
     }
 
     var body: some Commands {
-        CommandGroup(replacing: .newItem) {}
+        CommandGroup(replacing: .newItem) {
+            EmptyView()
+        }
         CommandGroup(replacing: .appTermination) {
             Button("Quit Sumi") {
                 browserManager.showQuitDialog()
             }
             .keyboardShortcut("q", modifiers: [.command])
         }
-        CommandGroup(replacing: .windowList) {}
+        CommandGroup(replacing: .windowList) {
+            EmptyView()
+        }
         CommandGroup(replacing: .windowArrangement) {
             Button("Minimize") {
                 NSApp.keyWindow?.miniaturize(nil)
@@ -190,12 +196,12 @@ struct SumiCommands: Commands {
                 browserManager.createNewWindow()
             }
             .modifier(dynamicShortcut(.newWindow))
-            
+
             Button("New Incognito Window") {
                 browserManager.createIncognitoWindow()
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
-            
+
             Divider()
             Button("Open Command Bar") {
                 let currentURL = browserManager.activePageURLForActiveWindow()?.absoluteString ?? ""
@@ -224,7 +230,6 @@ struct SumiCommands: Commands {
 
         // View commands
         CommandGroup(after: .windowSize) {
-
             Button("Find in Page") {
                 browserManager.showFindBar()
             }
@@ -235,7 +240,10 @@ struct SumiCommands: Commands {
                 browserManager.refreshCurrentTabInActiveWindow()
             }
             .modifier(dynamicShortcut(.refresh))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil || browserManager.activePageTabForActiveWindow()?.representsSumiNativeSurface == true)
+            .disabled(
+                browserManager.activePageTabForActiveWindow() == nil
+                    || browserManager.activePageTabForActiveWindow()?.representsSumiNativeSurface == true
+            )
 
             Divider()
 
@@ -263,7 +271,10 @@ struct SumiCommands: Commands {
                 browserManager.hardReloadCurrentPage()
             }
             .modifier(dynamicShortcut(.hardReload))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil || browserManager.activePageTabForActiveWindow()?.representsSumiNativeSurface == true)
+            .disabled(
+                browserManager.activePageTabForActiveWindow() == nil
+                    || browserManager.activePageTabForActiveWindow()?.representsSumiNativeSurface == true
+            )
 
             Divider()
 

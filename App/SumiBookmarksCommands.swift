@@ -32,12 +32,20 @@ struct SumiBookmarksCommands: Commands {
         self.snapshotStore = SumiBookmarkMenuSnapshotStore(bookmarkManager: bookmarkManager)
     }
 
+    private var bookmarkMenuSnapshot: SumiBookmarksSnapshot {
+        _ = bookmarkManager.revision
+        return snapshotStore.snapshot
+    }
+
+    private var bookmarkMenuFaviconPartition: SumiFaviconPartition {
+        _ = menuFaviconInvalidator.revision
+        return SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
+    }
+
     var body: some Commands {
         CommandMenu("Bookmarks") {
-            let _ = bookmarkManager.revision
-            let _ = menuFaviconInvalidator.revision
-            let bookmarkSnapshot = snapshotStore.snapshot
-            let faviconPartition = SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
+            let bookmarkSnapshot = bookmarkMenuSnapshot
+            let faviconPartition = bookmarkMenuFaviconPartition
 
             Button("Bookmark This Page…") {
                 browserManager.requestBookmarkEditorForActiveWindowFromMenu()
@@ -73,7 +81,7 @@ struct SumiBookmarksCommands: Commands {
 
             let bookmarkChildren = bookmarkSnapshot.root.children
             if bookmarkChildren.isEmpty {
-                Button("No Bookmarks") {}
+                Text("No Bookmarks")
                     .disabled(true)
             } else {
                 SumiBookmarkCommandItems(
@@ -111,7 +119,7 @@ private struct SumiBookmarkCommandItem: View {
         if entity.isFolder {
             Menu {
                 if entity.children.isEmpty {
-                    Button("Empty") {}
+                    Text("Empty")
                         .disabled(true)
                 } else {
                     SumiBookmarkCommandItems(

@@ -93,20 +93,7 @@ struct SumiApp: App {
         browserManager.windowRegistry = windowRegistry
         browserManager.sumiSettings = settingsManager
         browserManager.keyboardShortcutManager = keyboardShortcutManager
-        browserManager.windowShellContentViewFactory = {
-            [settingsManager, keyboardShortcutManager] browserManager,
-            windowRegistry,
-            webViewCoordinator,
-            windowState in
-            Self.makeWindowShellContentView(
-                browserManager: browserManager,
-                settingsManager: settingsManager,
-                keyboardShortcutManager: keyboardShortcutManager,
-                windowRegistry: windowRegistry,
-                webViewCoordinator: webViewCoordinator,
-                windowState: windowState
-            )
-        }
+        configureWindowShellContentViewFactory()
 
         // `MediaControlsView` also configures this, but tab selection / activation can refresh the
         // shared controller before the sidebar appears; without an early configure, `refreshImmediately`
@@ -132,8 +119,7 @@ struct SumiApp: App {
             browserManager.setupWindowState(windowState)
         }
 
-        windowRegistry.onWindowClose = {
-            [webViewCoordinator, weak browserManager] windowId in
+        windowRegistry.onWindowClose = { [webViewCoordinator, weak browserManager] windowId in
             // Only cleanup if browserManager still exists (it's captured weakly)
             if let browserManager = browserManager {
                 browserManager.handleWindowWillClose(windowId)
@@ -164,13 +150,11 @@ struct SumiApp: App {
             }
         }
 
-        windowRegistry.onActiveWindowChange = {
-            [weak browserManager] windowState in
+        windowRegistry.onActiveWindowChange = { [weak browserManager] windowState in
             browserManager?.setActiveWindowState(windowState)
         }
 
-        windowRegistry.onWindowVisibilityChange = {
-            [weak browserManager] windowState in
+        windowRegistry.onWindowVisibilityChange = { [weak browserManager] windowState in
             browserManager?.handleWindowVisibilityChanged(windowState)
         }
 
@@ -184,6 +168,22 @@ struct SumiApp: App {
         Task { @MainActor [browserManager] in
             await browserManager.runAutomaticPermissionCleanupIfNeeded(
                 for: browserManager.currentProfile
+            )
+        }
+    }
+
+    private func configureWindowShellContentViewFactory() {
+        let settingsManager = settingsManager
+        let keyboardShortcutManager = keyboardShortcutManager
+
+        browserManager.windowShellContentViewFactory = { browserManager, windowRegistry, webViewCoordinator, windowState in
+            Self.makeWindowShellContentView(
+                browserManager: browserManager,
+                settingsManager: settingsManager,
+                keyboardShortcutManager: keyboardShortcutManager,
+                windowRegistry: windowRegistry,
+                webViewCoordinator: webViewCoordinator,
+                windowState: windowState
             )
         }
     }

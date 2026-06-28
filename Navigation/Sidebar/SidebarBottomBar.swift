@@ -14,13 +14,13 @@ struct SidebarBottomBar: View {
     let visualSelectedSpaceId: UUID?
     let onNewSpaceTap: () -> Void
     let onSelectSpace: (Space) -> Void
-    
+
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
             DownloadsToolbarButton()
                 .environmentObject(browserManager)
                 .environment(windowState)
-            
+
             // Hide spaces list in incognito windows (only one ephemeral space)
             if !windowState.isIncognito {
                 SpacesList(
@@ -31,7 +31,7 @@ struct SidebarBottomBar: View {
                     .environmentObject(browserManager)
                     .environment(windowState)
             }
-            
+
             // Hide new space button in incognito windows
             if !windowState.isIncognito {
                 newSpaceButton
@@ -43,9 +43,12 @@ struct SidebarBottomBar: View {
     private var newSpaceButton: some View {
         Group {
             if presentationContext.inputMode == .collapsedOverlay {
-                Button(action: {}) {
+                Button(
+                    action: { _ = () },
+                    label: {
                     newSpaceButtonLabel
-                }
+                    }
+                )
                 .buttonStyle(NavButtonStyle())
                 .sidebarAppKitContextMenu(
                     surfaceKind: .button,
@@ -109,9 +112,30 @@ struct SidebarBottomBar: View {
                 title: "New Live Folder",
                 systemImage: "sparkles",
                 children: [
-                    .action(.init(title: "RSS Feed", systemImage: "dot.radiowaves.left.and.right", classification: .structuralMutation, onAction: createRSSLiveFolderInCurrentSpace)),
-                    .action(.init(title: "GitHub Pull Requests", systemImage: "chevron.left.forwardslash.chevron.right", classification: .structuralMutation, onAction: createGitHubPullRequestsLiveFolderInCurrentSpace)),
-                    .action(.init(title: "GitHub Issues", systemImage: "exclamationmark.circle", classification: .structuralMutation, onAction: createGitHubIssuesLiveFolderInCurrentSpace)),
+                    .action(
+                        .init(
+                            title: "RSS Feed",
+                            systemImage: "dot.radiowaves.left.and.right",
+                            classification: .structuralMutation,
+                            onAction: createRSSLiveFolderInCurrentSpace
+                        )
+                    ),
+                    .action(
+                        .init(
+                            title: "GitHub Pull Requests",
+                            systemImage: "chevron.left.forwardslash.chevron.right",
+                            classification: .structuralMutation,
+                            onAction: createGitHubPullRequestsLiveFolderInCurrentSpace
+                        )
+                    ),
+                    .action(
+                        .init(
+                            title: "GitHub Issues",
+                            systemImage: "exclamationmark.circle",
+                            classification: .structuralMutation,
+                            onAction: createGitHubIssuesLiveFolderInCurrentSpace
+                        )
+                    ),
                 ]
             ),
         ]

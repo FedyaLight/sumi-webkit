@@ -206,15 +206,14 @@ struct SpacesList: View {
     private func draggedSpaceOverlay(spaces: [Space]) -> some View {
         if let draggedSpaceId = reorderState.draggedSpaceId,
            let draggedSpace = spaces.first(where: { $0.id == draggedSpaceId }),
-           let frame = reorderState.draggedOverlayFrame()
-        {
+           let frame = reorderState.draggedOverlayFrame() {
             SpacesListItem(
                 space: draggedSpace,
                 isActive: visualSelectedSpaceId == draggedSpace.id,
                 compact: layoutMode == .compact,
                 isFaded: false,
                 metrics: metrics,
-                onSelect: {},
+                onSelect: { _ = () },
                 onHoverChange: nil
             )
             .environmentObject(browserManager)
@@ -232,8 +231,7 @@ struct SpacesList: View {
         if showPreview,
            let hoveredId = hoveredSpaceId,
            hoveredId != visualSelectedSpaceId,
-           let hoveredSpace = spaces.first(where: { $0.id == hoveredId })
-        {
+           let hoveredSpace = spaces.first(where: { $0.id == hoveredId }) {
             Text(hoveredSpace.name)
                 .font(.caption)
                 .foregroundStyle(previewTextColor)
@@ -248,7 +246,6 @@ struct SpacesList: View {
                 .offset(y: -20)
         }
     }
-
 }
 
 // MARK: - Layout Mode

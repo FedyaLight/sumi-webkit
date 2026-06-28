@@ -72,16 +72,16 @@ struct NavMenuStyle: MenuStyle {
     VStack(spacing: 20) {
         // Default
         Menu("Options", systemImage: "ellipsis") {
-            Button("Item 1") { }
-            Button("Item 2") { }
+            Button("Item 1") { RuntimeDiagnostics.emit("Item 1") }
+            Button("Item 2") { RuntimeDiagnostics.emit("Item 2") }
         }
         .labelStyle(.iconOnly)
         .menuStyle(NavMenuStyle())
 
         // With foregroundStyle
         Menu("More", systemImage: "ellipsis.circle") {
-            Button("Option A") { }
-            Button("Option B") { }
+            Button("Option A") { RuntimeDiagnostics.emit("Option A") }
+            Button("Option B") { RuntimeDiagnostics.emit("Option B") }
         }
         .labelStyle(.iconOnly)
         .menuStyle(NavMenuStyle())
@@ -90,27 +90,27 @@ struct NavMenuStyle: MenuStyle {
         // Different sizes
         HStack {
             Menu("", systemImage: "star") {
-                Button("Item") { }
+                Button("Item") { RuntimeDiagnostics.emit("Mini item") }
             }
             .labelStyle(.iconOnly)
             .menuStyle(NavMenuStyle())
             .controlSize(.mini)
 
             Menu("", systemImage: "star") {
-                Button("Item") { }
+                Button("Item") { RuntimeDiagnostics.emit("Small item") }
             }
             .labelStyle(.iconOnly)
             .menuStyle(NavMenuStyle())
             .controlSize(.small)
 
             Menu("", systemImage: "star") {
-                Button("Item") { }
+                Button("Item") { RuntimeDiagnostics.emit("Regular item") }
             }
             .labelStyle(.iconOnly)
             .menuStyle(NavMenuStyle())
 
             Menu("", systemImage: "star") {
-                Button("Item") { }
+                Button("Item") { RuntimeDiagnostics.emit("Large item") }
             }
             .labelStyle(.iconOnly)
             .menuStyle(NavMenuStyle())
@@ -119,7 +119,7 @@ struct NavMenuStyle: MenuStyle {
 
         // Disabled
         Menu("Disabled", systemImage: "gear") {
-            Button("Item") { }
+            Button("Item") { RuntimeDiagnostics.emit("Disabled item") }
         }
         .labelStyle(.iconOnly)
         .menuStyle(NavMenuStyle())

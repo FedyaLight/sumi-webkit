@@ -35,7 +35,7 @@ struct NavButtonStyle: ButtonStyle {
                 .foregroundStyle(tokens.primaryText)
         }
         .opacity(isEnabled ? 1.0 : 0.3)
-        
+
         .contentTransition(.symbolEffect(.replace.upUp.byLayer, options: .nonRepeating))
         .scaleEffect(configuration.isPressed && isEnabled ? 0.95 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
@@ -44,7 +44,7 @@ struct NavButtonStyle: ButtonStyle {
             isHovering = hovering
         }
     }
-    
+
     private var size: CGFloat {
         if let diameter {
             return diameter
@@ -60,11 +60,11 @@ struct NavButtonStyle: ButtonStyle {
         @unknown default: 32
         }
     }
-    
+
     private var cornerRadius: CGFloat {
         8
     }
-    
+
     private func backgroundColor(isPressed: Bool) -> Color {
         guard (isHovering || isPressed) && isEnabled else {
             return .clear
@@ -162,21 +162,21 @@ struct RectNavButtonStyle: ButtonStyle {
 
         // Different sizes
         HStack {
-            Button { } label: { Image(systemName: "star") }
+            Button { RuntimeDiagnostics.emit("Tapped") } label: { Image(systemName: "star") }
                 .buttonStyle(NavButtonStyle())
                 .foregroundStyle(Color.pink)
                 .controlSize(.mini)
 
-            Button { } label: { Image(systemName: "star") }
+            Button { RuntimeDiagnostics.emit("Tapped") } label: { Image(systemName: "star") }
                 .buttonStyle(NavButtonStyle())
                 .foregroundStyle(Color.purple)
                 .controlSize(.small)
 
-            Button { } label: { Image(systemName: "star") }
+            Button { RuntimeDiagnostics.emit("Tapped") } label: { Image(systemName: "star") }
                 .buttonStyle(NavButtonStyle())
                 .foregroundStyle(Color.yellow)
 
-            Button { } label: { Image(systemName: "star") }
+            Button { RuntimeDiagnostics.emit("Tapped") } label: { Image(systemName: "star") }
                 .buttonStyle(NavButtonStyle())
                 .foregroundStyle(Color.orange)
                 .controlSize(.large)
@@ -217,21 +217,21 @@ struct RectNavButtonStyle: ButtonStyle {
 
         // Different sizes
         VStack(spacing: 12) {
-            Button { } label: { Label("Mini", systemImage: "star") }
+            Button { RuntimeDiagnostics.emit("Mini") } label: { Label("Mini", systemImage: "star") }
                 .buttonStyle(RectNavButtonStyle())
                 .foregroundStyle(Color.pink)
                 .controlSize(.mini)
 
-            Button { } label: { Label("Small", systemImage: "star") }
+            Button { RuntimeDiagnostics.emit("Small") } label: { Label("Small", systemImage: "star") }
                 .buttonStyle(RectNavButtonStyle())
                 .foregroundStyle(Color.purple)
                 .controlSize(.small)
 
-            Button { } label: { Label("Regular", systemImage: "star") }
+            Button { RuntimeDiagnostics.emit("Regular") } label: { Label("Regular", systemImage: "star") }
                 .buttonStyle(RectNavButtonStyle())
                 .foregroundStyle(Color.yellow)
 
-            Button { } label: { Label("Large", systemImage: "star") }
+            Button { RuntimeDiagnostics.emit("Large") } label: { Label("Large", systemImage: "star") }
                 .buttonStyle(RectNavButtonStyle())
                 .foregroundStyle(Color.orange)
                 .controlSize(.large)

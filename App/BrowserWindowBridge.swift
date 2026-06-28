@@ -21,7 +21,7 @@ struct BrowserWindowBridge: NSViewRepresentable {
         nsView.attachToCurrentWindow()
     }
 
-    static func dismantleNSView(_ nsView: BrowserWindowBridgeView, coordinator: Coordinator) {
+    static func dismantleNSView(_: BrowserWindowBridgeView, coordinator: Coordinator) {
         coordinator.detach()
     }
 

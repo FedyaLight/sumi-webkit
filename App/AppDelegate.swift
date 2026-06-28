@@ -41,7 +41,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     // MARK: - Application Lifecycle
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationDidFinishLaunching(_ _: Notification) {
         UNUserNotificationCenter.current().delegate = self
         setupURLEventHandling()
         setupMouseButtonHandling()
@@ -51,24 +51,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    func applicationDidBecomeActive(_ notification: Notification) {
+    func applicationDidBecomeActive(_ _: Notification) {
         scheduleCloseMenuConfiguration()
         appLifecycleHandler?.handleApplicationDidBecomeActive()
     }
 
-    func applicationWillResignActive(_ notification: Notification) {
+    func applicationWillResignActive(_ _: Notification) {
         appLifecycleHandler?.handleApplicationWillResignActive()
     }
 
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
+        _ _: UNUserNotificationCenter,
+        willPresent _: UNNotification
     ) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
 
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
+        _ _: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
         RuntimeDiagnostics.debug(
@@ -100,8 +100,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     ///
     /// This is common in browsers - side buttons on gaming/office mice are often used for navigation.
     private func setupMouseButtonHandling() {
-        _ = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) {
-            [weak self] event in
+        _ = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
             guard let self = self,
                   let commandRouter = self.commandRouter,
                   let webViewLookup = self.webViewLookup,
@@ -110,7 +109,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             // Mouse events are delivered on the main thread, so we can safely assume main actor isolation
             MainActor.assumeIsolated {
                 switch event.buttonNumber {
-                case 2:  // Middle mouse button
+                case 2: // Middle mouse button
                     if let activeWindow = registry.activeWindow {
                         commandRouter.focusFloatingBar(
                             in: activeWindow,
@@ -118,7 +117,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                             navigateCurrentTab: false
                         )
                     }
-                case 3:  // Back button
+                case 3: // Back button
                     guard
                         let windowState = registry.activeWindow,
                         let currentTab = commandRouter.currentTab(for: windowState),
@@ -127,7 +126,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                         return
                     }
                     webView.goBack()
-                case 4:  // Forward button
+                case 4: // Forward button
                     guard
                         let windowState = registry.activeWindow,
                         let currentTab = commandRouter.currentTab(for: windowState),
@@ -177,8 +176,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @MainActor @objc private func handleCloseTabMenuItem(_ sender: Any?) {
         if let keyWindow = NSApp.keyWindow,
-           windowRegistry?.windows.values.contains(where: { $0.window === keyWindow }) != true
-        {
+           windowRegistry?.windows.values.contains(where: { $0.window === keyWindow }) != true {
             keyWindow.performClose(sender)
             return
         }
@@ -187,8 +185,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     @MainActor @objc private func handleCloseWindowMenuItem(_ sender: Any?) {
         if let keyWindow = NSApp.keyWindow,
-           windowRegistry?.windows.values.contains(where: { $0.window === keyWindow }) != true
-        {
+           windowRegistry?.windows.values.contains(where: { $0.window === keyWindow }) != true {
             keyWindow.performClose(sender)
             return
         }
@@ -196,7 +193,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     /// Handles URLs opened from external sources (e.g., Finder, other apps)
-    func application(_ application: NSApplication, open urls: [URL]) {
+    func application(_: NSApplication, open urls: [URL]) {
         urls.forEach { handleIncoming(url: $0) }
     }
 
@@ -383,7 +380,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    func applicationWillTerminate(_: Notification) {
         AppDelegate.log.info("applicationWillTerminate called")
     }
 

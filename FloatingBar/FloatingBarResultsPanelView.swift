@@ -109,6 +109,8 @@ private struct FloatingBarSuggestionsListView: View {
                         )
                         .contentShape(RoundedRectangle(cornerRadius: 6))
                         .id(index)
+                        .accessibilityLabel(accessibilityLabel(for: suggestion))
+                        .accessibilityAddTraits(.isButton)
                         .onHover { hovering in
                             hoveredIndex = hovering ? index : nil
                         }
@@ -158,7 +160,7 @@ private struct FloatingBarSuggestionsListView: View {
             )
         case .bookmark(let bookmark):
             GenericSuggestionItem(
-                icon: Image(systemName: "bookmark.fill"),
+                systemImage: "bookmark.fill",
                 text: bookmark.title,
                 actionLabel: "Open Bookmark",
                 isSelected: isSelected,
@@ -168,7 +170,7 @@ private struct FloatingBarSuggestionsListView: View {
             )
         case .url:
             GenericSuggestionItem(
-                icon: Image(systemName: "link"),
+                systemImage: "link",
                 text: suggestion.text,
                 actionLabel: "Open URL",
                 isSelected: isSelected,
@@ -178,13 +180,28 @@ private struct FloatingBarSuggestionsListView: View {
             )
         case .search:
             GenericSuggestionItem(
-                icon: Image(systemName: "magnifyingglass"),
+                systemImage: "magnifyingglass",
                 text: suggestion.text,
                 isSelected: isSelected,
                 selectedForeground: selectedForeground,
                 selectedChipBackground: selectedChipBackground,
                 selectedChipForeground: selectedChipForeground
             )
+        }
+    }
+
+    private func accessibilityLabel(for suggestion: SearchManager.SearchSuggestion) -> String {
+        switch suggestion.type {
+        case .tab:
+            return "Switch to tab, \(suggestion.text)"
+        case .bookmark:
+            return "Open bookmark, \(suggestion.text)"
+        case .history(let entry):
+            return "Open history item, \(entry.displayTitle), \(entry.displayURL)"
+        case .url:
+            return "Open URL, \(suggestion.text)"
+        case .search:
+            return "Search, \(suggestion.text)"
         }
     }
 }

@@ -11,16 +11,16 @@ struct HistorySuggestionItem: View {
     let entry: HistoryListItem
     var isSelected: Bool = false
     var isHovered: Bool = false
-    var selectedForeground: Color? = nil
-    var onDelete: (() -> Void)? = nil
-    
-    @State private var resolvedFavicon: SwiftUI.Image? = nil
+    var selectedForeground: Color?
+    var onDelete: (() -> Void)?
+
+    @State private var resolvedFavicon: NSImage?
     @State private var isDeleteConfirming = false
     @State private var isDeleteHovered = false
     @EnvironmentObject private var browserManager: BrowserManager
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    
+
     private var colors: ColorConfig {
         let tokens = themeContext.tokens(settings: sumiSettings)
         return ColorConfig(
@@ -33,7 +33,7 @@ struct HistorySuggestionItem: View {
     private var isDeleteVisible: Bool {
         isHovered || isDeleteConfirming
     }
-    
+
     var body: some View {
         HStack(alignment: .center, spacing: 9) {
             FloatingBarFaviconContainer {
@@ -43,8 +43,9 @@ struct HistorySuggestionItem: View {
                         width: FloatingBarSuggestionMetrics.faviconImageSize,
                         height: FloatingBarSuggestionMetrics.faviconImageSize
                     )
+                    .accessibilityHidden(true)
             }
-            
+
             historyLine
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(0)
@@ -74,11 +75,15 @@ struct HistorySuggestionItem: View {
         SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
     }
 
-    private var faviconImage: Image {
+    @ViewBuilder
+    private var faviconImage: some View {
         if let resolvedFavicon {
-            return resolvedFavicon
+            Image(nsImage: resolvedFavicon)
+                .accessibilityHidden(true)
+        } else {
+            Image(nsImage: SumiFaviconResolver.menuImage(for: entry.url, partition: faviconPartition))
+                .accessibilityHidden(true)
         }
-        return Image(nsImage: SumiFaviconResolver.menuImage(for: entry.url, partition: faviconPartition))
     }
 
     @ViewBuilder
@@ -95,8 +100,10 @@ struct HistorySuggestionItem: View {
                             .frame(width: 24, height: 24)
                             .background(colors.deleteButtonBackground(isHovered: false))
                             .clipShape(FloatingBarSuggestionMetrics.controlShape)
+                            .accessibilityHidden(true)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Cancel history deletion")
                     .help("Cancel history deletion")
 
                     Button {
@@ -109,8 +116,10 @@ struct HistorySuggestionItem: View {
                             .frame(width: 24, height: 24)
                             .background(colors.confirmDeleteBackground)
                             .clipShape(FloatingBarSuggestionMetrics.controlShape)
+                            .accessibilityHidden(true)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Confirm history deletion")
                     .help("Confirm history deletion")
                 }
             } else {
@@ -123,8 +132,10 @@ struct HistorySuggestionItem: View {
                         .frame(width: 24, height: 24)
                         .background(colors.deleteButtonBackground(isHovered: isDeleteHovered))
                         .clipShape(FloatingBarSuggestionMetrics.controlShape)
+                        .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Delete history entry")
                 .help("Delete history entry")
                 .onHover { hovering in
                     isDeleteHovered = hovering
@@ -143,21 +154,20 @@ struct HistorySuggestionItem: View {
         )
         .accessibilityLabel("\(entry.displayTitle) - \(entry.displayURL)")
     }
-    
+
     private func fetchFavicon(for url: URL) async {
-        let defaultFavicon = SwiftUI.Image(systemName: "globe")
         guard SumiFaviconResolver.cacheKey(for: url) != nil else {
-            await MainActor.run { self.resolvedFavicon = defaultFavicon }
+            await MainActor.run { self.resolvedFavicon = nil }
             return
         }
 
         guard let image = await SumiFaviconResolver.image(for: url, partition: faviconPartition) else {
-            await MainActor.run { self.resolvedFavicon = defaultFavicon }
+            await MainActor.run { self.resolvedFavicon = nil }
             return
         }
 
         await MainActor.run {
-            self.resolvedFavicon = SwiftUI.Image(nsImage: image)
+            self.resolvedFavicon = image
         }
     }
 }
@@ -230,7 +240,8 @@ private final class FloatingBarHistoryLineNSView: NSView {
         setup()
     }
 
-    required init?(coder: NSCoder) {
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
@@ -255,7 +266,7 @@ private final class FloatingBarHistoryLineNSView: NSView {
                 string: title,
                 attributes: [
                     .font: font,
-                    .foregroundColor: titleColor
+                    .foregroundColor: titleColor,
                 ]
             )
         )
@@ -264,7 +275,7 @@ private final class FloatingBarHistoryLineNSView: NSView {
                 string: " - ",
                 attributes: [
                     .font: font,
-                    .foregroundColor: urlColor
+                    .foregroundColor: urlColor,
                 ]
             )
         )
@@ -273,7 +284,7 @@ private final class FloatingBarHistoryLineNSView: NSView {
                 string: url,
                 attributes: [
                     .font: font,
-                    .foregroundColor: urlColor
+                    .foregroundColor: urlColor,
                 ]
             )
         )
@@ -309,7 +320,7 @@ private final class FloatingBarHistoryLineNSView: NSView {
             textField.leadingAnchor.constraint(equalTo: leadingAnchor),
             textField.trailingAnchor.constraint(equalTo: trailingAnchor),
             textField.topAnchor.constraint(equalTo: topAnchor),
-            textField.bottomAnchor.constraint(equalTo: bottomAnchor)
+            textField.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 
@@ -353,19 +364,19 @@ private struct ColorConfig {
         self.isSelected = isSelected
         self.selectedForeground = selectedForeground
     }
-    
+
     var titleColor: Color {
         isSelected ? (selectedForeground ?? tokens.primaryText) : tokens.secondaryText
     }
-    
+
     var urlColor: Color {
         isSelected ? (selectedForeground ?? tokens.primaryText).opacity(0.86) : tokens.tertiaryText
     }
-    
+
     var faviconColor: Color {
         isSelected ? (selectedForeground ?? tokens.primaryText) : tokens.secondaryText
     }
-    
+
     func deleteButtonColor(isHovered: Bool) -> Color {
         if isHovered {
             return Color.red.opacity(0.9)

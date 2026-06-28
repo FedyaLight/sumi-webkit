@@ -14,14 +14,14 @@ enum FloatingBarSuggestionMetrics {
 }
 
 struct GenericSuggestionItem: View {
-    let icon: Image
+    let systemImage: String
     let text: String
-    var actionLabel: String? = nil
+    var actionLabel: String?
     var isSelected: Bool = false
-    var selectedForeground: Color? = nil
-    var selectedChipBackground: Color? = nil
-    var selectedChipForeground: Color? = nil
-    
+    var selectedForeground: Color?
+    var selectedChipBackground: Color?
+    var selectedChipForeground: Color?
+
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
@@ -33,7 +33,7 @@ struct GenericSuggestionItem: View {
 
         HStack(alignment: .center, spacing: 12) {
             FloatingBarFaviconContainer {
-                icon
+                Image(systemName: systemImage)
                     .resizable()
                     .scaledToFit()
                     .frame(
@@ -41,6 +41,7 @@ struct GenericSuggestionItem: View {
                         height: FloatingBarSuggestionMetrics.symbolIconSize
                     )
                     .foregroundStyle(foreground)
+                    .accessibilityHidden(true)
             }
 
             FloatingBarFadingText(
@@ -123,7 +124,7 @@ struct FloatingBarTrailingFadeMask: View {
                 stops: [
                     .init(color: .black, location: 0),
                     .init(color: .black, location: fadeStart),
-                    .init(color: .clear, location: 1)
+                    .init(color: .clear, location: 1),
                 ],
                 startPoint: .leading,
                 endPoint: .trailing

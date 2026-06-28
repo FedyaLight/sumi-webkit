@@ -40,29 +40,29 @@ struct WindowView: View {
 
             ZStack {
                 chromeThemeScope {
-                    WindowBackground()
+                    windowBackground()
                 }
                 .sumiAppKitContextMenu(entries: {
-                [
-                    .action(
-                        SidebarContextMenuAction(
-                            title: "Customize Space Gradient...",
-                            systemImage: "paintpalette",
-                            isEnabled: browserManager.tabManager.currentSpace != nil,
-                            classification: .presentationOnly,
-                            action: {
-                            browserManager.showGradientEditor(
-                                source: windowState.resolveSidebarPresentationSource()
+                    [
+                        .action(
+                            SidebarContextMenuAction(
+                                title: "Customize Space Gradient...",
+                                systemImage: "paintpalette",
+                                isEnabled: browserManager.tabManager.currentSpace != nil,
+                                classification: .presentationOnly,
+                                action: {
+                                    browserManager.showGradientEditor(
+                                        source: windowState.resolveSidebarPresentationSource()
+                                    )
+                                }
                             )
-                            }
-                        )
-                    )
-                ]
-            })
+                        ),
+                    ]
+                })
 
-                SidebarWebViewStack(windowChromeSize: windowChromeSize)
+                sidebarWebViewStack(windowChromeSize: windowChromeSize)
 
-            // Collapsed hover-reveal sidebar overlay. Docked sidebar is a real layout column.
+                // Collapsed hover-reveal sidebar overlay. Docked sidebar is a real layout column.
                 if shouldRenderCollapsedSidebarOverlay {
                     chromeThemeScope {
                         SidebarHoverOverlayView(
@@ -76,30 +76,30 @@ struct WindowView: View {
                     }
                 }
 
-            // Floating bar is full-window chrome so its floating position is stable in both
-            // docked and collapsed sidebar layouts.
+                // Floating bar is full-window chrome so its floating position is stable in both
+                // docked and collapsed sidebar layouts.
                 chromeThemeScope {
                     FloatingBarChromeHost(
-                    browserManager: browserManager,
-                    windowState: windowState,
-                    sumiSettings: sumiSettings,
-                    resolvedThemeContext: resolvedThemeContext,
-                    colorScheme: nativeSurfaceColorScheme,
-                    isPresented: windowState.isFloatingBarVisible && !transientChromeModalSuppressed
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .zIndex(WindowTransientChromeZIndex.floatingBar)
-            }
+                        browserManager: browserManager,
+                        windowState: windowState,
+                        sumiSettings: sumiSettings,
+                        resolvedThemeContext: resolvedThemeContext,
+                        colorScheme: nativeSurfaceColorScheme,
+                        isPresented: windowState.isFloatingBarVisible && !transientChromeModalSuppressed
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .zIndex(WindowTransientChromeZIndex.floatingBar)
+                }
 
-            // Glance overlay for external link previews
+                // Glance overlay for external link previews
                 if shouldRenderGlanceOverlay {
                     chromeThemeScope {
                         GlanceOverlayView()
-                        .environmentObject(glanceManager)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .zIndex(WindowTransientChromeZIndex.glance)
+                            .environmentObject(glanceManager)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .zIndex(WindowTransientChromeZIndex.glance)
+                    }
                 }
-            }
 
                 if let glanceFindInPageSession,
                    let contentFrame = glanceFindInPageSession.contentFrameInWindowSpace {
@@ -121,13 +121,12 @@ struct WindowView: View {
 
                 chromeThemeScope {
                     SidebarFloatingDragPreview()
-                    .environmentObject(browserManager)
-                    .environment(windowState)
-                    .environment(\.sumiSettings, sumiSettings)
-                    .zIndex(WindowTransientChromeZIndex.sidebarDragPreview)
-                    .allowsHitTesting(false)
-            }
-
+                        .environmentObject(browserManager)
+                        .environment(windowState)
+                        .environment(\.sumiSettings, sumiSettings)
+                        .zIndex(WindowTransientChromeZIndex.sidebarDragPreview)
+                        .allowsHitTesting(false)
+                }
             }
         }
         // System feedback toast - top trailing corner
@@ -244,7 +243,7 @@ struct WindowView: View {
     }
 
     @ViewBuilder
-    private func WindowBackground() -> some View {
+    private func windowBackground() -> some View {
         SpaceGradientBackgroundView(
             surface: .toolbarChrome,
             nativeMaterialRole: .nativeGlassChrome
@@ -254,7 +253,7 @@ struct WindowView: View {
     }
 
     @ViewBuilder
-    private func SidebarWebViewStack(windowChromeSize: CGSize) -> some View {
+    private func sidebarWebViewStack(windowChromeSize: CGSize) -> some View {
         let sidebarVisible = windowState.isSidebarVisible
         let horizontalInsets = chromeGeometry.contentEdgeInsets
         let sidebarPosition = sumiSettings.sidebarPosition
@@ -265,17 +264,17 @@ struct WindowView: View {
             : dockedSidebarLayoutProgress
         let leftLayoutProgress = rendersDockedSidebar && shellEdge.isLeft ? layoutProgress : 0
         let rightLayoutProgress = rendersDockedSidebar && shellEdge.isRight ? layoutProgress : 0
-        
+
         HStack(spacing: 0) {
             if rendersDockedSidebar && shellEdge.isLeft {
-                SidebarDockedColumn(
+                sidebarDockedColumn(
                     sidebarPosition: sidebarPosition,
                     layoutProgress: layoutProgress,
                     windowChromeSize: windowChromeSize
                 )
             }
 
-            WebContent()
+            webContent()
                 .scaleEffect(glanceWebContentScale)
                 .opacity(glanceWebContentOpacity)
                 .transaction { transaction in
@@ -287,7 +286,7 @@ struct WindowView: View {
                 .animation(glanceWebContentAnimation, value: glanceWebContentIsDimmed)
 
             if rendersDockedSidebar && shellEdge.isRight {
-                SidebarDockedColumn(
+                sidebarDockedColumn(
                     sidebarPosition: sidebarPosition,
                     layoutProgress: layoutProgress,
                     windowChromeSize: windowChromeSize
@@ -299,7 +298,7 @@ struct WindowView: View {
     }
 
     @ViewBuilder
-    private func SidebarDockedColumn(
+    private func sidebarDockedColumn(
         sidebarPosition: SidebarPosition,
         layoutProgress: CGFloat,
         windowChromeSize: CGSize
@@ -370,7 +369,7 @@ struct WindowView: View {
     }
 
     @ViewBuilder
-    private func WebContent() -> some View {
+    private func webContent() -> some View {
         ZStack(alignment: .top) {
             WebsiteView()
                 .zIndex(2000)
@@ -464,7 +463,7 @@ struct WindowView: View {
     private var globalColorScheme: ColorScheme {
         switch sumiSettings.windowSchemeMode {
         case .auto:
-            let _ = effectiveAppearanceRevision
+            _ = effectiveAppearanceRevision
             return ColorScheme(effectiveAppearance: appKitGlobalAppearance)
         case .light:
             return .light
@@ -484,6 +483,7 @@ struct WindowView: View {
                         .onTapGesture {
                             windowState.dismissToast(id: toast.id)
                         }
+                        .accessibilityAddTraits(.isButton)
                 }
                 .transition(effectiveReduceMotion ? .opacity : .toast)
             }

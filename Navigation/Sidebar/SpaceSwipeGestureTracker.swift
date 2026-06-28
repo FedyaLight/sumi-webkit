@@ -83,7 +83,7 @@ struct SpaceSwipeGestureTracker {
             return .init(handling: .forwardToUnderlying, emittedEvents: [])
         }
 
-        if sample.momentumPhase != [] {
+        if !sample.momentumPhase.isEmpty {
             return .init(
                 handling: axisLock == .horizontal ? .consume : .forwardToUnderlying,
                 emittedEvents: []
@@ -92,7 +92,7 @@ struct SpaceSwipeGestureTracker {
 
         var emittedEvents: [SpaceSwipeGestureEvent] = []
 
-        if sample.phase.contains(.began) || (!didSendBeginEvent && sample.phase != []) {
+        if sample.phase.contains(.began) || (!didSendBeginEvent && !sample.phase.isEmpty) {
             beginGestureIfNeeded(into: &emittedEvents)
         }
 
@@ -105,76 +105,11 @@ struct SpaceSwipeGestureTracker {
         }
 
         if sample.phase.contains(.ended) {
-            switch axisLock {
-            case .horizontal:
-                return finishTracking(
-                    phase: .ended,
-                    width: width,
-                    prefixEvents: emittedEvents
-                )
-            case .unresolved:
-                emittedEvents.append(.init(phase: .cancelled, direction: nil, progress: 0))
-                reset()
-                return .init(handling: .consume, emittedEvents: emittedEvents)
-            case .vertical:
-                reset()
-                return .init(handling: .forwardToUnderlying, emittedEvents: emittedEvents)
-            }
+            return handleEndedPhase(width: width, emittedEvents: emittedEvents)
         }
 
-        if sample.phase.contains(.changed) || sample.phase == [] {
-            cumulativeDeltaX += sample.scrollingDeltaX
-            cumulativeDeltaY += sample.scrollingDeltaY
-
-            switch axisLock {
-            case .unresolved:
-                let absoluteX = abs(cumulativeDeltaX)
-                let absoluteY = abs(cumulativeDeltaY)
-
-                if absoluteX >= SpaceSidebarTransitionConfig.axisLockDistance,
-                   absoluteX > (absoluteY * SpaceSidebarTransitionConfig.axisLockDominanceMultiplier) {
-                    axisLock = .horizontal
-                } else if absoluteY >= SpaceSidebarTransitionConfig.axisLockDistance,
-                          absoluteY > (absoluteX * SpaceSidebarTransitionConfig.axisLockDominanceMultiplier) {
-                    axisLock = .vertical
-                    emittedEvents.append(.init(phase: .cancelled, direction: nil, progress: 0))
-                    return .init(handling: .forwardToUnderlying, emittedEvents: emittedEvents)
-                } else {
-                    return .init(handling: .consume, emittedEvents: emittedEvents)
-                }
-            case .vertical:
-                return .init(handling: .forwardToUnderlying, emittedEvents: emittedEvents)
-            case .horizontal:
-                break
-            }
-
-            let resolvedWidth = max(width, 1)
-            let directionSeed = abs(cumulativeDeltaX) > abs(sample.scrollingDeltaX)
-                ? cumulativeDeltaX
-                : sample.scrollingDeltaX
-            let direction = SpaceSidebarSwipePhysics.latchedDirection(
-                current: lastDirection,
-                rawDeltaX: directionSeed
-            )
-            let progress = SpaceSidebarSwipePhysics.normalizedProgress(
-                distance: abs(cumulativeDeltaX),
-                width: resolvedWidth
-            )
-            let directionChanged = direction != lastDirection
-            lastDirection = direction
-
-            if abs(progress - lastProgress) >= SpaceSidebarTransitionConfig.swipeProgressEpsilon || directionChanged {
-                lastProgress = progress
-                emittedEvents.append(
-                    .init(
-                        phase: .changed,
-                        direction: direction,
-                        progress: progress
-                    )
-                )
-            }
-
-            return .init(handling: .consume, emittedEvents: emittedEvents)
+        if sample.phase.contains(.changed) || sample.phase.isEmpty {
+            return handleChangedPhase(sample, width: width, emittedEvents: emittedEvents)
         }
 
         let shouldConsumeUnresolvedGesture = didSendBeginEvent && axisLock == .unresolved
@@ -183,6 +118,100 @@ struct SpaceSwipeGestureTracker {
                 ? .consume
                 : .forwardToUnderlying,
             emittedEvents: emittedEvents
+        )
+    }
+
+    private mutating func handleEndedPhase(
+        width: CGFloat,
+        emittedEvents: [SpaceSwipeGestureEvent]
+    ) -> SpaceSwipeGestureTrackingResult {
+        switch axisLock {
+        case .horizontal:
+            return finishTracking(phase: .ended, width: width, prefixEvents: emittedEvents)
+        case .unresolved:
+            var events = emittedEvents
+            events.append(.init(phase: .cancelled, direction: nil, progress: 0))
+            reset()
+            return .init(handling: .consume, emittedEvents: events)
+        case .vertical:
+            reset()
+            return .init(handling: .forwardToUnderlying, emittedEvents: emittedEvents)
+        }
+    }
+
+    private mutating func handleChangedPhase(
+        _ sample: SpaceSwipeGestureSample,
+        width: CGFloat,
+        emittedEvents: [SpaceSwipeGestureEvent]
+    ) -> SpaceSwipeGestureTrackingResult {
+        var events = emittedEvents
+        cumulativeDeltaX += sample.scrollingDeltaX
+        cumulativeDeltaY += sample.scrollingDeltaY
+
+        switch axisLock {
+        case .unresolved:
+            guard resolveAxisLock(into: &events) else {
+                return .init(handling: axisLock == .vertical ? .forwardToUnderlying : .consume, emittedEvents: events)
+            }
+        case .vertical:
+            return .init(handling: .forwardToUnderlying, emittedEvents: events)
+        case .horizontal:
+            break
+        }
+
+        appendProgressEvent(for: sample, width: width, into: &events)
+        return .init(handling: .consume, emittedEvents: events)
+    }
+
+    private mutating func resolveAxisLock(into emittedEvents: inout [SpaceSwipeGestureEvent]) -> Bool {
+        let absoluteX = abs(cumulativeDeltaX)
+        let absoluteY = abs(cumulativeDeltaY)
+
+        if absoluteX >= SpaceSidebarTransitionConfig.axisLockDistance,
+           absoluteX > (absoluteY * SpaceSidebarTransitionConfig.axisLockDominanceMultiplier) {
+            axisLock = .horizontal
+            return true
+        }
+
+        if absoluteY >= SpaceSidebarTransitionConfig.axisLockDistance,
+           absoluteY > (absoluteX * SpaceSidebarTransitionConfig.axisLockDominanceMultiplier) {
+            axisLock = .vertical
+            emittedEvents.append(.init(phase: .cancelled, direction: nil, progress: 0))
+        }
+        return false
+    }
+
+    private mutating func appendProgressEvent(
+        for sample: SpaceSwipeGestureSample,
+        width: CGFloat,
+        into emittedEvents: inout [SpaceSwipeGestureEvent]
+    ) {
+        let resolvedWidth = max(width, 1)
+        let directionSeed = abs(cumulativeDeltaX) > abs(sample.scrollingDeltaX)
+            ? cumulativeDeltaX
+            : sample.scrollingDeltaX
+        let direction = SpaceSidebarSwipePhysics.latchedDirection(
+            current: lastDirection,
+            rawDeltaX: directionSeed
+        )
+        let progress = SpaceSidebarSwipePhysics.normalizedProgress(
+            distance: abs(cumulativeDeltaX),
+            width: resolvedWidth
+        )
+        let directionChanged = direction != lastDirection
+        lastDirection = direction
+
+        guard abs(progress - lastProgress) >= SpaceSidebarTransitionConfig.swipeProgressEpsilon || directionChanged else {
+            return
+        }
+
+        lastProgress = progress
+        emittedEvents.append(
+            .init(
+                phase: .changed,
+                direction: direction,
+                progress: progress
+            )
         )
     }
 

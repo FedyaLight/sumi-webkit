@@ -15,7 +15,7 @@ struct SpaceTransitionSnapshotPageView: View, @preconcurrency Equatable {
     let themeContext: ResolvedThemeContext
 
     static func == (lhs: SpaceTransitionSnapshotPageView, rhs: SpaceTransitionSnapshotPageView) -> Bool {
-        return lhs.snapshot.spaceId == rhs.snapshot.spaceId &&
+        lhs.snapshot.spaceId == rhs.snapshot.spaceId &&
                lhs.snapshot.title == rhs.snapshot.title &&
                lhs.includesEssentials == rhs.includesEssentials &&
                lhs.width == rhs.width &&
@@ -141,6 +141,7 @@ private struct ExtensionActionSnapshotButton: View {
                 .interpolation(.high)
                 .antialiased(true)
                 .scaledToFit()
+                .accessibilityHidden(true)
         case .webExtension:
             if let icon = slot.icon {
                 Image(nsImage: icon)
@@ -148,10 +149,12 @@ private struct ExtensionActionSnapshotButton: View {
                     .interpolation(.high)
                     .antialiased(true)
                     .scaledToFit()
+                    .accessibilityHidden(true)
             } else {
                 Image(systemName: "puzzlepiece.extension")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(tokens.primaryText)
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -207,6 +210,7 @@ private struct SpaceSnapshotTitleView: View {
                     Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(iconValue))
                         .font(.system(size: spaceIconFontSize, weight: .medium))
                         .foregroundStyle(tokens.primaryText)
+                        .accessibilityHidden(true)
                 }
             }
             .frame(width: SidebarRowLayout.faviconSize, height: SidebarRowLayout.faviconSize)
@@ -495,6 +499,7 @@ private struct SpaceSnapshotShortcutRowView: View {
                     .foregroundStyle(shortcut.isMuted ? tokens.secondaryText : tokens.primaryText)
                     .frame(width: 22, height: 22)
                     .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
+                    .accessibilityHidden(true)
             }
 
             SpaceSnapshotTitleLabel(
@@ -565,6 +570,7 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
     private var newTabRow: some View {
         HStack(spacing: 8) {
             Image(systemName: "plus")
+                .accessibilityHidden(true)
             Text("New Tab")
             Spacer(minLength: 0)
         }
@@ -591,6 +597,7 @@ private struct SpaceSnapshotRegularTabRowView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(tab.isMuted ? tokens.secondaryText : tokens.primaryText)
                     .frame(width: 22, height: 22)
+                    .accessibilityHidden(true)
             }
 
             SpaceSnapshotTitleLabel(
@@ -669,6 +676,7 @@ struct SpaceSnapshotIconView: View {
                     .font(.system(size: size * 0.78, weight: .medium))
                     .symbolRenderingMode(.monochrome)
                     .foregroundStyle(foregroundColor)
+                    .accessibilityHidden(true)
             case .emoji(let emoji):
                 Text(emoji)
                     .font(.system(size: size * 0.75))

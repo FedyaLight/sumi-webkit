@@ -99,10 +99,10 @@ struct SpacesListItem: View {
                         browserManager.tabManager.markAllSpacesStructurallyDirty()
                         browserManager.tabManager.scheduleStructuralPersistence()
                     }
-
             } else {
                 Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(space.icon))
                     .foregroundStyle(iconColor)
+                    .accessibilityHidden(true)
                     .background(EmojiPickerAnchor(manager: emojiManager))
                     .onChange(of: emojiManager.selectedEmoji) { _, newValue in
                         guard !newValue.isEmpty else { return }
@@ -165,5 +165,4 @@ struct SpacesListItem: View {
             window: windowState.window
         )
     }
-
 }
