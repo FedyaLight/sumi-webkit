@@ -2,11 +2,12 @@ import Foundation
 import WebKit
 
 @MainActor
-final class TabProtectionAttachmentReloadOwner {
+final class TabReloadPolicyStateOwner {
     var safariContentBlockerAppliedAttachmentState: SumiSafariContentBlockerAttachmentState?
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState?
     var safariContentBlockerReloadRequirement: SumiSafariContentBlockerReloadRequirement?
     var protectionReloadRequirement: SumiProtectionReloadRequirement?
+    var autoplayReloadRequirement: SumiAutoplayReloadRequirement?
     var didManualReloadRebuildProtectionWebView: Bool = false
     var appliedProtectionAfterManualReload: Bool = false
     var lastProtectionWebViewRebuildDuration: TimeInterval?
@@ -18,6 +19,10 @@ final class TabProtectionAttachmentReloadOwner {
 
     var isProtectionReloadRequired: Bool {
         protectionReloadRequirement != nil
+    }
+
+    var isAutoplayReloadRequired: Bool {
+        autoplayReloadRequirement != nil
     }
 
     func safariContentBlockerDesiredAttachmentState(
@@ -252,6 +257,92 @@ final class TabProtectionAttachmentReloadOwner {
             )
     }
 
+    @discardableResult
+    func markAutoplayReloadRequiredIfNeeded(
+        afterChangingPolicyFor changedURL: URL?,
+        currentURL: URL,
+        existingWebView: WKWebView?,
+        profile: Profile?,
+        browserManager: BrowserManager?
+    ) -> Bool {
+        let changedOrigin = SumiPermissionOrigin(url: changedURL)
+        let currentOrigin = SumiPermissionOrigin(url: currentURL)
+        guard changedOrigin.isWebOrigin,
+              changedOrigin.identity == currentOrigin.identity
+        else { return false }
+
+        return updateAutoplayReloadRequirementForCurrentSite(
+            currentURL: currentURL,
+            existingWebView: existingWebView,
+            profile: profile,
+            browserManager: browserManager
+        )
+    }
+
+    @discardableResult
+    func updateAutoplayReloadRequirementForCurrentSite(
+        currentURL: URL,
+        existingWebView: WKWebView?,
+        profile: Profile?,
+        browserManager: BrowserManager?
+    ) -> Bool {
+        guard let webView = existingWebView else {
+            return clearAutoplayReloadRequirement()
+        }
+
+        let desiredPolicy = desiredAutoplayPolicy(for: currentURL, profile: profile)
+        let result = browserManager?.runtimePermissionController
+            .evaluateAutoplayPolicyChange(desiredPolicy.runtimeState, for: webView)
+            ?? SumiRuntimePermissionOperationResult.noOp
+
+        guard case .requiresReload(let requirement) = result else {
+            return clearAutoplayReloadRequirement()
+        }
+
+        return setAutoplayReloadRequirement(
+            SumiAutoplayReloadRequirement(
+                desiredPolicy: desiredPolicy,
+                runtimeRequirement: requirement
+            )
+        )
+    }
+
+    @discardableResult
+    func clearAutoplayReloadRequirementIfResolved(
+        for committedURL: URL,
+        currentURL: URL,
+        existingWebView: WKWebView?,
+        profile: Profile?,
+        browserManager: BrowserManager?
+    ) -> Bool {
+        _ = committedURL
+        return updateAutoplayReloadRequirementForCurrentSite(
+            currentURL: currentURL,
+            existingWebView: existingWebView,
+            profile: profile,
+            browserManager: browserManager
+        )
+    }
+
+    func autoplayPolicyRequiresNormalWebViewRebuild(
+        for targetURL: URL?,
+        existingWebView: WKWebView?,
+        webViewConfigurationOverride: WKWebViewConfiguration?,
+        isPopupHost: Bool,
+        profile: Profile?
+    ) -> Bool {
+        guard let webView = existingWebView,
+              webViewConfigurationOverride == nil,
+              !isPopupHost
+        else { return false }
+
+        let desiredPolicy = desiredAutoplayPolicy(for: targetURL, profile: profile)
+        let currentState = SumiRuntimePermissionController.autoplayState(
+            from: webView.configuration.mediaTypesRequiringUserActionForPlayback
+        )
+        return currentState != desiredPolicy.runtimeState
+    }
+
     func noteProtectionWebViewRebuildFailed(
         restoringAppliedState previousState: SumiProtectionAttachmentState?
     ) {
@@ -260,6 +351,13 @@ final class TabProtectionAttachmentReloadOwner {
 
     func noteProtectionWebViewRebuildSucceeded(startedAt rebuildStart: Date) {
         lastProtectionWebViewRebuildDuration = Date().timeIntervalSince(rebuildStart)
+    }
+
+    private func desiredAutoplayPolicy(for targetURL: URL?, profile: Profile?) -> SumiAutoplayPolicy {
+        SumiAutoplayPolicyStoreAdapter.shared.effectivePolicy(
+            for: targetURL,
+            profile: profile
+        )
     }
 
     private func setSafariContentBlockerReloadRequirement(
@@ -290,6 +388,20 @@ final class TabProtectionAttachmentReloadOwner {
     private func clearProtectionReloadRequirement() -> Bool {
         guard protectionReloadRequirement != nil else { return false }
         protectionReloadRequirement = nil
+        return true
+    }
+
+    private func setAutoplayReloadRequirement(
+        _ requirement: SumiAutoplayReloadRequirement
+    ) -> Bool {
+        guard autoplayReloadRequirement != requirement else { return false }
+        autoplayReloadRequirement = requirement
+        return true
+    }
+
+    private func clearAutoplayReloadRequirement() -> Bool {
+        guard autoplayReloadRequirement != nil else { return false }
+        autoplayReloadRequirement = nil
         return true
     }
 }

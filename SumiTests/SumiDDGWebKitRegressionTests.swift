@@ -922,7 +922,13 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         let sharedRebuild = try sourceSlice(
             tabSource,
             from: "private func rebuildNormalWebViewForConfigurationPolicy",
-            to: "private func desiredAutoplayPolicy"
+            to: "private func notifyContentBlockingReloadRequirementChangedIfNeeded"
+        )
+        let reloadPolicyStateOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Models/Tab/TabReloadPolicyStateOwner.swift"
+            ),
+            encoding: .utf8
         )
 
         XCTAssertTrue(contentBlockingRebuild.contains("rebuildNormalWebViewForConfigurationPolicy("))
@@ -934,6 +940,9 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertTrue(contentBlockingRebuild.contains("updateAutoplayReloadRequirementForCurrentSite()"))
         XCTAssertTrue(autoplayRebuild.contains("updateAutoplayReloadRequirementForCurrentSite()"))
         XCTAssertFalse(autoplayRebuild.contains("updateProtectionReloadRequirementForCurrentSite()"))
+        XCTAssertFalse(tabSource.contains("evaluateAutoplayPolicyChange"))
+        XCTAssertTrue(reloadPolicyStateOwnerSource.contains("evaluateAutoplayPolicyChange"))
+        XCTAssertTrue(reloadPolicyStateOwnerSource.contains("autoplayPolicyRequiresNormalWebViewRebuild"))
 
         XCTAssertFalse(contentBlockingRebuild.contains("coordinator?.removeAllWebViews"))
         XCTAssertFalse(autoplayRebuild.contains("coordinator?.removeAllWebViews"))

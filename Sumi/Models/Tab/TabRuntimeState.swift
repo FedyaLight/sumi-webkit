@@ -297,8 +297,7 @@ final class TabWebViewRuntime {
     var isSuspensionRestoreInProgress: Bool = false
     var suspensionRestoreTraceState: OSSignpostIntervalState?
     var profileAwaitCancellable: AnyCancellable?
-    let protectionAttachmentReloadOwner = TabProtectionAttachmentReloadOwner()
-    var autoplayReloadRequirement: SumiAutoplayReloadRequirement?
+    let reloadPolicyStateOwner = TabReloadPolicyStateOwner()
     var lastWebViewInteractionEvent: NSEvent?
     var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     let extensionRuntimeState = TabExtensionRuntimeState()
