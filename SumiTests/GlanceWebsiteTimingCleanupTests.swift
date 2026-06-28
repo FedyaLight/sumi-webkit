@@ -10,10 +10,13 @@ final class GlanceWebsiteTimingCleanupTests: XCTestCase {
         )
 
         XCTAssertFalse(animationSource.contains("DispatchQueue.main.asyncAfter(deadline: .now() + duration)"))
+        XCTAssertTrue(source.contains("private final class GlanceOverlayPresentationStateOwner"))
+        XCTAssertTrue(source.contains("private let presentationState = GlanceOverlayPresentationStateOwner()"))
         XCTAssertTrue(source.contains("private var postAnimationCompletionTask: Task<Void, Never>?"))
         XCTAssertTrue(source.contains("postAnimationCompletionTask?.cancel()"))
         XCTAssertTrue(source.contains("try? await Task.sleep(nanoseconds: Self.nanoseconds(for: duration))"))
-        XCTAssertTrue(source.contains("self.session?.id == sessionID"))
+        XCTAssertTrue(source.contains("self.displayedSessionID == sessionID"))
+        XCTAssertTrue(source.contains("presentationState.schedulePostAnimationCompletion("))
         XCTAssertTrue(source.contains("scheduleOpeningCompletion("))
         XCTAssertTrue(source.contains("scheduleClosingCompletion("))
     }
@@ -25,10 +28,18 @@ final class GlanceWebsiteTimingCleanupTests: XCTestCase {
             from: "private func scheduleCloseConfirmationReset()",
             to: "private func resetCloseConfirmation()"
         )
+        let presentationStateSource = try Self.slice(
+            source,
+            from: "private final class GlanceOverlayPresentationStateOwner",
+            to: "@MainActor\nprivate final class GlancePromotionHandoffOwner"
+        )
 
-        XCTAssertTrue(resetSource.contains("closeConfirmationWorkItem?.cancel()"))
+        XCTAssertTrue(resetSource.contains("presentationState.cancelCloseConfirmationReset()"))
         XCTAssertTrue(resetSource.contains("let item = DispatchWorkItem"))
+        XCTAssertTrue(resetSource.contains("presentationState.installCloseConfirmationReset(item)"))
         XCTAssertTrue(resetSource.contains("DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: item)"))
+        XCTAssertTrue(presentationStateSource.contains("private var closeConfirmationWorkItem: DispatchWorkItem?"))
+        XCTAssertTrue(presentationStateSource.contains("closeConfirmationWorkItem?.cancel()"))
     }
 
     func testGlancePromotionHandoffStateHasDedicatedOwner() throws {

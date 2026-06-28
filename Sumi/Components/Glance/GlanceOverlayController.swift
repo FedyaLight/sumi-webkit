@@ -9,14 +9,9 @@ final class GlanceOverlayController: NSObject {
     private var session: GlanceSession?
     private var configuration: GlanceOverlayConfiguration?
     private var keyMonitor: Any?
-    private var displayedSessionID: UUID?
-    private var isAnimatingClose = false
+    private let presentationState = GlanceOverlayPresentationStateOwner()
     private let promotionHandoff = GlancePromotionHandoffOwner()
     private let overlayLayout = GlanceOverlayLayout()
-    private var isPresentationVisible = false
-    private var closeConfirmationWorkItem: DispatchWorkItem?
-    private var postAnimationCompletionTask: Task<Void, Never>?
-    private var pendingPresentation: (session: GlanceSession, configuration: GlanceOverlayConfiguration)?
     private weak var previewWebView: FocusableWKWebView?
     private var previewHostView: SumiWebViewContainerView?
 
@@ -77,23 +72,19 @@ final class GlanceOverlayController: NSObject {
         actionChrome.isSplitEnabled = manager.canEnterSplitView
 
         guard let session else {
-            cancelPostAnimationCompletion()
-            pendingPresentation = nil
-            isAnimatingClose = false
-            isPresentationVisible = false
+            presentationState.resetForMissingSession()
             uninstallKeyMonitor()
             tearDownPresentedViews(
                 preservingPromotionHandoff: promotionHandoff.preservesPresentedHostDuringTeardown
             )
             promotionHandoff.reset()
             self.session = nil
-            displayedSessionID = nil
             return
         }
 
-        if displayedSessionID != session.id {
+        if presentationState.displayedSessionID != session.id {
             self.session = session
-            displayedSessionID = session.id
+            presentationState.display(sessionID: session.id)
             if configuration.isVisible {
                 presentWhenReady(session: session, configuration: configuration)
             } else {
@@ -106,22 +97,22 @@ final class GlanceOverlayController: NSObject {
 
         self.session = session
         if !configuration.isVisible {
-            pendingPresentation = nil
+            presentationState.clearPendingPresentation()
             setPresentationVisible(false)
             return
         }
 
-        if !isPresentationVisible {
+        if !presentationState.isPresentationVisible {
             setPresentationVisible(true)
             layoutForCurrentBounds(animated: false)
             return
         }
 
-        if phase == .closing, !isAnimatingClose {
-            pendingPresentation = nil
+        if phase == .closing, !presentationState.isAnimatingClose {
+            presentationState.clearPendingPresentation()
             animateClose(session: session, configuration: configuration)
-        } else if pendingPresentation?.session.id == session.id {
-            pendingPresentation = (session, configuration)
+        } else if presentationState.pendingPresentationSessionID == session.id {
+            presentationState.queuePendingPresentation(session: session, configuration: configuration)
             _ = presentPendingIfPossible()
         } else if phase == .opening {
             attachPreviewWebViewIfAvailable(for: session)
@@ -131,11 +122,7 @@ final class GlanceOverlayController: NSObject {
     }
 
     func tearDown() {
-        cancelPostAnimationCompletion()
-        closeConfirmationWorkItem?.cancel()
-        closeConfirmationWorkItem = nil
-        pendingPresentation = nil
-        isAnimatingClose = false
+        presentationState.prepareForTearDown()
         promotionHandoff.reset()
         uninstallKeyMonitor()
         tearDownPresentedViews()
@@ -162,7 +149,7 @@ final class GlanceOverlayController: NSObject {
         session: GlanceSession,
         configuration: GlanceOverlayConfiguration
     ) {
-        pendingPresentation = (session, configuration)
+        presentationState.queuePendingPresentation(session: session, configuration: configuration)
         guard !presentPendingIfPossible() else { return }
         rootView?.needsLayout = true
     }
@@ -172,10 +159,9 @@ final class GlanceOverlayController: NSObject {
         guard let rootView,
               rootView.bounds.width > 1,
               rootView.bounds.height > 1,
-              let pendingPresentation
+              let pendingPresentation = presentationState.takePendingPresentation()
         else { return false }
 
-        self.pendingPresentation = nil
         present(
             session: pendingPresentation.session,
             configuration: pendingPresentation.configuration
@@ -348,10 +334,8 @@ final class GlanceOverlayController: NSObject {
     ) {
         guard let rootView else { return }
 
-        cancelPostAnimationCompletion()
-        isAnimatingClose = false
+        presentationState.beginOpening()
         installViewsIfNeeded()
-        isPresentationVisible = true
         rootView.acceptsBackgroundMouseEvents = true
         contentShadowView.isHidden = false
         actionChrome.isHidden = false
@@ -415,7 +399,7 @@ final class GlanceOverlayController: NSObject {
         contentShadowView.frame = targetFrame
         webClipView.frame = contentShadowView.bounds
         manager?.markOpened(sessionID: sessionID)
-        guard isPresentationVisible,
+        guard presentationState.isPresentationVisible,
               self.configuration?.isVisible == true
         else {
             publishContentFrame(nil, in: rootView)
@@ -452,8 +436,7 @@ final class GlanceOverlayController: NSObject {
             manager?.finishAnimatedDismissal(sessionID: session.id)
             return
         }
-        cancelPostAnimationCompletion()
-        isAnimatingClose = true
+        presentationState.beginClosing()
         resetCloseConfirmation()
 
         let targetFrame = overlayLayout.targetContentFrame(in: rootView.bounds, configuration: configuration)
@@ -490,7 +473,7 @@ final class GlanceOverlayController: NSObject {
 
     private func finishClosing(sessionID: UUID) {
         guard session?.id == sessionID else { return }
-        isAnimatingClose = false
+        presentationState.finishClosing()
         tearDownPresentedViews()
         manager?.finishAnimatedDismissal(sessionID: sessionID)
     }
@@ -501,44 +484,25 @@ final class GlanceOverlayController: NSObject {
         configuration: GlanceOverlayConfiguration,
         after duration: TimeInterval
     ) {
-        cancelPostAnimationCompletion()
-        postAnimationCompletionTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.nanoseconds(for: duration))
-            guard !Task.isCancelled,
-                  let self,
-                  self.session?.id == sessionID
-            else { return }
-
-            self.finishOpening(
+        presentationState.schedulePostAnimationCompletion(
+            sessionID: sessionID,
+            after: duration
+        ) { [weak self] in
+            self?.finishOpening(
                 sessionID: sessionID,
                 targetFrame: targetFrame,
                 configuration: configuration
             )
-            self.postAnimationCompletionTask = nil
         }
     }
 
     private func scheduleClosingCompletion(sessionID: UUID, after duration: TimeInterval) {
-        cancelPostAnimationCompletion()
-        postAnimationCompletionTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.nanoseconds(for: duration))
-            guard !Task.isCancelled,
-                  let self,
-                  self.session?.id == sessionID
-            else { return }
-
-            self.finishClosing(sessionID: sessionID)
-            self.postAnimationCompletionTask = nil
+        presentationState.schedulePostAnimationCompletion(
+            sessionID: sessionID,
+            after: duration
+        ) { [weak self] in
+            self?.finishClosing(sessionID: sessionID)
         }
-    }
-
-    private func cancelPostAnimationCompletion() {
-        postAnimationCompletionTask?.cancel()
-        postAnimationCompletionTask = nil
-    }
-
-    private static func nanoseconds(for duration: TimeInterval) -> UInt64 {
-        UInt64(max(0, duration) * 1_000_000_000)
     }
 
     private func animateContentFrame(
@@ -600,7 +564,7 @@ final class GlanceOverlayController: NSObject {
 
     private func tearDownPresentedViews(preservingPromotionHandoff: Bool = false) {
         resetCloseConfirmation()
-        isPresentationVisible = false
+        presentationState.setPresentationVisible(false)
         publishContentFrame(nil, in: rootView)
         WebContentMouseTrackingShield.unregister(webContentShieldAnchorView)
         rootView?.acceptsBackgroundMouseEvents = false
@@ -620,7 +584,7 @@ final class GlanceOverlayController: NSObject {
     }
 
     private func setPresentationVisible(_ isVisible: Bool) {
-        isPresentationVisible = isVisible
+        presentationState.setPresentationVisible(isVisible)
         rootView?.acceptsBackgroundMouseEvents = isVisible
         contentShadowView.isHidden = !isVisible
         actionChrome.isHidden = !isVisible
@@ -631,8 +595,6 @@ final class GlanceOverlayController: NSObject {
             contentShadowView.alphaValue = 1
             actionChrome.alphaValue = 1
         } else {
-            cancelPostAnimationCompletion()
-            isAnimatingClose = false
             uninstallKeyMonitor()
             publishContentFrame(nil, in: rootView)
             WebContentMouseTrackingShield.unregister(webContentShieldAnchorView)
@@ -712,7 +674,7 @@ final class GlanceOverlayController: NSObject {
               let configuration,
               configuration.isVisible,
               session != nil,
-              !isAnimatingClose,
+              !presentationState.isAnimatingClose,
               !promotionHandoff.blocksPresentationUpdates
         else { return }
 
@@ -1001,18 +963,130 @@ final class GlanceOverlayController: NSObject {
     }
 
     private func scheduleCloseConfirmationReset() {
-        closeConfirmationWorkItem?.cancel()
+        presentationState.cancelCloseConfirmationReset()
         let item = DispatchWorkItem { [weak self] in
             self?.resetCloseConfirmation()
         }
-        closeConfirmationWorkItem = item
+        presentationState.installCloseConfirmationReset(item)
         DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: item)
     }
 
     private func resetCloseConfirmation() {
+        presentationState.cancelCloseConfirmationReset()
+        actionChrome.closeRequiresSecondPress = false
+    }
+}
+
+@MainActor
+private final class GlanceOverlayPresentationStateOwner {
+    struct PendingPresentation {
+        let session: GlanceSession
+        let configuration: GlanceOverlayConfiguration
+    }
+
+    private(set) var displayedSessionID: UUID?
+    private(set) var isAnimatingClose = false
+    private(set) var isPresentationVisible = false
+    private var pendingPresentation: PendingPresentation?
+    private var closeConfirmationWorkItem: DispatchWorkItem?
+    private var postAnimationCompletionTask: Task<Void, Never>?
+
+    var pendingPresentationSessionID: UUID? {
+        pendingPresentation?.session.id
+    }
+
+    func display(sessionID: UUID) {
+        displayedSessionID = sessionID
+    }
+
+    func resetForMissingSession() {
+        cancelPostAnimationCompletion()
+        clearPendingPresentation()
+        isAnimatingClose = false
+        isPresentationVisible = false
+        displayedSessionID = nil
+    }
+
+    func prepareForTearDown() {
+        cancelPostAnimationCompletion()
+        cancelCloseConfirmationReset()
+        clearPendingPresentation()
+        isAnimatingClose = false
+    }
+
+    func queuePendingPresentation(
+        session: GlanceSession,
+        configuration: GlanceOverlayConfiguration
+    ) {
+        pendingPresentation = PendingPresentation(session: session, configuration: configuration)
+    }
+
+    func takePendingPresentation() -> PendingPresentation? {
+        defer { pendingPresentation = nil }
+        return pendingPresentation
+    }
+
+    func clearPendingPresentation() {
+        pendingPresentation = nil
+    }
+
+    func beginOpening() {
+        cancelPostAnimationCompletion()
+        isAnimatingClose = false
+        isPresentationVisible = true
+    }
+
+    func beginClosing() {
+        cancelPostAnimationCompletion()
+        isAnimatingClose = true
+    }
+
+    func finishClosing() {
+        isAnimatingClose = false
+    }
+
+    func setPresentationVisible(_ isVisible: Bool) {
+        isPresentationVisible = isVisible
+        if !isVisible {
+            cancelPostAnimationCompletion()
+            isAnimatingClose = false
+        }
+    }
+
+    func schedulePostAnimationCompletion(
+        sessionID: UUID,
+        after duration: TimeInterval,
+        completion: @escaping @MainActor @Sendable () -> Void
+    ) {
+        cancelPostAnimationCompletion()
+        postAnimationCompletionTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.nanoseconds(for: duration))
+            guard !Task.isCancelled,
+                  let self,
+                  self.displayedSessionID == sessionID
+            else { return }
+
+            completion()
+            self.postAnimationCompletionTask = nil
+        }
+    }
+
+    func cancelPostAnimationCompletion() {
+        postAnimationCompletionTask?.cancel()
+        postAnimationCompletionTask = nil
+    }
+
+    func installCloseConfirmationReset(_ item: DispatchWorkItem) {
+        closeConfirmationWorkItem = item
+    }
+
+    func cancelCloseConfirmationReset() {
         closeConfirmationWorkItem?.cancel()
         closeConfirmationWorkItem = nil
-        actionChrome.closeRequiresSecondPress = false
+    }
+
+    private static func nanoseconds(for duration: TimeInterval) -> UInt64 {
+        UInt64(max(0, duration) * 1_000_000_000)
     }
 }
 
