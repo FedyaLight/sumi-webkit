@@ -9,24 +9,14 @@ final class BrowserActionOwner {
         let tabManager: @MainActor @Sendable () -> TabManager
         let liveFolderManager: @MainActor @Sendable () -> SumiLiveFolderManager
         let windowRegistry: @MainActor @Sendable () -> WindowRegistry?
-        let settings: @MainActor @Sendable () -> SumiSettingsService?
-        let activePageTab: @MainActor @Sendable (BrowserWindowState) -> Tab?
-        let hasValidCurrentSelection: @MainActor @Sendable (BrowserWindowState) -> Bool
-        let cancelEmptySplitPlaceholder: @MainActor @Sendable (BrowserWindowState) -> Void
-        let commitEmptySplitPlaceholder: @MainActor @Sendable (UUID, BrowserWindowState) -> Void
-        let replaceEmptySplitPlaceholder: @MainActor @Sendable (Tab, BrowserWindowState) -> Bool
-        let selectTab: @MainActor @Sendable (Tab, BrowserWindowState) -> Void
-        let dismissWorkspaceThemePickerIfNeededDiscarding: @MainActor @Sendable () -> Void
         let updateSavedSidebarVisibility: @MainActor @Sendable (Bool) -> Void
         let toggleSavedSidebarVisibility: @MainActor @Sendable () -> Void
         let updateSavedSidebarWidth: @MainActor @Sendable (CGFloat) -> Void
-        let persistWindowSession: @MainActor @Sendable (BrowserWindowState) -> Void
         let schedulePersistWindowSession: @MainActor @Sendable (BrowserWindowState, UInt64) -> Void
     }
 
     private let dependencies: Dependencies
     private let sidebarActionOwner: BrowserSidebarActionOwner
-    private let floatingBarNavigationOwner = FloatingBarNavigationOwner()
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
@@ -53,48 +43,6 @@ final class BrowserActionOwner {
         dependencies.schedulePersistWindowSession(windowState, 150_000_000)
     }
 
-    func focusFloatingBarForActiveWindow(
-        prefill: String,
-        navigateCurrentTab: Bool,
-        presentationReason: FloatingBarPresentationReason
-    ) {
-        floatingBarNavigationOwner.focusActiveWindow(
-            prefill: prefill,
-            navigateCurrentTab: navigateCurrentTab,
-            presentationReason: presentationReason,
-            actions: floatingBarActions
-        )
-    }
-
-    func focusFloatingBar(
-        in windowState: BrowserWindowState,
-        prefill: String,
-        navigateCurrentTab: Bool,
-        presentationReason: FloatingBarPresentationReason
-    ) {
-        floatingBarNavigationOwner.focus(
-            in: windowState,
-            prefill: prefill,
-            navigateCurrentTab: navigateCurrentTab,
-            presentationReason: presentationReason,
-            actions: floatingBarActions
-        )
-    }
-
-    func showNewTabFloatingBar(in windowState: BrowserWindowState) {
-        floatingBarNavigationOwner.showNewTab(
-            in: windowState,
-            actions: floatingBarActions
-        )
-    }
-
-    func openNewTabOrFloatingBar(in windowState: BrowserWindowState) {
-        floatingBarNavigationOwner.openNewTabSurface(
-            in: windowState,
-            actions: floatingBarActions
-        )
-    }
-
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
         sidebarActionOwner.spaceForSidebarActions(in: windowState)
     }
@@ -113,110 +61,6 @@ final class BrowserActionOwner {
 
     func createGitHubIssuesLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
         sidebarActionOwner.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
-    }
-
-    func updateFloatingBarDraft(
-        in windowState: BrowserWindowState,
-        text: String
-    ) {
-        floatingBarNavigationOwner.updateDraft(
-            in: windowState,
-            text: text,
-            actions: floatingBarActions
-        )
-    }
-
-    func dismissFloatingBar(
-        in windowState: BrowserWindowState,
-        preserveDraft: Bool,
-        cancelEmptySplitPlaceholder: Bool
-    ) {
-        floatingBarNavigationOwner.dismiss(
-            in: windowState,
-            preserveDraft: preserveDraft,
-            cancelEmptySplitPlaceholder: cancelEmptySplitPlaceholder,
-            actions: floatingBarActions
-        )
-    }
-
-    func dismissFloatingBarForActiveWindow(preserveDraft: Bool) {
-        floatingBarNavigationOwner.dismissActiveWindow(
-            preserveDraft: preserveDraft,
-            actions: floatingBarActions
-        )
-    }
-
-    @discardableResult
-    func dismissFloatingBarIfVisible(
-        in windowId: UUID,
-        preserveDraft: Bool
-    ) -> Bool {
-        floatingBarNavigationOwner.dismissIfVisible(
-            in: windowId,
-            preserveDraft: preserveDraft,
-            actions: floatingBarActions
-        )
-    }
-
-    func floatingBarCommitNavigatesCurrentTab(in windowState: BrowserWindowState) -> Bool {
-        floatingBarNavigationOwner.commitNavigatesCurrentTab(
-            in: windowState,
-            actions: floatingBarActions
-        )
-    }
-
-    func commitFloatingBarSuggestion(
-        _ suggestion: SearchManager.SearchSuggestion,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
-    ) {
-        floatingBarNavigationOwner.commitSuggestion(
-            suggestion,
-            in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
-            actions: floatingBarActions
-        )
-    }
-
-    func commitFloatingBarNavigation(
-        to urlString: String,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
-    ) {
-        floatingBarNavigationOwner.commitNavigation(
-            to: urlString,
-            in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
-            actions: floatingBarActions
-        )
-    }
-
-    func openFloatingBarSuggestion(
-        _ suggestion: SearchManager.SearchSuggestion,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
-    ) {
-        floatingBarNavigationOwner.openSuggestion(
-            suggestion,
-            in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
-            actions: floatingBarActions
-        )
-    }
-
-    func dismissFloatingBarAfterSelection(in windowState: BrowserWindowState) {
-        floatingBarNavigationOwner.dismissAfterSelection(
-            in: windowState,
-            actions: floatingBarActions
-        )
-    }
-
-    func sanitizeFloatingBarState(in windowState: BrowserWindowState) {
-        floatingBarNavigationOwner.sanitize(
-            in: windowState,
-            hasValidCurrentSelection: dependencies.hasValidCurrentSelection(windowState),
-            actions: floatingBarActions
-        )
     }
 
     @discardableResult
@@ -301,55 +145,6 @@ final class BrowserActionOwner {
         }
 
         return nil
-    }
-
-    private var floatingBarActions: FloatingBarNavigationOwner.Actions {
-        FloatingBarNavigationOwner.Actions(
-            activeWindow: {
-                self.dependencies.windowRegistry()?.activeWindow
-            },
-            window: { windowId in
-                self.dependencies.windowRegistry()?.windows[windowId]
-            },
-            activePageTab: dependencies.activePageTab,
-            cancelEmptySplitPlaceholder: dependencies.cancelEmptySplitPlaceholder,
-            commitEmptySplitPlaceholder: dependencies.commitEmptySplitPlaceholder,
-            replaceEmptySplitPlaceholder: dependencies.replaceEmptySplitPlaceholder,
-            selectTab: dependencies.selectTab,
-            createNewTab: { [weak self] windowState, url in
-                self?.createNewTab(in: windowState, url: url)
-            },
-            createNewTabAfterSidebarInsertion: { [weak self] windowState, url in
-                self?.createNewTabAfterSidebarInsertion(in: windowState, url: url)
-            },
-            configuredNewTabPageURL: {
-                guard let settings = self.dependencies.settings(),
-                      settings.newTabMode == .specificPage
-                else {
-                    return nil
-                }
-                return settings.resolvedNewTabPageURL.absoluteString
-            },
-            normalizeURL: { text in
-                let template = self.dependencies.settings()?.resolvedSearchEngineTemplate
-                    ?? SearchProvider.google.queryTemplate
-                return Sumi.normalizeURL(text, queryTemplate: template)
-            },
-            applySettingsSurfaceNavigation: { text in
-                let template = self.dependencies.settings()?.resolvedSearchEngineTemplate
-                    ?? SearchProvider.google.queryTemplate
-                let normalized = Sumi.normalizeURL(text, queryTemplate: template)
-                guard let url = URL(string: normalized),
-                      SumiSurface.isSettingsSurfaceURL(url)
-                else { return }
-                self.dependencies.settings()?.applyNavigationFromSettingsSurfaceURL(url)
-            },
-            dismissWorkspaceThemePickerIfNeededDiscarding: dependencies.dismissWorkspaceThemePickerIfNeededDiscarding,
-            persistWindowSession: dependencies.persistWindowSession,
-            schedulePersistWindowSession: { windowState in
-                self.dependencies.schedulePersistWindowSession(windowState, 450_000_000)
-            }
-        )
     }
 
 }

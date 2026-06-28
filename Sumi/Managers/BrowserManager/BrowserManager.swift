@@ -412,11 +412,9 @@ class BrowserManager: ObservableObject {
             }
         )
     )
-    private lazy var browserActionOwner = BrowserActionOwner(
-        dependencies: BrowserActionOwner.Dependencies(
+    private lazy var floatingBarRoutingOwner = BrowserFloatingBarRoutingOwner(
+        dependencies: BrowserFloatingBarRoutingOwner.Dependencies(
             tabOpeningOwner: { [unowned self] in self.tabOpeningOwner },
-            tabManager: { [unowned self] in self.tabManager },
-            liveFolderManager: { [unowned self] in self.liveFolderManager },
             windowRegistry: { [unowned self] in self.windowRegistry },
             settings: { [unowned self] in self.sumiSettings },
             activePageTab: { [unowned self] windowState in
@@ -440,6 +438,23 @@ class BrowserManager: ObservableObject {
             dismissWorkspaceThemePickerIfNeededDiscarding: { [unowned self] in
                 self.dismissWorkspaceThemePickerIfNeededDiscarding()
             },
+            persistWindowSession: { [unowned self] windowState in
+                self.persistWindowSession(for: windowState)
+            },
+            schedulePersistWindowSession: { [unowned self] windowState, delayNanoseconds in
+                self.schedulePersistWindowSession(
+                    for: windowState,
+                    delayNanoseconds: delayNanoseconds
+                )
+            }
+        )
+    )
+    private lazy var browserActionOwner = BrowserActionOwner(
+        dependencies: BrowserActionOwner.Dependencies(
+            tabOpeningOwner: { [unowned self] in self.tabOpeningOwner },
+            tabManager: { [unowned self] in self.tabManager },
+            liveFolderManager: { [unowned self] in self.liveFolderManager },
+            windowRegistry: { [unowned self] in self.windowRegistry },
             updateSavedSidebarVisibility: { [unowned self] isVisible in
                 self.savedSidebarVisibility = isVisible
             },
@@ -448,9 +463,6 @@ class BrowserManager: ObservableObject {
             },
             updateSavedSidebarWidth: { [unowned self] width in
                 self.savedSidebarWidth = width
-            },
-            persistWindowSession: { [unowned self] windowState in
-                self.persistWindowSession(for: windowState)
             },
             schedulePersistWindowSession: { [unowned self] windowState, delayNanoseconds in
                 self.schedulePersistWindowSession(
@@ -946,7 +958,7 @@ class BrowserManager: ObservableObject {
                 self?.windowSpaceStateOwner.updateProfileRuntimeStates(activeWindowState: windowState)
             },
             showNewTabFloatingBar: { [weak self] windowState in
-                self?.browserActionOwner.showNewTabFloatingBar(in: windowState)
+                self?.floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)
             }
         )
     }
@@ -957,7 +969,7 @@ class BrowserManager: ObservableObject {
         navigateCurrentTab: Bool = false,
         presentationReason: FloatingBarPresentationReason = .keyboard
     ) {
-        browserActionOwner.focusFloatingBarForActiveWindow(
+        floatingBarRoutingOwner.focusFloatingBarForActiveWindow(
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab,
             presentationReason: presentationReason
@@ -970,7 +982,7 @@ class BrowserManager: ObservableObject {
         navigateCurrentTab: Bool = false,
         presentationReason: FloatingBarPresentationReason = .keyboard
     ) {
-        browserActionOwner.focusFloatingBar(
+        floatingBarRoutingOwner.focusFloatingBar(
             in: windowState,
             prefill: prefill,
             navigateCurrentTab: navigateCurrentTab,
@@ -992,11 +1004,11 @@ class BrowserManager: ObservableObject {
     }
 
     func showNewTabFloatingBar(in windowState: BrowserWindowState) {
-        browserActionOwner.showNewTabFloatingBar(in: windowState)
+        floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)
     }
 
     func openNewTabOrFloatingBar(in windowState: BrowserWindowState) {
-        browserActionOwner.openNewTabOrFloatingBar(in: windowState)
+        floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
     }
 
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
@@ -1023,7 +1035,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         text: String
     ) {
-        browserActionOwner.updateFloatingBarDraft(
+        floatingBarRoutingOwner.updateFloatingBarDraft(
             in: windowState,
             text: text
         )
@@ -1034,7 +1046,7 @@ class BrowserManager: ObservableObject {
         preserveDraft: Bool,
         cancelEmptySplitPlaceholder: Bool = true
     ) {
-        browserActionOwner.dismissFloatingBar(
+        floatingBarRoutingOwner.dismissFloatingBar(
             in: windowState,
             preserveDraft: preserveDraft,
             cancelEmptySplitPlaceholder: cancelEmptySplitPlaceholder
@@ -1042,7 +1054,7 @@ class BrowserManager: ObservableObject {
     }
 
     func dismissFloatingBarForActiveWindow(preserveDraft: Bool = true) {
-        browserActionOwner.dismissFloatingBarForActiveWindow(preserveDraft: preserveDraft)
+        floatingBarRoutingOwner.dismissFloatingBarForActiveWindow(preserveDraft: preserveDraft)
     }
 
     @discardableResult
@@ -1050,14 +1062,14 @@ class BrowserManager: ObservableObject {
         in windowId: UUID,
         preserveDraft: Bool = true
     ) -> Bool {
-        browserActionOwner.dismissFloatingBarIfVisible(
+        floatingBarRoutingOwner.dismissFloatingBarIfVisible(
             in: windowId,
             preserveDraft: preserveDraft
         )
     }
 
     func floatingBarCommitNavigatesCurrentTab(in windowState: BrowserWindowState) -> Bool {
-        browserActionOwner.floatingBarCommitNavigatesCurrentTab(in: windowState)
+        floatingBarRoutingOwner.floatingBarCommitNavigatesCurrentTab(in: windowState)
     }
 
     func commitFloatingBarSuggestion(
@@ -1065,7 +1077,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
-        browserActionOwner.commitFloatingBarSuggestion(
+        floatingBarRoutingOwner.commitFloatingBarSuggestion(
             suggestion,
             in: windowState,
             navigatesCurrentTab: navigatesCurrentTab
@@ -1077,7 +1089,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
-        browserActionOwner.commitFloatingBarNavigation(
+        floatingBarRoutingOwner.commitFloatingBarNavigation(
             to: urlString,
             in: windowState,
             navigatesCurrentTab: navigatesCurrentTab
@@ -1100,7 +1112,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         navigatesCurrentTab: Bool
     ) {
-        browserActionOwner.openFloatingBarSuggestion(
+        floatingBarRoutingOwner.openFloatingBarSuggestion(
             suggestion,
             in: windowState,
             navigatesCurrentTab: navigatesCurrentTab
@@ -1108,11 +1120,11 @@ class BrowserManager: ObservableObject {
     }
 
     private func dismissFloatingBarAfterSelection(in windowState: BrowserWindowState) {
-        browserActionOwner.dismissFloatingBarAfterSelection(in: windowState)
+        floatingBarRoutingOwner.dismissFloatingBarAfterSelection(in: windowState)
     }
 
     func sanitizeFloatingBarState(in windowState: BrowserWindowState) {
-        browserActionOwner.sanitizeFloatingBarState(in: windowState)
+        floatingBarRoutingOwner.sanitizeFloatingBarState(in: windowState)
     }
 
     func showFindBar() {

@@ -38,6 +38,20 @@ final class BrowserActionOwnerTests: XCTestCase {
         XCTAssertFalse(actionOwnerSource.contains("NSAlert"))
     }
 
+    func testFloatingBarRoutingIsOwnedByFloatingBarRoutingOwner() throws {
+        let actionOwnerSource = try Self.source(
+            named: "Sumi/Managers/BrowserManager/BrowserActionOwner.swift"
+        )
+        let routingOwnerSource = try Self.source(
+            named: "Sumi/Managers/BrowserManager/BrowserFloatingBarRoutingOwner.swift"
+        )
+
+        XCTAssertFalse(actionOwnerSource.contains("FloatingBarNavigationOwner"))
+        XCTAssertTrue(routingOwnerSource.contains("final class BrowserFloatingBarRoutingOwner"))
+        XCTAssertTrue(routingOwnerSource.contains("private let navigationOwner = FloatingBarNavigationOwner()"))
+        XCTAssertTrue(routingOwnerSource.contains("func openFloatingBarSuggestion"))
+    }
+
     func testGlobalSidebarToggleTargetsOnlyRegisteredWindowWhenNoActiveWindowExists() {
         removePersistedWindowSession()
         defer { removePersistedWindowSession() }
