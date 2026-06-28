@@ -81,7 +81,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         currentRuntimeState(for: webView, pageId: nil)
     }
 
-    func currentRuntimeState(for webView: WKWebView, pageId: String?) -> SumiRuntimePermissionState {
+    func currentRuntimeState(for _: WKWebView, pageId _: String?) -> SumiRuntimePermissionState {
         currentRuntimeStateCallCount += 1
         return SumiRuntimePermissionState(
             camera: cameraRuntimeState,
@@ -92,21 +92,21 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         )
     }
 
-    func cameraState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState {
+    func cameraState(for _: WKWebView) -> SumiMediaCaptureRuntimeState {
         cameraRuntimeState
     }
 
-    func microphoneState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState {
+    func microphoneState(for _: WKWebView) -> SumiMediaCaptureRuntimeState {
         microphoneRuntimeState
     }
 
-    func screenCaptureState(for webView: WKWebView) -> SumiMediaCaptureRuntimeState {
+    func screenCaptureState(for _: WKWebView) -> SumiMediaCaptureRuntimeState {
         screenCaptureRuntimeState
     }
 
     func setCameraMuted(
         _ muted: Bool,
-        for webView: WKWebView
+        for _: WKWebView
     ) async -> SumiRuntimePermissionOperationResult {
         let operation = SumiRuntimePermissionOperation.setCameraMuted(muted)
         if let override = configuredResult(for: operation) {
@@ -120,7 +120,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
 
     func setMicrophoneMuted(
         _ muted: Bool,
-        for webView: WKWebView
+        for _: WKWebView
     ) async -> SumiRuntimePermissionOperationResult {
         let operation = SumiRuntimePermissionOperation.setMicrophoneMuted(muted)
         if let override = configuredResult(for: operation) {
@@ -132,7 +132,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         )
     }
 
-    func stopCamera(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult {
+    func stopCamera(for _: WKWebView) async -> SumiRuntimePermissionOperationResult {
         let operation = SumiRuntimePermissionOperation.stopCamera
         if let override = configuredResult(for: operation) {
             return override
@@ -140,7 +140,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         return applyMediaMutation(currentState: &cameraRuntimeState, requestedState: .none)
     }
 
-    func stopMicrophone(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult {
+    func stopMicrophone(for _: WKWebView) async -> SumiRuntimePermissionOperationResult {
         let operation = SumiRuntimePermissionOperation.stopMicrophone
         if let override = configuredResult(for: operation) {
             return override
@@ -148,7 +148,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         return applyMediaMutation(currentState: &microphoneRuntimeState, requestedState: .none)
     }
 
-    func stopScreenCapture(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult {
+    func stopScreenCapture(for _: WKWebView) async -> SumiRuntimePermissionOperationResult {
         let operation = SumiRuntimePermissionOperation.stopScreenCapture
         if let override = configuredResult(for: operation) {
             return override
@@ -169,7 +169,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
 
     func pauseGeolocation(
         pageId: String?,
-        for webView: WKWebView
+        for _: WKWebView
     ) async -> SumiRuntimePermissionOperationResult {
         await geolocationOperation(.pause(.geolocation), pageId: pageId) {
             geolocationRuntimeState = .paused
@@ -178,7 +178,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
 
     func resumeGeolocation(
         pageId: String?,
-        for webView: WKWebView
+        for _: WKWebView
     ) async -> SumiRuntimePermissionOperationResult {
         await geolocationOperation(.resume(.geolocation), pageId: pageId) {
             geolocationRuntimeState = .active
@@ -187,7 +187,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
 
     func stopGeolocation(
         pageId: String?,
-        for webView: WKWebView
+        for _: WKWebView
     ) async -> SumiRuntimePermissionOperationResult {
         await geolocationOperation(.revoke(.geolocation), pageId: pageId) {
             geolocationRuntimeState = .none
@@ -319,7 +319,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
 
     func evaluateAutoplayPolicyChange(
         _ requestedState: SumiRuntimeAutoplayState,
-        for webView: WKWebView
+        for _: WKWebView
     ) -> SumiRuntimePermissionOperationResult {
         let operation = SumiRuntimePermissionOperation.autoplay(requestedState)
         if let override = configuredResult(for: operation) {
@@ -385,7 +385,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
 
     private func geolocationOperation(
         _ operation: SumiRuntimePermissionOperation,
-        pageId: String?,
+        pageId _: String?,
         mutation: () -> Void
     ) async -> SumiRuntimePermissionOperationResult {
         if let override = configuredResult(for: operation) {
@@ -425,7 +425,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
 
     private func applyBatch(
         _ permissionTypes: [SumiPermissionType],
-        webView: WKWebView,
+        webView _: WKWebView,
         operation: (SumiPermissionType) async -> SumiRuntimePermissionOperationResult
     ) async -> SumiRuntimePermissionBatchResult {
         var results: [SumiPermissionType: SumiRuntimePermissionOperationResult] = [:]
@@ -509,7 +509,7 @@ extension SumiRuntimePermissionController {
         .unsupported
     }
 
-    func stopScreenCapture(for webView: WKWebView) async -> SumiRuntimePermissionOperationResult {
+    func stopScreenCapture(for _: WKWebView) async -> SumiRuntimePermissionOperationResult {
         .unsupported(reason: "screen-capture-runtime-state-unsupported")
     }
 

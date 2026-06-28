@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 final class URLBarZoomButtonVisibilityTests: XCTestCase {
     func testHiddenAtDefaultZoom() {

@@ -1,6 +1,6 @@
+@testable import Sumi
 import SwiftUI
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class ThemeContrastResolverTests: XCTestCase {
@@ -194,7 +194,7 @@ final class ThemeContrastResolverTests: XCTestCase {
                         algorithm: .floating,
                         lightness: WorkspaceThemeColor.defaultLightness(for: hex),
                         position: .monochrome
-                    )
+                    ),
                 ],
                 opacity: opacity,
                 texture: 0.2

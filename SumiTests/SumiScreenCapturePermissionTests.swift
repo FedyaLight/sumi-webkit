@@ -37,5 +37,4 @@ final class SumiScreenCapturePermissionTests: XCTestCase {
             "profile-a|https://share.example|https://top.example|screen-capture"
         )
     }
-
 }

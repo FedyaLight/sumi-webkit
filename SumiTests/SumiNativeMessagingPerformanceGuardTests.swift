@@ -14,7 +14,7 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
             bundleURLs[bundleIdentifier]
         }
 
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
+        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
             openedBundleIdentifiers.append(bundleIdentifier)
         }
     }
@@ -132,7 +132,7 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
 
     // MARK: - Retry cooldown
 
-    func testRetryCooldownSuppressesRepeatedLaunchAttempts() async throws {
+    func testRetryCooldownSuppressesRepeatedLaunchAttempts() async {
         let loopGuard = SumiNativeMessagingRelayLoopGuard()
         let key = SumiNativeMessagingRelayLoopGuard.SessionKey(
             profileId: UUID(),
@@ -195,7 +195,7 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
             extensionId: "ext-idle-guard",
             hostBundleIdentifier: "com.example.host",
             resolverBucket: .knownCompanionAlias,
-            logDiagnostic: { _ in },
+            logDiagnostic: { _ in /* no-op */ },
             companionProtocolErrorProvider: {
                 SumiNativeMessagingErrorMapper.relayError(
                     code: .companionAppProtocolUnknown,
@@ -325,7 +325,7 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
             port: port,
             extensionId: installed.id,
             installedExtensions: [installed],
-            registerHandler: { _ in },
+            registerHandler: { _ in /* no-op */ },
             completionHandler: { error in
                 connectError = error
                 expectation.fulfill()
@@ -360,7 +360,7 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
     private func makeInstalledExtension(
         id: String,
         sourceBundlePath: String
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         InstalledExtension(
             id: id,
             name: "Fixture",

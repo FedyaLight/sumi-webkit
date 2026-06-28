@@ -1,6 +1,6 @@
+@testable import Sumi
 import WebKit
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class SumiUserAgentTests: XCTestCase {

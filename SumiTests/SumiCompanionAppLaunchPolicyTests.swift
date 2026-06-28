@@ -13,7 +13,7 @@ final class SumiCompanionAppLaunchPolicyTests: XCTestCase {
             bundleURLs[bundleIdentifier]
         }
 
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
+        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
             openedBundleIdentifiers.append(bundleIdentifier)
         }
     }
@@ -178,7 +178,7 @@ final class SumiCompanionAppLaunchPolicyTests: XCTestCase {
         )
     }
 
-    func testSupportedAdapterLaunchBoundedPerSession() async throws {
+    func testSupportedAdapterLaunchBoundedPerSession() async {
         let launchPolicy = SumiCompanionAppLaunchPolicy(minimumLaunchInterval: 60)
         let sessionKey = SumiCompanionAppLaunchPolicy.sessionKey(
             profileId: UUID(),
@@ -300,7 +300,7 @@ final class SumiCompanionAppLaunchPolicyTests: XCTestCase {
     private func makeInstalledExtension(
         id: String,
         sourceBundlePath: String
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         InstalledExtension(
             id: id,
             name: "Fixture",

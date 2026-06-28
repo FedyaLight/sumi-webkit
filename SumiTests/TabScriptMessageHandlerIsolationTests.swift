@@ -1,7 +1,7 @@
 import Foundation
+@testable import Sumi
 import WebKit
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class TabScriptMessageHandlerIsolationTests: XCTestCase {
@@ -23,7 +23,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         await normalTabController.waitForContentBlockingAssetsInstalled()
-        try await loadBlankDocument(into: webView)
+        await loadBlankDocument(into: webView)
 
         let firstDelivered = expectation(description: "first tab message delivered")
         let secondDelivered = expectation(description: "second tab message delivered")
@@ -69,7 +69,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         await normalTabController.waitForContentBlockingAssetsInstalled()
-        try await loadBlankDocument(into: webView)
+        await loadBlankDocument(into: webView)
 
         normalTabController.cleanUpBeforeClosing()
 
@@ -175,7 +175,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
 
         await normalTabController.waitForContentBlockingAssetsInstalled()
-        try await loadBlankDocument(into: webView)
+        await loadBlankDocument(into: webView)
 
         try await postTabSuspensionCanBeSuspended(
             false,
@@ -278,7 +278,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             configuration: configuration
         )
         await normalTabController.waitForContentBlockingAssetsInstalled()
-        try await loadBlankDocument(into: webView)
+        await loadBlankDocument(into: webView)
         return webView
     }
 
@@ -344,7 +344,7 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         )
     }
 
-    private func loadBlankDocument(into webView: WKWebView) async throws {
+    private func loadBlankDocument(into webView: WKWebView) async {
         let didFinish = expectation(description: "blank document loaded")
         let delegate = NavigationDelegateBox {
             didFinish.fulfill()
@@ -378,7 +378,6 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
             contentWorld: contentWorld
         )
     }
-
 }
 
 private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {

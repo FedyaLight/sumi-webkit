@@ -13,7 +13,7 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
             bundleURLs[bundleIdentifier]
         }
 
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
+        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
             openedBundleIdentifiers.append(bundleIdentifier)
         }
     }
@@ -25,7 +25,7 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
         var disconnectHandler: (((any Error)?) -> Void)?
         var disconnectError: (any Error)?
 
-        func recordReplyToExtension(_ message: Any) {}
+        func recordReplyToExtension(_: Any) { /* no-op */ }
 
         func disconnect() {
             isDisconnected = true
@@ -47,13 +47,13 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
         func start(
             proxyExecutableURL: URL,
             handshakeTimeout: Duration
-        ) async throws {
+        ) async {
             _ = proxyExecutableURL
             _ = handshakeTimeout
             isConnected = true
         }
 
-        func send(_ object: [String: Any]) throws {
+        func send(_ object: [String: Any]) {
             _ = object
         }
 
@@ -68,7 +68,7 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
         SumiNativeMessagingRuntimeCounters.resetForTesting()
     }
 
-    func testClearLaunchSessionShutsDownBitwardenDesktopTransport() async throws {
+    func testClearLaunchSessionShutsDownBitwardenDesktopTransport() async {
         let transport = ShutdownTrackingTransport()
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { transport },
@@ -219,7 +219,7 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
             extensionId: "ext-bitwarden",
             hostBundleIdentifier: "com.bitwarden.desktop",
             resolverBucket: .knownCompanionAlias,
-            logDiagnostic: { _ in },
+            logDiagnostic: { _ in /* no-op */ },
             companionProtocolErrorProvider: {
                 SumiNativeMessagingErrorMapper.relayError(
                     code: .companionAppProtocolUnknown,
@@ -255,7 +255,7 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
             port: port,
             extensionId: installed.id,
             installedExtensions: [installed],
-            registerHandler: { _ in },
+            registerHandler: { _ in /* no-op */ },
             completionHandler: { error in
                 connectError = error
                 expectation.fulfill()
@@ -268,7 +268,7 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
     private func makeInstalledExtension(
         id: String,
         sourceBundlePath: String
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         InstalledExtension(
             id: id,
             name: "Fixture",

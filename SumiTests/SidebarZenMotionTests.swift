@@ -1,6 +1,6 @@
 import AppKit
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class SidebarZenMotionTests: XCTestCase {
@@ -111,7 +111,7 @@ final class SidebarZenMotionTests: XCTestCase {
     private func makeInteractiveItemView(
         sourceID: String,
         state: SidebarInteractionState,
-        action: @escaping () -> Void = {}
+        action: @escaping () -> Void = { /* no-op */ }
     ) -> SidebarInteractiveItemView {
         let view = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 160, height: 36))
         view.update(

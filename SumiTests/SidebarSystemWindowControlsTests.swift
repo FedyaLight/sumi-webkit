@@ -283,7 +283,7 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             accessibilityIdentifier: BrowserWindowControlsAccessibilityIdentifiers.minimizeButton
         )
         XCTAssertNotNil(minimizeButton)
-        XCTAssertTrue(minimizeButton?.target as AnyObject === window)
+        XCTAssertIdentical(minimizeButton?.target as AnyObject, window)
         XCTAssertEqual(minimizeButton?.action.map(NSStringFromSelector), "miniaturize:")
         XCTAssertTrue(minimizeButton?.isEnabled ?? false)
 
@@ -320,8 +320,8 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         XCTAssertFalse(collapsedOverlaySource.contains("TrafficLightReserved"))
         XCTAssertFalse(collapsedOverlaySource.contains("trafficLightReserved"))
-        XCTAssertFalse(collapsedOverlaySource.range(of: #"split.*panel"#, options: .regularExpression) != nil)
-        XCTAssertFalse(collapsedOverlaySource.range(of: #"accessory.*panel"#, options: .regularExpression) != nil)
+        XCTAssertNil(collapsedOverlaySource.range(of: #"split.*panel"#, options: .regularExpression))
+        XCTAssertNil(collapsedOverlaySource.range(of: #"accessory.*panel"#, options: .regularExpression))
         XCTAssertFalse(collapsedOverlaySource.contains("standardWindowButton"))
         XCTAssertFalse(collapsedOverlaySource.contains("NSPanel"))
     }
@@ -389,5 +389,4 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
             )
         }
     }
-
 }

@@ -33,7 +33,7 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
         XCTAssertEqual(SidebarDropCoordinator.dragOperation(for: pasteboard), .move)
     }
 
-    func testInternalDragRequiresScopedPayload() throws {
+    func testInternalDragRequiresScopedPayload() {
         let item = SumiDragItem(
             tabId: UUID(),
             title: "Unscoped",
@@ -66,7 +66,7 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
     }
 
     @MainActor
-    func testValidPayloadScopeDoesNotRequireGlobalDragState() throws {
+    func testValidPayloadScopeDoesNotRequireGlobalDragState() {
         let profileId = UUID()
         let spaceId = UUID()
         let windowState = BrowserWindowState()
@@ -104,7 +104,7 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
     }
 
     @MainActor
-    func testMismatchedPayloadDoesNotFallBackToGlobalDragState() throws {
+    func testMismatchedPayloadDoesNotFallBackToGlobalDragState() {
         let profileId = UUID()
         let currentSpaceId = UUID()
         let staleSpaceId = UUID()

@@ -479,8 +479,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
     }
 
     func testVisibleTabSelectionDefersInitialWebViewCreationUntilNativeMessagingWarmup()
-        async throws
-    {
+        async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let registry = SumiModuleRegistry(
@@ -1585,8 +1584,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
     }
 
     func testUserGestureReconcileDoesNotRebuildLivePageForMissedContentScriptBinding()
-        async throws
-    {
+        async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let manager = makeManager(
@@ -2219,8 +2217,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
     }
 
     func testUserExtensionRuntimeTeardownMarksAllLiveNormalTabsAffected()
-        async throws
-    {
+        async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
         let browserConfiguration = BrowserConfiguration()
@@ -2826,8 +2823,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
                 if metrics.readyState == "complete",
                    metrics.loadedFromExtensionScheme,
                    metrics.elementCount > 0,
-                   metrics.scriptCount > 0
-                {
+                   metrics.scriptCount > 0 {
                     return metrics
                 }
             }

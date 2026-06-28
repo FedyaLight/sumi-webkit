@@ -20,7 +20,7 @@ final class BasicAuthCredentialStoreTests: XCTestCase {
             ("method", try XCTUnwrap(makeKey(method: NSURLAuthenticationMethodHTTPDigest, profileId: profileId, dataStoreId: dataStoreId))),
             ("profile", try XCTUnwrap(makeKey(profileId: try XCTUnwrap(UUID(uuidString: "cccccccc-cccc-cccc-cccc-cccccccccccc")), dataStoreId: dataStoreId))),
             ("private", try XCTUnwrap(makeKey(profileId: profileId, isEphemeral: true, dataStoreId: dataStoreId))),
-            ("data store", try XCTUnwrap(makeKey(profileId: profileId, dataStoreId: try XCTUnwrap(UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd")))))
+            ("data store", try XCTUnwrap(makeKey(profileId: profileId, dataStoreId: try XCTUnwrap(UUID(uuidString: "dddddddd-dddd-dddd-dddd-dddddddddddd"))))),
         ]
 
         for (name, variant) in variants {

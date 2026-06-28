@@ -13,7 +13,7 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
             bundleURLs[bundleIdentifier]
         }
 
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
+        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
             openedBundleIdentifiers.append(bundleIdentifier)
         }
     }
@@ -25,7 +25,7 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         var disconnectHandler: (((any Error)?) -> Void)?
         var disconnectError: (any Error)?
 
-        func recordReplyToExtension(_ message: Any) {}
+        func recordReplyToExtension(_: Any) { /* no-op */ }
 
         func disconnect() {
             isDisconnected = true
@@ -51,8 +51,8 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         }
 
         func relayOneShotMessage(
-            request: SumiNativeMessagingOneShotRequest,
-            launcher: SumiHostApplicationLaunching,
+            request _: SumiNativeMessagingOneShotRequest,
+            launcher _: SumiHostApplicationLaunching,
             replyHandler: @escaping (Any?, (any Error)?) -> Void
         ) {
             Task { @MainActor in
@@ -65,7 +65,7 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         func connectPort(
             session: SumiNativeMessagingPortSession,
             launcher: SumiHostApplicationLaunching,
-            completionHandler: @escaping ((any Error)?) -> Void
+            completionHandler: ((any Error)?) -> Void
         ) {
             _ = session
             _ = launcher
@@ -171,7 +171,7 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
             extensionId: "ext-idle",
             hostBundleIdentifier: "com.example.host",
             resolverBucket: .knownCompanionAlias,
-            logDiagnostic: { _ in },
+            logDiagnostic: { _ in /* no-op */ },
             companionProtocolErrorProvider: {
                 SumiNativeMessagingErrorMapper.relayError(
                     code: .companionAppProtocolUnknown,
@@ -331,7 +331,7 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
             port: port,
             extensionId: installed.id,
             installedExtensions: [installed],
-            registerHandler: { _ in },
+            registerHandler: { _ in /* no-op */ },
             completionHandler: { error in
                 connectError = error
                 expectation.fulfill()
@@ -344,7 +344,7 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
     private func makeInstalledExtension(
         id: String,
         sourceBundlePath: String
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         InstalledExtension(
             id: id,
             name: "Fixture",

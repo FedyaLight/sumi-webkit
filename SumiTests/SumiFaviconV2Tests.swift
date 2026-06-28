@@ -163,7 +163,7 @@ final class SumiFaviconV2DiscoveryTests: XCTestCase {
             partition: .regular(nil)
         )
 
-        XCTAssertEqual(Set(candidates.compactMap { $0.iconURL.scheme }), ["data", "blob"])
+        XCTAssertEqual(Set(candidates.compactMap(\.iconURL.scheme)), ["data", "blob"])
         XCTAssertTrue(
             SumiFaviconDiscovery.rootFallbackCandidates(for: pageURL, partition: .regular(nil))
                 .allSatisfy { $0.iconURL.scheme == "https" }
@@ -1981,7 +1981,7 @@ private enum SumiFaviconTestImages {
 private actor RecordingFaviconNetworkFetcher: SumiFaviconNetworkFetching {
     private(set) var callCount = 0
 
-    func fetch(url: URL, context: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
+    func fetch(url _: URL, context _: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
         callCount += 1
         try? await Task.sleep(nanoseconds: 50_000_000)
         return .success(
@@ -2007,7 +2007,7 @@ private actor PriorityRecordingFaviconNetworkFetcher: SumiFaviconNetworkFetching
         firstContinuation = nil
     }
 
-    func fetch(url: URL, context: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
+    func fetch(url: URL, context _: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
         started.append(url.path)
         if started.count == 1 {
             await withCheckedContinuation { continuation in
@@ -2040,7 +2040,7 @@ private actor ControlledFaviconNetworkFetcher: SumiFaviconNetworkFetching {
         releaseContinuations.removeValue(forKey: callNumber)?.resume()
     }
 
-    func fetch(url: URL, context: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
+    func fetch(url _: URL, context _: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
         callCount += 1
         let callNumber = callCount
         resumeSatisfiedStartWaiters()
@@ -2073,7 +2073,7 @@ private actor RoutingFaviconNetworkFetcher: SumiFaviconNetworkFetching {
         self.responses = responses
     }
 
-    func fetch(url: URL, context: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
+    func fetch(url: URL, context _: SumiFaviconFetchContext) async -> SumiFaviconFetchResult {
         requestedURLs.append(url)
         return responses[url.absoluteString] ?? .failure(.notFound)
     }

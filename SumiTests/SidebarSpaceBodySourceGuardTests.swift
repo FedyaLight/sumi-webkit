@@ -25,7 +25,7 @@ final class SidebarSpaceBodySourceGuardTests: XCTestCase {
             "browserManager.profileManager",
             "baseFolderItems",
             "liveFolderItems",
-            "sortedFolderItems("
+            "sortedFolderItems(",
         ] {
             XCTAssertFalse(bodySource.contains(forbidden), "TabFolderView.body should not contain \(forbidden)")
         }
@@ -48,7 +48,7 @@ final class SidebarSpaceBodySourceGuardTests: XCTestCase {
             "dragState.projectionFolderDropIntent",
             "dragState.shouldHideCommittedCrossContainerPlaceholder",
             "private func folderDisplayEntries",
-            "private func folderDisplayID"
+            "private func folderDisplayID",
         ] {
             XCTAssertFalse(folderSource.contains(forbidden), "TabFolderView should not own \(forbidden)")
         }
@@ -72,7 +72,7 @@ final class SidebarSpaceBodySourceGuardTests: XCTestCase {
             "private func folderHeaderContextMenuEntries",
             "private func liveFolderHeaderContextMenuEntries",
             "private func refreshIntervalSubmenu",
-            "private func presentShortcutLinkEditor"
+            "private func presentShortcutLinkEditor",
         ] {
             XCTAssertFalse(folderSource.contains(forbidden), "TabFolderView should not own \(forbidden)")
         }

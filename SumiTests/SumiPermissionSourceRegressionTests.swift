@@ -269,7 +269,7 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
 
     @MainActor
     private func waitUntil(
-        _ condition: @escaping @MainActor () -> Bool,
+        _ condition: @MainActor () -> Bool,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {

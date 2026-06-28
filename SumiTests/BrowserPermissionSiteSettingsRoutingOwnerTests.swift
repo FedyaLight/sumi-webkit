@@ -100,7 +100,7 @@ final class BrowserPermissionSiteSettingsRoutingOwnerTests: XCTestCase {
             }
         )
 
-        XCTAssertTrue(resolved === activeWindow)
+        XCTAssertIdentical(resolved, activeWindow)
     }
 
     func testPermissionPageWindowLookupFallsBackToAllWindows() {
@@ -122,6 +122,6 @@ final class BrowserPermissionSiteSettingsRoutingOwnerTests: XCTestCase {
             }
         )
 
-        XCTAssertTrue(resolved === firstWindow)
+        XCTAssertIdentical(resolved, firstWindow)
     }
 }

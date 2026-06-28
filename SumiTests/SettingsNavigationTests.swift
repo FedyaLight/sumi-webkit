@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class SettingsNavigationTests: XCTestCase {

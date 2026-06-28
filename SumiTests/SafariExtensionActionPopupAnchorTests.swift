@@ -48,7 +48,7 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
             "URL-hub click context must capture the popup anchor before async runtime work"
         )
         XCTAssertTrue(
-            actionContext.range(
+            try XCTUnwrap(actionContext.range(
                 of: "captureActionPopupAnchor",
                 options: .backwards
             ).map { captureRange in
@@ -56,7 +56,7 @@ final class SafariExtensionActionPopupAnchorTests: XCTestCase {
                     of: "openActionPopupFromURLHub",
                     range: captureRange.upperBound..<actionContext.endIndex
                 ) != nil
-            } == true,
+            }),
             "Anchor capture must precede openActionPopupFromURLHub in the click handler"
         )
         XCTAssertTrue(

@@ -13,7 +13,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
             bundleURLs[bundleIdentifier]
         }
 
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
+        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
             openedBundleIdentifiers.append(bundleIdentifier)
         }
     }
@@ -47,14 +47,14 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         }
 
         func connectPort(
-            session: SumiNativeMessagingPortSession,
-            launcher: SumiHostApplicationLaunching,
-            completionHandler: @escaping ((any Error)?) -> Void
+            session _: SumiNativeMessagingPortSession,
+            launcher _: SumiHostApplicationLaunching,
+            completionHandler: ((any Error)?) -> Void
         ) {
             completionHandler(nil)
         }
 
-        func relayPortMessage(session: SumiNativeMessagingPortSession, message: Any) -> Bool {
+        func relayPortMessage(session _: SumiNativeMessagingPortSession, message _: Any) -> Bool {
             false
         }
     }
@@ -81,7 +81,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
 
         XCTAssertEqual(identity?.resolvedBundleIdentifier, "com.example.containing")
         XCTAssertEqual(identity?.resolutionSource, .containingAppOfImportedAppex)
-        XCTAssertTrue(identity?.isContainingApp == true)
+        XCTAssertEqual(identity?.isContainingApp, true)
     }
 
     func testResolverResolvesPublicBundleIDMetadata() throws {
@@ -101,7 +101,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
 
         XCTAssertEqual(identity?.resolvedBundleIdentifier, "com.bitwarden.desktop")
         XCTAssertEqual(identity?.resolutionSource, .publicBundleIdentityAlias)
-        XCTAssertFalse(identity?.isContainingApp == true)
+        XCTAssertNotEqual(identity?.isContainingApp, true)
     }
 
     func testNativeMessagingPolicyAllowsPublicAliasForMatchingContainingApp() throws {
@@ -229,13 +229,12 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         XCTAssertEqual(identityA?.resolvedBundleIdentifier, "com.example.containing.a")
         XCTAssertEqual(identityB?.resolvedBundleIdentifier, "com.example.containing.b")
         XCTAssertEqual(identityA?.resolutionSource, .containingAppOfImportedAppex)
-        XCTAssertTrue(identityA?.isContainingApp == true)
-        XCTAssertTrue(identityB?.isContainingApp == true)
+        XCTAssertEqual(identityA?.isContainingApp, true)
+        XCTAssertEqual(identityB?.isContainingApp, true)
     }
 
     func testApplicationIdReturnsTypedUnsupportedBackendWithoutSafariHandlerAdapter()
-        async throws
-    {
+        async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.example.containing",
             appexBundleID: "com.example.containing.extension"
@@ -463,12 +462,12 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         let diagnostic = try XCTUnwrap(diagnostics.last)
         XCTAssertEqual(diagnostic.requestedApplicationIdentifier, "com.example.host")
         XCTAssertEqual(diagnostic.hostBundleIdentifier, "com.example.host")
-        XCTAssertEqual(diagnostic.protocolAdapterAvailable, false)
-        XCTAssertEqual(diagnostic.launchAllowed, false)
+        XCTAssertFalse(try XCTUnwrap(diagnostic.protocolAdapterAvailable))
+        XCTAssertFalse(try XCTUnwrap(diagnostic.launchAllowed))
         XCTAssertEqual(diagnostic.outcome, .companionAppProtocolUnknown)
     }
 
-    func testDisableModuleClearsPendingLaunchState() async throws {
+    func testDisableModuleClearsPendingLaunchState() async {
         let launchPolicy = SumiCompanionAppLaunchPolicy()
         let loopGuard = SumiNativeMessagingRelayLoopGuard()
         var moduleEnabled = true

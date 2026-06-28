@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 final class SpaceCreationSessionTests: XCTestCase {
     @MainActor
@@ -14,7 +14,7 @@ final class SpaceCreationSessionTests: XCTestCase {
             defaultProfileID: defaultProfileID
         )
 
-        XCTAssertTrue(windowState.activeSpaceCreationSession === session)
+        XCTAssertIdentical(windowState.activeSpaceCreationSession, session)
         XCTAssertEqual(session.previousSpaceID, previousSpaceID)
         XCTAssertEqual(session.profileID, defaultProfileID)
         XCTAssertEqual(session.resolvedIcon, SpaceCreationSession.defaultIcon)
@@ -43,7 +43,7 @@ final class SpaceCreationSessionTests: XCTestCase {
             defaultProfileID: UUID()
         )
 
-        XCTAssertTrue(duplicate === session)
+        XCTAssertIdentical(duplicate, session)
 
         windowState.finishSpaceCreationSession(session, reason: "SpaceCreationSessionTests")
 

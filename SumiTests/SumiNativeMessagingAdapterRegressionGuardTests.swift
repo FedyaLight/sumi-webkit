@@ -371,7 +371,7 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         XCTAssertEqual(raindrop?.biometricsStatusProbe, .notApplicable)
     }
 
-    func testDiagnosticEnrichmentMapsFailureBucketWithoutPayload() {
+    func testDiagnosticEnrichmentMapsFailureBucketWithoutPayload() throws {
         let diagnostic = SafariExtensionNativeMessagingDiagnostic(
             extensionId: "ext-test",
             direction: .send,
@@ -386,7 +386,7 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         let enriched = SafariExtensionNativeMessagingDiagnosticEnrichment.enrich(diagnostic)
         XCTAssertEqual(enriched.failureBucket, .adapterUnavailable)
         XCTAssertEqual(enriched.protocolStatus, .protocolUnknown)
-        XCTAssertEqual(enriched.appResolved, true)
+        XCTAssertTrue(try XCTUnwrap(enriched.appResolved))
     }
 
     func testDiagnosticEnrichmentMapsAdapterRegisteredRelayTimeout() {

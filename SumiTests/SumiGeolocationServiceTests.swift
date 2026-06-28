@@ -32,7 +32,7 @@ final class SumiGeolocationServiceTests: XCTestCase {
             systemPermissionService: FakeSumiSystemPermissionService(states: [.geolocation: .systemDisabled])
         )
 
-        let error = await service.startUpdatingLocation(highAccuracy: false) { _ in }
+        let error = await service.startUpdatingLocation(highAccuracy: false) { _ in /* no-op */ }
 
         XCTAssertEqual(error, .systemDisabled)
         XCTAssertEqual(manager.startUpdatingLocationCallCount, 0)

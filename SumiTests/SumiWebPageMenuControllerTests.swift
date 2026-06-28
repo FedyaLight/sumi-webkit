@@ -1,7 +1,7 @@
 import AppKit
+@testable import Sumi
 import WebKit
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class SumiWebPageMenuControllerTests: XCTestCase {
@@ -190,7 +190,7 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
         }, 1)
     }
 
-    @objc private func noop(_: Any?) {}
+    @objc private func noop(_: Any?) { /* no-op */ }
 
     private func prepare(
         _ menu: NSMenu,

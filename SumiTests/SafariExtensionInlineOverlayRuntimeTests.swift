@@ -113,8 +113,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
         for _ in 0..<70 {
             if let json = try await evaluateString(script, in: webView),
                let data = json.data(using: .utf8),
-               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            {
+               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 let status = object["status"] as? String
                 let height = object["height"] as? Double ?? 0
                 let detail = object["detail"] as? String ?? ""
@@ -712,8 +711,8 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
         }
 
         func webView(
-            _ webView: WKWebView,
-            didFinish navigation: WKNavigation!
+            _: WKWebView,
+            didFinish _: WKNavigation! // swiftlint:disable:this implicitly_unwrapped_optional
         ) {
             onFinish()
         }

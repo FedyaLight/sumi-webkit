@@ -18,7 +18,7 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
             activeWindow: activeWindow,
             windows: [
                 activeWindow.id: activeWindow,
-                otherWindow.id: otherWindow
+                otherWindow.id: otherWindow,
             ],
             cancelEmptySplitPlaceholder: { windowState in
                 cancelledWindows.append(windowState.id)
@@ -98,27 +98,27 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
         activeWindow: BrowserWindowState? = nil,
         windows: [UUID: BrowserWindowState] = [:],
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
-        cancelEmptySplitPlaceholder: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
-        createNewTab: @escaping @MainActor (BrowserWindowState, String) -> Void = { _, _ in },
+        cancelEmptySplitPlaceholder: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* no-op */ },
+        createNewTab: @escaping @MainActor (BrowserWindowState, String) -> Void = { _, _ in /* no-op */ },
         configuredNewTabPageURL: @escaping @MainActor () -> String? = { nil },
-        persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in }
+        persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* no-op */ }
     ) -> FloatingBarNavigationOwner.Actions {
         FloatingBarNavigationOwner.Actions(
             activeWindow: { activeWindow },
             window: { windows[$0] },
             activePageTab: activePageTab,
             cancelEmptySplitPlaceholder: cancelEmptySplitPlaceholder,
-            commitEmptySplitPlaceholder: { _, _ in },
+            commitEmptySplitPlaceholder: { _, _ in /* no-op */ },
             replaceEmptySplitPlaceholder: { _, _ in false },
-            selectTab: { _, _ in },
+            selectTab: { _, _ in /* no-op */ },
             createNewTab: createNewTab,
-            createNewTabAfterSidebarInsertion: { _, _ in },
+            createNewTabAfterSidebarInsertion: { _, _ in /* no-op */ },
             configuredNewTabPageURL: configuredNewTabPageURL,
             normalizeURL: { $0 },
-            applySettingsSurfaceNavigation: { _ in },
-            dismissWorkspaceThemePickerIfNeededDiscarding: {},
+            applySettingsSurfaceNavigation: { _ in /* no-op */ },
+            dismissWorkspaceThemePickerIfNeededDiscarding: { /* no-op */ },
             persistWindowSession: persistWindowSession,
-            schedulePersistWindowSession: { _ in }
+            schedulePersistWindowSession: { _ in /* no-op */ }
         )
     }
 }

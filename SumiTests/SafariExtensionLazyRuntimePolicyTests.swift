@@ -42,7 +42,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
     func testEightProfilesWithOneExtensionCreatesAtMostOneContextUntilUsed() async throws {
         let container = try makeTestContainer()
         var profiles: [Profile] = []
-        for index in 1 ... 8 {
+        for index in 1...8 {
             profiles.append(Profile(name: "Profile \(index)"))
         }
 

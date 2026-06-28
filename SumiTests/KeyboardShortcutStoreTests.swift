@@ -17,7 +17,7 @@ final class KeyboardShortcutStoreTests: XCTestCase {
             UnknownShortcutOverride(
                 action: "unknown_action",
                 keyCombination: KeyCombination(key: "l", modifiers: [.command, .option])
-            )
+            ),
         ]
         defaults.set(try JSONEncoder().encode(overrides), forKey: "keyboard.shortcuts")
 

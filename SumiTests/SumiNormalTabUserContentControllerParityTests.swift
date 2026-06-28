@@ -9,10 +9,10 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
     func testNormalTabFactoryExposesSumiBoundaryAndInstallsProviderScriptsOnce() async throws {
         let provider = SumiNormalTabUserScripts(
             contentBlockingUserScripts: [
-                ParityUserScript(context: "sumiParityContentBlocking", sourceMarker: "__sumiParityContentBlocking")
+                ParityUserScript(context: "sumiParityContentBlocking", sourceMarker: "__sumiParityContentBlocking"),
             ],
             managedUserScripts: [
-                ParityUserScript(context: "sumiParityManaged", sourceMarker: "__sumiParityManaged")
+                ParityUserScript(context: "sumiParityManaged", sourceMarker: "__sumiParityManaged"),
             ]
         )
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
@@ -25,9 +25,9 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         await normalTabController.waitForContentBlockingAssetsInstalled()
 
         XCTAssertTrue(controller.sumiUsesNormalTabSumiUserContentController)
-        XCTAssertTrue(normalTabController.wkUserContentController === controller)
-        XCTAssertTrue(normalTabController.normalTabUserScriptsProvider === provider)
-        XCTAssertTrue(controller.sumiNormalTabUserScriptsProvider === provider)
+        XCTAssertIdentical(normalTabController.wkUserContentController, controller)
+        XCTAssertIdentical(normalTabController.normalTabUserScriptsProvider, provider)
+        XCTAssertIdentical(controller.sumiNormalTabUserScriptsProvider, provider)
         XCTAssertEqual(normalTabController.contentBlockingAssetSummary.globalRuleListCount, 0)
         XCTAssertFalse(normalTabController.contentBlockingAssetSummary.isContentBlockingFeatureEnabled)
         XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
@@ -39,7 +39,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
     func testFactoryPreinstallsDisabledUserContentWithoutAsyncWait() throws {
         let provider = SumiNormalTabUserScripts(
             managedUserScripts: [
-                ParityUserScript(context: "sumiParityFastPath", sourceMarker: "__sumiParityFastPath")
+                ParityUserScript(context: "sumiParityFastPath", sourceMarker: "__sumiParityFastPath"),
             ]
         )
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
@@ -58,10 +58,10 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
     func testReplacingManagedScriptsUpdatesVisibleInstalledSetAndKeepsProviderBoundary() async throws {
         let provider = SumiNormalTabUserScripts(
             contentBlockingUserScripts: [
-                ParityUserScript(context: "sumiParityStableContentBlocking", sourceMarker: "__sumiParityStableContentBlocking")
+                ParityUserScript(context: "sumiParityStableContentBlocking", sourceMarker: "__sumiParityStableContentBlocking"),
             ],
             managedUserScripts: [
-                ParityUserScript(context: "sumiParityFirstManaged", sourceMarker: "__sumiParityFirstManaged")
+                ParityUserScript(context: "sumiParityFirstManaged", sourceMarker: "__sumiParityFirstManaged"),
             ]
         )
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
@@ -72,12 +72,12 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         let initialSummary = normalTabController.contentBlockingAssetSummary
 
         provider.replaceManagedUserScripts([
-            ParityUserScript(context: "sumiParitySecondManaged", sourceMarker: "__sumiParitySecondManaged")
+            ParityUserScript(context: "sumiParitySecondManaged", sourceMarker: "__sumiParitySecondManaged"),
         ])
         await normalTabController.replaceNormalTabUserScripts(with: provider)
 
         XCTAssertTrue(controller.sumiUsesNormalTabSumiUserContentController)
-        XCTAssertTrue(normalTabController.normalTabUserScriptsProvider === provider)
+        XCTAssertIdentical(normalTabController.normalTabUserScriptsProvider, provider)
         XCTAssertEqual(normalTabController.contentBlockingAssetSummary, initialSummary)
         XCTAssertEqual(controller.userScripts.count, provider.userScripts.count)
         XCTAssertEqual(installedScriptCount(containing: "__sumiParityStableContentBlocking", in: controller), 1)
@@ -89,7 +89,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
     func testEquivalentReplacementDoesNotDuplicateInstalledScripts() async throws {
         let provider = SumiNormalTabUserScripts(
             managedUserScripts: [
-                ParityUserScript(context: "sumiParityIdempotentManaged", sourceMarker: "__sumiParityIdempotentManaged")
+                ParityUserScript(context: "sumiParityIdempotentManaged", sourceMarker: "__sumiParityIdempotentManaged"),
             ]
         )
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
@@ -109,15 +109,15 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
     func testEquivalentManagedScriptSetDoesNotAdvanceRevision() {
         let provider = SumiNormalTabUserScripts(
             managedUserScripts: [
-                ParityUserScript(context: "sumiParityStableManaged", sourceMarker: "__sumiParityStableManaged")
+                ParityUserScript(context: "sumiParityStableManaged", sourceMarker: "__sumiParityStableManaged"),
             ]
         )
 
         let didReplaceEquivalentScripts = provider.replaceManagedUserScriptsIfChanged([
-            ParityUserScript(context: "sumiParityStableManaged", sourceMarker: "__sumiParityStableManaged")
+            ParityUserScript(context: "sumiParityStableManaged", sourceMarker: "__sumiParityStableManaged"),
         ])
         let didReplaceChangedScripts = provider.replaceManagedUserScriptsIfChanged([
-            ParityUserScript(context: "sumiParityChangedManaged", sourceMarker: "__sumiParityChangedManaged")
+            ParityUserScript(context: "sumiParityChangedManaged", sourceMarker: "__sumiParityChangedManaged"),
         ])
 
         XCTAssertFalse(didReplaceEquivalentScripts)
@@ -159,7 +159,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
     func testEnabledContentBlockingAssetsReportInstalledRuleAndFeatureSummary() async throws {
         let service = SumiContentBlockingService(
             policy: .enabled(ruleLists: [
-                Self.validRuleListDefinition(name: "SumiParityEnabledRules")
+                Self.validRuleListDefinition(name: "SumiParityEnabledRules"),
             ])
         )
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
@@ -195,7 +195,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertTrue(initialSummary.isContentBlockingFeatureEnabled)
 
         let replacementPolicy = SumiContentBlockingPolicy.enabled(ruleLists: [
-            Self.validRuleListDefinition(name: "SumiParityReplacementRules")
+            Self.validRuleListDefinition(name: "SumiParityReplacementRules"),
         ])
         service.setPolicy(replacementPolicy)
         let replacementSummary = await waitForContentBlockingSummary(on: normalTabController) {
@@ -221,7 +221,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         await normalTabController.waitForContentBlockingAssetsInstalled()
         let disabledSummary = normalTabController.contentBlockingAssetSummary
         let replacementPolicy = SumiContentBlockingPolicy.enabled(ruleLists: [
-            Self.validRuleListDefinition(name: "SumiParityPublisherRules")
+            Self.validRuleListDefinition(name: "SumiParityPublisherRules"),
         ])
 
         let summaries = await withCheckedContinuation { continuation in
@@ -246,7 +246,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertTrue(summaries[1].isContentBlockingFeatureEnabled)
     }
 
-    func testContentBlockingDrainReturnsAfterCancellingDelayedRuleListRefresh() async throws {
+    func testContentBlockingDrainReturnsAfterCancellingDelayedRuleListRefresh() async {
         let provider = ParityContentRuleListProvider()
         let service = SumiContentBlockingService(ruleListProvider: provider)
 
@@ -264,7 +264,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
             provider.sendChange()
         }
 
-        for _ in 0 ..< 20 where weakService != nil {
+        for _ in 0..<20 where weakService != nil {
             await Task.yield()
         }
 
@@ -274,7 +274,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
     func testCleanupAfterInstalledContentBlockingAssetsIsIdempotentAndPreservesCurrentVisibleSummary() async throws {
         let service = SumiContentBlockingService(
             policy: .enabled(ruleLists: [
-                Self.validRuleListDefinition(name: "SumiParityCleanupRules")
+                Self.validRuleListDefinition(name: "SumiParityCleanupRules"),
             ])
         )
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
@@ -303,7 +303,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
     func testCleanupIsIdempotentAndPreventsLaterScriptReplacement() async throws {
         let provider = SumiNormalTabUserScripts(
             managedUserScripts: [
-                ParityUserScript(context: "sumiParityCleanupInitial", sourceMarker: "__sumiParityCleanupInitial")
+                ParityUserScript(context: "sumiParityCleanupInitial", sourceMarker: "__sumiParityCleanupInitial"),
             ]
         )
         let controller: WKUserContentController = SumiNormalTabUserContentControllerFactory.makeController(
@@ -318,7 +318,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         XCTAssertTrue(controller.userScripts.isEmpty)
 
         provider.replaceManagedUserScripts([
-            ParityUserScript(context: "sumiParityCleanupReplacement", sourceMarker: "__sumiParityCleanupReplacement")
+            ParityUserScript(context: "sumiParityCleanupReplacement", sourceMarker: "__sumiParityCleanupReplacement"),
         ])
         await normalTabController.replaceNormalTabUserScripts(with: provider)
         await normalTabController.waitForContentBlockingAssetsInstalled()
@@ -343,15 +343,15 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         let webView = makeWebView(userContentController: controller)
         firstScript.onMessage = { message in
             XCTAssertEqual(message.name, context)
-            XCTAssertTrue(message.webView === webView)
+            XCTAssertIdentical(message.webView, webView)
             firstDelivered.fulfill()
         }
         secondScript.onMessage = { message in
             XCTAssertEqual(message.name, context)
-            XCTAssertTrue(message.webView === webView)
+            XCTAssertIdentical(message.webView, webView)
             secondDelivered.fulfill()
         }
-        try await loadBlankDocument(into: webView)
+        await loadBlankDocument(into: webView)
 
         try await postMessage(to: context, in: webView)
         await fulfillment(of: [firstDelivered], timeout: 5.0)
@@ -377,12 +377,12 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         let delivered = expectation(description: "reply handler delivered original message")
         replyScript.onReply = { message in
             XCTAssertEqual(message.name, context)
-            XCTAssertTrue(message.webView === webView)
+            XCTAssertIdentical(message.webView, webView)
             XCTAssertEqual(message.frameInfo.securityOrigin.host, "example.com")
             delivered.fulfill()
             return #"{"context":"\#(context)","id":"reply-id","result":{"accepted":true}}"#
         }
-        try await loadBlankDocument(into: webView)
+        await loadBlankDocument(into: webView)
 
         let response = try await evaluateReturningString(
             """
@@ -408,7 +408,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         let normalTabController = try XCTUnwrap(controller.sumiNormalTabUserContentController)
         await normalTabController.waitForContentBlockingAssetsInstalled()
         let webView = makeWebView(userContentController: controller)
-        try await loadBlankDocument(into: webView)
+        await loadBlankDocument(into: webView)
 
         weak var weakScript: ReplyParityUserScript?
         do {
@@ -509,7 +509,7 @@ final class SumiNormalTabUserContentControllerParityTests: XCTestCase {
         )
     }
 
-    private func loadBlankDocument(into webView: WKWebView) async throws {
+    private func loadBlankDocument(into webView: WKWebView) async {
         let didFinish = expectation(description: "blank document loaded")
         let delegate = ParityNavigationDelegateBox {
             didFinish.fulfill()
@@ -576,7 +576,7 @@ private final class ParityContentRuleListProvider: SumiContentRuleListSetProvidi
         subject.send(())
     }
 
-    func ruleListSet(profileId: UUID?) throws -> SumiContentRuleListSet {
+    func ruleListSet(profileId: UUID?) -> SumiContentRuleListSet {
         _ = profileId
         return SumiContentRuleListSet()
     }

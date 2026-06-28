@@ -13,16 +13,16 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(browserManager.compositorManager.browserManager === browserManager)
-        XCTAssertTrue(browserManager.tabManager.browserManager === browserManager)
+        XCTAssertIdentical(browserManager.compositorManager.browserManager, browserManager)
+        XCTAssertIdentical(browserManager.tabManager.browserManager, browserManager)
         XCTAssertTrue(browserManager.tabManager.runtimeContext is BrowserManagerTabRuntimeContext)
-        XCTAssertTrue(browserManager.splitManager.browserManager === browserManager)
-        XCTAssertTrue(browserManager.downloadManager.browserManager === browserManager)
-        XCTAssertTrue(browserManager.extensionsModule.browserManager === browserManager)
-        XCTAssertTrue(browserManager.userscriptsModule.browserManager === browserManager)
-        XCTAssertTrue(browserManager.boostsModule.browserManager === browserManager)
-        XCTAssertTrue(browserManager.auxiliaryWindowManager.browserManager === browserManager)
-        XCTAssertTrue(browserManager.glanceManager.browserManager === browserManager)
+        XCTAssertIdentical(browserManager.splitManager.browserManager, browserManager)
+        XCTAssertIdentical(browserManager.downloadManager.browserManager, browserManager)
+        XCTAssertIdentical(browserManager.extensionsModule.browserManager, browserManager)
+        XCTAssertIdentical(browserManager.userscriptsModule.browserManager, browserManager)
+        XCTAssertIdentical(browserManager.boostsModule.browserManager, browserManager)
+        XCTAssertIdentical(browserManager.auxiliaryWindowManager.browserManager, browserManager)
+        XCTAssertIdentical(browserManager.glanceManager.browserManager, browserManager)
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
     }
@@ -55,12 +55,12 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             externalSchemeSessionStore: externalSchemeSessionStore
         )
 
-        XCTAssertTrue(browserManager.permissionIndicatorEventStore === indicatorEventStore)
-        XCTAssertTrue(browserManager.permissionRecentActivityStore === recentActivityStore)
-        XCTAssertTrue(browserManager.permissionSiteActivityStore === siteActivityStore)
-        XCTAssertTrue(browserManager.permissionCleanupService === cleanupService)
-        XCTAssertTrue(browserManager.blockedPopupStore === blockedPopupStore)
-        XCTAssertTrue(browserManager.externalSchemeSessionStore === externalSchemeSessionStore)
+        XCTAssertIdentical(browserManager.permissionIndicatorEventStore, indicatorEventStore)
+        XCTAssertIdentical(browserManager.permissionRecentActivityStore, recentActivityStore)
+        XCTAssertIdentical(browserManager.permissionSiteActivityStore, siteActivityStore)
+        XCTAssertIdentical(browserManager.permissionCleanupService, cleanupService)
+        XCTAssertIdentical(browserManager.blockedPopupStore, blockedPopupStore)
+        XCTAssertIdentical(browserManager.externalSchemeSessionStore, externalSchemeSessionStore)
     }
 
     func testRuntimeNotificationsPreserveLazyExtensionRuntime() throws {
@@ -104,7 +104,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             "let structuralChangeCancellable = bindTabManagerStructuralUpdates(for: browserManager)",
             "browserManager.auxiliaryWindowManager.attach(browserManager: browserManager)",
             "browserManager.glanceManager.attach(browserManager: browserManager)",
-            "browserManager.authenticationManager.attach(browserManager: browserManager)"
+            "browserManager.authenticationManager.attach(browserManager: browserManager)",
         ]
 
         try assertTokensAppearInOrder(orderedTokens, in: source)
@@ -123,7 +123,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             "browserManager.extensionsModule.notifyWindowOpenedIfLoaded",
             "browserManager.extensionsModule.notifyWindowFocusedIfLoaded",
             "browserManager.extensionsModule.notifyTabClosedIfLoaded",
-            "scheduleTabRuntimeReconcile(for: browserManager, reason: reason)"
+            "scheduleTabRuntimeReconcile(for: browserManager, reason: reason)",
         ] {
             XCTAssertTrue(runtimeWiringSource.contains(expectedToken), expectedToken)
         }
@@ -131,7 +131,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         for forbiddenToken in [
             "extensionsModule.notifyTabActivatedIfLoaded",
             "extensionsModule.notifyWindowOpenedIfLoaded",
-            "extensionsModule.notifyWindowFocusedIfLoaded"
+            "extensionsModule.notifyWindowFocusedIfLoaded",
         ] {
             XCTAssertFalse(browserManagerSource.contains(forbiddenToken), forbiddenToken)
         }
@@ -154,7 +154,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             "self.boostsModule.attach(browserManager: self)",
             "self.auxiliaryWindowManager.attach(browserManager: self)",
             "self.glanceManager.attach(browserManager: self)",
-            "self.authenticationManager.attach(browserManager: self)"
+            "self.authenticationManager.attach(browserManager: self)",
         ] {
             XCTAssertFalse(source.contains(forbiddenToken), forbiddenToken)
         }
@@ -170,7 +170,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             "windowSessionActivationOwner.setActiveWindowState(windowState)",
             "func persistWindowSession(for windowState: BrowserWindowState) {\n        windowSessionActivationOwner.persistWindowSession(for: windowState)\n    }",
             "windowSessionActivationOwner.flushPendingWindowSessionPersistence()",
-            "scheduleNativeNowPlayingRefresh: { delayNanoseconds in"
+            "scheduleNativeNowPlayingRefresh: { delayNanoseconds in",
         ]
 
         XCTAssertFalse(
@@ -183,7 +183,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             "final class BrowserWindowSessionActivationOwner",
             "let scheduleNativeNowPlayingRefresh: @MainActor (UInt64) -> Void",
             "dependencies.scheduleNativeNowPlayingRefresh(0)",
-            "dependencies.windowSessionService.persistWindowSession("
+            "dependencies.windowSessionService.persistWindowSession(",
         ] {
             XCTAssertTrue(ownerSource.contains(expectedOwnerToken), expectedOwnerToken)
         }

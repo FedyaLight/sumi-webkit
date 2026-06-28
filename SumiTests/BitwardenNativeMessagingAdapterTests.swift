@@ -14,7 +14,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             bundleURLs[bundleIdentifier]
         }
 
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
+        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
             openedBundleIdentifiers.append(bundleIdentifier)
         }
     }
@@ -46,7 +46,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         }
     }
 
-    func testHandshakeWithFakeDesktopTransport() async throws {
+    func testHandshakeWithFakeDesktopTransport() async {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
@@ -92,7 +92,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertNotNil(reply["response"])
     }
 
-    func testSetupEncryptionRelaysToDesktopProxy() async throws {
+    func testSetupEncryptionRelaysToDesktopProxy() async {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
@@ -121,7 +121,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
     }
 
-    func testConnectLaunchesDesktopWhenHandshakeReportsAppNotRunning() async throws {
+    func testConnectLaunchesDesktopWhenHandshakeReportsAppNotRunning() async {
         var attempt = 0
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: {
@@ -256,7 +256,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
     }
 
-    func testPortDisconnectHandledSafely() async throws {
+    func testPortDisconnectHandledSafely() async {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
@@ -381,7 +381,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertEqual(port.repliesSent.count, 0)
     }
 
-    func testRepeatedUnsupportedCommandsDoNotAccumulateTransportSends() async throws {
+    func testRepeatedUnsupportedCommandsDoNotAccumulateTransportSends() async {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
@@ -581,7 +581,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
 
         XCTAssertEqual(evaluation.detail?.resolvedBundleIdentifier, "com.bitwarden.desktop")
-        XCTAssertTrue(evaluation.detail?.protocolAdapterAvailable == true)
+        XCTAssertEqual(evaluation.detail?.protocolAdapterAvailable, true)
 
         let port = MockNativeMessagingPort()
         let connectResult = await connectReply(relay: relay, port: port, installed: installed)
@@ -718,7 +718,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         }
     }
 
-    func testShowPopoverOneShotMatchesSafariWebExtensionHandler() async throws {
+    func testShowPopoverOneShotMatchesSafariWebExtensionHandler() async {
         let adapter = BitwardenNativeMessagingAdapter()
         let expectation = expectation(description: "showPopover")
         var replyValue: Any?
@@ -742,7 +742,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertTrue(replyValue is NSNull)
     }
 
-    func testSleepOneShotCompletesAsynchronously() async throws {
+    func testSleepOneShotCompletesAsynchronously() async {
         let priorDelay = BitwardenSafariOneShotHandler.sleepDelay
         defer { BitwardenSafariOneShotHandler.sleepDelay = priorDelay }
         BitwardenSafariOneShotHandler.sleepDelay = .milliseconds(50)
@@ -770,7 +770,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertTrue(replyValue is NSNull)
     }
 
-    func testPopupOpenPortSequenceGetBiometricsStatusBeforeHandshake() async throws {
+    func testPopupOpenPortSequenceGetBiometricsStatusBeforeHandshake() async {
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected, startDelay: .milliseconds(150))
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
@@ -966,7 +966,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             extensionId: "ext-bitwarden",
             hostBundleIdentifier: "com.bitwarden.desktop",
             resolverBucket: .knownCompanionAlias,
-            logDiagnostic: { _ in },
+            logDiagnostic: { _ in /* no-op */ },
             companionProtocolErrorProvider: {
                 SumiNativeMessagingErrorMapper.relayError(
                     code: .companionAppProtocolUnknown,
@@ -1037,7 +1037,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
     private func makeInstalledExtension(
         id: String,
         sourceBundlePath: String
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         InstalledExtension(
             id: id,
             name: "Fixture",

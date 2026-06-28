@@ -74,7 +74,7 @@ final class SumiPermissionEventOwnerTests: XCTestCase {
     }
 
     private func waitUntil(
-        _ condition: @escaping () async -> Bool,
+        _ condition: () async -> Bool,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {

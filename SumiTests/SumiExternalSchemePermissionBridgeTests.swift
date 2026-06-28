@@ -89,7 +89,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertEqual(result.record?.result, .opened)
         XCTAssertEqual(result.record?.scheme, "mailto")
         XCTAssertEqual(result.record?.redactedTargetURLString, "mailto:test@example.com")
-        XCTAssertFalse(result.record?.redactedTargetURLString?.contains("secret") == true)
+        XCTAssertNotEqual(result.record?.redactedTargetURLString?.contains("secret"), true)
         XCTAssertTrue(events.contains(.opened(requestId: "external-a", pageId: "tab-a:1", scheme: "mailto")))
     }
 
@@ -366,7 +366,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertTrue(contexts.isEmpty)
     }
 
-    func testSecurityContextUsesTrustedOriginsProfileSurfaceAndActivation() {
+    func testSecurityContextUsesTrustedOriginsProfileSurfaceAndActivation() throws {
         let bridge = SumiExternalSchemePermissionBridge(
             coordinator: ExternalSchemeFakePermissionCoordinator(
                 decision: externalCoordinatorDecision(.promptRequired, reason: "ask")
@@ -398,7 +398,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertEqual(context.committedURL, URL(string: "https://top.example/committed")!)
         XCTAssertEqual(context.visibleURL, URL(string: "https://visible.example/path")!)
         XCTAssertEqual(context.mainFrameURL, URL(string: "https://main.example/path")!)
-        XCTAssertEqual(context.hasUserGesture, false)
+        XCTAssertFalse(try XCTUnwrap(context.hasUserGesture))
         XCTAssertEqual(context.request.displayDomain, "spoofed.example")
         XCTAssertEqual(context.request.permissionTypes, [.externalScheme("mailto")])
     }
@@ -559,21 +559,21 @@ private actor ExternalSchemeBridgePermissionStore: SumiPermissionStore {
         records[key.persistentIdentity] = SumiPermissionStoreRecord(key: key, decision: decision)
     }
 
-    func getDecision(for key: SumiPermissionKey) async throws -> SumiPermissionStoreRecord? {
+    func getDecision(for key: SumiPermissionKey) async -> SumiPermissionStoreRecord? {
         getCount += 1
         return records[key.persistentIdentity]
     }
 
-    func setDecision(for key: SumiPermissionKey, decision: SumiPermissionDecision) async throws {
+    func setDecision(for key: SumiPermissionKey, decision: SumiPermissionDecision) async {
         setCount += 1
         records[key.persistentIdentity] = SumiPermissionStoreRecord(key: key, decision: decision)
     }
 
-    func resetDecision(for key: SumiPermissionKey) async throws {
+    func resetDecision(for key: SumiPermissionKey) async {
         records.removeValue(forKey: key.persistentIdentity)
     }
 
-    func listDecisions(profilePartitionId: String) async throws -> [SumiPermissionStoreRecord] {
+    func listDecisions(profilePartitionId: String) async -> [SumiPermissionStoreRecord] {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         return records.values.filter { $0.key.profilePartitionId == profileId }
     }
@@ -587,12 +587,12 @@ private actor ExternalSchemeBridgePermissionStore: SumiPermissionStore {
             .filter { $0.displayDomain == domain }
     }
 
-    func clearAll(profilePartitionId: String) async throws {
+    func clearAll(profilePartitionId: String) async {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         records = records.filter { _, record in record.key.profilePartitionId != profileId }
     }
 
-    func clearForDisplayDomains(_ displayDomains: Set<String>, profilePartitionId: String) async throws {
+    func clearForDisplayDomains(_ displayDomains: Set<String>, profilePartitionId: String) async {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         let domains = Set(displayDomains.map(SumiPermissionStoreRecord.normalizedDisplayDomain))
         records = records.filter { _, record in
@@ -600,7 +600,7 @@ private actor ExternalSchemeBridgePermissionStore: SumiPermissionStore {
         }
     }
 
-    func clearForOrigins(_ origins: Set<SumiPermissionOrigin>, profilePartitionId: String) async throws {
+    func clearForOrigins(_ origins: Set<SumiPermissionOrigin>, profilePartitionId: String) async {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         let identities = Set(origins.map(\.identity))
         records = records.filter { _, record in
@@ -611,11 +611,11 @@ private actor ExternalSchemeBridgePermissionStore: SumiPermissionStore {
     }
 
     @discardableResult
-    func expireDecisions(now _: Date) async throws -> Int {
+    func expireDecisions(now _: Date) async -> Int {
         0
     }
 
-    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async throws {}
+    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async { /* no-op */ }
 
     func getDecisionCallCount() -> Int {
         getCount

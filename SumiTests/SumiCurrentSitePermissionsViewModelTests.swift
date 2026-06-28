@@ -126,7 +126,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertEqual(autoplay.subtitle, "Default")
     }
 
-    func testDefaultURLHubLoadDoesNotRequestSystemSnapshots() async throws {
+    func testDefaultURLHubLoadDoesNotRequestSystemSnapshots() async {
         let system = FakeSumiSystemPermissionService(states: [.camera: .denied])
         let viewModel = SumiCurrentSitePermissionsViewModel()
         let context = context()
@@ -256,7 +256,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         let camera = try XCTUnwrap(viewModel.rows.first { $0.id == "camera" })
         XCTAssertEqual(camera.currentOption, .ask)
         XCTAssertTrue(camera.showsSystemSettingsAction)
-        XCTAssertTrue(camera.systemStatus?.contains("macOS settings") == true)
+        XCTAssertEqual(camera.systemStatus?.contains("macOS settings"), true)
         let cameraRecord = await coordinator.record(for: context.key(for: .camera))
         let authorizationCallCount = await system.requestAuthorizationCallCount()
         XCTAssertNil(cameraRecord)
@@ -308,7 +308,7 @@ final class SumiCurrentSitePermissionsViewModelTests: XCTestCase {
         XCTAssertEqual(camera.subtitle, "On")
     }
 
-    func testResetClearsCurrentSitePermissionDecisionsPageEventsAndSiteActivity() async throws {
+    func testResetClearsCurrentSitePermissionDecisionsPageEventsAndSiteActivity() async {
         let coordinator = CurrentSiteFakePermissionCoordinator()
         let blockedPopupStore = SumiBlockedPopupStore()
         let externalStore = SumiExternalSchemeSessionStore()
@@ -483,7 +483,7 @@ private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
     func siteDecisionRecords(
         profilePartitionId: String,
         isEphemeralProfile: Bool
-    ) async throws -> [SumiPermissionStoreRecord] {
+    ) async -> [SumiPermissionStoreRecord] {
         recordsByIdentity.values
             .filter {
                 $0.key.profilePartitionId == SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
@@ -495,7 +495,7 @@ private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
     func transientDecisionRecords(
         profilePartitionId: String,
         pageId: String
-    ) async throws -> [SumiPermissionStoreRecord] {
+    ) async -> [SumiPermissionStoreRecord] {
         transientRecordsByIdentity.values
             .filter {
                 $0.key.profilePartitionId == SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
@@ -510,7 +510,7 @@ private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
         state: SumiPermissionState,
         source: SumiPermissionDecisionSource,
         reason: String?
-    ) async throws {
+    ) async {
         let decision = SumiPermissionDecision(
             state: state,
             persistence: key.isEphemeralProfile ? .session : .persistent,
@@ -525,13 +525,13 @@ private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
 
     func resetSiteDecision(
         for key: SumiPermissionKey
-    ) async throws {
+    ) async {
         recordsByIdentity.removeValue(forKey: key.persistentIdentity)
     }
 
     func resetSiteDecisions(
         for keys: [SumiPermissionKey]
-    ) async throws {
+    ) async {
         for key in keys {
             recordsByIdentity.removeValue(forKey: key.persistentIdentity)
         }
@@ -543,7 +543,7 @@ private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
         pageId: String?,
         requestingOrigin: SumiPermissionOrigin,
         topOrigin: SumiPermissionOrigin,
-        reason: String
+        reason _: String
     ) async -> Int {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         let beforeCount = transientRecordsByIdentity.count
@@ -591,35 +591,35 @@ private actor CurrentSiteFakePermissionCoordinator: SumiPermissionCoordinating {
     }
 
     func cancel(
-        queryId: String,
+        queryId _: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
     }
 
     func cancel(
-        requestId: String,
+        requestId _: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
     }
 
     func cancel(
-        pageId: String,
+        pageId _: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
     }
 
     func cancelNavigation(
-        pageId: String,
+        pageId _: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
     }
 
     func cancelTab(
-        tabId: String,
+        tabId _: String,
         reason: String
     ) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
@@ -645,7 +645,7 @@ private final class CurrentSiteFakeAutoplayStore: SumiCurrentSiteAutoplayPolicyM
         explicitPolicy(for: url, profile: profile) ?? .default
     }
 
-    func explicitPolicy(for url: URL?, profile: Profile?) -> SumiAutoplayPolicy? {
+    func explicitPolicy(for url: URL?, profile _: Profile?) -> SumiAutoplayPolicy? {
         guard let url else { return nil }
         return policiesByURL[url.absoluteString]
     }
@@ -656,7 +656,7 @@ private final class CurrentSiteFakeAutoplayStore: SumiCurrentSiteAutoplayPolicyM
         profile: Profile?,
         source: SumiPermissionDecisionSource,
         now: Date
-    ) async throws {
+    ) async {
         _ = profile
         _ = source
         _ = now
@@ -664,7 +664,7 @@ private final class CurrentSiteFakeAutoplayStore: SumiCurrentSiteAutoplayPolicyM
         policiesByURL[url.absoluteString] = policy
     }
 
-    func resetPolicy(for url: URL?, profile: Profile?) async throws {
+    func resetPolicy(for url: URL?, profile: Profile?) async {
         _ = profile
         guard let url else { return }
         policiesByURL.removeValue(forKey: url.absoluteString)

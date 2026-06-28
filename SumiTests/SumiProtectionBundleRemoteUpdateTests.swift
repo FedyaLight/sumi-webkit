@@ -79,8 +79,8 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
 
         XCTAssertEqual(store.lastFailureReason, SumiProtectionBundleRemoteUpdateError.signatureInvalid("test-key").localizedDescription)
         XCTAssertEqual(store.lastSignatureError, SumiProtectionBundleRemoteUpdateError.signatureInvalid("test-key").localizedDescription)
-        XCTAssertEqual(store.lastSignatureVerified, false)
-        XCTAssertEqual(store.lastDowngradeRejected, false)
+        XCTAssertFalse(try XCTUnwrap(store.lastSignatureVerified))
+        XCTAssertFalse(try XCTUnwrap(store.lastDowngradeRejected))
 
         store.recordFailure(
             SumiProtectionBundleRemoteUpdateError.releaseDowngradeRejected(
@@ -89,7 +89,7 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(store.lastDowngradeRejected, true)
+        XCTAssertTrue(try XCTUnwrap(store.lastDowngradeRejected))
     }
 
     @MainActor
@@ -136,7 +136,7 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         }
 
         XCTAssertEqual(outcome.activation, .installedRestartRequired)
-        XCTAssertEqual(outcome.browserRestartRequired, true)
+        XCTAssertTrue(outcome.browserRestartRequired)
         XCTAssertEqual(manager.installProfileIds, [profileId])
         XCTAssertEqual(activationCount, 1)
         XCTAssertEqual(statusStore.lastReleaseVersion, "20260626T120000Z")
@@ -539,17 +539,17 @@ private final class FakePreparedBundleManager: SumiProtectionPreparedBundleManag
         activeManifest
     }
 
-    func preparedNativeRuleBundleDiscovery(profileId: String) -> SumiPreparedAdblockBundleDiscovery {
+    func preparedNativeRuleBundleDiscovery(profileId _: String) -> SumiPreparedAdblockBundleDiscovery {
         discovery
     }
 
-    func installPreparedNativeRuleBundle(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
+    func installPreparedNativeRuleBundle(profileId: String) async -> AdblockCompiledGenerationManifest? {
         installProfileIds.append(profileId)
         activeManifest = installManifest
         return installManifest
     }
 
-    func restorePreparedNativeRuleBundleForStartup(profileId: String) async throws -> AdblockCompiledGenerationManifest? {
+    func restorePreparedNativeRuleBundleForStartup(profileId: String) async -> AdblockCompiledGenerationManifest? {
         restoreProfileIds.append(profileId)
         activeManifest = installManifest
         return installManifest
@@ -563,7 +563,7 @@ private final class FakeBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating,
         self.result = result
     }
 
-    func fetchLatestApprovedBundle(profileId: String) async throws -> SumiProtectionRemoteBundleFetchResult {
+    func fetchLatestApprovedBundle(profileId _: String) async throws -> SumiProtectionRemoteBundleFetchResult {
         try result.get()
     }
 }

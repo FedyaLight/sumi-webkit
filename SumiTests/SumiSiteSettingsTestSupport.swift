@@ -45,7 +45,7 @@ actor SiteSettingsFakePermissionCoordinator: SumiPermissionCoordinating {
     func siteDecisionRecords(
         profilePartitionId: String,
         isEphemeralProfile: Bool
-    ) async throws -> [SumiPermissionStoreRecord] {
+    ) async -> [SumiPermissionStoreRecord] {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         return recordsByIdentity.values
             .filter {
@@ -60,7 +60,7 @@ actor SiteSettingsFakePermissionCoordinator: SumiPermissionCoordinating {
         state: SumiPermissionState,
         source: SumiPermissionDecisionSource,
         reason: String?
-    ) async throws {
+    ) async {
         setKeys.append(key)
         let decision = SumiPermissionDecision(
             state: state,
@@ -71,7 +71,7 @@ actor SiteSettingsFakePermissionCoordinator: SumiPermissionCoordinating {
         recordsByIdentity[key.persistentIdentity] = SumiPermissionStoreRecord(key: key, decision: decision)
     }
 
-    func resetSiteDecision(for key: SumiPermissionKey) async throws {
+    func resetSiteDecision(for key: SumiPermissionKey) async {
         resetKeys.append(key)
         recordsByIdentity.removeValue(forKey: key.persistentIdentity)
     }
@@ -100,23 +100,23 @@ actor SiteSettingsFakePermissionCoordinator: SumiPermissionCoordinating {
         recordsByIdentity[key.persistentIdentity]
     }
 
-    func cancel(queryId: String, reason: String) async -> SumiPermissionCoordinatorDecision {
+    func cancel(queryId _: String, reason: String) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
     }
 
-    func cancel(requestId: String, reason: String) async -> SumiPermissionCoordinatorDecision {
+    func cancel(requestId _: String, reason: String) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
     }
 
-    func cancel(pageId: String, reason: String) async -> SumiPermissionCoordinatorDecision {
+    func cancel(pageId _: String, reason: String) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
     }
 
-    func cancelNavigation(pageId: String, reason: String) async -> SumiPermissionCoordinatorDecision {
+    func cancelNavigation(pageId _: String, reason: String) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
     }
 
-    func cancelTab(tabId: String, reason: String) async -> SumiPermissionCoordinatorDecision {
+    func cancelTab(tabId _: String, reason: String) async -> SumiPermissionCoordinatorDecision {
         cancellationDecision(reason: reason)
     }
 

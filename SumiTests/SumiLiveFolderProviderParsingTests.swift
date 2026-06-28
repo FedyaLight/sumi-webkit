@@ -1,8 +1,8 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 final class SumiLiveFolderProviderParsingTests: XCTestCase {
-    func testRSSParserExtractsFeedTitleAndDatedHTTPItems() throws {
+    func testRSSParserExtractsFeedTitleAndDatedHTTPItems() {
         let sourceId = UUID()
         let xml = """
         <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -35,7 +35,7 @@ final class SumiLiveFolderProviderParsingTests: XCTestCase {
         XCTAssertNotNil(item.publishedAt)
     }
 
-    func testAtomParserUsesAlternateLinkHref() throws {
+    func testAtomParserUsesAlternateLinkHref() {
         let sourceId = UUID()
         let xml = """
         <feed xmlns="http://www.w3.org/2005/Atom">

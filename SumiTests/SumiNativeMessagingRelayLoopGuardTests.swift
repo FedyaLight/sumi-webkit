@@ -13,7 +13,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
             bundleURLs[bundleIdentifier]
         }
 
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
+        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
             openedBundleIdentifiers.append(bundleIdentifier)
         }
     }
@@ -85,7 +85,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
         )
     }
 
-    func testSubsequentCallsWithinCooldownAreSuppressed() async throws {
+    func testSubsequentCallsWithinCooldownAreSuppressed() async {
         let loopGuard = SumiNativeMessagingRelayLoopGuard()
         let key = SumiNativeMessagingRelayLoopGuard.SessionKey(
             profileId: UUID(),
@@ -140,7 +140,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
         XCTAssertFalse(firstError.localizedDescription.contains("ping"))
     }
 
-    func testDisablingExtensionClearsLoopGuardState() async throws {
+    func testDisablingExtensionClearsLoopGuardState() async {
         let loopGuard = SumiNativeMessagingRelayLoopGuard()
         let profileId = UUID()
         let key = SumiNativeMessagingRelayLoopGuard.SessionKey(
@@ -399,7 +399,6 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
             disconnectError = error
             disconnect()
         }
-
     }
 
     private func connectReply(
@@ -451,7 +450,7 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
     private func makeInstalledExtension(
         id: String,
         sourceBundlePath: String
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         InstalledExtension(
             id: id,
             name: "Fixture",

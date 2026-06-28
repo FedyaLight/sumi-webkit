@@ -186,8 +186,9 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(report.contentBlockers.first?.ruleListCount, 1)
         XCTAssertEqual(report.attachedSafariContentRuleListIdentifiers, ["sumi.safariContentBlocker.example"])
         XCTAssertEqual(report.unsupportedLegacyCandidates.first?.extensionBundleIdentifier, "com.example.legacy")
-        XCTAssertTrue(
-            report.unsupportedLegacyCandidates.first?.reason.contains("public WebKit APIs") == true
+        XCTAssertEqual(
+            report.unsupportedLegacyCandidates.first?.reason.contains("public WebKit APIs"),
+            true
         )
     }
 

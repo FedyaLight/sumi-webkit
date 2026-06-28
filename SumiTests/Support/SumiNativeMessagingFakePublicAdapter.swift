@@ -30,7 +30,7 @@ final class SumiNativeMessagingFakePublicAdapter: SumiNativeMessagingProtocolAda
         oneShotReply: (Any?, (any Error)?) = (["ok": true], nil),
         shouldLaunchOnOneShot: Bool = true,
         shouldLaunchOnConnect: Bool = true,
-        connectCompletion: @Sendable @escaping ((any Error)?) -> (any Error)? = { $0 },
+        connectCompletion: @Sendable @escaping ((any Error)?) -> (any Error)? = \.self,
         relayPortMessageResult: Bool = true
     ) {
         self.protocolIdentifier = protocolIdentifier

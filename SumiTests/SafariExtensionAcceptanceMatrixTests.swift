@@ -149,7 +149,7 @@ final class SafariExtensionAcceptanceMatrixTests: XCTestCase {
         XCTAssertTrue(enableCheck?.detail.contains("Skipped") ?? false)
     }
 
-    func testLiveAcceptanceMatrixAgainstInstalledTargets() throws {
+    func testLiveAcceptanceMatrixAgainstInstalledTargets() {
         let roots = SafariExtensionScanner.defaultApplicationSearchRoots()
         let scanner = SafariExtensionScanner()
         var issues: [SafariExtensionScannerIssue] = []
@@ -209,7 +209,7 @@ final class SafariExtensionAcceptanceMatrixTests: XCTestCase {
         id: String,
         isEnabled: Bool,
         sourceBundlePath: String
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         let activationSummary = ExtensionActivationSummary(
             matchPatternStrings: ["<all_urls>"],
             broadScope: true,
@@ -250,7 +250,7 @@ final class SafariExtensionAcceptanceMatrixTests: XCTestCase {
     private func makeCandidate(
         bundleID: String,
         appexPath: String
-    ) throws -> DiscoveredSafariExtensionCandidate {
+    ) -> DiscoveredSafariExtensionCandidate {
         let appexURL = URL(fileURLWithPath: appexPath)
         return DiscoveredSafariExtensionCandidate(
             extensionBundleIdentifier: bundleID,

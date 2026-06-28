@@ -35,89 +35,89 @@ final class SumiSystemPermissionMappingTests: XCTestCase {
     func testCoreLocationAuthorizationAndGlobalServicesMapCorrectly() throws {
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.coreLocation(
-                CLAuthorizationStatus(rawValue: 0)!,
+                try coreLocationStatus(rawValue: 0),
                 locationServicesEnabled: true
             ),
             .notDetermined
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.coreLocation(
-                CLAuthorizationStatus(rawValue: 1)!,
+                try coreLocationStatus(rawValue: 1),
                 locationServicesEnabled: true
             ),
             .restricted
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.coreLocation(
-                CLAuthorizationStatus(rawValue: 2)!,
+                try coreLocationStatus(rawValue: 2),
                 locationServicesEnabled: true
             ),
             .denied
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.coreLocation(
-                CLAuthorizationStatus(rawValue: 3)!,
+                try coreLocationStatus(rawValue: 3),
                 locationServicesEnabled: true
             ),
             .authorized
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.coreLocation(
-                CLAuthorizationStatus(rawValue: 4)!,
+                try coreLocationStatus(rawValue: 4),
                 locationServicesEnabled: true
             ),
             .authorized
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.coreLocation(
-                CLAuthorizationStatus(rawValue: 999)!,
+                try coreLocationStatus(rawValue: 999),
                 locationServicesEnabled: true
             ),
             .unavailable
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.coreLocation(
-                CLAuthorizationStatus(rawValue: 2)!,
+                try coreLocationStatus(rawValue: 2),
                 locationServicesEnabled: false
             ),
             .systemDisabled
         )
     }
 
-    func testNotificationAuthorizationStatusesMapCorrectly() {
+    func testNotificationAuthorizationStatusesMapCorrectly() throws {
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.notifications(
-                UNAuthorizationStatus(rawValue: 0)!
+                try notificationStatus(rawValue: 0)
             ),
             .notDetermined
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.notifications(
-                UNAuthorizationStatus(rawValue: 1)!
+                try notificationStatus(rawValue: 1)
             ),
             .denied
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.notifications(
-                UNAuthorizationStatus(rawValue: 2)!
+                try notificationStatus(rawValue: 2)
             ),
             .authorized
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.notifications(
-                UNAuthorizationStatus(rawValue: 3)!
+                try notificationStatus(rawValue: 3)
             ),
             .authorized
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.notifications(
-                UNAuthorizationStatus(rawValue: 4)!
+                try notificationStatus(rawValue: 4)
             ),
             .authorized
         )
         XCTAssertEqual(
             SumiSystemPermissionAuthorizationMapper.notifications(
-                UNAuthorizationStatus(rawValue: 999)!
+                try notificationStatus(rawValue: 999)
             ),
             .unavailable
         )
@@ -140,5 +140,13 @@ final class SumiSystemPermissionMappingTests: XCTestCase {
             SumiSystemPermissionAuthorizationMapper.screenCaptureRequest(granted: false),
             .denied
         )
+    }
+
+    private func coreLocationStatus(rawValue: Int32) throws -> CLAuthorizationStatus {
+        try XCTUnwrap(CLAuthorizationStatus(rawValue: rawValue))
+    }
+
+    private func notificationStatus(rawValue: Int) throws -> UNAuthorizationStatus {
+        try XCTUnwrap(UNAuthorizationStatus(rawValue: rawValue))
     }
 }

@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 final class SumiNowPlayingBridgeTests: XCTestCase {
     func testMapperPrefersTitleArtistPayloadWhenAvailable() {
@@ -41,7 +41,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
             candidateProvider: { _ in [] },
             infoProvider: { _, _, _ in nil },
             commandExecutor: { _, _, _, _ in false },
-            activationHandler: { _, _, _ in }
+            activationHandler: { _, _, _ in /* no-op */ }
         )
 
         controller.setFeatureEnabled(true)
@@ -56,7 +56,7 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
             candidateProvider: { _ in [] },
             infoProvider: { _, _, _ in nil },
             commandExecutor: { _, _, _, _ in false },
-            activationHandler: { _, _, _ in }
+            activationHandler: { _, _, _ in /* no-op */ }
         )
 
         controller.setFeatureEnabled(false)

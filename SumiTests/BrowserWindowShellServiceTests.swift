@@ -57,7 +57,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,
             makeContentView: nil,
-            showEmptyState: { _ in }
+            showEmptyState: { _ in /* no-op */ }
         )
 
         service.createNewWindow(using: context)
@@ -81,8 +81,8 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,
             makeContentView: { windowRegistry, webViewCoordinator, windowState in
-                XCTAssertTrue(windowRegistry === harness.windowRegistry)
-                XCTAssertTrue(webViewCoordinator === harness.webViewCoordinator)
+                XCTAssertIdentical(windowRegistry, harness.windowRegistry)
+                XCTAssertIdentical(webViewCoordinator, harness.webViewCoordinator)
                 guard let windowState else {
                     XCTFail("Expected window shell service to pass the new window state.")
                     return NSView()
@@ -90,7 +90,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
                 factoryWindowStates.append(windowState)
                 return NSView()
             },
-            showEmptyState: { _ in }
+            showEmptyState: { _ in /* no-op */ }
         )
 
         service.createNewWindow(using: context)
@@ -103,9 +103,9 @@ final class BrowserWindowShellServiceTests: XCTestCase {
 
         XCTAssertEqual(factoryWindowStates.map(\.id), [windowState.id])
         XCTAssertTrue(windowState.window is SumiBrowserWindow)
-        XCTAssertTrue(windowState.tabManager === harness.tabManager)
+        XCTAssertIdentical(windowState.tabManager, harness.tabManager)
         XCTAssertEqual(harness.windowRegistry.activeWindowId, windowState.id)
-        XCTAssertEqual(registeredWindowHadNSWindow, true)
+        XCTAssertTrue(try XCTUnwrap(registeredWindowHadNSWindow))
     }
 
     func testEphemeralTabsUseMonotonicIndexesAndIncognitoCleanupIsIdempotent() async throws {

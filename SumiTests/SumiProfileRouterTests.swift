@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class SumiProfileRouterTests: XCTestCase {
@@ -76,8 +76,8 @@ private final class FakeSumiProfileRoutingSupport: SumiProfileRoutingSupport {
 
     func switchToProfile(
         _ profile: Profile,
-        context: BrowserManager.ProfileSwitchContext,
-        in windowState: BrowserWindowState?
+        context _: BrowserManager.ProfileSwitchContext,
+        in _: BrowserWindowState?
     ) async {
         switchedProfileId = profile.id
     }

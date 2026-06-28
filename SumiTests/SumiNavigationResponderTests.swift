@@ -127,7 +127,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences: &preferences
         )
 
-        XCTAssertTrue(policy?.isCancel == true)
+        XCTAssertEqual(policy?.isCancel, true)
         XCTAssertEqual(resolver.openedURLs, [mailURL])
     }
 
@@ -161,7 +161,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences: &preferences
         )
 
-        XCTAssertTrue(policy?.isCancel == true)
+        XCTAssertEqual(policy?.isCancel, true)
         XCTAssertTrue(resolver.openedURLs.isEmpty)
         XCTAssertEqual(bridge.sessionStore.records(forPageId: "tab-a:1").first?.result, .unsupportedScheme)
     }
@@ -229,7 +229,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences: &preferences
         )
 
-        XCTAssertTrue(policy?.isCancel == true)
+        XCTAssertEqual(policy?.isCancel, true)
         XCTAssertEqual(resolver.openedURLs, [URL(string: "mailto:test@example.com")!])
         XCTAssertEqual(webView.closeScriptEvaluations, 1)
     }
@@ -609,7 +609,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(sumiAction.navigationType.isRedirect)
         XCTAssertEqual(sumiAction.navigationTypeDescription, "redirect(server)")
         XCTAssertEqual(sumiAction.redirectHistory.first?.url, URL(string: "https://source.example/start")!)
-        XCTAssertTrue(sumiAction.redirectInitialAction?.isUserActivated == true)
+        XCTAssertEqual(sumiAction.redirectInitialAction?.isUserActivated, true)
         XCTAssertTrue(sumiAction.modifierFlags.contains(.option))
     }
 
@@ -986,7 +986,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(value.canShowMIMEType)
         XCTAssertTrue(value.shouldDownload)
         XCTAssertEqual(value.httpResponse?.statusCode, 404)
-        XCTAssertEqual(value.isHTTPStatusSuccessful, false)
+        XCTAssertFalse(try XCTUnwrap(value.isHTTPStatusSuccessful))
         XCTAssertEqual(value.mainFrameNavigation?.redirectHistory.first?.request.cachePolicy, .returnCacheDataElseLoad)
         XCTAssertEqual(value.mainFrameNavigation?.navigationAction.navigationType, .custom(.userRequestedPageDownload))
     }
@@ -1643,7 +1643,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             userScriptsProvider: scriptsProvider
         )
         let controller = try XCTUnwrap(configuration.userContentController.sumiNormalTabUserContentController)
-        XCTAssertTrue(controller.normalTabUserScriptsProvider === scriptsProvider)
+        XCTAssertIdentical(controller.normalTabUserScriptsProvider, scriptsProvider)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         let scriptAttachment = SumiTabScriptAttachmentNavigationResponder(tab: tab)
@@ -1684,7 +1684,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences: &preferences
         )
 
-        XCTAssertTrue(policy?.isDownload == true)
+        XCTAssertEqual(policy?.isDownload, true)
     }
 
     func testDownloadResponderDoesNotTreatOptionGlanceClickAsDownload() async {
@@ -1974,7 +1974,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences: &preferences
         )
 
-        XCTAssertTrue(policy?.isCancel == true)
+        XCTAssertEqual(policy?.isCancel, true)
         XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
     }
 
@@ -2000,7 +2000,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences: &preferences
         )
 
-        XCTAssertTrue(policy?.isCancel == true)
+        XCTAssertEqual(policy?.isCancel, true)
         XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
     }
 
@@ -2129,8 +2129,7 @@ final class SumiNavigationResponderTests: XCTestCase {
     }
 
     func testExtensionPopupExternalCreateWebViewUsesTabURLWhenSourceFrameMissing()
-        async throws
-    {
+        async throws {
         let harness = makePopupFocusHarness()
         let extensionPopupURL = URL(
             string: "safari-web-extension://extension-id/popup.html"
@@ -2284,7 +2283,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         return mock.navigationAction
     }
 
-    func testInternalSurfaceResponderCancelsRemoteWebNavigationToSumiSurface() async throws {
+    func testInternalSurfaceResponderCancelsRemoteWebNavigationToSumiSurface() async {
         let responder = SumiInternalSurfaceNavigationResponder(tab: Tab(url: URL(string: "https://evil.example")!))
         var preferences = sumiNavigationPreferences()
         let action = SumiNavigationAction(navigationAction(
@@ -2301,7 +2300,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(policy, .cancel)
     }
 
-    func testInternalSurfaceResponderAllowsUserEnteredSumiSurface() async throws {
+    func testInternalSurfaceResponderAllowsUserEnteredSumiSurface() async {
         let responder = SumiInternalSurfaceNavigationResponder(tab: Tab(url: URL(string: "about:blank")!))
         var preferences = sumiNavigationPreferences()
         let action = SumiNavigationAction(navigationAction(
@@ -2519,7 +2518,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences: &preferences
         )
 
-        XCTAssertTrue(policy?.isCancel == true, file: file, line: line)
+        XCTAssertEqual(policy?.isCancel, true, file: file, line: line)
         XCTAssertEqual(resolver.openedURLs, [URL(string: "mailto:test@example.com")!], file: file, line: line)
         XCTAssertEqual(webView.closeScriptEvaluations, 0, file: file, line: line)
     }
@@ -3013,7 +3012,6 @@ private final class SumiNavigationLifecycleContextProbeResponder:
     SumiNavigationCommitResponding,
     SumiNavigationCompletionResponding,
     SumiSameDocumentNavigationResponding {
-
     private(set) var events: [String] = []
     private(set) var contexts: [SumiNavigationContext] = []
     private(set) var failErrors: [WKError] = []
@@ -3023,7 +3021,7 @@ private final class SumiNavigationLifecycleContextProbeResponder:
         contexts.append(context)
     }
 
-    func navigationDidStart() {}
+    func navigationDidStart() { /* no-op */ }
 
     func navigationDidStart(_ context: SumiNavigationContext) {
         events.append("didStart")
@@ -3035,7 +3033,7 @@ private final class SumiNavigationLifecycleContextProbeResponder:
         contexts.append(context)
     }
 
-    func navigationDidFinish() {}
+    func navigationDidFinish() { /* no-op */ }
 
     func navigationDidFinish(_ context: SumiNavigationContext?) {
         events.append("finish")
@@ -3044,7 +3042,7 @@ private final class SumiNavigationLifecycleContextProbeResponder:
         }
     }
 
-    func navigationDidFail() {}
+    func navigationDidFail() { /* no-op */ }
 
     func navigationDidFail(_ error: WKError, context: SumiNavigationContext?) {
         events.append("fail")
@@ -3054,7 +3052,7 @@ private final class SumiNavigationLifecycleContextProbeResponder:
         }
     }
 
-    func navigationDidSameDocumentNavigation(type: SumiSameDocumentNavigationType) {}
+    func navigationDidSameDocumentNavigation(type _: SumiSameDocumentNavigationType) { /* no-op */ }
 
     func navigationDidSameDocumentNavigation(
         type: SumiSameDocumentNavigationType,
@@ -3191,7 +3189,7 @@ private final class FailingSchemeHandler: NSObject, WKURLSchemeHandler {
         urlSchemeTask.didFailWithError(NSError(domain: "SumiNavigationResponderTests", code: 1))
     }
 
-    func webView(_: WKWebView, stop _: WKURLSchemeTask) {}
+    func webView(_: WKWebView, stop _: WKURLSchemeTask) { /* no-op */ }
 }
 
 private final class SumiNavigationTestUserScript: NSObject, SumiUserScript {

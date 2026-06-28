@@ -224,7 +224,7 @@ final class SafariExtensionCompatibilityReportTests: XCTestCase {
         XCTAssertTrue(uiSource.contains("finalizeEnabledExtensionRuntime"))
     }
 
-    func testReportIncludesNativeMessagingClassificationsForPasswordManagers() throws {
+    func testReportIncludesNativeMessagingClassificationsForPasswordManagers() {
         let report = SafariExtensionCompatibilityReportBuilder.build(
             discovered: [],
             importStore: importStore
@@ -264,7 +264,7 @@ final class SafariExtensionCompatibilityReportTests: XCTestCase {
         XCTAssertEqual(report.entries[0].lastErrorBucket, .moduleDisabled)
     }
 
-    func testRealBundleProbeRecordsExpectedIdentifiersWhenPresent() throws {
+    func testRealBundleProbeRecordsExpectedIdentifiersWhenPresent() {
         let roots = SafariExtensionScanner.defaultApplicationSearchRoots()
         let scanner = SafariExtensionScanner()
         var issues: [SafariExtensionScannerIssue] = []
@@ -298,7 +298,7 @@ final class SafariExtensionCompatibilityReportTests: XCTestCase {
         isEnabled: Bool,
         packagePath: String = "/tmp/sumi/\(UUID().uuidString)",
         sourceBundlePath: String
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         let activationSummary = ExtensionActivationSummary(
             matchPatternStrings: ["<all_urls>"],
             broadScope: true,
@@ -339,7 +339,7 @@ final class SafariExtensionCompatibilityReportTests: XCTestCase {
     private func makeCandidate(
         bundleID: String,
         appexPath: String
-    ) throws -> DiscoveredSafariExtensionCandidate {
+    ) -> DiscoveredSafariExtensionCandidate {
         let appexURL = URL(fileURLWithPath: appexPath)
         return DiscoveredSafariExtensionCandidate(
             extensionBundleIdentifier: bundleID,

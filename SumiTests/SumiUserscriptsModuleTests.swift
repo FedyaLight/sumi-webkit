@@ -94,7 +94,7 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         let firstManager = try XCTUnwrap(module.managerIfEnabled())
         let secondManager = try XCTUnwrap(module.managerIfEnabled())
 
-        XCTAssertTrue(firstManager === secondManager)
+        XCTAssertIdentical(firstManager, secondManager)
         XCTAssertTrue(firstManager.isEnabled)
         XCTAssertEqual(probe.managerCount, 1)
         XCTAssertEqual(probe.storeCount, 1)

@@ -1,6 +1,6 @@
 import CoreGraphics
-import XCTest
 @testable import Sumi
+import XCTest
 
 final class SumiTextureRingMetricsTests: XCTestCase {
     func testTextureQuantizationMatchesZenSixteenthSteps() {

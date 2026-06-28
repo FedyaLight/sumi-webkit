@@ -266,7 +266,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         XCTAssertTrue(loginHTML.contains("autocomplete=\"current-password\""))
     }
 
-    private func fixtureURL(named filename: String) throws -> URL {
+    private func fixtureURL(named filename: String) -> URL {
         let testFile = URL(fileURLWithPath: #filePath)
         return testFile
             .deletingLastPathComponent()

@@ -172,7 +172,7 @@ private final class FakeCloseFallbackTabStore: ShellSelectionTabStore {
     }
 
     func tab(for id: UUID) -> Tab? {
-        tabsBySpace.values.lazy.flatMap { $0 }.first { $0.id == id }
+        tabsBySpace.values.lazy.flatMap(\.self).first { $0.id == id }
             ?? liveShortcutTabsByPin.values.first { $0.id == id }
     }
 
@@ -180,19 +180,19 @@ private final class FakeCloseFallbackTabStore: ShellSelectionTabStore {
         tabsBySpace[space.id] ?? []
     }
 
-    func shortcutPin(by id: UUID) -> ShortcutPin? {
+    func shortcutPin(by _: UUID) -> ShortcutPin? {
         nil
     }
 
-    func activeShortcutTab(for windowId: UUID) -> Tab? {
+    func activeShortcutTab(for _: UUID) -> Tab? {
         nil
     }
 
-    func liveShortcutTabs(in windowId: UUID) -> [Tab] {
+    func liveShortcutTabs(in _: UUID) -> [Tab] {
         Array(liveShortcutTabsByPin.values)
     }
 
-    func shortcutLiveTab(for pinId: UUID, in windowId: UUID) -> Tab? {
+    func shortcutLiveTab(for pinId: UUID, in _: UUID) -> Tab? {
         liveShortcutTabsByPin[pinId]
     }
 }

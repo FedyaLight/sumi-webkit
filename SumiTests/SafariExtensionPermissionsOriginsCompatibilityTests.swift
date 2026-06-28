@@ -102,10 +102,11 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
             .makePreludeUserScript(associatedURL: baseURL)
 
         XCTAssertNotNil(script)
-        XCTAssertTrue(
+        XCTAssertEqual(
             script?.source.contains(
                 "__sumiWebExtensionPermissionsOriginsCompatibilityInstalled"
-            ) == true
+            ),
+            true
         )
     }
 
@@ -400,8 +401,8 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         }
 
         func webView(
-            _ webView: WKWebView,
-            didFinish navigation: WKNavigation!
+            _: WKWebView,
+            didFinish _: WKNavigation! // swiftlint:disable:this implicitly_unwrapped_optional
         ) {
             onFinish()
         }

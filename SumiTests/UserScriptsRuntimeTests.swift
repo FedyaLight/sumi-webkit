@@ -1,6 +1,6 @@
+@testable import Sumi
 import WebKit
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class UserScriptsRuntimeTests: XCTestCase {
@@ -292,14 +292,14 @@ final class UserScriptsRuntimeTests: XCTestCase {
     func testBundledWebkitMediaCompatSourceLoads() {
         let src = UserScriptBundledCompatScript.source(moduleID: "webkit-media")
         XCTAssertNotNil(src)
-        XCTAssertTrue(src?.contains("__sumiWebkitMediaCompatInstalled") == true)
+        XCTAssertEqual(src?.contains("__sumiWebkitMediaCompatInstalled"), true)
     }
 
     func testInternalRequireURLResolvesWebkitMedia() {
         let url = "sumi-internal://userscript-compat/webkit-media.js"
         let content = UserScriptInternalRequireURL.content(from: url)
         XCTAssertNotNil(content)
-        XCTAssertTrue(content?.contains("__sumiWebkitMediaCompatInstalled") == true)
+        XCTAssertEqual(content?.contains("__sumiWebkitMediaCompatInstalled"), true)
     }
 
     func testCompatAssemblyDedupesModules() throws {

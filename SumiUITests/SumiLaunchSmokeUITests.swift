@@ -1504,8 +1504,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             line: line
         )
         if accessibilityValue(of: closeRow) != "selected",
-           let alternateHoverTabID
-        {
+           let alternateHoverTabID {
             let alternateRowID = "space-regular-tab-\(alternateHoverTabID)"
             let alternateRow = requireElement(
                 withIdentifier: alternateRowID,
@@ -1549,8 +1548,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if element(withIdentifier: "floating-bar", in: app).exists
-                || element(withIdentifier: "floating-bar-input", in: app).exists
-            {
+                || element(withIdentifier: "floating-bar-input", in: app).exists {
                 return true
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
@@ -2356,8 +2354,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         } else if elementID.hasPrefix("essential-shortcut-")
                     || elementID.hasPrefix("space-pinned-shortcut-")
                     || elementID.hasPrefix("folder-shortcut-")
-                    || elementID.hasPrefix("space-regular-tab-")
-        {
+                    || elementID.hasPrefix("space-regular-tab-") {
             expectedValue = "selected"
         } else {
             return
@@ -2400,8 +2397,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             }
             let candidate = element(withIdentifier: elementID, in: app)
             if candidate.exists,
-               accessibilityValue(of: candidate) == expectedValue
-            {
+               accessibilityValue(of: candidate) == expectedValue {
                 return true
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
@@ -2704,7 +2700,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
     private func sidebarShortcutDriftEnvironment(shortcutPinID: String) -> [String: String] {
         [
             smokeShortcutDriftPinEnvironmentKey: shortcutPinID,
-            smokeShortcutDriftURLEnvironmentKey: "https://example.com/sumi-smoke-drift-\(UUID().uuidString)"
+            smokeShortcutDriftURLEnvironmentKey: "https://example.com/sumi-smoke-drift-\(UUID().uuidString)",
         ]
     }
 
@@ -2968,8 +2964,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             if !element.exists
                 || !element.isEnabled
                 || element.frame.width <= 0
-                || element.frame.height <= 0
-            {
+                || element.frame.height <= 0 {
                 return true
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
@@ -3508,14 +3503,14 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                     [
                         "id": UUID().uuidString,
                         "colorHex": "#FF3B30",
-                        "location": 0.0
+                        "location": 0.0,
                     ],
                     [
                         "id": UUID().uuidString,
                         "colorHex": "#34C759",
-                        "location": 1.0
-                    ]
-                ]
+                        "location": 1.0,
+                    ],
+                ],
             ],
             options: []
         )
@@ -3533,8 +3528,8 @@ final class SumiLaunchSmokeUITests: XCTestCase {
             "isSidebarVisible": true,
             "floatingBarDraft": [
                 "text": "",
-                "navigateCurrentTab": false
-            ]
+                "navigateCurrentTab": false,
+            ],
         ]
         return try JSONSerialization.data(withJSONObject: snapshot, options: [])
     }
@@ -3550,7 +3545,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         let preferencesURL = preferencesDirectory
             .appendingPathComponent("com.sumi.browser.plist", isDirectory: false)
         let plist: [String: Any] = [
-            "sumi.windowSession.last.v3": windowSessionSnapshotData
+            "sumi.windowSession.last.v3": windowSessionSnapshotData,
         ]
         let plistData = try PropertyListSerialization.data(
             fromPropertyList: plist,
@@ -3915,8 +3910,7 @@ final class SumiLaunchSmokeUITests: XCTestCase {
 
             if let sourceIndex = orderedRegularTabIDs.firstIndex(of: sourceHex),
                let targetIndex = orderedRegularTabIDs.firstIndex(of: targetHex),
-               (sourceShouldBeAfterTarget ? sourceIndex > targetIndex : sourceIndex < targetIndex)
-            {
+               sourceShouldBeAfterTarget ? sourceIndex > targetIndex : sourceIndex < targetIndex {
                 return true
             }
 

@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class DownloadListCoordinatorTests: XCTestCase {
-    func testSessionStartsEmptyAndCalculatesActiveProgress() throws {
+    func testSessionStartsEmptyAndCalculatesActiveProgress() {
         let coordinator = DownloadListCoordinator()
         XCTAssertTrue(coordinator.items.isEmpty)
 
@@ -71,7 +71,7 @@ final class DownloadListCoordinatorTests: XCTestCase {
 
         coordinator.track(item, progress: progress)
 
-        XCTAssertTrue(item.progress === progress)
+        XCTAssertIdentical(item.progress, progress)
         XCTAssertEqual(item.state, .downloading)
         XCTAssertEqual(item.statusText, "Starting download…")
         XCTAssertEqual(coordinator.combinedProgressFraction, 0)
@@ -89,7 +89,7 @@ final class DownloadListCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.activeCount, 0)
     }
 
-    func testActiveStatusTextUsesCompactByteProgressFormat() throws {
+    func testActiveStatusTextUsesCompactByteProgressFormat() {
         let item = DownloadItem(
             downloadURL: URL(string: "https://example.com/compact.bin")!,
             fileName: "compact.bin",
@@ -102,8 +102,8 @@ final class DownloadListCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(statusText.contains("/"))
         XCTAssertFalse(statusText.contains(" of "))
-        XCTAssertFalse(statusText.split(separator: "/").first?.contains("B") == true)
-        XCTAssertFalse(statusText.split(separator: "/").first?.contains("Б") == true)
+        XCTAssertNotEqual(statusText.split(separator: "/").first?.contains("B"), true)
+        XCTAssertNotEqual(statusText.split(separator: "/").first?.contains("Б"), true)
     }
 
     func testClearInactiveDownloadsKeepsActiveAndCleansFailedTemporaryFilesOnly() throws {

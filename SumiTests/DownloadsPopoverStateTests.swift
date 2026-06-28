@@ -17,7 +17,7 @@ final class DownloadsPopoverStateTests: XCTestCase {
         XCTAssertFalse(windowState.isDownloadsPopoverPresented)
     }
 
-    func testDownloadsButtonStateDefaultsToVisibleInactiveManagerState() throws {
+    func testDownloadsButtonStateDefaultsToVisibleInactiveManagerState() {
         let manager = DownloadManager()
 
         XCTAssertFalse(manager.hasActiveDownloads)
@@ -26,7 +26,7 @@ final class DownloadsPopoverStateTests: XCTestCase {
         XCTAssertNil(manager.combinedProgressFraction)
     }
 
-    func testRetryableFailedItemStateIsIndependentFromPopoverListState() throws {
+    func testRetryableFailedItemStateIsIndependentFromPopoverListState() {
         let manager = DownloadManager()
         let item = DownloadItem(
             downloadURL: URL(string: "https://example.com/retry.bin")!,
@@ -39,7 +39,7 @@ final class DownloadsPopoverStateTests: XCTestCase {
         XCTAssertTrue(manager.items.isEmpty)
     }
 
-    func testClearInactiveAvailabilityTracksCurrentSessionItems() throws {
+    func testClearInactiveAvailabilityTracksCurrentSessionItems() {
         let manager = DownloadManager()
         let active = manager.beginExternalDownload(
             originalURL: URL(string: "https://example.com/active.bin")!,
@@ -62,7 +62,7 @@ final class DownloadsPopoverStateTests: XCTestCase {
         XCTAssertFalse(manager.hasInactiveDownloads)
     }
 
-    func testPopoverContentSizeUsesSingleSlotForEmptyAndOneItemList() throws {
+    func testPopoverContentSizeUsesSingleSlotForEmptyAndOneItemList() {
         let emptyManager = DownloadManager()
         let presenter = DownloadsPopoverPresenter()
 
@@ -81,7 +81,7 @@ final class DownloadsPopoverStateTests: XCTestCase {
         XCTAssertEqual(oneItemHeight, presenter.contentSize(for: emptyManager).height)
     }
 
-    func testPopoverContentSizeGrowsAndCapsListHeight() throws {
+    func testPopoverContentSizeGrowsAndCapsListHeight() {
         let presenter = DownloadsPopoverPresenter()
         let oneItemManager = DownloadManager()
         _ = oneItemManager.beginExternalDownload(
@@ -116,7 +116,7 @@ final class DownloadsPopoverStateTests: XCTestCase {
         XCTAssertLessThanOrEqual(presenter.contentSize(for: cappedManager).height, 390)
     }
 
-    func testDownloadsTransientSessionPinsCollapsedSidebarWithoutPersistentReveal() throws {
+    func testDownloadsTransientSessionPinsCollapsedSidebarWithoutPersistentReveal() {
         let windowState = BrowserWindowState()
         windowState.isSidebarVisible = false
         windowState.sidebarWidth = 250

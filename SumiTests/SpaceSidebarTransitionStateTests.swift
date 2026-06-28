@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class SpaceSidebarTransitionStateTests: XCTestCase {
@@ -301,7 +301,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
-    func testSnapshotBuilderKeepsSingleStationaryEssentialsForSameProfileTransition() throws {
+    func testSnapshotBuilderKeepsSingleStationaryEssentialsForSameProfileTransition() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()
@@ -328,7 +328,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(snapshot.stationaryEssentials?.items.map(\.id), [essential.id])
     }
 
-    func testSnapshotBuilderEmbedsEssentialsForCrossProfileTransition() throws {
+    func testSnapshotBuilderEmbedsEssentialsForCrossProfileTransition() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()
@@ -359,7 +359,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(snapshot.destination.essentials?.items.map(\.id), [destinationEssential.id])
     }
 
-    func testSnapshotBuilderMarksSelectedRegularTabWithoutObservedTabRows() throws {
+    func testSnapshotBuilderMarksSelectedRegularTabWithoutObservedTabRows() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()
@@ -401,7 +401,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(snapshot.source.regularTabs.map(\.isSelected), [false, true])
     }
 
-    func testSnapshotBuilderPreservesRegularTabUnloadedIndicator() throws {
+    func testSnapshotBuilderPreservesRegularTabUnloadedIndicator() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()
@@ -473,7 +473,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
                         hex: "#0A84FF",
                         isPrimary: true,
                         position: .monochrome
-                    )
+                    ),
                 ],
                 opacity: 1,
                 texture: 0
@@ -486,7 +486,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
                         hex: "#FF3B30",
                         isPrimary: true,
                         position: .monochrome
-                    )
+                    ),
                 ],
                 opacity: 1,
                 texture: 0
@@ -514,7 +514,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(pageContext.transitionProgress, 1.0, accuracy: 0.0001)
     }
 
-    func testSnapshotBuilderKeepsClosedFolderProjectionRowsForLiveLaunchers() throws {
+    func testSnapshotBuilderKeepsClosedFolderProjectionRowsForLiveLaunchers() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()
@@ -555,7 +555,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertTrue(folderSnapshot.hasActiveSelection)
     }
 
-    func testSnapshotBuilderPreservesOpenNestedFolderTreeForSpaceTransition() throws {
+    func testSnapshotBuilderPreservesOpenNestedFolderTreeForSpaceTransition() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
         let settings = makeIsolatedSettings()

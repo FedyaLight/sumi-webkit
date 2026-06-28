@@ -1,6 +1,6 @@
 import AppKit
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class SidebarDDGHoverTests: XCTestCase {
@@ -51,7 +51,7 @@ final class SidebarDDGHoverTests: XCTestCase {
             viewSource,
             layoutSource,
             motionSource,
-            resultsSource
+            resultsSource,
         ].joined(separator: "\n")
 
         XCTAssertTrue(viewSource.contains(".tint(tokens.primaryText)"))
@@ -157,7 +157,7 @@ final class SidebarDDGHoverTests: XCTestCase {
             closeCount += 1
         }
 
-        XCTAssertTrue(result === event)
+        XCTAssertIdentical(result, event)
         XCTAssertEqual(closeCount, 0)
     }
 
@@ -173,7 +173,7 @@ final class SidebarDDGHoverTests: XCTestCase {
             closeCount += 1
         }
 
-        XCTAssertTrue(result === event)
+        XCTAssertIdentical(result, event)
         XCTAssertEqual(closeCount, 1)
     }
 
@@ -554,7 +554,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         let shortcutRowSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift")
         let transitionSnapshotSource = try [
             Self.source(named: "Navigation/Sidebar/SpaceSidebarSnapshots.swift"),
-            Self.source(named: "Navigation/Sidebar/SpaceSidebarSnapshotViews.swift")
+            Self.source(named: "Navigation/Sidebar/SpaceSidebarSnapshotViews.swift"),
         ].joined(separator: "\n")
         let transitionPinnedTileSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSnapshotPinnedTileView.swift")
 
@@ -598,7 +598,7 @@ final class SidebarDDGHoverTests: XCTestCase {
             "sidebarHoverTarget",
             "SidebarHoverTarget",
             "setSidebarHover",
-            "isSidebarHoverActive"
+            "isSidebarHoverActive",
         ]
         let forbiddenHoverDelayTokens = [
             "asyncAfter",
@@ -607,7 +607,7 @@ final class SidebarDDGHoverTests: XCTestCase {
             "withAnimation",
             ".animation(",
             "spring",
-            "easeInOut"
+            "easeInOut",
         ]
 
         XCTAssertFalse(mouseOverDeclarationPrefix.contains("onHoverChanged"))
@@ -636,12 +636,12 @@ final class SidebarDDGHoverTests: XCTestCase {
             "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift",
             "Sumi/Components/Sidebar/SpaceSection/SpaceTitle.swift",
             "Sumi/Components/Sidebar/PinnedButtons/PinnedTabView.swift",
-            "Navigation/Sidebar/SpacesList/SpacesListItem.swift"
+            "Navigation/Sidebar/SpacesList/SpacesListItem.swift",
         ]
 
         return try Dictionary(
             uniqueKeysWithValues: paths.map { path in
-                return (path, try source(named: path))
+                (path, try source(named: path))
             }
         )
     }
@@ -670,7 +670,7 @@ final class SidebarDDGHoverTests: XCTestCase {
     }
 
     private static func mouseDownEvent() throws -> NSEvent {
-        return try XCTUnwrap(NSEvent.mouseEvent(
+        try XCTUnwrap(NSEvent.mouseEvent(
             with: .leftMouseDown,
             location: .zero,
             modifierFlags: [],

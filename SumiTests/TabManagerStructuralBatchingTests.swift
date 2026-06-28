@@ -146,8 +146,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         )
         let auxiliary = tabManager.createAuxiliaryMiniWindowTab(openerTab: opener)
 
-        XCTAssertTrue(tabManager.tab(for: transientExtension.id) === transientExtension)
-        XCTAssertTrue(tabManager.tab(for: auxiliary.id) === auxiliary)
+        XCTAssertIdentical(tabManager.tab(for: transientExtension.id), transientExtension)
+        XCTAssertIdentical(tabManager.tab(for: auxiliary.id), auxiliary)
 
         tabManager.removeAuxiliaryMiniWindowTab(auxiliary)
         tabManager.removeTab(transientExtension.id)
@@ -272,8 +272,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
         let adopted = tabManager.adoptGlanceTab(preview, sourceTab: source, in: space)
 
-        XCTAssertTrue(adopted === preview)
-        XCTAssertTrue(preview.existingWebView === webView)
+        XCTAssertIdentical(adopted, preview)
+        XCTAssertIdentical(preview.existingWebView, webView)
         XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [
             source.id,
             preview.id,
@@ -343,7 +343,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
 
         let adopted = tabManager.adoptGlanceTab(preview, sourceTab: source)
 
-        XCTAssertTrue(adopted === preview)
+        XCTAssertIdentical(adopted, preview)
         XCTAssertEqual(preview.spaceId, sourceSpace.id)
         XCTAssertEqual(preview.profileId, previewProfileId)
         XCTAssertEqual(sourceSpace.profileId, previewProfileId)

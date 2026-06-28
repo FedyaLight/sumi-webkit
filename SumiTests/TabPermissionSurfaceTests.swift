@@ -1,5 +1,5 @@
-import XCTest
 import WebKit
+import XCTest
 
 @testable import Sumi
 
@@ -52,8 +52,8 @@ final class TabPermissionSurfaceTests: XCTestCase {
         let (windowRegistry, windowState) = registerWindow(in: browserManager, selecting: tab)
         let webView = WKWebView()
 
-        XCTAssertEqual(tab.permissionRequestSurfaceState(for: webView).isActive, true)
-        XCTAssertEqual(tab.permissionRequestSurfaceState(for: webView).isVisible, false)
+        XCTAssertTrue(tab.permissionRequestSurfaceState(for: webView).isActive)
+        XCTAssertFalse(tab.permissionRequestSurfaceState(for: webView).isVisible)
 
         tab.primaryWindowId = windowState.id
 
@@ -65,7 +65,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
         XCTAssertEqual(context.pageId, tab.currentPermissionPageId())
         XCTAssertEqual(context.visibleURL, tab.url)
         XCTAssertEqual(context.mainFrameURL, tab.url)
-        withExtendedLifetime(windowRegistry) {}
+        withExtendedLifetime(windowRegistry) { /* no-op */ }
     }
 
     private func makeTab(browserManager: BrowserManager? = nil) -> Tab {

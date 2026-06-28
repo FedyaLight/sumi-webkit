@@ -60,8 +60,8 @@ final class SumiExternalSchemeSessionStoreTests: XCTestCase {
         )
 
         XCTAssertEqual(redacted, "zoommtg://join/123")
-        XCTAssertFalse(redacted?.contains("secret") == true)
-        XCTAssertFalse(redacted?.contains("access-token") == true)
+        XCTAssertNotEqual(redacted?.contains("secret"), true)
+        XCTAssertNotEqual(redacted?.contains("access-token"), true)
     }
 }
 

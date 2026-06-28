@@ -115,8 +115,7 @@ final class SumiPermissionCoordinatorPendingQueryTests: XCTestCase {
     ) async -> SumiPermissionAuthorizationQuery {
         for _ in 0..<200 {
             if let query = await coordinator.activeQuery(forPageId: "tab-a:1"),
-               isMatch(query)
-            {
+               isMatch(query) {
                 return query
             }
             try? await Task.sleep(nanoseconds: 5_000_000)
@@ -134,8 +133,7 @@ final class SumiPermissionCoordinatorPendingQueryTests: XCTestCase {
         for _ in 0..<200 {
             let snapshot = await coordinator.stateSnapshot()
             if case .queryCoalesced(_, let coalescedRequestId) = snapshot.latestEvent,
-               coalescedRequestId == requestId
-            {
+               coalescedRequestId == requestId {
                 return
             }
             try? await Task.sleep(nanoseconds: 5_000_000)

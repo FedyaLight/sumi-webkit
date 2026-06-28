@@ -148,7 +148,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
             importStore: importStore,
             launcher: launcher,
             extensionsModuleEnabled: { true },
-            logDiagnostic: { _ in }
+            logDiagnostic: { _ in /* no-op */ }
         )
 
         let reply = await sendMessageReply(
@@ -165,7 +165,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         )
     }
 
-    func testResolverReturnsNilForDirectoryExtensionWithoutExplicitHostRequest() throws {
+    func testResolverReturnsNilForDirectoryExtensionWithoutExplicitHostRequest() {
         let importStore = SafariExtensionImportStore(defaults: makeDefaults())
         let installed = makeInstalledExtension(
             id: "ext-directory",

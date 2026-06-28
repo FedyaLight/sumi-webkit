@@ -141,8 +141,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     }
 
     func testSurfaceStorePublishesSiteAccessPolicySnapshotForActiveProfile()
-        async throws
-    {
+        async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Surface Snapshot")
         let manager = ExtensionManager(
@@ -227,8 +226,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     }
 
     func testNativeMessagingPermissionGrantIsProfileScopedAndUsesSDKPermission()
-        async throws
-    {
+        async throws {
         let container = try makeTestContainer()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
@@ -314,8 +312,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     }
 
     func testPolicyDrivenCurrentSiteGrantDoesNotCreateConfiguredRule()
-        async throws
-    {
+        async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Default Current Site Access")
         let manager = ExtensionManager(
@@ -529,8 +526,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
     }
 
     func testDefaultAllowMakesBroadHostGrantVisibleToPermissionsContains()
-        async throws
-    {
+        async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Broad Host API Visibility")
         let manager = ExtensionManager(
@@ -550,15 +546,14 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertTrue(context.hasRequestedOptionalAccessToAllHosts)
 
         let results = try await permissionsContainsResults(in: context)
-        XCTAssertEqual(results["allHosts"], true)
-        XCTAssertEqual(results["account"], true)
-        XCTAssertEqual(results["pass"], true)
-        XCTAssertEqual(results["protonWildcard"], true)
+        XCTAssertTrue(try XCTUnwrap(results["allHosts"]))
+        XCTAssertTrue(try XCTUnwrap(results["account"]))
+        XCTAssertTrue(try XCTUnwrap(results["pass"]))
+        XCTAssertTrue(try XCTUnwrap(results["protonWildcard"]))
     }
 
     func testConfiguredAllSitesAllowMakesBroadHostGrantVisibleToPermissionsContains()
-        async throws
-    {
+        async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Configured Broad Host API Visibility")
         let manager = ExtensionManager(
@@ -589,10 +584,10 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertTrue(context.hasRequestedOptionalAccessToAllHosts)
 
         let results = try await permissionsContainsResults(in: context)
-        XCTAssertEqual(results["allHosts"], true)
-        XCTAssertEqual(results["account"], true)
-        XCTAssertEqual(results["pass"], true)
-        XCTAssertEqual(results["protonWildcard"], true)
+        XCTAssertTrue(try XCTUnwrap(results["allHosts"]))
+        XCTAssertTrue(try XCTUnwrap(results["account"]))
+        XCTAssertTrue(try XCTUnwrap(results["pass"]))
+        XCTAssertTrue(try XCTUnwrap(results["protonWildcard"]))
     }
 
     func testExternallyConnectableMatchesAreNotDeclaredSiteAccess() async throws {
@@ -717,7 +712,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {
-        for _ in 0 ..< 100 {
+        for _ in 0..<100 {
             if surfaceStore.siteAccessPoliciesByExtensionID[extensionId]?.defaultAccess == expected {
                 return
             }
@@ -868,8 +863,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         let data = try XCTUnwrap(rawValue?.data(using: .utf8))
         let object = try JSONSerialization.jsonObject(with: data)
         if let result = object as? [String: String],
-           let error = result["error"]
-        {
+           let error = result["error"] {
             XCTFail("permissions.contains failed in extension page: \(error)")
             return [:]
         }

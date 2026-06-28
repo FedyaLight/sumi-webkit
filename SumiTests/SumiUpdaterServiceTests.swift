@@ -227,7 +227,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
             infoDictionary: [
                 "CFBundleDisplayName": "Sumi",
                 "CFBundleShortVersionString": "3.4.5",
-                "CFBundleVersion": "345"
+                "CFBundleVersion": "345",
             ]
         )
         var state = SumiUpdateState.initial(channel: .alpha)
@@ -257,7 +257,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
             infoDictionary: [
                 "CFBundleDisplayName": "Sumi",
                 "CFBundleShortVersionString": "3.4.5",
-                "CFBundleVersion": "345"
+                "CFBundleVersion": "345",
             ]
         )
         let update = update(displayVersion: "3.5.0", buildVersion: "350")
@@ -268,28 +268,28 @@ final class SumiUpdaterServiceTests: XCTestCase {
 
         state.isCheckingForUpdates = true
         XCTAssertEqual(
-            SumiAboutUpdateViewModel(metadata: metadata, state: state, checkForUpdates: {}).panelState,
+            SumiAboutUpdateViewModel(metadata: metadata, state: state, checkForUpdates: { /* no-op */ }).panelState,
             .checking
         )
 
         state.isCheckingForUpdates = false
         state.availability = .available(update)
         XCTAssertEqual(
-            SumiAboutUpdateViewModel(metadata: metadata, state: state, checkForUpdates: {}).panelState,
+            SumiAboutUpdateViewModel(metadata: metadata, state: state, checkForUpdates: { /* no-op */ }).panelState,
             .updateAvailable(update)
         )
 
         state.availability = .none
         state.lastCheckedAt = Date(timeIntervalSince1970: 1_700_000_000)
         XCTAssertEqual(
-            SumiAboutUpdateViewModel(metadata: metadata, state: state, checkForUpdates: {}).panelState,
+            SumiAboutUpdateViewModel(metadata: metadata, state: state, checkForUpdates: { /* no-op */ }).panelState,
             .upToDate
         )
 
         state.lastCheckedAt = nil
         state.diagnosticMessage = "Network unavailable"
         XCTAssertEqual(
-            SumiAboutUpdateViewModel(metadata: metadata, state: state, checkForUpdates: {}).panelState,
+            SumiAboutUpdateViewModel(metadata: metadata, state: state, checkForUpdates: { /* no-op */ }).panelState,
             .checkFailed("Network unavailable")
         )
     }
@@ -348,7 +348,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "Process(",
                 "FileManager.default.moveItem",
                 "FileManager.default.replaceItem",
-                "NSWorkspace.shared.launchApplication"
+                "NSWorkspace.shared.launchApplication",
             ],
             context: "updater layer"
         )
@@ -384,7 +384,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "Sumi.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
                 "README.md",
                 "SECURITY.md",
-                ".gitignore"
+                ".gitignore",
             ]
         )
 
@@ -392,7 +392,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
             source,
             [
                 "/" + "Users/",
-                "file:///" + "Users/"
+                "file:///" + "Users/",
             ],
             context: "committable source and release files"
         )
@@ -406,7 +406,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "App/SumiCommands.swift",
                 "Sumi/Components/Settings/Tabs/About.swift",
                 "Sumi/Components/Sidebar/SumiUpdateSidebarNoticeView.swift",
-                "Navigation/Sidebar/SpacesSideBarView.swift"
+                "Navigation/Sidebar/SpacesSideBarView.swift",
             ]
         )
 
@@ -420,7 +420,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "appcast-preview.xml",
                 "http://localhost",
                 "http://127.0.0.1",
-                "feedURLString(for updater:"
+                "feedURLString(for updater:",
             ],
             context: "runtime updater surface"
         )
@@ -433,7 +433,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "scripts/release",
                 "docs",
                 "Sumi/Info.plist",
-                "README.md"
+                "README.md",
             ]
         )
 
@@ -444,7 +444,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "gh" + "s_",
                 "github" + "_pat_",
                 "BEGIN " + "PRIVATE KEY",
-                "BEGIN " + "OPENSSH PRIVATE KEY"
+                "BEGIN " + "OPENSSH PRIVATE KEY",
             ],
             context: "release infrastructure"
         )
@@ -457,7 +457,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "ASC_KEY",
                 "APP_STORE_CONNECT",
                 "notarytool",
-                "NOTARIZATION"
+                "NOTARIZATION",
             ],
             context: "alpha GitHub Actions"
         )
@@ -471,7 +471,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "docs/UPDATES.md",
                 "docs/RELEASES.md",
                 "README.md",
-                "Sumi/Info.plist"
+                "Sumi/Info.plist",
             ]
         )
 
@@ -490,7 +490,7 @@ final class SumiUpdaterServiceTests: XCTestCase {
                 "Local Sparkle Update Testing",
                 "SUMI_DEV_SPARKLE_FEED_URL",
                 "--sumi-dev-sparkle-feed",
-                "dev.sumi.updates.localFeedURL"
+                "dev.sumi.updates.localFeedURL",
             ],
             context: "current release surface"
         )
@@ -645,7 +645,7 @@ private final class FakeDismissalStore: SumiUpdateNoticeDismissalPersisting {
 private struct FakeInstalledUpdateStore: SumiInstalledUpdateNoticePersisting {
     var notice: SumiInstalledUpdate?
 
-    func consumeInstalledUpdateNotice(current: SumiAppVersionMetadata) -> SumiInstalledUpdate? {
+    func consumeInstalledUpdateNotice(current _: SumiAppVersionMetadata) -> SumiInstalledUpdate? {
         notice
     }
 }

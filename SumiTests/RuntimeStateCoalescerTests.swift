@@ -3,7 +3,7 @@ import XCTest
 @testable import Sumi
 
 final class RuntimeStateCoalescerTests: XCTestCase {
-    func testSameTabUpdatesCollapseToLatestPayload() async throws {
+    func testSameTabUpdatesCollapseToLatestPayload() async {
         let recorder = RuntimeStateBatchRecorder()
         let coalescer = RuntimeStateCoalescer(
             debounceNanoseconds: 1_000_000_000,
@@ -47,7 +47,7 @@ final class RuntimeStateCoalescerTests: XCTestCase {
         XCTAssertEqual(Set(batches[0].map(\.id)), [firstID, secondID])
     }
 
-    func testForceFlushPersistsWithoutWaitingForDebounce() async throws {
+    func testForceFlushPersistsWithoutWaitingForDebounce() async {
         let recorder = RuntimeStateBatchRecorder()
         let coalescer = RuntimeStateCoalescer(
             debounceNanoseconds: 60_000_000_000,

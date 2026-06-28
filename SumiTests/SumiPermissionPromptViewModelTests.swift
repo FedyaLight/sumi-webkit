@@ -157,7 +157,7 @@ final class SumiPermissionPromptViewModelTests: XCTestCase {
                 .screenCapture: .authorized,
             ]
         ),
-        onFinished: @escaping @MainActor () -> Void = {}
+        onFinished: @escaping @MainActor () -> Void = { /* no-op */ }
     ) -> SumiPermissionPromptViewModel {
         SumiPermissionPromptViewModel(
             query: query,
@@ -197,7 +197,7 @@ private actor PromptFakeCoordinator: SumiPermissionCoordinating {
         await requestPermission(context)
     }
 
-    func activeQuery(forPageId pageId: String) -> SumiPermissionAuthorizationQuery? {
+    func activeQuery(forPageId _: String) -> SumiPermissionAuthorizationQuery? {
         nil
     }
 
@@ -320,6 +320,6 @@ private func promptQuery(
         createdAt: Date(timeIntervalSince1970: 1_800_000_000),
         isEphemeralProfile: isEphemeralProfile,
         shouldOfferSystemSettings: systemAuthorizationSnapshots.contains(where: \.shouldOpenSystemSettings),
-        disablesPersistentAllow: isEphemeralProfile || !availablePersistences.contains(.persistent),
+        disablesPersistentAllow: isEphemeralProfile || !availablePersistences.contains(.persistent)
     )
 }

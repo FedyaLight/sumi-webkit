@@ -228,7 +228,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         )
     }
 
-    func testRuntimeConnectCompatibilityLayerWasDeleted() throws {
+    func testRuntimeConnectCompatibilityLayerWasDeleted() {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -306,8 +306,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             atPath: runtimeResources.path,
             isDirectory: &isDirectory
         ),
-           isDirectory.boolValue
-        {
+           isDirectory.boolValue {
             let remainingJS = try FileManager.default.contentsOfDirectory(
                 at: runtimeResources,
                 includingPropertiesForKeys: nil

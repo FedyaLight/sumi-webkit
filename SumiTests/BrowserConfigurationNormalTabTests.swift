@@ -37,8 +37,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         let controller = try XCTUnwrap(configuration.userContentController.sumiNormalTabUserContentController)
         XCTAssertTrue(configuration.sumiIsNormalTabWebViewConfiguration)
-        XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
-        XCTAssertTrue(controller.wkUserContentController === configuration.userContentController)
+        XCTAssertIdentical(configuration.websiteDataStore, profile.dataStore)
+        XCTAssertIdentical(controller.wkUserContentController, configuration.userContentController)
         XCTAssertNotNil(controller.normalTabUserScriptsProvider)
         XCTAssertTrue(controller.hasInstalledInitialUserContent)
         XCTAssertFalse(configuration.userContentController.userScripts.isEmpty)
@@ -268,7 +268,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             url: URL(string: "https://second.example")
         )
 
-        XCTAssertFalse(first.userContentController === second.userContentController)
+        XCTAssertNotIdentical(first.userContentController, second.userContentController)
         XCTAssertTrue(first.sumiIsNormalTabWebViewConfiguration)
         XCTAssertTrue(second.sumiIsNormalTabWebViewConfiguration)
     }
@@ -312,7 +312,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
 
         XCTAssertFalse(configuration.websiteDataStore.isPersistent)
-        XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
+        XCTAssertIdentical(configuration.websiteDataStore, profile.dataStore)
     }
 
     func testNormalTabConfigurationsShareVisitedLinkStoreWithinProfile() throws {
@@ -333,7 +333,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         let firstStore = try XCTUnwrap(first.sumiVisitedLinkStoreObject)
         let secondStore = try XCTUnwrap(second.sumiVisitedLinkStoreObject)
-        XCTAssertTrue(firstStore === secondStore)
+        XCTAssertIdentical(firstStore, secondStore)
     }
 
     func testNormalTabConfigurationsSeparateVisitedLinkStoresAcrossProfiles() throws {
@@ -355,7 +355,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         let firstStore = try XCTUnwrap(first.sumiVisitedLinkStoreObject)
         let secondStore = try XCTUnwrap(second.sumiVisitedLinkStoreObject)
-        XCTAssertFalse(firstStore === secondStore)
+        XCTAssertNotIdentical(firstStore, secondStore)
     }
 
     func testEphemeralProfilesUseIsolatedVisitedLinkStores() throws {
@@ -383,8 +383,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let persistentStore = try XCTUnwrap(persistent.sumiVisitedLinkStoreObject)
         let firstEphemeralStore = try XCTUnwrap(firstEphemeral.sumiVisitedLinkStoreObject)
         let secondEphemeralStore = try XCTUnwrap(secondEphemeral.sumiVisitedLinkStoreObject)
-        XCTAssertFalse(persistentStore === firstEphemeralStore)
-        XCTAssertFalse(firstEphemeralStore === secondEphemeralStore)
+        XCTAssertNotIdentical(persistentStore, firstEphemeralStore)
+        XCTAssertNotIdentical(firstEphemeralStore, secondEphemeralStore)
     }
 
     func testProfileAwareAuxiliaryConfigurationCarriesStoreWithoutEnablingRecording() throws {
@@ -404,7 +404,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         let normalStore = try XCTUnwrap(normal.sumiVisitedLinkStoreObject)
         let auxiliaryStore = try XCTUnwrap(auxiliary.sumiVisitedLinkStoreObject)
-        XCTAssertTrue(normalStore === auxiliaryStore)
+        XCTAssertIdentical(normalStore, auxiliaryStore)
 
         _ = WKWebView(frame: .zero, configuration: auxiliary)
     }
@@ -426,7 +426,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(auxiliary.websiteDataStore.isPersistent)
         let normalStore = try XCTUnwrap(normal.sumiVisitedLinkStoreObject)
         let auxiliaryStore = try XCTUnwrap(auxiliary.sumiVisitedLinkStoreObject)
-        XCTAssertFalse(normalStore === auxiliaryStore)
+        XCTAssertNotIdentical(normalStore, auxiliaryStore)
 
         _ = WKWebView(frame: .zero, configuration: auxiliary)
     }
@@ -485,7 +485,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         ]
 
         for configuration in configurations {
-            XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
+            XCTAssertIdentical(configuration.websiteDataStore, profile.dataStore)
         }
     }
 
@@ -851,7 +851,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     private func waitForAssets(
         on controller: SumiNormalTabUserContentControlling,
         timeout: TimeInterval = 5,
-        where predicate: @escaping (SumiNormalTabContentBlockingAssetSummary) -> Bool
+        where predicate: (SumiNormalTabContentBlockingAssetSummary) -> Bool
     ) async throws -> SumiNormalTabContentBlockingAssetSummary {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -869,7 +869,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     private func waitForAssets(
         on tab: Tab,
         timeout: TimeInterval = 5,
-        where predicate: @escaping (SumiNormalTabContentBlockingAssetSummary) -> Bool
+        where predicate: (SumiNormalTabContentBlockingAssetSummary) -> Bool
     ) async throws -> SumiNormalTabContentBlockingAssetSummary {
         let deadline = Date().addingTimeInterval(timeout)
         var latestSummary: SumiNormalTabContentBlockingAssetSummary?

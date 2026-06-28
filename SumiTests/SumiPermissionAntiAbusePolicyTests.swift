@@ -9,7 +9,7 @@ final class SumiPermissionAntiAbusePolicyTests: XCTestCase {
     func testFirstDismissStartsTenMinuteCooldown() {
         let key = antiAbuseKey(.camera)
         let events = [
-            event(.userDismissed, key: key, at: now)
+            event(.userDismissed, key: key, at: now),
         ]
 
         let suppression = policy.suppression(
@@ -29,7 +29,7 @@ final class SumiPermissionAntiAbusePolicyTests: XCTestCase {
     func testCooldownExpiryAllowsPromptAgain() {
         let key = antiAbuseKey(.camera)
         let events = [
-            event(.userDismissed, key: key, at: now)
+            event(.userDismissed, key: key, at: now),
         ]
 
         let suppression = policy.suppression(
@@ -101,7 +101,7 @@ final class SumiPermissionAntiAbusePolicyTests: XCTestCase {
     func testNavigationCancellationDoesNotCountAsDismissal() {
         let key = antiAbuseKey(.camera)
         let events = [
-            event(.requestCancelledByNavigation, key: key, at: now)
+            event(.requestCancelledByNavigation, key: key, at: now),
         ]
 
         let suppression = policy.suppression(
@@ -139,7 +139,7 @@ final class SumiPermissionAntiAbusePolicyTests: XCTestCase {
     func testSystemBlockedCooldownIsSeparateFromUserDeny() {
         let key = antiAbuseKey(.camera)
         let events = [
-            event(.systemBlocked, key: key, at: now)
+            event(.systemBlocked, key: key, at: now),
         ]
 
         let promptSuppression = policy.suppression(

@@ -79,7 +79,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
                 "tabSuspension:tab-selection-changed",
                 "backgroundMedia:tab-selection-changed",
                 "updateActiveTabState",
-                "persistWindowSession"
+                "persistWindowSession",
             ]
         )
     }
@@ -139,7 +139,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
                 "clearFind",
                 "refreshCompositor",
                 "persistWindowSession",
-                "showNewTabFloatingBar"
+                "showNewTabFloatingBar",
             ]
         )
     }

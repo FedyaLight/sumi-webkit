@@ -36,7 +36,7 @@ final class URLBarHubPageActionOwnerTests: XCTestCase {
         XCTAssertFalse(actionOwner.contains("[weak self]"))
     }
 
-    func testScreenshotFilenameSanitizesTitleAndScale() throws {
+    func testScreenshotFilenameSanitizesTitleAndScale() {
         let tab = Tab(url: URL(string: "https://example.com")!, name: "Example: One/Two")
 
         XCTAssertEqual(

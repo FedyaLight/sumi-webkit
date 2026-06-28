@@ -3,8 +3,8 @@
 //  SumiTests
 //
 
-@testable import Sumi
 import AppKit
+@testable import Sumi
 import SwiftData
 import WebKit
 import XCTest

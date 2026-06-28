@@ -59,7 +59,7 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertTrue(delegate.committedThemes.isEmpty)
     }
 
-    func testBrowserManagerSuppressesGlobalCurrentTabFallbackDuringInitialSessionResolution() throws {
+    func testBrowserManagerSuppressesGlobalCurrentTabFallbackDuringInitialSessionResolution() {
         let browserManager = BrowserManager()
         let space = Space(id: UUID(), name: "Primary")
         browserManager.tabManager.spaces = [space]
@@ -121,10 +121,10 @@ final class WindowSessionServiceTests: XCTestCase {
             isShowingEmptyState: false,
             floatingBarReason: .keyboard,
             activeTabsBySpace: [
-                SpaceTabSelectionSnapshot(spaceId: space.id, tabId: tab.id)
+                SpaceTabSelectionSnapshot(spaceId: space.id, tabId: tab.id),
             ],
             activeShortcutsBySpace: [
-                SpaceShortcutSelectionSnapshot(spaceId: space.id, shortcutPinId: shortcutPinId)
+                SpaceShortcutSelectionSnapshot(spaceId: space.id, shortcutPinId: shortcutPinId),
             ],
             sidebarWidth: 312,
             savedSidebarWidth: 340,
@@ -228,7 +228,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let sessionKey = try seedWindowSession(
             currentSpaceId: space.id,
             activeShortcutsBySpace: [
-                SpaceShortcutSelectionSnapshot(spaceId: space.id, shortcutPinId: pin.id)
+                SpaceShortcutSelectionSnapshot(spaceId: space.id, shortcutPinId: pin.id),
             ]
         )
         defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
@@ -353,7 +353,7 @@ final class WindowSessionServiceTests: XCTestCase {
                     WorkspaceThemeColor(
                         hex: "#34C759",
                         position: .bottom
-                    )
+                    ),
                 ],
                 opacity: 0.82,
                 texture: 0.2
@@ -420,9 +420,9 @@ private final class TestWindowSessionDelegate: WindowSessionServiceDelegate {
         _ tab: Tab,
         in windowState: BrowserWindowState,
         updateSpaceFromTab: Bool,
-        updateTheme: Bool,
-        rememberSelection: Bool,
-        persistSelection: Bool
+        updateTheme _: Bool,
+        rememberSelection _: Bool,
+        persistSelection _: Bool
     ) {
         windowState.currentTabId = tab.id
         if updateSpaceFromTab {
@@ -434,9 +434,9 @@ private final class TestWindowSessionDelegate: WindowSessionServiceDelegate {
         windowState.isShowingEmptyState = true
     }
 
-    func sanitizeFloatingBarState(in windowState: BrowserWindowState) {}
+    func sanitizeFloatingBarState(in _: BrowserWindowState) { /* no-op */ }
 
-    func syncShortcutSelectionState(for windowState: BrowserWindowState) {}
+    func syncShortcutSelectionState(for _: BrowserWindowState) { /* no-op */ }
 
     func commitWorkspaceTheme(_ theme: WorkspaceTheme, for windowState: BrowserWindowState) {
         committedThemes.append(theme)
@@ -448,7 +448,7 @@ private final class TestWindowSessionDelegate: WindowSessionServiceDelegate {
         return tabManager.spaces.first { $0.id == spaceId }
     }
 
-    func syncBrowserManagerSidebarCachesFromWindow(_ windowState: BrowserWindowState) {}
+    func syncBrowserManagerSidebarCachesFromWindow(_: BrowserWindowState) { /* no-op */ }
 
     func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState) {
         focusedSplitGroupIds.append(group.id)

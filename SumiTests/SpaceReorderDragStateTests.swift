@@ -1,7 +1,7 @@
 import CoreGraphics
+@testable import Sumi
 import SwiftUI
 import XCTest
-@testable import Sumi
 
 final class SpaceReorderDragStateTests: XCTestCase {
     private let metrics = SpaceStripMetrics.resolve(for: .regular)

@@ -1,6 +1,6 @@
+@testable import Sumi
 import WebKit
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class SumiNotificationPermissionBridgeTests: XCTestCase {
@@ -386,7 +386,7 @@ private actor FakeNotificationPermissionCoordinator: SumiPermissionCoordinating 
 
     @discardableResult
     func cancelTab(
-        tabId: String,
+        tabId _: String,
         reason: String
     ) -> SumiPermissionCoordinatorDecision {
         cancelReasons.append(reason)
@@ -414,13 +414,13 @@ private actor FakeNotificationPermissionCoordinator: SumiPermissionCoordinating 
             presentationPermissionType: nil,
             availablePersistences: [.oneTime, .session, .persistent],
             systemAuthorizationSnapshots: [
-                SumiSystemPermissionSnapshot(kind: .notifications, state: .authorized)
+                SumiSystemPermissionSnapshot(kind: .notifications, state: .authorized),
             ],
             policyReasons: [SumiPermissionPolicyReason.allowed],
             createdAt: context.now,
             isEphemeralProfile: context.isEphemeralProfile,
             shouldOfferSystemSettings: false,
-            disablesPersistentAllow: context.isEphemeralProfile,
+            disablesPersistentAllow: context.isEphemeralProfile
         )
     }
 }

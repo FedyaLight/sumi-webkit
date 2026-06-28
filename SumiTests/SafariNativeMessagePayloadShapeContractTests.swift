@@ -346,8 +346,7 @@ final class SafariNativeMessagePayloadShapeContractTests: XCTestCase {
 
     private final class NativeMessageShapeSpyDelegate:
         NSObject,
-        WKWebExtensionControllerDelegate
-    {
+        WKWebExtensionControllerDelegate {
         private(set) var records: [NativeMessageShapeDelegateRecord] = []
 
         func webExtensionController(
@@ -355,7 +354,7 @@ final class SafariNativeMessagePayloadShapeContractTests: XCTestCase {
             sendMessage message: Any,
             toApplicationWithIdentifier applicationIdentifier: String?,
             for extensionContext: WKWebExtensionContext,
-            replyHandler: @escaping (Any?, (any Error)?) -> Void
+            replyHandler: (Any?, (any Error)?) -> Void
         ) {
             _ = (controller, extensionContext)
             records.append(

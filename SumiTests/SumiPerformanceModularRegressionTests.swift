@@ -380,7 +380,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertEqual(extensionsProbe.managerCount, 0)
     }
 
-    func testEnabledModulesRemainSeparated() throws {
+    func testEnabledModulesRemainSeparated() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -836,7 +836,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             .joined(separator: "\n")
     }
 
-    private static func relativeFiles(in relativeDirectory: String) throws -> [String] {
+    private static func relativeFiles(in relativeDirectory: String) -> [String] {
         let directoryURL = repoRoot.appendingPathComponent(relativeDirectory)
         guard FileManager.default.fileExists(atPath: directoryURL.path) else {
             return []

@@ -313,7 +313,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             "folders(for: spaceId",
             "openFolderIfNeeded(folderId",
             "setAllFolders(open: isOpen",
-            "moveTabToFolder(tab: tab"
+            "moveTabToFolder(tab: tab",
         ] {
             XCTAssertTrue(folderFacadeSource.contains("folderMutationOwner.\(method)"))
         }
@@ -323,7 +323,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             "foldersBySpace",
             "spacePinnedShortcuts",
             "convertTabToShortcutPin",
-            "deleteLiveFolderState"
+            "deleteLiveFolderState",
         ] {
             XCTAssertFalse(folderFacadeSource.contains(forbidden), "TabManager folder facade should not own \(forbidden)")
         }
@@ -582,7 +582,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let tabs = [
             tabManager.createNewTab(url: "https://example.com/one", in: space, activate: true),
             tabManager.createNewTab(url: "https://example.com/two", in: space, activate: false),
-            tabManager.createNewTab(url: "https://example.com/three", in: space, activate: false)
+            tabManager.createNewTab(url: "https://example.com/three", in: space, activate: false),
         ]
         let baseGroup = try XCTUnwrap(
             SplitGroup.make(
@@ -660,7 +660,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
                         tabId: livePinnedTab.id,
                         pinId: pin.id,
                         origin: .spacePinned(spaceId: space.id, folderId: nil, index: pin.index)
-                    )
+                    ),
                 ]
             )
         )

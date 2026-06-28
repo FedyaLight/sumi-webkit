@@ -110,8 +110,8 @@ final class HistoryNavigationTests: XCTestCase {
         let remainingSource = source[start.upperBound...]
         let nextFunctionBoundaries = [
             remainingSource.range(of: "\n    func ")?.lowerBound,
-            remainingSource.range(of: "\n    private func ")?.lowerBound
-        ].compactMap { $0 }
+            remainingSource.range(of: "\n    private func ")?.lowerBound,
+        ].compactMap(\.self)
         let end = nextFunctionBoundaries.min() ?? source.endIndex
 
         return source[start.lowerBound..<end]

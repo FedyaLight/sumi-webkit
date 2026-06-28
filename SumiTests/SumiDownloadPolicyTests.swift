@@ -103,7 +103,7 @@ final class SumiDownloadPolicyTests: XCTestCase {
         )
     }
 
-    func testApplicationsStorePersistsRecordsAndRejectsHTML() throws {
+    func testApplicationsStorePersistsRecordsAndRejectsHTML() {
         let storeURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathComponent("DownloadApplications.json")

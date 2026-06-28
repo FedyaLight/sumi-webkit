@@ -1,7 +1,7 @@
 import AppKit
+@testable import Sumi
 import SwiftUI
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class SumiTabTitleViewTests: XCTestCase {

@@ -90,7 +90,7 @@ final class ExtensionNativeMessagingBackgroundWakeOwnerTests: XCTestCase {
                     releaseFirstWake = continuation
                 }
             },
-            logFailure: { _, _ in }
+            logFailure: { _, _ in /* no-op */ }
         )
         owner.scheduleWake(
             wakeKey: "second-profile:second-extension",
@@ -101,7 +101,7 @@ final class ExtensionNativeMessagingBackgroundWakeOwnerTests: XCTestCase {
                     releaseSecondWake = continuation
                 }
             },
-            logFailure: { _, _ in }
+            logFailure: { _, _ in /* no-op */ }
         )
 
         await fulfillment(

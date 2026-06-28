@@ -152,10 +152,10 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
 
         searchManager.searchSuggestions(for: "example.com")
         let suggestions = await waitForSuggestions(in: searchManager) {
-            $0.contains { $0.isNormalizedExampleURLSuggestion }
+            $0.contains(where: \.isNormalizedExampleURLSuggestion)
         }
 
-        XCTAssertTrue(suggestions.contains { $0.isNormalizedExampleURLSuggestion })
+        XCTAssertTrue(suggestions.contains(where: \.isNormalizedExampleURLSuggestion))
         searchManager.clearSuggestions()
     }
 
@@ -202,7 +202,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         }
 
         XCTAssertEqual(suggestions.first?.text, "GitHub")
-        XCTAssertTrue(suggestions.first?.isHistorySuggestion == true)
+        XCTAssertEqual(suggestions.first?.isHistorySuggestion, true)
         harness.searchManager.clearSuggestions()
     }
 
@@ -280,7 +280,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
         }
 
         XCTAssertEqual(suggestions.first?.text, "High Frequency")
-        XCTAssertTrue(suggestions.first?.isHistorySuggestion == true)
+        XCTAssertEqual(suggestions.first?.isHistorySuggestion, true)
         harness.searchManager.clearSuggestions()
     }
 
@@ -357,7 +357,7 @@ final class SearchManagerHistorySuggestionTests: XCTestCase {
 private struct StaticSearchSuggestionDataProvider: SearchSuggestionDataProviding {
     let payload: String
 
-    func data(for query: String) async throws -> Data {
+    func data(for _: String) async -> Data {
         Data(payload.utf8)
     }
 }

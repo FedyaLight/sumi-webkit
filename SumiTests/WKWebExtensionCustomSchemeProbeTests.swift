@@ -71,7 +71,7 @@ private final class CustomSchemeProbeNavigationDelegate: NSObject, WKNavigationD
         self.didFinish = didFinish
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    func webView(_: WKWebView, didFinish _: WKNavigation!) { // swiftlint:disable:this implicitly_unwrapped_optional
         didFinish()
     }
 }

@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class SumiDefaultBrowserServiceTests: XCTestCase {
@@ -78,11 +78,11 @@ final class SumiDefaultBrowserServiceTests: XCTestCase {
 
     func testInfoPlistRegistersDefaultBrowserCapabilities() {
         let activityTypes = Bundle.main.object(forInfoDictionaryKey: "NSUserActivityTypes") as? [String]
-        XCTAssertTrue(activityTypes?.contains("NSUserActivityTypeBrowsingWeb") == true)
+        XCTAssertEqual(activityTypes?.contains("NSUserActivityTypeBrowsingWeb"), true)
 
         let documentTypes = Bundle.main.object(forInfoDictionaryKey: "CFBundleDocumentTypes") as? [[String: Any]]
         let contentTypes = Set(
-            (documentTypes ?? []).compactMap { $0["LSItemContentTypes"] as? [String] }.flatMap { $0 }
+            (documentTypes ?? []).compactMap { $0["LSItemContentTypes"] as? [String] }.flatMap(\.self)
         )
         XCTAssertTrue(contentTypes.contains("public.html"))
         XCTAssertTrue(contentTypes.contains("public.xhtml"))

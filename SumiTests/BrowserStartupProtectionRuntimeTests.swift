@@ -100,12 +100,12 @@ final class BrowserStartupProtectionRuntimeTests: XCTestCase {
 
     private func makeRuntime(
         appliedLevel: @escaping () -> SumiProtectionLevel = { .protection },
-        restoreAppliedProtectionLevelForStartup: @escaping () async throws -> Void = {},
+        restoreAppliedProtectionLevelForStartup: @escaping () async throws -> Void = { /* no-op */ },
         tab: @escaping (UUID) -> Tab? = { _ in nil },
         allWindows: @escaping () -> [BrowserWindowState] = { [] },
-        prepareBackgroundTabIfNeeded: @escaping (Tab) -> Void = { _ in },
-        schedulePrepareVisibleWebViews: @escaping (BrowserWindowState) -> Void = { _ in },
-        refreshCompositor: @escaping (BrowserWindowState) -> Void = { _ in }
+        prepareBackgroundTabIfNeeded: @escaping (Tab) -> Void = { _ in /* no-op */ },
+        schedulePrepareVisibleWebViews: @escaping (BrowserWindowState) -> Void = { _ in /* no-op */ },
+        refreshCompositor: @escaping (BrowserWindowState) -> Void = { _ in /* no-op */ }
     ) -> BrowserStartupProtectionRuntime {
         BrowserStartupProtectionRuntime(
             dependencies: BrowserStartupProtectionRuntime.Dependencies(

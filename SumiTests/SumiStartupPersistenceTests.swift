@@ -30,7 +30,7 @@ final class SumiStartupPersistenceTests: XCTestCase {
 
         XCTAssertEqual(openAttempts, 2)
         XCTAssertEqual(resetAttempts, 1)
-        XCTAssertTrue(resolvedContainer === recreatedContainer)
+        XCTAssertIdentical(resolvedContainer, recreatedContainer)
     }
 
     func testNonResettableStoreOpenFailurePropagatesWithoutFallbackContainer() throws {

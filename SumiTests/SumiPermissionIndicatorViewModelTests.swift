@@ -404,7 +404,7 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
             createdAt: fixedDate,
             isEphemeralProfile: false,
             shouldOfferSystemSettings: false,
-            disablesPersistentAllow: false,
+            disablesPersistentAllow: false
         )
     }
 

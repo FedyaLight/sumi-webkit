@@ -39,7 +39,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             oneShotReply: (Any?, (any Error)?) = (["ok": true], nil),
             shouldLaunchOnOneShot: Bool = true,
             shouldLaunchOnConnect: Bool = true,
-            connectCompletion: @Sendable @escaping ((any Error)?) -> (any Error)? = { $0 },
+            connectCompletion: @Sendable @escaping ((any Error)?) -> (any Error)? = \.self,
             relayPortMessageResult: Bool = true
         ) {
             self.protocolIdentifier = protocolIdentifier
@@ -134,7 +134,6 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             isDisconnected = true
             disconnectHandler?(error)
         }
-
     }
 
     // 1. One-time native message success using fake protocol adapter
@@ -143,7 +142,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
         )
-        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let installed = makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
         let adapter = FakeProtocolAdapter(
@@ -169,7 +168,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             appBundleID: "com.bitwarden.desktop",
             appexBundleID: "com.bitwarden.desktop.safari"
         )
-        let installed = try makeInstalledExtension(id: "ext-bitwarden", sourceBundlePath: appexPath)
+        let installed = makeInstalledExtension(id: "ext-bitwarden", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.bitwarden.desktop"] = URL(
             fileURLWithPath: "/Applications/Bitwarden.app"
@@ -207,7 +206,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
         )
-        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let installed = makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
         let adapter = FakeProtocolAdapter(
@@ -237,7 +236,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
         )
-        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let installed = makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
 
@@ -251,7 +250,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             func relayOneShotMessage(
                 request: SumiNativeMessagingOneShotRequest,
                 launcher: SumiHostApplicationLaunching,
-                replyHandler: @escaping (Any?, (any Error)?) -> Void
+                replyHandler: (Any?, (any Error)?) -> Void
             ) {
                 _ = request
                 _ = launcher
@@ -262,7 +261,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             func connectPort(
                 session: SumiNativeMessagingPortSession,
                 launcher: SumiHostApplicationLaunching,
-                completionHandler: @escaping ((any Error)?) -> Void
+                completionHandler: ((any Error)?) -> Void
             ) {
                 _ = session
                 _ = launcher
@@ -308,17 +307,17 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
         )
-        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let installed = makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
 
         final class SlowAdapter: SumiNativeMessagingProtocolAdapter {
             let protocolIdentifier = "test.slow"
-            func supports(hostBundleIdentifier: String) -> Bool { true }
+            func supports(hostBundleIdentifier _: String) -> Bool { true }
             func relayOneShotMessage(
                 request: SumiNativeMessagingOneShotRequest,
                 launcher: SumiHostApplicationLaunching,
-                replyHandler: @escaping (Any?, (any Error)?) -> Void
+                replyHandler: (Any?, (any Error)?) -> Void
             ) {
                 _ = request
                 _ = launcher
@@ -327,7 +326,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             func connectPort(
                 session: SumiNativeMessagingPortSession,
                 launcher: SumiHostApplicationLaunching,
-                completionHandler: @escaping ((any Error)?) -> Void
+                completionHandler: ((any Error)?) -> Void
             ) {
                 _ = session
                 _ = launcher
@@ -355,8 +354,8 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
     }
 
     // 5. Cancellation path
-    func testOneShotCancellation() async throws {
-        let coordinator = SumiNativeMessagingOnceReplyCoordinator { _, _ in }
+    func testOneShotCancellation() async {
+        let coordinator = SumiNativeMessagingOnceReplyCoordinator { _, _ in /* no-op */ }
         var completed = false
         coordinator.startRelay(timeout: .seconds(30)) {
             try? await Task.sleep(for: .seconds(5))
@@ -376,7 +375,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
         )
-        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let installed = makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
         let adapter = FakeProtocolAdapter(supportedHosts: ["com.example.host"])
@@ -397,7 +396,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
         )
-        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let installed = makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
         let adapter = FakeProtocolAdapter(
@@ -422,7 +421,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             appBundleID: "com.example.host",
             appexBundleID: "com.example.host.extension"
         )
-        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let installed = makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
         let adapter = FakeProtocolAdapter(
@@ -473,7 +472,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
     }
 
     // 8. Port disconnect from extension/app side
-    func testPortDisconnectFromExtensionSide() async throws {
+    func testPortDisconnectFromExtensionSide() async {
         let port = MockNativeMessagingPort()
         port.applicationIdentifier = "com.example.host"
         var disconnectObserved = false
@@ -483,7 +482,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             extensionId: "ext-1",
             hostBundleIdentifier: "com.example.host",
             resolverBucket: .explicitApplicationIdentifier,
-            logDiagnostic: { _ in },
+            logDiagnostic: { _ in /* no-op */ },
             companionProtocolErrorProvider: {
                 SumiNativeMessagingErrorMapper.relayError(
                     code: .companionAppProtocolUnknown,
@@ -504,7 +503,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             appBundleID: "com.bitwarden.desktop",
             appexBundleID: "com.bitwarden.desktop.safari"
         )
-        let installed = try makeInstalledExtension(id: "ext-bitwarden", sourceBundlePath: appexPath)
+        let installed = makeInstalledExtension(id: "ext-bitwarden", sourceBundlePath: appexPath)
         let launcher = MockHostLauncher()
         launcher.bundleURLs["com.bitwarden.desktop"] = URL(
             fileURLWithPath: "/Applications/Bitwarden.app"
@@ -534,7 +533,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             extensionId: "ext-1",
             hostBundleIdentifier: "com.example.host",
             resolverBucket: .explicitApplicationIdentifier,
-            logDiagnostic: { _ in },
+            logDiagnostic: { _ in /* no-op */ },
             companionProtocolErrorProvider: {
                 SumiNativeMessagingErrorMapper.relayError(
                     code: .companionAppProtocolUnknown,
@@ -595,7 +594,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         let relay = SumiNativeMessagingRelay(
             extensionsModuleEnabled: { false }
         )
-        let installed = try makeInstalledExtension(id: "ext-1", sourceBundlePath: "/tmp/x.appex")
+        let installed = makeInstalledExtension(id: "ext-1", sourceBundlePath: "/tmp/x.appex")
 
         let reply = await sendMessageReply(
             relay: relay,
@@ -613,7 +612,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             extensionsModuleEnabled: { true },
             isPrivateBrowsing: { true }
         )
-        let installed = try makeInstalledExtension(
+        let installed = makeInstalledExtension(
             id: "ext-1",
             sourceBundlePath: "/tmp/x.appex",
             incognitoMode: .notAllowed
@@ -631,7 +630,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
 
     func testPolicyDeniesPrivateOriginWhenContextPrivateAccessDenied() async throws {
         let relay = SumiNativeMessagingRelay(extensionsModuleEnabled: { true })
-        let installed = try makeInstalledExtension(
+        let installed = makeInstalledExtension(
             id: "ext-private-denied",
             sourceBundlePath: try makeFixtureApp(
                 appBundleID: "com.example.host",
@@ -682,7 +681,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
     private func makeRelay(
         launcher: MockHostLauncher,
         adapters: [SumiNativeMessagingProtocolAdapter],
-        logDiagnostic: @MainActor @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void = { _ in }
+        logDiagnostic: @MainActor @escaping (SafariExtensionNativeMessagingDiagnostic) -> Void = { _ in /* no-op */ }
     ) -> SumiNativeMessagingRelay {
         SumiNativeMessagingRelay(
             launcher: launcher,
@@ -723,7 +722,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
             adapter: adapter,
             launcher: launcher,
             launchPolicy: SumiCompanionAppLaunchPolicy(),
-            logDiagnostic: { _ in },
+            logDiagnostic: { _ in /* no-op */ },
             replyHandler: { value, error in
                 replyValue = value
                 replyError = error
@@ -788,7 +787,7 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         id: String,
         sourceBundlePath: String,
         incognitoMode: IncognitoExtensionMode = .split
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         InstalledExtension(
             id: id,
             name: "Fixture",

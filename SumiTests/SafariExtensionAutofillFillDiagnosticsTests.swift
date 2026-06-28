@@ -106,9 +106,9 @@ final class SafariExtensionAutofillFillDiagnosticsTests: XCTestCase {
                 "Sumi/Models/Tab/Navigation/SafariExtensionInlineUINavigationResponder.swift"
             )
         let navigationSource = try? String(contentsOf: navigationPath, encoding: .utf8)
-        XCTAssertTrue(navigationSource?.contains("\"webkit-extension\"") == true)
-        XCTAssertTrue(navigationSource?.contains("\"safari-web-extension\"") == true)
-        XCTAssertTrue(navigationSource?.contains("recordExtensionResourceNavigation") == true)
+        XCTAssertEqual(navigationSource?.contains("\"webkit-extension\""), true)
+        XCTAssertEqual(navigationSource?.contains("\"safari-web-extension\""), true)
+        XCTAssertEqual(navigationSource?.contains("recordExtensionResourceNavigation"), true)
     }
 
     func testContentScriptTabReconcileProbeRequiresWebViewAttachBeforeNotify() {
@@ -117,8 +117,9 @@ final class SafariExtensionAutofillFillDiagnosticsTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift")
         let profilesSource = try? String(contentsOf: profilesPath, encoding: .utf8)
-        XCTAssertTrue(
-            profilesSource?.contains("Attach or rebuild WebViews before `didOpenTab`") == true
+        XCTAssertEqual(
+            profilesSource?.contains("Attach or rebuild WebViews before `didOpenTab`"),
+            true
         )
         XCTAssertTrue(SafariExtensionContentScriptProbe.isTabReconcilePathWiredInSources())
     }
@@ -132,6 +133,6 @@ final class SafariExtensionAutofillFillDiagnosticsTests: XCTestCase {
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: probeURL.path))
         let contents = try? String(contentsOf: probeURL, encoding: .utf8)
-        XCTAssertTrue(contents?.contains("__sumiAutofillFillProbe") == true)
+        XCTAssertEqual(contents?.contains("__sumiAutofillFillProbe"), true)
     }
 }

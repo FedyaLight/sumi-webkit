@@ -589,8 +589,8 @@ private struct StaticSumiPermissionPolicyProvider: SumiPermissionPolicyProvider 
     let override: SumiPermissionPolicyOverride?
 
     func override(
-        for context: SumiPermissionSecurityContext,
-        permissionType: SumiPermissionType
+        for _: SumiPermissionSecurityContext,
+        permissionType _: SumiPermissionType
     ) async -> SumiPermissionPolicyOverride? {
         override
     }

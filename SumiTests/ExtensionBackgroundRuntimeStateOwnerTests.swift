@@ -14,7 +14,7 @@ final class ExtensionBackgroundRuntimeStateOwnerTests: XCTestCase {
             wakeKey: "profile:extension",
             hasBackgroundContent: false,
             reason: .install,
-            trace: { _ in },
+            trace: { _ in /* no-op */ },
             loadBackgroundContent: {
                 didLoadBackground = true
             },
@@ -42,7 +42,7 @@ final class ExtensionBackgroundRuntimeStateOwnerTests: XCTestCase {
                 wakeKey: wakeKey,
                 hasBackgroundContent: true,
                 reason: .nativeMessaging,
-                trace: { _ in },
+                trace: { _ in /* no-op */ },
                 loadBackgroundContent: {
                     wakeCount += 1
                     wakeStarted.fulfill()
@@ -64,7 +64,7 @@ final class ExtensionBackgroundRuntimeStateOwnerTests: XCTestCase {
                 wakeKey: wakeKey,
                 hasBackgroundContent: true,
                 reason: .nativeMessaging,
-                trace: { _ in },
+                trace: { _ in /* no-op */ },
                 loadBackgroundContent: {
                     XCTFail("In-flight wake should be reused")
                 },
@@ -102,7 +102,7 @@ final class ExtensionBackgroundRuntimeStateOwnerTests: XCTestCase {
                 wakeKey: wakeKey,
                 hasBackgroundContent: true,
                 reason: .install,
-                trace: { _ in },
+                trace: { _ in /* no-op */ },
                 loadBackgroundContent: {
                     throw TestError.failed
                 },
@@ -119,8 +119,8 @@ final class ExtensionBackgroundRuntimeStateOwnerTests: XCTestCase {
             wakeKey: wakeKey,
             hasBackgroundContent: true,
             reason: .enable,
-            trace: { _ in },
-            loadBackgroundContent: {},
+            trace: { _ in /* no-op */ },
+            loadBackgroundContent: { /* no-op */ },
             recordWakeMetric: { _, _, didFail in
                 metricFailures.append(didFail)
             }

@@ -375,8 +375,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
                 if metrics.readyState == "complete",
                    metrics.loadedFromExtensionScheme,
                    metrics.elementCount > 0,
-                   metrics.scriptCount > 0
-                {
+                   metrics.scriptCount > 0 {
                     return metrics
                 }
             }

@@ -1,6 +1,6 @@
+@testable import Sumi
 import SwiftUI
 import XCTest
-@testable import Sumi
 
 final class WindowThemeStateTests: XCTestCase {
     @MainActor
@@ -19,7 +19,7 @@ final class WindowThemeStateTests: XCTestCase {
                     WorkspaceThemeColor(
                         hex: "#FFD60A",
                         position: .bottom
-                    )
+                    ),
                 ],
                 opacity: 0.78,
                 texture: 0.125
@@ -232,7 +232,7 @@ final class WindowThemeStateTests: XCTestCase {
                     WorkspaceThemeColor(
                         hex: "#F0B8CD",
                         position: .bottom
-                    )
+                    ),
                 ],
                 opacity: opacity,
                 texture: 0.125
@@ -273,7 +273,7 @@ final class WindowThemeStateTests: XCTestCase {
                     WorkspaceThemeColor(
                         hex: "#FF9500",
                         position: .bottom
-                    )
+                    ),
                 ],
                 opacity: 0.7,
                 texture: 0.1
@@ -302,7 +302,7 @@ final class WindowThemeStateTests: XCTestCase {
         XCTAssertEqual(state.sourceSpaceId, sourceSpaceId)
         XCTAssertEqual(state.progress, 0.18, accuracy: 0.0001)
         XCTAssertEqual(state.committedTheme, sourceTheme)
-        XCTAssertTrue(state.sourceTheme?.visuallyEquals(sourceTheme) == true)
-        XCTAssertTrue(state.targetTheme?.visuallyEquals(secondTargetTheme) == true)
+        XCTAssertEqual(state.sourceTheme?.visuallyEquals(sourceTheme), true)
+        XCTAssertEqual(state.targetTheme?.visuallyEquals(secondTargetTheme), true)
     }
 }

@@ -50,8 +50,8 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         XCTAssertEqual(restored.shortcutPinId, pin.id)
         XCTAssertEqual(restored.url, driftedURL)
         XCTAssertEqual(restored.name, "Current pinned page")
-        XCTAssertEqual(restored.restoredCanGoBack, true)
-        XCTAssertEqual(restored.restoredCanGoForward, true)
+        XCTAssertTrue(try XCTUnwrap(restored.restoredCanGoBack))
+        XCTAssertTrue(try XCTUnwrap(restored.restoredCanGoForward))
         XCTAssertEqual(harness.windowState.currentShortcutPinId, pin.id)
     }
 

@@ -20,7 +20,7 @@ final class CompanionApplicationMessageRouterTests: XCTestCase {
 
         func handle(
             request: CompanionApplicationMessageRequest,
-            replyHandler: @escaping (Any?, (any Error)?) -> Void
+            replyHandler: (Any?, (any Error)?) -> Void
         ) {
             receivedContexts.append(request.context)
             replyHandler(["ok": true], nil)
@@ -192,7 +192,7 @@ final class MockHostLauncher: SumiHostApplicationLaunching {
         return URL(fileURLWithPath: "/Applications/Fixture.app")
     }
 
-    func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
+    func openApplication(withBundleIdentifier bundleIdentifier: String) async {
         _ = bundleIdentifier
     }
 }
@@ -202,7 +202,7 @@ func makeInstalledExtension(
     id: String,
     sourceBundlePath: String,
     name: String = "Fixture"
-) throws -> InstalledExtension {
+) -> InstalledExtension {
     InstalledExtension(
         id: id,
         name: name,

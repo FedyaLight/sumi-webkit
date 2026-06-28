@@ -76,7 +76,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                     index: 0,
                     workspaceThemeData: nil,
                     profileId: nil
-                )
+                ),
             ],
             tabs: [
                 TabSnapshotRepository.SnapshotTab(
@@ -94,7 +94,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                     currentURLString: "https://example.com",
                     canGoBack: false,
                     canGoForward: false
-                )
+                ),
             ],
             folders: [],
             splitGroups: [],

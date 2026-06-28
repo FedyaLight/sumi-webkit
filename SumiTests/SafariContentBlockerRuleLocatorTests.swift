@@ -103,7 +103,7 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
             )
             XCTAssertEqual(record.compileStatus, .compileFailed)
             XCTAssertFalse(record.isEnabled)
-            XCTAssertTrue(record.lastError?.contains("Invalid content blocker JSON") == true)
+            XCTAssertEqual(record.lastError?.contains("Invalid content blocker JSON"), true)
         }
     }
 

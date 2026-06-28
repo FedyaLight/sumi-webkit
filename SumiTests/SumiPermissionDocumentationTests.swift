@@ -1,7 +1,7 @@
 import XCTest
 
 final class SumiPermissionDocumentationTests: XCTestCase {
-    func testStablePermissionDocsExistAndTemporaryImplementationFileIsAbsent() throws {
+    func testStablePermissionDocsExistAndTemporaryImplementationFileIsAbsent() {
         for doc in stableDocNames {
             XCTAssertTrue(
                 FileManager.default.fileExists(atPath: permissionsDocsURL.appendingPathComponent(doc).path),

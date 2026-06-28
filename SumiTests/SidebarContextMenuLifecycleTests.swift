@@ -1,6 +1,6 @@
-import XCTest
 import AppKit
 @testable import Sumi
+import XCTest
 
 final class SidebarContextMenuLifecycleTests: XCTestCase {
     private static let spaceA = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
@@ -9,7 +9,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
     private static let folderB = UUID(uuidString: "00000000-0000-0000-0000-000000000006")!
     private static let profileA = UUID(uuidString: "00000000-0000-0000-0000-000000000004")!
     private static let profileB = UUID(uuidString: "00000000-0000-0000-0000-000000000005")!
-    private static func noop() {}
+    private static func noop() { /* no-op */ }
 
     func testPopupReturnFinalizesClosedVisibleMenu() {
         XCTAssertEqual(
@@ -119,14 +119,14 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             selectedSpaceId: currentSpace.id
         )
         XCTAssertEqual(spaceChoices.map(\.title), ["Current", "Work"])
-        XCTAssertTrue(spaceChoices.first?.isSelected == true)
+        XCTAssertEqual(spaceChoices.first?.isSelected, true)
 
         let profileChoices = makeSidebarContextMenuProfileChoices(
             profiles: [personalProfile, workProfile],
             selectedProfileId: personalProfile.id
         )
         XCTAssertEqual(profileChoices.map(\.title), ["Personal", "Work"])
-        XCTAssertTrue(profileChoices.first?.isSelected == true)
+        XCTAssertEqual(profileChoices.first?.isSelected, true)
     }
 
     @MainActor
@@ -385,7 +385,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
                 XCTFail("Expected menu images to be rendered")
                 continue
             }
-            XCTAssertTrue(firstImage === secondImage)
+            XCTAssertIdentical(firstImage, secondImage)
         }
     }
 
@@ -556,7 +556,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
     private static func choiceAction(_ choices: [SidebarContextMenuChoice]) -> SidebarChoiceMenuAction {
         .init(
             choices: choices,
-            onSelect: { _ in }
+            onSelect: { _ in /* no-op */ }
         )
     }
 
@@ -565,7 +565,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
     ) -> SidebarSpaceDestinationAction {
         .init(
             choices: choices,
-            onSelect: { _ in }
+            onSelect: { _ in /* no-op */ }
         )
     }
 
@@ -573,13 +573,13 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         folders: [SidebarContextMenuChoice] = [],
         spaces: [SidebarContextMenuChoice] = [],
         profiles: [SidebarContextMenuChoice] = [],
-        moveUp: (() -> Void)? = {},
-        moveDown: (() -> Void)? = {},
-        pinToSpace: (() -> Void)? = {},
-        addToEssentials: (() -> Void)? = {},
-        closeTabsBelow: (() -> Void)? = {}
+        moveUp: (() -> Void)? = { /* no-op */ },
+        moveDown: (() -> Void)? = { /* no-op */ },
+        pinToSpace: (() -> Void)? = { /* no-op */ },
+        addToEssentials: (() -> Void)? = { /* no-op */ },
+        closeTabsBelow: (() -> Void)? = { /* no-op */ }
     ) -> SidebarTabContextMenuActions {
-        return SidebarTabContextMenuActions(
+        SidebarTabContextMenuActions(
             duplicate: noop,
             copyLink: noop,
             share: noop,
@@ -604,7 +604,7 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         onBackToSavedURL: (() -> Void)? = nil,
         onUseCurrentPageAsSavedURL: (() -> Void)? = nil,
         unload: (() -> Void)? = nil,
-        deleteSavedTab: @escaping () -> Void = {}
+        deleteSavedTab: @escaping () -> Void = { /* no-op */ }
     ) -> SidebarTabContextMenuActions {
         let driftActions: SidebarSavedURLDriftActions?
         if let onBackToSavedURL, let onUseCurrentPageAsSavedURL {

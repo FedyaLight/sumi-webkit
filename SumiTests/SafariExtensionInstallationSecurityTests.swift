@@ -70,8 +70,7 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
     }
 
     func testInstallRejectsMaliciousGeckoIDBeforeMovingOutsideExtensionsRoot()
-        async throws
-    {
+        async throws {
         let container = try makeTestContainer()
         let manager = ExtensionManager(
             context: container.mainContext,

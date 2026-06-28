@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class ShellSelectionServiceTests: XCTestCase {
@@ -464,19 +464,19 @@ private final class FakeShellSelectionTabStore: ShellSelectionTabStore {
         shortcutPins[id]
     }
 
-    func activeShortcutTab(for windowId: UUID) -> Tab? {
+    func activeShortcutTab(for _: UUID) -> Tab? {
         nil
     }
 
-    func liveShortcutTabs(in windowId: UUID) -> [Tab] {
+    func liveShortcutTabs(in _: UUID) -> [Tab] {
         Array(liveShortcutTabsByPin.values)
     }
 
-    func shortcutLiveTab(for pinId: UUID, in windowId: UUID) -> Tab? {
+    func shortcutLiveTab(for pinId: UUID, in _: UUID) -> Tab? {
         liveShortcutTabsByPin[pinId]
     }
 
-    func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
+    func activateShortcutPin(_ pin: ShortcutPin, in _: UUID, currentSpaceId: UUID?) -> Tab {
         activateShortcutPinCallCount += 1
         XCTFail("Shortcut activation was not expected in this test")
         return Tab(url: pin.launchURL, name: pin.title, spaceId: currentSpaceId, index: 0)

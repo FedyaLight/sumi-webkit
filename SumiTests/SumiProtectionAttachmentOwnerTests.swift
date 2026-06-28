@@ -158,7 +158,7 @@ private final class FakeProtectionAttachmentRuleProvider: SumiProtectionAttachme
 
     func contentRuleListDefinitions(
         for protectionGroups: Set<SumiProtectionGroupKind>
-    ) throws -> [SumiContentRuleListDefinition] {
+    ) -> [SumiContentRuleListDefinition] {
         ruleDefinitionCallCount += 1
         return definitions.filter { definition in
             guard let shard = manifest?.networkShards.first(where: {
@@ -168,7 +168,7 @@ private final class FakeProtectionAttachmentRuleProvider: SumiProtectionAttachme
         }
     }
 
-    func siteOverride(for url: URL?) -> SumiAdblockSiteOverride {
+    func siteOverride(for _: URL?) -> SumiAdblockSiteOverride {
         siteOverrideCallCount += 1
         return .inherit
     }

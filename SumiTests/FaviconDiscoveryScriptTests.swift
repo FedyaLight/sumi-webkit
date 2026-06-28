@@ -25,7 +25,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
             payloadReceived.fulfill()
         }
 
-        try await loadHTML(
+        await loadHTML(
             """
             <!doctype html>
             <html>
@@ -61,7 +61,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
             payloadReceived.fulfill()
         }
 
-        try await loadHTML(
+        await loadHTML(
             """
             <!doctype html>
             <html>
@@ -92,7 +92,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
             }
         }
 
-        try await loadHTML(
+        await loadHTML(
             """
             <!doctype html>
             <html>
@@ -145,7 +145,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
             }
         }
 
-        try await loadHTML(
+        await loadHTML(
             """
             <!doctype html>
             <html>
@@ -191,7 +191,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
             }
         }
 
-        try await loadHTML(
+        await loadHTML(
             """
             <!doctype html>
             <html>
@@ -254,7 +254,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
             }
         }
 
-        try await loadHTML(
+        await loadHTML(
             """
             <!doctype html>
             <html><head><link rel="icon" href="/favicon.ico"></head><body>first</body></html>
@@ -262,7 +262,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
             baseURL: URL(string: "https://first.example/page")!,
             into: firstWebView
         )
-        try await loadHTML(
+        await loadHTML(
             """
             <!doctype html>
             <html><head><link rel="icon" href="/favicon.ico"></head><body>second</body></html>
@@ -298,7 +298,7 @@ final class FaviconDiscoveryScriptTests: XCTestCase {
         _ html: String,
         baseURL: URL,
         into webView: WKWebView
-    ) async throws {
+    ) async {
         let didFinish = expectation(description: "html loaded")
         let delegate = NavigationDelegateBox {
             didFinish.fulfill()
@@ -358,8 +358,8 @@ private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {
     }
 
     func webView(
-        _ webView: WKWebView,
-        didFinish navigation: WKNavigation!
+        _: WKWebView,
+        didFinish _: WKNavigation! // swiftlint:disable:this implicitly_unwrapped_optional
     ) {
         onFinish()
     }

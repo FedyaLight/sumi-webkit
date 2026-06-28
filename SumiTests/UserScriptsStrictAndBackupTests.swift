@@ -1,9 +1,8 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class UserScriptsStrictAndBackupTests: XCTestCase {
-
     private func tempScriptsDir() throws -> URL {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("SumiUserscriptTests-\(UUID().uuidString)", isDirectory: true)

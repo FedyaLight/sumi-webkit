@@ -1,6 +1,6 @@
 import CoreGraphics
-import XCTest
 @testable import Sumi
+import XCTest
 
 final class SumiThemePickerHarmonyTests: XCTestCase {
     func testActionStateMatchesZenMatrix() {
@@ -50,7 +50,7 @@ final class SumiThemePickerHarmonyTests: XCTestCase {
                 algorithm: .floating,
                 lightness: 0.9,
                 position: WorkspaceThemePosition(x: 0.66, y: 0.5)
-            )
+            ),
         ]
 
         XCTAssertEqual(SumiThemePickerHarmony.infer(from: colors), .floating)

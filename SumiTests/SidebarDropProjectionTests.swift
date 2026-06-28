@@ -1,7 +1,7 @@
-import XCTest
 import AppKit
 import CoreGraphics
 import Foundation
+import XCTest
 
 @testable import Sumi
 

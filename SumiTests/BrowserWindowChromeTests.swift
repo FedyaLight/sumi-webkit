@@ -243,7 +243,7 @@ final class BrowserWindowChromeTests: XCTestCase {
         WindowChromeTestSupport.retain(window)
 
         XCTAssertFalse(window is SumiBrowserWindow)
-        XCTAssertTrue(windowState.window === window)
+        XCTAssertIdentical(windowState.window, window)
         XCTAssertEqual(window.titlebarSeparatorStyle, .none)
         XCTAssertNil(window.toolbar)
         XCTAssertEqual(window.backgroundColor, SumiBrowserWindowShellConfiguration.backgroundColor)
@@ -267,7 +267,7 @@ final class BrowserWindowChromeTests: XCTestCase {
 
         coordinator.attach(to: window)
         WindowChromeTestSupport.retain(window)
-        XCTAssertTrue(windowState.window === window)
+        XCTAssertIdentical(windowState.window, window)
 
         coordinator.detach()
 
@@ -393,7 +393,7 @@ final class BrowserWindowChromeTests: XCTestCase {
             "func closeIncognitoWindow(",
             "func closeActiveWindow()",
             "func toggleFullScreenForActiveWindow()",
-            "private func makeWindowShellContext()"
+            "private func makeWindowShellContext()",
         ] {
             XCTAssertTrue(windowShellSource.contains(expectedToken), expectedToken)
         }
@@ -405,7 +405,7 @@ final class BrowserWindowChromeTests: XCTestCase {
             "func closeDownloadsPopover(",
             "func toggleURLBarHubPopover(",
             "func presentURLBarHubPopover(",
-            "func closeURLBarHubPopover("
+            "func closeURLBarHubPopover(",
         ] {
             XCTAssertFalse(windowShellSource.contains(browserShellToken), browserShellToken)
             XCTAssertTrue(browserShellCommandsSource.contains(browserShellToken), browserShellToken)
@@ -482,7 +482,7 @@ private final class WindowShouldCloseDelegate: NSObject, NSWindowDelegate {
         self.shouldClose = shouldClose
     }
 
-    func windowShouldClose(_ sender: NSWindow) -> Bool {
+    func windowShouldClose(_: NSWindow) -> Bool {
         windowShouldCloseCount += 1
         return shouldClose
     }

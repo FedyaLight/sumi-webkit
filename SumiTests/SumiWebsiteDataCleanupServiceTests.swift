@@ -34,12 +34,12 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
     func testClearAllProfileWebsiteDataUsesDDGOrderedAsyncCleanup() async {
         let cookieStore = FakeDDGCookieStore(cookies: [
-            .make(domain: "example.com")
+            .make(domain: "example.com"),
         ])
         let store = FakeDDGWebsiteDataStore(
             cookieStore: cookieStore,
             records: [
-                FakeDDGWebsiteDataRecord(displayName: "example.com")
+                FakeDDGWebsiteDataRecord(displayName: "example.com"),
             ]
         )
         let service = SumiWebsiteDataCleanupService()
@@ -80,13 +80,13 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
     func testConcurrentDomainCleanupRequestsCoalesce() async {
         let cookieStore = FakeDDGCookieStore(cookies: [
             .make(domain: "example.com"),
-            .make(domain: "sub.example.com")
+            .make(domain: "sub.example.com"),
         ])
         let store = FakeDDGWebsiteDataStore(
             cookieStore: cookieStore,
             records: [
                 FakeDDGWebsiteDataRecord(displayName: "example.com"),
-                FakeDDGWebsiteDataRecord(displayName: "sub.example.com")
+                FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
             ]
         )
         store.recordFetchDelayNanoseconds = 50_000_000
@@ -123,7 +123,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             records: [
                 FakeDDGWebsiteDataRecord(displayName: "example.com"),
                 FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
-                FakeDDGWebsiteDataRecord(displayName: "other.com")
+                FakeDDGWebsiteDataRecord(displayName: "other.com"),
             ]
         )
         let service = SumiWebsiteDataCleanupService()
@@ -147,14 +147,14 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let cookieStore = FakeDDGCookieStore(cookies: [
             .make(domain: "example.com"),
             .make(domain: "sub.example.com"),
-            .make(domain: "other.com")
+            .make(domain: "other.com"),
         ])
         let store = FakeDDGWebsiteDataStore(
             cookieStore: cookieStore,
             records: [
                 FakeDDGWebsiteDataRecord(displayName: "example.com"),
                 FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
-                FakeDDGWebsiteDataRecord(displayName: "unrelated.com")
+                FakeDDGWebsiteDataRecord(displayName: "unrelated.com"),
             ]
         )
         let service = SumiWebsiteDataCleanupService()
@@ -184,14 +184,14 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let cookieStore = FakeDDGCookieStore(cookies: [
             .make(name: "root", domain: "example.com"),
             .make(name: "sub", domain: ".sub.example.com"),
-            .make(name: "other", domain: "other.com")
+            .make(name: "other", domain: "other.com"),
         ])
         let store = FakeDDGWebsiteDataStore(
             cookieStore: cookieStore,
             records: [
                 FakeDDGWebsiteDataRecord(displayName: "example.com"),
                 FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
-                FakeDDGWebsiteDataRecord(displayName: "unrelated.com")
+                FakeDDGWebsiteDataRecord(displayName: "unrelated.com"),
             ]
         )
         let service = SumiWebsiteDataCleanupService()
@@ -215,7 +215,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             .make(name: "sharedRoot", domain: ".example.com"),
             .make(name: "sub", domain: "sub.example.com"),
             .make(name: "sibling", domain: "sibling.example.com"),
-            .make(name: "other", domain: "other.com")
+            .make(name: "other", domain: "other.com"),
         ])
         let store = FakeDDGWebsiteDataStore(
             cookieStore: cookieStore,
@@ -223,7 +223,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
                 FakeDDGWebsiteDataRecord(displayName: "example.com"),
                 FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
                 FakeDDGWebsiteDataRecord(displayName: "sibling.example.com"),
-                FakeDDGWebsiteDataRecord(displayName: "other.com")
+                FakeDDGWebsiteDataRecord(displayName: "other.com"),
             ]
         )
         let service = SumiWebsiteDataCleanupService()
@@ -251,7 +251,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             .make(name: "sharedRoot", domain: ".example.com"),
             .make(name: "sub", domain: "sub.example.com"),
             .make(name: "sibling", domain: "sibling.example.com"),
-            .make(name: "other", domain: "other.com")
+            .make(name: "other", domain: "other.com"),
         ])
         let store = FakeDDGWebsiteDataStore(
             cookieStore: cookieStore,
@@ -259,7 +259,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
                 FakeDDGWebsiteDataRecord(displayName: "example.com"),
                 FakeDDGWebsiteDataRecord(displayName: "sub.example.com"),
                 FakeDDGWebsiteDataRecord(displayName: "sibling.example.com"),
-                FakeDDGWebsiteDataRecord(displayName: "other.com")
+                FakeDDGWebsiteDataRecord(displayName: "other.com"),
             ]
         )
         let service = SumiWebsiteDataCleanupService()
@@ -289,7 +289,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             .make(domain: "example.com"),
             .make(domain: "sub.example.com"),
             .make(domain: "example.com.fake.com"),
-            .make(domain: "other.com")
+            .make(domain: "other.com"),
         ])
         let store = FakeDDGWebsiteDataStore(cookieStore: cookieStore)
         let service = SumiWebsiteDataCleanupService()
@@ -308,12 +308,12 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
     func testFireStyleClearUsesEmptySumiPreservationPolicyByDefault() async {
         let cookieStore = FakeDDGCookieStore(cookies: [
-            .make(domain: "preserved.example")
+            .make(domain: "preserved.example"),
         ])
         let store = FakeDDGWebsiteDataStore(
             cookieStore: cookieStore,
             records: [
-                FakeDDGWebsiteDataRecord(displayName: "preserved.example")
+                FakeDDGWebsiteDataRecord(displayName: "preserved.example"),
             ]
         )
         let service = SumiWebsiteDataCleanupService()
@@ -462,7 +462,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             "Sumi/Services/SumiWebsiteDataCleanupService.swift",
             "Sumi/Services/BrowserPrivacyService.swift",
             "Sumi/Models/Profile/Profile.swift",
-            "Sumi/Components/Settings/PrivacySettingsView.swift"
+            "Sumi/Components/Settings/PrivacySettingsView.swift",
         ]
 
         let source = try paths
@@ -507,7 +507,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             "Sumi/Managers/BrowserManager/BrowserManager+Privacy.swift",
             "Sumi/Managers/BrowserManager/BrowserManager.swift",
             "Sumi/History/SumiBrowsingDataDialog.swift",
-            "Sumi/Components/Settings/PrivacySettingsView.swift"
+            "Sumi/Components/Settings/PrivacySettingsView.swift",
         ]
 
         let source = try paths
@@ -1442,7 +1442,7 @@ private extension HTTPCookie {
             .name: name,
             .value: value,
             .domain: domain,
-            .path: path
+            .path: path,
         ]
         if let expiresDate {
             properties[.expires] = expiresDate

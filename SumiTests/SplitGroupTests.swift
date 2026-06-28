@@ -48,7 +48,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: ids[0],
                     pinId: pinId,
                     origin: .spacePinned(spaceId: spaceId, folderId: nil, index: 0)
-                )
+                ),
             ]
         ))
         let overlapping = try XCTUnwrap(SplitGroup.make(
@@ -59,7 +59,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: ids[2],
                     pinId: pinId,
                     origin: .spacePinned(spaceId: spaceId, folderId: nil, index: 0)
-                )
+                ),
             ]
         ))
 
@@ -90,7 +90,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: otherId,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: nil)
-                )
+                ),
             ]
         ))
 
@@ -133,7 +133,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: otherId,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: nil)
-                )
+                ),
             ]
         ))
 
@@ -184,7 +184,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: groupedTopLevelPin.id,
                     pinId: groupedTopLevelPin.id,
                     origin: .spacePinned(spaceId: space.id, folderId: nil, index: 1)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(group)
@@ -249,7 +249,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: topLevelHostPin.id,
                     pinId: topLevelHostPin.id,
                     origin: .spacePinned(spaceId: space.id, folderId: nil, index: topLevelHostPin.index)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(group)
@@ -303,7 +303,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: groupedTopLevelPin.id,
                     pinId: groupedTopLevelPin.id,
                     origin: .spacePinned(spaceId: spaceId, folderId: nil, index: groupedTopLevelPin.index)
-                )
+                ),
             ]
         ))
         let folderGroup = try XCTUnwrap(SplitGroup.make(
@@ -315,7 +315,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: groupedFolderPin.id,
                     pinId: groupedFolderPin.id,
                     origin: .spacePinned(spaceId: spaceId, folderId: folder.id, index: groupedFolderPin.index)
-                )
+                ),
             ]
         ))
 
@@ -327,7 +327,7 @@ final class SplitGroupTests: XCTestCase {
                 visibleTopLevelPin,
                 visibleFolderPin,
                 groupedTopLevelPin,
-                groupedFolderPin
+                groupedFolderPin,
             ]
         )
 
@@ -365,7 +365,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: secondEssentialId,
                     pinId: secondEssentialId,
                     origin: .essential(profileId: nil, index: 1)
-                )
+                ),
             ]
         ))
 
@@ -400,7 +400,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: otherId,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: nil)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(group)
@@ -452,7 +452,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: regular.id,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: regular.index)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(sourceGroup)
@@ -485,7 +485,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: liveSecondPinned.id,
                     pinId: secondPinned.id,
                     origin: .spacePinned(spaceId: space.id, folderId: nil, index: 1)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(targetGroup)
@@ -541,7 +541,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: secondRegular.id,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: secondRegular.index)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(sourceGroup)
@@ -574,7 +574,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: liveSecondEssential.id,
                     pinId: secondEssential.id,
                     origin: .essential(profileId: profileId, index: 1)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(targetGroup)
@@ -629,7 +629,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: regular.id,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: regular.index)
-                )
+                ),
             ]
         ))
 
@@ -674,7 +674,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: regular.id,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: regular.index)
-                )
+                ),
             ]
         ))
 
@@ -725,7 +725,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: regular.id,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: regular.index)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(group)
@@ -779,7 +779,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: regular.id,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: regular.index)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(group)
@@ -850,7 +850,7 @@ final class SplitGroupTests: XCTestCase {
                     tabId: regular.id,
                     pinId: nil,
                     origin: .regular(spaceId: space.id, index: regular.index)
-                )
+                ),
             ]
         ))
         harness.tabManager.upsertSplitGroup(group)
@@ -1863,10 +1863,10 @@ final class SplitGroupTests: XCTestCase {
                     size: 1.0 / 3.0,
                     children: [
                         .leaf(tabId: tabs[1].id, size: 0.5),
-                        .leaf(tabId: tabs[2].id, size: 0.5)
+                        .leaf(tabId: tabs[2].id, size: 0.5),
                     ]
                 ),
-                .leaf(tabId: tabs[3].id, size: 1.0 / 3.0)
+                .leaf(tabId: tabs[3].id, size: 1.0 / 3.0),
             ]
         )
         harness.tabManager.upsertSplitGroup(
@@ -1930,10 +1930,10 @@ final class SplitGroupTests: XCTestCase {
                     size: 1.0 / 3.0,
                     children: [
                         .leaf(tabId: tabs[1].id, size: 0.5),
-                        .leaf(tabId: tabs[2].id, size: 0.5)
+                        .leaf(tabId: tabs[2].id, size: 0.5),
                     ]
                 ),
-                .leaf(tabId: tabs[3].id, size: 1.0 / 3.0)
+                .leaf(tabId: tabs[3].id, size: 1.0 / 3.0),
             ]
         )
         harness.tabManager.upsertSplitGroup(
@@ -1987,10 +1987,10 @@ final class SplitGroupTests: XCTestCase {
                     size: 1.0 / 3.0,
                     children: [
                         .leaf(tabId: tabs[1].id, size: 0.5),
-                        .leaf(tabId: tabs[2].id, size: 0.5)
+                        .leaf(tabId: tabs[2].id, size: 0.5),
                     ]
                 ),
-                .leaf(tabId: tabs[3].id, size: 1.0 / 3.0)
+                .leaf(tabId: tabs[3].id, size: 1.0 / 3.0),
             ]
         )
         harness.tabManager.upsertSplitGroup(
@@ -2043,7 +2043,7 @@ final class SplitGroupTests: XCTestCase {
                     size: 0.5,
                     children: [
                         .leaf(tabId: tabs[0].id, size: 0.5),
-                        .leaf(tabId: tabs[1].id, size: 0.5)
+                        .leaf(tabId: tabs[1].id, size: 0.5),
                     ]
                 ),
                 .split(
@@ -2051,9 +2051,9 @@ final class SplitGroupTests: XCTestCase {
                     size: 0.5,
                     children: [
                         .leaf(tabId: tabs[2].id, size: 0.5),
-                        .leaf(tabId: tabs[3].id, size: 0.5)
+                        .leaf(tabId: tabs[3].id, size: 0.5),
                     ]
-                )
+                ),
             ]
         )
         harness.tabManager.upsertSplitGroup(
@@ -2183,10 +2183,10 @@ final class SplitGroupTests: XCTestCase {
                     size: 1.0 / 3.0,
                     children: [
                         .leaf(tabId: ids[1], size: 0.5),
-                        .leaf(tabId: ids[2], size: 0.5)
+                        .leaf(tabId: ids[2], size: 0.5),
                     ]
                 ),
-                .leaf(tabId: ids[3], size: 1.0 / 3.0)
+                .leaf(tabId: ids[3], size: 1.0 / 3.0),
             ]
         )
 
@@ -2768,7 +2768,7 @@ final class SplitGroupTests: XCTestCase {
             (
                 "4h",
                 .split(axis: column, size: 1, children: ids.map { .leaf(tabId: $0, size: 0.25) })
-            )
+            ),
         ]
 
         for rootAxis in [row, column] {
@@ -2782,8 +2782,8 @@ final class SplitGroupTests: XCTestCase {
                         axis: rootAxis,
                         size: 1,
                         children: [
-                            equalLeaves(childAxis, ids[0 ..< 2], size: 0.5),
-                            equalLeaves(childAxis, ids[2 ..< 4], size: 0.5)
+                            equalLeaves(childAxis, ids[0..<2], size: 0.5),
+                            equalLeaves(childAxis, ids[2..<4], size: 0.5),
                         ]
                     )
                 )
@@ -2795,8 +2795,8 @@ final class SplitGroupTests: XCTestCase {
                         axis: rootAxis,
                         size: 1,
                         children: [
-                            equalLeaves(childAxis, ids[0 ..< 3], size: 0.5),
-                            .leaf(tabId: ids[3], size: 0.5)
+                            equalLeaves(childAxis, ids[0..<3], size: 0.5),
+                            .leaf(tabId: ids[3], size: 0.5),
                         ]
                     )
                 )
@@ -2809,17 +2809,17 @@ final class SplitGroupTests: XCTestCase {
                         size: 1,
                         children: [
                             .leaf(tabId: ids[0], size: 0.5),
-                            equalLeaves(childAxis, ids[1 ..< 4], size: 0.5)
+                            equalLeaves(childAxis, ids[1..<4], size: 0.5),
                         ]
                     )
                 )
             )
 
-            for splitIndex in 0 ..< 3 {
+            for splitIndex in 0..<3 {
                 var cursor = 0
-                let children = (0 ..< 3).map { index -> SplitLayoutTree in
+                let children = (0..<3).map { index -> SplitLayoutTree in
                     if index == splitIndex {
-                        let split = equalLeaves(childAxis, ids[cursor ..< cursor + 2], size: 1.0 / 3.0)
+                        let split = equalLeaves(childAxis, ids[cursor..<cursor + 2], size: 1.0 / 3.0)
                         cursor += 2
                         return split
                     }

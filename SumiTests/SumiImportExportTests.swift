@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 final class SumiImportExportTests: XCTestCase {
     func testBrowser2ZenLegacyNormalizesSidebarConcepts() throws {
@@ -165,15 +165,15 @@ final class SumiImportExportTests: XCTestCase {
                 "id": "zen-parent",
                 "name": "Parent",
                 "workspaceId": "zen-space",
-                "collapsed": false
+                "collapsed": false,
             ],
             [
                 "id": "zen-child",
                 "name": "Child",
                 "workspaceId": "zen-space",
                 "parentId": "zen-parent",
-                "collapsed": true
-            ]
+                "collapsed": true,
+            ],
         ])
 
         let parent = try XCTUnwrap(records.first(where: { $0.id == "zen-parent" }))
@@ -190,7 +190,7 @@ final class SumiImportExportTests: XCTestCase {
                 [
                     "id": "zen-parent",
                     "name": "Parent",
-                    "workspaceId": "zen-space"
+                    "workspaceId": "zen-space",
                 ],
                 [
                     "id": "zen-child",
@@ -199,9 +199,9 @@ final class SumiImportExportTests: XCTestCase {
                     "parentId": "zen-parent",
                     "prevSiblingInfo": [
                         "type": "tab",
-                        "id": "tab-before-child"
-                    ]
-                ]
+                        "id": "tab-before-child",
+                    ],
+                ],
             ],
             pinnedSiblingIndexes: ["tab-before-child": 4]
         )
@@ -297,7 +297,7 @@ final class SumiImportExportTests: XCTestCase {
     func testSumiExtensionBlockImportsExactPortableData() throws {
         let exact = SumiPortableData(
             profiles: [
-                SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0)
+                SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0),
             ],
             spaces: [
                 SumiPortableSpace(
@@ -308,7 +308,7 @@ final class SumiImportExportTests: XCTestCase {
                     profileId: "profile-a",
                     themeDataBase64: nil,
                     color: nil
-                )
+                ),
             ],
             folders: [],
             essentials: [],
@@ -332,7 +332,7 @@ final class SumiImportExportTests: XCTestCase {
     func testSumiBackupArchiveCarriesVersionedLogicalData() throws {
         let data = SumiPortableData(
             profiles: [
-                SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0)
+                SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0),
             ]
         )
         let archive = SumiPortableArchive(

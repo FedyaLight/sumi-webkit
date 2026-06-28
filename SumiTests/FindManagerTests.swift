@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class FindManagerTests: XCTestCase {
@@ -117,7 +117,6 @@ final class FindManagerTests: XCTestCase {
         XCTAssertFalse(manager.isFindBarVisible)
         XCTAssertNil(manager.currentModel)
     }
-
 }
 
 @MainActor
@@ -147,11 +146,11 @@ private final class RecordingFindInPageWebView: FindInPageWebView {
         }
     }
 
-    func collapseSelectionToStart() async throws {
+    func collapseSelectionToStart() async {
         events.append(.collapseSelectionToStart)
     }
 
-    func deselectAll() async throws {
+    func deselectAll() async {
         events.append(.deselectAll)
     }
 

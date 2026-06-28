@@ -16,7 +16,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
             bundleURLs[bundleIdentifier]
         }
 
-        func openApplication(withBundleIdentifier bundleIdentifier: String) async throws {
+        func openApplication(withBundleIdentifier bundleIdentifier: String) async {
             openedBundleIdentifiers.append(bundleIdentifier)
         }
     }
@@ -46,12 +46,11 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
             isDisconnected = true
             disconnectHandler?(error)
         }
-
     }
 
     // 1. Fake public adapter handles one-shot native message
     func testFakePublicAdapterHandlesOneShotMessage() async throws {
-        let installed = try makeInstalledExtension(
+        let installed = makeInstalledExtension(
             id: "ext-one-shot",
             sourceBundlePath: try makeFixtureApp(
                 appBundleID: "com.example.host",
@@ -80,7 +79,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
 
     // 2. Fake public adapter handles persistent port
     func testFakePublicAdapterHandlesPersistentPort() async throws {
-        let installed = try makeInstalledExtension(
+        let installed = makeInstalledExtension(
             id: "ext-port",
             sourceBundlePath: try makeFixtureApp(
                 appBundleID: "com.example.host",
@@ -107,7 +106,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
 
     // 3. Unknown adapter returns companionAppProtocolUnknown
     func testUnknownAdapterReturnsCompanionAppProtocolUnknown() async throws {
-        let installed = try makeInstalledExtension(
+        let installed = makeInstalledExtension(
             id: "ext-unknown",
             sourceBundlePath: try makeFixtureApp(
                 appBundleID: "com.vendor.desktop",
@@ -142,7 +141,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
 
     // 4. Adapter unavailable does not launch app repeatedly
     func testAdapterUnavailableDoesNotLaunchAppRepeatedly() async throws {
-        let installed = try makeInstalledExtension(
+        let installed = makeInstalledExtension(
             id: "ext-no-launch-loop",
             sourceBundlePath: try makeFixtureApp(
                 appBundleID: "com.example.host",
@@ -169,7 +168,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
 
     // 5. Adapter timeout maps to deterministic error
     func testAdapterTimeoutMapsToDeterministicError() async throws {
-        let installed = try makeInstalledExtension(
+        let installed = makeInstalledExtension(
             id: "ext-timeout",
             sourceBundlePath: try makeFixtureApp(
                 appBundleID: "com.example.host",
@@ -181,11 +180,11 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
 
         final class SlowAdapter: SumiNativeMessagingProtocolAdapter {
             let protocolIdentifier = "test.slow"
-            func supports(hostBundleIdentifier: String) -> Bool { true }
+            func supports(hostBundleIdentifier _: String) -> Bool { true }
             func relayOneShotMessage(
                 request: SumiNativeMessagingOneShotRequest,
                 launcher: SumiHostApplicationLaunching,
-                replyHandler: @escaping (Any?, (any Error)?) -> Void
+                replyHandler: (Any?, (any Error)?) -> Void
             ) {
                 _ = request
                 _ = launcher
@@ -194,7 +193,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
             func connectPort(
                 session: SumiNativeMessagingPortSession,
                 launcher: SumiHostApplicationLaunching,
-                completionHandler: @escaping ((any Error)?) -> Void
+                completionHandler: ((any Error)?) -> Void
             ) {
                 _ = session
                 _ = launcher
@@ -224,7 +223,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
     }
 
     // 6. Adapter disconnect cleans sessions
-    func testAdapterDisconnectCleansProfileScopedSessions() async throws {
+    func testAdapterDisconnectCleansProfileScopedSessions() async {
         let profileId = UUID()
         let port = MockNativeMessagingPort()
         port.applicationIdentifier = "com.example.host"
@@ -236,7 +235,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
             profileId: profileId,
             hostBundleIdentifier: "com.example.host",
             resolverBucket: .explicitApplicationIdentifier,
-            logDiagnostic: { _ in },
+            logDiagnostic: { _ in /* no-op */ },
             companionProtocolErrorProvider: {
                 SumiNativeMessagingErrorMapper.relayError(
                     code: .companionAppProtocolUnknown,
@@ -254,7 +253,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
     // 7. Disable/delete/module off closes sessions
     func testClearCompanionStateDisconnectsTrackedPortSessions() async throws {
         let profileId = UUID()
-        let installed = try makeInstalledExtension(
+        let installed = makeInstalledExtension(
             id: "ext-clear",
             sourceBundlePath: try makeFixtureApp(
                 appBundleID: "com.example.host",
@@ -383,7 +382,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
             adapter: adapter,
             launcher: launcher,
             launchPolicy: SumiCompanionAppLaunchPolicy(),
-            logDiagnostic: { _ in },
+            logDiagnostic: { _ in /* no-op */ },
             replyHandler: { value, error in
                 replyValue = value
                 replyError = error
@@ -444,7 +443,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
     private func makeInstalledExtension(
         id: String,
         sourceBundlePath: String
-    ) throws -> InstalledExtension {
+    ) -> InstalledExtension {
         InstalledExtension(
             id: id,
             name: "Fixture",

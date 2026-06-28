@@ -306,7 +306,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
             expectation.fulfill()
         }
         await fulfillment(of: [expectation], timeout: 2)
-        withExtendedLifetime(webView) {}
+        withExtendedLifetime(webView) { /* no-op */ }
         return decisions
     }
 
@@ -473,7 +473,7 @@ private actor FakeGeolocationPermissionCoordinator: SumiPermissionCoordinating {
     }
 
     @discardableResult
-    func cancelTab(tabId: String, reason: String) -> SumiPermissionCoordinatorDecision {
+    func cancelTab(tabId _: String, reason: String) -> SumiPermissionCoordinatorDecision {
         cancelReasons.append(reason)
         return SumiWebKitGeolocationDecisionMapper.failClosedDecision(for: nil, reason: reason)
     }
@@ -513,20 +513,20 @@ private actor GeolocationBridgePermissionStore: SumiPermissionStore {
         records[key.persistentIdentity] = SumiPermissionStoreRecord(key: key, decision: decision)
     }
 
-    func getDecision(for key: SumiPermissionKey) async throws -> SumiPermissionStoreRecord? {
+    func getDecision(for key: SumiPermissionKey) async -> SumiPermissionStoreRecord? {
         records[key.persistentIdentity]
     }
 
-    func setDecision(for key: SumiPermissionKey, decision: SumiPermissionDecision) async throws {
+    func setDecision(for key: SumiPermissionKey, decision: SumiPermissionDecision) async {
         setCount += 1
         records[key.persistentIdentity] = SumiPermissionStoreRecord(key: key, decision: decision)
     }
 
-    func resetDecision(for key: SumiPermissionKey) async throws {
+    func resetDecision(for key: SumiPermissionKey) async {
         records.removeValue(forKey: key.persistentIdentity)
     }
 
-    func listDecisions(profilePartitionId: String) async throws -> [SumiPermissionStoreRecord] {
+    func listDecisions(profilePartitionId: String) async -> [SumiPermissionStoreRecord] {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         return records.values.filter { $0.key.profilePartitionId == profileId }
     }
@@ -540,23 +540,23 @@ private actor GeolocationBridgePermissionStore: SumiPermissionStore {
             .filter { $0.displayDomain == domain }
     }
 
-    func clearAll(profilePartitionId: String) async throws {
+    func clearAll(profilePartitionId: String) async {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         records = records.filter { _, record in record.key.profilePartitionId != profileId }
     }
 
     func clearForDisplayDomains(
         _ displayDomains: Set<String>,
-        profilePartitionId: String
-    ) async throws {
+        profilePartitionId _: String
+    ) async {
         let domains = Set(displayDomains.map(SumiPermissionStoreRecord.normalizedDisplayDomain))
         records = records.filter { _, record in !domains.contains(record.displayDomain) }
     }
 
     func clearForOrigins(
         _ origins: Set<SumiPermissionOrigin>,
-        profilePartitionId: String
-    ) async throws {
+        profilePartitionId _: String
+    ) async {
         let identities = Set(origins.map(\.identity))
         records = records.filter { _, record in
             !identities.contains(record.key.requestingOrigin.identity)
@@ -565,11 +565,11 @@ private actor GeolocationBridgePermissionStore: SumiPermissionStore {
     }
 
     @discardableResult
-    func expireDecisions(now: Date) async throws -> Int {
+    func expireDecisions(now _: Date) async -> Int {
         0
     }
 
-    func recordLastUsed(for key: SumiPermissionKey, at date: Date) async throws {}
+    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async { /* no-op */ }
 
     func setDecisionCallCount() -> Int {
         setCount

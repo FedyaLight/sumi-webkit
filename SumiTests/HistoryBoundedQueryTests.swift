@@ -416,7 +416,7 @@ final class HistoryBoundedQueryTests: XCTestCase {
             .joined(separator: "\n")
     }
 
-    private func functionSource(named name: String, in source: String) throws -> Substring {
+    private func functionSource(named name: String, in source: String) -> Substring {
         guard let nameRange = source.range(of: "func \(name)("),
               let openingBrace = source[nameRange.lowerBound...].firstIndex(of: "{")
         else {

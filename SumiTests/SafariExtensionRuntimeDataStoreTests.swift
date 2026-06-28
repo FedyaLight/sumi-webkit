@@ -61,7 +61,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             reason: "SafariExtensionRuntimeDataStoreTests"
         )
 
-        XCTAssertTrue(configuration.websiteDataStore === profile.dataStore)
+        XCTAssertIdentical(configuration.websiteDataStore, profile.dataStore)
         XCTAssertTrue(configuration.websiteDataStore.isPersistent)
     }
 
@@ -98,7 +98,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             url: URL(string: "https://private.example")
         )
         XCTAssertFalse(configuration.websiteDataStore.isPersistent)
-        XCTAssertTrue(configuration.websiteDataStore === ephemeralProfile.dataStore)
+        XCTAssertIdentical(configuration.websiteDataStore, ephemeralProfile.dataStore)
 
         manager.prepareWebViewConfigurationForExtensionRuntime(
             configuration,
@@ -106,11 +106,11 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             reason: "SafariExtensionRuntimeDataStoreTests.ephemeral"
         )
 
-        XCTAssertTrue(configuration.websiteDataStore === ephemeralProfile.dataStore)
+        XCTAssertIdentical(configuration.websiteDataStore, ephemeralProfile.dataStore)
         XCTAssertFalse(configuration.websiteDataStore.isPersistent)
-        XCTAssertTrue(
-            configuration.webExtensionController?.configuration.defaultWebsiteDataStore
-                === ephemeralProfile.dataStore
+        XCTAssertIdentical(
+            configuration.webExtensionController?.configuration.defaultWebsiteDataStore,
+            ephemeralProfile.dataStore
         )
     }
 
@@ -161,8 +161,8 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             currentProfileId: currentProfileId
         )
 
-        XCTAssertTrue(cache.cachedStore(for: currentProfileId) === currentStore)
-        XCTAssertTrue(cache.cachedStore(for: inactiveProfileId) === inactiveStore)
+        XCTAssertIdentical(cache.cachedStore(for: currentProfileId), currentStore)
+        XCTAssertIdentical(cache.cachedStore(for: inactiveProfileId), inactiveStore)
 
         _ = cache.store(
             for: newestProfileId,
@@ -170,7 +170,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             currentProfileId: currentProfileId
         )
 
-        XCTAssertTrue(cache.cachedStore(for: currentProfileId) === currentStore)
+        XCTAssertIdentical(cache.cachedStore(for: currentProfileId), currentStore)
         XCTAssertNil(cache.cachedStore(for: inactiveProfileId))
         XCTAssertNotNil(cache.cachedStore(for: newestProfileId))
     }
@@ -192,8 +192,8 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             currentProfileId: nil
         )
 
-        XCTAssertTrue(cache.cachedStore(for: firstProfileId) === firstStore)
-        XCTAssertTrue(cache.cachedStore(for: secondProfileId) === secondStore)
+        XCTAssertIdentical(cache.cachedStore(for: firstProfileId), firstStore)
+        XCTAssertIdentical(cache.cachedStore(for: secondProfileId), secondStore)
 
         _ = cache.store(
             for: firstProfileId,
@@ -206,7 +206,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
             currentProfileId: nil
         )
 
-        XCTAssertTrue(cache.cachedStore(for: firstProfileId) === firstStore)
+        XCTAssertIdentical(cache.cachedStore(for: firstProfileId), firstStore)
         XCTAssertNil(cache.cachedStore(for: secondProfileId))
         XCTAssertNotNil(cache.cachedStore(for: newestProfileId))
     }

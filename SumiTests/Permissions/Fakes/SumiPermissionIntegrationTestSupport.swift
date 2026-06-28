@@ -128,7 +128,7 @@ func sumiPermissionIntegrationWaitForActiveQuery(
         createdAt: sumiPermissionIntegrationNow,
         isEphemeralProfile: false,
         shouldOfferSystemSettings: false,
-        disablesPersistentAllow: false,
+        disablesPersistentAllow: false
     )
 }
 
@@ -143,22 +143,22 @@ actor SumiPermissionIntegrationStore: SumiPermissionStore {
         records[key.persistentIdentity] = SumiPermissionStoreRecord(key: key, decision: decision)
     }
 
-    func getDecision(for key: SumiPermissionKey) async throws -> SumiPermissionStoreRecord? {
+    func getDecision(for key: SumiPermissionKey) async -> SumiPermissionStoreRecord? {
         getCount += 1
         return records[key.persistentIdentity]
     }
 
-    func setDecision(for key: SumiPermissionKey, decision: SumiPermissionDecision) async throws {
+    func setDecision(for key: SumiPermissionKey, decision: SumiPermissionDecision) async {
         setCount += 1
         records[key.persistentIdentity] = SumiPermissionStoreRecord(key: key, decision: decision)
     }
 
-    func resetDecision(for key: SumiPermissionKey) async throws {
+    func resetDecision(for key: SumiPermissionKey) async {
         resetCount += 1
         records.removeValue(forKey: key.persistentIdentity)
     }
 
-    func listDecisions(profilePartitionId: String) async throws -> [SumiPermissionStoreRecord] {
+    func listDecisions(profilePartitionId: String) async -> [SumiPermissionStoreRecord] {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         return records.values
             .filter { $0.key.profilePartitionId == profileId }
@@ -174,7 +174,7 @@ actor SumiPermissionIntegrationStore: SumiPermissionStore {
             .filter { $0.displayDomain == domain }
     }
 
-    func clearAll(profilePartitionId: String) async throws {
+    func clearAll(profilePartitionId: String) async {
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         records = records.filter { _, record in record.key.profilePartitionId != profileId }
     }
@@ -182,7 +182,7 @@ actor SumiPermissionIntegrationStore: SumiPermissionStore {
     func clearForDisplayDomains(
         _ displayDomains: Set<String>,
         profilePartitionId: String
-    ) async throws {
+    ) async {
         let domains = Set(displayDomains.map(SumiPermissionStoreRecord.normalizedDisplayDomain))
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         records = records.filter { _, record in
@@ -193,7 +193,7 @@ actor SumiPermissionIntegrationStore: SumiPermissionStore {
     func clearForOrigins(
         _ origins: Set<SumiPermissionOrigin>,
         profilePartitionId: String
-    ) async throws {
+    ) async {
         let originIds = Set(origins.map(\.identity))
         let profileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         records = records.filter { _, record in
@@ -204,7 +204,7 @@ actor SumiPermissionIntegrationStore: SumiPermissionStore {
     }
 
     @discardableResult
-    func expireDecisions(now: Date) async throws -> Int {
+    func expireDecisions(now: Date) async -> Int {
         let expired = records.filter { _, record in
             record.decision.expiresAt.map { $0 <= now } == true
         }
@@ -214,7 +214,7 @@ actor SumiPermissionIntegrationStore: SumiPermissionStore {
         return expired.count
     }
 
-    func recordLastUsed(for key: SumiPermissionKey, at date: Date) async throws {
+    func recordLastUsed(for key: SumiPermissionKey, at date: Date) async {
         lastUsedCount += 1
         guard let record = records[key.persistentIdentity] else { return }
         let decision = SumiPermissionDecision(
@@ -309,7 +309,7 @@ final class SumiPermissionIntegrationAutoplayStore: SumiCurrentSiteAutoplayPolic
         profile: Profile?,
         source: SumiPermissionDecisionSource,
         now: Date
-    ) async throws {
+    ) async {
         guard let key = key(for: url, profile: profile) else { return }
         if policy == .default {
             policiesByIdentity.removeValue(forKey: key.persistentIdentity)
@@ -320,7 +320,7 @@ final class SumiPermissionIntegrationAutoplayStore: SumiCurrentSiteAutoplayPolic
         _ = now
     }
 
-    func resetPolicy(for url: URL?, profile: Profile?) async throws {
+    func resetPolicy(for url: URL?, profile: Profile?) async {
         guard let key = key(for: url, profile: profile) else { return }
         policiesByIdentity.removeValue(forKey: key.persistentIdentity)
     }

@@ -271,7 +271,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         let secondCoordinator = try XCTUnwrap(secondContext.persistentStoreCoordinator)
         let storeURL = try XCTUnwrap(firstCoordinator.persistentStores.first?.url)
 
-        XCTAssertTrue(firstCoordinator === secondCoordinator)
+        XCTAssertIdentical(firstCoordinator, secondCoordinator)
         XCTAssertEqual(firstContext.name, "SumiBookmarkCoordinatorParityFirst")
         XCTAssertEqual(secondContext.name, "SumiBookmarkCoordinatorParitySecond")
         XCTAssertEqual(storeURL.standardizedFileURL, directory.appendingPathComponent("SumiBookmarks.sqlite").standardizedFileURL)
@@ -321,7 +321,7 @@ final class SumiBookmarkManagerTests: XCTestCase {
         let observed = observer.withLock { $0 }
         XCTAssertEqual(observed.contextName, "SumiBookmarkSaveNotificationParityWriter")
         XCTAssertEqual(observed.insertedBookmarkUUIDs, ["sumi-save-observer-parity"])
-        XCTAssertEqual(observed.isMainThread, true)
+        XCTAssertTrue(try XCTUnwrap(observed.isMainThread))
     }
 
     func testBookmarkDatabaseBootstrapSaveFailureIsLoggedAndRolledBack() throws {

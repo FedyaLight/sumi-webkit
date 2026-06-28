@@ -1,7 +1,7 @@
 import AppKit
+@testable import Sumi
 import WebKit
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class SumiDDGWebKitRegressionTests: XCTestCase {
@@ -182,7 +182,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "recover(tabID, webView)",
                 "for delay in Self.retryDelays",
                 "DispatchQueue.main.asyncAfter(deadline: .now() + delay)",
-                "self?.recover(tabID, webView)"
+                "self?.recover(tabID, webView)",
             ]
         )
 
@@ -310,7 +310,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
 
         let editor = try XCTUnwrap(viewController.textField.currentEditor())
-        XCTAssertTrue(window.firstResponder === editor)
+        XCTAssertIdentical(window.firstResponder, editor)
         XCTAssertTrue(editor.isFieldEditor)
         XCTAssertTrue(String(describing: type(of: editor)).contains("FindInPageFieldEditor"))
 
@@ -373,7 +373,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertEqual(webView.trackingAreas.filter { $0 === trackingArea }.count, 1)
     }
 
-    func testFocusableWebViewPrivateFindResumesDelegateCallback() async throws {
+    func testFocusableWebViewPrivateFindResumesDelegateCallback() async {
         let webView = FocusableWKWebView(
             frame: NSRect(x: 0, y: 0, width: 640, height: 480),
             configuration: WKWebViewConfiguration()
@@ -388,7 +388,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         window.makeKeyAndOrderFront(nil)
         defer { window.orderOut(nil) }
 
-        try await loadHTML(
+        await loadHTML(
             """
             <!doctype html>
             <html>
@@ -491,7 +491,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "compositorHandoffState.removeContainerView",
                 "scheduledPrepareWindowIds.remove",
                 "webViewRegistry.removeVisibilityHistory",
-                "pruneInvalidDeferredCommands"
+                "pruneInvalidDeferredCommands",
             ]
         )
 
@@ -509,7 +509,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "createWebView(",
                 "evictHiddenWebViews(",
                 "scheduleProactiveTimerReconcile",
-                "backgroundMediaOptimizationService.scheduleReconcile"
+                "backgroundMediaOptimizationService.scheduleReconcile",
             ]
         )
 
@@ -524,7 +524,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "guard scheduledPrepareWindowIds.insert",
                 "DispatchQueue.main.async",
                 "self.scheduledPrepareWindowIds.remove",
-                "browserManager.refreshCompositor"
+                "browserManager.refreshCompositor",
             ]
         )
 
@@ -585,7 +585,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "removeRecentVisibility: false",
                 "webViewRegistry.setWebView(webView, for: owner)",
                 "installRuntimeObservations(webView)",
-                "webViewRegistry.assertTrackingConsistency(\"registerTrackedWebView\")"
+                "webViewRegistry.assertTrackingConsistency(\"registerTrackedWebView\")",
             ]
         )
 
@@ -604,7 +604,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "webViewRegistry.removeWebView(",
                 "uninstallRuntimeObservationsIfUntracked(resolvedWebView)",
                 "pruneInvalidDeferredCommands(\"unregisterTrackedWebViewSlot\")",
-                "webViewRegistry.assertTrackingConsistency(\"unregisterTrackedWebViewSlot\")"
+                "webViewRegistry.assertTrackingConsistency(\"unregisterTrackedWebViewSlot\")",
             ]
         )
 
@@ -667,7 +667,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "defer { syncingTabIds.remove(tabId) }",
                 "isProtected(webView)",
                 "WebViewSyncLoadPolicy.shouldLoadTarget",
-                "load(webView)"
+                "load(webView)",
             ]
         )
 
@@ -680,7 +680,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ownerReloadSource,
             [
                 "isProtected(webView)",
-                "reload(webView)"
+                "reload(webView)",
             ]
         )
 
@@ -744,7 +744,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             in: windowID,
             expectedWebView: webView
         )
-        XCTAssertTrue(takenHost === host)
+        XCTAssertIdentical(takenHost, host)
         XCTAssertNil(handoffState.takePromotedHost(
             for: tab.id,
             in: windowID,
@@ -808,7 +808,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertNil(nilCurrentState.activeSplitGroup)
     }
 
-    func testWindowWebContentUsesBrowserContextBoundary() throws {
+    func testWindowWebContentUsesBrowserContextBoundary() {
         let browserContext = CompositorBrowserContextStub()
         let windowState = BrowserWindowState()
         let webViewCoordinator = WebViewCoordinator()
@@ -965,7 +965,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "coordinator?.setWebView(replacementWebView, for: id, in: previousWindowId)",
                 "assignWebViewToWindow(replacementWebView, windowId: previousWindowId)",
                 "browserManager?.refreshCompositor(for: windowState)",
-                "_webView = replacementWebView"
+                "_webView = replacementWebView",
             ]
         )
     }
@@ -1047,7 +1047,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "dependencies.applyTabSelection",
                 "dependencies.performImmediateVisualHandoffIfPossible(windowState)",
-                "dependencies.adoptProfileForSpaceChange(windowState)"
+                "dependencies.adoptProfileForSpaceChange(windowState)",
             ]
         )
         let spaceStateOwnerWiring = try sourceSlice(
@@ -1099,14 +1099,14 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "let didBeginVisualHandoff = beginVisualHandoffCovers(for: decision)",
                 "scheduleSplitRepair(groupId: repairSplitGroupId)",
                 "showSinglePane(tab: tab)",
-                "scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)"
+                "scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)",
             ]
         )
         try assertTokenOrder(
             compositorApply,
             [
                 "showSplitGroup(group, tabs: tabs)",
-                "scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)"
+                "scheduleVisualHandoffCoverRelease(if: didBeginVisualHandoff)",
             ]
         )
 
@@ -1204,7 +1204,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "containerView.removeVisualHandoffCover(host)",
                 "hostLifecycleOwner.removeParkedProtectedHost(for: webViewID)",
-                "webViewCoordinator.finishVisualHandoffProtection(for: host.webView)"
+                "webViewCoordinator.finishVisualHandoffProtection(for: host.webView)",
             ]
         )
 
@@ -1218,7 +1218,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "webViewCoordinator.beginVisualHandoffProtection(for: host.webView)",
                 "hostLifecycleOwner.prepareForVisualHandoff(host)",
-                "visualHandoffCovers.placeCover(host"
+                "visualHandoffCovers.placeCover(host",
             ]
         )
         let hostOwner = try sourceSlice(
@@ -1231,7 +1231,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "func prepareForVisualHandoff(_ host: SumiWebViewContainerView)",
                 "hostRegistry.clearReferences(to: host)",
-                "hostRegistry.parkProtectedHost(host)"
+                "hostRegistry.parkProtectedHost(host)",
             ]
         )
 
@@ -1247,7 +1247,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             coverController,
             [
                 "containerView.placeVisualHandoffCover(host",
-                "coverHosts[ObjectIdentifier(host.webView)] = host"
+                "coverHosts[ObjectIdentifier(host.webView)] = host",
             ]
         )
         try assertTokenOrder(
@@ -1256,7 +1256,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "CATransaction.flush()",
                 "containerView.layoutSubtreeIfNeeded()",
                 "containerView.displayIfNeeded()",
-                "self.releaseCovers()"
+                "self.releaseCovers()",
             ]
         )
         try assertTokenOrder(
@@ -1264,7 +1264,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "let covers = coverHosts",
                 "coverHosts.removeAll(keepingCapacity: true)",
-                "releaseCover(webViewID, host)"
+                "releaseCover(webViewID, host)",
             ]
         )
 
@@ -1280,7 +1280,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "host.attachDisplayedContentIfNeeded()",
                 "if isProtected",
                 "hostRegistry.parkProtectedHost(host)",
-                "webViewCoordinator.completePromotedHostAttachment"
+                "webViewCoordinator.completePromotedHostAttachment",
             ]
         )
     }
@@ -1313,7 +1313,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "webView.navigationDelegate = nil",
                 "webView.uiDelegate = nil",
                 "webView.removeFromSuperview()",
-                "removeWebViewFromContainers(webView)"
+                "removeWebViewFromContainers(webView)",
             ]
         )
 
@@ -1330,7 +1330,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "SumiWebViewShutdown.perform(",
                 "context.unbindAudioState(webView)",
                 "context.removeNavigationStateObservers(webView)",
-                "context.removeNavigationDelegateBundle(webView)"
+                "context.removeNavigationDelegateBundle(webView)",
             ]
         )
 
@@ -1348,7 +1348,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "context.clearCurrentWebView()",
                 "context.resetPlaybackActivity()",
                 "context.setLoadingIdle()",
-                "notifyNowPlayingTabUnloaded(tabId: context.tabId)"
+                "notifyNowPlayingTabUnloaded(tabId: context.tabId)",
             ]
         )
     }
@@ -1434,7 +1434,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "runtime.enqueueDeferredProtectedCommand(",
                 "continue",
                 "runtime.cleanupUnprotectedTrackedWebView(",
-                "runtime.refreshPrimaryTrackedWebView("
+                "runtime.refreshPrimaryTrackedWebView(",
             ]
         )
         XCTAssertFalse(cleanupScopeSource.contains("WebViewMediaProtectionOwner"))
@@ -1465,7 +1465,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "runtime.enqueueDeferredProtectedCommand(",
                 "continue",
                 "runtime.cleanupUnprotectedTrackedWebView(",
-                "runtime.refreshPrimaryTrackedWebView("
+                "runtime.refreshPrimaryTrackedWebView(",
             ]
         )
         XCTAssertFalse(hiddenCloneEvictionOwnerSource.contains("WebViewMediaProtectionOwner"))
@@ -1482,7 +1482,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             deferredWrapper,
             [
                 "cleanupUnprotectedTrackedWebView(",
-                "refreshPrimaryTrackedWebView"
+                "refreshPrimaryTrackedWebView",
             ]
         )
         XCTAssertFalse(deferredWrapper.contains("finishDestructiveDataCleanupNavigation"))
@@ -1496,7 +1496,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             unprotectedHelper,
             [
                 "trackedCleanupExecutionOwner.cleanupUnprotectedTrackedWebView(",
-                "runtime: trackedCleanupExecutionRuntime()"
+                "runtime: trackedCleanupExecutionRuntime()",
             ]
         )
         XCTAssertFalse(unprotectedHelper.contains("refreshPrimaryTrackedWebView"))
@@ -1507,14 +1507,14 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "runtime.finishDestructiveCleanupSuppression(webView)",
                 "runtime.removeFromContainers(webView)",
                 "trackingLifecycleOwner.unregisterTrackedWebViewSlot(",
-                "tab.cleanupCloneWebView(webView)"
+                "tab.cleanupCloneWebView(webView)",
             ]
         )
         try assertTokenOrder(
             cleanupOwnerSource[...],
             [
                 "trackingLifecycleOwner.unregisterTrackedWebViewSlot(",
-                "runtime.fallbackCleanup(webView, owner.tabID, browserManager)"
+                "runtime.fallbackCleanup(webView, owner.tabID, browserManager)",
             ]
         )
         XCTAssertFalse(cleanupOwnerSource.contains("refreshPrimaryTrackedWebView"))
@@ -1698,7 +1698,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "deferredProtectedCommandExecutionOwner.enqueue(",
                 "mediaProtectionOwner: mediaProtectionOwner",
-                "runtime: deferredProtectedCommandRuntime()"
+                "runtime: deferredProtectedCommandRuntime()",
             ]
         )
 
@@ -1714,7 +1714,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "resolveWebView:",
                 "isCommandValid:",
                 "dropCommand:",
-                "didPruneStaleWebViewIDs:"
+                "didPruneStaleWebViewIDs:",
             ]
         )
 
@@ -1732,7 +1732,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "pruneInvalidDeferredCommands(",
                 "guard isCommandValid(command)",
                 "deferredProtectedWebViewCommands.enqueue(",
-                "switch enqueueResult.outcome"
+                "switch enqueueResult.outcome",
             ]
         )
 
@@ -1746,7 +1746,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "deferredProtectedCommandExecutionOwner.flushCommandsIfUnprotected(",
                 "mediaProtectionOwner: mediaProtectionOwner",
-                "runtime: deferredProtectedCommandRuntime()"
+                "runtime: deferredProtectedCommandRuntime()",
             ]
         )
 
@@ -1766,7 +1766,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "webViewRegistry.isEmpty == false",
                 "browserManager?.windowRegistry?.windows[windowID] != nil",
                 "performDeferredProtectedCommand(command)",
-                "finishDestructiveCleanupSuppression(for: webViewIDs)"
+                "finishDestructiveCleanupSuppression(for: webViewIDs)",
             ]
         )
 
@@ -1783,7 +1783,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "Task { @MainActor",
                 "\"WebViewCoordinator.flushDeferredProtectedCommands\"",
                 "execute(",
-                "reason: \"flush.invalidTarget\""
+                "reason: \"flush.invalidTarget\"",
             ]
         )
 
@@ -1797,7 +1797,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "guard isCommandValid(command, context: runtime.validationContext)",
                 "\"executeDeferredCommand sourceWebView=\\(sourceWebViewID) command={\\(command.debugSummary)}\"",
-                "return runtime.executeCommand(command)"
+                "return runtime.executeCommand(command)",
             ]
         )
 
@@ -1812,7 +1812,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "case .cleanupWindow(let windowID):",
                 "context.hasCleanupWindowTarget(windowID)",
                 "case .evictHiddenWebViews(let windowID):",
-                "context.hasWindow(windowID)"
+                "context.hasWindow(windowID)",
             ]
         )
 
@@ -1825,7 +1825,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             executionOwnerDropSource,
             [
                 "PerformanceTrace.emitEvent(\"WebViewCoordinator.dropDeferredProtectedCommand\")",
-                "\"dropDeferredCommand reason=\\(reason) sourceWebView=\\(sourceWebViewID) command={\\(command.debugSummary)}\""
+                "\"dropDeferredCommand reason=\\(reason) sourceWebView=\\(sourceWebViewID) command={\\(command.debugSummary)}\"",
             ]
         )
 
@@ -1840,7 +1840,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "guard isProtected(webViewID) == false",
                 "didPruneStaleWebViewIDs(",
                 "pruneInvalidDeferredCommands(",
-                "deferredProtectedWebViewCommands.drainCommands(for: webViewID)"
+                "deferredProtectedWebViewCommands.drainCommands(for: webViewID)",
             ]
         )
     }
@@ -1907,7 +1907,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "if let webView = webViewRegistry.trackedWebView(with: identifier)",
                 "mediaProtectionOwner.note(webView)",
                 "return webView",
-                "return mediaProtectionOwner.resolveWeakWebView(with: identifier)"
+                "return mediaProtectionOwner.resolveWeakWebView(with: identifier)",
             ]
         )
 
@@ -1923,7 +1923,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "activeHistorySwipeProtections.removeValue(forKey: id)",
                 "visualHandoffProtectedWebViewIDs.remove(id)",
                 "fullscreenProtection.remove(id)",
-                "deferredProtectedWebViewCommands.removeAllCommands(for: id)"
+                "deferredProtectedWebViewCommands.removeAllCommands(for: id)",
             ]
         )
         XCTAssertFalse(ownerPruneSource.contains("webViewRegistry.trackedWebView"))
@@ -1937,7 +1937,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             coordinatorPruneSource,
             [
                 "finishDestructiveCleanupSuppression(",
-                "mediaProtectionOwner.pruneStaleBookkeeping(reason: reason)"
+                "mediaProtectionOwner.pruneStaleBookkeeping(reason: reason)",
             ]
         )
     }
@@ -1986,7 +1986,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             closeActiveSource,
             [
                 "mediaProtectionOwner.closeActiveFullscreenMedia(in: windowId)",
-                "resolveWebView(with: webViewID)"
+                "resolveWebView(with: webViewID)",
             ]
         )
 
@@ -2003,7 +2003,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "fallbackWindowID:",
                 "flushDeferredProtectedCommands:",
                 "refreshCompositor:",
-                "mediaProtectionOwner.installNowPlayingSessionObservationIfNeeded("
+                "mediaProtectionOwner.installNowPlayingSessionObservationIfNeeded(",
             ]
         )
 
@@ -2015,7 +2015,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "requestFullscreenMediaExit(on: webView)",
                 "func closeFullscreenMediaIfNeeded(on webView: WKWebView)",
                 "protectedCommandOwner.isFullscreenProtected(webViewID)",
-                "private func requestFullscreenMediaExit"
+                "private func requestFullscreenMediaExit",
             ]
         )
         try assertTokenOrder(
@@ -2024,7 +2024,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "func installNowPlayingSessionObservationIfNeeded(",
                 "nowPlayingSessionCancellablesByWebViewID[webViewID] = webView",
                 "publisher(for: \\.sumiHasActiveNowPlayingSession",
-                "postMediaTouchBarRecoveryRequest("
+                "postMediaTouchBarRecoveryRequest(",
             ]
         )
         try assertTokenOrder(
@@ -2034,7 +2034,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "protectedCommandOwner.installFullscreenStateObservationIfNeeded(",
                 "updateFullscreenProtection(",
                 "private func beginFullscreenProtectionIfNeeded",
-                "private func finishFullscreenProtectionIfNeeded"
+                "private func finishFullscreenProtectionIfNeeded",
             ]
         )
     }
@@ -2102,7 +2102,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "tab.stopLoading(on: webView)",
                 "webView.pauseAllMediaPlayback",
                 "beginNavigationSuppression(on: webView)",
-                "webView.load(URLRequest(url: SumiSurface.emptyTabURL))"
+                "webView.load(URLRequest(url: SumiSurface.emptyTabURL))",
             ]
         )
 
@@ -2123,7 +2123,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "runtime.finishDestructiveCleanupSuppression(webView)",
                 "runtime.removeFromContainers(webView)",
-                "trackingLifecycleOwner.unregisterTrackedWebViewSlot("
+                "trackingLifecycleOwner.unregisterTrackedWebViewSlot(",
             ]
         )
 
@@ -2136,7 +2136,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             stalePruneSource,
             [
                 "finishDestructiveCleanupSuppression(",
-                "mediaProtectionOwner.pruneStaleBookkeeping(reason: reason)"
+                "mediaProtectionOwner.pruneStaleBookkeeping(reason: reason)",
             ]
         )
 
@@ -2149,7 +2149,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             suppressionReleaseSource,
             [
                 "for webViewID in webViewIDs",
-                "destructiveCleanupPreparationOwner.finishNavigationSuppression(webViewID: webViewID)"
+                "destructiveCleanupPreparationOwner.finishNavigationSuppression(webViewID: webViewID)",
             ]
         )
     }
@@ -2200,7 +2200,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "result.skippedProtectedWebViewCount += tabLiveWebViews.count",
                 "tab.cancelPendingMainFrameNavigation()",
                 "cleanupPreparationOwner.prepare(webView, tab: tab)",
-                "result.preparedWebViewCount += 1"
+                "result.preparedWebViewCount += 1",
             ]
         )
 
@@ -2214,7 +2214,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             [
                 "tab.resolveProfile()?.id ?? tab.profileId",
                 "profileIDs.contains(profileId)",
-                "tab.representsSumiNativeSurface == false"
+                "tab.representsSumiNativeSurface == false",
             ]
         )
 
@@ -2234,7 +2234,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                 "liveWebViews(for: tab)",
                 "isWebViewProtectedFromCompositorMutation(webView)",
                 "cleanupPreparationOwner: destructiveCleanupPreparationOwner",
-                "RuntimeDiagnostics.debug(category: \"WebViewCoordinator\")"
+                "RuntimeDiagnostics.debug(category: \"WebViewCoordinator\")",
             ]
         )
         XCTAssertFalse(coordinatorPreparationSource.contains("var seenTabIDs"))
@@ -2438,41 +2438,41 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
     @MainActor
     private final class CompositorBrowserContextStub: WindowWebContentBrowserContext {
-        func currentTab(for windowState: BrowserWindowState) -> Tab? {
+        func currentTab(for _: BrowserWindowState) -> Tab? {
             nil
         }
 
-        func tab(for tabId: UUID) -> Tab? {
+        func tab(for _: UUID) -> Tab? {
             nil
         }
 
-        func splitGroup(for windowId: UUID) -> SplitGroup? {
+        func splitGroup(for _: UUID) -> SplitGroup? {
             nil
         }
 
-        func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {}
+        func schedulePrepareVisibleWebViews(for _: BrowserWindowState) { /* no-op */ }
 
         func enqueueWindowMutationDuringHistorySwipe(
-            _ kind: HistorySwipeDeferredWindowMutationKind,
-            for windowState: BrowserWindowState
-        ) {}
+            _: HistorySwipeDeferredWindowMutationKind,
+            for _: BrowserWindowState
+        ) { /* no-op */ }
 
-        func removeSplitGroup(id: UUID) {}
+        func removeSplitGroup(id _: UUID) { /* no-op */ }
 
         func updateSplitLayoutSizes(
-            groupId: UUID,
-            path: [Int],
-            sizes: [Double],
-            for windowId: UUID
-        ) {}
+            groupId _: UUID,
+            path _: [Int],
+            sizes _: [Double],
+            for _: UUID
+        ) { /* no-op */ }
 
-        func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {}
+        func configureSplitDropCapture(_: SplitDropCaptureView, windowId _: UUID) { /* no-op */ }
 
         func configureSplitControls(
-            _ controls: SplitPaneControlsView,
-            tab: Tab,
-            windowState: BrowserWindowState
-        ) {}
+            _: SplitPaneControlsView,
+            tab _: Tab,
+            windowState _: BrowserWindowState
+        ) { /* no-op */ }
     }
 
     private func sourceSlice(_ source: String, from startToken: String, to endToken: String) throws -> Substring {
@@ -2521,7 +2521,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         }
     }
 
-    private func loadHTML(_ html: String, into webView: WKWebView) async throws {
+    private func loadHTML(_ html: String, into webView: WKWebView) async {
         let didFinish = expectation(description: "find test page loaded")
         let delegate = FindNavigationDelegateBox {
             didFinish.fulfill()
@@ -2546,7 +2546,7 @@ private final class FindNavigationDelegateBox: NSObject, WKNavigationDelegate {
         self.onFinish = onFinish
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    func webView(_: WKWebView, didFinish _: WKNavigation!) { // swiftlint:disable:this implicitly_unwrapped_optional
         onFinish()
     }
 }

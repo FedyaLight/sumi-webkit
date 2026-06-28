@@ -11,9 +11,9 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             startupPersistence: BrowserManagerStartupPersistence(container: container)
         )
 
-        XCTAssertTrue(browserManager.modelContext.container === container)
-        XCTAssertTrue(browserManager.profileManager.context.container === container)
-        XCTAssertTrue(browserManager.tabManager.context.container === container)
+        XCTAssertIdentical(browserManager.modelContext.container, container)
+        XCTAssertIdentical(browserManager.profileManager.context.container, container)
+        XCTAssertIdentical(browserManager.tabManager.context.container, container)
         XCTAssertNotNil(browserManager.currentProfile)
     }
 

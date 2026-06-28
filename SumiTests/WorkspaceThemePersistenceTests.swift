@@ -1,7 +1,7 @@
+@testable import Sumi
 import SwiftData
 import SwiftUI
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class WorkspaceThemePersistenceTests: XCTestCase {
@@ -15,7 +15,7 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
                         algorithm: .floating,
                         lightness: 0.35,
                         position: .monochrome
-                    )
+                    ),
                 ],
                 opacity: 0.74,
                 texture: 0.2
@@ -206,7 +206,7 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
                     WorkspaceThemeColor(
                         hex: "#34C759",
                         position: .bottom
-                    )
+                    ),
                 ],
                 opacity: 0.82,
                 texture: 0.25
@@ -264,7 +264,7 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
                 algorithm: .floating,
                 lightness: 0.9,
                 position: .monochrome
-            )
+            ),
         ]
     }
 }

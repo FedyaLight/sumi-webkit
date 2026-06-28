@@ -98,7 +98,7 @@ final class TabStructuralSnapshotMaterializerTests: XCTestCase {
             spacePinnedShortcuts: [secondSpace.id: [spacePin]],
             tabsBySpace: [
                 firstSpace.id: [untouchedTab],
-                secondSpace.id: [persistedTab, nonPersistedTab]
+                secondSpace.id: [persistedTab, nonPersistedTab],
             ],
             foldersBySpace: [secondSpace.id: [folder]],
             splitGroups: [splitGroup],

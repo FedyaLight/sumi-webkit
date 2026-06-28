@@ -394,7 +394,7 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         XCTAssertEqual(result.records.map(\.id), [staleRecord.id])
         XCTAssertEqual(result.enabledEntities.map(\.id), [staleRecord.id])
         XCTAssertEqual(result.records.first?.backgroundModel, .persistentPage)
-        XCTAssertTrue(result.records.first?.hasBackground == true)
+        XCTAssertEqual(result.records.first?.hasBackground, true)
         XCTAssertTrue(
             traces.contains { $0.contains("Refreshed extension metadata") }
         )

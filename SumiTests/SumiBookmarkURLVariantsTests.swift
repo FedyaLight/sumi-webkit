@@ -29,7 +29,7 @@ final class SumiBookmarkURLVariantsTests: XCTestCase {
         )
     }
 
-    func testNonHTTPURLOnlyReturnsItself() throws {
+    func testNonHTTPURLOnlyReturnsItself() {
         let url = URL(fileURLWithPath: "/tmp/example.html")
 
         XCTAssertEqual(url.sumiBookmarkButtonURLVariants(), [url])

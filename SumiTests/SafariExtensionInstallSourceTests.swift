@@ -127,7 +127,7 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
         XCTAssertEqual(resolved.resourcesURL, directoryURL)
     }
 
-    func testInstalledAppexBundleURLRequiresSafariSourceKind() throws {
+    func testInstalledAppexBundleURLRequiresSafariSourceKind() {
         XCTAssertNil(
             SafariAppExtensionResources.installedAppexBundleURL(
                 sourceKind: .directory,
