@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 struct SumiPermissionDecisionResolutionOwner {
     typealias NowProvider = @Sendable () -> Date
@@ -10,6 +11,12 @@ struct SumiPermissionDecisionResolutionOwner {
         let key: SumiPermissionKey
     }
 
+    private typealias StoredDecisionLookupResult = (
+        deniedDecision: SumiPermissionCoordinatorDecision?,
+        grantedRecords: [SumiPermissionStoreRecord],
+        promptEvaluations: [PolicyEvaluation]
+    )
+
     enum Resolution {
         case immediate(SumiPermissionCoordinatorDecision)
         case promptRequired([PolicyEvaluation])
@@ -20,6 +27,15 @@ struct SumiPermissionDecisionResolutionOwner {
         case immediate(SumiPermissionCoordinatorDecision)
         case promptRequired([PolicyEvaluation])
     }
+
+    private enum StoreFailure: String, Sendable {
+        case memoryRead = "permission-memory-store-read-failed"
+        case memoryRecordLastUsed = "permission-memory-store-record-last-used-failed"
+        case persistentRead = "permission-persistent-store-read-failed"
+        case persistentRecordLastUsed = "permission-persistent-store-record-last-used-failed"
+    }
+
+    private static let logger = RuntimeDiagnostics.logger(category: "Permissions")
 
     private let policyResolver: any SumiPermissionPolicyResolver
     private let memoryStore: InMemoryPermissionStore
@@ -151,33 +167,39 @@ struct SumiPermissionDecisionResolutionOwner {
 
     private func storedDecisionLookup(
         for evaluations: [PolicyEvaluation]
-    ) async -> (
-        deniedDecision: SumiPermissionCoordinatorDecision?,
-        grantedRecords: [SumiPermissionStoreRecord],
-        promptEvaluations: [PolicyEvaluation]
-    ) {
+    ) async -> StoredDecisionLookupResult {
         var grantedRecords: [SumiPermissionStoreRecord] = []
         var promptEvaluations: [PolicyEvaluation] = []
 
         for evaluation in evaluations {
-            if let memoryRecord = try? await memoryStore.getDecision(
-                for: evaluation.key,
-                sessionOwnerId: sessionOwnerId
-            ) {
+            let memoryRecord: SumiPermissionStoreRecord?
+            do {
+                memoryRecord = try await memoryStore.getDecision(
+                    for: evaluation.key,
+                    sessionOwnerId: sessionOwnerId
+                )
+            } catch {
+                return storeFailureLookupResult(
+                    .memoryRead,
+                    error: error,
+                    evaluation: evaluation,
+                    grantedRecords: grantedRecords
+                )
+            }
+
+            if let memoryRecord {
                 switch memoryRecord.decision.state {
                 case .allow:
-                    try? await memoryStore.recordLastUsed(
-                        for: evaluation.key,
-                        at: nowProvider(),
-                        sessionOwnerId: sessionOwnerId
+                    await recordMemoryLastUsed(
+                        for: evaluation,
+                        failure: .memoryRecordLastUsed
                     )
                     grantedRecords.append(memoryRecord)
                     continue
                 case .deny:
-                    try? await memoryStore.recordLastUsed(
-                        for: evaluation.key,
-                        at: nowProvider(),
-                        sessionOwnerId: sessionOwnerId
+                    await recordMemoryLastUsed(
+                        for: evaluation,
+                        failure: .memoryRecordLastUsed
                     )
                     return (
                         SumiPermissionCoordinatorDecision.fromStoredDecision(
@@ -196,19 +218,37 @@ struct SumiPermissionDecisionResolutionOwner {
 
             if !evaluation.context.isEphemeralProfile,
                evaluation.key.permissionType.canBePersisted,
-               let persistentStore,
-               let persistentRecord = try? await persistentStore.getDecision(for: evaluation.key) {
+               let persistentStore {
+                let persistentRecord: SumiPermissionStoreRecord?
+                do {
+                    persistentRecord = try await persistentStore.getDecision(for: evaluation.key)
+                } catch {
+                    return storeFailureLookupResult(
+                        .persistentRead,
+                        error: error,
+                        evaluation: evaluation,
+                        grantedRecords: grantedRecords
+                    )
+                }
+
+                guard let persistentRecord else {
+                    promptEvaluations.append(evaluation)
+                    continue
+                }
+
                 switch persistentRecord.decision.state {
                 case .allow:
-                    try? await persistentStore.recordLastUsed(
-                        for: evaluation.key,
-                        at: nowProvider()
+                    await recordPersistentLastUsed(
+                        persistentStore,
+                        for: evaluation,
+                        failure: .persistentRecordLastUsed
                     )
                     grantedRecords.append(persistentRecord)
                 case .deny:
-                    try? await persistentStore.recordLastUsed(
-                        for: evaluation.key,
-                        at: nowProvider()
+                    await recordPersistentLastUsed(
+                        persistentStore,
+                        for: evaluation,
+                        failure: .persistentRecordLastUsed
                     )
                     return (
                         SumiPermissionCoordinatorDecision.fromStoredDecision(
@@ -228,6 +268,78 @@ struct SumiPermissionDecisionResolutionOwner {
         }
 
         return (nil, grantedRecords, promptEvaluations)
+    }
+
+    private func recordMemoryLastUsed(
+        for evaluation: PolicyEvaluation,
+        failure: StoreFailure
+    ) async {
+        do {
+            try await memoryStore.recordLastUsed(
+                for: evaluation.key,
+                at: nowProvider(),
+                sessionOwnerId: sessionOwnerId
+            )
+        } catch {
+            logStoreFailure(failure, evaluation: evaluation, error: error)
+        }
+    }
+
+    private func recordPersistentLastUsed(
+        _ persistentStore: any SumiPermissionStore,
+        for evaluation: PolicyEvaluation,
+        failure: StoreFailure
+    ) async {
+        do {
+            try await persistentStore.recordLastUsed(
+                for: evaluation.key,
+                at: nowProvider()
+            )
+        } catch {
+            logStoreFailure(failure, evaluation: evaluation, error: error)
+        }
+    }
+
+    private func storeFailureLookupResult(
+        _ failure: StoreFailure,
+        error: any Error,
+        evaluation: PolicyEvaluation,
+        grantedRecords: [SumiPermissionStoreRecord]
+    ) -> StoredDecisionLookupResult {
+        logStoreFailure(failure, evaluation: evaluation, error: error)
+        return (
+            storeFailureDecision(for: evaluation, failure: failure),
+            grantedRecords,
+            []
+        )
+    }
+
+    private func logStoreFailure(
+        _ failure: StoreFailure,
+        evaluation: PolicyEvaluation,
+        error: any Error
+    ) {
+        Self.logger.error(
+            "Permission decision store failure \(failure.rawValue, privacy: .public) permission=\(evaluation.key.permissionType.identity, privacy: .public) domain=\(evaluation.key.displayDomain, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+        )
+    }
+
+    private func storeFailureDecision(
+        for evaluation: PolicyEvaluation,
+        failure: StoreFailure
+    ) -> SumiPermissionCoordinatorDecision {
+        SumiPermissionCoordinatorDecision(
+            outcome: .denied,
+            state: .deny,
+            persistence: nil,
+            source: .runtime,
+            reason: failure.rawValue,
+            permissionTypes: [evaluation.permissionType],
+            keys: [evaluation.key],
+            systemAuthorizationSnapshot: evaluation.result.systemAuthorizationSnapshot,
+            shouldOfferSystemSettings: evaluation.result.mayOpenSystemSettings,
+            disablesPersistentAllow: evaluation.context.isEphemeralProfile
+        )
     }
 
     private func aggregateGrantedDecision(

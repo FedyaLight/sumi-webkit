@@ -71,31 +71,6 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(responder.policyCallCount, 1)
     }
 
-    func testPopupRoutingKeepsWebKitProvidedConfigurationFlow() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let uiDelegateSource = try String(
-            contentsOf: repoRoot.appendingPathComponent("Sumi/Models/Tab/Tab+UIDelegate.swift"),
-            encoding: .utf8
-        )
-        let popupResponderSource = try String(
-            contentsOf: repoRoot.appendingPathComponent("Sumi/Models/Tab/Navigation/SumiPopupHandlingNavigationResponder.swift"),
-            encoding: .utf8
-        )
-
-        XCTAssertTrue(uiDelegateSource.contains("popupHandling.createWebViewAsync("))
-        XCTAssertTrue(uiDelegateSource.contains("completionHandler(popupWebView)"))
-        XCTAssertTrue(popupResponderSource.contains("createPopupWebViewFromWebKitConfiguration("))
-        XCTAssertFalse(popupResponderSource.contains("FocusableWKWebView(frame: .zero, configuration: configuration)"))
-        XCTAssertFalse(popupResponderSource.contains("webViewConfigurationOverride: configuration"))
-        XCTAssertTrue(popupResponderSource.contains("popupPermissionBridge.evaluate("))
-        XCTAssertTrue(popupResponderSource.contains("evaluateSynchronouslyForWebKitFallback("))
-        XCTAssertTrue(popupResponderSource.contains("guard permissionResult.isAllowed else { return nil }"))
-        XCTAssertFalse(popupResponderSource.contains("loadURL(requestURL"))
-        XCTAssertFalse(popupResponderSource.contains("load(URLRequest(url: requestURL"))
-    }
-
     func testExternalSchemeResponderCancelsAndRoutesThroughPermissionBridge() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
@@ -637,24 +612,6 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertFalse(sumiAction.sourceFrame?.isMainFrame ?? true)
         XCTAssertTrue(sumiAction.isTargetingNewWindow)
         XCTAssertEqual(sumiAction.navigationTypeDescription, "\(WKNavigationType.linkActivated.rawValue)")
-    }
-
-    func testExternalSchemeResponderSourceRoutesThroughBridgeBeforeAppOpen() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let responderSource = try String(
-            contentsOf: repoRoot.appendingPathComponent(
-                "Sumi/Models/Tab/Navigation/SumiExternalSchemeNavigationResponder.swift"
-            ),
-            encoding: .utf8
-        )
-
-        XCTAssertTrue(responderSource.contains("SumiExternalSchemePermissionRequest.fromSumiNavigationAction"))
-        XCTAssertTrue(responderSource.contains("bridge.evaluate("))
-        XCTAssertTrue(responderSource.contains("return .cancel"))
-        XCTAssertFalse(responderSource.contains("NSWorkspace.shared.open"))
-        XCTAssertFalse(responderSource.contains("workspace.open"))
     }
 
     func testAutoplayPolicyResponderMapsStoredPoliciesToWebPagePreferences() async throws {
@@ -1879,42 +1836,14 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(tab.isGlanceTriggerActive(resolved))
     }
 
-    func testClearingSyntheticNewWindowClickStateDoesNotBreakPendingWindowPriority() throws {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let source = try String(
-            contentsOf: repositoryRoot.appendingPathComponent(
-                "Sumi/Models/Tab/Navigation/SumiPopupHandlingNavigationResponder.swift"
-            ),
-            encoding: .utf8
-        )
-        let asyncStart = try XCTUnwrap(source.range(of: "func createWebViewAsync(")?.lowerBound)
-        let syncStart = try XCTUnwrap(source.range(of: "private func createWebViewSynchronously(", range: asyncStart..<source.endIndex)?.lowerBound)
-        let policyStart = try XCTUnwrap(source.range(of: "func navigationWillStart", range: syncStart..<source.endIndex)?.lowerBound)
-        let createWebViewSources = [
-            String(source[asyncStart..<syncStart]),
-            String(source[syncStart..<policyStart]),
-        ]
-
-        for createWebViewSource in createWebViewSources {
-            let explicitGlance = try XCTUnwrap(createWebViewSource.range(of: "tab.isGlanceTriggerActive(navigationFlags)")?.lowerBound)
-            let pendingWindow = try XCTUnwrap(createWebViewSource.range(of: "newWindowPolicy(for: navigationAction)")?.lowerBound)
-            let dynamicGlance = try XCTUnwrap(createWebViewSource.range(of: "tab.shouldOpenDynamicallyInGlance(")?.lowerBound)
-
-            XCTAssertLessThan(explicitGlance, pendingWindow)
-            XCTAssertLessThan(pendingWindow, dynamicGlance)
-        }
-        XCTAssertTrue(source.contains("resetLinkGestureModifierState(for: tab)\n            targetWebView.sumiLoadInNewWindow(url)"))
-    }
-
-    func testNativeContextMenuProbeConsumesChildWebViewRequest() {
+    func testNativeContextMenuProbeConsumesChildWebViewRequestBeforeDynamicGlance() {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
         let browserManager = BrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
         tab.browserManager = browserManager
         tab.sumiSettings = settings
+        tab.shortcutPinRole = .essential
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
         let sourceWebView = WKWebView(frame: .zero)
         let destinationURL = URL(string: "https://destination.example/image.png")!
@@ -1949,6 +1878,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(didConsume)
         XCTAssertEqual(capturedURL, destinationURL)
         XCTAssertNil(childWebView)
+        XCTAssertNil(browserManager.glanceManager.currentSession)
     }
 
     func testPopupResponderOptionClickRoutesToGlance() async {
@@ -2065,6 +1995,13 @@ final class SumiNavigationResponderTests: XCTestCase {
     func testPopupCreateWebViewFocusesCleanClickNewTab() {
         let harness = makePopupFocusHarness()
         let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let configuration = WKWebViewConfiguration()
+        let markerScript = WKUserScript(
+            source: "window.__sumiPopupConfigurationMarker = true;",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true
+        )
+        configuration.userContentController.addUserScript(markerScript)
         let action = popupNavigationAction(
             sourceURL: harness.sourceTab.url,
             targetURL: URL(string: "https://destination.example/page")!,
@@ -2073,17 +2010,24 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         let childWebView = responder.createWebView(
             from: harness.sourceWebView,
-            with: WKWebViewConfiguration(),
+            with: configuration,
             for: action,
             windowFeatures: WKWindowFeatures()
         )
 
         XCTAssertNotNil(childWebView)
+        XCTAssertEqual(
+            childWebView?.configuration.userContentController.userScripts.map(\.source),
+            [markerScript.source]
+        )
         XCTAssertNotEqual(harness.windowState.currentTabId, harness.sourceTab.id)
         XCTAssertEqual(
             harness.windowState.currentTabId,
             harness.browserManager.tabManager.tabs.last?.id
         )
+        let childTab = harness.browserManager.tabManager.tabs.last
+        XCTAssertIdentical(childTab?.existingWebView, childWebView)
+        XCTAssertNil(childTab?.webViewConfigurationOverride)
     }
 
     func testExtensionPopupExternalCreateWebViewOpensNormalBrowserTab() async throws {
@@ -2184,6 +2128,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         XCTAssertNotNil(childWebView)
         XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+        XCTAssertEqual(harness.sourceTab.resolvedNavigationModifierFlags(actionFlags: []), [])
     }
 
     func testPolicyGeneratedCleanNewTabSelectsButCommandNewTabStaysBackground() {

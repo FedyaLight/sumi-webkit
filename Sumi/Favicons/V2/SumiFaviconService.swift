@@ -437,7 +437,7 @@ final class SumiFaviconService: @unchecked Sendable {
                         candidateURL: candidate.iconURL,
                         partition: candidate.partition,
                         failureKind: .invalidPayload,
-                        ttl: SumiFaviconTTL.verifiedInvalidPayload
+                        ttl: SumiFaviconTTL.failureCacheDuration(for: .invalidPayload)
                     )
                 }
 
@@ -446,7 +446,7 @@ final class SumiFaviconService: @unchecked Sendable {
                     candidateURL: candidate.iconURL,
                     partition: candidate.partition,
                     failureKind: failureKind,
-                    ttl: ttl(for: failureKind)
+                    ttl: SumiFaviconTTL.failureCacheDuration(for: failureKind)
                 )
             }
         }
@@ -547,7 +547,7 @@ final class SumiFaviconService: @unchecked Sendable {
                 candidateURL: candidate.iconURL,
                 partition: candidate.partition,
                 failureKind: failureKind,
-                ttl: ttl(for: failureKind)
+                ttl: SumiFaviconTTL.failureCacheDuration(for: failureKind)
             )
             return nil
         }
@@ -619,17 +619,6 @@ final class SumiFaviconService: @unchecked Sendable {
             partition: selection.partition,
             revision: selection.revision
         )
-    }
-
-    private func ttl(for failureKind: SumiFaviconValidationFailureKind) -> TimeInterval {
-        switch failureKind {
-        case .transport:
-            return SumiFaviconTTL.transientTransportFailure
-        case .notFound, .invalidPayload, .oversizedPayload, .oversizedPixels, .htmlPayload, .unsafeSVG, .unsupported:
-            return SumiFaviconTTL.verifiedInvalidPayload
-        case .noIconFound:
-            return SumiFaviconTTL.noIconFound
-        }
     }
 
     private func postUpdate(

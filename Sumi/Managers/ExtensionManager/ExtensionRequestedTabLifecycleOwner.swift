@@ -141,11 +141,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         manager: ExtensionManager
     ) throws -> Tab {
         guard let browserContext = manager.browserBridgeContext else {
-            throw NSError(
-                domain: "ExtensionManager",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
-            )
+            throw ExtensionManagerCallbackError.requestedTabBrowserManagerUnavailable.nsError()
         }
 
         let target = try requestedTabTarget(
@@ -315,11 +311,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         manager: ExtensionManager
     ) throws -> Target {
         guard let browserContext = manager.browserBridgeContext else {
-            throw NSError(
-                domain: "ExtensionManager",
-                code: 3,
-                userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
-            )
+            throw ExtensionManagerCallbackError.requestedTabBrowserManagerUnavailable.nsError()
         }
 
         if let miniWindowAdapter = requestedWindow as? ExtensionMiniWindowAdapter,

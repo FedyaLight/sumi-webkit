@@ -126,7 +126,9 @@ actor SumiFaviconFetchScheduler {
         }
 
         if let result, case .failure(let failureKind) = result {
-            negativeUntilByKey[key] = now.addingTimeInterval(ttl(for: failureKind))
+            negativeUntilByKey[key] = now.addingTimeInterval(
+                SumiFaviconTTL.failureCacheDuration(for: failureKind)
+            )
         }
         return result ?? .cancelled
     }
@@ -158,17 +160,6 @@ actor SumiFaviconFetchScheduler {
             }
         }
     #endif
-
-    private func ttl(for failureKind: SumiFaviconValidationFailureKind) -> TimeInterval {
-        switch failureKind {
-        case .transport:
-            return SumiFaviconTTL.transientTransportFailure
-        case .notFound, .invalidPayload, .oversizedPayload, .oversizedPixels, .htmlPayload, .unsafeSVG, .unsupported:
-            return SumiFaviconTTL.verifiedInvalidPayload
-        case .noIconFound:
-            return SumiFaviconTTL.noIconFound
-        }
-    }
 
     private func originKey(for url: URL) -> String {
         let scheme = url.scheme?.lowercased() ?? ""
@@ -322,7 +313,7 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
     ) async -> SumiFaviconFetchResult {
         var request = baseRequest(url: url)
         let cookies = await sessionCookies(for: webView)
-        let matchingCookies = Self.cookies(
+        let matchingCookies = SumiCookieMatcher.cookies(
             cookies,
             matching: url,
             sourceDocumentURL: sourceDocumentURL
@@ -376,54 +367,6 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
         }
     }
 
-    static func cookies(
-        _ cookies: [HTTPCookie],
-        matching url: URL,
-        sourceDocumentURL: URL?
-    ) -> [HTTPCookie] {
-        guard shouldAttachSessionCookies(to: url, sourceDocumentURL: sourceDocumentURL) else {
-            return []
-        }
-        guard let host = url.host?.lowercased() else { return [] }
-        let requestPath = url.path.isEmpty ? "/" : url.path
-        let isSecureRequest = url.scheme?.lowercased() == "https"
-
-        return cookies.filter { cookie in
-            let cookieDomain = cookie.domain
-                .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                .lowercased()
-            let domainMatches = host == cookieDomain || host.hasSuffix(".\(cookieDomain)")
-            let pathMatches = requestPath.hasPrefix(cookie.path.isEmpty ? "/" : cookie.path)
-            let secureMatches = !cookie.isSecure || isSecureRequest
-            return domainMatches && pathMatches && secureMatches
-        }
-    }
-
-    static func shouldAttachSessionCookies(to url: URL, sourceDocumentURL: URL?) -> Bool {
-        guard let sourceDocumentURL,
-              let targetSite = schemefulSite(for: url),
-              let sourceSite = schemefulSite(for: sourceDocumentURL)
-        else {
-            return false
-        }
-        return targetSite == sourceSite
-    }
-
-    private static func schemefulSite(for url: URL) -> String? {
-        guard let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              let rawHost = url.host
-        else {
-            return nil
-        }
-        let host = rawHost
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            .lowercased()
-        guard !host.isEmpty else { return nil }
-        let siteHost = SumiRegistrableDomainResolver().registrableDomain(forHost: host) ?? host
-        return "\(scheme)://\(siteHost)"
-    }
 }
 
 @MainActor

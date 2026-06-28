@@ -748,11 +748,7 @@ extension ExtensionManager {
         guard let browserContext = browserBridgeContext else {
             completionHandler(
                 nil,
-                NSError(
-                    domain: "ExtensionManager",
-                    code: 4,
-                    userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
-                )
+                ExtensionManagerCallbackError.browserManagerUnavailable.nsError()
             )
             return
         }
@@ -765,11 +761,7 @@ extension ExtensionManager {
                 guard let self, let browserContext = self.browserBridgeContext else {
                     completionHandler(
                         nil,
-                        NSError(
-                            domain: "ExtensionManager",
-                            code: 4,
-                            userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
-                        )
+                        ExtensionManagerCallbackError.browserManagerUnavailable.nsError()
                     )
                     return
                 }
@@ -800,11 +792,7 @@ extension ExtensionManager {
                 } catch {
                     completionHandler(
                         nil,
-                        NSError(
-                            domain: "ExtensionManager",
-                            code: 6,
-                            userInfo: [NSLocalizedDescriptionKey: "Sumi could not open the extension external tab"]
-                        )
+                        ExtensionManagerCallbackError.extensionExternalTabUnavailable.nsError()
                     )
                 }
             }
@@ -818,21 +806,16 @@ extension ExtensionManager {
             guard let self, let browserContext = self.browserBridgeContext else {
                 completionHandler(
                     nil,
-                    NSError(
-                        domain: "ExtensionManager",
-                        code: 4,
-                        userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
-                    )
+                    ExtensionManagerCallbackError.browserManagerUnavailable.nsError()
                 )
                 return
             }
 
             guard let windowState = await awaitWindowRegistration(existingWindowIDs) else {
-                completionHandler(nil, NSError(
-                    domain: "ExtensionManager",
-                    code: 5,
-                    userInfo: [NSLocalizedDescriptionKey: "Sumi could not resolve the new window"]
-                ))
+                completionHandler(
+                    nil,
+                    ExtensionManagerCallbackError.newWindowUnavailable.nsError()
+                )
                 return
             }
 

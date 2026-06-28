@@ -31,11 +31,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let container = try makeInMemoryStartupContainer()
         let permissionStore = SwiftDataPermissionStore(container: container)
         let recentActivityStore = SumiPermissionRecentActivityStore()
-        let siteActivityStore = SumiPermissionSiteActivityStore(
-            userDefaults: try XCTUnwrap(
-                UserDefaults(suiteName: "BrowserManagerRuntimeWiringTests-\(UUID().uuidString)")
-            )
-        )
+        let siteActivityStore = try makeSiteActivityStore()
         let indicatorEventStore = SumiPermissionIndicatorEventStore()
         let cleanupService = SumiPermissionCleanupService(
             store: permissionStore,
@@ -61,13 +57,89 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(browserManager.permissionCleanupService, cleanupService)
         XCTAssertIdentical(browserManager.blockedPopupStore, blockedPopupStore)
         XCTAssertIdentical(browserManager.externalSchemeSessionStore, externalSchemeSessionStore)
+        XCTAssertIdentical(browserManager.permissionBridges.permissionIndicatorEventStore, indicatorEventStore)
+        XCTAssertIdentical(browserManager.permissionBridges.blockedPopupStore, blockedPopupStore)
+        XCTAssertIdentical(browserManager.permissionBridges.externalSchemeSessionStore, externalSchemeSessionStore)
+    }
+
+    func testBrowserManagerPermissionFacadesRouteThroughScopedBridgeRegistry() throws {
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            permissionSiteActivityStore: try makeSiteActivityStore()
+        )
+        let registry = browserManager.permissionBridges
+
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionBridges, registry)
+        XCTAssertIdentical(browserManager.webKitPermissionBridge, registry.webKitPermissionBridge)
+        XCTAssertIdentical(browserManager.webKitGeolocationBridge, registry.webKitGeolocationBridge)
+        XCTAssertIdentical(browserManager.notificationPermissionBridge, registry.notificationPermissionBridge)
+        XCTAssertIdentical(browserManager.filePickerPermissionBridge, registry.filePickerPermissionBridge)
+        XCTAssertIdentical(browserManager.storageAccessPermissionBridge, registry.storageAccessPermissionBridge)
+        XCTAssertIdentical(browserManager.popupPermissionBridge, registry.popupPermissionBridge)
+        XCTAssertIdentical(browserManager.externalSchemePermissionBridge, registry.externalSchemePermissionBridge)
+        XCTAssertIdentical(browserManager.permissionLifecycleController, registry.permissionLifecycleController)
+    }
+
+    func testPermissionBridgeOverridesAreScopedToRegistry() throws {
+        let container = try makeInMemoryStartupContainer()
+        let systemPermissionService = FakeSumiSystemPermissionService()
+        let permissionCoordinator = SumiPermissionCoordinator(
+            policyResolver: DefaultSumiPermissionPolicyResolver(
+                systemPermissionService: systemPermissionService
+            ),
+            persistentStore: nil,
+            antiAbuseStore: nil,
+            sessionOwnerId: "browser-manager-runtime-wiring-tests"
+        )
+        let blockedPopupStore = SumiBlockedPopupStore()
+        let siteActivityStore = try makeSiteActivityStore()
+        let popupBridge = SumiPopupPermissionBridge(
+            coordinator: permissionCoordinator,
+            blockedPopupStore: blockedPopupStore,
+            siteActivityStore: siteActivityStore
+        )
+
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(container: container),
+            systemPermissionService: systemPermissionService,
+            permissionCoordinator: permissionCoordinator,
+            permissionSiteActivityStore: siteActivityStore,
+            blockedPopupStore: blockedPopupStore,
+            permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides(
+                popupPermissionBridge: popupBridge
+            )
+        )
+
+        XCTAssertIdentical(browserManager.permissionBridges.popupPermissionBridge, popupBridge)
+        XCTAssertIdentical(browserManager.popupPermissionBridge, popupBridge)
+        XCTAssertIdentical(browserManager.permissionBridges.blockedPopupStore, blockedPopupStore)
+    }
+
+    func testWebViewCoordinatorWiringUsesInjectedBrowsingDataCleanupService() throws {
+        let cleanupService = SumiBrowsingDataCleanupService()
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            browsingDataCleanupService: cleanupService,
+            permissionSiteActivityStore: try makeSiteActivityStore()
+        )
+        let coordinator = WebViewCoordinator()
+
+        browserManager.webViewCoordinator = coordinator
+
+        let preparer = try XCTUnwrap(cleanupService.destructiveCleanupPreparer)
+        XCTAssertIdentical(preparer as AnyObject, coordinator)
     }
 
     func testRuntimeNotificationsPreserveLazyExtensionRuntime() throws {
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
-            )
+            ),
+            permissionSiteActivityStore: try makeSiteActivityStore()
         )
         let windowState = BrowserWindowState()
         let tab = Tab(loadsCachedFaviconOnInit: false)
@@ -193,6 +265,14 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+    }
+
+    private func makeSiteActivityStore() throws -> SumiPermissionSiteActivityStore {
+        SumiPermissionSiteActivityStore(
+            userDefaults: try XCTUnwrap(
+                UserDefaults(suiteName: "BrowserManagerRuntimeWiringTests-\(UUID().uuidString)")
+            )
         )
     }
 

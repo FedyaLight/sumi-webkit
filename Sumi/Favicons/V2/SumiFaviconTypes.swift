@@ -332,6 +332,17 @@ enum SumiFaviconTTL {
     static let transientTransportFailure: TimeInterval = 60 * 10
     static let verifiedInvalidPayload: TimeInterval = 60 * 60 * 6
     static let noIconFound: TimeInterval = 60 * 60 * 24
+
+    static func failureCacheDuration(for failureKind: SumiFaviconValidationFailureKind) -> TimeInterval {
+        switch failureKind {
+        case .transport:
+            return transientTransportFailure
+        case .notFound, .invalidPayload, .oversizedPayload, .oversizedPixels, .htmlPayload, .unsafeSVG, .unsupported:
+            return verifiedInvalidPayload
+        case .noIconFound:
+            return noIconFound
+        }
+    }
 }
 
 enum SumiFaviconConstants {

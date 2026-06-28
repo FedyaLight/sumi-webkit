@@ -81,7 +81,8 @@ final class HistorySwipeWindowMutationFlushOwner {
 
     func flushPendingMutations(
         in windowId: UUID,
-        prepareVisibleWebViews: @MainActor (BrowserWindowState) -> Bool
+        prepareVisibleWebViews: @MainActor (BrowserWindowState) -> Bool,
+        refreshCompositor: @MainActor (BrowserWindowState) -> Void
     ) {
         guard let pendingMutations = queue.takePendingMutations(for: windowId) else {
             return
@@ -91,7 +92,7 @@ final class HistorySwipeWindowMutationFlushOwner {
             _ = prepareVisibleWebViews(pendingMutations.windowState)
         }
         if pendingMutations.needsCompositorRefresh {
-            pendingMutations.windowState.refreshCompositor()
+            refreshCompositor(pendingMutations.windowState)
         }
     }
 
@@ -195,7 +196,11 @@ class BrowserManager: ObservableObject {
     var splitManager: SplitViewManager
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
+    let browsingDataCleanupService: SumiBrowsingDataCleanupService
     let permissionRuntime: BrowserManagerPermissionRuntime
+    var permissionBridges: BrowserPermissionBridgeRegistry {
+        permissionRuntime.permissionBridges
+    }
     var systemPermissionService: any SumiSystemPermissionService {
         permissionRuntime.systemPermissionService
     }
@@ -506,7 +511,7 @@ class BrowserManager: ObservableObject {
                 oldValue?.browserManager = nil
             }
             webViewCoordinator?.browserManager = self
-            SumiBrowsingDataCleanupService.shared.destructiveCleanupPreparer = webViewCoordinator
+            browsingDataCleanupService.destructiveCleanupPreparer = webViewCoordinator
         }
     }
 
@@ -598,32 +603,28 @@ class BrowserManager: ObservableObject {
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
         startupPersistence: BrowserManagerStartupPersistence = .production,
+        browserConfiguration: BrowserConfiguration = .shared,
         // Explicit injection seams keep module-boundary tests focused without constructing optional runtimes at startup.
         adBlockingModule: SumiAdBlockingModule? = nil,
         protectionCoordinator: SumiProtectionCoordinator? = nil,
         extensionsModule: SumiExtensionsModule? = nil,
         userscriptsModule: SumiUserscriptsModule? = nil,
         boostsModule: SumiBoostsModule? = nil,
+        browsingDataCleanupService: SumiBrowsingDataCleanupService = .shared,
         systemPermissionService: (any SumiSystemPermissionService)? = nil,
         permissionCoordinator: (any SumiPermissionCoordinating)? = nil,
         geolocationProvider: (any SumiGeolocationProviding)? = nil,
         notificationService: (any SumiNotificationServicing)? = nil,
         runtimePermissionController: (any SumiRuntimePermissionControlling)? = nil,
-        webKitPermissionBridge: SumiWebKitPermissionBridge? = nil,
-        webKitGeolocationBridge: SumiWebKitGeolocationBridge? = nil,
-        notificationPermissionBridge: SumiNotificationPermissionBridge? = nil,
         filePickerPanelPresenter: (any SumiFilePickerPanelPresenting)? = nil,
-        filePickerPermissionBridge: SumiFilePickerPermissionBridge? = nil,
-        storageAccessPermissionBridge: SumiStorageAccessPermissionBridge? = nil,
         permissionIndicatorEventStore: SumiPermissionIndicatorEventStore? = nil,
         permissionRecentActivityStore: SumiPermissionRecentActivityStore? = nil,
-        permissionSiteActivityStore: SumiPermissionSiteActivityStore? = nil,
+        permissionSiteActivityStore: SumiPermissionSiteActivityStore = .shared,
         permissionCleanupService: SumiPermissionCleanupService? = nil,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
-        popupPermissionBridge: SumiPopupPermissionBridge? = nil,
-        externalAppResolver: (any SumiExternalAppResolving)? = nil,
+        externalAppResolver: any SumiExternalAppResolving = SumiNSWorkspaceExternalAppResolver.shared,
         externalSchemeSessionStore: SumiExternalSchemeSessionStore? = nil,
-        externalSchemePermissionBridge: SumiExternalSchemePermissionBridge? = nil
+        permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides = BrowserPermissionBridgeRegistry.Overrides()
     ) {
         let startupTrace = StartupPerformanceTrace.browserManagerInitStarted()
         defer {
@@ -693,29 +694,25 @@ class BrowserManager: ObservableObject {
         self.splitManager = SplitViewManager()
         self.workspaceThemeCoordinator = WorkspaceThemeCoordinator()
         self.findManager = FindManager()
+        self.browsingDataCleanupService = browsingDataCleanupService
         self.permissionRuntime = BrowserManagerPermissionRuntime(
             dependencies: BrowserManagerPermissionRuntime.Dependencies(
                 startupPersistence: startupPersistence,
+                browserConfiguration: browserConfiguration,
                 systemPermissionService: systemPermissionService,
                 permissionCoordinator: permissionCoordinator,
                 geolocationProvider: geolocationProvider,
                 notificationService: notificationService,
                 runtimePermissionController: runtimePermissionController,
-                webKitPermissionBridge: webKitPermissionBridge,
-                webKitGeolocationBridge: webKitGeolocationBridge,
-                notificationPermissionBridge: notificationPermissionBridge,
                 filePickerPanelPresenter: filePickerPanelPresenter,
-                filePickerPermissionBridge: filePickerPermissionBridge,
-                storageAccessPermissionBridge: storageAccessPermissionBridge,
                 permissionIndicatorEventStore: permissionIndicatorEventStore,
                 permissionRecentActivityStore: permissionRecentActivityStore,
                 permissionSiteActivityStore: permissionSiteActivityStore,
                 permissionCleanupService: permissionCleanupService,
                 blockedPopupStore: blockedPopupStore,
-                popupPermissionBridge: popupPermissionBridge,
                 externalAppResolver: externalAppResolver,
                 externalSchemeSessionStore: externalSchemeSessionStore,
-                externalSchemePermissionBridge: externalSchemePermissionBridge
+                permissionBridgeOverrides: permissionBridgeOverrides
             )
         )
         self.permissionRuntime.startPermissionEventObservation { [weak self] _ in
@@ -1545,9 +1542,15 @@ class BrowserManager: ObservableObject {
     }
 
     func flushWindowMutationsAfterHistorySwipe(in windowId: UUID) {
-        historySwipeWindowMutationFlushOwner.flushPendingMutations(in: windowId) { [unowned self] windowState in
-            prepareVisibleWebViews(for: windowState)
-        }
+        historySwipeWindowMutationFlushOwner.flushPendingMutations(
+            in: windowId,
+            prepareVisibleWebViews: { [unowned self] windowState in
+                prepareVisibleWebViews(for: windowState)
+            },
+            refreshCompositor: { windowState in
+                windowState.refreshCompositor()
+            }
+        )
     }
 
     func cancelWindowMutationsAfterHistorySwipe(in windowId: UUID) {

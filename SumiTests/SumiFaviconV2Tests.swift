@@ -583,6 +583,25 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
         }
     }
 
+    func testFailureCacheDurationMapsTransientAndVerifiedFailures() {
+        XCTAssertEqual(
+            SumiFaviconTTL.failureCacheDuration(for: .transport),
+            SumiFaviconTTL.transientTransportFailure
+        )
+        XCTAssertEqual(
+            SumiFaviconTTL.failureCacheDuration(for: .notFound),
+            SumiFaviconTTL.verifiedInvalidPayload
+        )
+        XCTAssertEqual(
+            SumiFaviconTTL.failureCacheDuration(for: .invalidPayload),
+            SumiFaviconTTL.verifiedInvalidPayload
+        )
+        XCTAssertEqual(
+            SumiFaviconTTL.failureCacheDuration(for: .noIconFound),
+            SumiFaviconTTL.noIconFound
+        )
+    }
+
     func testPreparedCacheInvalidatesOnlyMatchingRevision() throws {
         let cache = SumiPreparedFaviconCache(totalCostLimit: 1024 * 1024)
         let request = SumiPreparedFaviconRequest(
@@ -798,12 +817,12 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             ])
         )
 
-        let cookies = SumiFaviconNetworkClient.cookies(
+        let cookies = SumiCookieMatcher.cookies(
             [matching, wrongDomain, wrongPath],
             matching: url,
             sourceDocumentURL: try XCTUnwrap(URL(string: "https://www.example.com/page"))
         )
-        XCTAssertEqual(cookies.map(\.name), ["session"])
+        XCTAssertEqual(cookies.map { $0.name }, ["session"])
     }
 
     func testSessionCookieMatchingDropsCrossSitePageDeclaredCookies() throws {
@@ -819,7 +838,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             ])
         )
 
-        let cookies = SumiFaviconNetworkClient.cookies(
+        let cookies = SumiCookieMatcher.cookies(
             [victimCookie],
             matching: iconURL,
             sourceDocumentURL: sourceDocumentURL
@@ -842,13 +861,13 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             ])
         )
 
-        let cookies = SumiFaviconNetworkClient.cookies(
+        let cookies = SumiCookieMatcher.cookies(
             [sameSiteCookie],
             matching: iconURL,
             sourceDocumentURL: sourceDocumentURL
         )
 
-        XCTAssertEqual(cookies.map(\.name), ["session"])
+        XCTAssertEqual(cookies.map { $0.name }, ["session"])
         XCTAssertEqual(HTTPCookie.requestHeaderFields(with: cookies)["Cookie"], "session=same-site")
     }
 }
@@ -1880,7 +1899,7 @@ final class SumiFaviconV2SourceGuardTests: XCTestCase {
     func testSessionAwareDocumentFetchUsesProfileCookieStoreBeforeWebKitDownloadFallback() throws {
         let scheduler = try Self.source("Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift")
         XCTAssertTrue(scheduler.contains("sourceDocumentURL: context.sourceDocumentURL"))
-        XCTAssertTrue(scheduler.contains("shouldAttachSessionCookies(to: url, sourceDocumentURL: sourceDocumentURL)"))
+        XCTAssertTrue(scheduler.contains("SumiCookieMatcher.cookies("))
         XCTAssertTrue(scheduler.contains("httpCookieStore.getAllCookies"))
         XCTAssertTrue(scheduler.contains("SumiFaviconWebKitDownloader.shared.download"))
     }

@@ -44,6 +44,23 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
         XCTAssertTrue(ephemeralEvents.isEmpty)
     }
 
+    func testUnreadablePersistentPayloadIsPreservedForDiagnostics() async throws {
+        let suiteName = "SumiAntiAbuseStoreTests-\(UUID().uuidString)"
+        let setupDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let storageKey = "anti-abuse-\(UUID().uuidString)"
+        let unreadablePayload = Data("not-json".utf8)
+        setupDefaults.set(unreadablePayload, forKey: storageKey)
+
+        let store = SumiPermissionAntiAbuseStore(
+            userDefaults: try XCTUnwrap(UserDefaults(suiteName: suiteName)),
+            storageKey: storageKey
+        )
+        _ = await store.events(for: antiAbuseKey(.camera), now: Date(timeIntervalSince1970: 1_800_000_000))
+
+        let assertionDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        XCTAssertEqual(assertionDefaults.data(forKey: "\(storageKey).unreadable"), unreadablePayload)
+    }
+
     func testRetentionCapRemovesOldAndExcessEvents() async {
         let store = SumiPermissionAntiAbuseStore(
             userDefaults: nil,

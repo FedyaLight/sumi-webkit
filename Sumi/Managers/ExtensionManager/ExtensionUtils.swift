@@ -567,11 +567,7 @@ struct ExtensionUtils {
             normalizedCandidate.path == normalizedRoot.path
                 || normalizedCandidate.path.hasPrefix(rootPath)
         else {
-            throw NSError(
-                domain: "ExtensionManager",
-                code: 7,
-                userInfo: [NSLocalizedDescriptionKey: "Options URL outside extension directory"]
-            )
+            throw ExtensionManagerCallbackError.optionsURLOutsideExtensionDirectory.nsError()
         }
 
         return normalizedCandidate
@@ -630,11 +626,7 @@ struct ExtensionUtils {
     }
 
     static func optionsPageNotFoundError() -> NSError {
-        NSError(
-            domain: "ExtensionManager",
-            code: 6,
-            userInfo: [NSLocalizedDescriptionKey: "No options page was found for this extension"]
-        )
+        ExtensionManagerCallbackError.optionsPageNotFound.nsError()
     }
 
     static func hasContentScripts(in manifest: [String: Any]) -> Bool {

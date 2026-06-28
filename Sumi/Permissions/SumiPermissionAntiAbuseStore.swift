@@ -64,13 +64,17 @@ actor SumiPermissionAntiAbuseStore: SumiPermissionAntiAbuseStoring {
         guard !loaded else { return }
         loaded = true
         guard let userDefaults,
-              let data = userDefaults.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([SumiPermissionAntiAbuseEvent].self, from: data)
+              let data = userDefaults.data(forKey: storageKey)
         else {
             records = []
             return
         }
-        records = decoded
+        do {
+            records = try JSONDecoder().decode([SumiPermissionAntiAbuseEvent].self, from: data)
+        } catch {
+            Self.preserveUnreadablePayload(data, in: userDefaults, storageKey: storageKey)
+            records = []
+        }
     }
 
     private func persistIfNeeded() {
@@ -97,6 +101,16 @@ actor SumiPermissionAntiAbuseStore: SumiPermissionAntiAbuseStoring {
                 .prefix(maximumEventsPerProfile)
         }
         .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    private static func preserveUnreadablePayload(
+        _ data: Data,
+        in userDefaults: UserDefaults,
+        storageKey: String
+    ) {
+        let backupKey = "\(storageKey).unreadable"
+        guard userDefaults.data(forKey: backupKey) == nil else { return }
+        userDefaults.set(data, forKey: backupKey)
     }
 
     private static func isSuppressionStateEvent(_ type: SumiPermissionAntiAbuseEvent.EventType) -> Bool {

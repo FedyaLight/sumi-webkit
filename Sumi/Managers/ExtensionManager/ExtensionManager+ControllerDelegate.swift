@@ -311,11 +311,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
         guard let popover = action.popupPopover else {
             completionHandler(
-                NSError(
-                    domain: "ExtensionManager",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "No popup popover is available"]
-                )
+                ExtensionManagerCallbackError.noPopupPopover.nsError()
             )
             return
         }
@@ -360,11 +356,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
             guard let extensionId else {
                 completionHandler(
-                    NSError(
-                        domain: "ExtensionManager",
-                        code: 2,
-                        userInfo: [NSLocalizedDescriptionKey: "No extension identifier is available"]
-                    )
+                    ExtensionManagerCallbackError.extensionIdentifierUnavailable.nsError()
                 )
                 return
             }
@@ -385,14 +377,9 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
 
             guard resolution.anchorResolved else {
                 completionHandler(
-                    NSError(
-                        domain: "ExtensionManager",
-                        code: 2,
-                        userInfo: [
-                            NSLocalizedDescriptionKey: "No URL-hub anchor is available for the extension action popup",
-                            "anchorSource": resolution.anchorSource?.rawValue ?? "nil",
-                        ]
-                    )
+                    ExtensionManagerCallbackError
+                        .actionPopupAnchorUnavailable(anchorSource: resolution.anchorSource?.rawValue)
+                        .nsError()
                 )
                 return
             }
@@ -760,11 +747,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             guard let self else {
                 completionHandler(
                     nil,
-                    NSError(
-                        domain: "ExtensionManager",
-                        code: 3,
-                        userInfo: [NSLocalizedDescriptionKey: "Extension manager is unavailable"]
-                    )
+                    ExtensionManagerCallbackError.extensionManagerUnavailable.nsError()
                 )
                 return
             }
@@ -804,14 +787,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         guard configuration.shouldBePrivate == false else {
             completionHandler(
                 nil,
-                NSError(
-                    domain: "ExtensionManager",
-                    code: 7,
-                    userInfo: [
-                        NSLocalizedDescriptionKey:
-                            "Sumi does not support private extension windows without an isolated private extension runtime",
-                    ]
-                )
+                ExtensionManagerCallbackError.privateWindowsUnsupported.nsError()
             )
             return
         }
@@ -821,11 +797,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 guard let self, let browserContext = self.browserBridgeContext else {
                     completionHandler(
                         nil,
-                        NSError(
-                            domain: "ExtensionManager",
-                            code: 4,
-                            userInfo: [NSLocalizedDescriptionKey: "Browser manager is unavailable"]
-                        )
+                        ExtensionManagerCallbackError.browserManagerUnavailable.nsError()
                     )
                     return
                 }
@@ -844,11 +816,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
                 } else {
                     completionHandler(
                         nil,
-                        NSError(
-                            domain: "ExtensionManager",
-                            code: 6,
-                            userInfo: [NSLocalizedDescriptionKey: "Sumi could not open the extension popup window"]
-                        )
+                        ExtensionManagerCallbackError.extensionPopupWindowUnavailable.nsError()
                     )
                 }
             }

@@ -1,41 +1,49 @@
 import XCTest
 
-final class HistorySwipeWindowMutationFlushOrderSourceTests: XCTestCase {
-    func testFlushOwnerPreparesVisibleWebViewsBeforeRefreshingCompositor() throws {
-        let source = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
-        let flushSource = try Self.slice(
-            source,
-            from: "func flushPendingMutations",
-            to: "func cancelPendingMutations"
+@testable import Sumi
+
+@MainActor
+final class HistorySwipeWindowMutationFlushOwnerTests: XCTestCase {
+    func testFlushOwnerPreparesVisibleWebViewsBeforeRefreshingCompositor() {
+        let owner = HistorySwipeWindowMutationFlushOwner()
+        let windowState = BrowserWindowState()
+        var events: [String] = []
+
+        owner.enqueue(.prepareVisibleWebViews, for: windowState)
+        owner.flushPendingMutations(
+            in: windowState.id,
+            prepareVisibleWebViews: { preparedWindowState in
+                XCTAssertIdentical(preparedWindowState, windowState)
+                events.append("prepare")
+                return true
+            },
+            refreshCompositor: { refreshedWindowState in
+                XCTAssertIdentical(refreshedWindowState, windowState)
+                events.append("refresh")
+            }
         )
 
-        let prepareRange = try XCTUnwrap(
-            flushSource.range(of: "_ = prepareVisibleWebViews(pendingMutations.windowState)")
-        )
-        let refreshRange = try XCTUnwrap(
-            flushSource.range(of: "pendingMutations.windowState.refreshCompositor()")
-        )
-
-        XCTAssertLessThan(prepareRange.lowerBound, refreshRange.lowerBound)
+        XCTAssertEqual(events, ["prepare", "refresh"])
     }
 
-    private static func source(named relativePath: String) throws -> String {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repositoryRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
+    func testFlushOwnerRefreshesWithoutPreparingForRefreshOnlyMutation() {
+        let owner = HistorySwipeWindowMutationFlushOwner()
+        let windowState = BrowserWindowState()
+        var events: [String] = []
 
-    private static func slice(
-        _ source: String,
-        from startMarker: String,
-        to endMarker: String
-    ) throws -> String {
-        let start = try XCTUnwrap(source.range(of: startMarker)?.lowerBound)
-        let end = try XCTUnwrap(source.range(of: endMarker, range: start..<source.endIndex)?.lowerBound)
-        return String(source[start..<end])
+        owner.enqueue(.refreshCompositor, for: windowState)
+        owner.flushPendingMutations(
+            in: windowState.id,
+            prepareVisibleWebViews: { _ in
+                events.append("prepare")
+                return true
+            },
+            refreshCompositor: { refreshedWindowState in
+                XCTAssertIdentical(refreshedWindowState, windowState)
+                events.append("refresh")
+            }
+        )
+
+        XCTAssertEqual(events, ["refresh"])
     }
 }

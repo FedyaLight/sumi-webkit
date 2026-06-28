@@ -1,49 +1,18 @@
 import Foundation
 import WebKit
 
-@available(macOS 13.0, *)
 @MainActor
-final class SumiWebKitPermissionDecisionHandler {
-    private var decisionHandler: ((WKPermissionDecision) -> Void)?
+final class SumiWebKitPermissionDecisionHandler<Decision> {
+    private var decisionHandler: ((Decision) -> Void)?
 
-    init(_ decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+    init(_ decisionHandler: @escaping (Decision) -> Void) {
         self.decisionHandler = decisionHandler
     }
 
-    func resolve(_ decision: WKPermissionDecision) {
+    func resolve(_ decision: Decision) {
         guard let handler = decisionHandler else { return }
         decisionHandler = nil
         handler(decision)
-    }
-}
-
-@MainActor
-final class SumiWebKitBoolDecisionHandler {
-    private var decisionHandler: ((Bool) -> Void)?
-
-    init(_ decisionHandler: @escaping (Bool) -> Void) {
-        self.decisionHandler = decisionHandler
-    }
-
-    func resolve(_ decision: Bool) {
-        guard let handler = decisionHandler else { return }
-        decisionHandler = nil
-        handler(decision)
-    }
-}
-
-@MainActor
-final class SumiWebKitDisplayCaptureDecisionHandler {
-    private var decisionHandler: ((Int) -> Void)?
-
-    init(_ decisionHandler: @escaping (Int) -> Void) {
-        self.decisionHandler = decisionHandler
-    }
-
-    func resolve(_ decision: SumiWebKitDisplayCapturePermissionDecision) {
-        guard let handler = decisionHandler else { return }
-        decisionHandler = nil
-        handler(decision.rawValue)
     }
 }
 
@@ -214,7 +183,7 @@ final class SumiWebKitPermissionBridge {
         webView: WKWebView?,
         decisionHandler: @escaping (Bool) -> Void
     ) {
-        let once = SumiWebKitBoolDecisionHandler(decisionHandler)
+        let once = SumiWebKitPermissionDecisionHandler(decisionHandler)
         guard webView != nil else {
             once.resolve(false)
             return
@@ -259,9 +228,9 @@ final class SumiWebKitPermissionBridge {
         webView: WKWebView?,
         decisionHandler: @escaping (Int) -> Void
     ) {
-        let once = SumiWebKitDisplayCaptureDecisionHandler(decisionHandler)
+        let once = SumiWebKitPermissionDecisionHandler(decisionHandler)
         guard webView != nil else {
-            once.resolve(.deny)
+            once.resolve(SumiWebKitDisplayCapturePermissionDecision.deny.rawValue)
             return
         }
 
@@ -269,7 +238,7 @@ final class SumiWebKitPermissionBridge {
 
         Task { @MainActor [weak self, weak webView] in
             guard let self else {
-                once.resolve(.deny)
+                once.resolve(SumiWebKitDisplayCapturePermissionDecision.deny.rawValue)
                 return
             }
 
@@ -287,10 +256,10 @@ final class SumiWebKitPermissionBridge {
                     requestId: context.request.id,
                     reason: "webkit-screen-capture-permission-stale-page"
                 )
-                once.resolve(.deny)
+                once.resolve(SumiWebKitDisplayCapturePermissionDecision.deny.rawValue)
                 return
             }
-            once.resolve(webKitDecision)
+            once.resolve(webKitDecision.rawValue)
 
             if coordinatorDecision.outcome == .granted, let webView {
                 _ = self.runtimeController.currentRuntimeState(for: webView)

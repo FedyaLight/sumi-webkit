@@ -563,7 +563,7 @@ private struct PinnedSplitPlaceholderTile: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isTileHovered = false
-    @StateObject private var storedFaviconLoader = PinnedTileStoredFaviconLoader()
+    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
 
     var body: some View {
         let configuration = PinnedTabsConfiguration.large
@@ -735,7 +735,7 @@ private struct LivePinnedTileContent: View {
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
-    @StateObject private var storedFaviconLoader = PinnedTileStoredFaviconLoader()
+    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
 
     var body: some View {
         let resolvedTitle = pin.resolvedDisplayTitle(liveTab: liveTab)
@@ -853,7 +853,7 @@ private struct StoredPinnedTileContent: View {
     let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
-    @StateObject private var storedFaviconLoader = PinnedTileStoredFaviconLoader()
+    @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
 
     var body: some View {
         let resolvedTitle = pin.preferredDisplayTitle
@@ -919,77 +919,6 @@ private struct StoredPinnedTileContent: View {
             isCurrentLaunchURL: { pin.launchURL == $0 }
         )
     }
-}
-
-@MainActor
-private final class PinnedTileStoredFaviconLoader: ObservableObject {
-    private struct LoadedFavicon {
-        let launchURL: URL
-        let image: Image
-    }
-
-    @Published private var refreshID = UUID()
-    @Published private var loadedFavicon: LoadedFavicon?
-
-    func image(for launchURL: URL) -> Image? {
-        loadedFavicon?.launchURL == launchURL ? loadedFavicon?.image : nil
-    }
-
-    func loadKey(
-        launchURL: URL,
-        partition: SumiFaviconPartition,
-        isEnabled: Bool = true,
-        disabledID: String? = nil
-    ) -> String {
-        guard isEnabled else {
-            return "disabled|\(disabledID ?? launchURL.absoluteString)|\(refreshID.uuidString)"
-        }
-
-        return [
-            launchURL.absoluteString,
-            partition.storageComponent,
-            refreshID.uuidString,
-        ].joined(separator: "|")
-    }
-
-    func invalidateIfNeeded(
-        for notification: Notification,
-        launchURL: URL
-    ) {
-        guard shouldReloadPinnedTileFavicon(for: notification, launchURL: launchURL) else { return }
-        loadedFavicon = nil
-        refreshID = UUID()
-    }
-
-    func load(
-        launchURL: URL,
-        partition: SumiFaviconPartition,
-        isCurrentLaunchURL: (URL) -> Bool
-    ) async {
-        guard let image = await TabFaviconStore.loadCachedLauncherImage(
-            forDocumentURL: launchURL,
-            partition: partition
-        ),
-              !Task.isCancelled,
-              isCurrentLaunchURL(launchURL)
-        else { return }
-
-        loadedFavicon = LoadedFavicon(
-            launchURL: launchURL,
-            image: Image(nsImage: image)
-        )
-    }
-}
-
-private func shouldReloadPinnedTileFavicon(
-    for notification: Notification,
-    launchURL: URL
-) -> Bool {
-    guard let updatedDomain = notification.userInfo?[NSNotification.Name.faviconCacheUpdatedDomainKey] as? String else {
-        return true
-    }
-    guard let host = launchURL.host?.lowercased() else { return false }
-    return host == updatedDomain.lowercased()
 }
 
 @MainActor

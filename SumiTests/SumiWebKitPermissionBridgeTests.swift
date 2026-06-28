@@ -311,9 +311,9 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(timeoutDecisions, [.deny])
     }
 
-    func testExactlyOnceWrapperIgnoresDuplicateResolutions() {
+    func testGenericExactlyOnceWrapperIgnoresDuplicateResolutions() {
         var decisions: [WKPermissionDecision] = []
-        let once = SumiWebKitPermissionDecisionHandler {
+        let once = SumiWebKitPermissionDecisionHandler<WKPermissionDecision> {
             decisions.append($0)
         }
 
@@ -323,14 +323,26 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(decisions, [.grant])
     }
 
-    func testDisplayCaptureExactlyOnceWrapperIgnoresDuplicateResolutions() {
-        var decisions: [Int] = []
-        let once = SumiWebKitDisplayCaptureDecisionHandler {
+    func testGenericExactlyOnceWrapperHandlesBoolDecisions() {
+        var decisions: [Bool] = []
+        let once = SumiWebKitPermissionDecisionHandler<Bool> {
             decisions.append($0)
         }
 
-        once.resolve(.screenPrompt)
-        once.resolve(.deny)
+        once.resolve(true)
+        once.resolve(false)
+
+        XCTAssertEqual(decisions, [true])
+    }
+
+    func testGenericExactlyOnceWrapperHandlesDisplayCaptureRawValue() {
+        var decisions: [Int] = []
+        let once = SumiWebKitPermissionDecisionHandler<Int> {
+            decisions.append($0)
+        }
+
+        once.resolve(SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue)
+        once.resolve(SumiWebKitDisplayCapturePermissionDecision.deny.rawValue)
 
         XCTAssertEqual(decisions, [SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue])
     }
@@ -434,6 +446,29 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         let denyBridge = realCoordinatorBridge(policyResult: proceedPolicyResult(), store: denyStore)
         let storedDenyDecisions = await resolve(bridge: denyBridge, request: mediaRequest(permissionTypes: [.camera]))
         XCTAssertEqual(storedDenyDecisions, [.deny])
+    }
+
+    func testPersistentStoreReadFailureFailsClosedInsteadOfPrompting() async {
+        let store = FailingReadPermissionStore()
+        let coordinator = SumiPermissionCoordinator(
+            policyResolver: BridgePolicyResolver(result: proceedPolicyResult()),
+            persistentStore: store,
+            now: { webKitPermissionBridgeFixedDate }
+        )
+        let bridge = makeBridge(coordinator: coordinator)
+        let context = bridge.securityContext(
+            for: mediaRequest(permissionTypes: [.camera]),
+            tabContext: tabContext()
+        )
+
+        let decision = await coordinator.requestPermission(context)
+        let snapshot = await coordinator.stateSnapshot()
+
+        XCTAssertEqual(decision.outcome, .denied)
+        XCTAssertEqual(decision.state, .deny)
+        XCTAssertEqual(decision.source, .runtime)
+        XCTAssertEqual(decision.reason, "permission-persistent-store-read-failed")
+        XCTAssertTrue(snapshot.activeQueriesByPageId.isEmpty)
     }
 
     func testRuntimeControllerBoundary() async {
@@ -907,6 +942,26 @@ private actor BridgePermissionStore: SumiPermissionStore {
     func setDecisionCallCount() -> Int {
         setCount
     }
+}
+
+private enum FailingPermissionStoreError: Error {
+    case readFailed
+}
+
+private actor FailingReadPermissionStore: SumiPermissionStore {
+    func getDecision(for _: SumiPermissionKey) async throws -> SumiPermissionStoreRecord? {
+        throw FailingPermissionStoreError.readFailed
+    }
+
+    func setDecision(for _: SumiPermissionKey, decision _: SumiPermissionDecision) async throws {}
+
+    func resetDecision(for _: SumiPermissionKey) async throws {}
+
+    func listDecisions(profilePartitionId _: String) async throws -> [SumiPermissionStoreRecord] {
+        []
+    }
+
+    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async throws {}
 }
 
 private func decision(

@@ -380,11 +380,31 @@ final class SumiPermissionSiteActivityStore: ObservableObject {
     private static func loadRecords(
         from userDefaults: UserDefaults
     ) -> [String: SumiPermissionSiteActivityRecord] {
-        guard let data = userDefaults.data(forKey: Constants.storageKey),
-              let envelope = try? JSONDecoder().decode(StorageEnvelope.self, from: data),
-              envelope.version == Constants.storageVersion
-        else { return [:] }
+        guard let data = userDefaults.data(forKey: Constants.storageKey) else {
+            return [:]
+        }
+        let envelope: StorageEnvelope
+        do {
+            envelope = try JSONDecoder().decode(StorageEnvelope.self, from: data)
+        } catch {
+            preserveUnreadablePayload(data, in: userDefaults, storageKey: Constants.storageKey)
+            return [:]
+        }
+        guard envelope.version == Constants.storageVersion else {
+            preserveUnreadablePayload(data, in: userDefaults, storageKey: Constants.storageKey)
+            return [:]
+        }
         return Dictionary(uniqueKeysWithValues: envelope.records.map { ($0.id, $0) })
+    }
+
+    private static func preserveUnreadablePayload(
+        _ data: Data,
+        in userDefaults: UserDefaults,
+        storageKey: String
+    ) {
+        let backupKey = "\(storageKey).unreadable"
+        guard userDefaults.data(forKey: backupKey) == nil else { return }
+        userDefaults.set(data, forKey: backupKey)
     }
 
     private func siteHost(for origin: SumiPermissionOrigin) -> String? {

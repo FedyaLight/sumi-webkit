@@ -13,6 +13,37 @@ import SwiftData
 import SwiftUI
 import WebKit
 
+enum SumiStartupSchemaV1: VersionedSchema {
+    static let versionIdentifier = Schema.Version(1, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            SpaceEntity.self,
+            ProfileEntity.self,
+            TabEntity.self,
+            FolderEntity.self,
+            TabsStateEntity.self,
+            HistoryEntryEntity.self,
+            HistoryVisitEntity.self,
+            ExtensionEntity.self,
+            SafariContentBlockerEntity.self,
+            UserScriptEntity.self,
+            UserScriptResourceEntity.self,
+            PermissionDecisionEntity.self,
+        ]
+    }
+}
+
+enum SumiStartupMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] {
+        [SumiStartupSchemaV1.self]
+    }
+
+    static var stages: [MigrationStage] {
+        []
+    }
+}
+
 @MainActor
 final class SumiStartupPersistence {
     static let shared = SumiStartupPersistence()
@@ -30,20 +61,8 @@ final class SumiStartupPersistence {
     nonisolated private static let log = Logger.sumi(category: "StartupPersistence")
     nonisolated private static let storeFileName = "default.store"
 
-    static let schema = Schema([
-        SpaceEntity.self,
-        ProfileEntity.self,
-        TabEntity.self,
-        FolderEntity.self,
-        TabsStateEntity.self,
-        HistoryEntryEntity.self,
-        HistoryVisitEntity.self,
-        ExtensionEntity.self,
-        SafariContentBlockerEntity.self,
-        UserScriptEntity.self,
-        UserScriptResourceEntity.self,
-        PermissionDecisionEntity.self,
-    ])
+    static let schema = Schema(versionedSchema: SumiStartupSchemaV1.self)
+    static let migrationPlan: (any SchemaMigrationPlan.Type) = SumiStartupMigrationPlan.self
 
     // MARK: - URLs
     nonisolated private static var appSupportURL: URL {
@@ -86,7 +105,8 @@ final class SumiStartupPersistence {
             Self.log.info("SwiftData container initialized successfully.")
             return resolvedContainer
         } catch {
-            switch Self.classifyStoreOpenFailure(error) {
+            let diagnostics = Self.classifyStoreOpenFailure(error)
+            switch diagnostics.reason {
             case .diskSpace:
                 Self.log.fault(
                     "SwiftData container initialization failed because disk space is insufficient. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
@@ -98,6 +118,12 @@ final class SumiStartupPersistence {
                     "SwiftData container initialization failed because store access was denied. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
                 )
                 throw StartupPersistenceError.permissionDenied(error)
+
+            case .migrationOrSchemaMismatch:
+                Self.log.fault(
+                    "SwiftData container initialization failed because the local store schema does not match this app version. Local store files were not removed. error=\(String(describing: error), privacy: .public)"
+                )
+                throw StartupPersistenceError.migrationOrSchemaMismatch(error)
 
             case .resettableLocalStore:
                 Self.log.fault(
@@ -132,47 +158,99 @@ final class SumiStartupPersistence {
         }
     }
 
+    static func makeContainer(configuration: ModelConfiguration) throws -> ModelContainer {
+        try ModelContainer(
+            for: Self.schema,
+            migrationPlan: Self.migrationPlan,
+            configurations: [configuration]
+        )
+    }
+
     private static func openPersistentContainer() throws -> ModelContainer {
         let config = ModelConfiguration(url: Self.storeURL)
-        return try ModelContainer(for: Self.schema, configurations: [config])
+        return try makeContainer(configuration: config)
     }
 
     // MARK: - Error Classification
-    private enum StoreOpenFailure {
+    enum StoreOpenFailureReason: Equatable {
         case diskSpace
         case permissionDenied
+        case migrationOrSchemaMismatch
         case resettableLocalStore
+    }
+
+    struct StoreOpenFailureDiagnostics: Equatable {
+        let reason: StoreOpenFailureReason
+
+        var shouldResetLocalStore: Bool {
+            reason == .resettableLocalStore
+        }
     }
 
     private enum StartupPersistenceError: Error {
         case diskSpace(Error)
         case permissionDenied(Error)
+        case migrationOrSchemaMismatch(Error)
         case resetFailed(initialError: Error, resetError: Error)
         case reopenFailed(initialError: Error, reopenError: Error)
     }
 
-    private static func classifyStoreOpenFailure(_ error: Error) -> StoreOpenFailure {
+    nonisolated static func classifyStoreOpenFailure(_ error: Error) -> StoreOpenFailureDiagnostics {
         let ns = error as NSError
         let domain = ns.domain
         let code = ns.code
         let desc = Self.errorDescriptionTree(error)
         let lower = (desc + " " + domain).lowercased()
 
-        if domain == NSPOSIXErrorDomain && code == 28 { return .diskSpace }
-        if lower.contains("no space left") || lower.contains("disk full") { return .diskSpace }
+        if domain == NSPOSIXErrorDomain && code == 28 {
+            return StoreOpenFailureDiagnostics(reason: .diskSpace)
+        }
+        if lower.contains("no space left") || lower.contains("disk full") {
+            return StoreOpenFailureDiagnostics(reason: .diskSpace)
+        }
 
         if domain == NSPOSIXErrorDomain && (code == 1 || code == 13) {
-            return .permissionDenied
+            return StoreOpenFailureDiagnostics(reason: .permissionDenied)
         }
         if domain == NSCocoaErrorDomain
             && (code == NSFileReadNoPermissionError || code == NSFileWriteNoPermissionError) {
-            return .permissionDenied
+            return StoreOpenFailureDiagnostics(reason: .permissionDenied)
         }
         if lower.contains("permission denied") || lower.contains("operation not permitted") {
-            return .permissionDenied
+            return StoreOpenFailureDiagnostics(reason: .permissionDenied)
         }
 
-        return .resettableLocalStore
+        if Self.isMigrationOrSchemaMismatch(domain: domain, code: code, lowercasedDescription: lower) {
+            return StoreOpenFailureDiagnostics(reason: .migrationOrSchemaMismatch)
+        }
+
+        return StoreOpenFailureDiagnostics(reason: .resettableLocalStore)
+    }
+
+    nonisolated private static func isMigrationOrSchemaMismatch(
+        domain: String,
+        code: Int,
+        lowercasedDescription: String
+    ) -> Bool {
+        let migrationRelatedCocoaCodes: Set<Int> = [
+            134100,
+            134110,
+            134120,
+            134130,
+            134140,
+            134150,
+            134160,
+            134170,
+        ]
+        if domain == NSCocoaErrorDomain && migrationRelatedCocoaCodes.contains(code) {
+            return true
+        }
+
+        return lowercasedDescription.contains("migration")
+            || lowercasedDescription.contains("missing mapping model")
+            || lowercasedDescription.contains("incompatible version hash")
+            || lowercasedDescription.contains("store is incompatible")
+            || lowercasedDescription.contains("schema does not match")
     }
 
     private static func startupFailureMessage(for error: Error) -> String {
@@ -181,6 +259,8 @@ final class SumiStartupPersistence {
             return "Sumi could not open the local browser store because disk space is insufficient."
         case StartupPersistenceError.permissionDenied:
             return "Sumi could not open the local browser store because store file access was denied."
+        case StartupPersistenceError.migrationOrSchemaMismatch:
+            return "Sumi could not open the local browser store because its schema does not match this app version."
         case StartupPersistenceError.resetFailed:
             return "Sumi could not remove the failed local browser store."
         case StartupPersistenceError.reopenFailed:
@@ -209,7 +289,7 @@ final class SumiStartupPersistence {
         Darwin.exit(EXIT_FAILURE)
     }
 
-    private static func errorDescriptionTree(_ error: Error) -> String {
+    nonisolated private static func errorDescriptionTree(_ error: Error) -> String {
         var parts: [String] = []
         var visited = Set<ObjectIdentifier>()
 

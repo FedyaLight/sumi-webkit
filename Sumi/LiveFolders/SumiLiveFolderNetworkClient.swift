@@ -47,7 +47,7 @@ final class SumiLiveFolderNetworkClient: @unchecked Sendable {
             request.setValue(lastModified, forHTTPHeaderField: "If-Modified-Since")
         }
 
-        let matchingCookies = Self.cookies(cookies, matching: url)
+        let matchingCookies = SumiCookieMatcher.cookies(cookies, matching: url)
         if !matchingCookies.isEmpty,
            let cookieHeader = HTTPCookie.requestHeaderFields(with: matchingCookies)["Cookie"] {
             request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
@@ -73,22 +73,6 @@ final class SumiLiveFolderNetworkClient: @unchecked Sendable {
             throw error
         } catch {
             throw FetchError.network
-        }
-    }
-
-    static func cookies(_ cookies: [HTTPCookie], matching url: URL) -> [HTTPCookie] {
-        guard let host = url.host?.lowercased() else { return [] }
-        let requestPath = url.path.isEmpty ? "/" : url.path
-        let isSecureRequest = url.scheme?.lowercased() == "https"
-
-        return cookies.filter { cookie in
-            let cookieDomain = cookie.domain
-                .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                .lowercased()
-            let domainMatches = host == cookieDomain || host.hasSuffix(".\(cookieDomain)")
-            let pathMatches = requestPath.hasPrefix(cookie.path.isEmpty ? "/" : cookie.path)
-            let secureMatches = !cookie.isSecure || isSecureRequest
-            return domainMatches && pathMatches && secureMatches
         }
     }
 

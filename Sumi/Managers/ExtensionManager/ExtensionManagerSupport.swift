@@ -8,6 +8,88 @@
 import AppKit
 import Foundation
 
+enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
+    static let domain = "ExtensionManager"
+
+    case noPopupPopover
+    case extensionIdentifierUnavailable
+    case actionPopupAnchorUnavailable(anchorSource: String?)
+    case extensionManagerUnavailable
+    case requestedTabBrowserManagerUnavailable
+    case browserManagerUnavailable
+    case newWindowUnavailable
+    case extensionExternalTabUnavailable
+    case extensionPopupWindowUnavailable
+    case optionsPageNotFound
+    case privateWindowsUnsupported
+    case optionsURLOutsideExtensionDirectory
+
+    var code: Int {
+        switch self {
+        case .noPopupPopover:
+            return 1
+        case .extensionIdentifierUnavailable,
+             .actionPopupAnchorUnavailable:
+            return 2
+        case .extensionManagerUnavailable,
+             .requestedTabBrowserManagerUnavailable:
+            return 3
+        case .browserManagerUnavailable:
+            return 4
+        case .newWindowUnavailable:
+            return 5
+        case .extensionExternalTabUnavailable,
+             .extensionPopupWindowUnavailable,
+             .optionsPageNotFound:
+            return 6
+        case .privateWindowsUnsupported,
+             .optionsURLOutsideExtensionDirectory:
+            return 7
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .noPopupPopover:
+            return "No popup popover is available"
+        case .extensionIdentifierUnavailable:
+            return "No extension identifier is available"
+        case .actionPopupAnchorUnavailable:
+            return "No URL-hub anchor is available for the extension action popup"
+        case .extensionManagerUnavailable:
+            return "Extension manager is unavailable"
+        case .requestedTabBrowserManagerUnavailable:
+            return "Browser manager is unavailable"
+        case .browserManagerUnavailable:
+            return "Browser manager is unavailable"
+        case .newWindowUnavailable:
+            return "Sumi could not resolve the new window"
+        case .extensionExternalTabUnavailable:
+            return "Sumi could not open the extension external tab"
+        case .extensionPopupWindowUnavailable:
+            return "Sumi could not open the extension popup window"
+        case .optionsPageNotFound:
+            return "No options page was found for this extension"
+        case .privateWindowsUnsupported:
+            return "Sumi does not support private extension windows without an isolated private extension runtime"
+        case .optionsURLOutsideExtensionDirectory:
+            return "Options URL outside extension directory"
+        }
+    }
+
+    var errorDescription: String? {
+        message
+    }
+
+    func nsError() -> NSError {
+        var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]
+        if case .actionPopupAnchorUnavailable(let anchorSource) = self {
+            userInfo["anchorSource"] = anchorSource ?? "nil"
+        }
+        return NSError(domain: Self.domain, code: code, userInfo: userInfo)
+    }
+}
+
 enum BrowserExtensionActionPopupBlocker:
     String,
     Codable,

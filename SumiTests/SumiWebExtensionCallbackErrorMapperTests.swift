@@ -11,6 +11,61 @@ final class SumiWebExtensionCallbackErrorMapperTests: XCTestCase {
         SafariExtensionWebExtensionCallbackDiagnostics.resetForTesting()
     }
 
+    func testExtensionManagerCallbackErrorsPreserveLegacyNSErrorShape() {
+        let cases: [(ExtensionManagerCallbackError, Int, String)] = [
+            (.noPopupPopover, 1, "No popup popover is available"),
+            (.extensionIdentifierUnavailable, 2, "No extension identifier is available"),
+            (.extensionManagerUnavailable, 3, "Extension manager is unavailable"),
+            (.requestedTabBrowserManagerUnavailable, 3, "Browser manager is unavailable"),
+            (.browserManagerUnavailable, 4, "Browser manager is unavailable"),
+            (.newWindowUnavailable, 5, "Sumi could not resolve the new window"),
+            (.extensionExternalTabUnavailable, 6, "Sumi could not open the extension external tab"),
+            (.extensionPopupWindowUnavailable, 6, "Sumi could not open the extension popup window"),
+            (.optionsPageNotFound, 6, "No options page was found for this extension"),
+            (.privateWindowsUnsupported, 7, "Sumi does not support private extension windows without an isolated private extension runtime"),
+            (.optionsURLOutsideExtensionDirectory, 7, "Options URL outside extension directory"),
+        ]
+
+        for (callbackError, code, message) in cases {
+            let error = callbackError.nsError()
+
+            XCTAssertEqual(error.domain, ExtensionManagerCallbackError.domain)
+            XCTAssertEqual(error.code, code)
+            XCTAssertEqual(error.localizedDescription, message)
+        }
+    }
+
+    func testExtensionManagerActionPopupAnchorErrorPreservesDiagnostics() {
+        let error = ExtensionManagerCallbackError
+            .actionPopupAnchorUnavailable(anchorSource: "stale")
+            .nsError()
+
+        XCTAssertEqual(error.domain, ExtensionManagerCallbackError.domain)
+        XCTAssertEqual(error.code, 2)
+        XCTAssertEqual(error.localizedDescription, "No URL-hub anchor is available for the extension action popup")
+        XCTAssertEqual(error.userInfo["anchorSource"] as? String, "stale")
+    }
+
+    func testExtensionManagerCallbackErrorMapsWithStableMessage() {
+        let source = ExtensionManagerCallbackError.extensionPopupWindowUnavailable.nsError()
+
+        let mapped = SumiWebExtensionCallbackErrorMapper.webExtensionCallbackError(from: source)
+
+        XCTAssertEqual(
+            mapped.domain,
+            SumiWebExtensionCallbackErrorMapper.webExtensionContextErrorDomain
+        )
+        XCTAssertEqual(mapped.localizedDescription, "Sumi could not open the extension popup window")
+        XCTAssertEqual(
+            mapped.userInfo[SumiWebExtensionCallbackErrorMapper.underlyingDomainUserInfoKey] as? String,
+            ExtensionManagerCallbackError.domain
+        )
+        XCTAssertEqual(
+            mapped.userInfo[SumiWebExtensionCallbackErrorMapper.underlyingCodeUserInfoKey] as? Int,
+            6
+        )
+    }
+
     func testRelayCancelledMapsToWebExtensionContextDomainWithMessage() {
         let source = SumiNativeMessagingErrorMapper.relayError(
             code: .relayCancelled,
