@@ -91,6 +91,7 @@ final class SidebarDropProjectionTests: XCTestCase {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         let rootView = NSView(frame: window.contentView?.bounds ?? .zero)
         window.contentView = rootView
 
@@ -106,6 +107,7 @@ final class SidebarDropProjectionTests: XCTestCase {
             registry.unregister(largeScrollView)
             registry.unregister(smallScrollView)
             registry.stop()
+            window.contentView = nil
             window.close()
         }
 
@@ -603,6 +605,7 @@ final class SidebarDropProjectionTests: XCTestCase {
         XCTAssertFalse(appliedValues.contains(1))
     }
 
+    @MainActor
     private func makeScrollView(frame: NSRect) -> NSScrollView {
         let scrollView = NSScrollView(frame: frame)
         scrollView.borderType = .noBorder

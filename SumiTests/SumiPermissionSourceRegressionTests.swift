@@ -201,13 +201,23 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
                 UserDefaults(suiteName: "SumiPermissionSourceRegressionTests-\(UUID().uuidString)")
             )
         )
+        let systemPermissionService = FakeSumiSystemPermissionService(
+            states: sumiPermissionIntegrationAuthorizedSystemStates()
+        )
+        let permissionCoordinator = SumiPermissionCoordinator(
+            policyResolver: DefaultSumiPermissionPolicyResolver(
+                systemPermissionService: systemPermissionService
+            ),
+            persistentStore: nil,
+            antiAbuseStore: nil,
+            sessionOwnerId: "browser-permission-source-regression"
+        )
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             ),
-            systemPermissionService: FakeSumiSystemPermissionService(
-                states: sumiPermissionIntegrationAuthorizedSystemStates()
-            ),
+            systemPermissionService: systemPermissionService,
+            permissionCoordinator: permissionCoordinator,
             permissionRecentActivityStore: recentActivityStore,
             permissionSiteActivityStore: siteActivityStore
         )
