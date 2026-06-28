@@ -1,16 +1,20 @@
 import XCTest
 
 final class HistorySwipeWindowMutationFlushOrderSourceTests: XCTestCase {
-    func testBrowserManagerFlushPreparesVisibleWebViewsBeforeRefreshingCompositor() throws {
+    func testFlushOwnerPreparesVisibleWebViewsBeforeRefreshingCompositor() throws {
         let source = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
         let flushSource = try Self.slice(
             source,
-            from: "func flushWindowMutationsAfterHistorySwipe",
-            to: "func cancelWindowMutationsAfterHistorySwipe"
+            from: "func flushPendingMutations",
+            to: "func cancelPendingMutations"
         )
 
-        let prepareRange = try XCTUnwrap(flushSource.range(of: "prepareVisibleWebViews("))
-        let refreshRange = try XCTUnwrap(flushSource.range(of: "windowState.refreshCompositor()"))
+        let prepareRange = try XCTUnwrap(
+            flushSource.range(of: "_ = prepareVisibleWebViews(pendingMutations.windowState)")
+        )
+        let refreshRange = try XCTUnwrap(
+            flushSource.range(of: "pendingMutations.windowState.refreshCompositor()")
+        )
 
         XCTAssertLessThan(prepareRange.lowerBound, refreshRange.lowerBound)
     }

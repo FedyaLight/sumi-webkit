@@ -68,6 +68,38 @@ struct HistorySwipeWindowMutationQueue {
     }
 }
 
+@MainActor
+final class HistorySwipeWindowMutationFlushOwner {
+    private var queue = HistorySwipeWindowMutationQueue()
+
+    func enqueue(
+        _ kind: HistorySwipeDeferredWindowMutationKind,
+        for windowState: BrowserWindowState
+    ) {
+        queue.enqueue(kind, for: windowState)
+    }
+
+    func flushPendingMutations(
+        in windowId: UUID,
+        prepareVisibleWebViews: @MainActor (BrowserWindowState) -> Bool
+    ) {
+        guard let pendingMutations = queue.takePendingMutations(for: windowId) else {
+            return
+        }
+
+        if pendingMutations.needsVisibleWebViewPreparation {
+            _ = prepareVisibleWebViews(pendingMutations.windowState)
+        }
+        if pendingMutations.needsCompositorRefresh {
+            pendingMutations.windowState.refreshCompositor()
+        }
+    }
+
+    func cancelPendingMutations(in windowId: UUID) {
+        queue.cancel(in: windowId)
+    }
+}
+
 private final class WeakBrowserWindowState {
     weak var value: BrowserWindowState?
 
@@ -489,7 +521,7 @@ class BrowserManager: ObservableObject {
     private var browsingDataRetentionObserverToken: NSObjectProtocol?
     private var startupProtectionRuntime: BrowserStartupProtectionRuntime!
     private let windowTabActivationBatcher = WindowTabActivationBatcher()
-    private var historySwipeWindowMutationQueue = HistorySwipeWindowMutationQueue()
+    private let historySwipeWindowMutationFlushOwner = HistorySwipeWindowMutationFlushOwner()
 
     private func adoptProfileIfNeeded(
         for windowState: BrowserWindowState, context: ProfileSwitchContext
@@ -1584,24 +1616,17 @@ class BrowserManager: ObservableObject {
         _ kind: HistorySwipeDeferredWindowMutationKind,
         for windowState: BrowserWindowState
     ) {
-        historySwipeWindowMutationQueue.enqueue(kind, for: windowState)
+        historySwipeWindowMutationFlushOwner.enqueue(kind, for: windowState)
     }
 
     func flushWindowMutationsAfterHistorySwipe(in windowId: UUID) {
-        guard let pendingMutations = historySwipeWindowMutationQueue.takePendingMutations(for: windowId) else {
-            return
-        }
-
-        if pendingMutations.needsVisibleWebViewPreparation {
-            _ = prepareVisibleWebViews(for: pendingMutations.windowState)
-        }
-        if pendingMutations.needsCompositorRefresh {
-            pendingMutations.windowState.refreshCompositor()
+        historySwipeWindowMutationFlushOwner.flushPendingMutations(in: windowId) { [unowned self] windowState in
+            prepareVisibleWebViews(for: windowState)
         }
     }
 
     func cancelWindowMutationsAfterHistorySwipe(in windowId: UUID) {
-        historySwipeWindowMutationQueue.cancel(in: windowId)
+        historySwipeWindowMutationFlushOwner.cancelPendingMutations(in: windowId)
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
