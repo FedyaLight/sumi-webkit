@@ -52,9 +52,7 @@ extension ExtensionManager {
             throw ExtensionError.installationFailed("Extension was not found in persistence")
         }
 
-        entity.isEnabled = true
-        entity.lastUpdateDate = Date()
-        try context.save()
+        try installationMetadataStore.setEnabled(true, for: entity)
         let sourceKind =
             WebExtensionSourceKind(rawValue: entity.sourceKindRawValue) ?? .directory
         let extensionRoot = try extensionResourcesRoot(
@@ -105,9 +103,7 @@ extension ExtensionManager {
         tearDownExtensionRuntimeState(for: extensionId, removeUIState: true)
 
         if let entity = try extensionEntity(for: extensionId) {
-            entity.isEnabled = false
-            entity.lastUpdateDate = Date()
-            try context.save()
+            try installationMetadataStore.setEnabled(false, for: entity)
         }
 
         await applyInstalledExtensionsMutationOnNextRunLoop { manager in
@@ -116,32 +112,9 @@ extension ExtensionManager {
             }
 
             let current = manager.installedExtensions[index]
-            let updated = InstalledExtensionRecord(
-                id: current.id,
-                name: current.name,
-                version: current.version,
-                manifestVersion: current.manifestVersion,
-                description: current.description,
-                isEnabled: false,
-                installDate: current.installDate,
-                lastUpdateDate: Date(),
-                packagePath: current.packagePath,
-                iconPath: current.iconPath,
-                sourceKind: current.sourceKind,
-                backgroundModel: current.backgroundModel,
-                incognitoMode: current.incognitoMode,
-                sourcePathFingerprint: current.sourcePathFingerprint,
-                manifestRootFingerprint: current.manifestRootFingerprint,
-                sourceBundlePath: current.sourceBundlePath,
-                optionsPagePath: current.optionsPagePath,
-                defaultPopupPath: current.defaultPopupPath,
-                hasBackground: current.hasBackground,
-                hasAction: current.hasAction,
-                hasOptionsPage: current.hasOptionsPage,
-                hasContentScripts: current.hasContentScripts,
-                hasExtensionPages: current.hasExtensionPages,
-                activationSummary: current.activationSummary,
-                manifest: current.manifest
+            let updated = manager.installationMetadataStore.record(
+                current,
+                withEnabledState: false
             )
             manager.installedExtensions[index] = updated
             manager.sortInstalledExtensions()

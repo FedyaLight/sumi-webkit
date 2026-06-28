@@ -26,9 +26,9 @@ final class ExtensionManager: NSObject, ObservableObject {
     static let controllerIdentifierKey =
         "\(SumiAppIdentity.bundleIdentifier).WKWebExtensionController.Identifier"
     nonisolated static let extensionPermissionDecisionsStorageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.permissionDecisions.v1"
+        SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
     nonisolated static let extensionSiteAccessStorageKey =
-        "\(SumiAppIdentity.bundleIdentifier).extensions.siteAccess.v1"
+        SafariExtensionSiteAccessPolicyStore.siteAccessStorageKey
     #if DEBUG
         nonisolated static let testControllerIdentifiersDefaultsKey =
             "\(SumiAppIdentity.bundleIdentifier).tests.WKWebExtensionController.Identifiers"
@@ -133,6 +133,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     let context: ModelContext
     let browserConfiguration: BrowserConfiguration
     let installationMetadataStore: ExtensionInstallationMetadataStore
+    let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
     let extensionPreferences: UserDefaults
     let requestedTabLifecycleOwner = ExtensionRequestedTabLifecycleOwner()
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
@@ -245,6 +246,9 @@ final class ExtensionManager: NSObject, ObservableObject {
         self.extensionPreferences = extensionPreferences
         self.installationMetadataStore = ExtensionInstallationMetadataStore(
             context: context
+        )
+        self.siteAccessPolicyStore = SafariExtensionSiteAccessPolicyStore(
+            preferences: extensionPreferences
         )
         self.profileRuntimeOwner = ExtensionProfileRuntimeOwner(
             initialProfileId: initialProfile?.id

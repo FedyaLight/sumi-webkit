@@ -346,6 +346,9 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         let controllerDelegateSource = try source(named: extensionManagerPaths[7])
         let storeSource = try source(named: extensionManagerPaths[17])
         let capabilityOwnerSource = try source(named: extensionManagerPaths[18])
+        let siteAccessPolicyStoreSource = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicyStore.swift"
+        )
 
         XCTAssertTrue(profilesSource.contains("if forceReload {"))
         XCTAssertFalse(
@@ -370,7 +373,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
         )
         XCTAssertTrue(
             installationSource.contains("applyConfiguredSiteAccessPolicy")
-                && storeSource.contains("extensionSiteAccessStorageKey")
+                && siteAccessPolicyStoreSource.contains("siteAccessStorageKey")
                 && capabilityOwnerSource.contains("webExtension.optionalPermissionMatchPatterns"),
             "Production context load should restore profile-scoped site access policy, including optional host patterns only when Sumi settings allow them"
         )
@@ -416,6 +419,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionPermissionLifecycleDiagnostics.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicy.swift",
+            "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionSiteAccessPolicyStore.swift",
             "Sumi/Managers/ExtensionManager/SafariExtension/SafariExtensionInstallCapabilityOwner.swift",
         ].map(source(named:)).joined(separator: "\n")
 

@@ -205,6 +205,50 @@ final class ExtensionInstallationMetadataStore {
         entity.manifestSnapshotJSON = record.encodedManifestSnapshot
     }
 
+    func setEnabled(
+        _ isEnabled: Bool,
+        for entity: ExtensionEntity,
+        lastUpdateDate: Date = Date()
+    ) throws {
+        entity.isEnabled = isEnabled
+        entity.lastUpdateDate = lastUpdateDate
+        try context.save()
+    }
+
+    func record(
+        _ record: InstalledExtension,
+        withEnabledState isEnabled: Bool,
+        lastUpdateDate: Date = Date()
+    ) -> InstalledExtension {
+        InstalledExtensionRecord(
+            id: record.id,
+            name: record.name,
+            version: record.version,
+            manifestVersion: record.manifestVersion,
+            description: record.description,
+            isEnabled: isEnabled,
+            installDate: record.installDate,
+            lastUpdateDate: lastUpdateDate,
+            packagePath: record.packagePath,
+            iconPath: record.iconPath,
+            sourceKind: record.sourceKind,
+            backgroundModel: record.backgroundModel,
+            incognitoMode: record.incognitoMode,
+            sourcePathFingerprint: record.sourcePathFingerprint,
+            manifestRootFingerprint: record.manifestRootFingerprint,
+            sourceBundlePath: record.sourceBundlePath,
+            optionsPagePath: record.optionsPagePath,
+            defaultPopupPath: record.defaultPopupPath,
+            hasBackground: record.hasBackground,
+            hasAction: record.hasAction,
+            hasOptionsPage: record.hasOptionsPage,
+            hasContentScripts: record.hasContentScripts,
+            hasExtensionPages: record.hasExtensionPages,
+            activationSummary: record.activationSummary,
+            manifest: record.manifest
+        )
+    }
+
     func refreshedRecord(
         for entity: ExtensionEntity,
         manifest: [String: Any]
