@@ -1369,18 +1369,32 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
             encoding: .utf8
         )
+        let cleanupScopeOwnerSource = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "Sumi/Managers/WebViewCoordinator/WebViewCleanupScopeOwner.swift"
+            ),
+            encoding: .utf8
+        )
 
-        let callSites = [
+        let delegatedCallSites = [
             (
                 "func cleanupWindow(_ windowId: UUID, tabManager: TabManager)",
                 "func cleanupAllWebViews(tabManager: TabManager)",
-                ["enqueueDeferredProtectedCommand(", "continue"]
+                ["cleanupScopeOwner.cleanupWindow("]
             ),
             (
                 "func cleanupAllWebViews(tabManager: TabManager)",
                 "// MARK: - History Swipe Protection",
-                ["enqueueDeferredProtectedCommand(", "continue"]
+                ["cleanupScopeOwner.cleanupAllWebViews("]
             ),
+        ]
+
+        for (start, end, delegationTokens) in delegatedCallSites {
+            let callSite = try sourceSlice(source, from: start, to: end)
+            try assertTokenOrder(callSite, delegationTokens)
+        }
+
+        let inlineCallSites = [
             (
                 "func removeAllWebViews(\n        for tab: Tab,",
                 "@discardableResult\n    func suspendWebViews",
@@ -1393,7 +1407,7 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
             ),
         ]
 
-        for (start, end, protectedDeferralTokens) in callSites {
+        for (start, end, protectedDeferralTokens) in inlineCallSites {
             let callSite = try sourceSlice(source, from: start, to: end)
             try assertTokenOrder(
                 callSite,
@@ -1401,6 +1415,25 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
                     + ["cleanupUnprotectedTrackedWebView(", "refreshPrimaryTrackedWebView"]
             )
         }
+
+        let cleanupScopeSource = try sourceSlice(
+            cleanupScopeOwnerSource,
+            from: "private func cleanup(",
+            to: "\n    }\n}"
+        )
+        try assertTokenOrder(
+            cleanupScopeSource,
+            [
+                "runtime.isWebViewProtectedFromCompositorMutation(webView)",
+                "runtime.enqueueDeferredProtectedCommand(",
+                "continue",
+                "runtime.cleanupUnprotectedTrackedWebView(",
+                "runtime.refreshPrimaryTrackedWebView("
+            ]
+        )
+        XCTAssertFalse(cleanupScopeSource.contains("WebViewMediaProtectionOwner"))
+        XCTAssertFalse(cleanupScopeSource.contains("WindowWebViewRegistry"))
+        XCTAssertFalse(cleanupScopeSource.contains("WebViewTrackedCleanupExecutionOwner"))
 
         let deferredWrapper = try sourceSlice(
             source,

@@ -45,6 +45,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private let trackedCleanupExecutionOwner = WebViewTrackedCleanupExecutionOwner()
 
     @ObservationIgnored
+    private let cleanupScopeOwner = WebViewCleanupScopeOwner()
+
+    @ObservationIgnored
     weak var browserManager: BrowserManager?
 
     @ObservationIgnored
@@ -247,74 +250,20 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
 
         visibleWebViewRuntimeOwner.cancelScheduledPreparation(for: windowId)
-        let webViewsToCleanup = webViewRegistry.trackedWebViews(in: windowId)
-
-        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-            "Cleaning up \(webViewsToCleanup.count) WebViews for window \(windowId.uuidString)."
-        }
-
-        for (owner, webView) in webViewsToCleanup {
-            if isWebViewProtectedFromCompositorMutation(webView) {
-                _ = enqueueDeferredProtectedCommand(
-                    .cleanupWindow(windowID: windowId),
-                    for: webView,
-                    reason: "cleanupWindow"
-                )
-                continue
-            }
-
-            let tab = tabManager.tab(for: owner.tabID)
-            cleanupUnprotectedTrackedWebView(
-                webView,
-                owner: owner,
-                tab: tab,
-                browserManager: tabManager.browserManager
-            )
-            if let tab {
-                refreshPrimaryTrackedWebView(for: tab, browserManager: tabManager.browserManager)
-            }
-
-            RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-                "Cleaned up WebView for tab=\(owner.tabID.uuidString.prefix(8)) in window=\(windowId.uuidString.prefix(8))."
-            }
-        }
-
+        cleanupScopeOwner.cleanupWindow(
+            windowId,
+            entries: webViewRegistry.trackedWebViews(in: windowId),
+            runtime: cleanupScopeRuntime(tabManager: tabManager)
+        )
         removeCompositorContainerView(for: windowId)
     }
 
     func cleanupAllWebViews(tabManager: TabManager) {
-        let totalWebViews = webViewRegistry.totalTrackedWebViewCount
-        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-            "Starting full WebView cleanup for \(totalWebViews) tracked views."
-        }
-
-        let trackedEntries = webViewRegistry.trackedWebViews()
-
-        for (owner, webView) in trackedEntries {
-            if isWebViewProtectedFromCompositorMutation(webView) {
-                _ = enqueueDeferredProtectedCommand(
-                    .cleanupAllWebViews,
-                    for: webView,
-                    reason: "cleanupAllWebViews"
-                )
-                continue
-            }
-
-            let tab = tabManager.tab(for: owner.tabID)
-            cleanupUnprotectedTrackedWebView(
-                webView,
-                owner: owner,
-                tab: tab,
-                browserManager: tabManager.browserManager
-            )
-            if let tab {
-                refreshPrimaryTrackedWebView(for: tab, browserManager: tabManager.browserManager)
-            }
-
-            RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-                "Cleaned up WebView for tab=\(owner.tabID.uuidString.prefix(8)) in window=\(owner.windowID.uuidString.prefix(8))."
-            }
-        }
+        cleanupScopeOwner.cleanupAllWebViews(
+            entries: webViewRegistry.trackedWebViews(),
+            totalWebViewCount: webViewRegistry.totalTrackedWebViewCount,
+            runtime: cleanupScopeRuntime(tabManager: tabManager)
+        )
 
         if webViewRegistry.isEmpty {
             webViewRegistry.removeAll()
@@ -768,6 +717,32 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         for webViewID in webViewIDs {
             destructiveCleanupPreparationOwner.finishNavigationSuppression(webViewID: webViewID)
         }
+    }
+
+    private func cleanupScopeRuntime(tabManager: TabManager) -> WebViewCleanupScopeOwner.Runtime {
+        WebViewCleanupScopeOwner.Runtime(
+            browserManager: tabManager.browserManager,
+            tabForID: { tabID in
+                tabManager.tab(for: tabID)
+            },
+            isWebViewProtectedFromCompositorMutation: { [self] webView in
+                isWebViewProtectedFromCompositorMutation(webView)
+            },
+            enqueueDeferredProtectedCommand: { [self] command, webView, reason in
+                enqueueDeferredProtectedCommand(command, for: webView, reason: reason)
+            },
+            cleanupUnprotectedTrackedWebView: { [self] webView, owner, tab, browserManager in
+                cleanupUnprotectedTrackedWebView(
+                    webView,
+                    owner: owner,
+                    tab: tab,
+                    browserManager: browserManager
+                )
+            },
+            refreshPrimaryTrackedWebView: { [self] tab, browserManager in
+                refreshPrimaryTrackedWebView(for: tab, browserManager: browserManager)
+            }
+        )
     }
 
     @discardableResult
