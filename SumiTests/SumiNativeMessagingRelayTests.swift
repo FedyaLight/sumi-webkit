@@ -232,6 +232,76 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         XCTAssertEqual(replyCount, 1)
     }
 
+    func testOneShotAdapterDuplicateReplyStillCompletesRelayReplyOnce() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.example.host",
+            appexBundleID: "com.example.host.extension"
+        )
+        let installed = try makeInstalledExtension(id: "ext-example", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.example.host"] = URL(fileURLWithPath: "/Applications/Example.app")
+
+        final class DuplicateReplyAdapter: SumiNativeMessagingProtocolAdapter {
+            let protocolIdentifier = "test.duplicate"
+
+            func supports(hostBundleIdentifier: String) -> Bool {
+                hostBundleIdentifier == "com.example.host"
+            }
+
+            func relayOneShotMessage(
+                request: SumiNativeMessagingOneShotRequest,
+                launcher: SumiHostApplicationLaunching,
+                replyHandler: @escaping (Any?, (any Error)?) -> Void
+            ) {
+                _ = request
+                _ = launcher
+                replyHandler(["first": true], nil)
+                replyHandler(["second": true], nil)
+            }
+
+            func connectPort(
+                session: SumiNativeMessagingPortSession,
+                launcher: SumiHostApplicationLaunching,
+                completionHandler: @escaping ((any Error)?) -> Void
+            ) {
+                _ = session
+                _ = launcher
+                completionHandler(nil)
+            }
+
+            func relayPortMessage(
+                session: SumiNativeMessagingPortSession,
+                message: Any
+            ) -> Bool {
+                _ = session
+                _ = message
+                return true
+            }
+        }
+
+        let relay = makeRelay(launcher: launcher, adapters: [DuplicateReplyAdapter()])
+        let expectation = expectation(description: "reply")
+        expectation.assertForOverFulfill = true
+        var replyCount = 0
+        var replyValue: Any?
+
+        relay.handleSendMessage(
+            applicationIdentifier: "com.example.host",
+            message: ["type": "ping"],
+            extensionId: installed.id,
+            installedExtensions: [installed]
+        ) { value, _ in
+            replyCount += 1
+            replyValue = value
+            expectation.fulfill()
+        }
+        await fulfillment(of: [expectation], timeout: 5)
+        try await Task.sleep(for: .milliseconds(50))
+
+        XCTAssertEqual(replyCount, 1)
+        XCTAssertEqual(replyValue as? [String: Bool], ["first": true])
+    }
+
     // 4. Timeout path
     func testOneShotTimeout() async throws {
         let appexPath = try makeFixtureApp(

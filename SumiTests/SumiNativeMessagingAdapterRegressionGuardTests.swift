@@ -11,6 +11,7 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingProtocolAdapter.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppResolver.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift",
+        "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingOneShotRelayFlow.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingConnection.swift",
         "Sumi/Managers/ExtensionManager/SafariExtension/CompanionApplicationMessageRouter.swift",
@@ -139,11 +140,30 @@ final class SumiNativeMessagingAdapterRegressionGuardTests: XCTestCase {
         let relaySource = try source(
             named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
         )
+        let oneShotFlowSource = try source(
+            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingOneShotRelayFlow.swift"
+        )
         XCTAssertTrue(relaySource.contains("SumiNativeMessagingRelayLoopGuard"))
         XCTAssertTrue(relaySource.contains("recordSuppressedRetry"))
         XCTAssertTrue(relaySource.contains("launchSuppressed"))
         XCTAssertTrue(relaySource.contains("SumiNativeMessagingAdapterRegistry"))
         XCTAssertTrue(relaySource.contains("CompanionApplicationMessageRouter"))
+        XCTAssertTrue(relaySource.contains("SumiNativeMessagingOneShotRelayFlow"))
+        XCTAssertTrue(oneShotFlowSource.contains("trackPendingOneShot"))
+        XCTAssertTrue(oneShotFlowSource.contains("untrackPendingOneShot"))
+        XCTAssertTrue(oneShotFlowSource.contains("recordCompanionAppProtocolUnknown"))
+        XCTAssertTrue(oneShotFlowSource.contains("recordSupportedAdapterLaunchAttempt"))
+        for forbidden in [
+            "routeResolver",
+            "SumiCompanionAppResolver.evaluate",
+            "SumiNativeMessagingRelayPolicy",
+            "evaluatePolicy(",
+        ] {
+            XCTAssertFalse(
+                oneShotFlowSource.contains(forbidden),
+                "One-shot flow owner must not decide route or policy via \(forbidden)"
+            )
+        }
     }
 
     func testApplicationIdCompanionRouterDoesNotUseStandardNativeHostBackend() throws {

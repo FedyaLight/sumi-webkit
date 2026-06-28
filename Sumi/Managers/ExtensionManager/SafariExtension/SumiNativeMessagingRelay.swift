@@ -48,6 +48,7 @@ final class SumiNativeMessagingRelay {
     private let rawLogDiagnostic: @MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void
     private let sessionStore: SumiNativeMessagingRelaySessionStore
     private let routeResolver: SumiNativeMessagingRelayRouteResolver
+    private let oneShotFlow: SumiNativeMessagingOneShotRelayFlow
 
     init(
         importStore: SafariExtensionImportStore = .shared,
@@ -71,7 +72,13 @@ final class SumiNativeMessagingRelay {
         self.extensionsModuleEnabled = extensionsModuleEnabled
         self.fallbackIsPrivateBrowsing = isPrivateBrowsing
         self.profileRuntimeLoaded = profileRuntimeLoaded
-        self.sessionStore = SumiNativeMessagingRelaySessionStore(adapterRegistry: adapterRegistry)
+        let sessionStore = SumiNativeMessagingRelaySessionStore(adapterRegistry: adapterRegistry)
+        self.sessionStore = sessionStore
+        self.oneShotFlow = SumiNativeMessagingOneShotRelayFlow(
+            sessionStore: sessionStore,
+            loopGuard: loopGuard,
+            profileRuntimeLoaded: profileRuntimeLoaded
+        )
         self.routeResolver = SumiNativeMessagingRelayRouteResolver(
             importStore: importStore,
             launcher: launcher,
@@ -448,54 +455,20 @@ final class SumiNativeMessagingRelay {
             applicationIdentifier: applicationIdentifier,
             hostBundleIdentifier: hostBundleIdentifier
         )
-        let once = OnceReplyHandler(replyHandler)
-        final class PendingOneShotCoordinatorRef {
-            var coordinator: SumiNativeMessagingOnceReplyCoordinator?
-        }
-        let pendingCoordinatorRef = PendingOneShotCoordinatorRef()
-        SumiNativeMessagingConnection.relayOneShot(
+        oneShotFlow.relay(
             applicationIdentifier: applicationIdentifier,
             message: message,
             extensionId: extensionId,
+            profileId: profileId,
             evaluation: evaluation,
             adapter: adapter,
             launcher: launcher,
             launchPolicy: launchPolicy,
             launchSessionKey: launchKey,
-            launchSuppressed: loopEvaluation.launchSuppressed,
-            retryCountBucket: loopEvaluation.retryCountBucket,
-            extensionContextActive: profileRuntimeLoaded(),
+            loopKey: loopKey,
+            loopEvaluation: loopEvaluation,
             logDiagnostic: makeConnectionLogger(profileId: profileId),
-            replyHandler: { [self] value, error in
-                if let coordinator = pendingCoordinatorRef.coordinator {
-                    self.sessionStore.untrackPendingOneShot(coordinator)
-                }
-                if let error {
-                    let nsError = error as NSError
-                    if nsError.domain == Self.errorDomain,
-                       nsError.code == ErrorCode.companionAppProtocolUnknown.rawValue
-                    {
-                        self.loopGuard.recordCompanionAppProtocolUnknown(
-                            key: loopKey,
-                            launchAttempted: true
-                        )
-                    }
-                } else {
-                    self.loopGuard.recordSupportedAdapterLaunchAttempt(key: loopKey)
-                    SafariExtensionAutofillFillDiagnostics.noteNativeMessagingRelaySucceeded(
-                        extensionId: extensionId
-                    )
-                }
-                once.call(value, error)
-            },
-            registerCoordinator: { [self] coordinator in
-                pendingCoordinatorRef.coordinator = coordinator
-                self.sessionStore.trackPendingOneShot(
-                    coordinator,
-                    extensionId: extensionId,
-                    profileId: profileId
-                )
-            }
+            replyHandler: replyHandler
         )
     }
 
@@ -1294,22 +1267,5 @@ final class SumiNativeMessagingRelay {
              .companionApplicationSecureStateMissing:
             return .companionAppProtocolUnknown
         }
-    }
-}
-
-@MainActor
-private final class OnceReplyHandler {
-    private var handler: ((Any?, (any Error)?) -> Void)?
-    private var fulfilled = false
-
-    init(_ handler: @escaping (Any?, (any Error)?) -> Void) {
-        self.handler = handler
-    }
-
-    func call(_ value: Any?, _ error: (any Error)?) {
-        guard fulfilled == false else { return }
-        fulfilled = true
-        handler?(value, error)
-        handler = nil
     }
 }
