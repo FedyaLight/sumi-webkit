@@ -62,6 +62,10 @@ class TabManager: ObservableObject {
     var transientExtensionTabsByID: [UUID: Tab] = [:]
     var auxiliaryMiniWindowTabsByID: [UUID: Tab] = [:]
     private let structuralLookupOwner = TabStructuralLookupOwner()
+    private lazy var tabCollectionMembershipOwner = TabCollectionMembershipOwner(
+        tabManager: self,
+        structuralLookupOwner: structuralLookupOwner
+    )
     /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for persistence completion—`scheduleStructuralPersistence()` does not send this.
     let structuralChanges = PassthroughSubject<Void, Never>()
     private lazy var structuralPublishOwner = TabStructuralPublishOwner(structuralChanges: structuralChanges)
@@ -559,54 +563,25 @@ class TabManager: ObservableObject {
     }
 
     func attach(_ tab: Tab) {
-        tab.browserManager = browserManager
-        tab.sumiSettings = sumiSettings
-        structuralLookupOwner.attach(tab)
+        tabCollectionMembershipOwner.attach(tab)
     }
 
     func detach(_ tab: Tab) {
-        structuralLookupOwner.detach(tab)
+        tabCollectionMembershipOwner.detach(tab)
     }
 
     // Public accessor for managers that need to iterate tabs (e.g., privacy, rules updates)
     func allTabs() -> [Tab] {
-        structuralLookupOwner.rebuildIfEmpty(with: structuralLookupSnapshot)
-
-        let normals = regularTabCollectionOwner.allTabs(in: spaces)
-        return transientShortcutTabsByWindow.values.flatMap(\.values)
-            + Array(transientExtensionTabsByID.values)
-            + normals
+        tabCollectionMembershipOwner.allTabs()
     }
 
     /// Profile-filtered union of pinned, space-pinned and regular tabs.
     func allTabsForCurrentProfile() -> [Tab] {
-        guard let pid = runtimeContext?.currentProfileId else {
-            return allTabs()
-        }
-        let spaceIds = Set(spaces.filter { $0.profileId == pid }.map { $0.id })
-        let pinned = activeEssentialTabs(for: pid)
-        let spacePinned = transientShortcutTabsByWindow.values
-            .flatMap(\.values)
-            .filter { tab in
-                guard tab.shortcutPinRole == .spacePinned, let sid = tab.spaceId else { return false }
-                return spaceIds.contains(sid)
-            }
-        let regular = regularTabCollectionOwner
-            .allTabs(in: spaces.filter { spaceIds.contains($0.id) })
-        return pinned + spacePinned + regular
+        tabCollectionMembershipOwner.allTabsForCurrentProfile()
     }
 
     private func contains(_ tab: Tab) -> Bool {
-        if activeShortcutTabs().contains(where: { $0.id == tab.id }) {
-            return true
-        }
-        if allPinnedTabsAllProfiles.contains(where: { $0.id == tab.id }) {
-            return true
-        }
-        if regularTabCollectionOwner.contains(tab) {
-            return true
-        }
-        return false
+        tabCollectionMembershipOwner.contains(tab)
     }
 
     // MARK: - Container Membership Helpers
@@ -819,7 +794,7 @@ class TabManager: ObservableObject {
     }
 
     func isTransientExtensionTab(_ tab: Tab) -> Bool {
-        transientExtensionTabsByID[tab.id] != nil
+        tabCollectionMembershipOwner.isTransientExtensionTab(tab)
     }
 
     @discardableResult
@@ -851,8 +826,7 @@ class TabManager: ObservableObject {
         tab.profileId = targetSpace.profileId
         tab.webExtensionContextOverride = webExtensionContextOverride
         attach(tab)
-        transientExtensionTabsByID[tab.id] = tab
-        structuralLookupOwner.insertTransientExtensionTab(tab)
+        tabCollectionMembershipOwner.registerTransientExtensionTab(tab)
         return tab
     }
 
@@ -882,13 +856,12 @@ class TabManager: ObservableObject {
         tab.profileId = resolvedProfileId
         tab.webExtensionContextOverride = webExtensionContextOverride
         attach(tab)
-        auxiliaryMiniWindowTabsByID[tab.id] = tab
+        tabCollectionMembershipOwner.registerAuxiliaryMiniWindowTab(tab)
         return tab
     }
 
     func removeAuxiliaryMiniWindowTab(_ tab: Tab) {
-        auxiliaryMiniWindowTabsByID.removeValue(forKey: tab.id)
-        structuralLookupOwner.remove(tab.id)
+        tabCollectionMembershipOwner.removeAuxiliaryMiniWindowTab(tab)
         runtimeContext?.unloadTab(tab)
         runtimeContext?.removeAllWebViews(
             for: tab,
@@ -902,7 +875,7 @@ class TabManager: ObservableObject {
     }
 
     func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool {
-        auxiliaryMiniWindowTabsByID[tab.id] != nil
+        tabCollectionMembershipOwner.isAuxiliaryMiniWindowTab(tab)
     }
 
     @discardableResult
@@ -911,10 +884,7 @@ class TabManager: ObservableObject {
         in space: Space? = nil,
         activate: Bool = false
     ) -> Bool {
-        guard transientExtensionTabsByID.removeValue(forKey: tab.id) != nil else {
-            return false
-        }
-        structuralLookupOwner.stopTrackingTransientTab(tab.id)
+        guard tabCollectionMembershipOwner.promoteTransientExtensionTab(tab) else { return false }
 
         let targetSpace = space
             ?? tab.spaceId.flatMap { spaceId in
@@ -955,15 +925,14 @@ class TabManager: ObservableObject {
             var removedSpaceId: UUID?
             var removedIndexInCurrentSpace: Int?
 
-            if let transientExtensionTab = transientExtensionTabsByID.removeValue(forKey: id) {
-                structuralLookupOwner.removeTransientExtensionTab(id)
+            if let transientExtensionTab = tabCollectionMembershipOwner.removeTransientExtensionTab(id: id) {
                 cleanupRemovedTransientExtensionTab(transientExtensionTab)
                 return
             }
 
-            if auxiliaryMiniWindowTabsByID[id] != nil {
+            if let auxiliaryTab = tabCollectionMembershipOwner.auxiliaryMiniWindowTab(for: id) {
                 runtimeContext?.closeAuxiliaryMiniWindow(
-                    for: tab(for: id) ?? auxiliaryMiniWindowTabsByID[id]!,
+                    for: tab(for: id) ?? auxiliaryTab,
                     reason: .extensionRequestedClose
                 )
                 return
