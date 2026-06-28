@@ -399,9 +399,9 @@ enum SafariExtensionRaindropTabAdapterProbe {
     static func evaluate(
         bridgeSource: String? = nil
     ) -> Result {
-        let source = bridgeSource ?? loadExtensionBridgeSource()
+        let source = bridgeSource ?? loadExtensionBridgeAdapterSource()
         guard let source else {
-            return Result(passed: false, detail: "ExtensionBridge.swift source unavailable")
+            return Result(passed: false, detail: "Extension bridge adapter source unavailable")
         }
 
         let missing = requiredTabAdapterSymbols.filter { source.contains($0) == false }
@@ -418,12 +418,18 @@ enum SafariExtensionRaindropTabAdapterProbe {
         )
     }
 
-    private static func loadExtensionBridgeSource() -> String? {
-        let path = URL(fileURLWithPath: #filePath)
+    private static func loadExtensionBridgeAdapterSource() -> String? {
+        let directory = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("ExtensionBridge.swift")
-        return try? String(contentsOf: path, encoding: .utf8)
+        let sources = [
+            "ExtensionBridge.swift",
+            "ExtensionTabAdapter.swift",
+        ].compactMap {
+            try? String(contentsOf: directory.appendingPathComponent($0), encoding: .utf8)
+        }
+        guard sources.isEmpty == false else { return nil }
+        return sources.joined(separator: "\n")
     }
 }
 

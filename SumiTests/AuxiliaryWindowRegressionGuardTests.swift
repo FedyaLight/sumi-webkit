@@ -135,6 +135,9 @@ final class AuxiliaryWindowRegressionGuardTests: XCTestCase {
         let bridgeSource = try source(
             "Sumi/Managers/ExtensionManager/ExtensionBridge.swift"
         )
+        let tabAdapterSource = try source(
+            "Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift"
+        )
 
         for source in [managerSource, resolverSource] {
             XCTAssertFalse(source.contains("parentWindow?.setFrame"))
@@ -144,7 +147,7 @@ final class AuxiliaryWindowRegressionGuardTests: XCTestCase {
         }
 
         XCTAssertTrue(
-            bridgeSource.contains("func window(for extensionContext:"),
+            tabAdapterSource.contains("func window(for extensionContext:"),
             "Extension tab adapters must route auxiliary tabs to mini-window adapters"
         )
         XCTAssertTrue(
@@ -241,6 +244,7 @@ final class AuxiliaryWindowRegressionGuardTests: XCTestCase {
             "Sumi/Managers/BrowserManager/BrowserManager+DialogsUtilities.swift",
             "Sumi/Managers/AuxiliaryWindowManager/AuxiliaryWindowManager.swift",
             "Sumi/Managers/ExtensionManager/ExtensionBridge.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionTabAdapter.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift",
         ]

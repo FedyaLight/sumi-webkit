@@ -426,12 +426,12 @@ enum SafariExtensionTabFrameMappingProbe {
     ]
 
     static func evaluate(bridgeSource: String? = nil) -> Result {
-        let source = bridgeSource ?? loadBridgeSource()
+        let source = bridgeSource ?? loadBridgeAdapterSource()
         guard let source else {
             return Result(
                 passed: false,
                 status: .error,
-                detail: "ExtensionBridge.swift source unavailable"
+                detail: "Extension bridge adapter source unavailable"
             )
         }
 
@@ -451,12 +451,18 @@ enum SafariExtensionTabFrameMappingProbe {
         )
     }
 
-    private static func loadBridgeSource() -> String? {
-        let path = URL(fileURLWithPath: #filePath)
+    private static func loadBridgeAdapterSource() -> String? {
+        let directory = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("ExtensionBridge.swift")
-        return try? String(contentsOf: path, encoding: .utf8)
+        let sources = [
+            "ExtensionBridge.swift",
+            "ExtensionTabAdapter.swift",
+        ].compactMap {
+            try? String(contentsOf: directory.appendingPathComponent($0), encoding: .utf8)
+        }
+        guard sources.isEmpty == false else { return nil }
+        return sources.joined(separator: "\n")
     }
 }
 
