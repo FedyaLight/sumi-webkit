@@ -2576,17 +2576,17 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
     }
 
     func testRegisterTabWithExtensionRuntimeAttachesControllerBeforeNotifying() throws {
-        let profilesPath = URL(fileURLWithPath: #filePath)
+        let normalTabRuntimeBindingPath = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift")
-        let profilesSource = try XCTUnwrap(
-            String(contentsOf: profilesPath, encoding: .utf8)
+            .appendingPathComponent("Sumi/Managers/ExtensionManager/ExtensionNormalTabRuntimeBindingOwner.swift")
+        let normalTabRuntimeBindingSource = try XCTUnwrap(
+            String(contentsOf: normalTabRuntimeBindingPath, encoding: .utf8)
         )
         let registerRange = try XCTUnwrap(
-            profilesSource.range(of: "func registerTabWithExtensionRuntime")
+            normalTabRuntimeBindingSource.range(of: "func registerTabWithExtensionRuntime")
         )
-        let registerBody = String(profilesSource[registerRange.lowerBound...])
+        let registerBody = String(normalTabRuntimeBindingSource[registerRange.lowerBound...])
         let ensureIndex = try XCTUnwrap(
             registerBody.range(of: "ensureExtensionControllerAttachedForTab")?.lowerBound
         )

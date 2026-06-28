@@ -201,6 +201,18 @@ final class ExtensionManager: NSObject, ObservableObject {
     {
         initialDocumentRuntimePreparationOwnerStorage
     }
+    var normalTabRuntimeBindingOwnerStorage:
+        ExtensionNormalTabRuntimeBindingOwner?
+    var normalTabRuntimeBindingOwner:
+        ExtensionNormalTabRuntimeBindingOwner
+    {
+        if let normalTabRuntimeBindingOwnerStorage {
+            return normalTabRuntimeBindingOwnerStorage
+        }
+        let owner = ExtensionNormalTabRuntimeBindingOwner(manager: self)
+        normalTabRuntimeBindingOwnerStorage = owner
+        return owner
+    }
     var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] = [:]
     var actionAnchors: [String: [WeakAnchor]] = [:]
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()

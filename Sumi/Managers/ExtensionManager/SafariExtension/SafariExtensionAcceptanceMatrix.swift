@@ -363,12 +363,20 @@ enum SafariExtensionContentScriptProbe {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("ExtensionManager+Profiles.swift")
+        let normalTabRuntimeBindingPath = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("ExtensionNormalTabRuntimeBindingOwner.swift")
         let uiPath = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("ExtensionManager+UI.swift")
 
         guard let profiles = try? String(contentsOf: profilesPath, encoding: .utf8),
+              let normalTabRuntimeBinding = try? String(
+                  contentsOf: normalTabRuntimeBindingPath,
+                  encoding: .utf8
+              ),
               let ui = try? String(contentsOf: uiPath, encoding: .utf8)
         else {
             return false
@@ -376,7 +384,7 @@ enum SafariExtensionContentScriptProbe {
 
         return profiles.contains("reconcileOpenTabsAfterExtensionContextLoad")
             && profiles.contains("Attach or rebuild WebViews before `didOpenTab`")
-            && profiles.contains("tabNeedsExtensionContentScriptRebind")
+            && normalTabRuntimeBinding.contains("tabNeedsExtensionContentScriptRebind")
             && ui.contains("finalizeEnabledExtensionRuntime")
     }
 }

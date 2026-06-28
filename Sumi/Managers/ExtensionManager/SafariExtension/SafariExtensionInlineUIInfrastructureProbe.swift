@@ -42,6 +42,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
     static func evaluate(
         tabContainerSource: String? = nil,
         profilesSource: String? = nil,
+        normalTabRuntimeBindingSource: String? = nil,
         navigationResponderSource: String? = nil
     ) -> SafariExtensionInlineUIInfrastructureProbeResult {
         let container = tabContainerSource ?? loadSource(
@@ -49,6 +50,9 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         )
         let profiles = profilesSource ?? loadSource(
             relativeToExtensionManager: "ExtensionManager+Profiles.swift"
+        )
+        let normalTabRuntimeBinding = normalTabRuntimeBindingSource ?? loadSource(
+            relativeToExtensionManager: "ExtensionNormalTabRuntimeBindingOwner.swift"
         )
         let webViewBindingPolicy = loadSource(
             relativeToExtensionManager: "ExtensionRuntimeWebViewBindingPolicy.swift"
@@ -63,6 +67,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
             container?.contains("layer?.masksToBounds = radius > 0") == true
         let lateBindBlocksLoadedPages =
             profiles?.contains("func canLateBindExtensionController(to webView: WKWebView) -> Bool") == true
+            && normalTabRuntimeBinding?.contains("func tabNeedsExtensionContentScriptRebind(_ tab: Tab) -> Bool") == true
             && webViewBindingPolicy?.contains("enum ExtensionRuntimeWebViewBindingPolicy") == true
             && webViewBindingPolicy?.contains("normalizedURL.isEmpty || normalizedURL == \"about:blank\"") == true
         let inlineUINavigationResponderWired =
