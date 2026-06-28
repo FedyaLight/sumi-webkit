@@ -25,10 +25,17 @@ final class BrowserActionOwner {
     }
 
     private let dependencies: Dependencies
+    private let sidebarActionOwner: BrowserSidebarActionOwner
     private let floatingBarNavigationOwner = FloatingBarNavigationOwner()
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
+        self.sidebarActionOwner = BrowserSidebarActionOwner(
+            dependencies: BrowserSidebarActionOwner.Dependencies(
+                tabManager: dependencies.tabManager,
+                liveFolderManager: dependencies.liveFolderManager
+            )
+        )
     }
 
     func toggleSidebar() {
@@ -89,34 +96,23 @@ final class BrowserActionOwner {
     }
 
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
-        let tabManager = dependencies.tabManager()
-        return windowState.currentSpaceId
-            .flatMap { spaceId in tabManager.spaces.first(where: { $0.id == spaceId }) }
-            ?? tabManager.currentSpace
+        sidebarActionOwner.spaceForSidebarActions(in: windowState)
     }
 
     func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        guard let space = spaceForSidebarActions(in: windowState) else { return }
-        _ = dependencies.tabManager().createFolder(for: space.id)
+        sidebarActionOwner.createFolderInCurrentSpace(in: windowState)
     }
 
     func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        guard let space = spaceForSidebarActions(in: windowState),
-              let feedURLString = promptForLiveFolderFeedURL()
-        else {
-            return
-        }
-        dependencies.liveFolderManager().createRSSFolder(in: space.id, feedURLString: feedURLString)
+        sidebarActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
     }
 
     func createGitHubPullRequestsLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        guard let space = spaceForSidebarActions(in: windowState) else { return }
-        dependencies.liveFolderManager().createGitHubFolder(in: space.id, kind: .githubPullRequests)
+        sidebarActionOwner.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
     }
 
     func createGitHubIssuesLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        guard let space = spaceForSidebarActions(in: windowState) else { return }
-        dependencies.liveFolderManager().createGitHubFolder(in: space.id, kind: .githubIssues)
+        sidebarActionOwner.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
     }
 
     func updateFloatingBarDraft(
@@ -356,27 +352,4 @@ final class BrowserActionOwner {
         )
     }
 
-    private func promptForLiveFolderFeedURL() -> String? {
-        let alert = NSAlert()
-        alert.messageText = "New RSS Live Folder"
-        alert.informativeText = "Enter an RSS or Atom feed URL."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Create")
-        alert.addButton(withTitle: "Cancel")
-
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
-        field.placeholderString = "https://example.com/feed.xml"
-        alert.accessoryView = field
-
-        guard alert.runModal() == .alertFirstButtonReturn else {
-            return nil
-        }
-
-        let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: value),
-              ["http", "https"].contains(url.scheme?.lowercased()) else {
-            return nil
-        }
-        return value
-    }
 }
