@@ -54,6 +54,30 @@ final class SidebarSpaceBodySourceGuardTests: XCTestCase {
         }
     }
 
+    func testTabFolderContextMenusAreOwnedByActionOwner() throws {
+        let folderSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift")
+        let ownerSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/TabFolderContextMenuActionOwner.swift")
+
+        XCTAssertTrue(ownerSource.contains("struct TabFolderContextMenuActionOwner"))
+        XCTAssertTrue(ownerSource.contains("func folderShortcutContextMenuEntries"))
+        XCTAssertTrue(ownerSource.contains("func liveFolderItemContextMenuEntries"))
+        XCTAssertTrue(ownerSource.contains("func folderHeaderContextMenuEntries"))
+        XCTAssertTrue(ownerSource.contains("private func liveFolderHeaderContextMenuEntries"))
+        XCTAssertTrue(ownerSource.contains("private func refreshIntervalSubmenu"))
+        XCTAssertTrue(ownerSource.contains("private func presentShortcutLinkEditor"))
+
+        for forbidden in [
+            "private func folderShortcutContextMenuEntries",
+            "private func liveFolderItemContextMenuEntries",
+            "private func folderHeaderContextMenuEntries",
+            "private func liveFolderHeaderContextMenuEntries",
+            "private func refreshIntervalSubmenu",
+            "private func presentShortcutLinkEditor"
+        ] {
+            XCTAssertFalse(folderSource.contains(forbidden), "TabFolderView should not own \(forbidden)")
+        }
+    }
+
     func testSpaceScrollChromeNotificationsKeepSynchronousMainActorBoundary() throws {
         let source = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/SpaceScrollChrome.swift")
         let observationSource = try Self.sourceRange(
