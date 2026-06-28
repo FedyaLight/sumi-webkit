@@ -2631,22 +2631,29 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
     }
 
     func testPerformInstallationUpdatesWebViewsBeforeTabResync() throws {
-        let installationPath = URL(fileURLWithPath: #filePath)
+        let activationOwnerPath = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("Sumi/Managers/ExtensionManager/ExtensionManager+Installation.swift")
-        let installationSource = try XCTUnwrap(
-            String(contentsOf: installationPath, encoding: .utf8)
+            .appendingPathComponent(
+                "Sumi/Managers/ExtensionManager/ExtensionInstallRuntimeActivationOwner.swift"
+            )
+        let activationOwnerSource = try XCTUnwrap(
+            String(contentsOf: activationOwnerPath, encoding: .utf8)
         )
         let blockMarker = "tabOpenNotificationGeneration &+= 1"
-        let blockStart = try XCTUnwrap(installationSource.range(of: blockMarker).map(\.lowerBound))
+        let blockStart = try XCTUnwrap(
+            activationOwnerSource.range(of: blockMarker).map(\.lowerBound)
+        )
         let blockEnd = try XCTUnwrap(
-            installationSource[blockStart...].range(
+            activationOwnerSource[blockStart...].range(
                 of: "registerExistingWindowStateIfAttached()"
             )?.upperBound
         )
-        let installBlock = String(installationSource[blockStart..<blockEnd])
-        XCTAssertTrue(installBlock.contains("ExtensionManager.performInstallation.afterLoad"))
+        let installBlock = String(activationOwnerSource[blockStart..<blockEnd])
+        XCTAssertTrue(activationOwnerSource.contains("ExtensionManager.performInstallation.afterLoad"))
+        XCTAssertTrue(
+            activationOwnerSource.contains("ExtensionManager.enableSafariAppExtension.afterLoad")
+        )
         let webViewIndex = try XCTUnwrap(installBlock.range(of: "updateWebViewsForProfile")?.lowerBound)
         let resyncIndex = try XCTUnwrap(
             installBlock.range(of: "resyncOpenTabsWithExtensionRuntimeAfterGenerationBump")?.lowerBound

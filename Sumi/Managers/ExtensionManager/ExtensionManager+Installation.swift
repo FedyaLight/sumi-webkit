@@ -550,35 +550,14 @@ extension ExtensionManager {
                     )
                 )
 
-                // New contexts must see existing windows even before `loadInstalledExtensions` sets
-                // `extensionsLoaded`, or MV3 onboarding (`tabs.create`) may not run reliably.
-                tabOpenNotificationGeneration &+= 1
-                updateWebViewsForProfile(
-                    installProfileId,
-                    allowWhenExtensionsNotLoaded: true
-                )
-                resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-                    reason: "ExtensionManager.performInstallation.afterLoad",
-                    allowWhenExtensionsNotLoaded: true
-                )
-                registerExistingWindowStateIfAttached()
-
-                // Await background load so `runtime.onInstalled` / `tabs.create` can run in this install cycle
-                // (fire-and-forget was returning before the service worker finished starting).
-                let installedWebExtension = extensionContext.webExtension
-                let installedDisplayName = installedWebExtension.displayName ?? record.id
-                do {
-                    _ = try await ensureBackgroundAvailableIfRequired(
-                        for: installedWebExtension,
-                        context: extensionContext,
-                        reason: .install
+                await ExtensionInstallRuntimeActivationOwner(manager: self).activate(
+                    ExtensionInstallRuntimeActivationOwner.Request(
+                        profileId: installProfileId,
+                        extensionContext: extensionContext,
+                        installedExtensionId: record.id,
+                        operation: .install
                     )
-                } catch {
-                    Self.logger.error(
-                        "Failed to wake background worker after install for \(installedDisplayName, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                    )
-                }
-                markExtensionRuntimeReadyIfProfileContextsLoaded(for: installProfileId)
+                )
             } else {
                 ensureWebExtensionStorageDirectoryExists(for: extensionId)
             }
@@ -755,31 +734,14 @@ extension ExtensionManager {
                     )
                 )
 
-                tabOpenNotificationGeneration &+= 1
-                updateWebViewsForProfile(
-                    installProfileId,
-                    allowWhenExtensionsNotLoaded: true
-                )
-                resyncOpenTabsWithExtensionRuntimeAfterGenerationBump(
-                    reason: "ExtensionManager.enableSafariAppExtension.afterLoad",
-                    allowWhenExtensionsNotLoaded: true
-                )
-                registerExistingWindowStateIfAttached()
-
-                let installedWebExtension = extensionContext.webExtension
-                let installedDisplayName = installedWebExtension.displayName ?? record.id
-                do {
-                    _ = try await ensureBackgroundAvailableIfRequired(
-                        for: installedWebExtension,
-                        context: extensionContext,
-                        reason: .install
+                await ExtensionInstallRuntimeActivationOwner(manager: self).activate(
+                    ExtensionInstallRuntimeActivationOwner.Request(
+                        profileId: installProfileId,
+                        extensionContext: extensionContext,
+                        installedExtensionId: record.id,
+                        operation: .safariEnable
                     )
-                } catch {
-                    Self.logger.error(
-                        "Failed to wake background worker after Safari extension enable for \(installedDisplayName, privacy: .public): \(error.localizedDescription, privacy: .public)"
-                    )
-                }
-                markExtensionRuntimeReadyIfProfileContextsLoaded(for: installProfileId)
+                )
             } else {
                 ensureWebExtensionStorageDirectoryExists(for: extensionId)
             }

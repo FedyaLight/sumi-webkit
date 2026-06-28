@@ -423,6 +423,7 @@ final class SafariExtensionCleanImportSourceGuardTests: XCTestCase {
             "Sumi/Managers/ExtensionManager/ExtensionManager+Store.swift",
             "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
             "Sumi/Managers/ExtensionManager/ExtensionRuntimeContextLoadOwner.swift",
+            "Sumi/Managers/ExtensionManager/ExtensionInstallRuntimeActivationOwner.swift",
             "Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentationOwner.swift",
             "Sumi/Managers/ExtensionManager/ExtensionActionSurfaceStatePresenter.swift",
             "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
