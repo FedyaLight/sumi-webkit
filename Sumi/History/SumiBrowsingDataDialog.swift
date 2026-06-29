@@ -354,7 +354,9 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
             includeAllProfiles: clearsAllProfiles
         )
         for profile in browserManager.profileManager.profiles where !profile.isEphemeral {
-            await profile.refreshDataStoreStats()
+            await profile.refreshDataStoreStats(
+                cleanupService: browserManager.dataServices.websiteDataCleanupService
+            )
         }
 
         isDeleting = false

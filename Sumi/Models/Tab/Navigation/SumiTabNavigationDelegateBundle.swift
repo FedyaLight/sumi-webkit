@@ -72,6 +72,15 @@ final class SumiTabNavigationDelegateBundle {
             .strong(findInPageAdapter)
         )
     }
+
+    func hasInlineUIExtensionResourceResponderInChain() -> Bool {
+        distributedNavigationDelegate.getResponders().contains { responder in
+            guard let adapter = responder as? SumiNavigationResponderAdapter else {
+                return false
+            }
+            return adapter.isAdapting(SafariExtensionInlineUINavigationResponder.self)
+        }
+    }
 }
 
 extension Tab {

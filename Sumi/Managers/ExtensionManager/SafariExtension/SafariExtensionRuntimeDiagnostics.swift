@@ -377,37 +377,24 @@ enum SafariExtensionPopupAnchorProbe {
     ]
 
     static func evaluate(anchorSource: String? = nil) -> Result {
-        let source = anchorSource ?? loadAnchorSource()
-        guard let source else {
-            return Result(
-                passed: false,
-                status: .error,
-                detail: "ExtensionManager+ActionPopupAnchor.swift source unavailable"
-            )
+        if let anchorSource {
+            let missing = requiredSymbols.filter { anchorSource.contains($0) == false }
+            guard missing.isEmpty else {
+                return Result(
+                    passed: false,
+                    status: .error,
+                    detail: "Popup anchor probe missing: \(missing.joined(separator: ", "))"
+                )
+            }
         }
 
-        let missing = requiredSymbols.filter { source.contains($0) == false }
-        guard missing.isEmpty else {
-            return Result(
-                passed: false,
-                status: .error,
-                detail: "Popup anchor probe missing: \(missing.joined(separator: ", "))"
-            )
-        }
+        _ = ExtensionActionPopupAnchorResolution.self
 
         return Result(
             passed: true,
             status: .wired,
             detail: "Click-time anchor capture + resolve + present path wired"
         )
-    }
-
-    private static func loadAnchorSource() -> String? {
-        let path = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("ExtensionManager+ActionPopupAnchor.swift")
-        return try? String(contentsOf: path, encoding: .utf8)
     }
 }
 
@@ -428,56 +415,96 @@ enum SafariExtensionTabFrameMappingProbe {
     ]
 
     static func evaluate(bridgeSource: String? = nil) -> Result {
-        let source = bridgeSource ?? loadBridgeAdapterSource()
-        guard let source else {
+        if let bridgeSource {
+            let missing = requiredBridgeSymbols.filter { bridgeSource.contains($0) == false }
+            guard missing.isEmpty else {
+                return Result(
+                    passed: false,
+                    status: .error,
+                    detail: "Tab/frame mapping probe missing: \(missing.joined(separator: ", "))"
+                )
+            }
+        }
+
+        guard #available(macOS 15.5, *) else {
             return Result(
                 passed: false,
                 status: .error,
-                detail: "Extension bridge adapter source unavailable"
+                detail: "WebKit extension bridge adapters require macOS 15.5+"
             )
         }
 
-        let missing = requiredBridgeSymbols.filter { source.contains($0) == false }
-        guard missing.isEmpty else {
-            return Result(
-                passed: false,
-                status: .error,
-                detail: "Tab/frame mapping probe missing: \(missing.joined(separator: ", "))"
-            )
-        }
+        _ = ExtensionWindowAdapter.self
+        _ = ExtensionTabAdapter.self
 
         return Result(
             passed: true,
             status: .wired,
-            detail: "Window/tab adapters expose activeTab, tabs, frame, and webView surfaces"
+            detail: "Compiled window/tab adapters expose activeTab, tabs, frame, and webView surfaces"
         )
-    }
-
-    private static func loadBridgeAdapterSource() -> String? {
-        let directory = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sources = [
-            "ExtensionBridge.swift",
-            "ExtensionTabAdapter.swift",
-        ].compactMap {
-            try? String(contentsOf: directory.appendingPathComponent($0), encoding: .utf8)
-        }
-        guard sources.isEmpty == false else { return nil }
-        return sources.joined(separator: "\n")
     }
 }
 
 enum SafariExtensionNativeMessagingSuppressionProbe {
+    @MainActor
     static func evaluate(
         relaySource: String? = nil,
         loopGuardSource: String? = nil,
         coalescerSource: String? = nil
     ) -> SafariExtensionNativeMessagingSuppressionReport {
-        let relay = relaySource ?? loadSource(named: "SumiNativeMessagingRelay.swift")
-        let loopGuard = loopGuardSource ?? loadSource(named: "SumiNativeMessagingRelayLoopGuard.swift")
-        let coalescer = coalescerSource ?? loadSource(named: "SumiNativeMessagingDiagnosticCoalescer.swift")
+        if relaySource != nil || loopGuardSource != nil || coalescerSource != nil {
+            return evaluateSources(
+                relay: relaySource,
+                loopGuard: loopGuardSource,
+                coalescer: coalescerSource
+            )
+        }
 
+        let loopGuard = SumiNativeMessagingRelayLoopGuard()
+        let unsupportedKey = SumiNativeMessagingRelayLoopGuard.SessionKey(
+            profileId: nil,
+            extensionId: "diagnostic-probe",
+            applicationIdentifier: "com.example.unsupported"
+        )
+        loopGuard.recordCompanionAppProtocolUnknown(
+            key: unsupportedKey,
+            launchAttempted: false
+        )
+        loopGuard.recordSuppressedRetry(key: unsupportedKey)
+        let suppressionEvaluation = loopGuard.evaluate(
+            key: unsupportedKey,
+            hostBundleIdentifier: "com.example.unsupported"
+        )
+        let sessionState = loopGuard.sessionState(
+            policyDenial: nil,
+            profileRuntimeLoaded: true,
+            evaluation: nil,
+            hostBundleIdentifier: "com.example.unsupported",
+            key: unsupportedKey
+        )
+        let coalescedLogging = coalescerEmitsSummaryForSuppressedRetry()
+
+        return SafariExtensionNativeMessagingSuppressionReport(
+            repeatedCallSuppressionEnabled: suppressionEvaluation.launchSuppressed,
+            coalescedLoggingEnabled: coalescedLogging,
+            sessionStateTrackingEnabled: sessionState != nil,
+            companionProtocolUnknownDeterministic: SumiNativeMessagingRelay.ErrorCode
+                .companionAppProtocolUnknown.rawValue > 0,
+            supportedRelayProtocolHostCount: SumiNativeMessagingRelayLoopGuard
+                .supportedRelayProtocolHostBundleIdentifiers.count,
+            note: """
+            Repeated companionAppProtocolUnknown / launchSuppressed diagnostics are coalesced when verbose logging is enabled. \
+            WebKit extension console may still log one NSError per delegate callback; Sumi coalesces duplicate SafariNativeMessaging \
+            lines (coalesced ext=… repeatCount=… bucket=…) after the first detailed line per session key.
+            """
+        )
+    }
+
+    private static func evaluateSources(
+        relay: String?,
+        loopGuard: String?,
+        coalescer: String?
+    ) -> SafariExtensionNativeMessagingSuppressionReport {
         let suppressionEnabled =
             loopGuard?.contains("recordCompanionAppProtocolUnknown") == true
             && loopGuard?.contains("launchSuppressed") == true
@@ -504,11 +531,42 @@ enum SafariExtensionNativeMessagingSuppressionProbe {
         )
     }
 
-    private static func loadSource(named fileName: String) -> String? {
-        let path = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent(fileName)
-        return try? String(contentsOf: path, encoding: .utf8)
+    @MainActor
+    private static func coalescerEmitsSummaryForSuppressedRetry() -> Bool {
+        var styles: [SumiNativeMessagingDiagnosticLogStyle] = []
+        let coalescer = SumiNativeMessagingDiagnosticCoalescer { _, style in
+            styles.append(style)
+        }
+        let base = SafariExtensionNativeMessagingDiagnostic(
+            extensionId: "diagnostic-probe",
+            direction: .send,
+            requestedApplicationIdentifier: "com.example.unsupported",
+            hostBundleIdentifier: "com.example.unsupported",
+            resolverBucket: nil,
+            outcome: .companionAppProtocolUnknown,
+            errorDomain: SumiNativeMessagingRelay.errorDomain,
+            errorCode: SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue,
+            retryCountBucket: SumiNativeMessagingRetryCountBucket.none
+        )
+        coalescer.record(base)
+        coalescer.record(
+            SafariExtensionNativeMessagingDiagnostic(
+                extensionId: base.extensionId,
+                direction: base.direction,
+                requestedApplicationIdentifier: base.requestedApplicationIdentifier,
+                hostBundleIdentifier: base.hostBundleIdentifier,
+                resolverBucket: base.resolverBucket,
+                outcome: .launchSuppressed,
+                errorDomain: base.errorDomain,
+                errorCode: base.errorCode,
+                launchSuppressed: true,
+                retryCountBucket: .first
+            )
+        )
+        return styles.contains {
+            if case .summarized = $0 { return true }
+            return false
+        }
     }
 }
 

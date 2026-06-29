@@ -95,6 +95,9 @@ struct URLBarHubPopover: View {
         currentTab: Tab?,
         profile: Profile?,
         profileId: UUID?,
+        cleanupService: any SumiWebsiteDataCleanupServicing,
+        siteDataPolicyStore: any BrowserSiteDataPolicyStoring,
+        siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing,
         faviconService: any BrowserFaviconServicing,
         onClose: @escaping () -> Void,
         onContentSizeChange: @escaping (CGSize) -> Void
@@ -107,7 +110,12 @@ struct URLBarHubPopover: View {
         self.onClose = onClose
         self.onContentSizeChange = onContentSizeChange
         self._siteDataDetailsModel = StateObject(
-            wrappedValue: URLBarSiteDataDetailsViewModel(faviconService: faviconService)
+            wrappedValue: URLBarSiteDataDetailsViewModel(
+                cleanupService: cleanupService,
+                policyStore: siteDataPolicyStore,
+                enforcementService: siteDataPolicyEnforcementService,
+                faviconService: faviconService
+            )
         )
     }
 

@@ -1,6 +1,9 @@
 import Foundation
+import OSLog
 
 struct KeyboardShortcutStore {
+    private static let log = Logger.sumi(category: "KeyboardShortcuts")
+
     private struct ShortcutOverride: Codable, Equatable {
         var action: ShortcutAction
         var keyCombination: KeyCombination?
@@ -18,7 +21,13 @@ struct KeyboardShortcutStore {
             return [:]
         }
 
-        guard let overrides = try? JSONDecoder().decode([ShortcutOverride].self, from: data) else {
+        let overrides: [ShortcutOverride]
+        do {
+            overrides = try JSONDecoder().decode([ShortcutOverride].self, from: data)
+        } catch {
+            Self.log.error(
+                "Failed to decode keyboard shortcuts: \(error.localizedDescription, privacy: .public)"
+            )
             reset()
             return nil
         }
@@ -54,7 +63,15 @@ struct KeyboardShortcutStore {
             return
         }
 
-        guard let encoded = try? JSONEncoder().encode(overrides) else { return }
+        let encoded: Data
+        do {
+            encoded = try JSONEncoder().encode(overrides)
+        } catch {
+            Self.log.error(
+                "Failed to encode keyboard shortcuts: \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
         userDefaults.set(encoded, forKey: shortcutsKey)
     }
 

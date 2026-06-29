@@ -148,8 +148,10 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 container: try makeInMemoryStartupContainer()
             ),
             dataServices: BrowserManagerDataServices(
+                websiteDataCleanupService: FakeWebsiteDataCleanupService(),
                 browsingDataCleanupService: browsingDataCleanupService,
                 automaticBrowsingDataCleanupService: automaticCleanupService,
+                siteDataPolicyStore: try makeSiteDataPolicyStore(),
                 siteDataPolicyEnforcementService: siteDataPolicyService,
                 faviconService: faviconService,
                 visitedLinkStore: visitedLinkStore,
@@ -225,8 +227,10 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 container: try makeInMemoryStartupContainer()
             ),
             dataServices: BrowserManagerDataServices(
+                websiteDataCleanupService: FakeWebsiteDataCleanupService(),
                 browsingDataCleanupService: browsingDataCleanupService,
                 automaticBrowsingDataCleanupService: FakeAutomaticBrowsingDataCleanupScheduler(),
+                siteDataPolicyStore: try makeSiteDataPolicyStore(),
                 siteDataPolicyEnforcementService: FakeBrowserSiteDataPolicyService(),
                 faviconService: faviconService,
                 visitedLinkStore: visitedLinkStore,
@@ -324,12 +328,19 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     private func makeBrowsingDataCleanupService() -> SumiBrowsingDataCleanupService {
         SumiBrowsingDataCleanupService(
-            websiteDataCleanupService: SumiWebsiteDataCleanupService.shared,
+            websiteDataCleanupService: FakeWebsiteDataCleanupService(),
             faviconCacheCleaner: FakeBrowserFaviconService(),
             appResidueCleaner: SumiBrowsingDataAppResidueCleaner(),
             basicAuthCredentialStore: FakeBrowsingDataCredentialStore(),
             visitedLinkStore: FakeBrowserVisitedLinkStore()
         )
+    }
+
+    private func makeSiteDataPolicyStore() throws -> SumiSiteDataPolicyStore {
+        let suiteName = "BrowserManagerSiteDataPolicyStoreTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        return SumiSiteDataPolicyStore(userDefaults: defaults)
     }
 
     private func makeInMemoryStartupContainer() throws -> ModelContainer {
@@ -448,6 +459,22 @@ private final class FakeBrowserSiteDataPolicyService: BrowserSiteDataPolicyEnfor
     private(set) var enforcedProfileIds: [UUID?] = []
     private(set) var closedCleanupProfileIds: [UUID] = []
 
+    func setBlockStorage(
+        _ isEnabled: Bool,
+        forHost host: String,
+        profile: Profile?
+    ) async {
+        _ = (isEnabled, host, profile)
+    }
+
+    func setDeleteWhenAllWindowsClosed(
+        _ isEnabled: Bool,
+        forHost host: String,
+        profile: Profile?
+    ) {
+        _ = (isEnabled, host, profile)
+    }
+
     func enforceBlockStorageIfNeeded(for url: URL?, profile: Profile?) {
         enforcedURLs.append(url)
         enforcedProfileIds.append(profile?.id)
@@ -455,6 +482,86 @@ private final class FakeBrowserSiteDataPolicyService: BrowserSiteDataPolicyEnfor
 
     func performAllWindowsClosedCleanup(profiles: [Profile]) async {
         closedCleanupProfileIds = profiles.map(\.id)
+    }
+}
+
+@MainActor
+private final class FakeWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
+    func fetchCookies(in dataStore: WKWebsiteDataStore) async -> [HTTPCookie] {
+        _ = dataStore
+        return []
+    }
+
+    func fetchWebsiteDataRecords(
+        ofTypes dataTypes: Set<String>,
+        in dataStore: WKWebsiteDataStore
+    ) async -> [WKWebsiteDataRecord] {
+        _ = (dataTypes, dataStore)
+        return []
+    }
+
+    func fetchSiteDataEntries(
+        forDomain domain: String,
+        ofTypes dataTypes: Set<String>,
+        in dataStore: WKWebsiteDataStore
+    ) async -> [SumiSiteDataEntry] {
+        _ = (domain, dataTypes, dataStore)
+        return []
+    }
+
+    func removeCookies(
+        _ selection: SumiCookieRemovalSelection,
+        in dataStore: WKWebsiteDataStore
+    ) async {
+        _ = (selection, dataStore)
+    }
+
+    func removeWebsiteData(
+        ofTypes dataTypes: Set<String>,
+        modifiedSince date: Date,
+        in dataStore: WKWebsiteDataStore
+    ) async {
+        _ = (dataTypes, date, dataStore)
+    }
+
+    func removeWebsiteDataForDomain(
+        _ domain: String,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {
+        _ = (domain, includingCookies, dataStore)
+    }
+
+    func removeWebsiteDataForExactHost(
+        _ host: String,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {
+        _ = (host, dataTypes, includingCookies, dataStore)
+    }
+
+    func removeWebsiteDataForDomains(
+        _ domains: Set<String>,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {
+        _ = (domains, dataTypes, includingCookies, dataStore)
+    }
+
+    func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async {
+        _ = dataStore
+    }
+
+    func removePersistentDataStore(forIdentifier identifier: UUID) async -> Bool {
+        _ = identifier
+        return true
+    }
+
+    func prunePersistentDataStores(keeping identifiersToKeep: Set<UUID>) async -> [UUID] {
+        _ = identifiersToKeep
+        return []
     }
 }
 

@@ -49,7 +49,7 @@ struct URLBarSiteDataDetailsView: View {
         .task(id: loadKey) {
             await model.load(url: currentTab?.url, profile: profile)
         }
-        .onReceive(SumiSiteDataPolicyStore.shared.changesPublisher) { _ in
+        .onReceive(model.policyChangesPublisher) { _ in
             Task {
                 await model.load(url: currentTab?.url, profile: profile)
             }

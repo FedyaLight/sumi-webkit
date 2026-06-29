@@ -216,9 +216,29 @@ final class SumiDownloadApplicationsStore {
     }
 
     func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([SumiContentHandlerRecord].self, from: data)
-        else {
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            records = []
+            return
+        } catch {
+            RuntimeDiagnostics.debug(
+                "Failed to read download applications store: \(String(describing: error))",
+                category: "DownloadManager"
+            )
+            records = []
+            return
+        }
+
+        let decoded: [SumiContentHandlerRecord]
+        do {
+            decoded = try JSONDecoder().decode([SumiContentHandlerRecord].self, from: data)
+        } catch {
+            RuntimeDiagnostics.debug(
+                "Failed to decode download applications store: \(String(describing: error))",
+                category: "DownloadManager"
+            )
             records = []
             return
         }

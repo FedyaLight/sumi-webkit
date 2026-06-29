@@ -264,6 +264,7 @@ struct SiteSettingsRepositoryHarness {
     let profile: Profile
     let coordinator: SiteSettingsFakePermissionCoordinator
     let recentStore: SumiPermissionRecentActivityStore
+    let siteActivityStore: SumiPermissionSiteActivityStore
     let blockedPopupStore: SumiBlockedPopupStore
     let externalSchemeStore: SumiExternalSchemeSessionStore
     let indicatorStore: SumiPermissionIndicatorEventStore
@@ -289,6 +290,7 @@ struct SiteSettingsRepositoryHarness {
         )
         self.coordinator = SiteSettingsFakePermissionCoordinator()
         self.recentStore = SumiPermissionRecentActivityStore()
+        self.siteActivityStore = SumiPermissionSiteActivityStore(userDefaults: userDefaults)
         self.blockedPopupStore = SumiBlockedPopupStore()
         self.externalSchemeStore = SumiExternalSchemeSessionStore()
         self.indicatorStore = SumiPermissionIndicatorEventStore()
@@ -318,6 +320,7 @@ struct SiteSettingsRepositoryHarness {
             systemPermissionService: system,
             autoplayStore: autoplayStore,
             recentActivityStore: recentStore,
+            siteActivityStore: siteActivityStore,
             blockedPopupStore: blockedPopupStore,
             externalSchemeSessionStore: externalSchemeStore,
             indicatorEventStore: indicatorStore,

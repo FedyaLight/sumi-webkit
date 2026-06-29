@@ -20,6 +20,15 @@ final class BrowserPrivacyService {
         self.invalidateFaviconSite = faviconInvalidator
     }
 
+    func replacingCleanupService(
+        _ cleanupService: any SumiWebsiteDataCleanupServicing
+    ) -> BrowserPrivacyService {
+        BrowserPrivacyService(
+            cleanupService: cleanupService,
+            faviconInvalidator: invalidateFaviconSite
+        )
+    }
+
     func clearCurrentPageCookies(using context: Context) {
         guard let host = context.currentTab()?.url.host else { return }
         let dataStore = context.currentDataStore()

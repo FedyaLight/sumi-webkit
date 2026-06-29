@@ -23,9 +23,9 @@ final class SumiPermissionSettingsRepository {
     init(
         coordinator: any SumiPermissionCoordinating,
         systemPermissionService: any SumiSystemPermissionService,
-        autoplayStore: SumiAutoplayPolicyStoreAdapter? = nil,
+        autoplayStore: SumiAutoplayPolicyStoreAdapter,
         recentActivityStore: SumiPermissionRecentActivityStore,
-        siteActivityStore: SumiPermissionSiteActivityStore = .shared,
+        siteActivityStore: SumiPermissionSiteActivityStore,
         blockedPopupStore: SumiBlockedPopupStore,
         externalSchemeSessionStore: SumiExternalSchemeSessionStore,
         indicatorEventStore: SumiPermissionIndicatorEventStore,
@@ -36,13 +36,13 @@ final class SumiPermissionSettingsRepository {
     ) {
         self.coordinator = coordinator
         self.systemPermissionService = systemPermissionService
-        self.autoplayStore = autoplayStore ?? .shared
+        self.autoplayStore = autoplayStore
         self.recentActivityStore = recentActivityStore
         self.siteActivityStore = siteActivityStore
         self.blockedPopupStore = blockedPopupStore
         self.externalSchemeSessionStore = externalSchemeSessionStore
         self.indicatorEventStore = indicatorEventStore
-        self.websiteDataCleanupService = websiteDataCleanupService ?? SumiWebsiteDataCleanupService.shared
+        self.websiteDataCleanupService = websiteDataCleanupService
         self.permissionCleanupService = permissionCleanupService
         self.userDefaults = userDefaults
         self.now = now
@@ -58,7 +58,7 @@ final class SumiPermissionSettingsRepository {
             blockedPopupStore: browserManager.blockedPopupStore,
             externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
             indicatorEventStore: browserManager.permissionIndicatorEventStore,
-            websiteDataCleanupService: SumiWebsiteDataCleanupService.shared,
+            websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService,
             permissionCleanupService: browserManager.permissionCleanupService
         )
     }
@@ -387,7 +387,7 @@ final class SumiPermissionSettingsRepository {
             includingCookies: true,
             in: profile.dataStore
         )
-        await profile.refreshDataStoreStats()
+        await profile.refreshDataStoreStats(cleanupService: websiteDataCleanupService)
     }
 
     @discardableResult

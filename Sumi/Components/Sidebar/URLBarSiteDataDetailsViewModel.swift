@@ -11,20 +11,24 @@ final class URLBarSiteDataDetailsViewModel: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private let cleanupService: any SumiWebsiteDataCleanupServicing
-    private let policyStore: SumiSiteDataPolicyStore
-    private let enforcementService: SumiSiteDataPolicyEnforcementService
+    private let policyStore: any BrowserSiteDataPolicyStoring
+    private let enforcementService: any BrowserSiteDataPolicyEnforcing
     private let faviconService: any BrowserFaviconServicing
     private var loadGeneration: UInt64 = 0
 
+    var policyChangesPublisher: AnyPublisher<Void, Never> {
+        policyStore.changesPublisher
+    }
+
     init(
-        cleanupService: (any SumiWebsiteDataCleanupServicing)? = nil,
-        policyStore: SumiSiteDataPolicyStore? = nil,
-        enforcementService: SumiSiteDataPolicyEnforcementService? = nil,
-        faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService
+        cleanupService: any SumiWebsiteDataCleanupServicing,
+        policyStore: any BrowserSiteDataPolicyStoring,
+        enforcementService: any BrowserSiteDataPolicyEnforcing,
+        faviconService: any BrowserFaviconServicing
     ) {
-        self.cleanupService = cleanupService ?? SumiWebsiteDataCleanupService.shared
-        self.policyStore = policyStore ?? .shared
-        self.enforcementService = enforcementService ?? .shared
+        self.cleanupService = cleanupService
+        self.policyStore = policyStore
+        self.enforcementService = enforcementService
         self.faviconService = faviconService
     }
 
@@ -98,7 +102,7 @@ final class URLBarSiteDataDetailsViewModel: ObservableObject {
             in: profile.dataStore
         )
         faviconService.invalidateSite(domain: host, profile: profile)
-        await profile.refreshDataStoreStats()
+        await profile.refreshDataStoreStats(cleanupService: cleanupService)
         await load(url: url, profile: profile)
     }
 

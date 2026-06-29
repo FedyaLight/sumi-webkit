@@ -2,11 +2,13 @@
 //  SafariExtensionInlineUIInfrastructureProbe.swift
 //  Sumi
 //
-//  Static structural probes for inline extension overlay infrastructure.
+//  Runtime probes for inline extension overlay infrastructure.
 //  Never inspects page DOM, credentials, or extension message payloads.
 //
 
+import AppKit
 import Foundation
+import WebKit
 
 struct SafariExtensionInlineUIInfrastructureProbeResult: Equatable, Sendable {
     let clipsToBoundsOnTabContainer: Bool
@@ -43,36 +45,117 @@ enum SafariExtensionInlineUIInfrastructureProbe {
         tabContainerSource: String? = nil,
         profilesSource: String? = nil,
         normalTabRuntimeBindingSource: String? = nil,
+        webViewBindingPolicySource: String? = nil,
         navigationResponderSource: String? = nil
     ) -> SafariExtensionInlineUIInfrastructureProbeResult {
-        let container = tabContainerSource ?? loadSource(
-            relativeToExtensionManager: "WebViewCoordinator/SumiWebViewContainerView.swift"
+        if tabContainerSource != nil
+            || profilesSource != nil
+            || normalTabRuntimeBindingSource != nil
+            || webViewBindingPolicySource != nil
+            || navigationResponderSource != nil {
+            return evaluateSources(
+                tabContainerSource: tabContainerSource,
+                profilesSource: profilesSource,
+                normalTabRuntimeBindingSource: normalTabRuntimeBindingSource,
+                webViewBindingPolicySource: webViewBindingPolicySource,
+                navigationResponderSource: navigationResponderSource
+            )
+        }
+
+        let runtimeResult: SafariExtensionInlineUIInfrastructureProbeResult
+        if Thread.isMainThread {
+            runtimeResult = MainActor.assumeIsolated {
+                evaluateRuntimeInfrastructure()
+            }
+        } else {
+            runtimeResult = DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    evaluateRuntimeInfrastructure()
+                }
+            }
+        }
+
+        return runtimeResult
+    }
+
+    @MainActor
+    private static func evaluateRuntimeInfrastructure() -> SafariExtensionInlineUIInfrastructureProbeResult {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let webView = WKWebView(
+            frame: NSRect(x: 0, y: 0, width: 100, height: 100),
+            configuration: WKWebViewConfiguration()
         )
-        let profiles = profilesSource ?? loadSource(
-            relativeToExtensionManager: "ExtensionManager+Profiles.swift"
-        )
-        let normalTabRuntimeBinding = normalTabRuntimeBindingSource ?? loadSource(
-            relativeToExtensionManager: "ExtensionNormalTabRuntimeBindingOwner.swift"
-        )
-        let webViewBindingPolicy = loadSource(
-            relativeToExtensionManager: "ExtensionRuntimeWebViewBindingPolicy.swift"
-        )
-        let navigation = navigationResponderSource ?? loadSource(
-            relativeToTabNavigation: "SafariExtensionInlineUINavigationResponder.swift"
+        let container = SumiWebViewContainerView(tab: tab, webView: webView)
+        container.frame = NSRect(x: 0, y: 0, width: 100, height: 100)
+        container.setBrowserContentViewport(
+            geometry: BrowserChromeGeometry(outerRadius: 16, elementSeparation: 0)
         )
 
+        let navigationBundle = tab.installNavigationDelegate(on: webView)
+        let inlineUINavigationResponderWired =
+            webView.navigationDelegate === navigationBundle.distributedNavigationDelegate
+                && navigationBundle.hasInlineUIExtensionResourceResponderInChain()
+
+        let lateBindBlocksLoadedPages: Bool
+        if #available(macOS 15.5, *) {
+            lateBindBlocksLoadedPages =
+                ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
+                    currentURL: URL(string: "about:blank")
+                )
+                && ExtensionRuntimeWebViewBindingPolicy.canLateBindController(
+                    currentURL: URL(string: "https://example.com")
+                ) == false
+        } else {
+            lateBindBlocksLoadedPages = false
+        }
+
+        return result(
+            clipsToBoundsOnTabContainer: container.clipsToBounds,
+            masksToBoundsOnRoundedViewport: container.layer?.masksToBounds == true,
+            lateBindBlocksLoadedPages: lateBindBlocksLoadedPages,
+            inlineUINavigationResponderWired: inlineUINavigationResponderWired
+        )
+    }
+
+    private static func evaluateSources(
+        tabContainerSource: String?,
+        profilesSource: String?,
+        normalTabRuntimeBindingSource: String?,
+        webViewBindingPolicySource: String?,
+        navigationResponderSource: String?
+    ) -> SafariExtensionInlineUIInfrastructureProbeResult {
+        let container = tabContainerSource
+        let profiles = profilesSource
+        let normalTabRuntimeBinding = normalTabRuntimeBindingSource
+        let webViewBindingPolicy = webViewBindingPolicySource
+        let navigation = navigationResponderSource
         let clipsToBoundsOnTabContainer =
-            container?.contains("clipsToBounds = true") == true
-        let masksToBoundsOnRoundedViewport =
-            container?.contains("layer?.masksToBounds = radius > 0") == true
+            tabContainerRequiredSymbols.allSatisfy { container?.contains($0) == true }
+        let masksToBoundsOnRoundedViewport = clipsToBoundsOnTabContainer
         let lateBindBlocksLoadedPages =
-            profiles?.contains("func canLateBindExtensionController(to webView: WKWebView) -> Bool") == true
+            lateBindRequiredSymbols.allSatisfy { symbol in
+                profiles?.contains(symbol) == true
+                    || normalTabRuntimeBinding?.contains(symbol) == true
+                    || webViewBindingPolicy?.contains(symbol) == true
+            }
             && normalTabRuntimeBinding?.contains("func tabNeedsExtensionContentScriptRebind(_ tab: Tab) -> Bool") == true
-            && webViewBindingPolicy?.contains("enum ExtensionRuntimeWebViewBindingPolicy") == true
-            && webViewBindingPolicy?.contains("normalizedURL.isEmpty || normalizedURL == \"about:blank\"") == true
         let inlineUINavigationResponderWired =
             navigationResponderRequiredSymbols.allSatisfy { navigation?.contains($0) == true }
 
+        return result(
+            clipsToBoundsOnTabContainer: clipsToBoundsOnTabContainer,
+            masksToBoundsOnRoundedViewport: masksToBoundsOnRoundedViewport,
+            lateBindBlocksLoadedPages: lateBindBlocksLoadedPages,
+            inlineUINavigationResponderWired: inlineUINavigationResponderWired
+        )
+    }
+
+    private static func result(
+        clipsToBoundsOnTabContainer: Bool,
+        masksToBoundsOnRoundedViewport: Bool,
+        lateBindBlocksLoadedPages: Bool,
+        inlineUINavigationResponderWired: Bool
+    ) -> SafariExtensionInlineUIInfrastructureProbeResult {
         var detailParts: [String] = []
         if clipsToBoundsOnTabContainer {
             detailParts.append("tabContainerClipsToBoundsChromeOnly")
@@ -95,25 +178,5 @@ enum SafariExtensionInlineUIInfrastructureProbe {
             inlineUINavigationResponderWired: inlineUINavigationResponderWired,
             detail: detailParts.isEmpty ? "inlineUIInfrastructureProbePassed" : detailParts.joined(separator: ",")
         )
-    }
-
-    private static func managersRootURL() -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-    }
-
-    private static func loadSource(relativeToExtensionManager path: String) -> String? {
-        let url = managersRootURL().appendingPathComponent(path)
-        return try? String(contentsOf: url, encoding: .utf8)
-    }
-
-    private static func loadSource(relativeToTabNavigation path: String) -> String? {
-        let url = managersRootURL()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Models/Tab/Navigation")
-            .appendingPathComponent(path)
-        return try? String(contentsOf: url, encoding: .utf8)
     }
 }

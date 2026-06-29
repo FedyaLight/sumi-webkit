@@ -9,6 +9,10 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         self.target = target
     }
 
+    func isAdapting<T: AnyObject>(_ targetType: T.Type) -> Bool {
+        target is T
+    }
+
     func decidePolicy(
         for navigationAction: NavigationAction,
         preferences: inout NavigationPreferences

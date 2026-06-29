@@ -13,6 +13,7 @@ final class SumiProfileMaintenanceService {
         var profileManager: ProfileManager
         var tabManager: TabManager
         var browsingDataCleanupService: SumiBrowsingDataCleanupService
+        var websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
         var faviconService: any BrowserFaviconServicing
         var visitedLinkStore: any BrowserVisitedLinkStoreManaging
         var showNotice: @MainActor (Notice) -> Void
@@ -45,7 +46,8 @@ final class SumiProfileMaintenanceService {
                 fallbackProfileId: replacement.id
             )
             await profile.clearAllData(
-                cleanupService: context.browsingDataCleanupService
+                browsingDataCleanupService: context.browsingDataCleanupService,
+                websiteDataCleanupService: context.websiteDataCleanupService
             )
             context.faviconService.clearFaviconPartition(for: profile)
 
@@ -59,7 +61,9 @@ final class SumiProfileMaintenanceService {
                     )
                 )
             } else {
-                _ = await profile.removePersistentDataStore()
+                _ = await profile.removePersistentDataStore(
+                    cleanupService: context.websiteDataCleanupService
+                )
                 context.visitedLinkStore.discardStore(for: profile.id)
             }
         }

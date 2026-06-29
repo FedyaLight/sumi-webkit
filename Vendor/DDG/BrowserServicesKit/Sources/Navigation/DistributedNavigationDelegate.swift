@@ -125,6 +125,12 @@ public final class DistributedNavigationDelegate: NSObject {
         responders.setResponders(refs.compactMap { $0 })
     }
 
+    public func getResponders() -> [NavigationResponder] {
+        dispatchPrecondition(condition: .onQueue(.main))
+
+        return responders.getResponders()
+    }
+
     /// Dispatches a callback so it runs only after all NavigationActions that were executing at the moment of dispatch
     /// finish their `decidePolicyForNavigationAction` responder-chain processing.
     @MainActor

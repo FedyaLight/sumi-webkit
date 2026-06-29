@@ -510,6 +510,9 @@ private struct URLBarHubPopoverRootView: View {
                 currentTab: currentTab,
                 profile: profile,
                 profileId: profileId,
+                cleanupService: browserManager.dataServices.websiteDataCleanupService,
+                siteDataPolicyStore: browserManager.dataServices.siteDataPolicyStore,
+                siteDataPolicyEnforcementService: browserManager.dataServices.siteDataPolicyEnforcementService,
                 faviconService: browserManager.dataServices.faviconService,
                 onClose: onClose,
                 onContentSizeChange: onContentSizeChange

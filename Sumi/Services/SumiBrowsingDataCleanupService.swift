@@ -184,7 +184,7 @@ final class SumiBrowsingDataAppResidueCleaner: SumiBrowsingDataAppResidueCleanin
 
 @MainActor
 final class SumiBrowsingDataCleanupService {
-    private let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
+    let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
     private let localCleanupOwner: SumiBrowsingDataLocalCleanupOwner
     private let appResidueCleaner: any SumiBrowsingDataAppResidueCleaning
     private let sharedWebsiteDataStoreProvider: @MainActor () -> WKWebsiteDataStore

@@ -5,12 +5,15 @@
 //
 
 import AppKit
+import OSLog
 import Security
 import SwiftUI
 
 @MainActor
 @Observable
 class SumiSettingsService {
+    private static let log = Logger.sumi(category: "Settings")
+
     private let userDefaults: UserDefaults
     private let windowSchemeModeKey = "settings.windowSchemeMode"
     private let themeUseSystemColorsKey = "settings.themeUseSystemColors"
@@ -101,8 +104,13 @@ class SumiSettingsService {
                 return
             }
 
-            if let data = try? JSONEncoder().encode(searchEngines) {
+            do {
+                let data = try JSONEncoder().encode(searchEngines)
                 userDefaults.set(data, forKey: searchEnginesKey)
+            } catch {
+                Self.log.error(
+                    "Failed to encode search engines: \(error.localizedDescription, privacy: .public)"
+                )
             }
 
             if !searchEngines.contains(where: { $0.id == searchEngineId }) {
@@ -580,10 +588,18 @@ class SumiSettingsService {
         ) ?? .saveFile
 
         let loadedSearchEngines: [SumiSearchEngine]
-        if let data = userDefaults.data(forKey: searchEnginesKey),
-           let decoded = try? JSONDecoder().decode([SumiSearchEngine].self, from: data),
-           decoded.isEmpty == false {
-            loadedSearchEngines = SumiSearchEngine.normalized(decoded)
+        if let data = userDefaults.data(forKey: searchEnginesKey) {
+            do {
+                let decoded = try JSONDecoder().decode([SumiSearchEngine].self, from: data)
+                loadedSearchEngines = decoded.isEmpty
+                    ? SumiSearchEngine.defaultEngines()
+                    : SumiSearchEngine.normalized(decoded)
+            } catch {
+                Self.log.error(
+                    "Failed to decode search engines: \(error.localizedDescription, privacy: .public)"
+                )
+                loadedSearchEngines = SumiSearchEngine.defaultEngines()
+            }
         } else {
             loadedSearchEngines = SumiSearchEngine.defaultEngines()
         }

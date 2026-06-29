@@ -3,17 +3,24 @@ import WebKit
 
 @MainActor
 final class SumiSiteDataPolicyEnforcementService {
-    static let shared = SumiSiteDataPolicyEnforcementService()
-
     private let policyStore: SumiSiteDataPolicyStore
     private let cleanupService: any SumiWebsiteDataCleanupServicing
 
     init(
-        policyStore: SumiSiteDataPolicyStore? = nil,
-        cleanupService: (any SumiWebsiteDataCleanupServicing)? = nil
+        policyStore: SumiSiteDataPolicyStore,
+        cleanupService: any SumiWebsiteDataCleanupServicing
     ) {
-        self.policyStore = policyStore ?? .shared
-        self.cleanupService = cleanupService ?? SumiWebsiteDataCleanupService.shared
+        self.policyStore = policyStore
+        self.cleanupService = cleanupService
+    }
+
+    func replacingCleanupService(
+        _ cleanupService: any SumiWebsiteDataCleanupServicing
+    ) -> SumiSiteDataPolicyEnforcementService {
+        SumiSiteDataPolicyEnforcementService(
+            policyStore: policyStore,
+            cleanupService: cleanupService
+        )
     }
 
     func setBlockStorage(
@@ -82,7 +89,7 @@ final class SumiSiteDataPolicyEnforcementService {
             includingCookies: true,
             in: profile.dataStore
         )
-        await profile.refreshDataStoreStats()
+        await profile.refreshDataStoreStats(cleanupService: cleanupService)
     }
 
     private func normalizedHost(for url: URL?) -> String? {

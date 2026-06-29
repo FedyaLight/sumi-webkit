@@ -4,9 +4,12 @@
 //
 
 import Foundation
+import OSLog
 
 @MainActor
 final class LastSessionWindowsStore: ObservableObject {
+    private static let log = Logger.sumi(category: "LastSessionWindowsStore")
+
     private enum Const {
         static let defaultsKey =
             "\(SumiAppIdentity.runtimeBundleIdentifier).history.lastSessionWindows"
@@ -45,7 +48,13 @@ final class LastSessionWindowsStore: ObservableObject {
 
     private func save() {
         let archive = Archive(snapshots: snapshots, tabSnapshot: tabSnapshot)
-        guard let data = try? JSONEncoder().encode(archive) else {
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(archive)
+        } catch {
+            Self.log.error(
+                "Failed to encode last-session windows: \(error.localizedDescription, privacy: .public)"
+            )
             return
         }
         userDefaults.set(data, forKey: Const.defaultsKey)
@@ -55,11 +64,22 @@ final class LastSessionWindowsStore: ObservableObject {
         guard let data = userDefaults.data(forKey: Const.defaultsKey) else {
             return Archive(snapshots: [], tabSnapshot: nil)
         }
-        if let archive = try? JSONDecoder().decode(Archive.self, from: data) {
+        do {
+            let archive = try JSONDecoder().decode(Archive.self, from: data)
             return archive
+        } catch {
+            log.error(
+                "Failed to decode last-session archive, trying legacy snapshot format: \(error.localizedDescription, privacy: .public)"
+            )
         }
-        if let snapshots = try? JSONDecoder().decode([LastSessionWindowSnapshot].self, from: data) {
+
+        do {
+            let snapshots = try JSONDecoder().decode([LastSessionWindowSnapshot].self, from: data)
             return Archive(snapshots: snapshots, tabSnapshot: nil)
+        } catch {
+            log.error(
+                "Failed to decode legacy last-session windows: \(error.localizedDescription, privacy: .public)"
+            )
         }
         return Archive(snapshots: [], tabSnapshot: nil)
     }

@@ -97,8 +97,10 @@ final class Profile: NSObject, Identifiable {
 
     // MARK: - Validation & Stats
     @MainActor
-    func refreshDataStoreStats() async {
-        cachedCookieCount = await SumiWebsiteDataCleanupService.shared
+    func refreshDataStoreStats(
+        cleanupService: any SumiWebsiteDataCleanupServicing
+    ) async {
+        cachedCookieCount = await cleanupService
             .fetchCookies(in: dataStore)
             .count
 
@@ -110,26 +112,30 @@ final class Profile: NSObject, Identifiable {
             WKWebsiteDataTypeFetchCache,
             WKWebsiteDataTypeServiceWorkerRegistrations,
         ]
-        cachedRecordCount = await SumiWebsiteDataCleanupService.shared
+        cachedRecordCount = await cleanupService
             .fetchWebsiteDataRecords(ofTypes: types, in: dataStore)
             .count
     }
 
     // MARK: - Cleanup
-    func clearAllData(cleanupService: SumiBrowsingDataCleanupService) async {
-        await cleanupService.prepareForDestructiveWebsiteDataCleanup(
+    func clearAllData(
+        browsingDataCleanupService: SumiBrowsingDataCleanupService,
+        websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
+    ) async {
+        await browsingDataCleanupService.prepareForDestructiveWebsiteDataCleanup(
             profileIDs: [id]
         )
-        await SumiWebsiteDataCleanupService.shared.clearAllProfileWebsiteData(in: dataStore)
-        await refreshDataStoreStats()
+        await websiteDataCleanupService.clearAllProfileWebsiteData(in: dataStore)
+        await refreshDataStoreStats(cleanupService: websiteDataCleanupService)
     }
 
     @discardableResult
-    func removePersistentDataStore() async -> Bool {
+    func removePersistentDataStore(
+        cleanupService: any SumiWebsiteDataCleanupServicing
+    ) async -> Bool {
         guard !isEphemeral else { return true }
         cachedPersistentDataStore = nil
-        return await SumiWebsiteDataCleanupService.shared
-            .removePersistentDataStore(forIdentifier: id)
+        return await cleanupService.removePersistentDataStore(forIdentifier: id)
     }
 
     /// Releases the ephemeral profile's non-persistent store ownership.
