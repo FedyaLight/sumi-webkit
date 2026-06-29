@@ -31,10 +31,7 @@ struct SidebarHeader: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             NavButtonsView(
-                browserContext: NavigationToolbarBrowserContext.live(
-                    browserManager: browserManager,
-                    windowState: windowState
-                )
+                browserContext: browserManager.navigationToolbarContext(for: windowState)
             )
             .environment(windowState)
         }
@@ -44,7 +41,10 @@ struct SidebarHeader: View {
     }
 
     private var sidebarURLBar: some View {
-        URLBarView(browserManager: browserManager, presentationMode: .sidebar)
+        URLBarView(
+            browserContext: browserManager.urlBarBrowserContext,
+            presentationMode: .sidebar
+        )
         .environment(windowState)
         .padding(.horizontal, 8)
     }

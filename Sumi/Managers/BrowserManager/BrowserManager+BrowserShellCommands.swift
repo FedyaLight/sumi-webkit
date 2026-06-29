@@ -27,14 +27,14 @@ extension BrowserManager {
     func toggleURLBarHubPopover(in windowState: BrowserWindowState) {
         urlBarHubPopoverPresenter.toggle(
             in: windowState,
-            browserManager: self
+            browserContext: urlBarHubBrowserContext
         )
     }
 
     func presentURLBarHubPopover(in windowState: BrowserWindowState) {
         urlBarHubPopoverPresenter.present(
             in: windowState,
-            browserManager: self
+            browserContext: urlBarHubBrowserContext
         )
     }
 

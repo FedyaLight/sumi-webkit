@@ -77,26 +77,6 @@ struct NavigationToolbarBrowserContext {
     let currentTab: () -> Tab?
     let webView: (Tab) -> WKWebView?
     let historyContext: SumiNavigationHistoryContext
-
-    static func live(
-        browserManager: BrowserManager,
-        windowState: BrowserWindowState
-    ) -> NavigationToolbarBrowserContext {
-        NavigationToolbarBrowserContext(
-            currentTab: { [weak browserManager, weak windowState] in
-                guard let browserManager, let windowState else { return nil }
-                return browserManager.currentTab(for: windowState)
-            },
-            webView: { [weak browserManager, weak windowState] tab in
-                guard let browserManager, let windowState else { return nil }
-                return browserManager.getWebView(for: tab.id, in: windowState.id)
-            },
-            historyContext: SumiNavigationHistoryContext.live(
-                browserManager: browserManager,
-                windowState: windowState
-            )
-        )
-    }
 }
 
 struct NavButtonsView: View {

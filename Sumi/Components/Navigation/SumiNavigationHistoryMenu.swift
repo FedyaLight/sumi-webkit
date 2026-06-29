@@ -48,39 +48,6 @@ struct SumiNavigationHistoryContext {
     let faviconImageService: any BrowserFaviconImageServicing
     let openURLInNewTab: (URL, Bool, Tab?) -> Void
     let openURLsInNewWindow: ([URL]) -> Void
-
-    static func live(
-        browserManager: BrowserManager,
-        windowState: BrowserWindowState
-    ) -> SumiNavigationHistoryContext {
-        SumiNavigationHistoryContext(
-            faviconService: browserManager.dataServices.faviconService,
-            faviconImageService: browserManager.dataServices.faviconImageService,
-            openURLInNewTab: { [weak browserManager, weak windowState] url, selected, sourceTab in
-                guard let browserManager else { return }
-                let targetWindowState = windowState ?? browserManager.windowRegistry?.activeWindow
-                let context: BrowserManager.TabOpenContext
-                if selected, let targetWindowState {
-                    context = .foreground(
-                        windowState: targetWindowState,
-                        sourceTab: sourceTab,
-                        preferredSpaceId: targetWindowState.currentSpaceId
-                    )
-                } else {
-                    context = .background(
-                        windowState: targetWindowState,
-                        sourceTab: sourceTab,
-                        preferredSpaceId: targetWindowState?.currentSpaceId
-                    )
-                }
-
-                browserManager.openNewTab(url: url.absoluteString, context: context)
-            },
-            openURLsInNewWindow: { [weak browserManager] urls in
-                browserManager?.openHistoryURLsInNewWindow(urls)
-            }
-        )
-    }
 }
 
 enum SumiNavigationHistoryMenuModel {

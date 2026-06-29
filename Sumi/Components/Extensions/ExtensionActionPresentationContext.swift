@@ -6,54 +6,108 @@
 //
 
 import Foundation
+import WebKit
+
+@available(macOS 15.5, *)
+@MainActor
+struct ExtensionActionBrowserContext {
+    let extensionsModule: SumiExtensionsModule
+    let userscriptsModule: SumiUserscriptsModule
+    let windowState: BrowserWindowState
+    let currentTab: () -> Tab?
+    let currentProfileID: () -> UUID?
+    let hasLoadedInitialData: () -> Bool
+    let webView: (Tab) -> WKWebView?
+    let openSettingsTab: (SettingsTabs) -> Void
+    let showExtensionUnavailableAlert: (_ extensionName: String, _ message: String) -> Void
+
+    static func live(
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState
+    ) -> ExtensionActionBrowserContext {
+        ExtensionActionBrowserContext(
+            extensionsModule: browserManager.extensionsModule,
+            userscriptsModule: browserManager.userscriptsModule,
+            windowState: windowState,
+            currentTab: { [weak browserManager, weak windowState] in
+                guard let browserManager, let windowState else { return nil }
+                return browserManager.currentTab(for: windowState)
+                    ?? windowState.currentTabId.flatMap { browserManager.tabManager.tab(for: $0) }
+                    ?? browserManager.shellSelectionService.currentTab(
+                        for: windowState,
+                        tabStore: browserManager.tabManager.runtimeStore
+                    )
+            },
+            currentProfileID: { [weak browserManager] in
+                browserManager?.currentProfile?.id
+            },
+            hasLoadedInitialData: { [weak browserManager] in
+                browserManager?.tabManager.hasLoadedInitialData ?? true
+            },
+            webView: { [weak browserManager, weak windowState] tab in
+                guard let browserManager, let windowState else {
+                    return tab.existingWebView
+                }
+                return browserManager.getWebView(for: tab.id, in: windowState.id)
+                    ?? tab.existingWebView
+            },
+            openSettingsTab: { [weak browserManager, weak windowState] tab in
+                guard let browserManager, let windowState else { return }
+                browserManager.openSettingsTab(selecting: tab, in: windowState)
+            },
+            showExtensionUnavailableAlert: { [weak browserManager] extensionName, message in
+                browserManager?.showBrowserExtensionsUnavailableAlert(
+                    extensionName: extensionName,
+                    informativeText: message
+                )
+            }
+        )
+    }
+}
 
 @available(macOS 15.5, *)
 @MainActor
 struct ExtensionActionPresentationContext {
-    let browserManager: BrowserManager
-    let windowState: BrowserWindowState
+    let browserContext: ExtensionActionBrowserContext
     let profileId: UUID?
 
     func presentActionPopup(for installedExtension: InstalledExtension) async {
         let currentTab = await currentActionTabForClick()
         let actionProfileId =
             currentTab?.profileId
-            ?? windowState.currentProfileId
-            ?? browserManager.currentProfile?.id
+            ?? browserContext.windowState.currentProfileId
+            ?? browserContext.currentProfileID()
 
-        browserManager.extensionsModule.captureActionPopupAnchor(
+        browserContext.extensionsModule.captureActionPopupAnchor(
             extensionId: installedExtension.id,
-            windowId: windowState.id,
+            windowId: browserContext.windowState.id,
             profileId: actionProfileId
         )
 
-        let result = await browserManager.extensionsModule
+        let result = await browserContext.extensionsModule
             .openActionPopupFromURLHub(
                 extensionId: installedExtension.id,
                 currentTab: currentTab
             )
         guard result.opened == false else { return }
 
-        browserManager.showBrowserExtensionsUnavailableAlert(
-            extensionName: installedExtension.name,
-            informativeText: result.message
-        )
+        browserContext.showExtensionUnavailableAlert(installedExtension.name, result.message)
     }
 
     func openExtensionsSettings() {
-        browserManager.openSettingsTab(selecting: .extensions, in: windowState)
+        browserContext.openSettingsTab(.extensions)
     }
 
     func pinToToolbar(extensionId: String) {
-        browserManager.extensionsModule.pinToToolbar(extensionId)
+        browserContext.extensionsModule.pinToToolbar(extensionId)
     }
 
     func unpinFromToolbar(extensionId: String) {
-        browserManager.extensionsModule.unpinFromToolbar(extensionId)
+        browserContext.extensionsModule.unpinFromToolbar(extensionId)
     }
 
     func openOptionsPage(for installedExtension: InstalledExtension) async {
-        await browserManager.extensionsModule.openOptionsPage(
+        await browserContext.extensionsModule.openOptionsPage(
             extensionId: installedExtension.id,
             profileId: extensionActionProfileId
         )
@@ -62,8 +116,8 @@ struct ExtensionActionPresentationContext {
     private var extensionActionProfileId: UUID? {
         profileId
             ?? currentActionTab?.profileId
-            ?? windowState.currentProfileId
-            ?? browserManager.currentProfile?.id
+            ?? browserContext.windowState.currentProfileId
+            ?? browserContext.currentProfileID()
     }
 
     private func currentActionTabForClick() async -> Tab? {
@@ -71,8 +125,8 @@ struct ExtensionActionPresentationContext {
             return currentTab
         }
 
-        guard windowState.isAwaitingInitialSessionResolution
-                || !browserManager.tabManager.hasLoadedInitialData
+        guard browserContext.windowState.isAwaitingInitialSessionResolution
+                || !browserContext.hasLoadedInitialData()
         else {
             return nil
         }
@@ -82,8 +136,8 @@ struct ExtensionActionPresentationContext {
             if let currentTab = currentActionTab {
                 return currentTab
             }
-            if !windowState.isAwaitingInitialSessionResolution
-                && browserManager.tabManager.hasLoadedInitialData {
+            if !browserContext.windowState.isAwaitingInitialSessionResolution
+                && browserContext.hasLoadedInitialData() {
                 return nil
             }
         }
@@ -91,11 +145,6 @@ struct ExtensionActionPresentationContext {
     }
 
     private var currentActionTab: Tab? {
-        browserManager.currentTab(for: windowState)
-            ?? windowState.currentTabId.flatMap { browserManager.tabManager.tab(for: $0) }
-            ?? browserManager.shellSelectionService.currentTab(
-                for: windowState,
-                tabStore: browserManager.tabManager.runtimeStore
-            )
+        browserContext.currentTab()
     }
 }

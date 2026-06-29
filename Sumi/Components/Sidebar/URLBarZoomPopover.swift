@@ -33,16 +33,16 @@ extension URLBarView {
         .popover(isPresented: $isZoomPopoverPresented, arrowEdge: .bottom) {
             URLBarZoomPopoverView(
                 currentTab: currentTab,
-                zoomManager: browserManager.zoomManager,
-                zoomRevision: browserManager.zoomStateRevision,
+                zoomManager: browserContext.zoom.manager,
+                zoomRevision: browserContext.zoom.stateRevision,
                 resetZoom: {
-                    browserManager.resetZoomCurrentTab(in: windowState)
+                    browserContext.zoom.resetCurrentTab(windowState)
                 },
                 zoomOut: {
-                    browserManager.zoomOutCurrentTab(in: windowState)
+                    browserContext.zoom.zoomOutCurrentTab(windowState)
                 },
                 zoomIn: {
-                    browserManager.zoomInCurrentTab(in: windowState)
+                    browserContext.zoom.zoomInCurrentTab(windowState)
                 },
                 onMouseOverChange: { hovering in
                     isZoomPopoverHovering = hovering
@@ -58,12 +58,12 @@ extension URLBarView {
     }
 
     func shouldShowZoomButton(for tab: Tab) -> Bool {
-        _ = browserManager.zoomStateRevision
+        _ = browserContext.zoom.stateRevision
         return URLBarZoomButtonVisibility.shouldShow(
             hasURL: isZoomButtonURLAvailable(for: tab),
             isEditing: windowState.isFloatingBarVisible,
             isPopoverPresented: isZoomPopoverPresented,
-            isDefaultZoom: browserManager.zoomManager.isDefaultZoom(for: tab.id)
+            isDefaultZoom: browserContext.zoom.manager.isDefaultZoom(for: tab.id)
         )
     }
 
@@ -72,18 +72,18 @@ extension URLBarView {
     }
 
     func zoomButtonImageName(for tab: Tab) -> String {
-        _ = browserManager.zoomStateRevision
-        return browserManager.zoomManager.getZoomLevel(for: tab.id) < 1.0 ? "ZoomOut" : "ZoomIn"
+        _ = browserContext.zoom.stateRevision
+        return browserContext.zoom.manager.getZoomLevel(for: tab.id) < 1.0 ? "ZoomOut" : "ZoomIn"
     }
 
     func toggleZoomPopoverFromToolbar(for tab: Tab) {
-        browserManager.closeURLBarHubPopover(in: windowState)
+        browserContext.closeURLBarHubPopover(windowState)
         zoomPopoverSource = .toolbar
         if isZoomPopoverPresented {
             closeZoomPopover()
         } else {
             isZoomPopoverPresented = true
-            browserManager.requestZoomPopover(for: tab, in: windowState, source: .toolbar)
+            browserContext.zoom.requestPopover(tab, windowState, .toolbar)
             updateZoomPopoverAutoCloseTask()
         }
     }
@@ -94,7 +94,7 @@ extension URLBarView {
               request.tabId == currentTab?.id
         else { return }
 
-        browserManager.closeURLBarHubPopover(in: windowState)
+        browserContext.closeURLBarHubPopover(windowState)
         zoomPopoverSource = request.source
         isZoomPopoverPresented = true
         updateZoomPopoverAutoCloseTask()

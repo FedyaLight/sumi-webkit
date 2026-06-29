@@ -60,10 +60,9 @@ extension URLBarView {
     @ViewBuilder
     var urlBarExtensionActions: some View {
         if ExtensionActionPlacement.resolve(totalActions: orderedExtensionActionCount) == .urlBar {
-            ExtensionActionView(
-                extensions: extensionSurfaceStore.enabledExtensions,
-                layout: .compactStrip,
-                browserManager: browserManager
+            browserContext.extensionActions.compactStrip(
+                extensionSurfaceStore.enabledExtensions,
+                windowState
             )
             .environment(windowState)
             .accessibilityIdentifier("urlbar-extension-action-strip")
@@ -71,11 +70,9 @@ extension URLBarView {
     }
 
     var orderedExtensionActionCount: Int {
-        browserManager.extensionsModule.orderedPinnedToolbarSlots(
-            enabledExtensions: extensionSurfaceStore.enabledExtensions,
-            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled
+        browserContext.extensionActions.orderedPinnedToolbarSlotCount(
+            extensionSurfaceStore.enabledExtensions
         )
-        .count
     }
 
     func copyLinkButton(for currentTab: Tab) -> some View {
@@ -98,7 +95,7 @@ extension URLBarView {
     var hubButton: some View {
         let action = {
             closeZoomPopover()
-            browserManager.toggleURLBarHubPopover(in: windowState)
+            browserContext.toggleURLBarHubPopover(windowState)
         }
 
         return Button(action: action) {
@@ -120,7 +117,8 @@ extension URLBarView {
         .accessibilityIdentifier("urlbar-site-controls-button")
         .background(
             URLBarHubPopoverAnchorView(
-                browserManager: browserManager,
+                presenter: browserContext.hubPopoverPresenter,
+                browserContext: browserContext.hub,
                 windowState: windowState,
                 settings: sumiSettings,
                 themeContext: themeContext,
@@ -141,7 +139,7 @@ extension URLBarView {
             showCheckmark = true
         }
 
-        browserManager.presentToast(.init(kind: .copyURL), in: windowState)
+        browserContext.presentToast(.init(kind: .copyURL), windowState)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             withAnimation(.easeInOut(duration: 0.2)) {

@@ -69,7 +69,7 @@ extension URLBarView {
         if ExtensionUtils.isExtensionOwnedURL(url) {
             return ExtensionUtils.displayName(
                 forExtensionOwnedURL: url,
-                installedExtensions: browserManager.extensionSurfaceStore.installedExtensions
+                installedExtensions: extensionSurfaceStore.installedExtensions
             ) ?? String(localized: "Extension")
         }
         guard let host = url.host else {

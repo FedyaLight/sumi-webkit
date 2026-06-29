@@ -12,8 +12,8 @@ final class URLBarHubPageActionOwner: ObservableObject {
 
     func shareCurrentPage(
         currentTab: Tab?,
-        browserManager: BrowserManager,
-        windowState: BrowserWindowState
+        windowState: BrowserWindowState,
+        presentSharingServicePicker: ([Any], SidebarTransientPresentationSource) -> Void
     ) {
         guard let url = currentTab?.url else { return }
 
@@ -21,19 +21,19 @@ final class URLBarHubPageActionOwner: ObservableObject {
             window: windowState.window,
             ownerView: shareButtonAnchor.view
         )
-        browserManager.presentSharingServicePicker([url], source: source)
+        presentSharingServicePicker([url], source)
     }
 
     func captureCurrentPageUsingSavedSettings(
         currentTab: Tab?,
-        browserManager: BrowserManager,
         windowState: BrowserWindowState,
+        webViewProvider: (Tab, BrowserWindowState) -> WKWebView?,
         options: URLBarHubScreenshotOptions
     ) {
         guard let target = captureTarget(
             currentTab: currentTab,
-            browserManager: browserManager,
-            windowState: windowState
+            windowState: windowState,
+            webViewProvider: webViewProvider
         ) else { return }
 
         captureCurrentPage(
@@ -46,15 +46,15 @@ final class URLBarHubPageActionOwner: ObservableObject {
 
     func presentScreenshotSettings(
         currentTab: Tab?,
-        browserManager: BrowserManager,
         windowState: BrowserWindowState,
+        webViewProvider: (Tab, BrowserWindowState) -> WKWebView?,
         options: URLBarHubScreenshotOptions,
         persistOptions: @escaping @MainActor (URLBarHubScreenshotOptions) -> Void
     ) {
         guard let target = captureTarget(
             currentTab: currentTab,
-            browserManager: browserManager,
-            windowState: windowState
+            windowState: windowState,
+            webViewProvider: webViewProvider
         ) else { return }
 
         URLBarHubScreenshotSettingsPresenter.present(
@@ -74,14 +74,11 @@ final class URLBarHubPageActionOwner: ObservableObject {
 
     private func captureTarget(
         currentTab: Tab?,
-        browserManager: BrowserManager,
-        windowState: BrowserWindowState
+        windowState: BrowserWindowState,
+        webViewProvider: (Tab, BrowserWindowState) -> WKWebView?
     ) -> (tab: Tab, webView: WKWebView)? {
         guard let currentTab,
-              let webView = browserManager.getWebView(
-                for: currentTab.id,
-                in: windowState.id
-              ),
+              let webView = webViewProvider(currentTab, windowState),
               !isCapturingScreenshot
         else {
             return nil

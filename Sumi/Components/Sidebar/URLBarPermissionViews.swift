@@ -44,49 +44,41 @@ extension URLBarView {
 
     func configurePermissionIndicatorIfNeeded() {
         permissionIndicatorViewModel.configure(
-            coordinator: browserManager.permissionCoordinator,
-            runtimeController: browserManager.runtimePermissionController,
-            popupStore: browserManager.blockedPopupStore,
-            externalSchemeStore: browserManager.externalSchemeSessionStore,
-            indicatorEventStore: browserManager.permissionIndicatorEventStore
+            coordinator: browserContext.permission.coordinator,
+            runtimeController: browserContext.permission.runtimeController,
+            popupStore: browserContext.permission.popupStore,
+            externalSchemeStore: browserContext.permission.externalSchemeStore,
+            indicatorEventStore: browserContext.permission.indicatorEventStore
         )
     }
 
     func configurePermissionPromptIfNeeded() {
         permissionPromptPresenter.configure(
-            coordinator: browserManager.permissionCoordinator,
-            systemPermissionService: browserManager.systemPermissionService,
-            externalAppResolver: browserManager.externalAppResolver
+            coordinator: browserContext.permission.coordinator,
+            systemPermissionService: browserContext.permission.systemPermissionService,
+            externalAppResolver: browserContext.permission.externalAppResolver
         )
     }
 
     func refreshPermissionIndicator(for tab: Tab) {
         configurePermissionIndicatorIfNeeded()
-        permissionIndicatorViewModel.update(
-            tab: tab,
-            windowId: windowState.id,
-            browserManager: browserManager
-        )
+        browserContext.permission.updateIndicator(permissionIndicatorViewModel, tab, windowState)
     }
 
     func refreshPermissionPrompt(for tab: Tab) {
         configurePermissionPromptIfNeeded()
-        permissionPromptPresenter.update(
-            tab: tab,
-            windowState: windowState,
-            browserManager: browserManager
-        )
+        browserContext.permission.updatePrompt(permissionPromptPresenter, tab, windowState)
     }
 
     func handlePermissionIndicatorClick() {
         closeZoomPopover()
         if permissionPromptPresenter.presentFromIndicatorClick() {
-            browserManager.closeURLBarHubPopover(in: windowState)
+            browserContext.closeURLBarHubPopover(windowState)
             closePermissionIndicatorPopover()
             return
         }
 
-        browserManager.closeURLBarHubPopover(in: windowState)
+        browserContext.closeURLBarHubPopover(windowState)
         if isPermissionIndicatorPopoverPresented {
             closePermissionIndicatorPopover()
         } else {
@@ -108,7 +100,7 @@ extension URLBarView {
 
         permissionRuntimeControlsModel.load(
             pageContext: permissionRuntimeControlsPageContext(for: currentTab),
-            runtimeController: browserManager.runtimePermissionController,
+            runtimeController: browserContext.permission.runtimeController,
             reloadRequired: currentTab.isAutoplayReloadRequired,
             onRuntimeStateChanged: {
                 refreshPermissionIndicator(for: currentTab)
@@ -127,10 +119,7 @@ extension URLBarView {
 
     func openPermissionIndicatorSiteSettings(focusing tab: Tab) {
         closePermissionIndicatorPopover()
-        browserManager.openSiteSettingsTab(
-            focusing: tab,
-            in: windowState
-        )
+        browserContext.hub.openSiteSettings(tab, windowState)
     }
 
     func permissionRuntimeControlsPageContext(
@@ -166,13 +155,13 @@ extension URLBarView {
                 return true
             },
             isGeolocationStillAllowed: {
-                let decision = await browserManager.permissionCoordinator.queryPermissionState(
+                let decision = await browserContext.permission.coordinator.queryPermissionState(
                     context.securityContext(for: .geolocation)
                 )
                 return decision.outcome == .granted || decision.state == .allow
             },
             clearGeolocationGrantForVisit: {
-                await browserManager.permissionCoordinator.resetTransientDecisions(
+                await browserContext.permission.coordinator.resetTransientDecisions(
                     profilePartitionId: context.profilePartitionId,
                     pageId: context.pageId,
                     requestingOrigin: context.origin,
@@ -193,7 +182,7 @@ extension URLBarView {
     }
 
     func permissionIndicatorDisplayState(for currentTab: Tab) -> SumiPermissionIndicatorState {
-        if browserManager.urlBarHubPopoverPresenter.isPresented(in: windowState) {
+        if browserContext.isURLBarHubPopoverPresented(windowState) {
             return .hidden
         }
 

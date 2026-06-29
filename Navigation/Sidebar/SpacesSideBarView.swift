@@ -1020,7 +1020,10 @@ struct SpacesSideBarView: View {
                 extensions: extensionSurfaceStore.enabledExtensions,
                 layout: .sidebarGrid,
                 profileId: profileId,
-                browserManager: browserManager
+                browserContext: ExtensionActionBrowserContext.live(
+                    browserManager: browserManager,
+                    windowState: windowState
+                )
             )
             .environment(windowState)
             .padding(.horizontal, 8)

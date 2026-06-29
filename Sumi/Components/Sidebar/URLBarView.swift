@@ -43,7 +43,7 @@ struct URLBarView: View {
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
 
-    let browserManager: BrowserManager
+    let browserContext: URLBarBrowserContext
     let presentationMode: URLBarPresentationMode
 
     @State var isHovering = false
@@ -60,10 +60,10 @@ struct URLBarView: View {
     @StateObject var permissionRuntimeControlsModel = SumiPermissionRuntimeControlsViewModel()
 
     init(
-        browserManager: BrowserManager,
+        browserContext: URLBarBrowserContext,
         presentationMode: URLBarPresentationMode = .sidebar
     ) {
-        self.browserManager = browserManager
+        self.browserContext = browserContext
         self.presentationMode = presentationMode
     }
 
@@ -116,17 +116,17 @@ struct URLBarView: View {
                 }
             }
         }
-        .onChange(of: browserManager.zoomPopoverRequest) { _, request in
+        .onChange(of: browserContext.zoom.popoverRequest) { _, request in
             handleZoomPopoverRequest(request)
         }
-        .onChange(of: browserManager.bookmarkEditorPresentationRequest) { _, request in
+        .onChange(of: browserContext.bookmarkEditorPresentationRequest) { _, request in
             handleBookmarkEditorPresentationRequest(request)
         }
         .onChange(of: currentTab?.id) { _, _ in
             DispatchQueue.main.async {
                 closeZoomPopover()
                 closePermissionIndicatorPopover()
-                browserManager.closeURLBarHubPopover(in: windowState)
+                browserContext.closeURLBarHubPopover(windowState)
                 permissionPromptPresenter.closeForCurrentTabChange()
             }
         }
@@ -135,20 +135,20 @@ struct URLBarView: View {
                 DispatchQueue.main.async {
                     closeZoomPopover()
                     closePermissionIndicatorPopover()
-                    browserManager.closeURLBarHubPopover(in: windowState)
+                    browserContext.closeURLBarHubPopover(windowState)
                 }
             }
         }
         .onChange(of: permissionPromptPresenter.isPresented) { _, isPresented in
             if isPresented {
                 closePermissionIndicatorPopover()
-                browserManager.closeURLBarHubPopover(in: windowState)
+                browserContext.closeURLBarHubPopover(windowState)
             }
         }
         .onDisappear {
             cancelZoomPopoverHideTask()
             closePermissionIndicatorPopover()
-            browserManager.closeURLBarHubPopover(in: windowState)
+            browserContext.closeURLBarHubPopover(windowState)
             permissionPromptPresenter.clear()
         }
     }
@@ -163,8 +163,8 @@ struct URLBarView: View {
             return windowState.ephemeralTabs.first { $0.id == currentTabId }
         }
         guard let currentTabId else { return nil }
-        return browserManager.tabManager.tab(for: currentTabId)
-            ?? browserManager.currentTab(for: windowState)
+        return browserContext.tabForID(currentTabId)
+            ?? browserContext.currentTab(windowState)
     }
 
     var activePageURL: URL? {
@@ -176,15 +176,11 @@ struct URLBarView: View {
         let currentURL = ExtensionUtils.isExtensionOwnedURL(activePageURL)
             ? ""
             : activePageURL?.absoluteString ?? ""
-        browserManager.focusFloatingBar(
-            in: windowState,
-            prefill: currentURL,
-            navigateCurrentTab: true
-        )
+        browserContext.focusFloatingBar(windowState, currentURL, true)
     }
 
     var effectiveProfileId: UUID? {
-        windowState.currentProfileId ?? browserManager.currentProfile?.id
+        windowState.currentProfileId ?? browserContext.currentProfile()?.id
     }
 
     var effectiveProfile: Profile? {
@@ -192,21 +188,18 @@ struct URLBarView: View {
             return profile
         }
         if let profileId = effectiveProfileId,
-           let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId }) {
+           let profile = browserContext.profiles().first(where: { $0.id == profileId }) {
             return profile
         }
-        return browserManager.currentProfile
+        return browserContext.currentProfile()
     }
 
     var siteControlsSnapshot: SiteControlsSnapshot {
-        SiteControlsSnapshot.resolve(
-            url: activePageURL,
-            profile: effectiveProfile,
-            protectionCoordinator: browserManager.protectionCoordinator,
-            protectionBrowserRestartRequired: browserManager.protectionCoordinator.settings.browserRestartRequired,
-            protectionReloadRequired: currentTab?.isProtectionReloadRequired == true,
-            extensionsModule: browserManager.extensionsModule,
-            safariContentBlockerReloadRequired: currentTab?.isSafariContentBlockerReloadRequired == true
+        browserContext.siteControlsSnapshot(
+            activePageURL,
+            effectiveProfile,
+            currentTab?.isProtectionReloadRequired == true,
+            currentTab?.isSafariContentBlockerReloadRequired == true
         )
     }
 }

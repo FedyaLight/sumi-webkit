@@ -135,7 +135,7 @@ struct ExtensionActionView: View {
     var layout: ExtensionActionLayout = .compactStrip
     var visibleActionLimit: Int?
     var profileId: UUID?
-    let browserManager: BrowserManager
+    let browserContext: ExtensionActionBrowserContext
 
     var body: some View {
         switch layout {
@@ -143,22 +143,22 @@ struct ExtensionActionView: View {
             CompactExtensionActionStrip(
                 extensions: extensions,
                 visibleActionLimit: visibleActionLimit,
-                browserManager: browserManager
+                browserContext: browserContext
             )
         case .sidebarGrid:
             SidebarExtensionActionGrid(
                 extensions: extensions,
                 profileId: profileId,
-                browserManager: browserManager
+                browserContext: browserContext
             )
         case .hubTiles:
             LazyVGrid(columns: hubTileColumns, alignment: .leading, spacing: 8) {
-                if browserManager.userscriptsModule.isEnabled {
-                    SumiScriptsToolbarControl(layout: .hubTile, browserManager: browserManager)
+                if browserContext.userscriptsModule.isEnabled {
+                    SumiScriptsToolbarControl(layout: .hubTile, browserContext: browserContext)
                 }
 
                 ForEach(hubExtensions, id: \.id) { ext in
-                    ExtensionActionButton(ext: ext, layout: .hubTiles, browserManager: browserManager)
+                    ExtensionActionButton(ext: ext, layout: .hubTiles, browserContext: browserContext)
                 }
             }
         }
@@ -174,7 +174,7 @@ struct ExtensionActionView: View {
     private var hubExtensions: [InstalledExtension] {
         extensions
             .filter { $0.isEnabled && $0.hasAction }
-            .filter { browserManager.extensionsModule.isPinnedToToolbar($0.id) == false }
+            .filter { browserContext.extensionsModule.isPinnedToToolbar($0.id) == false }
     }
 }
 
@@ -182,7 +182,7 @@ struct ExtensionActionView: View {
 private struct SidebarExtensionActionGrid: View {
     let extensions: [InstalledExtension]
     let profileId: UUID?
-    let browserManager: BrowserManager
+    let browserContext: ExtensionActionBrowserContext
     private static let gridSpacing: CGFloat = 8
 
     var body: some View {
@@ -192,13 +192,13 @@ private struct SidebarExtensionActionGrid: View {
             ForEach(slots) { slot in
                 switch slot {
                 case .sumiScriptsManager:
-                    SumiScriptsToolbarControl(layout: .sidebarGrid, browserManager: browserManager)
+                    SumiScriptsToolbarControl(layout: .sidebarGrid, browserContext: browserContext)
                 case .webExtension(let ext):
                     ExtensionActionButton(
                         ext: ext,
                         layout: .sidebarGrid,
                         profileId: profileId,
-                        browserManager: browserManager
+                        browserContext: browserContext
                     )
                 }
             }
@@ -223,9 +223,9 @@ private struct SidebarExtensionActionGrid: View {
     }
 
     private var pinnedSlots: [PinnedToolbarSlot] {
-        browserManager.extensionsModule.orderedPinnedToolbarSlots(
+        browserContext.extensionsModule.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled,
+            sumiScriptsManagerEnabled: browserContext.userscriptsModule.isEnabled,
             profileId: profileId
         )
     }
@@ -235,16 +235,16 @@ private struct SidebarExtensionActionGrid: View {
 private struct CompactExtensionActionStrip: View {
     let extensions: [InstalledExtension]
     let visibleActionLimit: Int?
-    let browserManager: BrowserManager
+    let browserContext: ExtensionActionBrowserContext
 
     var body: some View {
         HStack(spacing: 4) {
             ForEach(visiblePinnedSlots) { slot in
                 switch slot {
                 case .sumiScriptsManager:
-                    SumiScriptsToolbarControl(layout: .compactStrip, browserManager: browserManager)
+                    SumiScriptsToolbarControl(layout: .compactStrip, browserContext: browserContext)
                 case .webExtension(let ext):
-                    ExtensionActionButton(ext: ext, layout: .compactStrip, browserManager: browserManager)
+                    ExtensionActionButton(ext: ext, layout: .compactStrip, browserContext: browserContext)
                 }
             }
         }
@@ -259,9 +259,9 @@ private struct CompactExtensionActionStrip: View {
     }
 
     private var pinnedSlots: [PinnedToolbarSlot] {
-        browserManager.extensionsModule.orderedPinnedToolbarSlots(
+        browserContext.extensionsModule.orderedPinnedToolbarSlots(
             enabledExtensions: enabledExtensions,
-            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled
+            sumiScriptsManagerEnabled: browserContext.userscriptsModule.isEnabled
         )
     }
 
@@ -282,9 +282,8 @@ private enum SumiScriptsToolbarLayout {
 @available(macOS 15.5, *)
 private struct SumiScriptsToolbarControl: View {
     let layout: SumiScriptsToolbarLayout
-    let browserManager: BrowserManager
+    let browserContext: ExtensionActionBrowserContext
 
-    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering = false
@@ -347,15 +346,12 @@ private struct SumiScriptsToolbarControl: View {
 
     @ViewBuilder
     private var sumiScriptsPopover: some View {
-        let currentTab = browserManager.currentTab(for: windowState)
-        if let manager = browserManager.userscriptsModule.managerIfEnabled() {
+        let currentTab = browserContext.currentTab()
+        if let manager = browserContext.userscriptsModule.managerIfEnabled() {
             SumiScriptsPopupView(
                 manager: manager,
                 currentURL: currentTab?.url,
-                webView: currentTab.map {
-                    browserManager.getWebView(for: $0.id, in: windowState.id)
-                        ?? $0.existingWebView
-                } ?? nil
+                webView: currentTab.map(browserContext.webView) ?? nil
             )
         }
     }
@@ -390,7 +386,7 @@ private struct SumiScriptsToolbarControl: View {
                     systemImage: "gearshape",
                     classification: .presentationOnly,
                     action: {
-                        browserManager.openSettingsTab(selecting: .userScripts, in: windowState)
+                        browserContext.openSettingsTab(.userScripts)
                     }
                 )
             ),
@@ -442,10 +438,9 @@ struct ExtensionActionButton: View {
     let ext: InstalledExtension
     var layout: ExtensionActionLayout = .compactStrip
     var profileId: UUID?
-    let browserManager: BrowserManager
+    let browserContext: ExtensionActionBrowserContext
     @EnvironmentObject private var extensionSurfaceStore:
         BrowserExtensionSurfaceStore
-    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isHovering: Bool = false
@@ -501,7 +496,7 @@ struct ExtensionActionButton: View {
                     .background(
                         ActionAnchorView(
                             extensionId: ext.id,
-                            extensionsModule: browserManager.extensionsModule
+                            extensionsModule: browserContext.extensionsModule
                         )
                         .allowsHitTesting(false)
                     )
@@ -518,7 +513,7 @@ struct ExtensionActionButton: View {
                     .background(
                         ActionAnchorView(
                             extensionId: ext.id,
-                            extensionsModule: browserManager.extensionsModule
+                            extensionsModule: browserContext.extensionsModule
                         )
                         .allowsHitTesting(false)
                     )
@@ -538,7 +533,7 @@ struct ExtensionActionButton: View {
                     .background(
                         ActionAnchorView(
                             extensionId: ext.id,
-                            extensionsModule: browserManager.extensionsModule
+                            extensionsModule: browserContext.extensionsModule
                         )
                         .allowsHitTesting(false)
                     )
@@ -663,8 +658,7 @@ struct ExtensionActionButton: View {
 
     private var actionPresentationContext: ExtensionActionPresentationContext {
         ExtensionActionPresentationContext(
-            browserManager: browserManager,
-            windowState: windowState,
+            browserContext: browserContext,
             profileId: profileId
         )
     }
@@ -735,7 +729,20 @@ struct ExtensionActionButton: View {
 
 @available(macOS 15.5, *)
 #Preview {
-    ExtensionActionView(extensions: [], browserManager: BrowserManager())
+    ExtensionActionView(
+        extensions: [],
+        browserContext: ExtensionActionBrowserContext(
+            extensionsModule: SumiExtensionsModule(),
+            userscriptsModule: SumiUserscriptsModule(),
+            windowState: BrowserWindowState(),
+            currentTab: { nil },
+            currentProfileID: { nil },
+            hasLoadedInitialData: { true },
+            webView: { $0.existingWebView },
+            openSettingsTab: { _ in },
+            showExtensionUnavailableAlert: { _, _ in }
+        )
+    )
 }
 
 @available(macOS 15.5, *)

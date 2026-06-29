@@ -30,13 +30,11 @@ private struct URLBarHubNativeBackground: View {
 }
 
 struct URLBarHubPopover: View {
-    @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
 
-    let browserManager: BrowserManager
+    let browserContext: URLBarHubBrowserContext
     @ObservedObject var bookmarkManager: SumiBookmarkManager
 
-    let bookmarkPresentationRequest: SumiBookmarkEditorPresentationRequest?
     let currentTab: Tab?
     let profile: Profile?
     let profileId: UUID?
@@ -90,22 +88,15 @@ struct URLBarHubPopover: View {
 
     @MainActor
     init(
-        browserManager: BrowserManager,
-        bookmarkManager: SumiBookmarkManager,
-        bookmarkPresentationRequest: SumiBookmarkEditorPresentationRequest?,
+        browserContext: URLBarHubBrowserContext,
         currentTab: Tab?,
         profile: Profile?,
         profileId: UUID?,
-        cleanupService: any SumiWebsiteDataCleanupServicing,
-        siteDataPolicyStore: any BrowserSiteDataPolicyStoring,
-        siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing,
-        faviconService: any BrowserFaviconServicing,
         onClose: @escaping () -> Void,
         onContentSizeChange: @escaping (CGSize) -> Void
     ) {
-        self.browserManager = browserManager
-        self.bookmarkManager = bookmarkManager
-        self.bookmarkPresentationRequest = bookmarkPresentationRequest
+        self.browserContext = browserContext
+        self.bookmarkManager = browserContext.bookmarkManager
         self.currentTab = currentTab
         self.profile = profile
         self.profileId = profileId
@@ -113,70 +104,52 @@ struct URLBarHubPopover: View {
         self.onContentSizeChange = onContentSizeChange
         self._siteDataDetailsModel = StateObject(
             wrappedValue: URLBarSiteDataDetailsViewModel(
-                cleanupService: cleanupService,
-                policyStore: siteDataPolicyStore,
-                enforcementService: siteDataPolicyEnforcementService,
-                faviconService: faviconService
+                cleanupService: browserContext.cleanupService,
+                policyStore: browserContext.siteDataPolicyStore,
+                enforcementService: browserContext.siteDataPolicyEnforcementService,
+                faviconService: browserContext.faviconService
             )
         )
     }
 
     private var snapshot: SiteControlsSnapshot {
         _ = refreshNonce
-        return SiteControlsSnapshot.resolve(
-            url: currentTab?.url,
-            profile: activeProfile,
-            protectionCoordinator: browserManager.protectionCoordinator,
-            protectionBrowserRestartRequired: browserManager.protectionCoordinator.settings.browserRestartRequired,
-            protectionReloadRequired: currentTab?.isProtectionReloadRequired == true,
-            extensionsModule: browserManager.extensionsModule,
-            safariContentBlockerReloadRequired: currentTab?.isSafariContentBlockerReloadRequired == true
+        return browserContext.siteControlsSnapshot(
+            currentTab?.url,
+            activeProfile,
+            currentTab?.isProtectionReloadRequired == true,
+            currentTab?.isSafariContentBlockerReloadRequired == true
         )
     }
 
     private var showsExtensionSection: Bool {
-        let sumiScriptsEnabled = browserManager.userscriptsModule.isEnabled
+        let sumiScriptsEnabled = browserContext.extensionActions.sumiScriptsManagerEnabled()
         return !unpinnedEnabledExtensionActions.isEmpty
             || sumiScriptsEnabled
     }
 
     private var showsBoostsSection: Bool {
-        browserManager.boostsModule.canBoost(url: currentTab?.url)
+        browserContext.canBoost(currentTab?.url)
     }
 
     private var currentSiteBoosts: [SumiBoost] {
         _ = refreshNonce
-        return browserManager.boostsModule.changedBoosts(
-            for: currentTab?.url,
-            profileId: activeProfile?.id
-        )
+        return browserContext.changedBoosts(currentTab?.url, activeProfile?.id)
     }
 
     private var currentActiveBoostId: UUID? {
         _ = refreshNonce
-        return browserManager.boostsModule.activeBoostId(
-            for: currentTab?.url,
-            profileId: activeProfile?.id
-        )
+        return browserContext.activeBoostId(currentTab?.url, activeProfile?.id)
     }
 
     private var unpinnedEnabledExtensionActions: [InstalledExtension] {
-        extensionSurfaceStore.enabledExtensions
+        browserContext.extensionSurfaceStore.enabledExtensions
             .filter(\.hasAction)
-            .filter { browserManager.extensionsModule.isPinnedToToolbar($0.id) == false }
+            .filter { browserContext.extensionActions.isPinnedToToolbar($0.id) == false }
     }
 
     private var permissionDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies {
-        SumiCurrentSitePermissionsViewModel.LoadDependencies(
-            coordinator: browserManager.permissionCoordinator,
-            systemPermissionService: browserManager.systemPermissionService,
-            runtimeController: browserManager.runtimePermissionController,
-            autoplayStore: SumiAutoplayPolicyStoreAdapter.shared,
-            blockedPopupStore: browserManager.blockedPopupStore,
-            externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
-            indicatorEventStore: browserManager.permissionIndicatorEventStore,
-            siteActivityStore: browserManager.permissionSiteActivityStore
-        )
+        browserContext.permissionDependencies
     }
 
     private var permissionsLoadKey: String {
@@ -188,7 +161,7 @@ struct URLBarHubPopover: View {
             currentTab?.url.absoluteString ?? "none",
             currentTab?.isAutoplayReloadRequired == true ? "autoplay-reload" : "autoplay-ready",
             currentTab?.audioState.isPlayingAudio == true ? "audio-playing" : "audio-idle",
-            "\(browserManager.permissionSiteActivityStore.revision)",
+            "\(browserContext.permission.siteActivityRevision())",
         ].joined(separator: "|")
     }
 
@@ -230,9 +203,8 @@ struct URLBarHubPopover: View {
         .clipped()
         .animation(Self.modeAnimation, value: containerWidth)
         .onAppear {
-            browserManager.extensionsModule
-                .ensureActionSurfaceMetadataLoadedIfNeeded()
-            handleBookmarkPresentationRequest(bookmarkPresentationRequest)
+            browserContext.extensionActions.ensureActionSurfaceMetadataLoadedIfNeeded()
+            handleBookmarkPresentationRequest(browserContext.bookmarkPresentationRequest)
         }
         .task(id: permissionsLoadKey) {
             await reloadPermissionsImmediately()
@@ -240,7 +212,7 @@ struct URLBarHubPopover: View {
         .task(id: readerModeLoadKey) {
             await reloadReaderModeState()
         }
-        .onChange(of: bookmarkPresentationRequest) { _, request in
+        .onChange(of: browserContext.bookmarkPresentationRequest) { _, request in
             handleBookmarkPresentationRequest(request)
         }
         .onChange(of: currentTab?.id) { _, _ in
@@ -252,25 +224,25 @@ struct URLBarHubPopover: View {
         .onReceive(NotificationCenter.default.publisher(for: .sumiTabNavigationStateDidChange)) { notification in
             handleNavigationStateDidChange(notification)
         }
-        .onReceive(browserManager.protectionCoordinator.settings.changesPublisher) {
+        .onReceive(browserContext.protectionSettingsChanges) {
             _ in scheduleCoalescedRefresh()
         }
-        .onReceive(browserManager.protectionCoordinator.sitePolicyChangesPublisher()) {
+        .onReceive(browserContext.protectionSitePolicyChanges) {
             _ in scheduleCoalescedRefresh()
         }
-        .onReceive(browserManager.blockedPopupStore.objectWillChange) { _ in
+        .onReceive(browserContext.blockedPopupChanges) { _ in
             schedulePermissionsReloadAfterStoreChange()
         }
-        .onReceive(browserManager.externalSchemeSessionStore.objectWillChange) { _ in
+        .onReceive(browserContext.externalSchemeChanges) { _ in
             schedulePermissionsReloadAfterStoreChange()
         }
-        .onReceive(browserManager.permissionIndicatorEventStore.objectWillChange) { _ in
+        .onReceive(browserContext.indicatorEventChanges) { _ in
             schedulePermissionsReloadAfterStoreChange()
         }
-        .onReceive(browserManager.permissionSiteActivityStore.objectWillChange) { _ in
+        .onReceive(browserContext.permissionSiteActivityChanges) { _ in
             schedulePermissionsReloadAfterStoreChange()
         }
-        .onReceive(browserManager.boostsModule.store.changesPublisher) { _ in
+        .onReceive(browserContext.boostChanges) { _ in
             scheduleCoalescedRefresh()
         }
         .onReceive(audioStatePublisher) { _ in
@@ -292,14 +264,11 @@ struct URLBarHubPopover: View {
             controlsContent
         case .protectionDetails:
             URLBarHubProtectionSection(
-                coordinator: browserManager.protectionCoordinator,
+                coordinator: browserContext.protectionCoordinator,
                 currentTab: currentTab,
                 webViewProvider: {
                     guard let currentTab else { return nil }
-                    return browserManager.getWebView(
-                        for: currentTab.id,
-                        in: windowState.id
-                    )
+                    return browserContext.webView(currentTab, windowState)
                 },
                 onBack: {
                     setMode(.controls, direction: .backward)
@@ -463,10 +432,10 @@ struct URLBarHubPopover: View {
             return profile
         }
         if let profileId,
-           let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId }) {
+           let profile = browserContext.profiles().first(where: { $0.id == profileId }) {
             return profile
         }
-        return browserManager.currentProfile
+        return browserContext.currentProfile()
     }
 
     @ViewBuilder
@@ -476,16 +445,15 @@ struct URLBarHubPopover: View {
                 title: "Extensions",
                 actionTitle: "Manage",
                 action: {
-                    browserManager.openSettingsTab(selecting: .extensions, in: windowState)
+                    browserContext.openExtensionSettings(windowState)
                     onClose()
                 },
                 isSectionHovered: isHoveringExtensions
             )
 
-            ExtensionActionView(
-                extensions: unpinnedEnabledExtensionActions,
-                layout: .hubTiles,
-                browserManager: browserManager
+            browserContext.extensionActions.hubTiles(
+                unpinnedEnabledExtensionActions,
+                windowState
             )
             .environment(windowState)
         }
@@ -515,8 +483,8 @@ struct URLBarHubPopover: View {
             ) {
                 pageActionOwner.captureCurrentPageUsingSavedSettings(
                     currentTab: currentTab,
-                    browserManager: browserManager,
                     windowState: windowState,
+                    webViewProvider: browserContext.webView,
                     options: screenshotOptions
                 )
             }
@@ -524,8 +492,8 @@ struct URLBarHubPopover: View {
                 Button("Screenshot Settings...") {
                     pageActionOwner.presentScreenshotSettings(
                         currentTab: currentTab,
-                        browserManager: browserManager,
                         windowState: windowState,
+                        webViewProvider: browserContext.webView,
                         options: screenshotOptions
                     ) { options in
                         screenshotCaptureTarget = options.target.rawValue
@@ -552,8 +520,8 @@ struct URLBarHubPopover: View {
             ) {
                 pageActionOwner.shareCurrentPage(
                     currentTab: currentTab,
-                    browserManager: browserManager,
-                    windowState: windowState
+                    windowState: windowState,
+                    presentSharingServicePicker: browserContext.presentSharingServicePicker
                 )
             }
             .background(URLBarHubShareAnchorView(anchor: pageActionOwner.shareButtonAnchor))
@@ -683,10 +651,7 @@ struct URLBarHubPopover: View {
 
     private func reloadReaderModeState() async {
         guard let currentTab,
-              let webView = browserManager.getWebView(
-                for: currentTab.id,
-                in: windowState.id
-              )
+              let webView = browserContext.webView(currentTab, windowState)
         else {
             readerModeIsActive = false
             return
@@ -767,16 +732,13 @@ struct URLBarHubPopover: View {
         Task { @MainActor in
             await currentSitePermissionsModel.openSystemSettings(
                 for: row,
-                systemPermissionService: browserManager.systemPermissionService
+                systemPermissionService: browserContext.permission.systemPermissionService
             )
         }
     }
 
     private func openSiteSettings() {
-        browserManager.openSiteSettingsTab(
-            focusing: currentTab,
-            in: windowState
-        )
+        browserContext.openSiteSettings(currentTab, windowState)
         onClose()
     }
 
@@ -823,9 +785,9 @@ struct URLBarHubPopover: View {
         _ override: SumiSafariContentBlockerSiteOverride
     ) {
         guard let currentTab else { return }
-        browserManager.extensionsModule.setSafariContentBlockerSiteOverride(
+        browserContext.setSafariContentBlockerSiteOverride(
             override,
-            for: currentTab.url
+            currentTab.url
         )
         currentTab.markSafariContentBlockerReloadRequiredIfNeeded(
             afterChangingPolicyFor: currentTab.url
@@ -836,11 +798,7 @@ struct URLBarHubPopover: View {
     private func createBoost() {
         guard let currentTab else { return }
         do {
-            try browserManager.boostsModule.createBoostAndOpenEditor(
-                tab: currentTab,
-                profile: activeProfile,
-                windowState: windowState
-            )
+            try browserContext.createBoostAndOpenEditor(currentTab, activeProfile, windowState)
             onClose()
         } catch {
             bookmarkErrorMessage = error.localizedDescription
@@ -848,21 +806,13 @@ struct URLBarHubPopover: View {
     }
 
     private func toggleBoost(_ boost: SumiBoost) {
-        browserManager.boostsModule.toggleActiveBoost(
-            boost,
-            isEphemeral: activeProfile?.isEphemeral == true
-        )
+        browserContext.toggleActiveBoost(boost, activeProfile?.isEphemeral == true)
         scheduleCoalescedRefresh()
     }
 
     private func editBoost(_ boost: SumiBoost) {
         guard let currentTab else { return }
-        browserManager.boostsModule.presentEditor(
-            boost: boost,
-            tab: currentTab,
-            profile: activeProfile,
-            windowState: windowState
-        )
+        browserContext.presentBoostEditor(boost, currentTab, activeProfile, windowState)
         onClose()
     }
 
@@ -895,7 +845,7 @@ struct URLBarHubPopover: View {
         else { return }
 
         showBookmarkEditor()
-        browserManager.clearBookmarkEditorPresentationRequest(request)
+        browserContext.clearBookmarkEditorPresentationRequest(request)
     }
 
     private func handleNavigationStateDidChange(_ notification: Notification) {
@@ -916,10 +866,7 @@ struct URLBarHubPopover: View {
 
     private func handleReaderMode() {
         guard let currentTab,
-              let webView = browserManager.getWebView(
-                for: currentTab.id,
-                in: windowState.id
-              )
+              let webView = browserContext.webView(currentTab, windowState)
         else {
             return
         }

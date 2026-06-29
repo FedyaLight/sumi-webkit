@@ -12,7 +12,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     private final class AnchorRegistration {
         weak var view: NSView?
         weak var windowState: BrowserWindowState?
-        weak var browserManager: BrowserManager?
+        let browserContext: URLBarHubBrowserContext
         weak var settings: SumiSettingsService?
         var themeContext: ResolvedThemeContext
         var currentTab: Tab?
@@ -22,7 +22,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         init(
             view: NSView,
             windowState: BrowserWindowState,
-            browserManager: BrowserManager,
+            browserContext: URLBarHubBrowserContext,
             settings: SumiSettingsService,
             themeContext: ResolvedThemeContext,
             currentTab: Tab?,
@@ -31,7 +31,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         ) {
             self.view = view
             self.windowState = windowState
-            self.browserManager = browserManager
+            self.browserContext = browserContext
             self.settings = settings
             self.themeContext = themeContext
             self.currentTab = currentTab
@@ -44,7 +44,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         let popover: NSPopover
         let hostingController: NSHostingController<URLBarHubPopoverRootView>
         weak var windowState: BrowserWindowState?
-        weak var browserManager: BrowserManager?
         weak var transientCoordinator: SidebarTransientSessionCoordinator?
         let transientSessionToken: SidebarTransientSessionToken?
         var contentSize: NSSize
@@ -55,7 +54,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             popover: NSPopover,
             hostingController: NSHostingController<URLBarHubPopoverRootView>,
             windowState: BrowserWindowState,
-            browserManager: BrowserManager,
             transientCoordinator: SidebarTransientSessionCoordinator?,
             transientSessionToken: SidebarTransientSessionToken?,
             contentSize: NSSize
@@ -63,7 +61,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             self.popover = popover
             self.hostingController = hostingController
             self.windowState = windowState
-            self.browserManager = browserManager
             self.transientCoordinator = transientCoordinator
             self.transientSessionToken = transientSessionToken
             self.contentSize = contentSize
@@ -87,7 +84,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     func registerAnchor(
         _ view: NSView,
         windowState: BrowserWindowState,
-        browserManager: BrowserManager,
+        browserContext: URLBarHubBrowserContext,
         settings: SumiSettingsService,
         themeContext: ResolvedThemeContext,
         currentTab: Tab?,
@@ -97,7 +94,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         let registration = AnchorRegistration(
             view: view,
             windowState: windowState,
-            browserManager: browserManager,
+            browserContext: browserContext,
             settings: settings,
             themeContext: themeContext,
             currentTab: currentTab,
@@ -118,7 +115,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         pendingContentSizes[windowID] = nil
     }
 
-    func toggle(in windowState: BrowserWindowState, browserManager: BrowserManager) {
+    func toggle(in windowState: BrowserWindowState, browserContext: URLBarHubBrowserContext) {
         if activeSessions[windowState.id]?.popover.isShown == true {
             close(in: windowState)
             return
@@ -126,11 +123,11 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
         present(
             in: windowState,
-            browserManager: browserManager
+            browserContext: browserContext
         )
     }
 
-    func present(in windowState: BrowserWindowState, browserManager: BrowserManager) {
+    func present(in windowState: BrowserWindowState, browserContext: URLBarHubBrowserContext) {
         if let session = activeSessions[windowState.id],
            let registration = anchors[windowState.id] {
             update(session, using: registration)
@@ -139,7 +136,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
         presentOrRetry(
             in: windowState,
-            browserManager: browserManager,
+            browserContext: browserContext,
             allowRetry: true
         )
     }
@@ -175,7 +172,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func presentOrRetry(
         in windowState: BrowserWindowState,
-        browserManager: BrowserManager,
+        browserContext: URLBarHubBrowserContext,
         allowRetry: Bool
     ) {
         guard let registration = anchors[windowState.id],
@@ -187,13 +184,13 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         else {
             if allowRetry {
                 beginPendingTransientSessionIfNeeded(in: windowState)
-                Task { @MainActor [weak self, weak windowState, weak browserManager] in
+                Task { @MainActor [weak self, weak windowState, browserContext] in
                     await Task.yield()
                     await Task.yield()
-                    guard let self, let windowState, let browserManager else { return }
+                    guard let self, let windowState else { return }
                     self.presentOrRetry(
                         in: windowState,
-                        browserManager: browserManager,
+                        browserContext: browserContext,
                         allowRetry: false
                     )
                 }
@@ -233,7 +230,6 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
             popover: popover,
             hostingController: hostingController,
             windowState: windowState,
-            browserManager: browserManager,
             transientCoordinator: windowState.sidebarTransientSessionCoordinator,
             transientSessionToken: transientSessionToken,
             contentSize: initialSize
@@ -321,7 +317,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     ) -> URLBarHubPopoverRootView {
         let colorScheme = popoverColorScheme(for: registration)
         return URLBarHubPopoverRootView(
-            browserManager: registration.browserManager,
+            browserContext: registration.browserContext,
             windowState: registration.windowState,
             settings: registration.settings ?? SumiSettingsService(),
             themeContext: popoverThemeContext(for: registration, colorScheme: colorScheme),
@@ -491,7 +487,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 }
 
 private struct URLBarHubPopoverRootView: View {
-    let browserManager: BrowserManager?
+    let browserContext: URLBarHubBrowserContext?
     let windowState: BrowserWindowState?
     let settings: SumiSettingsService
     let themeContext: ResolvedThemeContext
@@ -503,22 +499,16 @@ private struct URLBarHubPopoverRootView: View {
     let onContentSizeChange: (CGSize) -> Void
 
     var body: some View {
-        if let browserManager, let windowState {
+        if let browserContext, let windowState {
             URLBarHubPopover(
-                browserManager: browserManager,
-                bookmarkManager: browserManager.bookmarkManager,
-                bookmarkPresentationRequest: browserManager.bookmarkEditorPresentationRequest,
+                browserContext: browserContext,
                 currentTab: currentTab,
                 profile: profile,
                 profileId: profileId,
-                cleanupService: browserManager.dataServices.websiteDataCleanupService,
-                siteDataPolicyStore: browserManager.dataServices.siteDataPolicyStore,
-                siteDataPolicyEnforcementService: browserManager.dataServices.siteDataPolicyEnforcementService,
-                faviconService: browserManager.dataServices.faviconService,
                 onClose: onClose,
                 onContentSizeChange: onContentSizeChange
             )
-            .environmentObject(browserManager.extensionSurfaceStore)
+            .environmentObject(browserContext.extensionSurfaceStore)
             .environment(windowState)
             .environment(\.sumiSettings, settings)
             .environment(\.resolvedThemeContext, themeContext)
@@ -531,7 +521,8 @@ private struct URLBarHubPopoverRootView: View {
 }
 
 struct URLBarHubPopoverAnchorView: NSViewRepresentable {
-    let browserManager: BrowserManager
+    let presenter: URLBarHubPopoverPresenter
+    let browserContext: URLBarHubBrowserContext
     let windowState: BrowserWindowState
     let settings: SumiSettingsService
     let themeContext: ResolvedThemeContext
@@ -540,7 +531,7 @@ struct URLBarHubPopoverAnchorView: NSViewRepresentable {
     let profileId: UUID?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(browserManager: browserManager, windowID: windowState.id)
+        Coordinator(presenter: presenter, windowID: windowState.id)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -550,25 +541,25 @@ struct URLBarHubPopoverAnchorView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.browserManager = browserManager
+        context.coordinator.presenter = presenter
         context.coordinator.windowID = windowState.id
         register(nsView, coordinator: context.coordinator)
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.browserManager?.urlBarHubPopoverPresenter.unregisterAnchor(
+        coordinator.presenter?.unregisterAnchor(
             nsView,
             windowID: coordinator.windowID
         )
     }
 
     private func register(_ view: NSView, coordinator: Coordinator) {
-        coordinator.browserManager = browserManager
+        coordinator.presenter = presenter
         coordinator.windowID = windowState.id
-        browserManager.urlBarHubPopoverPresenter.registerAnchor(
+        presenter.registerAnchor(
             view,
             windowState: windowState,
-            browserManager: browserManager,
+            browserContext: browserContext,
             settings: settings,
             themeContext: themeContext,
             currentTab: currentTab,
@@ -578,11 +569,11 @@ struct URLBarHubPopoverAnchorView: NSViewRepresentable {
     }
 
     final class Coordinator {
-        weak var browserManager: BrowserManager?
+        weak var presenter: URLBarHubPopoverPresenter?
         var windowID: UUID
 
-        init(browserManager: BrowserManager, windowID: UUID) {
-            self.browserManager = browserManager
+        init(presenter: URLBarHubPopoverPresenter, windowID: UUID) {
+            self.presenter = presenter
             self.windowID = windowID
         }
     }
