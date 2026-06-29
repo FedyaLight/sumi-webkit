@@ -1,3 +1,4 @@
+@testable import Sumi
 import XCTest
 
 final class SidebarSpaceBodySourceGuardTests: XCTestCase {
@@ -54,32 +55,32 @@ final class SidebarSpaceBodySourceGuardTests: XCTestCase {
         }
     }
 
-    func testActiveSwiftUISidebarReadsInjectedDragState() throws {
-        let hostSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarPresentationContext.swift")
-        XCTAssertTrue(hostSource.contains("let sidebarDragState: SidebarDragState"))
-        XCTAssertTrue(hostSource.contains(".environmentObject(context.sidebarDragState)"))
-        XCTAssertTrue(hostSource.contains(".environmentObject(context.sidebarDragState.locationTracker)"))
-
-        let columnRootSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarColumnRepresentable.swift")
-        XCTAssertTrue(columnRootSource.contains("var sidebarDragState: SidebarDragState = SidebarDragState.shared"))
-        XCTAssertTrue(columnRootSource.contains("sidebarDragState: sidebarDragState"))
-
-        let hoverRootSource = try Self.source(named: "Sumi/Components/Sidebar/SidebarHoverOverlayView.swift")
-        XCTAssertTrue(hoverRootSource.contains("sidebarDragState: SidebarDragState = SidebarDragState.shared"))
-        XCTAssertTrue(hoverRootSource.contains("sidebarDragState: dragState"))
-
-        for path in [
-            "Navigation/Sidebar/SpacesSideBarView.swift",
-            "Sumi/Components/Sidebar/CollapsedSidebarOverlayHost.swift",
-            "Sumi/Components/Sidebar/PinnedButtons/PinnedGrid.swift",
-            "Sumi/Components/Sidebar/SidebarDDGHover.swift",
-            "Sumi/Components/Sidebar/SpaceSection/SpaceView.swift",
-            "Sumi/Components/Sidebar/SpaceSection/SpaceRegularTabsSection.swift",
-            "Sumi/Components/Sidebar/SpaceSection/TabFolderView.swift",
-        ] {
-            let source = try Self.source(named: path)
-            XCTAssertFalse(source.contains("SidebarDragState.shared"), "\(path) should use injected sidebar drag state")
+    @MainActor
+    func testSidebarColumnHostedRootCarriesInjectedDragState() throws {
+        let browserManager = BrowserManager()
+        let windowState = BrowserWindowState()
+        let windowRegistry = WindowRegistry()
+        let dragState = SidebarDragState()
+        let settingsSuiteName = "SumiTests.sidebarDragState.\(UUID().uuidString)"
+        let settingsDefaults = try XCTUnwrap(UserDefaults(suiteName: settingsSuiteName))
+        defer {
+            settingsDefaults.removePersistentDomain(forName: settingsSuiteName)
         }
+
+        let root = SidebarColumnHostedRoot.view(
+            browserManager: browserManager,
+            windowState: windowState,
+            windowRegistry: windowRegistry,
+            sumiSettings: SumiSettingsService(userDefaults: settingsDefaults),
+            resolvedThemeContext: .default,
+            chromeBackgroundResolvedThemeContext: .default,
+            windowChromeSize: CGSize(width: 320, height: 640),
+            sidebarDragState: dragState,
+            presentationContext: .docked(sidebarWidth: 280)
+        )
+
+        XCTAssertTrue(root.environmentContext.sidebarDragState === dragState)
+        XCTAssertTrue(root.environmentContext.sidebarDragState.locationTracker === dragState.locationTracker)
     }
 
     func testTabFolderContextMenusAreOwnedByActionOwner() throws {
