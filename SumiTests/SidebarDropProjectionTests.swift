@@ -562,24 +562,24 @@ final class SidebarDropProjectionTests: XCTestCase {
     @MainActor
     func testSidebarDragGeometryMutationBufferCoalescesLatestMutationForKey() {
         let buffer = SidebarDragGeometryMutationBuffer()
-        let state = SidebarDragState()
+        let repository = SidebarDragGeometryRepository()
         let spaceId = UUID()
         var appliedValues: [Int] = []
 
-        buffer.enqueue(key: .regularList(spaceId), state: state) { _ in
+        buffer.enqueue(key: .regularList(spaceId), repository: repository) { _ in
             appliedValues.append(1)
         }
-        buffer.enqueue(key: .regularList(spaceId), state: state) { _ in
+        buffer.enqueue(key: .regularList(spaceId), repository: repository) { _ in
             appliedValues.append(2)
         }
         buffer.enqueue(
             key: .section(SidebarSectionGeometryKey(spaceId: spaceId, section: .spacePinned)),
-            state: state
+            repository: repository
         ) { _ in
             appliedValues.append(3)
         }
 
-        buffer.flush(into: state)
+        buffer.flush(into: repository)
 
         XCTAssertEqual(appliedValues.count, 2)
         XCTAssertTrue(appliedValues.contains(2))

@@ -142,7 +142,7 @@ enum SidebarDragGeometryMutationKey: Hashable {
 }
 
 private struct SidebarDragGeometryMutation {
-    let apply: @MainActor (SidebarDragState) -> Void
+    let apply: @MainActor (SidebarDragGeometryRepository) -> Void
 }
 
 @MainActor
@@ -152,20 +152,20 @@ final class SidebarDragGeometryMutationBuffer {
 
     func enqueue(
         key: SidebarDragGeometryMutationKey,
-        state: SidebarDragState,
-        apply: @escaping @MainActor (SidebarDragState) -> Void
+        repository: SidebarDragGeometryRepository,
+        apply: @escaping @MainActor (SidebarDragGeometryRepository) -> Void
     ) {
         mutations[key] = SidebarDragGeometryMutation(apply: apply)
 
         guard !isFlushScheduled else { return }
         isFlushScheduled = true
-        DispatchQueue.main.async { [weak self, weak state] in
-            guard let self, let state else { return }
-            self.flush(into: state)
+        DispatchQueue.main.async { [weak self, weak repository] in
+            guard let self, let repository else { return }
+            self.flush(into: repository)
         }
     }
 
-    func flush(into state: SidebarDragState) {
+    func flush(into repository: SidebarDragGeometryRepository) {
         isFlushScheduled = false
         guard !mutations.isEmpty else { return }
 
@@ -173,7 +173,7 @@ final class SidebarDragGeometryMutationBuffer {
         mutations = [:]
 
         for mutation in pendingMutations {
-            mutation.apply(state)
+            mutation.apply(repository)
         }
     }
 }
