@@ -17,11 +17,14 @@ extension SumiExtensionsModule {
         )
 
         let manager = managerIfLoadedAndEnabled()
+        let adapterRegistry = manager?.loadedNativeMessagingRelay?.diagnosticsAdapterRegistry
+            ?? SumiNativeMessagingAdapterRegistry.production()
         let report = SafariExtensionNativeMessagingProbeBuilder.build(
             discovered: discovered,
             installedExtensions: manager?.installedExtensions ?? [],
             extensionManager: manager,
-            extensionsModuleEnabled: isEnabled
+            extensionsModuleEnabled: isEnabled,
+            adapterRegistry: adapterRegistry
         )
         SafariExtensionNativeMessagingProbeBuilder.logIfDiagnosticsEnabled(report)
         return report

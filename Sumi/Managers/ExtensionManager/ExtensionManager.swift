@@ -235,7 +235,15 @@ final class ExtensionManager: NSObject, ObservableObject {
         if let nativeMessagingRelayStorage {
             return nativeMessagingRelayStorage
         }
-        let relay = SumiNativeMessagingRelay()
+        let relay = SumiNativeMessagingRelay.production(
+            extensionsModuleEnabled: { [weak self] in
+                self?.extensionsModuleEnabledForDelegateCallbacks ?? false
+            },
+            profileRuntimeLoaded: { [weak self] in
+                guard let self else { return false }
+                return self.runtimeState == .ready || self.runtimeState == .loading
+            }
+        )
         nativeMessagingRelayStorage = relay
         return relay
     }

@@ -23,10 +23,14 @@ enum SumiNativeMessagingConfiguredAdapters {
 
 @MainActor
 extension SumiNativeMessagingAdapterRegistry {
-    static let shared: SumiNativeMessagingAdapterRegistry = {
+    static func production() -> SumiNativeMessagingAdapterRegistry {
         if #available(macOS 15.5, *) {
             return SumiNativeMessagingAdapterRegistry(adapters: SumiNativeMessagingConfiguredAdapters.all)
         }
         return SumiNativeMessagingAdapterRegistry(adapters: [])
+    }
+
+    static let shared: SumiNativeMessagingAdapterRegistry = {
+        production()
     }()
 }

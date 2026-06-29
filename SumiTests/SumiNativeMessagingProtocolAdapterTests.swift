@@ -338,6 +338,21 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
         )
     }
 
+    func testRelayDefaultAdapterRegistryIsInstanceScoped() {
+        let first = SumiNativeMessagingRelay()
+        let second = SumiNativeMessagingRelay()
+
+        XCTAssertFalse(first.diagnosticsAdapterRegistry === second.diagnosticsAdapterRegistry)
+        XCTAssertEqual(
+            first.diagnosticsAdapterRegistry.registeredProtocolIdentifiers,
+            [BitwardenNativeMessagingIdentifiers.protocolIdentifier]
+        )
+        XCTAssertEqual(
+            second.diagnosticsAdapterRegistry.registeredProtocolIdentifiers,
+            [BitwardenNativeMessagingIdentifiers.protocolIdentifier]
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeRelay(

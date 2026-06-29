@@ -35,9 +35,7 @@ protocol CompanionApplicationMessageBackend: AnyObject {
 
 @MainActor
 final class CompanionApplicationBackendRegistry {
-    static let shared = CompanionApplicationBackendRegistry(
-        backends: CompanionApplicationBackendRegistry.defaultBackends()
-    )
+    static let shared = CompanionApplicationBackendRegistry.production()
 
     private let backends: [CompanionApplicationMessageBackend]
 
@@ -55,6 +53,10 @@ final class CompanionApplicationBackendRegistry {
         backends.map(\.backendIdentifier).sorted()
     }
 
+    static func production() -> CompanionApplicationBackendRegistry {
+        CompanionApplicationBackendRegistry(backends: defaultBackends())
+    }
+
     private static func defaultBackends() -> [CompanionApplicationMessageBackend] {
         [ProtonPassSafariApplicationIDAdapter()]
     }
@@ -64,7 +66,7 @@ final class CompanionApplicationBackendRegistry {
 final class CompanionApplicationMessageRouter {
     private let registry: CompanionApplicationBackendRegistry
 
-    init(registry: CompanionApplicationBackendRegistry = .shared) {
+    init(registry: CompanionApplicationBackendRegistry = .production()) {
         self.registry = registry
     }
 

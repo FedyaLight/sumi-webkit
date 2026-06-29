@@ -92,7 +92,8 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         contentBlockerRecords: [InstalledSafariContentBlockerRecord] = [],
         attachedSafariContentRuleListIdentifiers: [String] = [],
         extensionManager: ExtensionManager? = nil,
-        extensionsModuleEnabled: Bool = true
+        extensionsModuleEnabled: Bool = true,
+        adapterRegistry: SumiNativeMessagingAdapterRegistry = .production()
     ) -> SafariExtensionRuntimeDiagnosticReport {
         let compatibility = SafariExtensionCompatibilityReportBuilder.build(
             targets: targets,
@@ -122,7 +123,8 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
                 context: context,
                 compatibilityEntry: compatibilityEntry,
                 extensionsModuleEnabled: extensionsModuleEnabled,
-                suppressionReport: suppressionReport
+                suppressionReport: suppressionReport,
+                adapterRegistry: adapterRegistry
             )
 
             return SafariExtensionRuntimeDiagnosticEntry(
@@ -182,7 +184,8 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         context: WKWebExtensionContext?,
         compatibilityEntry: SafariExtensionCompatibilityEntry?,
         extensionsModuleEnabled: Bool,
-        suppressionReport: SafariExtensionNativeMessagingSuppressionReport
+        suppressionReport: SafariExtensionNativeMessagingSuppressionReport,
+        adapterRegistry: SumiNativeMessagingAdapterRegistry
     ) -> SafariExtensionRuntimeStatusSnapshot {
         var notes: [String] = []
 
@@ -226,7 +229,7 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
 
         if isPasswordManager {
             if target.key == "bitwarden",
-               SumiNativeMessagingAdapterRegistry.shared.adapter(
+               adapterRegistry.adapter(
                    forHostBundleIdentifier: BitwardenNativeMessagingIdentifiers.hostBundleIdentifier
                ) != nil {
                 notes.append(
@@ -583,13 +586,16 @@ extension SumiExtensionsModule {
         SafariExtensionImportStore.shared.refreshDiscoveredCandidates(discovered)
 
         let manager = managerIfLoadedAndEnabled()
+        let adapterRegistry = manager?.loadedNativeMessagingRelay?.diagnosticsAdapterRegistry
+            ?? SumiNativeMessagingAdapterRegistry.production()
         let report = SafariExtensionRuntimeDiagnosticsBuilder.build(
             discovered: discovered,
             installedExtensions: manager?.installedExtensions ?? [],
             contentBlockerRecords: installedSafariContentBlockers(),
             attachedSafariContentRuleListIdentifiers: safariContentBlockerAttachedRuleListIdentifiers(),
             extensionManager: manager,
-            extensionsModuleEnabled: isEnabled
+            extensionsModuleEnabled: isEnabled,
+            adapterRegistry: adapterRegistry
         )
         SafariExtensionRuntimeDiagnosticsBuilder.logIfDiagnosticsEnabled(report)
         return report

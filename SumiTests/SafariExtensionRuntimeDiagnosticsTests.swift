@@ -137,6 +137,19 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertTrue(report.globalSuppressionReport.repeatedCallSuppressionEnabled)
     }
 
+    func testRuntimeDiagnosticReportUsesInjectedNativeMessagingRegistry() {
+        let report = SafariExtensionRuntimeDiagnosticsBuilder.build(
+            targets: [SafariExtensionCompatibilityTargets.all[0]],
+            discovered: [],
+            importStore: importStore,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [])
+        )
+
+        let notes = report.entries[0].runtimeStatus.detailNotes.joined(separator: "\n")
+        XCTAssertFalse(notes.contains("Bitwarden adapter registered"))
+        XCTAssertTrue(notes.contains("companionAppProtocolUnknown expected"))
+    }
+
     func testRuntimeDiagnosticReportIncludesSafariBundleKindSummary() {
         let contentBlocker = makeCandidate(
             bundleIdentifier: "com.example.blocker",
@@ -251,6 +264,21 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         let raindropRow = report.adapterCompatibility.first { $0.targetKey == "raindrop" }
         XCTAssertEqual(raindropRow?.protocolStatus, .notApplicable)
         XCTAssertEqual(raindropRow?.biometricsStatusProbe, .notApplicable)
+    }
+
+    func testNativeMessagingProbeUsesInjectedAdapterRegistry() {
+        let report = SafariExtensionNativeMessagingProbeBuilder.build(
+            targets: [SafariExtensionCompatibilityTargets.all[0]],
+            discovered: [],
+            importStore: importStore,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [])
+        )
+
+        XCTAssertEqual(report.registeredAdapterIdentifiers, [])
+        XCTAssertEqual(report.entries[0].targetKey, "bitwarden")
+        XCTAssertFalse(report.entries[0].adapterSelected)
+        XCTAssertNil(report.entries[0].adapterIdentifier)
+        XCTAssertEqual(report.adapterCompatibility[0].registeredAdapterIdentifiers, [])
     }
 
     func testCompatibilityReportIncludesManualVerification() {

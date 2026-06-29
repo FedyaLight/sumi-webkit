@@ -54,12 +54,12 @@ final class SumiNativeMessagingRelay {
     init(
         importStore: SafariExtensionImportStore = .shared,
         launcher: SumiHostApplicationLaunching = SumiNSWorkspaceHostApplicationLauncher(),
-        adapterRegistry: SumiNativeMessagingAdapterRegistry = .shared,
+        adapterRegistry: SumiNativeMessagingAdapterRegistry = .production(),
         companionApplicationRouter: CompanionApplicationMessageRouter =
             CompanionApplicationMessageRouter(),
-        launchPolicy: SumiCompanionAppLaunchPolicy = .shared,
+        launchPolicy: SumiCompanionAppLaunchPolicy = SumiCompanionAppLaunchPolicy(),
         loopGuard: SumiNativeMessagingRelayLoopGuard = SumiNativeMessagingRelayLoopGuard(),
-        extensionsModuleEnabled: @escaping @MainActor () -> Bool = { SumiExtensionsModule.shared.isEnabled },
+        extensionsModuleEnabled: @escaping @MainActor () -> Bool = { true },
         isPrivateBrowsing: @escaping @MainActor () -> Bool = { false },
         profileRuntimeLoaded: @escaping @MainActor () -> Bool = { true },
         logDiagnostic: (@MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void)? = nil
@@ -150,6 +150,34 @@ final class SumiNativeMessagingRelay {
                 }
             }
         )
+    }
+
+    static func production(
+        importStore: SafariExtensionImportStore = .shared,
+        launcher: SumiHostApplicationLaunching = SumiNSWorkspaceHostApplicationLauncher(),
+        extensionsModuleEnabled: @escaping @MainActor () -> Bool,
+        isPrivateBrowsing: @escaping @MainActor () -> Bool = { false },
+        profileRuntimeLoaded: @escaping @MainActor () -> Bool = { true },
+        logDiagnostic: (@MainActor (SafariExtensionNativeMessagingDiagnostic) -> Void)? = nil
+    ) -> SumiNativeMessagingRelay {
+        SumiNativeMessagingRelay(
+            importStore: importStore,
+            launcher: launcher,
+            adapterRegistry: .production(),
+            companionApplicationRouter: CompanionApplicationMessageRouter(
+                registry: .production()
+            ),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: extensionsModuleEnabled,
+            isPrivateBrowsing: isPrivateBrowsing,
+            profileRuntimeLoaded: profileRuntimeLoaded,
+            logDiagnostic: logDiagnostic
+        )
+    }
+
+    var diagnosticsAdapterRegistry: SumiNativeMessagingAdapterRegistry {
+        adapterRegistry
     }
 
     func handleSendMessage(

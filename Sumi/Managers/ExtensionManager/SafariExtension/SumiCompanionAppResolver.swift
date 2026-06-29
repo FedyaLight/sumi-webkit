@@ -129,8 +129,8 @@ enum SumiCompanionAppResolver {
         installedExtensions: [InstalledExtension],
         importStore: SafariExtensionImportStore,
         launcher: SumiHostApplicationLaunching,
-        adapterRegistry: SumiNativeMessagingAdapterRegistry = .shared,
-        launchPolicy: SumiCompanionAppLaunchPolicy = .shared
+        adapterRegistry: SumiNativeMessagingAdapterRegistry = .production(),
+        launchPolicy: SumiCompanionAppLaunchPolicy = SumiCompanionAppLaunchPolicy()
     ) -> SumiCompanionAppResolverResult {
         let trimmedRequest = requestedApplicationIdentifier?
             .trimmingCharacters(in: .whitespacesAndNewlines)

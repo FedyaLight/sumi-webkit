@@ -17,7 +17,7 @@ enum SafariExtensionNativeMessagingProbeBuilder {
         installedExtensions: [InstalledExtension] = [],
         extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true,
-        adapterRegistry: SumiNativeMessagingAdapterRegistry = .shared
+        adapterRegistry: SumiNativeMessagingAdapterRegistry = .production()
     ) -> SafariExtensionNativeMessagingProbeReport {
         let registeredAdapterIdentifiers = adapterRegistry.registeredProtocolIdentifiers
         let compatibility = SafariExtensionCompatibilityReportBuilder.build(
