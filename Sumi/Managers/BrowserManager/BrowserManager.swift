@@ -188,15 +188,16 @@ class BrowserManager: ObservableObject {
         }
     }
 
-    private var savedSidebarWidth: CGFloat = BrowserWindowState.sidebarDefaultWidth
-    private var savedSidebarVisibility: Bool = true
+    private let sidebarPresentationStateOwner = BrowserSidebarPresentationStateOwner()
     var isSwitchingProfile: Bool = false
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
     private var browsingDataRetentionObserverToken: NSObjectProtocol?
     private var startupProtectionRuntime: BrowserStartupProtectionRuntime!
     private let windowTabActivationBatcher = WindowTabActivationBatcher()
-    private let historySwipeWindowMutationFlushOwner = HistorySwipeWindowMutationFlushOwner()
+    private lazy var windowVisualMutationOwner = BrowserWindowVisualMutationOwner(
+        dependencies: .live(browserManager: self)
+    )
     lazy var windowHistorySessionOwner = BrowserWindowHistorySessionOwner(
         dependencies: .live(browserManager: self)
     )
@@ -466,26 +467,22 @@ class BrowserManager: ObservableObject {
         for windowState: BrowserWindowState,
         persist: Bool = true
     ) {
-        let clampedWidth = BrowserWindowState.clampedSidebarWidth(width)
-        windowState.sidebarWidth = clampedWidth
-        windowState.savedSidebarWidth = clampedWidth
-        windowState.sidebarContentWidth = BrowserWindowState.sidebarContentWidth(for: clampedWidth)
-        savedSidebarWidth = clampedWidth
+        sidebarPresentationStateOwner.updateSidebarWidth(width, for: windowState)
         if persist {
             schedulePersistWindowSession(for: windowState)
         }
     }
 
     func updateSavedSidebarVisibility(_ isVisible: Bool) {
-        savedSidebarVisibility = isVisible
+        sidebarPresentationStateOwner.updateSavedSidebarVisibility(isVisible)
     }
 
     func toggleSavedSidebarVisibility() {
-        savedSidebarVisibility.toggle()
+        sidebarPresentationStateOwner.toggleSavedSidebarVisibility()
     }
 
     func updateSavedSidebarWidth(_ width: CGFloat) {
-        savedSidebarWidth = width
+        sidebarPresentationStateOwner.updateSavedSidebarWidth(width)
     }
 
     func toggleSidebar() {
@@ -499,13 +496,10 @@ class BrowserManager: ObservableObject {
     // MARK: - Sidebar width access for overlays
     /// Returns the last saved sidebar width (used when sidebar is collapsed to size hover overlay)
     func getSavedSidebarWidth(for windowState: BrowserWindowState? = nil) -> CGFloat {
-        if let state = windowState {
-            return max(BrowserWindowState.sidebarMinimumWidth, state.savedSidebarWidth)
-        }
-        if let active = windowRegistry?.activeWindow {
-            return max(BrowserWindowState.sidebarMinimumWidth, active.savedSidebarWidth)
-        }
-        return max(BrowserWindowState.sidebarMinimumWidth, savedSidebarWidth)
+        sidebarPresentationStateOwner.savedSidebarWidth(
+            for: windowState,
+            activeWindow: windowRegistry?.activeWindow
+        )
     }
 
     private var tabSelectionActions: BrowserTabSelectionOwner.Actions {
@@ -996,43 +990,21 @@ class BrowserManager: ObservableObject {
 
     /// Refresh compositor for a specific window
     func refreshCompositor(for windowState: BrowserWindowState) {
-        guard !isBackForwardGestureActive(in: windowState) else {
-            enqueueWindowMutationDuringHistorySwipe(
-                .refreshCompositor,
-                for: windowState
-            )
-            return
-        }
-        windowState.refreshCompositor()
+        windowVisualMutationOwner.refreshCompositor(for: windowState)
     }
 
     @discardableResult
     func performImmediateVisualHandoffIfPossible(in windowState: BrowserWindowState) -> Bool {
-        guard !isBackForwardGestureActive(in: windowState) else { return false }
-        return webViewCoordinator?.performImmediateVisualHandoffIfPossible(in: windowState.id) ?? false
+        windowVisualMutationOwner.performImmediateVisualHandoffIfPossible(in: windowState)
     }
 
     @discardableResult
     func prepareVisibleWebViews(for windowState: BrowserWindowState) -> Bool {
-        guard let webViewCoordinator else { return false }
-        return webViewCoordinator.prepareVisibleWebViews(
-            for: windowState,
-            browserManager: self
-        )
+        windowVisualMutationOwner.prepareVisibleWebViews(for: windowState)
     }
 
     func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {
-        guard !isBackForwardGestureActive(in: windowState) else {
-            enqueueWindowMutationDuringHistorySwipe(
-                .prepareVisibleWebViews,
-                for: windowState
-            )
-            return
-        }
-        webViewCoordinator?.schedulePrepareVisibleWebViews(
-            for: windowState,
-            browserManager: self
-        )
+        windowVisualMutationOwner.schedulePrepareVisibleWebViews(for: windowState)
     }
 
     func space(for spaceId: UUID?) -> Space? {
@@ -1063,36 +1035,19 @@ class BrowserManager: ObservableObject {
         windowSpaceStateOwner.updateProfileRuntimeStates(activeWindowState: activeWindowState)
     }
 
-    private func isBackForwardGestureActive(in windowState: BrowserWindowState) -> Bool {
-        if webViewCoordinator?.hasActiveHistorySwipe(in: windowState.id) == true {
-            return true
-        }
-        guard let current = currentTab(for: windowState) else { return false }
-        return current.pendingMainFrameNavigationKind == .backForward
-            || current.isFreezingNavigationStateDuringBackForwardGesture
-    }
-
     func enqueueWindowMutationDuringHistorySwipe(
         _ kind: HistorySwipeDeferredWindowMutationKind,
         for windowState: BrowserWindowState
     ) {
-        historySwipeWindowMutationFlushOwner.enqueue(kind, for: windowState)
+        windowVisualMutationOwner.enqueueWindowMutationDuringHistorySwipe(kind, for: windowState)
     }
 
     func flushWindowMutationsAfterHistorySwipe(in windowId: UUID) {
-        historySwipeWindowMutationFlushOwner.flushPendingMutations(
-            in: windowId,
-            prepareVisibleWebViews: { [weak self] windowState in
-                self?.prepareVisibleWebViews(for: windowState) ?? false
-            },
-            refreshCompositor: { windowState in
-                windowState.refreshCompositor()
-            }
-        )
+        windowVisualMutationOwner.flushWindowMutationsAfterHistorySwipe(in: windowId)
     }
 
     func cancelWindowMutationsAfterHistorySwipe(in windowId: UUID) {
-        historySwipeWindowMutationFlushOwner.cancelPendingMutations(in: windowId)
+        windowVisualMutationOwner.cancelWindowMutationsAfterHistorySwipe(in: windowId)
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
@@ -1144,8 +1099,7 @@ class BrowserManager: ObservableObject {
 
 extension BrowserManager: WindowSessionServiceDelegate {
     func syncBrowserManagerSidebarCachesFromWindow(_ windowState: BrowserWindowState) {
-        savedSidebarWidth = windowState.savedSidebarWidth
-        savedSidebarVisibility = windowState.isSidebarVisible
+        sidebarPresentationStateOwner.syncFromWindow(windowState)
     }
 }
 
