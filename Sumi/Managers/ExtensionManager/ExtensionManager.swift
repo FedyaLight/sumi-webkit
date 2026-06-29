@@ -171,6 +171,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var loadedExtensionManifests: [String: [String: Any]] = [:]
     let installCapabilityOwner = SafariExtensionInstallCapabilityOwner()
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
+    let runtimeTeardownOwner = ExtensionRuntimeTeardownOwner()
     var nativeMessagingBackgroundWakeOwnerStorage:
         ExtensionNativeMessagingBackgroundWakeOwner?
     var nativeMessagingBackgroundWakeOwner:

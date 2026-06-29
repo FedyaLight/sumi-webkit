@@ -624,93 +624,12 @@ extension ExtensionManager {
         removeUIState: Bool,
         releaseController: Bool
     ) {
-        let signpostState = PerformanceTrace.beginInterval(
-            "ExtensionManager.runtimeTeardown"
+        runtimeTeardownOwner.tearDownRuntime(
+            manager: self,
+            reason: reason,
+            removeUIState: removeUIState,
+            releaseController: releaseController
         )
-        defer {
-            PerformanceTrace.endInterval(
-                "ExtensionManager.runtimeTeardown",
-                signpostState
-            )
-        }
-
-        extensionRuntimeTrace(
-            "runtimeTeardown start reason=\(reason) removeUIState=\(removeUIState) releaseController=\(releaseController)"
-        )
-
-        #if DEBUG
-            clearDebugState()
-        #endif
-
-        extensionLoadGeneration &+= 1
-        runtimeInitializationTask?.cancel()
-        runtimeInitializationTask = nil
-        loadedInitialDocumentRuntimePreparationOwner?
-            .cancelContentScriptContextLoadTasks()
-        cancelInitialDocumentNativeMessagingWarmupTasks()
-        loadedInitialDocumentRuntimePreparationOwner?
-            .cancelDeferredTabNotificationTasks()
-        cancelNativeMessagingBackgroundWakeTasks()
-        backgroundRuntimeStateOwner.cancelAllWakeTasks()
-
-        let uiStateIDs = removeUIState ? Array(actionAnchors.keys) : []
-        let loadedIDs = allLoadedExtensionIDs()
-            .union(loadedExtensionManifests.keys)
-            .union(optionsWindows.keys)
-            .union(nativeMessagePortExtensionIDs.values)
-            .union(extensionErrorObserverTokens.keys)
-            .union(uiStateIDs)
-
-        for extensionId in loadedIDs {
-            tearDownExtensionRuntimeState(
-                for: extensionId,
-                removeUIState: removeUIState
-            )
-        }
-
-        for (_, token) in extensionErrorObserverTokens {
-            NotificationCenter.default.removeObserver(token)
-        }
-        extensionErrorObserverTokens.removeAll()
-
-        if removeUIState {
-            for extensionId in Array(actionAnchors.keys) {
-                clearActionAnchors(for: extensionId)
-            }
-        }
-
-        Array(optionsWindows.keys).forEach { closeOptionsWindow(for: $0) }
-        cancelNativeMessagingSessions(reason: reason)
-
-        extensionContextsByProfile.removeAll()
-        loadedExtensionManifests.removeAll()
-        actionStatesByExtensionID.removeAll()
-        cachedWebExtensionsByID.removeAll()
-        cachedWebExtensionRuntimeSourceKeysByID.removeAll()
-        lastExtensionLoadErrors.removeAll()
-        extensionRuntimeResidencyState.removeAll()
-        backgroundRuntimeStateOwner.removeAll()
-        runtimeMetricsByExtensionID.removeAll()
-        lastLoggedExtensionErrorFingerprints.removeAll()
-        requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
-        clearPermissionsOriginsCompatibilityInstallations()
-        extensionPageUserContentControllersByProfile.removeAll()
-        tabAdapters.removeAll()
-        windowAdapters.removeAll()
-
-        if releaseController {
-            browserConfiguration.webViewConfiguration.webExtensionController = nil
-            for controller in extensionControllersByProfile.values {
-                controller.delegate = nil
-            }
-            extensionControllersByProfile.removeAll()
-            profileRuntimeOwner.removeAllWebsiteDataStores()
-            extensionRuntimeAllowsWithoutEnabledExtensions = false
-            runtimeState = isExtensionSupportAvailable ? .idle : .unavailable
-            extensionsLoaded = false
-        }
-
-        extensionRuntimeTrace("runtimeTeardown complete reason=\(reason)")
     }
 
     func tabsAffectedByLoadedUserExtensionRuntime() -> [Tab] {
