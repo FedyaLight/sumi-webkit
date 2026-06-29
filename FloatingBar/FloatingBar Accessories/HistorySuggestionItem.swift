@@ -8,6 +8,7 @@ import AppKit
 import SwiftUI
 
 struct HistorySuggestionItem: View {
+    @ObservedObject var browserManager: BrowserManager
     let entry: HistoryListItem
     var isSelected: Bool = false
     var isHovered: Bool = false
@@ -17,7 +18,6 @@ struct HistorySuggestionItem: View {
     @State private var resolvedFavicon: NSImage?
     @State private var isDeleteConfirming = false
     @State private var isDeleteHovered = false
-    @EnvironmentObject private var browserManager: BrowserManager
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 

@@ -8,7 +8,7 @@ import AppKit
 import SwiftUI
 
 struct FloatingBarView: View {
-    @EnvironmentObject var browserManager: BrowserManager
+    @ObservedObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @State private var searchManager = SearchManager()
     @Environment(\.sumiSettings) var sumiSettings
@@ -262,6 +262,7 @@ struct FloatingBarView: View {
                             }
 
                             FloatingBarResultsPanelView(
+                                browserManager: browserManager,
                                 tokens: tokens,
                                 suggestions: visibleSuggestions,
                                 layoutSuggestionCount: suggestionLayoutCount,
