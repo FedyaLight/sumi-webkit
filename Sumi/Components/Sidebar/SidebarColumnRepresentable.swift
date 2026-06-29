@@ -8,7 +8,9 @@ struct SidebarColumnHostedRootView: View {
 
     var body: some View {
         SpacesSideBarView(
-            browserManager: environmentContext.browserManager,
+            browserContext: SidebarBrowserContext.live(
+                browserManager: environmentContext.browserManager
+            ),
             nowPlayingController: environmentContext.nowPlayingController
         )
             .frame(width: presentationContext.sidebarWidth, alignment: .leading)

@@ -19,17 +19,34 @@ struct SidebarBrowserContext {
     let splitManager: SplitViewManager
     let downloadManager: DownloadManager
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
+    let glanceManager: GlanceManager
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
     let presentationActions: SidebarBrowserPresentationActions
+    let headerContext: (BrowserWindowState) -> SidebarHeaderBrowserContext
     let tabStructuralRevision: () -> UInt
     let isTransitioningProfile: () -> Bool
     let currentProfile: () -> Profile?
     let currentTab: (BrowserWindowState) -> Tab?
     let space: (UUID?) -> Space?
     let extensionToolbarSlots: ([InstalledExtension], UUID?) -> [PinnedToolbarSlot]
+    let extensionActionBrowserContext: (BrowserWindowState) -> ExtensionActionBrowserContext
     let savedSidebarWidth: (BrowserWindowState) -> CGFloat
+    let performDrop: (NSPasteboard, SidebarDropResolution, BrowserWindowState?) -> Bool
+    let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
+    let completePendingSplitGroupFocusIfReady: (BrowserWindowState, UUID) -> Void
+    let setActiveSpace: (Space, BrowserWindowState) -> Void
+    let beginInteractiveSpaceTransition: (Space, Space, BrowserWindowState) -> Void
+    let updateInteractiveSpaceTransition: (Double, BrowserWindowState) -> Void
+    let cancelInteractiveSpaceTransition: (BrowserWindowState) -> Void
+    let canCreateFolderInCurrentSpace: (BrowserWindowState) -> Bool
+    let showGradientEditor: (SidebarTransientPresentationSource) -> Void
+    let toggleSidebar: (BrowserWindowState) -> Void
+    let openAppearanceSettings: (BrowserWindowState) -> Void
+    let closeDownloadsPopover: (BrowserWindowState) -> Void
     let requestUserTabActivation: (Tab, BrowserWindowState) -> Void
     let closeTab: (Tab, BrowserWindowState) -> Void
+    let moveTabUp: (UUID) -> Void
+    let moveTabDown: (UUID) -> Void
     let focusSplitGroup: (SplitGroup, BrowserWindowState) -> Void
     let restoreShortcutSplitMember: (UUID, SplitGroup, BrowserWindowState) -> Void
     let openForegroundTab: (String, BrowserWindowState, UUID?) -> Tab?
@@ -50,6 +67,7 @@ struct SidebarBrowserContext {
             splitManager: browserManager.splitManager,
             downloadManager: browserManager.downloadManager,
             downloadsPopoverPresenter: browserManager.downloadsPopoverPresenter,
+            glanceManager: browserManager.glanceManager,
             extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { [weak browserManager] pin, windowState, themeContext, source in
@@ -91,6 +109,9 @@ struct SidebarBrowserContext {
                     browserManager?.presentSharingServicePicker(items, source: source)
                 }
             ),
+            headerContext: { windowState in
+                browserManager.sidebarHeaderBrowserContext(for: windowState)
+            },
             tabStructuralRevision: { [weak browserManager] in
                 browserManager?.tabStructuralRevision ?? 0
             },
@@ -114,14 +135,79 @@ struct SidebarBrowserContext {
                     profileId: profileId
                 )
             },
+            extensionActionBrowserContext: { windowState in
+                ExtensionActionBrowserContext.live(
+                    browserManager: browserManager,
+                    windowState: windowState
+                )
+            },
             savedSidebarWidth: { [weak browserManager] windowState in
                 browserManager?.getSavedSidebarWidth(for: windowState) ?? BrowserWindowState.sidebarDefaultWidth
+            },
+            performDrop: { [weak browserManager] pasteboard, resolution, windowState in
+                guard let browserManager else { return false }
+                return SidebarDropCoordinator.performDrop(
+                    pasteboard: pasteboard,
+                    resolution: resolution,
+                    browserManager: browserManager,
+                    windowState: windowState
+                )
+            },
+            configureMediaStore: { [weak browserManager] mediaStore, windowState in
+                guard let browserManager else { return }
+                mediaStore.configure(browserManager: browserManager, windowState: windowState)
+            },
+            completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
+                browserManager?.completePendingSplitGroupFocusIfReady(
+                    in: windowState,
+                    spaceId: spaceId
+                )
+            },
+            setActiveSpace: { [weak browserManager] space, windowState in
+                browserManager?.setActiveSpace(space, in: windowState)
+            },
+            beginInteractiveSpaceTransition: { [weak browserManager] source, destination, windowState in
+                browserManager?.beginInteractiveSpaceTransition(
+                    from: source,
+                    to: destination,
+                    in: windowState
+                )
+            },
+            updateInteractiveSpaceTransition: { [weak browserManager] progress, windowState in
+                browserManager?.updateInteractiveSpaceTransition(
+                    progress: progress,
+                    in: windowState
+                )
+            },
+            cancelInteractiveSpaceTransition: { [weak browserManager] windowState in
+                browserManager?.cancelInteractiveSpaceTransition(in: windowState)
+            },
+            canCreateFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.spaceForSidebarActions(in: windowState) != nil
+            },
+            showGradientEditor: { [weak browserManager] source in
+                browserManager?.showGradientEditor(source: source)
+            },
+            toggleSidebar: { [weak browserManager] windowState in
+                browserManager?.toggleSidebar(for: windowState)
+            },
+            openAppearanceSettings: { [weak browserManager] windowState in
+                browserManager?.openSettingsTab(selecting: .appearance, in: windowState)
+            },
+            closeDownloadsPopover: { [weak browserManager] windowState in
+                browserManager?.closeDownloadsPopover(in: windowState)
             },
             requestUserTabActivation: { [weak browserManager] tab, windowState in
                 browserManager?.requestUserTabActivation(tab, in: windowState)
             },
             closeTab: { [weak browserManager] tab, windowState in
                 browserManager?.closeTab(tab, in: windowState)
+            },
+            moveTabUp: { [weak browserManager] tabId in
+                browserManager?.tabManager.moveTabUp(tabId)
+            },
+            moveTabDown: { [weak browserManager] tabId in
+                browserManager?.tabManager.moveTabDown(tabId)
             },
             focusSplitGroup: { [weak browserManager] group, windowState in
                 browserManager?.focusSplitGroup(group, in: windowState)

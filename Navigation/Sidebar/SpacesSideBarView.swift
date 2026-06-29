@@ -25,7 +25,6 @@ private struct SidebarPageInputGraphIdentity: Hashable {
 }
 
 struct SpacesSideBarView: View {
-    @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
@@ -38,20 +37,24 @@ struct SpacesSideBarView: View {
     @State private var transitionSnapshot: SpaceSidebarTransitionSnapshot?
     @State private var transitionTask: Task<Void, Never>?
     @ObservedObject private var nowPlayingController: SumiNativeNowPlayingController
+    @ObservedObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @ObservedObject private var updaterService = SumiUpdaterService.shared
     @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
-    let browserManager: BrowserManager
+    let browserContext: SidebarBrowserContext
 
     init(
-        browserManager: BrowserManager,
+        browserContext: SidebarBrowserContext,
         nowPlayingController: SumiNativeNowPlayingController
     ) {
-        self.browserManager = browserManager
+        self.browserContext = browserContext
         self.nowPlayingController = nowPlayingController
+        self._extensionSurfaceStore = ObservedObject(
+            wrappedValue: browserContext.extensionSurfaceStore
+        )
     }
 
     private var sidebarBrowserContext: SidebarBrowserContext {
-        SidebarBrowserContext.live(browserManager: browserManager)
+        browserContext
     }
 
     private var shouldMountMiniPlayer: Bool {
@@ -87,12 +90,7 @@ struct SpacesSideBarView: View {
                 ZStack {
                     SidebarGlobalDragOverlay(
                         dropActions: SidebarDropActionContext(performDrop: { pasteboard, resolution, windowState in
-                            SidebarDropCoordinator.performDrop(
-                                pasteboard: pasteboard,
-                                resolution: resolution,
-                                browserManager: browserManager,
-                                windowState: windowState
-                            )
+                            browserContext.performDrop(pasteboard, resolution, windowState)
                         })
                     )
                         .allowsHitTesting(allowsSidebarInteractiveWork)
@@ -101,20 +99,20 @@ struct SpacesSideBarView: View {
     }
 
     private var mainSidebarContent: some View {
-        _ = browserManager.tabStructuralRevision
+        _ = browserContext.tabStructuralRevision()
         let spaces = availableSpaces
         let visualSpaceId = visualSelectedSpaceId(in: spaces)
 
         return VStack(spacing: 8) {
-            SidebarHeader(browserContext: browserManager.sidebarHeaderBrowserContext(for: windowState))
+            SidebarHeader(browserContext: browserContext.headerContext(windowState))
                 .environment(windowState)
 
             if let creationSession = windowState.activeSpaceCreationSession {
                 SidebarSpaceCreationView(
                     session: creationSession,
                     profileContext: SpaceCreationProfileContext(
-                        profiles: browserManager.profileManager.profiles,
-                        currentProfileID: browserManager.currentProfile?.id
+                        profiles: browserContext.profileManager.profiles,
+                        currentProfileID: browserContext.currentProfile()?.id
                     ),
                     onCreate: { commitSpaceCreationSession(creationSession) },
                     onCancel: { cancelSpaceCreationSession(creationSession) }
@@ -133,7 +131,7 @@ struct SpacesSideBarView: View {
 
                     if shouldMountMiniPlayer {
                         MediaControlsView(nowPlayingController: nowPlayingController) { mediaStore, windowState in
-                            mediaStore.configure(browserManager: browserManager, windowState: windowState)
+                            browserContext.configureMediaStore(mediaStore, windowState)
                         }
                             .environment(windowState)
                     }
@@ -244,7 +242,7 @@ struct SpacesSideBarView: View {
     private var availableSpaces: [Space] {
         windowState.isIncognito
             ? windowState.ephemeralSpaces
-            : browserManager.tabManager.spaces
+            : browserContext.tabManager.spaces
     }
 
     private var sidebarInteractionState: SidebarInteractionState {
@@ -507,9 +505,9 @@ struct SpacesSideBarView: View {
         guard let request else { return }
 
         if windowState.currentSpaceId == request.targetSpaceId {
-            browserManager.completePendingSplitGroupFocusIfReady(
-                in: windowState,
-                spaceId: request.targetSpaceId
+            browserContext.completePendingSplitGroupFocusIfReady(
+                windowState,
+                request.targetSpaceId
             )
             return
         }
@@ -544,7 +542,7 @@ struct SpacesSideBarView: View {
         guard let currentSpaceId = windowState.currentSpaceId,
               spaces.contains(where: { $0.id == currentSpaceId })
         else {
-            browserManager.setActiveSpace(firstSpace, in: windowState)
+            browserContext.setActiveSpace(firstSpace, windowState)
             return
         }
     }
@@ -734,24 +732,21 @@ struct SpacesSideBarView: View {
         from sourceSpace: Space,
         to destinationSpace: Space
     ) {
-        browserManager.beginInteractiveSpaceTransition(
-            from: sourceSpace,
-            to: destinationSpace,
-            in: windowState
+        browserContext.beginInteractiveSpaceTransition(
+            sourceSpace,
+            destinationSpace,
+            windowState
         )
     }
 
     private func updateInteractiveThemeTransitionProgress(_ progress: Double) {
-        browserManager.updateInteractiveSpaceTransition(
-            progress: progress,
-            in: windowState
-        )
+        browserContext.updateInteractiveSpaceTransition(progress, windowState)
     }
 
     private func cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: Bool? = nil) {
         let shouldCancel = hadThemeTransition ?? hasActiveThemeTransition
         guard shouldCancel else { return }
-        browserManager.cancelInteractiveSpaceTransition(in: windowState)
+        browserContext.cancelInteractiveSpaceTransition(windowState)
     }
 
     private func reconcileSwipeThemeTransition(
@@ -796,7 +791,7 @@ struct SpacesSideBarView: View {
         if commit,
            let destinationSpaceId = completedDestinationSpaceId ?? destinationSpaceId,
            let destinationSpace = space(for: destinationSpaceId, in: availableSpaces) {
-            browserManager.setActiveSpace(destinationSpace, in: windowState)
+            browserContext.setActiveSpace(destinationSpace, windowState)
         } else {
             cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: hadThemeTransition)
         }
@@ -872,41 +867,39 @@ struct SpacesSideBarView: View {
     // MARK: - Context Menu
 
     private func sidebarContextMenuEntries() -> [SidebarContextMenuEntry] {
-        let newFolderAction: (() -> Void)? = browserManager.spaceForSidebarActions(in: windowState) == nil
+        let newFolderAction: (() -> Void)? = browserContext.canCreateFolderInCurrentSpace(windowState) == false
             ? nil
             : {
-                browserManager.createFolderInCurrentSpace(in: windowState)
+                browserContext.createFolderInCurrentSpace(windowState)
             }
-        let changeThemeAction: (() -> Void)? = browserManager.tabManager.currentSpace == nil
+        let changeThemeAction: (() -> Void)? = browserContext.tabManager.currentSpace == nil
             ? nil
             : {
-                browserManager.showGradientEditor(
-                    source: windowState.resolveSidebarPresentationSource()
-                )
+                browserContext.showGradientEditor(windowState.resolveSidebarPresentationSource())
             }
 
         return makeSidebarShellContextMenuEntries(
             isCompactModeEnabled: !windowState.isSidebarVisible,
             actions: .init(
                 newTab: {
-                    browserManager.openNewTabOrFloatingBar(in: windowState)
+                    browserContext.openNewTabOrFloatingBar(windowState)
                 },
                 newFolder: newFolderAction,
                 newRSSLiveFolder: newFolderAction.map { _ in
-                    { browserManager.createRSSLiveFolderInCurrentSpace(in: windowState) }
+                    { browserContext.createRSSLiveFolderInCurrentSpace(windowState) }
                 },
                 newGitHubPullRequestsLiveFolder: newFolderAction.map { _ in
-                    { browserManager.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState) }
+                    { browserContext.createGitHubPullRequestsLiveFolderInCurrentSpace(windowState) }
                 },
                 newGitHubIssuesLiveFolder: newFolderAction.map { _ in
-                    { browserManager.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState) }
+                    { browserContext.createGitHubIssuesLiveFolderInCurrentSpace(windowState) }
                 },
                 changeTheme: changeThemeAction,
                 toggleCompactMode: {
-                    browserManager.toggleSidebar(for: windowState)
+                    browserContext.toggleSidebar(windowState)
                 },
                 openSettings: {
-                    browserManager.openSettingsTab(selecting: .appearance, in: windowState)
+                    browserContext.openAppearanceSettings(windowState)
                 }
             )
         )
@@ -916,7 +909,7 @@ struct SpacesSideBarView: View {
 
     private func handleSidebarContextMenuVisibility(_ presented: Bool) {
         if presented {
-            browserManager.closeDownloadsPopover(in: windowState)
+            browserContext.closeDownloadsPopover(windowState)
         }
     }
 
@@ -934,20 +927,17 @@ struct SpacesSideBarView: View {
             scrollHoverCoordinator: scrollHoverCoordinator,
             isSidebarHovered: $isSidebarHovered,
             onActivateTab: {
-                browserManager.requestUserTabActivation(
-                    $0,
-                    in: windowState
-                )
+                browserContext.requestUserTabActivation($0, windowState)
             },
-            onCloseTab: { browserManager.closeTab($0, in: windowState) },
-            onMoveTabUp: { browserManager.tabManager.moveTabUp($0.id) },
-            onMoveTabDown: { browserManager.tabManager.moveTabDown($0.id) },
+            onCloseTab: { browserContext.closeTab($0, windowState) },
+            onMoveTabUp: { browserContext.moveTabUp($0.id) },
+            onMoveTabDown: { browserContext.moveTabDown($0.id) },
             onMuteTab: { $0.toggleMute() }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .environmentObject(browserManager.glanceManager)
+        .environmentObject(browserContext.glanceManager)
         .environment(windowState)
-        .environmentObject(browserManager.splitManager)
+        .environmentObject(browserContext.splitManager)
         .id(space.id)
     }
 
@@ -1007,22 +997,16 @@ struct SpacesSideBarView: View {
         profileId: UUID?,
         pageRenderMode: SidebarPageRenderMode
     ) -> some View {
-        let slots = browserManager.extensionsModule.orderedPinnedToolbarSlots(
-            enabledExtensions: extensionSurfaceStore.enabledExtensions,
-            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled,
-            profileId: profileId
-        )
+        let enabledExtensions = extensionSurfaceStore.enabledExtensions
+        let slots = browserContext.extensionToolbarSlots(enabledExtensions, profileId)
         let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
 
         if ExtensionActionPlacement.resolve(totalActions: slots.count) == .sidebarGrid {
             ExtensionActionView(
-                extensions: extensionSurfaceStore.enabledExtensions,
+                extensions: enabledExtensions,
                 layout: .sidebarGrid,
                 profileId: profileId,
-                browserContext: ExtensionActionBrowserContext.live(
-                    browserManager: browserManager,
-                    windowState: windowState
-                )
+                browserContext: browserContext.extensionActionBrowserContext(windowState)
             )
             .environment(windowState)
             .padding(.horizontal, 8)
@@ -1044,7 +1028,7 @@ struct SpacesSideBarView: View {
         let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
         let shouldAnimate = SpaceSidebarChromePreviewPolicy.shouldAnimateEssentialsLayout(
             isActiveWindow: windowRegistry.activeWindow?.id == windowState.id,
-            isTransitioningProfile: browserManager.isTransitioningProfile,
+            isTransitioningProfile: browserContext.isTransitioningProfile(),
             pageRenderMode: pageRenderMode
         ) && allowsInteractiveWork
 
@@ -1062,7 +1046,7 @@ struct SpacesSideBarView: View {
     }
 
     private func resolvedPageProfileId(for space: Space?) -> UUID? {
-        space?.profileId ?? windowState.currentProfileId ?? browserManager.currentProfile?.id
+        space?.profileId ?? windowState.currentProfileId ?? browserContext.currentProfile()?.id
     }
 
     // MARK: - Space Creation
@@ -1080,8 +1064,8 @@ struct SpacesSideBarView: View {
     private func beginSpaceCreationMode() {
         let source = windowState.resolveSidebarPresentationSource()
         let defaultProfileID = windowState.currentProfileId
-            ?? browserManager.currentProfile?.id
-            ?? browserManager.profileManager.profiles.first?.id
+            ?? browserContext.currentProfile()?.id
+            ?? browserContext.profileManager.profiles.first?.id
 
         windowState.beginSpaceCreationSession(
             source: source,
@@ -1095,7 +1079,7 @@ struct SpacesSideBarView: View {
         let profileId: UUID?
         if session.createsNewProfile {
             guard isNewProfileNameAvailable(for: session) else { return }
-            let createdProfile = browserManager.profileManager.createProfile(
+            let createdProfile = browserContext.profileManager.createProfile(
                 name: session.trimmedNewProfileName,
                 icon: session.resolvedNewProfileIcon
             )
@@ -1104,13 +1088,13 @@ struct SpacesSideBarView: View {
             profileId = session.profileID
         }
 
-        let newSpace = browserManager.tabManager.createSpace(
+        let newSpace = browserContext.tabManager.createSpace(
             name: session.trimmedName,
             icon: session.resolvedIcon,
             profileId: profileId
         )
-        if let resolvedSpace = browserManager.tabManager.spaces.first(where: { $0.id == newSpace.id }) {
-            browserManager.setActiveSpace(resolvedSpace, in: windowState)
+        if let resolvedSpace = browserContext.tabManager.spaces.first(where: { $0.id == newSpace.id }) {
+            browserContext.setActiveSpace(resolvedSpace, windowState)
         }
 
         windowState.finishSpaceCreationSession(
@@ -1130,7 +1114,7 @@ struct SpacesSideBarView: View {
     private func isNewProfileNameAvailable(for session: SpaceCreationSession) -> Bool {
         let trimmed = session.trimmedNewProfileName
         guard !trimmed.isEmpty else { return false }
-        return !browserManager.profileManager.profiles.contains {
+        return !browserContext.profileManager.profiles.contains {
             $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
         }
     }
