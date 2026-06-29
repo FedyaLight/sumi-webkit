@@ -383,6 +383,7 @@ final class SidebarDragState: ObservableObject {
         armedDragScope = nil
         clearEssentialsPreviewState()
         requestGeometryRefresh()
+        flushDeferredGeometryForDragStart()
     }
 
     func armInternalDragGeometry(scope: SidebarDragScope?) {
