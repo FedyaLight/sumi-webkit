@@ -81,11 +81,11 @@ final class SumiPermissionDocumentationTests: XCTestCase {
         XCTAssertTrue(architecture.contains("Extension permission bridging/UI"))
     }
 
-    func testTestPlanDocumentsManualValidationAndSourceGuards() throws {
+    func testTestPlanDocumentsManualValidationAndBehavioralRegressionBoundaries() throws {
         let testPlan = try docSource("TEST_PLAN.md")
 
         XCTAssertTrue(testPlan.contains("Manual Validation Matrix"))
-        XCTAssertTrue(testPlan.contains("Source-Level Regression Guards"))
+        XCTAssertTrue(testPlan.contains("Behavioral Regression Boundaries"))
     }
 
     private let stableDocNames = [

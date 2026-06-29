@@ -48,7 +48,7 @@ enum SafariExtensionHostRelayAPIProbe {
         return false
     }
 
-    /// Legacy probe name — retained for test source guards.
+    /// Legacy probe name retained for compatibility with existing SDK probe reports.
     static var publicHostRelayAvailable: Bool {
         false
     }
