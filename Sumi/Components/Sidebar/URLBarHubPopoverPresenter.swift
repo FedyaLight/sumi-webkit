@@ -505,6 +505,7 @@ private struct URLBarHubPopoverRootView: View {
     var body: some View {
         if let browserManager, let windowState {
             URLBarHubPopover(
+                browserManager: browserManager,
                 bookmarkManager: browserManager.bookmarkManager,
                 bookmarkPresentationRequest: browserManager.bookmarkEditorPresentationRequest,
                 currentTab: currentTab,
@@ -517,7 +518,6 @@ private struct URLBarHubPopoverRootView: View {
                 onClose: onClose,
                 onContentSizeChange: onContentSizeChange
             )
-            .environmentObject(browserManager)
             .environmentObject(browserManager.extensionSurfaceStore)
             .environment(windowState)
             .environment(\.sumiSettings, settings)

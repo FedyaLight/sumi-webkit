@@ -42,6 +42,47 @@ struct SumiNavigationHistoryMenuItem {
     }
 }
 
+@MainActor
+struct SumiNavigationHistoryContext {
+    let faviconService: any BrowserFaviconServicing
+    let faviconImageService: any BrowserFaviconImageServicing
+    let openURLInNewTab: (URL, Bool, Tab?) -> Void
+    let openURLsInNewWindow: ([URL]) -> Void
+
+    static func live(
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState
+    ) -> SumiNavigationHistoryContext {
+        SumiNavigationHistoryContext(
+            faviconService: browserManager.dataServices.faviconService,
+            faviconImageService: browserManager.dataServices.faviconImageService,
+            openURLInNewTab: { [weak browserManager, weak windowState] url, selected, sourceTab in
+                guard let browserManager else { return }
+                let targetWindowState = windowState ?? browserManager.windowRegistry?.activeWindow
+                let context: BrowserManager.TabOpenContext
+                if selected, let targetWindowState {
+                    context = .foreground(
+                        windowState: targetWindowState,
+                        sourceTab: sourceTab,
+                        preferredSpaceId: targetWindowState.currentSpaceId
+                    )
+                } else {
+                    context = .background(
+                        windowState: targetWindowState,
+                        sourceTab: sourceTab,
+                        preferredSpaceId: targetWindowState?.currentSpaceId
+                    )
+                }
+
+                browserManager.openNewTab(url: url.absoluteString, context: context)
+            },
+            openURLsInNewWindow: { [weak browserManager] urls in
+                browserManager?.openHistoryURLsInNewWindow(urls)
+            }
+        )
+    }
+}
+
 enum SumiNavigationHistoryMenuModel {
     @MainActor
     static func items(
@@ -85,8 +126,7 @@ enum SumiNavigationHistoryMenuModel {
         to item: SumiNavigationHistoryMenuItem,
         tab: Tab?,
         webView: WKWebView?,
-        browserManager: BrowserManager?,
-        windowState: BrowserWindowState?,
+        historyContext: SumiNavigationHistoryContext?,
         event: NSEvent?
     ) {
         guard let url = item.url else { return }
@@ -108,15 +148,9 @@ enum SumiNavigationHistoryMenuModel {
                 tab?.loadURL(url)
             }
         case .newTab(let selected):
-            openURL(
-                url,
-                inNewTabSelected: selected,
-                browserManager: browserManager,
-                windowState: windowState,
-                sourceTab: tab
-            )
+            historyContext?.openURLInNewTab(url, selected, tab)
         case .newWindow:
-            browserManager?.openHistoryURLsInNewWindow([url])
+            historyContext?.openURLsInNewWindow([url])
         }
     }
 
@@ -124,8 +158,7 @@ enum SumiNavigationHistoryMenuModel {
     @MainActor
     static func openURLIfModifiedClick(
         _ url: URL?,
-        browserManager: BrowserManager?,
-        windowState: BrowserWindowState?,
+        historyContext: SumiNavigationHistoryContext?,
         sourceTab: Tab?,
         event: NSEvent?
     ) -> Bool {
@@ -141,16 +174,10 @@ enum SumiNavigationHistoryMenuModel {
         case .currentTab:
             return false
         case .newTab(let selected):
-            openURL(
-                url,
-                inNewTabSelected: selected,
-                browserManager: browserManager,
-                windowState: windowState,
-                sourceTab: sourceTab
-            )
+            historyContext?.openURLInNewTab(url, selected, sourceTab)
             return true
         case .newWindow:
-            browserManager?.openHistoryURLsInNewWindow([url])
+            historyContext?.openURLsInNewWindow([url])
             return true
         }
     }
@@ -179,40 +206,12 @@ enum SumiNavigationHistoryMenuModel {
             isCurrent: true
         )
     }
-
-    @MainActor
-    private static func openURL(
-        _ url: URL,
-        inNewTabSelected selected: Bool,
-        browserManager: BrowserManager?,
-        windowState: BrowserWindowState?,
-        sourceTab: Tab?
-    ) {
-        let targetWindowState = windowState ?? browserManager?.windowRegistry?.activeWindow
-        let context: BrowserManager.TabOpenContext
-        if selected, let targetWindowState {
-            context = .foreground(
-                windowState: targetWindowState,
-                sourceTab: sourceTab,
-                preferredSpaceId: targetWindowState.currentSpaceId
-            )
-        } else {
-            context = .background(
-                windowState: targetWindowState,
-                sourceTab: sourceTab,
-                preferredSpaceId: targetWindowState?.currentSpaceId
-            )
-        }
-
-        browserManager?.openNewTab(url: url.absoluteString, context: context)
-    }
 }
 
 @MainActor
 final class SumiNavigationHistoryMenuDelegate: NSObject, NSMenuDelegate {
     var direction: SumiNavigationHistoryDirection
-    weak var browserManager: BrowserManager?
-    weak var windowState: BrowserWindowState?
+    var historyContext: SumiNavigationHistoryContext?
     var tabProvider: (() -> Tab?)?
     var webViewProvider: (() -> WKWebView?)?
 
@@ -245,14 +244,13 @@ final class SumiNavigationHistoryMenuDelegate: NSObject, NSMenuDelegate {
             menuItem.state = item.isCurrent ? .on : .off
             menuItem.isEnabled = item.url != nil
             menuItem.representedObject = item.id
-            let dataServices = browserManager?.dataServices
             let profile = tabProvider?()?.resolveProfile()
-            let partition = dataServices?.faviconService.partition(profile: profile)
+            let partition = historyContext?.faviconService.partition(profile: profile)
                 ?? BrowserManagerDataServices.productionFaviconService.partition(profile: profile)
             menuItem.image = SumiFaviconResolver.menuImage(
                 for: item.url,
                 partition: partition,
-                faviconImageService: dataServices?.faviconImageService
+                faviconImageService: historyContext?.faviconImageService
                     ?? BrowserManagerDataServices.productionFaviconImageService
             )
             menu.addItem(menuItem)
@@ -266,8 +264,7 @@ final class SumiNavigationHistoryMenuDelegate: NSObject, NSMenuDelegate {
             to: items[sender.tag],
             tab: tabProvider?(),
             webView: webViewProvider?(),
-            browserManager: browserManager,
-            windowState: windowState,
+            historyContext: historyContext,
             event: NSApp.currentEvent
         )
     }

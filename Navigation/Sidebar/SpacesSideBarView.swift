@@ -46,6 +46,10 @@ struct SpacesSideBarView: View {
         self.nowPlayingController = nowPlayingController
     }
 
+    private var sidebarBrowserContext: SidebarBrowserContext {
+        SidebarBrowserContext.live(browserManager: browserManager)
+    }
+
     private var shouldMountMiniPlayer: Bool {
         guard sumiSettings.sidebarMiniPlayerEnabled else { return false }
         return SumiBackgroundMediaCardStore.shouldMountMiniPlayer(
@@ -922,6 +926,7 @@ struct SpacesSideBarView: View {
     ) -> some View {
         SpaceView(
             space: space,
+            browserContext: sidebarBrowserContext,
             renderMode: renderMode,
             allowsInteraction: allowsInteraction,
             scrollHoverCoordinator: scrollHoverCoordinator,
@@ -938,7 +943,6 @@ struct SpacesSideBarView: View {
             onMuteTab: { $0.toggleMute() }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .environmentObject(browserManager)
         .environmentObject(browserManager.glanceManager)
         .environment(windowState)
         .environmentObject(browserManager.splitManager)
@@ -1041,13 +1045,13 @@ struct SpacesSideBarView: View {
 
         PinnedGrid(
             width: windowState.sidebarContentWidth,
+            browserContext: sidebarBrowserContext,
             spaceId: spaceId,
             profileId: profileId,
             animateLayout: shouldAnimate,
             reportsGeometry: allowsInteractiveWork,
             isAppKitInteractionEnabled: allowsInteractiveWork
         )
-        .environmentObject(browserManager)
         .environment(windowState)
         .padding(.horizontal, 8)
     }

@@ -13,7 +13,7 @@ struct TabFolderContextMenuActionOwner {
     let space: Space
     let childFoldersByParentId: [UUID: [TabFolder]]
     let folderPinsByFolderId: [UUID: [ShortcutPin]]
-    let browserManager: BrowserManager
+    let browserContext: SidebarBrowserContext
     let windowState: BrowserWindowState
     let themeContext: ResolvedThemeContext
     let folderLayoutAnimation: Animation?
@@ -22,34 +22,34 @@ struct TabFolderContextMenuActionOwner {
 
     func folderShortcutContextMenuEntries(_ pin: ShortcutPin) -> [SidebarContextMenuEntry] {
         let presentationState = shortcutPresentationState(for: pin)
-        let profiles = browserManager.profileManager.profiles
+        let profiles = browserContext.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
-            folders: browserManager.tabManager.folders(for: space.id)
-                .filter { !browserManager.liveFolderManager.isLiveFolder($0.id) },
+            folders: browserContext.tabManager.folders(for: space.id)
+                .filter { !browserContext.liveFolderManager.isLiveFolder($0.id) },
             selectedFolderId: pin.folderId
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
-            spaces: browserManager.tabManager.spaces,
+            spaces: browserContext.tabManager.spaces,
             selectedSpaceId: pin.spaceId
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
             profiles: profiles,
-            selectedProfileId: browserManager.tabManager.resolvedExecutionProfileId(
+            selectedProfileId: browserContext.tabManager.resolvedExecutionProfileId(
                 for: pin,
                 currentSpaceId: space.id
             )
         )
-        let addToEssentialsAction: (() -> Void)? = browserManager.tabManager.canAddURLToEssentials(
+        let addToEssentialsAction: (() -> Void)? = browserContext.tabManager.canAddURLToEssentials(
             pin.launchURL,
             using: .init(windowState: windowState, spaceId: space.id)
         )
             ? { pinShortcutGlobally(pin) }
             : nil
         let savedURLDriftActions: SidebarSavedURLDriftActions? =
-            browserManager.tabManager.shortcutHasDrifted(pin, in: windowState)
+            browserContext.tabManager.shortcutHasDrifted(pin, in: windowState)
                 ? .init(
                     onBackToSavedURL: { resetShortcutPin(pin) },
-                    onUseCurrentPageAsSavedURL: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
+                    onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
                 )
                 : nil
         let unloadAction: (() -> Void)? = presentationState.isOpenLive
@@ -84,7 +84,7 @@ struct TabFolderContextMenuActionOwner {
                 profileTarget: .init(
                     choices: profileChoices,
                     onSelect: { profileId in
-                        browserManager.tabManager.assign(
+                        browserContext.tabManager.assign(
                             shortcutPin: pin,
                             toExecutionProfile: profileId
                         )
@@ -107,7 +107,7 @@ struct TabFolderContextMenuActionOwner {
             [
                 [
                     .action(.init(title: "Open", systemImage: "arrow.up.right.square", classification: .presentationOnly) {
-                        browserManager.liveFolderManager.open(item: item, in: windowState)
+                        browserContext.liveFolderManager.open(item: item, in: windowState)
                     }),
                     .action(.init(title: "Copy Link", systemImage: "link", classification: .presentationOnly) {
                         copyLink(url)
@@ -121,7 +121,7 @@ struct TabFolderContextMenuActionOwner {
                 ],
                 [
                     .action(.init(title: "Hide Item", systemImage: "xmark", classification: .stateMutationNonStructural) {
-                        browserManager.liveFolderManager.dismiss(item: item)
+                        browserContext.liveFolderManager.dismiss(item: item)
                     }),
                 ],
             ]
@@ -143,11 +143,11 @@ struct TabFolderContextMenuActionOwner {
         return makeFolderHeaderContextMenuEntries(
             actions: .init(
                 edit: {
-                    browserManager.showFolderEditor(
-                        for: folder,
-                        in: windowState,
-                        themeContext: themeContext,
-                        source: windowState.resolveSidebarPresentationSource()
+                    browserContext.presentationActions.showFolderEditor(
+                        folder,
+                        windowState,
+                        themeContext,
+                        windowState.resolveSidebarPresentationSource()
                     )
                 },
                 alphabetize: alphabetizeTabs,
@@ -161,7 +161,7 @@ struct TabFolderContextMenuActionOwner {
     func resetShortcutPin(_ pin: ShortcutPin) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
-        _ = browserManager.tabManager.resetShortcutPinToLaunchURL(
+        _ = browserContext.tabManager.resetShortcutPinToLaunchURL(
             pin,
             in: windowState,
             preserveCurrentPage: preserveCurrentPage
@@ -169,17 +169,17 @@ struct TabFolderContextMenuActionOwner {
     }
 
     func unloadShortcutPin(_ pin: ShortcutPin) {
-        if let current = browserManager.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState) {
-            browserManager.closeTab(current, in: windowState)
+        if let current = browserContext.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState) {
+            browserContext.closeTab(current, windowState)
             return
         }
 
-        browserManager.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
+        browserContext.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
     func removeShortcutPin(_ pin: ShortcutPin) {
         mutateFolderContent {
-            browserManager.tabManager.removeShortcutPin(pin)
+            browserContext.tabManager.removeShortcutPin(pin)
         }
     }
 
@@ -200,10 +200,7 @@ struct TabFolderContextMenuActionOwner {
            source?.kind == .githubPullRequests || source?.kind == .githubIssues {
             githubLoginSection = [
                 .action(.init(title: "Sign in to GitHub", systemImage: "person.crop.circle.badge.exclamationmark", classification: .presentationOnly) {
-                    browserManager.openNewTab(
-                        url: "https://github.com/login",
-                        context: .foreground(windowState: windowState, preferredSpaceId: space.id)
-                    )
+                    _ = browserContext.openForegroundTab("https://github.com/login", windowState, space.id)
                 }),
             ]
         } else {
@@ -215,7 +212,7 @@ struct TabFolderContextMenuActionOwner {
                 [
                     .action(.init(title: statusTitle, systemImage: "clock", isEnabled: false, classification: .presentationOnly) {}),
                     .action(.init(title: "Refresh Now", systemImage: "arrow.clockwise", classification: .stateMutationNonStructural) {
-                        browserManager.liveFolderManager.refresh(folderId: folder.id)
+                        browserContext.liveFolderManager.refresh(folderId: folder.id)
                     }),
                     refreshIntervalSubmenu(for: source),
                 ],
@@ -256,7 +253,7 @@ struct TabFolderContextMenuActionOwner {
                         state: currentInterval == option.seconds ? .on : .off,
                         classification: .stateMutationNonStructural
                     ) {
-                        browserManager.liveFolderManager.setRefreshInterval(folderId: folder.id, seconds: option.seconds)
+                        browserContext.liveFolderManager.setRefreshInterval(folderId: folder.id, seconds: option.seconds)
                     }
                 )
             }
@@ -267,30 +264,30 @@ struct TabFolderContextMenuActionOwner {
         for pin: ShortcutPin,
         source: SidebarTransientPresentationSource? = nil
     ) {
-        browserManager.showShortcutEditor(
-            for: pin,
-            in: windowState,
-            themeContext: themeContext,
-            source: source ?? windowState.resolveSidebarPresentationSource()
+        browserContext.presentationActions.showShortcutEditor(
+            pin,
+            windowState,
+            themeContext,
+            source ?? windowState.resolveSidebarPresentationSource()
         )
     }
 
     private func currentLiveFolderSource() -> SumiLiveFolderSource? {
-        browserManager.liveFolderManager.source(for: folder.id)
+        browserContext.liveFolderManager.source(for: folder.id)
     }
 
     private func alphabetizeTabs() {
         withAnimation(folderLayoutAnimation) {
-            browserManager.tabManager.alphabetizeFolderPins(folder.id, in: space.id)
+            browserContext.tabManager.alphabetizeFolderPins(folder.id, in: space.id)
         }
     }
 
     private func shortcutPresentationState(for pin: ShortcutPin) -> ShortcutPresentationState {
-        browserManager.tabManager.shortcutPresentationState(for: pin, in: windowState)
+        browserContext.tabManager.shortcutPresentationState(for: pin, in: windowState)
     }
 
     private func activeShortcutTab(for pin: ShortcutPin) -> Tab? {
-        browserManager.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+        browserContext.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
     }
 
     private func confirmDeleteShortcutPin(_ pin: ShortcutPin) {
@@ -312,24 +309,18 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func duplicateShortcutPin(_ pin: ShortcutPin) {
-        _ = browserManager.openNewTab(
-            url: pin.launchURL.absoluteString,
-            context: .foreground(
-                windowState: windowState,
-                preferredSpaceId: space.id
-            )
-        )
+        _ = browserContext.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
-        guard let targetFolder = browserManager.tabManager.folder(by: folderId) else { return }
-        let targetIndex = browserManager.tabManager.folderPinnedPins(
+        guard let targetFolder = browserContext.tabManager.folder(by: folderId) else { return }
+        let targetIndex = browserContext.tabManager.folderPinnedPins(
             for: folderId,
             in: targetFolder.spaceId
         ).count
 
         mutateFolderContent {
-            _ = browserManager.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -341,10 +332,10 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
-        let targetIndex = browserManager.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
+        let targetIndex = browserContext.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutateFolderContent {
-            _ = browserManager.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -356,18 +347,7 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func pinShortcutGlobally(_ pin: ShortcutPin) {
-        let syntheticTab = Tab(
-            url: pin.launchURL,
-            name: pin.resolvedDisplayTitle(liveTab: activeShortcutTab(for: pin)),
-            favicon: SumiPersistentGlyph.launcherSystemImageFallback,
-            spaceId: space.id,
-            index: 0,
-            browserManager: browserManager
-        )
-        browserManager.tabManager.pinTab(
-            syntheticTab,
-            context: .init(windowState: windowState, spaceId: space.id)
-        )
+        browserContext.pinShortcutGlobally(pin, windowState, space.id, activeShortcutTab(for: pin))
     }
 
     private var folderHasLiveSavedTabs: Bool {
@@ -376,7 +356,7 @@ struct TabFolderContextMenuActionOwner {
 
     private func folderHasLiveSavedTabsHelper(folderId: UUID) -> Bool {
         if let directPins = folderPinsByFolderId[folderId],
-           directPins.contains(where: { browserManager.tabManager.shortcutLiveTab(for: $0.id, in: windowState.id) != nil }) {
+           directPins.contains(where: { browserContext.tabManager.shortcutLiveTab(for: $0.id, in: windowState.id) != nil }) {
             return true
         }
         if let children = childFoldersByParentId[folderId] {
@@ -421,7 +401,7 @@ struct TabFolderContextMenuActionOwner {
         source: SidebarTransientPresentationSource? = nil
     ) {
         if let source {
-            browserManager.presentSharingServicePicker([url], source: source)
+            browserContext.presentationActions.presentSharingServicePicker([url], source)
             return
         }
 

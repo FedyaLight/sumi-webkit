@@ -118,7 +118,6 @@ struct LinkStatusBar: View {
 }
 
 struct WebsiteView: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(WebViewCoordinator.self) private var webViewCoordinator
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
@@ -128,9 +127,14 @@ struct WebsiteView: View {
     @ObservedObject private var sidebarDragState: SidebarDragState
     @State private var hoveredLink: String?
 
+    let browserManager: BrowserManager
     private let dragCoordinateSpace = "splitPreview"
 
-    init(sidebarDragState: SidebarDragState) {
+    init(
+        browserManager: BrowserManager,
+        sidebarDragState: SidebarDragState
+    ) {
+        self.browserManager = browserManager
         self._sidebarDragState = ObservedObject(wrappedValue: sidebarDragState)
     }
 

@@ -37,13 +37,13 @@ enum URLBarPresentationMode {
 }
 
 struct URLBarView: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var glanceManager: GlanceManager
     @EnvironmentObject var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) var themeContext
 
+    let browserManager: BrowserManager
     let presentationMode: URLBarPresentationMode
 
     @State var isHovering = false
@@ -60,8 +60,10 @@ struct URLBarView: View {
     @StateObject var permissionRuntimeControlsModel = SumiPermissionRuntimeControlsViewModel()
 
     init(
+        browserManager: BrowserManager,
         presentationMode: URLBarPresentationMode = .sidebar
     ) {
+        self.browserManager = browserManager
         self.presentationMode = presentationMode
     }
 

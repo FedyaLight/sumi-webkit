@@ -9,13 +9,13 @@ struct PinnedGrid: View {
     private static let collapsedRevealHeight: CGFloat = 6
 
     let width: CGFloat
+    let browserContext: SidebarBrowserContext
     let spaceId: UUID?
     let profileId: UUID?
     let animateLayout: Bool
     let reportsGeometry: Bool
     let isAppKitInteractionEnabled: Bool
 
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -23,6 +23,7 @@ struct PinnedGrid: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     init(
         width: CGFloat,
+        browserContext: SidebarBrowserContext,
         spaceId: UUID? = nil,
         profileId: UUID? = nil,
         animateLayout: Bool = true,
@@ -30,6 +31,7 @@ struct PinnedGrid: View {
         isAppKitInteractionEnabled: Bool = true
     ) {
         self.width = width
+        self.browserContext = browserContext
         self.spaceId = spaceId
         self.profileId = profileId
         self.animateLayout = animateLayout
@@ -38,14 +40,14 @@ struct PinnedGrid: View {
     }
 
     var body: some View {
-        let _ = browserManager.tabStructuralRevision
+        let _ = browserContext.tabStructuralRevision()
         let shouldReduceMotion = reduceMotion || sumiSettings.shouldReduceChromeMotion
 
         let pinnedTabsConfiguration: PinnedTabsConfiguration = .large
         // Use profile-filtered essentials
-        let effectiveProfileId = profileId ?? windowState.currentProfileId ?? browserManager.currentProfile?.id
+        let effectiveProfileId = profileId ?? windowState.currentProfileId ?? browserContext.currentProfile()?.id
         let items: [ShortcutPin] = effectiveProfileId != nil
-            ? browserManager.tabManager.essentialPins(for: effectiveProfileId)
+            ? browserContext.tabManager.essentialPins(for: effectiveProfileId)
             : []
         let gridProjection = SidebarEssentialsGridProjection(
             width: width,
@@ -65,12 +67,12 @@ struct PinnedGrid: View {
             )
         let shouldAnimateDropLayout = animateLayout
             && (windowRegistry.activeWindow?.id == windowState.id)
-            && !browserManager.isTransitioningProfile
+            && !browserContext.isTransitioningProfile()
             && !shouldReduceMotion
             && dragState.shouldAnimateDropLayout
         let shouldAnimateContentLayout = animateLayout
             && (windowRegistry.activeWindow?.id == windowState.id)
-            && !browserManager.isTransitioningProfile
+            && !browserContext.isTransitioningProfile()
             && !shouldReduceMotion
 
         let isHoveringThisEssentials: Bool = {
@@ -205,7 +207,7 @@ struct PinnedGrid: View {
                 transaction.disablesAnimations = true
             }
         }
-        .allowsHitTesting(!browserManager.isTransitioningProfile)
+        .allowsHitTesting(!browserContext.isTransitioningProfile())
     }
 
     @ViewBuilder
@@ -217,7 +219,7 @@ struct PinnedGrid: View {
         if let placeholderGroup = splitPlaceholderGroup(for: pin) {
             PinnedSplitPlaceholderTile(
                 pin: pin,
-                faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
+                faviconPartition: browserContext.tabManager.resolvedFaviconPartition(
                     for: pin,
                     currentSpaceId: windowState.currentSpaceId
                 ),
@@ -225,7 +227,7 @@ struct PinnedGrid: View {
                 accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled,
                 onActivate: {
-                    browserManager.focusSplitGroup(placeholderGroup, in: windowState)
+                    browserContext.focusSplitGroup(placeholderGroup, windowState)
                 }
             )
             .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
@@ -241,7 +243,7 @@ struct PinnedGrid: View {
             )
         } else {
             let presentationState = pinPresentationState(pin)
-            let liveTab = browserManager.tabManager.shortcutLiveTab(
+            let liveTab = browserContext.tabManager.shortcutLiveTab(
                 for: pin.id,
                 in: windowState.id
             )
@@ -249,7 +251,7 @@ struct PinnedGrid: View {
 
             PinnedTile(
                 pin: pin,
-                faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
+                faviconPartition: browserContext.tabManager.resolvedFaviconPartition(
                     for: pin,
                     currentSpaceId: windowState.currentSpaceId
                 ),
@@ -261,7 +263,7 @@ struct PinnedGrid: View {
                 onUnload: { unload(pin) },
                 contextMenuActions: contextMenuActions,
                 dragPinnedConfiguration: configuration,
-                dragIsEnabled: !browserManager.isTransitioningProfile && isAppKitInteractionEnabled,
+                dragIsEnabled: !browserContext.isTransitioningProfile() && isAppKitInteractionEnabled,
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled
             )
             .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
@@ -270,7 +272,6 @@ struct PinnedGrid: View {
                     ? 0.001
                     : 1
             )
-            .environmentObject(browserManager)
             .transition(
                 reduceMotion
                     ? .identity
@@ -292,19 +293,19 @@ struct PinnedGrid: View {
     @EnvironmentObject private var dragState: SidebarDragState
 
     private func pinPresentationState(_ pin: ShortcutPin) -> ShortcutPresentationState {
-        browserManager.tabManager.shortcutPresentationState(for: pin, in: windowState)
+        browserContext.tabManager.shortcutPresentationState(for: pin, in: windowState)
     }
 
     private func essentialRuntimeState(_ pin: ShortcutPin) -> SumiEssentialRuntimeState? {
-        browserManager.tabManager.essentialRuntimeState(
+        browserContext.tabManager.essentialRuntimeState(
             for: pin,
             in: windowState,
-            splitManager: browserManager.splitManager
+            splitManager: browserContext.splitManager
         )
     }
 
     private func splitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
-        browserManager.tabManager.splitGroup(containingPinId: pin.id)
+        browserContext.tabManager.splitGroup(containingPinId: pin.id)
     }
 
     private func isSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
@@ -319,43 +320,41 @@ struct PinnedGrid: View {
     }
 
     private func activate(_ pin: ShortcutPin) {
-        let tab = browserManager.tabManager.activateShortcutPin(
+        let tab = browserContext.tabManager.activateShortcutPin(
             pin,
             in: windowState.id,
             currentSpaceId: windowState.currentSpaceId
         )
-        browserManager.requestUserTabActivation(
+        browserContext.requestUserTabActivation(
             tab,
-            in: windowState
+            windowState
         )
     }
 
     private func unload(_ pin: ShortcutPin) {
-        if let current = browserManager.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState) {
-            browserManager.closeTab(current, in: windowState)
+        if let current = browserContext.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState) {
+            browserContext.closeTab(current, windowState)
             return
         }
 
-        browserManager.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
+        browserContext.tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
     }
 
     private func duplicateAsRegularTab(_ pin: ShortcutPin) {
-        _ = browserManager.openNewTab(
-            url: pin.launchURL.absoluteString,
-            context: .foreground(
-                windowState: windowState,
-                preferredSpaceId: windowState.currentSpaceId
-            )
+        _ = browserContext.openForegroundTab(
+            pin.launchURL.absoluteString,
+            windowState,
+            windowState.currentSpaceId
         )
     }
 
     private func essentialContextMenuActions(for pin: ShortcutPin) -> EssentialTileContextMenuActions {
         EssentialTileContextMenuActions(makeEntries: {
             let savedURLDriftActions: SidebarSavedURLDriftActions? =
-                browserManager.tabManager.shortcutHasDrifted(pin, in: windowState)
+                browserContext.tabManager.shortcutHasDrifted(pin, in: windowState)
                     ? .init(
                         onBackToSavedURL: { resetShortcutPin(pin) },
-                        onUseCurrentPageAsSavedURL: { _ = browserManager.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
+                        onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
                     )
                     : nil
             let unloadAction: (() -> Void)? = pinPresentationState(pin).isOpenLive
@@ -389,7 +388,7 @@ struct PinnedGrid: View {
                     profileTarget: .init(
                         choices: profileChoices(for: pin),
                         onSelect: { profileId in
-                            browserManager.tabManager.assign(
+                            browserContext.tabManager.assign(
                                 shortcutPin: pin,
                                 toExecutionProfile: profileId
                             )
@@ -406,28 +405,28 @@ struct PinnedGrid: View {
     private var contextMenuSpace: Space? {
         let targetSpaceId = windowState.currentSpaceId
             ?? spaceId
-            ?? browserManager.tabManager.currentSpace?.id
+            ?? browserContext.tabManager.currentSpace?.id
         guard let targetSpaceId else { return nil }
-        return browserManager.tabManager.spaces.first { $0.id == targetSpaceId }
+        return browserContext.tabManager.spaces.first { $0.id == targetSpaceId }
     }
 
     private var essentialFolderChoices: [SidebarContextMenuChoice] {
         guard let contextMenuSpace else { return [] }
         return makeSidebarContextMenuFolderChoices(
-            folders: browserManager.tabManager.folders(for: contextMenuSpace.id)
+            folders: browserContext.tabManager.folders(for: contextMenuSpace.id)
         )
     }
 
     private var essentialSpaceChoices: [SidebarContextMenuChoice] {
         makeSidebarContextMenuSpaceChoices(
-            spaces: browserManager.tabManager.spaces
+            spaces: browserContext.tabManager.spaces
         )
     }
 
     private func profileChoices(for pin: ShortcutPin) -> [SidebarContextMenuChoice] {
         makeSidebarContextMenuProfileChoices(
-            profiles: browserManager.profileManager.profiles,
-            selectedProfileId: browserManager.tabManager.resolvedExecutionProfileId(
+            profiles: browserContext.profileManager.profiles,
+            selectedProfileId: browserContext.tabManager.resolvedExecutionProfileId(
                 for: pin,
                 currentSpaceId: contextMenuSpace?.id
             )
@@ -435,14 +434,14 @@ struct PinnedGrid: View {
     }
 
     private func moveEssential(_ pin: ShortcutPin, toFolder folderId: UUID) {
-        guard let targetFolder = browserManager.tabManager.folder(by: folderId) else { return }
-        let targetIndex = browserManager.tabManager.folderPinnedPins(
+        guard let targetFolder = browserContext.tabManager.folder(by: folderId) else { return }
+        let targetIndex = browserContext.tabManager.folderPinnedPins(
             for: folderId,
             in: targetFolder.spaceId
         ).count
 
         mutateContentLayout {
-            _ = browserManager.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -454,10 +453,10 @@ struct PinnedGrid: View {
     }
 
     private func moveEssential(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
-        let targetIndex = browserManager.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
+        let targetIndex = browserContext.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutateContentLayout {
-            _ = browserManager.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -471,7 +470,7 @@ struct PinnedGrid: View {
     private func resetShortcutPin(_ pin: ShortcutPin) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
-        _ = browserManager.tabManager.resetShortcutPinToLaunchURL(
+        _ = browserContext.tabManager.resetShortcutPinToLaunchURL(
             pin,
             in: windowState,
             preserveCurrentPage: preserveCurrentPage
@@ -480,7 +479,7 @@ struct PinnedGrid: View {
 
     private func removeFromEssentials(_ pin: ShortcutPin) {
         mutateContentLayout {
-            browserManager.tabManager.removeFromEssentials(pin)
+            browserContext.tabManager.removeFromEssentials(pin)
         }
     }
 
@@ -495,11 +494,11 @@ struct PinnedGrid: View {
     }
 
     private func presentShortcutLinkEditor(for pin: ShortcutPin) {
-        browserManager.showShortcutEditor(
-            for: pin,
-            in: windowState,
-            themeContext: themeContext,
-            source: windowState.resolveSidebarPresentationSource()
+        browserContext.presentationActions.showShortcutEditor(
+            pin,
+            windowState,
+            themeContext,
+            windowState.resolveSidebarPresentationSource()
         )
     }
 
@@ -513,7 +512,7 @@ struct PinnedGrid: View {
         source: SidebarTransientPresentationSource? = nil
     ) {
         if let source {
-            browserManager.presentSharingServicePicker([url], source: source)
+            browserContext.presentationActions.presentSharingServicePicker([url], source)
             return
         }
 
@@ -531,7 +530,7 @@ struct PinnedGrid: View {
     private func mutateContentLayout(_ update: () -> Void) {
         guard animateLayout,
               windowRegistry.activeWindow?.id == windowState.id,
-              !browserManager.isTransitioningProfile,
+              !browserContext.isTransitioningProfile(),
               !reduceMotion,
               !dragState.isCompletingDrop else {
             update()
@@ -544,8 +543,8 @@ struct PinnedGrid: View {
     private var geometrySpaceId: UUID {
         spaceId
             ?? windowState.currentSpaceId
-            ?? browserManager.tabManager.currentSpace?.id
-            ?? browserManager.tabManager.spaces.first?.id
+            ?? browserContext.tabManager.currentSpace?.id
+            ?? browserContext.tabManager.spaces.first?.id
             ?? UUID()
     }
 }

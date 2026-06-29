@@ -30,7 +30,7 @@ extension SpaceView {
         if windowState.isIncognito {
             return windowState.ephemeralTabs.sorted { $0.index < $1.index }
         }
-        return browserManager.tabManager.tabs(in: space)
+        return browserContext.tabManager.tabs(in: space)
     }
 
     private var newTabRow: some View {
@@ -79,7 +79,7 @@ extension SpaceView {
 
     private func openNewTabFloatingBar() {
         guard isInteractive else { return }
-        browserManager.openNewTabOrFloatingBar(in: windowState)
+        browserContext.openNewTabOrFloatingBar(windowState)
     }
 
     private var topNewTabButtonSection: some View {
@@ -98,10 +98,10 @@ extension SpaceView {
             }
 
             SpaceSeparator(
-                hasTabs: !browserManager.tabManager.tabs(in: space).isEmpty,
+                hasTabs: !browserContext.tabManager.tabs(in: space).isEmpty,
                 isHovering: $isSidebarHovered
             ) {
-                browserManager.tabManager.clearRegularTabs(for: space.id)
+                browserContext.tabManager.clearRegularTabs(for: space.id)
             }
             .padding(.horizontal, 8)
 
@@ -132,7 +132,7 @@ extension SpaceView {
             regularTabsListAnimation.preserveSnapshots(
                 from: oldValue,
                 to: newValue,
-                liveTab: { browserManager.tabManager.tab(for: $0) }
+                liveTab: { browserContext.tabManager.tab(for: $0) }
             )
             regularTabsListAnimation.cacheTabs(tabs)
             animateRegularRenderedTabsChange(from: oldValue, to: newValue)
@@ -227,7 +227,7 @@ extension SpaceView {
                             },
                             contextMenuEntries: regularTabContextMenuEntries,
                             onActivate: onActivateTab,
-                            onActivateGroup: { browserManager.focusSplitGroup(group, in: windowState) },
+                            onActivateGroup: { browserContext.focusSplitGroup(group, windowState) },
                             onSegmentActionAnimationStart: { item in
                                 if splitSegmentAction(for: item, in: group) == .restore {
                                     prepareShortcutRestoreGap(for: item, in: group)
@@ -237,7 +237,6 @@ extension SpaceView {
                                 performSplitSegmentAction(for: item, in: group)
                             }
                         )
-                        .environmentObject(browserManager)
                         .environmentObject(splitManager)
                         .zIndex(regularSplitGroupRowZIndex(group))
                     } else if groupedTabIds.contains(tabId) {
@@ -245,7 +244,7 @@ extension SpaceView {
                     } else if let tab = tabById[tabId]
                         ?? regularTabsListAnimation.resolvedTab(
                             for: tabId,
-                            liveTab: { browserManager.tabManager.tab(for: $0) }
+                            liveTab: { browserContext.tabManager.tab(for: $0) }
                         ) {
                         regularAnimatedTabRow(tab)
                     }
@@ -264,7 +263,7 @@ extension SpaceView {
         let currentTabIds = Set(currentTabs.map(\.id))
         var seenGroupIds = Set<UUID>()
         return currentTabs.compactMap { tab in
-            guard let group = browserManager.tabManager.splitGroup(containing: tab.id),
+            guard let group = browserContext.tabManager.splitGroup(containing: tab.id),
                   !group.isShortcutHosted,
                   seenGroupIds.insert(group.id).inserted,
                   group.tabIds.count >= SplitGroup.minimumTabs,
@@ -281,14 +280,14 @@ extension SpaceView {
         tabById: [UUID: Tab]
     ) -> [SplitGroupSidebarItem] {
         group.tabIds.compactMap { id in
-            if let tab = tabById[id] ?? browserManager.tabManager.tab(for: id) {
+            if let tab = tabById[id] ?? browserContext.tabManager.tab(for: id) {
                 return .tab(tab)
             }
             if let pinId = group.member(for: id)?.pinId,
-               let pin = browserManager.tabManager.shortcutPin(by: pinId) {
+               let pin = browserContext.tabManager.shortcutPin(by: pinId) {
                 return .pin(pin)
             }
-            if let pin = browserManager.tabManager.shortcutPin(by: id) {
+            if let pin = browserContext.tabManager.shortcutPin(by: id) {
                 return .pin(pin)
             }
             return nil
@@ -312,7 +311,7 @@ extension SpaceView {
         if splitMember(for: item, in: group)?.isShortcutBacked == true {
             performShortcutRestoreWithPreparedGap(for: item, in: group) {
                 performRegularSplitModelMutation {
-                    browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+                    browserContext.restoreShortcutSplitMember(item.id, group, windowState)
                 }
             }
             return
@@ -366,7 +365,7 @@ extension SpaceView {
                     if let tab = item.tab {
                         onActivateTab(tab)
                     } else {
-                        browserManager.focusSplitGroup(group, in: windowState)
+                        browserContext.focusSplitGroup(group, windowState)
                     }
                 },
                 isEnabled: isInteractive
@@ -397,7 +396,7 @@ extension SpaceView {
             return pin
         }
         if let pinId = item.tab?.shortcutPinId ?? member?.pinId {
-            return browserManager.tabManager.shortcutPin(by: pinId)
+            return browserContext.tabManager.shortcutPin(by: pinId)
         }
         return nil
     }
@@ -484,7 +483,7 @@ extension SpaceView {
             guard regularTabsListAnimation.containsRenderedTab(removedId),
                   let tab = regularTabsListAnimation.resolvedTab(
                     for: removedId,
-                    liveTab: { browserManager.tabManager.tab(for: $0) }
+                    liveTab: { browserContext.tabManager.tab(for: $0) }
                   ) else {
                 syncRegularRenderedTabsWithoutAnimation(to: newIds)
                 return
@@ -508,7 +507,7 @@ extension SpaceView {
         let finalItems = newIds.map(RegularTabRenderedItem.tab)
 
         SidebarMotionTransaction.withoutAnimation {
-            regularTabsListAnimation.beginInsertion(insertedIds) { browserManager.tabManager.tab(for: $0) }
+            regularTabsListAnimation.beginInsertion(insertedIds) { browserContext.tabManager.tab(for: $0) }
         }
 
         withAnimation(animation) {
@@ -683,13 +682,13 @@ extension SpaceView {
     }
 
     private func regularTabContextMenuEntries(_ tab: Tab) -> [SidebarContextMenuEntry] {
-        let profiles = browserManager.profileManager.profiles
+        let profiles = browserContext.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
-            folders: browserManager.tabManager.folders(for: space.id)
-                .filter { !browserManager.liveFolderManager.isLiveFolder($0.id) }
+            folders: browserContext.tabManager.folders(for: space.id)
+                .filter { !browserContext.liveFolderManager.isLiveFolder($0.id) }
         )
         let spaceChoices = makeSidebarContextMenuSpaceChoices(
-            spaces: browserManager.tabManager.spaces,
+            spaces: browserContext.tabManager.spaces,
             selectedSpaceId: tab.spaceId
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
@@ -700,26 +699,26 @@ extension SpaceView {
         let moveDownAction: (() -> Void)? = isLastTab(tab) ? nil : { onMoveTabDown(tab) }
         let pinToSpaceAction: (() -> Void)? = tab.isPinned || tab.isSpacePinned
             ? nil
-            : { browserManager.tabManager.pinTabToSpace(tab, spaceId: space.id) }
+            : { browserContext.tabManager.pinTabToSpace(tab, spaceId: space.id) }
         let addToEssentialsAction: (() -> Void)? = canAddTabToEssentials(tab)
             ? {
-                browserManager.tabManager.pinTab(
+                browserContext.tabManager.pinTab(
                     tab,
                     context: .init(windowState: windowState, spaceId: space.id)
                 )
             }
             : nil
         let closeTabsBelowAction: (() -> Void)? = !tab.isPinned && !tab.isSpacePinned && tab.spaceId != nil
-            ? { browserManager.tabManager.closeAllTabsBelow(tab) }
+            ? { browserContext.tabManager.closeAllTabsBelow(tab) }
             : nil
         let moveToSpaceAction: (UUID) -> Void = { targetSpaceId in
-            browserManager.tabManager.moveTab(tab.id, to: targetSpaceId)
+            browserContext.tabManager.moveTab(tab.id, to: targetSpaceId)
         }
 
         return makeSidebarTabContextMenuEntries(
             role: .regularTab,
             actions: .init(
-                duplicate: { browserManager.duplicateTab(tab, in: windowState) },
+                duplicate: { browserContext.duplicateTab(tab, windowState) },
                 copyLink: { copyLink(tab.url) },
                 share: {
                     presentSharePicker(
@@ -731,7 +730,7 @@ extension SpaceView {
                 folderTarget: .init(
                     choices: folderChoices,
                     onSelect: { folderId in
-                        browserManager.tabManager.moveTabToFolder(tab: tab, folderId: folderId)
+                        browserContext.tabManager.moveTabToFolder(tab: tab, folderId: folderId)
                     }
                 ),
                 moveToSpace: .init(
@@ -741,7 +740,7 @@ extension SpaceView {
                 profileTarget: .init(
                     choices: profileChoices,
                     onSelect: { profileId in
-                        browserManager.tabManager.assign(tab: tab, toProfile: profileId)
+                        browserContext.tabManager.assign(tab: tab, toProfile: profileId)
                     }
                 ),
                 moveUp: moveUpAction,
@@ -756,7 +755,7 @@ extension SpaceView {
 
     private func canAddTabToEssentials(_ tab: Tab) -> Bool {
         guard !tab.isPinned && !tab.isSpacePinned else { return false }
-        return browserManager.tabManager.canAddURLToEssentials(
+        return browserContext.tabManager.canAddURLToEssentials(
             tab.url,
             using: .init(windowState: windowState, spaceId: space.id)
         )
@@ -771,9 +770,9 @@ extension SpaceView {
     }
 
     private func handleUserTabActivation(_ tab: Tab) {
-        browserManager.requestUserTabActivation(
+        browserContext.requestUserTabActivation(
             tab,
-            in: windowState
+            windowState
         )
     }
 
@@ -795,7 +794,7 @@ extension SpaceView {
         source: SidebarTransientPresentationSource? = nil
     ) {
         if let source {
-            browserManager.presentSharingServicePicker([url], source: source)
+            browserContext.presentationActions.presentSharingServicePicker([url], source)
             return
         }
 

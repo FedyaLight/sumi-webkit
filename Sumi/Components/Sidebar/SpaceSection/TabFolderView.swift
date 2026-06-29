@@ -15,6 +15,7 @@ struct TabFolderView: View {
     private static let folderContentVerticalPadding: CGFloat = 4
 
     var folder: TabFolder
+    let browserContext: SidebarBrowserContext
     let space: Space
     let shortcutPins: [ShortcutPin]
     let childFolders: [TabFolder]
@@ -34,7 +35,6 @@ struct TabFolderView: View {
 
     @State private var displayedCollapsedProjectionIDs: [UUID] = []
 
-    @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
@@ -64,7 +64,7 @@ struct TabFolderView: View {
             space: space,
             childFoldersByParentId: childFoldersByParentId,
             folderPinsByFolderId: folderPinsByFolderId,
-            browserManager: browserManager,
+            browserContext: browserContext,
             windowState: windowState,
             themeContext: themeContext,
             folderLayoutAnimation: folderLayoutAnimation,
@@ -196,9 +196,9 @@ struct TabFolderView: View {
             shortcutPins: shortcutPins,
             childFolders: childFolders,
             shortcutRestoreGaps: shortcutRestoreGaps,
-            tabManager: browserManager.tabManager,
-            liveFolderManager: browserManager.liveFolderManager,
-            currentTab: browserManager.currentTab(for: windowState)
+            tabManager: browserContext.tabManager,
+            liveFolderManager: browserContext.liveFolderManager,
+            currentTab: browserContext.currentTab(windowState)
         ) { projection in
             let dragSnapshot = folderDragSnapshot
             let contentProjection = folderContentProjection(
@@ -243,7 +243,7 @@ struct TabFolderView: View {
 
     private func refreshLiveFolderIfNeeded() {
         guard folder.isOpen else { return }
-        browserManager.liveFolderManager.refreshIfStale(folderId: folder.id)
+        browserContext.liveFolderManager.refreshIfStale(folderId: folder.id)
     }
 
     private func folderCompositeContent(
@@ -445,7 +445,7 @@ struct TabFolderView: View {
                         }
                     case .liveItem(let itemId):
                         if let item = projection.liveFolderItem(with: itemId) {
-                            liveFolderItemView(item)
+                            liveFolderItemView(item, projection: projection)
                         }
                     case .splitGroup(let groupId):
                         if let group = projection.splitGroup(with: groupId) {
@@ -482,6 +482,7 @@ struct TabFolderView: View {
     private func nestedFolderView(_ childFolder: TabFolder, containerIndex: Int) -> some View {
         TabFolderView(
             folder: childFolder,
+            browserContext: browserContext,
             space: space,
             shortcutPins: folderPinsByFolderId[childFolder.id] ?? [],
             childFolders: childFoldersByParentId[childFolder.id] ?? [],
@@ -503,7 +504,6 @@ struct TabFolderView: View {
             onPrepareShortcutRestoreGap: onPrepareShortcutRestoreGap,
             onPerformShortcutRestoreWithPreparedGap: onPerformShortcutRestoreWithPreparedGap
         )
-        .environmentObject(browserManager)
         .environmentObject(splitManager)
         .environment(windowState)
     }
@@ -616,20 +616,20 @@ struct TabFolderView: View {
                 group: group,
                 items: items,
                 spaceId: space.id,
-                tabManager: browserManager.tabManager,
+                tabManager: browserContext.tabManager,
                 isAppKitInteractionEnabled: isInteractive,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateTab: { tab in
-                    browserManager.requestUserTabActivation(tab, in: windowState)
+                    browserContext.requestUserTabActivation(tab, windowState)
                 },
                 onActivateGroup: { group in
-                    browserManager.focusSplitGroup(group, in: windowState)
+                    browserContext.focusSplitGroup(group, windowState)
                 },
                 onRestoreShortcutSplitMember: { item, group in
-                    browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+                    browserContext.restoreShortcutSplitMember(item.id, group, windowState)
                 },
                 onCloseTab: { tab in
-                    browserManager.closeTab(tab, in: windowState)
+                    browserContext.closeTab(tab, windowState)
                 },
                 onPrepareShortcutRestoreGap: onPrepareShortcutRestoreGap,
                 onPerformShortcutRestoreWithPreparedGap: onPerformShortcutRestoreWithPreparedGap
@@ -650,7 +650,7 @@ struct TabFolderView: View {
                 accessibilityID: "folder-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isInteractive,
                 action: {
-                    browserManager.focusSplitGroup(placeholderGroup, in: windowState)
+                    browserContext.focusSplitGroup(placeholderGroup, windowState)
                 }
             )
             .opacity(
@@ -660,11 +660,11 @@ struct TabFolderView: View {
             ShortcutSidebarRow(
                 pin: pin,
                 liveTab: projection.liveTab(for: pin.id),
-                faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
+                faviconPartition: browserContext.tabManager.resolvedFaviconPartition(
                     for: pin,
                     currentSpaceId: windowState.currentSpaceId
                 ),
-                runtimeAffordance: browserManager.tabManager.shortcutRuntimeAffordanceState(
+                runtimeAffordance: browserContext.tabManager.shortcutRuntimeAffordanceState(
                     for: pin,
                     in: windowState
                 ),
@@ -686,21 +686,24 @@ struct TabFolderView: View {
         }
     }
 
-    private func liveFolderItemView(_ item: SumiLiveFolderItem) -> some View {
+    private func liveFolderItemView(
+        _ item: SumiLiveFolderItem,
+        projection: SidebarFolderViewProjection
+    ) -> some View {
         SumiLiveFolderItemRow(
             item: item,
+            isSelected: projection.currentTabURLString == item.urlString,
             accessibilityID: "live-folder-item-\(folder.id.uuidString)-\(item.id)",
             contextMenuEntries: {
                 contextMenuActionOwner.liveFolderItemContextMenuEntries(item)
             },
             action: {
-                browserManager.liveFolderManager.open(item: item, in: windowState)
+                browserContext.liveFolderManager.open(item: item, in: windowState)
             },
             onDismiss: {
-                browserManager.liveFolderManager.dismiss(item: item)
+                browserContext.liveFolderManager.dismiss(item: item)
             }
         )
-        .environmentObject(browserManager)
         .environment(windowState)
     }
 
@@ -725,7 +728,7 @@ struct TabFolderView: View {
 
     private func toggleFolderOpenState() {
         withAnimation(folderLayoutAnimation) {
-            browserManager.tabManager.toggleFolderOpenState(folder.id)
+            browserContext.tabManager.toggleFolderOpenState(folder.id)
         }
     }
 
@@ -787,19 +790,19 @@ struct TabFolderView: View {
     }
 
     private func activateShortcutPin(_ pin: ShortcutPin) {
-        let tab = browserManager.tabManager.activateShortcutPin(
+        let tab = browserContext.tabManager.activateShortcutPin(
             pin,
             in: windowState.id,
             currentSpaceId: space.id
         )
-        browserManager.requestUserTabActivation(
+        browserContext.requestUserTabActivation(
             tab,
-            in: windowState
+            windowState
         )
     }
 
     private func deleteNestedFolder(_ childFolder: TabFolder) {
-        let childCount = browserManager.tabManager.folderRecursiveChildCount(
+        let childCount = browserContext.tabManager.folderRecursiveChildCount(
             for: childFolder.id,
             in: space.id
         )
@@ -810,7 +813,7 @@ struct TabFolderView: View {
                 window: windowState.window,
                 onDelete: {
                     mutateFolderContent {
-                        browserManager.tabManager.deleteFolder(childFolder.id)
+                        browserContext.tabManager.deleteFolder(childFolder.id)
                     }
                 }
             )
@@ -818,13 +821,13 @@ struct TabFolderView: View {
         }
 
         mutateFolderContent {
-            browserManager.tabManager.deleteFolder(childFolder.id)
+            browserContext.tabManager.deleteFolder(childFolder.id)
         }
     }
 
     private func ungroupNestedFolder(_ childFolder: TabFolder) {
         mutateFolderContent {
-            browserManager.tabManager.ungroupFolder(childFolder.id)
+            browserContext.tabManager.ungroupFolder(childFolder.id)
         }
     }
 

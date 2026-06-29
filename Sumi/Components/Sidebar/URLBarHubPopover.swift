@@ -30,10 +30,10 @@ private struct URLBarHubNativeBackground: View {
 }
 
 struct URLBarHubPopover: View {
-    @EnvironmentObject private var browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
 
+    let browserManager: BrowserManager
     @ObservedObject var bookmarkManager: SumiBookmarkManager
 
     let bookmarkPresentationRequest: SumiBookmarkEditorPresentationRequest?
@@ -90,6 +90,7 @@ struct URLBarHubPopover: View {
 
     @MainActor
     init(
+        browserManager: BrowserManager,
         bookmarkManager: SumiBookmarkManager,
         bookmarkPresentationRequest: SumiBookmarkEditorPresentationRequest?,
         currentTab: Tab?,
@@ -102,6 +103,7 @@ struct URLBarHubPopover: View {
         onClose: @escaping () -> Void,
         onContentSizeChange: @escaping (CGSize) -> Void
     ) {
+        self.browserManager = browserManager
         self.bookmarkManager = bookmarkManager
         self.bookmarkPresentationRequest = bookmarkPresentationRequest
         self.currentTab = currentTab

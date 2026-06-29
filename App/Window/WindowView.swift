@@ -390,7 +390,10 @@ struct WindowView: View {
     @ViewBuilder
     private func webContent() -> some View {
         ZStack(alignment: .top) {
-            WebsiteView(sidebarDragState: sidebarDragState)
+            WebsiteView(
+                browserManager: browserManager,
+                sidebarDragState: sidebarDragState
+            )
                 .zIndex(2000)
 
             if let currentTab = browserManager.currentTab(for: windowState) {

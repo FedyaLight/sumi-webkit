@@ -2,12 +2,12 @@ import SwiftUI
 
 struct SumiLiveFolderItemRow: View {
     let item: SumiLiveFolderItem
+    let isSelected: Bool
     let accessibilityID: String
     let contextMenuEntries: () -> [SidebarContextMenuEntry]
     let action: () -> Void
     let onDismiss: () -> Void
 
-    @EnvironmentObject private var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -108,10 +108,6 @@ struct SumiLiveFolderItemRow: View {
             isInteractionEnabled: true,
             action: onDismiss
         )
-    }
-
-    private var isSelected: Bool {
-        browserManager.currentTab(for: windowState)?.url.absoluteString == item.urlString
     }
 
     private var backgroundColor: Color {

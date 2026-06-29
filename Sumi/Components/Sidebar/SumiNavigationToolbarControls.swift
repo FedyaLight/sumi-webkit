@@ -48,8 +48,7 @@ struct SumiNavigationToolbarTheme {
 struct SumiNavigationToolbarControls: NSViewRepresentable {
     let state: SumiNavigationToolbarControlState
     let theme: SumiNavigationToolbarTheme
-    let browserManager: BrowserManager
-    let windowState: BrowserWindowState
+    let historyContext: SumiNavigationHistoryContext
     let tab: Tab?
     let activeWebView: WKWebView?
     let goBack: () -> Void
@@ -220,8 +219,7 @@ struct SumiNavigationToolbarControls: NSViewRepresentable {
             direction: SumiNavigationHistoryDirection
         ) {
             delegate.direction = direction
-            delegate.browserManager = parent.browserManager
-            delegate.windowState = parent.windowState
+            delegate.historyContext = parent.historyContext
             delegate.tabProvider = { [weak self] in
                 self?.parent.tab
             }

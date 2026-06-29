@@ -28,11 +28,11 @@ struct ShortcutRestoreGap: Identifiable, Hashable {
 
 struct SpaceView: View {
     let space: Space
+    let browserContext: SidebarBrowserContext
     let renderMode: SpaceViewRenderMode
     let allowsInteraction: Bool
     let scrollHoverCoordinator: NativeSurfaceScrollHoverCoordinator
     @Binding var isSidebarHovered: Bool
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @EnvironmentObject var dragState: SidebarDragState
@@ -57,7 +57,7 @@ struct SpaceView: View {
         if visibleWidth > 0 {
             return visibleWidth
         }
-        let fallbackWidth = browserManager.getSavedSidebarWidth(for: windowState)
+        let fallbackWidth = browserContext.savedSidebarWidth(windowState)
         return max(fallbackWidth, 0)
     }
 
@@ -67,10 +67,10 @@ struct SpaceView: View {
 
     var spaceTitleActions: SpaceTitleActions {
         SpaceTitleActions(
-            canDeleteSpace: browserManager.tabManager.spaces.count > 1,
+            canDeleteSpace: browserContext.tabManager.spaces.count > 1,
             renameSpace: { newName in
                 do {
-                    try browserManager.tabManager.renameSpace(
+                    try browserContext.tabManager.renameSpace(
                         spaceId: space.id,
                         newName: newName
                     )
@@ -80,34 +80,33 @@ struct SpaceView: View {
             },
             updateSpaceIcon: { icon in
                 do {
-                    try browserManager.tabManager.updateSpaceIcon(spaceId: space.id, icon: icon)
+                    try browserContext.tabManager.updateSpaceIcon(spaceId: space.id, icon: icon)
                 } catch {
                     RuntimeDiagnostics.emit("⚠️ Failed to update space icon \(space.id.uuidString):", error)
                 }
             },
             persistCommittedEmoji: { _ in
-                browserManager.tabManager.markAllSpacesStructurallyDirty()
-                browserManager.tabManager.scheduleStructuralPersistence()
+                browserContext.tabManager.markAllSpacesStructurallyDirty()
+                browserContext.tabManager.scheduleStructuralPersistence()
             },
             editSpace: {
-                browserManager.showSpaceEditor(
-                    for: space,
-                    in: windowState,
-                    themeContext: themeContext,
-                    source: windowState.resolveSidebarPresentationSource()
+                browserContext.presentationActions.showSpaceEditor(
+                    space,
+                    windowState,
+                    themeContext,
+                    windowState.resolveSidebarPresentationSource()
                 )
             },
             changeTheme: {
-                browserManager.showGradientEditor(
-                    for: space,
-                    source: windowState.resolveSidebarPresentationSource()
+                browserContext.presentationActions.showGradientEditorForSpace(
+                    space,
+                    windowState.resolveSidebarPresentationSource()
                 )
             },
             deleteSpace: {
-                SpaceDeletionConfirmationPresenter.confirmDelete(
-                    space: space,
-                    browserManager: browserManager,
-                    window: windowState.window
+                browserContext.presentationActions.confirmDeleteSpace(
+                    space,
+                    windowState
                 )
             }
         )
@@ -118,16 +117,16 @@ struct SpaceView: View {
     }
 
     var body: some View {
-        SidebarTabStructuralRevisionReader(browserManager: browserManager) { _ in
-            VStack(spacing: 4) {
-                SpaceTitle(
-                    space: space,
-                    actions: spaceTitleActions,
-                    isAppKitInteractionEnabled: isInteractive
-                )
+        let _ = browserContext.tabStructuralRevision()
 
-                mainContentContainer
-            }
+        return VStack(spacing: 4) {
+            SpaceTitle(
+                space: space,
+                actions: spaceTitleActions,
+                isAppKitInteractionEnabled: isInteractive
+            )
+
+            mainContentContainer
         }
         .padding(.horizontal, 8)
         .frame(minWidth: 0, maxWidth: outerWidth, alignment: .leading)
@@ -140,15 +139,6 @@ struct SpaceView: View {
                 transaction.disablesAnimations = true
             }
         }
-    }
-}
-
-private struct SidebarTabStructuralRevisionReader<Content: View>: View {
-    @ObservedObject var browserManager: BrowserManager
-    @ViewBuilder let content: (UInt) -> Content
-
-    var body: some View {
-        content(browserManager.tabStructuralRevision)
     }
 }
 
@@ -205,7 +195,7 @@ extension SpaceView {
         guard let member = shortcutRestoreMember(for: item, in: group),
               member.isShortcutBacked,
               let pinId = member.pinId,
-              browserManager.tabManager.shortcutPin(by: pinId) != nil
+              browserContext.tabManager.shortcutPin(by: pinId) != nil
         else {
             return nil
         }
@@ -214,8 +204,8 @@ extension SpaceView {
         case .spacePinned(let spaceId, let folderId, let index):
             guard spaceId == space.id else { return nil }
             if let folderId {
-                guard browserManager.tabManager.folderSpaceId(for: folderId) == spaceId,
-                      browserManager.tabManager.folder(by: folderId)?.isOpen == true
+                guard browserContext.tabManager.folderSpaceId(for: folderId) == spaceId,
+                      browserContext.tabManager.folder(by: folderId)?.isOpen == true
                 else {
                     return nil
                 }
@@ -236,7 +226,7 @@ extension SpaceView {
             return ShortcutRestoreGap(
                 pinId: pinId,
                 container: .spacePinned(spaceId),
-                index: browserManager.tabManager.topLevelSpacePinnedItems(for: spaceId).count
+                index: browserContext.tabManager.topLevelSpacePinnedItems(for: spaceId).count
             )
 
         case .essential, .regular:
@@ -262,7 +252,7 @@ extension SpaceView {
 
     var elevatedFolderIds: Set<UUID> {
         var elevated = Set<UUID>()
-        let tabManager = browserManager.tabManager
+        let tabManager = browserContext.tabManager
 
         // 1. If a shortcut pin is selected
         if let currentShortcutPinId = windowState.currentShortcutPinId {

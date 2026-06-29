@@ -13,8 +13,7 @@ import WebKit
 @MainActor
 class ObservableTabWrapper: ObservableObject {
     @Published var tab: Tab?
-    weak var browserManager: BrowserManager?
-    weak var windowState: BrowserWindowState?
+    var webViewProvider: ((Tab) -> WKWebView?)?
     private var cancellables: Set<AnyCancellable> = []
     @Published private(set) var canGoBack: Bool = false
     @Published private(set) var canGoForward: Bool = false
@@ -45,15 +44,13 @@ class ObservableTabWrapper: ObservableObject {
             .store(in: &cancellables)
     }
 
-    func setContext(browserManager: BrowserManager, windowState: BrowserWindowState) {
-        self.browserManager = browserManager
-        self.windowState = windowState
+    func setWebViewProvider(_ provider: @escaping (Tab) -> WKWebView?) {
+        webViewProvider = provider
     }
 
     func activeWebView() -> WKWebView? {
         guard let tab else { return nil }
-        if let browserManager, let windowState,
-           let webView = browserManager.getWebView(for: tab.id, in: windowState.id) {
+        if let webView = webViewProvider?(tab) {
             return webView
         }
         return tab.assignedWebView ?? tab.existingWebView
@@ -75,8 +72,36 @@ class ObservableTabWrapper: ObservableObject {
     }
 }
 
+@MainActor
+struct NavigationToolbarBrowserContext {
+    let currentTab: () -> Tab?
+    let webView: (Tab) -> WKWebView?
+    let historyContext: SumiNavigationHistoryContext
+
+    static func live(
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState
+    ) -> NavigationToolbarBrowserContext {
+        NavigationToolbarBrowserContext(
+            currentTab: { [weak browserManager, weak windowState] in
+                guard let browserManager, let windowState else { return nil }
+                return browserManager.currentTab(for: windowState)
+            },
+            webView: { [weak browserManager, weak windowState] tab in
+                guard let browserManager, let windowState else { return nil }
+                return browserManager.getWebView(for: tab.id, in: windowState.id)
+            },
+            historyContext: SumiNavigationHistoryContext.live(
+                browserManager: browserManager,
+                windowState: windowState
+            )
+        )
+    }
+}
+
 struct NavButtonsView: View {
-    @EnvironmentObject var browserManager: BrowserManager
+    let browserContext: NavigationToolbarBrowserContext
+
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sumiSettings) private var sumiSettings
@@ -88,8 +113,7 @@ struct NavButtonsView: View {
             theme: SumiNavigationToolbarTheme(
                 tokens: themeContext.tokens(settings: sumiSettings)
             ),
-            browserManager: browserManager,
-            windowState: windowState,
+            historyContext: browserContext.historyContext,
             tab: tabWrapper.tab,
             activeWebView: tabWrapper.activeWebView(),
             goBack: goBack,
@@ -109,10 +133,10 @@ struct NavButtonsView: View {
             }
         )
         .onAppear {
-            tabWrapper.setContext(browserManager: browserManager, windowState: windowState)
+            tabWrapper.setWebViewProvider(browserContext.webView)
             updateCurrentTab()
         }
-        .onChange(of: browserManager.currentTab(for: windowState)?.id) { _, _ in
+        .onChange(of: browserContext.currentTab()?.id) { _, _ in
             DispatchQueue.main.async {
                 updateCurrentTab()
             }
@@ -120,7 +144,7 @@ struct NavButtonsView: View {
     }
 
     private func updateCurrentTab() {
-        tabWrapper.updateTab(browserManager.currentTab(for: windowState))
+        tabWrapper.updateTab(browserContext.currentTab())
     }
 
     private var navigationControlState: SumiNavigationToolbarControlState {
@@ -140,8 +164,7 @@ struct NavButtonsView: View {
         let webView = activeWebView()
         if SumiNavigationHistoryMenuModel.openURLIfModifiedClick(
             webView?.backForwardList.backItem?.url,
-            browserManager: browserManager,
-            windowState: windowState,
+            historyContext: browserContext.historyContext,
             sourceTab: tabWrapper.tab,
             event: NSApp.currentEvent
         ) {
@@ -159,8 +182,7 @@ struct NavButtonsView: View {
         let webView = activeWebView()
         if SumiNavigationHistoryMenuModel.openURLIfModifiedClick(
             webView?.backForwardList.forwardItem?.url,
-            browserManager: browserManager,
-            windowState: windowState,
+            historyContext: browserContext.historyContext,
             sourceTab: tabWrapper.tab,
             event: NSApp.currentEvent
         ) {
