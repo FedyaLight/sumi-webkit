@@ -10,12 +10,6 @@ import Foundation
 import SwiftUI
 import WebKit
 
-extension Notification.Name {
-    static let sumiTabLifecycleDidChange = Notification.Name("SumiTabLifecycleDidChange")
-    static let sumiTabNavigationStateDidChange = Notification.Name("SumiTabNavigationStateDidChange")
-    static let sumiTabLoadingStateDidChange = Notification.Name("SumiTabLoadingStateDidChange")
-}
-
 struct SumiGlanceOriginSnapshot {
     let rectInWindow: CGRect
     let timestamp: TimeInterval
@@ -39,6 +33,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     // Track the current click modifiers for native popup/link routing fallback.
     var clickModifierFlags: NSEvent.ModifierFlags = []
+    let stateChangeEmitter = TabStateChangeEmitter()
     private let navigationRuntime = TabNavigationRuntime()
     let mediaRuntime = TabMediaRuntime()
     let popupUserActivationTracker = SumiPopupUserActivationTracker()
@@ -122,11 +117,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 self.estimatedProgress = 1.0
             }
             guard oldIsLoading != newValue.isLoading else { return }
-            NotificationCenter.default.post(
-                name: .sumiTabLoadingStateDidChange,
-                object: self,
-                userInfo: ["tabId": id]
-            )
+            stateChangeEmitter.postLoadingStateDidChange(for: self)
         }
     }
 
@@ -774,7 +765,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func markProtectionReloadRequiredIfNeeded(
         afterChangingPolicyFor changedURL: URL?
     ) {
-        notifyContentBlockingReloadRequirementChangedIfNeeded(
+        publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.markProtectionReloadRequiredIfNeeded(
                 afterChangingPolicyFor: changedURL,
                 currentURL: url,
@@ -787,7 +778,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func markSafariContentBlockerReloadRequiredIfNeeded(
         afterChangingPolicyFor changedURL: URL?
     ) {
-        notifyContentBlockingReloadRequirementChangedIfNeeded(
+        publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.markSafariContentBlockerReloadRequiredIfNeeded(
                 afterChangingPolicyFor: changedURL,
                 currentURL: url,
@@ -798,7 +789,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func updateSafariContentBlockerReloadRequirementForCurrentSite() {
-        notifyContentBlockingReloadRequirementChangedIfNeeded(
+        publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.updateSafariContentBlockerReloadRequirementForCurrentSite(
                 currentURL: url,
                 existingWebView: existingWebView,
@@ -808,7 +799,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func clearSafariContentBlockerReloadRequirementIfResolved(for committedURL: URL) {
-        notifyContentBlockingReloadRequirementChangedIfNeeded(
+        publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.clearSafariContentBlockerReloadRequirementIfResolved(
                 for: committedURL,
                 browserManager: browserManager
@@ -817,7 +808,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func updateProtectionReloadRequirementForCurrentSite() {
-        notifyContentBlockingReloadRequirementChangedIfNeeded(
+        publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.updateProtectionReloadRequirementForCurrentSite(
                 currentURL: url,
                 existingWebView: existingWebView,
@@ -827,7 +818,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func clearProtectionReloadRequirementIfResolved(for committedURL: URL) {
-        notifyContentBlockingReloadRequirementChangedIfNeeded(
+        publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.clearProtectionReloadRequirementIfResolved(
                 for: committedURL,
                 browserManager: browserManager
@@ -855,7 +846,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func markAutoplayReloadRequiredIfNeeded(afterChangingPolicyFor changedURL: URL?) {
-        notifyAutoplayReloadRequirementChangedIfNeeded(
+        publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.markAutoplayReloadRequiredIfNeeded(
                 afterChangingPolicyFor: changedURL,
                 currentURL: url,
@@ -867,7 +858,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func updateAutoplayReloadRequirementForCurrentSite() {
-        notifyAutoplayReloadRequirementChangedIfNeeded(
+        publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.updateAutoplayReloadRequirementForCurrentSite(
                 currentURL: url,
                 existingWebView: existingWebView,
@@ -878,7 +869,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func clearAutoplayReloadRequirementIfResolved(for committedURL: URL) {
-        notifyAutoplayReloadRequirementChangedIfNeeded(
+        publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.clearAutoplayReloadRequirementIfResolved(
                 for: committedURL,
                 currentURL: url,
@@ -995,28 +986,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         return true
     }
 
-    private func notifyContentBlockingReloadRequirementChangedIfNeeded(_ didChange: Bool) {
+    private func publishNavigationStateChangeIfNeeded(_ didChange: Bool) {
         guard didChange else { return }
-        notifyContentBlockingReloadRequirementChanged()
-    }
-
-    private func notifyContentBlockingReloadRequirementChanged() {
-        objectWillChange.send()
-        NotificationCenter.default.post(
-            name: .sumiTabNavigationStateDidChange,
-            object: self,
-            userInfo: ["tabId": id]
-        )
-    }
-
-    private func notifyAutoplayReloadRequirementChangedIfNeeded(_ didChange: Bool) {
-        guard didChange else { return }
-        objectWillChange.send()
-        NotificationCenter.default.post(
-            name: .sumiTabNavigationStateDidChange,
-            object: self,
-            userInfo: ["tabId": id]
-        )
+        stateChangeEmitter.publishNavigationStateDidChange(for: self)
     }
 
     func markSuspended(at date: Date = Date()) {
@@ -1029,10 +1001,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         }
         resetPlaybackActivity()
         loadingState = .idle
-        NotificationCenter.default.post(
-            name: .sumiTabLifecycleDidChange,
-            object: self
-        )
+        stateChangeEmitter.postLifecycleDidChange(for: self)
     }
 
     func beginSuspendedRestoreIfNeeded() {
@@ -1052,10 +1021,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             webViewRuntime.suspensionRestoreTraceState = nil
         }
         PerformanceTrace.emitEvent("TabSuspension.restoreEnd")
-        NotificationCenter.default.post(
-            name: .sumiTabLifecycleDidChange,
-            object: self
-        )
+        stateChangeEmitter.postLifecycleDidChange(for: self)
     }
 
     func toggleMute() {

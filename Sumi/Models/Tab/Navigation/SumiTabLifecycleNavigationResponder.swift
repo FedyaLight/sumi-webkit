@@ -142,11 +142,7 @@ final class SumiTabLifecycleNavigationResponder:
             tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.URL, .loading])
         }
 
-        NotificationCenter.default.post(
-            name: .sumiTabNavigationStateDidChange,
-            object: tab,
-            userInfo: ["tabId": tab.id]
-        )
+        tab.stateChangeEmitter.postNavigationStateDidChange(for: tab)
     }
 
     func navigationDidFinish(_ context: SumiNavigationContext?) {

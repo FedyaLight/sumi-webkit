@@ -82,11 +82,7 @@ extension Tab {
         if newCanGoBack != canGoBack || newCanGoForward != canGoForward {
             canGoBack = newCanGoBack
             canGoForward = newCanGoForward
-            NotificationCenter.default.post(
-                name: .sumiTabNavigationStateDidChange,
-                object: self,
-                userInfo: ["tabId": id]
-            )
+            stateChangeEmitter.postNavigationStateDidChange(for: self)
             browserManager?.tabManager.updateTabNavigationState(self)
         }
     }
@@ -115,11 +111,7 @@ extension Tab {
         if urlChanged {
             applyCachedFaviconOrPlaceholder(for: newURL)
             refreshFaviconExtensionCache()
-            NotificationCenter.default.post(
-                name: .sumiTabNavigationStateDidChange,
-                object: self,
-                userInfo: ["tabId": id]
-            )
+            stateChangeEmitter.postNavigationStateDidChange(for: self)
         }
     }
 
