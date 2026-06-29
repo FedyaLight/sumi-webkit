@@ -391,7 +391,10 @@ struct WindowView: View {
     private func webContent() -> some View {
         ZStack(alignment: .top) {
             WebsiteView(
-                browserManager: browserManager,
+                browserContext: browserManager.websiteViewBrowserContext(
+                    sidebarDragState: sidebarDragState
+                ),
+                nativeSurfaceRootBuilders: browserManager.websiteNativeSurfaceRootBuilders,
                 sidebarDragState: sidebarDragState
             )
                 .zIndex(2000)

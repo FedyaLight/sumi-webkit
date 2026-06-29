@@ -117,6 +117,20 @@ struct LinkStatusBar: View {
     }
 }
 
+@MainActor
+struct WebsiteViewBrowserContext {
+    let currentTab: (BrowserWindowState) -> Tab?
+    let workspaceTheme: (UUID?) -> WorkspaceTheme?
+    let makeWebContentContext: () -> any WindowWebContentBrowserContext
+}
+
+@MainActor
+struct WebsiteNativeSurfaceRootBuilders {
+    let history: (BrowserWindowState) -> AnyView
+    let bookmarks: (BrowserWindowState) -> AnyView
+    let settings: (BrowserWindowState) -> AnyView
+}
+
 struct WebsiteView: View {
     @Environment(WebViewCoordinator.self) private var webViewCoordinator
     @Environment(BrowserWindowState.self) private var windowState
@@ -127,14 +141,17 @@ struct WebsiteView: View {
     @ObservedObject private var sidebarDragState: SidebarDragState
     @State private var hoveredLink: String?
 
-    let browserManager: BrowserManager
+    private let browserContext: WebsiteViewBrowserContext
+    private let nativeSurfaceRootBuilders: WebsiteNativeSurfaceRootBuilders
     private let dragCoordinateSpace = "splitPreview"
 
     init(
-        browserManager: BrowserManager,
+        browserContext: WebsiteViewBrowserContext,
+        nativeSurfaceRootBuilders: WebsiteNativeSurfaceRootBuilders,
         sidebarDragState: SidebarDragState
     ) {
-        self.browserManager = browserManager
+        self.browserContext = browserContext
+        self.nativeSurfaceRootBuilders = nativeSurfaceRootBuilders
         self._sidebarDragState = ObservedObject(wrappedValue: sidebarDragState)
     }
 
@@ -143,13 +160,13 @@ struct WebsiteView: View {
     }
 
     private var tabThemeContext: ResolvedThemeContext {
-        guard let currentTab = browserManager.currentTab(for: windowState) else {
+        guard let currentTab = browserContext.currentTab(windowState) else {
             return themeContext
         }
         let tabTheme: WorkspaceTheme
         if let spaceId = currentTab.spaceId,
-           let space = browserManager.space(for: spaceId) {
-            tabTheme = space.workspaceTheme
+           let workspaceTheme = browserContext.workspaceTheme(spaceId) {
+            tabTheme = workspaceTheme
         } else {
             tabTheme = windowState.workspaceTheme
         }
@@ -204,7 +221,7 @@ struct WebsiteView: View {
 
     private var activeNativeSurfaceKind: NativeSurfaceKind? {
         guard splitManager.isSplit(for: windowState.id) == false else { return nil }
-        guard let currentTab = browserManager.currentTab(for: windowState) else { return .empty }
+        guard let currentTab = browserContext.currentTab(windowState) else { return .empty }
         if currentTab.representsSumiHistorySurface { return .history }
         if currentTab.representsSumiBookmarksSurface { return .bookmarks }
         if currentTab.representsSumiSettingsSurface { return .settings }
@@ -214,8 +231,7 @@ struct WebsiteView: View {
 
     private var tabCompositor: some View {
         TabCompositorWrapper(
-            browserManager: browserManager,
-            sidebarDragState: sidebarDragState,
+            browserContext: browserContext.makeWebContentContext(),
             webViewCoordinator: webViewCoordinator,
             hoveredLink: $hoveredLink,
             splitGroup: splitManager.splitGroup(for: windowState.id),
@@ -236,10 +252,7 @@ struct WebsiteView: View {
 
         switch kind {
         case .history:
-            SumiHistoryTabRootView(
-                browserManager: browserManager,
-                windowState: windowState
-            )
+            nativeSurfaceRootBuilders.history(windowState)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environment(\.resolvedThemeContext, currentTabThemeContext)
             .browserContentSurface(
@@ -248,10 +261,7 @@ struct WebsiteView: View {
             )
             .allowsHitTesting(true)
         case .bookmarks:
-            SumiBookmarksTabRootView(
-                browserManager: browserManager,
-                windowState: windowState
-            )
+            nativeSurfaceRootBuilders.bookmarks(windowState)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environment(\.resolvedThemeContext, currentTabThemeContext)
             .browserContentSurface(
@@ -260,11 +270,7 @@ struct WebsiteView: View {
             )
             .allowsHitTesting(true)
         case .settings:
-            SumiSettingsTabRootView(
-                browserManager: browserManager,
-                windowState: windowState
-            )
-            .environmentObject(browserManager.extensionSurfaceStore)
+            nativeSurfaceRootBuilders.settings(windowState)
             .environment(keyboardShortcutManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environment(\.resolvedThemeContext, currentTabThemeContext)
