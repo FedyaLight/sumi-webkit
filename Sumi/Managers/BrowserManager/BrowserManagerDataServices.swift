@@ -221,6 +221,13 @@ struct BrowserManagerDataServices {
         )
     }
 
+    var historyManagerDependencies: HistoryManager.Dependencies {
+        HistoryManager.Dependencies(
+            faviconCleaner: historyFaviconCleaner,
+            visitedLinkStore: historyVisitedLinkStore
+        )
+    }
+
     func replacing(
         browsingDataCleanupService: SumiBrowsingDataCleanupService
     ) -> BrowserManagerDataServices {

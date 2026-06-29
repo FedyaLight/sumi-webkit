@@ -204,3 +204,43 @@ final class BrowserManagerPermissionRuntime {
         permissionEventOwner?.cancel()
     }
 }
+
+extension BrowserManagerPermissionRuntime.Dependencies {
+    static func live(
+        startupPersistence: BrowserManagerStartupPersistence,
+        browserConfiguration: BrowserConfiguration,
+        systemPermissionService: (any SumiSystemPermissionService)?,
+        permissionCoordinator: (any SumiPermissionCoordinating)?,
+        geolocationProvider: (any SumiGeolocationProviding)?,
+        notificationService: (any SumiNotificationServicing)?,
+        runtimePermissionController: (any SumiRuntimePermissionControlling)?,
+        filePickerPanelPresenter: (any SumiFilePickerPanelPresenting)?,
+        permissionIndicatorEventStore: SumiPermissionIndicatorEventStore?,
+        permissionRecentActivityStore: SumiPermissionRecentActivityStore?,
+        permissionSiteActivityStore: SumiPermissionSiteActivityStore,
+        permissionCleanupService: SumiPermissionCleanupService?,
+        blockedPopupStore: SumiBlockedPopupStore?,
+        externalAppResolver: any SumiExternalAppResolving,
+        externalSchemeSessionStore: SumiExternalSchemeSessionStore?,
+        permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides
+    ) -> Self {
+        Self(
+            startupPersistence: startupPersistence,
+            browserConfiguration: browserConfiguration,
+            systemPermissionService: systemPermissionService,
+            permissionCoordinator: permissionCoordinator,
+            geolocationProvider: geolocationProvider,
+            notificationService: notificationService,
+            runtimePermissionController: runtimePermissionController,
+            filePickerPanelPresenter: filePickerPanelPresenter,
+            permissionIndicatorEventStore: permissionIndicatorEventStore,
+            permissionRecentActivityStore: permissionRecentActivityStore,
+            permissionSiteActivityStore: permissionSiteActivityStore,
+            permissionCleanupService: permissionCleanupService,
+            blockedPopupStore: blockedPopupStore,
+            externalAppResolver: externalAppResolver,
+            externalSchemeSessionStore: externalSchemeSessionStore,
+            permissionBridgeOverrides: permissionBridgeOverrides
+        )
+    }
+}

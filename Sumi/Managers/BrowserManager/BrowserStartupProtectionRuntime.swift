@@ -119,3 +119,33 @@ final class BrowserStartupProtectionRuntime {
     }
 #endif
 }
+
+extension BrowserStartupProtectionRuntime.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        Self(
+            appliedProtectionLevel: { [weak browserManager] in
+                browserManager?.protectionCoordinator.settings.appliedLevel ?? .off
+            },
+            restoreAppliedProtectionLevelForStartup: { [weak browserManager] in
+                guard let browserManager else { return }
+                _ = try await browserManager.protectionCoordinator.restoreAppliedLevelForStartup()
+            },
+            tab: { [weak browserManager] tabId in
+                browserManager?.tabManager.tab(for: tabId)
+            },
+            allWindows: { [weak browserManager] in
+                browserManager?.windowRegistry?.allWindows ?? []
+            },
+            prepareBackgroundTabIfNeeded: { [weak browserManager] tab in
+                browserManager?.prepareBackgroundTabAfterStartupProtectionRestore(tab)
+            },
+            schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
+                browserManager?.schedulePrepareVisibleWebViews(for: windowState)
+            },
+            refreshCompositor: { [weak browserManager] windowState in
+                browserManager?.refreshCompositor(for: windowState)
+            }
+        )
+    }
+}

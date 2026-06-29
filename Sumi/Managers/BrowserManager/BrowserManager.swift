@@ -317,10 +317,7 @@ class BrowserManager: ObservableObject {
         self.historyManager = HistoryManager(
             context: startupModelContext,
             profileId: initialProfile?.id,
-            dependencies: HistoryManager.Dependencies(
-                faviconCleaner: resolvedDataServices.historyFaviconCleaner,
-                visitedLinkStore: resolvedDataServices.historyVisitedLinkStore
-            )
+            dependencies: resolvedDataServices.historyManagerDependencies
         )
         self.bookmarkManager = SumiBookmarkManager(
             faviconService: resolvedDataServices.faviconService
@@ -346,7 +343,7 @@ class BrowserManager: ObservableObject {
         self.browsingDataCleanupService = resolvedDataServices.browsingDataCleanupService
         self.nativeNowPlayingController = nowPlayingController
         self.permissionRuntime = BrowserManagerPermissionRuntime(
-            dependencies: BrowserManagerPermissionRuntime.Dependencies(
+            dependencies: .live(
                 startupPersistence: startupPersistence,
                 browserConfiguration: browserConfiguration,
                 systemPermissionService: systemPermissionService,
@@ -369,30 +366,7 @@ class BrowserManager: ObservableObject {
             await self?.reconcilePermissionSidebarPins(reason: "permission-event")
         }
         self.startupProtectionRuntime = BrowserStartupProtectionRuntime(
-            dependencies: BrowserStartupProtectionRuntime.Dependencies(
-                appliedProtectionLevel: { [weak self] in
-                    self?.protectionCoordinator.settings.appliedLevel ?? .off
-                },
-                restoreAppliedProtectionLevelForStartup: { [weak self] in
-                    guard let self else { return }
-                    _ = try await self.protectionCoordinator.restoreAppliedLevelForStartup()
-                },
-                tab: { [weak self] tabId in
-                    self?.tabManager.tab(for: tabId)
-                },
-                allWindows: { [weak self] in
-                    self?.windowRegistry?.allWindows ?? []
-                },
-                prepareBackgroundTabIfNeeded: { [weak self] tab in
-                    self?.browserActionOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
-                },
-                schedulePrepareVisibleWebViews: { [weak self] windowState in
-                    self?.schedulePrepareVisibleWebViews(for: windowState)
-                },
-                refreshCompositor: { [weak self] windowState in
-                    self?.refreshCompositor(for: windowState)
-                }
-            )
+            dependencies: .live(browserManager: self)
         )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
@@ -463,6 +437,10 @@ class BrowserManager: ObservableObject {
 
     func deferBackgroundTabUntilStartupReady(_ tab: Tab) {
         startupProtectionRuntime.deferBackgroundTabUntilStartupReady(tab)
+    }
+
+    func prepareBackgroundTabAfterStartupProtectionRestore(_ tab: Tab) {
+        browserActionOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
     }
 
     enum ProfileSwitchContext {
