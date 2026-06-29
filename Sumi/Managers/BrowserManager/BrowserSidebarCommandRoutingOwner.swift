@@ -104,16 +104,16 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
                 browserManager?.sidebarFolderCommandOwner.canCreateFolderInCurrentSpace(in: windowState) ?? false
             },
             showGradientEditor: { [weak browserManager] source in
-                browserManager?.showGradientEditor(source: source)
+                browserManager?.sidebarChromeCommandOwner.showGradientEditor(source: source)
             },
             toggleSidebar: { [weak browserManager] windowState in
-                browserManager?.toggleSidebar(for: windowState)
+                browserManager?.sidebarChromeCommandOwner.toggleSidebar(in: windowState)
             },
             openAppearanceSettings: { [weak browserManager] windowState in
-                browserManager?.openSettingsTab(selecting: .appearance, in: windowState)
+                browserManager?.sidebarChromeCommandOwner.openAppearanceSettings(in: windowState)
             },
             closeDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.closeDownloadsPopover(in: windowState)
+                browserManager?.sidebarChromeCommandOwner.closeDownloadsPopover(in: windowState)
             },
             requestUserTabActivation: { [weak browserManager] tab, windowState in
                 browserManager?.sidebarTabCommandOwner.requestUserTabActivation(tab, in: windowState)
@@ -159,7 +159,7 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
                 )
             },
             toggleDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.toggleDownloadsPopover(in: windowState)
+                browserManager?.sidebarChromeCommandOwner.toggleDownloadsPopover(in: windowState)
             },
             createFolderInCurrentSpace: { [weak browserManager] windowState in
                 browserManager?.sidebarFolderCommandOwner.createFolderInCurrentSpace(in: windowState)

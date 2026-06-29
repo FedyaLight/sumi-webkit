@@ -95,6 +95,9 @@ class BrowserManager: ObservableObject {
     lazy var sidebarEditorPresentationOwner = BrowserSidebarEditorPresentationOwner(
         dependencies: .live(browserManager: self)
     )
+    lazy var sidebarChromeCommandOwner = BrowserSidebarChromeCommandOwner(
+        dependencies: .live(browserManager: self)
+    )
     lazy var sidebarShortcutPromotionOwner = BrowserSidebarShortcutPromotionOwner(
         dependencies: .live(browserManager: self)
     )
