@@ -31,6 +31,7 @@ struct FloatingBarView: View {
     @State private var committedSuggestionLayoutCount = 0
     @State private var isSuggestionPreviewActive = false
     @State private var suggestionPreviewRestorationText: String?
+    @State private var focusRequestOwner = FloatingBarFocusRequestOwner()
     @State private var searchFocusRequestID = 0
     @State private var searchFocusSelectAll = false
 
@@ -422,16 +423,22 @@ struct FloatingBarView: View {
 
     private func handleVisibilityChanged(_ newVisible: Bool) {
         if newVisible {
+            let windowID = windowState.id
+            focusRequestOwner.beginSession(windowID: windowID)
             installOutsideClickMonitorIfNeeded()
             browserContext.configureSearchManager(searchManager)
 
             text = windowState.floatingBarDraftText
             refreshEmptyStateSuggestionsIfNeeded()
 
-            DispatchQueue.main.async {
+            focusRequestOwner.scheduleDeferredFocus(windowID: windowID) {
+                guard windowState.id == windowID,
+                      windowState.isFloatingBarVisible
+                else { return }
                 focusSearchField(selectAll: !text.isEmpty)
             }
         } else {
+            focusRequestOwner.endSession()
             searchDebouncer.cancel()
             isWaitingForSearchDebounce = false
             removeOutsideClickMonitor()
@@ -504,6 +511,7 @@ struct FloatingBarView: View {
     }
 
     private func focusSearchField(selectAll: Bool) {
+        guard windowState.isFloatingBarVisible else { return }
         isSearchFocused = true
         searchFocusSelectAll = selectAll
         searchFocusRequestID &+= 1
@@ -720,6 +728,65 @@ struct FloatingBarView: View {
     }
 }
 
+@MainActor
+final class FloatingBarFocusRequestOwner {
+    struct Session: Equatable {
+        let windowID: UUID
+        let generation: UInt64
+    }
+
+    private var generation: UInt64 = 0
+    private var currentSession: Session?
+    private var deferredFocusTask: Task<Void, Never>?
+
+    deinit {
+        deferredFocusTask?.cancel()
+    }
+
+    @discardableResult
+    func beginSession(windowID: UUID) -> Session {
+        generation &+= 1
+        deferredFocusTask?.cancel()
+        deferredFocusTask = nil
+
+        let session = Session(windowID: windowID, generation: generation)
+        currentSession = session
+        return session
+    }
+
+    func endSession() {
+        generation &+= 1
+        currentSession = nil
+        deferredFocusTask?.cancel()
+        deferredFocusTask = nil
+    }
+
+    func isCurrent(_ session: Session) -> Bool {
+        currentSession == session
+    }
+
+    func scheduleDeferredFocus(
+        windowID: UUID,
+        operation: @escaping @MainActor () -> Void
+    ) {
+        guard let session = currentSession,
+              session.windowID == windowID
+        else { return }
+
+        deferredFocusTask?.cancel()
+        deferredFocusTask = Task { @MainActor [weak self] in
+            await Task.yield()
+            guard !Task.isCancelled,
+                  let self,
+                  self.isCurrent(session)
+            else { return }
+
+            self.deferredFocusTask = nil
+            operation()
+        }
+    }
+}
+
 private struct FloatingBarInlineCompletionTextField: NSViewRepresentable {
     @Binding var text: String
     var isFocused: FocusState<Bool>.Binding
@@ -856,8 +923,15 @@ private struct FloatingBarInlineCompletionTextField: NSViewRepresentable {
 
 private final class FloatingBarInlineCompletionTextFieldView: NSView {
     let textField = FloatingBarInlineCompletionNSTextField()
-    var wantsTextFocus = false
+    var wantsTextFocus = false {
+        didSet {
+            if !wantsTextFocus {
+                focusGeneration &+= 1
+            }
+        }
+    }
     private var handledFocusRequestID = 0
+    private var focusGeneration: UInt64 = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -925,14 +999,33 @@ private final class FloatingBarInlineCompletionTextFieldView: NSView {
     func handleFocusRequest(id: Int, selectAll: Bool) {
         guard id != handledFocusRequestID else { return }
         handledFocusRequestID = id
-        focusTextField(selectAll: selectAll, remainingRetries: 4)
+        guard wantsTextFocus else { return }
+
+        focusGeneration &+= 1
+        focusTextField(
+            selectAll: selectAll,
+            remainingRetries: 4,
+            generation: focusGeneration
+        )
     }
 
-    private func focusTextField(selectAll: Bool, remainingRetries: Int) {
+    private func focusTextField(
+        selectAll: Bool,
+        remainingRetries: Int,
+        generation: UInt64
+    ) {
         guard remainingRetries >= 0 else { return }
+        guard wantsTextFocus,
+              generation == focusGeneration
+        else { return }
+
         guard let window else {
             DispatchQueue.main.async { [weak self] in
-                self?.focusTextField(selectAll: selectAll, remainingRetries: remainingRetries - 1)
+                self?.focusTextField(
+                    selectAll: selectAll,
+                    remainingRetries: remainingRetries - 1,
+                    generation: generation
+                )
             }
             return
         }
@@ -945,7 +1038,11 @@ private final class FloatingBarInlineCompletionTextFieldView: NSView {
         if window.firstResponder !== textField.currentEditor(),
            window.firstResponder !== textField {
             DispatchQueue.main.async { [weak self] in
-                self?.focusTextField(selectAll: selectAll, remainingRetries: remainingRetries - 1)
+                self?.focusTextField(
+                    selectAll: selectAll,
+                    remainingRetries: remainingRetries - 1,
+                    generation: generation
+                )
             }
         }
     }

@@ -4,12 +4,9 @@
 //
 
 import AppKit
-import SwiftUI
 
 @MainActor
 extension BrowserManager {
-    private typealias NewWindowRegistrationAwaiter = @MainActor () async -> BrowserWindowState?
-
     enum HistoryOpenMode {
         case currentTab
         case newTab
@@ -25,89 +22,30 @@ extension BrowserManager {
     }
 
     var canGoBackInActiveWindow: Bool {
-        guard let activeWindow = windowRegistry?.activeWindow,
-              let currentTab = activePageTab(for: activeWindow),
-              let webView = activePageWebView(for: activeWindow)
-                ?? webViewCoordinator?.getWebView(for: currentTab.id, in: activeWindow.id)
-        else {
-            return false
-        }
-        return webView.canGoBack
+        historyNavigationOwner.canGoBackInActiveWindow
     }
 
     var canGoForwardInActiveWindow: Bool {
-        guard let activeWindow = windowRegistry?.activeWindow,
-              let currentTab = activePageTab(for: activeWindow),
-              let webView = activePageWebView(for: activeWindow)
-                ?? webViewCoordinator?.getWebView(for: currentTab.id, in: activeWindow.id)
-        else {
-            return false
-        }
-        return webView.canGoForward
+        historyNavigationOwner.canGoForwardInActiveWindow
     }
 
     func goBackInActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow,
-              let currentTab = activePageTab(for: activeWindow),
-              let webView = activePageWebView(for: activeWindow)
-                ?? webViewCoordinator?.getWebView(for: currentTab.id, in: activeWindow.id),
-              webView.canGoBack
-        else {
-            return
-        }
-        webView.goBack()
+        historyNavigationOwner.goBackInActiveWindow()
     }
 
     func goForwardInActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow,
-              let currentTab = activePageTab(for: activeWindow),
-              let webView = activePageWebView(for: activeWindow)
-                ?? webViewCoordinator?.getWebView(for: currentTab.id, in: activeWindow.id),
-              webView.canGoForward
-        else {
-            return
-        }
-        webView.goForward()
+        historyNavigationOwner.goForwardInActiveWindow()
     }
 
     func openHistoryTab(
         selecting range: HistoryRange = .all,
         in windowState: BrowserWindowState? = nil
     ) {
-        if let targetWindow = windowState ?? windowRegistry?.activeWindow {
-            openHistoryTab(inResolvedWindow: targetWindow, selecting: range)
-            return
-        }
-
-        let awaitNewWindow = createNewWindowRegistrationAwaiter()
-        Task { @MainActor [weak self] in
-            guard let self,
-                  let targetWindow = await awaitNewWindow()
-            else {
-                return
-            }
-            self.openHistoryTab(inResolvedWindow: targetWindow, selecting: range)
-        }
-    }
-
-    private func openHistoryTab(
-        inResolvedWindow targetWindow: BrowserWindowState,
-        selecting range: HistoryRange
-    ) {
-        openNativeBrowserSurface(
-            .history,
-            url: SumiSurface.historySurfaceURL(rangeQuery: range.paneQueryValue),
-            in: targetWindow,
-            preferredSpaceId: targetWindow.currentSpaceId
-        )
+        historyNavigationOwner.openHistoryTab(selecting: range, in: windowState)
     }
 
     func openHistoryURLFromMenuItem(_ url: URL) {
-        if let activeWindow = windowRegistry?.activeWindow {
-            openHistoryURL(url, in: activeWindow, preferredOpenMode: .currentTab)
-        } else {
-            openHistoryURLsInNewWindow([url])
-        }
+        historyNavigationOwner.openHistoryURLFromMenuItem(url)
     }
 
     func openHistoryURL(
@@ -115,93 +53,23 @@ extension BrowserManager {
         in windowState: BrowserWindowState,
         preferredOpenMode: HistoryOpenMode
     ) {
-        switch preferredOpenMode {
-        case .currentTab:
-            if let currentTab = activePageTab(for: windowState),
-               !currentTab.representsSumiEmptySurface {
-                if currentTab.representsSumiHistorySurface {
-                    replaceNativeHistoryTab(currentTab, with: url, in: windowState)
-                } else {
-                    currentTab.loadURL(url)
-                }
-            } else {
-                let newTab = openNewTab(
-                    url: url.absoluteString,
-                    context: .foreground(windowState: windowState)
-                )
-                newTab.name = url.host ?? url.absoluteString
-            }
-        case .newTab:
-            let newTab = openNewTab(
-                url: url.absoluteString,
-                context: .foreground(windowState: windowState)
-            )
-            newTab.name = url.host ?? url.absoluteString
-        case .newWindow:
-            openHistoryURLsInNewWindow([url])
-        }
-    }
-
-    private func replaceNativeHistoryTab(
-        _ tab: Tab,
-        with url: URL,
-        in windowState: BrowserWindowState
-    ) {
-        tab.name = url.host ?? url.absoluteString
-        tab.favicon = Image(systemName: "globe")
-        tab.faviconIsTemplateGlobePlaceholder = true
-        tab.loadURL(url)
-        windowState.invalidateNativeSurfaceRouting()
-        tabManager.scheduleRuntimeStatePersistence(for: tab)
-        schedulePrepareVisibleWebViews(for: windowState)
-        refreshCompositor(for: windowState)
-
-        Task { @MainActor [weak tab] in
-            guard let tab else { return }
-            await tab.fetchFaviconForVisiblePresentation()
-        }
+        historyNavigationOwner.openHistoryURL(url, in: windowState, preferredOpenMode: preferredOpenMode)
     }
 
     func openURLsInNewTabs(_ urls: [URL], in windowState: BrowserWindowState) {
-        let uniqueURLs = Array(NSOrderedSet(array: urls)).compactMap { $0 as? URL }
-        guard !uniqueURLs.isEmpty else { return }
-
-        for (index, url) in uniqueURLs.enumerated() {
-            let context: TabOpenContext
-            if index == 0 {
-                context = .foreground(windowState: windowState)
-            } else {
-                context = .background(
-                    windowState: windowState,
-                    preferredSpaceId: windowState.currentSpaceId
-                )
-            }
-            let tab = openNewTab(url: url.absoluteString, context: context)
-            tab.name = url.host ?? url.absoluteString
-        }
+        historyNavigationOwner.openURLsInNewTabs(urls, in: windowState)
     }
 
     func openHistoryURLsInNewTabs(_ urls: [URL], in windowState: BrowserWindowState) {
-        openURLsInNewTabs(urls, in: windowState)
+        historyNavigationOwner.openHistoryURLsInNewTabs(urls, in: windowState)
     }
 
     func openURLsInNewWindow(_ urls: [URL]) {
-        let uniqueURLs = Array(NSOrderedSet(array: urls)).compactMap { $0 as? URL }
-        guard !uniqueURLs.isEmpty else { return }
-
-        let awaitNewWindow = createNewWindowRegistrationAwaiter()
-        Task { @MainActor [weak self] in
-            guard let self,
-                  let targetWindow = await awaitNewWindow()
-            else {
-                return
-            }
-            self.openURLsInNewTabs(uniqueURLs, in: targetWindow)
-        }
+        historyNavigationOwner.openURLsInNewWindow(urls)
     }
 
     func openHistoryURLsInNewWindow(_ urls: [URL]) {
-        openURLsInNewWindow(urls)
+        historyNavigationOwner.openHistoryURLsInNewWindow(urls)
     }
 
     func reopenMostRecentClosedItem() {
@@ -443,8 +311,11 @@ extension BrowserManager {
     }
 
     func reopenWindow(from snapshot: WindowSessionSnapshot) async {
-        let awaitNewWindow = createNewWindowRegistrationAwaiter()
-        guard let targetWindow = await awaitNewWindow() else {
+        let existingWindowIDs = Set(windowRegistry?.windows.keys.map { $0 } ?? [])
+        createNewWindow()
+        guard let targetWindow = await windowRegistry?.awaitNextRegisteredWindow(
+            excluding: existingWindowIDs
+        ) else {
             return
         }
 
@@ -455,17 +326,6 @@ extension BrowserManager {
         )
         targetWindow.window?.makeKeyAndOrderFront(nil as Any?)
         NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private func createNewWindowRegistrationAwaiter() -> NewWindowRegistrationAwaiter {
-        let existingWindowIDs = Set(windowRegistry?.windows.keys.map { $0 } ?? [])
-        createNewWindow()
-
-        return { [weak self] in
-            await self?.windowRegistry?.awaitNextRegisteredWindow(
-                excluding: existingWindowIDs
-            )
-        }
     }
 
     func currentRegularWindowSnapshots(

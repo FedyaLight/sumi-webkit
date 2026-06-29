@@ -5,6 +5,24 @@ import XCTest
 
 @MainActor
 final class TabScriptMessageHandlerIsolationTests: XCTestCase {
+    private struct ScriptSignature: Equatable {
+        let typeName: String
+        let source: String
+        let injectionTime: WKUserScriptInjectionTime
+        let forMainFrameOnly: Bool
+        let requiresRunInPageContentWorld: Bool
+        let messageNames: [String]
+    }
+
+    func testNormalTabCoreScriptFacadeDelegatesToRuntimeOwner() {
+        let tab = Tab(name: "Owner Wiring")
+
+        XCTAssertEqual(
+            scriptSignatures(tab.normalTabCoreUserScripts()),
+            scriptSignatures(tab.scriptMessageRuntimeOwner.normalTabCoreUserScripts())
+        )
+    }
+
     func testBrokeredTabMessagesRemainScopedByContext() async throws {
         let firstTab = Tab(name: "First")
         let secondTab = Tab(name: "Second")
@@ -226,6 +244,19 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
 
     private func tabSuspensionContext(for tab: Tab) -> String {
         "sumiTabSuspension_\(tab.id.uuidString)"
+    }
+
+    private func scriptSignatures(_ scripts: [SumiUserScript]) -> [ScriptSignature] {
+        scripts.map { script in
+            ScriptSignature(
+                typeName: String(describing: type(of: script)),
+                source: script.source,
+                injectionTime: script.injectionTime,
+                forMainFrameOnly: script.forMainFrameOnly,
+                requiresRunInPageContentWorld: script.requiresRunInPageContentWorld,
+                messageNames: script.messageNames
+            )
+        }
     }
 
     private func makeWebView(with tab: Tab) async throws -> WKWebView {
