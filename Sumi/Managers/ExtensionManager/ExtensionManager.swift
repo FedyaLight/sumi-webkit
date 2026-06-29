@@ -230,6 +230,8 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
     let extensionPermissionPromptPresentationOwner =
         ExtensionPermissionPromptPresentationOwner()
+    let permissionDelegateCallbackOwner =
+        ExtensionPermissionDelegateCallbackOwner()
     var permissionsOriginsCompatibilityInstallations:
         [ObjectIdentifier: Set<String>] = [:]
     var extensionPageUserContentControllersByProfile:
