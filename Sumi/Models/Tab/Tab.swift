@@ -52,6 +52,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let faviconRuntime = TabFaviconRuntime()
     private let webViewRuntime = TabWebViewRuntime()
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
+    lazy var ownedWebViewPreparationOwner = TabOwnedWebViewPreparationOwner(
+        dependencies: .live(tab: self)
+    )
     private let suspensionStateOwner = TabSuspensionStateOwner()
     private let webViewInteractionStateOwner = TabWebViewInteractionStateOwner()
     lazy var permissionSurfaceOwner = TabPermissionSurfaceOwner(tab: self)

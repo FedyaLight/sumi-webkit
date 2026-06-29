@@ -35,19 +35,13 @@ extension Tab {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
         _webView = webView
 
-        applyOwnedTabWebViewNavigationSetup(to: webView)
-        applyOwnedTabWebViewOwnershipBaseline(to: webView)
-        applyOwnedTabWebViewNavigationPreferences(to: webView)
-        visitedLinkStore.enableVisitedLinkRecording(on: webView)
-        installRuntimeObservers(on: webView)
-
-        if isExtensionOriginated {
-            browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
-                webView,
-                currentURL: currentURL,
-                reason: reason
-            )
-        }
+        ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+            webView,
+            currentURL: currentURL,
+            reason: reason,
+            installFaviconRuntime: false,
+            prepareExtensionRuntime: isExtensionOriginated
+        )
 
         return webView
     }
@@ -62,19 +56,13 @@ extension Tab {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         _webView = webView
 
-        applyOwnedTabWebViewNavigationSetup(to: webView)
-        applyOwnedTabWebViewOwnershipBaseline(to: webView)
-        applyOwnedTabWebViewNavigationPreferences(to: webView)
-        visitedLinkStore.enableVisitedLinkRecording(on: webView)
-        installRuntimeObservers(on: webView)
-
-        if isExtensionOriginated {
-            browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
-                webView,
-                currentURL: currentURL,
-                reason: reason
-            )
-        }
+        ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+            webView,
+            currentURL: currentURL,
+            reason: reason,
+            installFaviconRuntime: false,
+            prepareExtensionRuntime: isExtensionOriginated
+        )
 
         return webView
     }
@@ -83,16 +71,13 @@ extension Tab {
     func assignWebViewToWindow(_ webView: WKWebView, windowId: UUID) {
         _webView = webView
         primaryWindowId = windowId
-        installNavigationDelegate(on: webView)
-        installRuntimeObservers(on: webView)
+        ownedWebViewPreparationOwner.prepareAssignedWebView(webView)
     }
 
     /// Installs the Tab-owned runtime observers on WebViews created outside
     /// `Tab.setupWebView()`, for example by `WebViewCoordinator`.
     func installRuntimeObservers(on webView: WKWebView) {
-        setupNavigationStateObservers(for: webView)
-        bindAudioState(to: webView)
-        applyRestoredNavigationState()
+        ownedWebViewPreparationOwner.installRuntimeObservers(on: webView)
     }
 
     /// Creates a fully configured normal-tab WebView. This is the single
@@ -123,16 +108,7 @@ extension Tab {
     }
 
     func configureNormalTabWebView(_ webView: FocusableWKWebView, reason: String) {
-        applyOwnedTabWebViewNavigationSetup(to: webView)
-        applyOwnedTabWebViewOwnershipBaseline(to: webView)
-        applyOwnedTabWebViewNavigationPreferences(to: webView)
-        visitedLinkStore.enableVisitedLinkRecording(on: webView)
-        installRuntimeObservers(on: webView)
-        if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
-            ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
-        }
-
-        browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
+        ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
             webView,
             currentURL: url,
             reason: reason
@@ -291,17 +267,12 @@ extension Tab {
 
         if let webView = _webView {
             if didReuseExistingWebView || !(webView is FocusableWKWebView) {
-                visitedLinkStore.enableVisitedLinkRecording(on: webView)
-                applyOwnedTabWebViewNavigationSetup(to: webView)
-                installRuntimeObservers(on: webView)
-                if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
-                    ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
-                }
+                ownedWebViewPreparationOwner.prepareReusedOrExternallyCreatedWebView(webView)
             }
         }
 
         if let webView = _webView {
-            applyOwnedTabWebViewNavigationPreferences(to: webView)
+            ownedWebViewPreparationOwner.applyOwnedTabWebViewNavigationPreferences(to: webView)
         }
 
         let shouldDelayInitialNormalTabRuntimeRegistration =
@@ -467,40 +438,13 @@ extension Tab {
         )
     }
 
-    private func applyOwnedTabWebViewNavigationSetup(to webView: WKWebView) {
-        installNavigationDelegate(on: webView)
-        webView.uiDelegate = self
-        webView.allowsBackForwardNavigationGestures = true
-        webView.allowsMagnification = true
-    }
-
-    private func applyOwnedTabWebViewOwnershipBaseline(to webView: FocusableWKWebView) {
-        webView.setValue(true, forKey: "drawsBackground")
-        webView.owningTab = self
-        SumiUserAgent.apply(to: webView)
-    }
-
-    private func applyOwnedTabWebViewNavigationPreferences(to webView: WKWebView) {
-        if RuntimeDiagnostics.isDeveloperInspectionEnabled {
-            webView.isInspectable = true
-        }
-
-        webView.allowsLinkPreview = true
-        webView.configuration.preferences.isFraudulentWebsiteWarningEnabled = true
-        webView.configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-    }
-
     private func configureAuxiliaryOverrideWebView(_ webView: FocusableWKWebView, reason: String) {
-        applyOwnedTabWebViewNavigationSetup(to: webView)
-        applyOwnedTabWebViewOwnershipBaseline(to: webView)
-        installRuntimeObservers(on: webView)
-        if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
-            ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
-        }
-        browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
+        ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
             webView,
             currentURL: url,
-            reason: reason
+            reason: reason,
+            enableVisitedLinkRecording: false,
+            applyNavigationPreferences: false
         )
     }
 }
