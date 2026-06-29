@@ -7,7 +7,7 @@
 import SwiftUI
 
 struct FloatingBarResultsPanelView: View {
-    @ObservedObject var browserManager: BrowserManager
+    let browserContext: FloatingBarBrowserContext
     let tokens: ChromeThemeTokens
     let suggestions: [SearchManager.SearchSuggestion]
     let layoutSuggestionCount: Int
@@ -43,7 +43,7 @@ struct FloatingBarResultsPanelView: View {
                 .frame(height: isExpanded ? FloatingBarLayoutPolicy.resultsPanelDividerSpacing : 0)
 
             FloatingBarSuggestionsListView(
-                browserManager: browserManager,
+                browserContext: browserContext,
                 tokens: tokens,
                 suggestions: suggestions,
                 visibleHeight: listHeight,
@@ -62,7 +62,7 @@ struct FloatingBarResultsPanelView: View {
 }
 
 private struct FloatingBarSuggestionsListView: View {
-    @ObservedObject var browserManager: BrowserManager
+    let browserContext: FloatingBarBrowserContext
     let tokens: ChromeThemeTokens
     let suggestions: [SearchManager.SearchSuggestion]
     let visibleHeight: CGFloat
@@ -153,7 +153,7 @@ private struct FloatingBarSuggestionsListView: View {
             )
         case .history(let entry):
             HistorySuggestionItem(
-                browserManager: browserManager,
+                faviconContext: browserContext.favicon,
                 entry: entry,
                 isSelected: isSelected,
                 isHovered: isHovered,

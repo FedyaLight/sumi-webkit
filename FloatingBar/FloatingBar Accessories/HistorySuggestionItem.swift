@@ -8,7 +8,7 @@ import AppKit
 import SwiftUI
 
 struct HistorySuggestionItem: View {
-    @ObservedObject var browserManager: BrowserManager
+    let faviconContext: FloatingBarFaviconContext
     let entry: HistoryListItem
     var isSelected: Bool = false
     var isHovered: Bool = false
@@ -71,10 +71,6 @@ struct HistorySuggestionItem: View {
         }
     }
 
-    private var faviconPartition: SumiFaviconPartition {
-        browserManager.dataServices.faviconService.partition(profile: browserManager.currentProfile)
-    }
-
     @ViewBuilder
     private var faviconImage: some View {
         if let resolvedFavicon {
@@ -83,8 +79,8 @@ struct HistorySuggestionItem: View {
         } else {
             Image(nsImage: SumiFaviconResolver.menuImage(
                 for: entry.url,
-                partition: faviconPartition,
-                faviconImageService: browserManager.dataServices.faviconImageService
+                partition: faviconContext.partition,
+                faviconImageService: faviconContext.imageService
             ))
                 .accessibilityHidden(true)
         }
@@ -167,8 +163,8 @@ struct HistorySuggestionItem: View {
 
         guard let image = await SumiFaviconResolver.image(
             for: url,
-            partition: faviconPartition,
-            faviconImageService: browserManager.dataServices.faviconImageService
+            partition: faviconContext.partition,
+            faviconImageService: faviconContext.imageService
         ) else {
             await MainActor.run { self.resolvedFavicon = nil }
             return

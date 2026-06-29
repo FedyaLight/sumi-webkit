@@ -8,7 +8,7 @@ import AppKit
 import SwiftUI
 
 struct FloatingBarView: View {
-    @ObservedObject var browserManager: BrowserManager
+    let browserContext: FloatingBarBrowserContext
     @Environment(BrowserWindowState.self) private var windowState
     @State private var searchManager = SearchManager()
     @Environment(\.sumiSettings) var sumiSettings
@@ -193,7 +193,7 @@ struct FloatingBarView: View {
                                                         activeSiteSearch = nil
                                                     }
                                                 } else {
-                                                    browserManager.dismissFloatingBar(in: windowState, preserveDraft: true)
+                                                    browserContext.dismissFloatingBar(in: windowState, preserveDraft: true)
                                                 }
                                             },
                                             onDeleteAtEmptySiteSearch: {
@@ -210,7 +210,7 @@ struct FloatingBarView: View {
                                             .onChange(of: text) { _, newValue in
                                                 // Defer floating bar / window session writes so `BrowserWindowState` is not mutated during SwiftUI view updates.
                                                 Task { @MainActor in
-                                                    browserManager.updateFloatingBarDraft(in: windowState, text: newValue)
+                                                    browserContext.updateFloatingBarDraft(in: windowState, text: newValue)
                                                     guard !suppressNextTextSearch else {
                                                         suppressNextTextSearch = false
                                                         return
@@ -262,7 +262,7 @@ struct FloatingBarView: View {
                             }
 
                             FloatingBarResultsPanelView(
-                                browserManager: browserManager,
+                                browserContext: browserContext,
                                 tokens: tokens,
                                 suggestions: visibleSuggestions,
                                 layoutSuggestionCount: suggestionLayoutCount,
@@ -352,7 +352,7 @@ struct FloatingBarView: View {
             searchDebouncer.cancel()
             removeOutsideClickMonitor()
         }
-        .onChange(of: browserManager.currentProfile?.id) { _, _ in
+        .onChange(of: browserContext.currentProfileId) { _, _ in
             if windowState.isFloatingBarVisible {
                 searchManager.updateProfileContext()
                 searchManager.clearSuggestions()
@@ -423,10 +423,7 @@ struct FloatingBarView: View {
     private func handleVisibilityChanged(_ newVisible: Bool) {
         if newVisible {
             installOutsideClickMonitorIfNeeded()
-            searchManager.setTabManager(browserManager.tabManager)
-            searchManager.setHistoryManager(browserManager.historyManager)
-            searchManager.setBookmarkManager(browserManager.bookmarkManager)
-            searchManager.updateProfileContext()
+            browserContext.configureSearchManager(searchManager)
 
             text = windowState.floatingBarDraftText
             refreshEmptyStateSuggestionsIfNeeded()
@@ -565,11 +562,7 @@ struct FloatingBarView: View {
 
     private func deleteHistoryEntry(_ entry: HistoryListItem) {
         Task { @MainActor in
-            if let visitID = entry.visitID {
-                await browserManager.historyManager.delete(query: .visits([visitID]))
-            } else {
-                await browserManager.historyManager.delete(query: .domainFilter([entry.siteDomain ?? entry.domain]))
-            }
+            await browserContext.deleteHistoryEntry(entry)
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 refreshEmptyStateSuggestionsIfNeeded()
@@ -609,12 +602,12 @@ struct FloatingBarView: View {
             }
             guard !query.isEmpty else { return }
             let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
-            let navigatesCurrentTab = browserManager.floatingBarCommitNavigatesCurrentTab(in: windowState)
+            let navigatesCurrentTab = browserContext.floatingBarCommitNavigatesCurrentTab(in: windowState)
             text = ""
             activeSiteSearch = nil
             selectedSuggestionIndex = -1
             DispatchQueue.main.async {
-                browserManager.commitFloatingBarNavigation(
+                browserContext.commitFloatingBarNavigation(
                     to: navigateURL,
                     in: windowState,
                     navigatesCurrentTab: navigatesCurrentTab
@@ -640,12 +633,12 @@ struct FloatingBarView: View {
     }
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion) {
-        let navigatesCurrentTab = browserManager.floatingBarCommitNavigatesCurrentTab(in: windowState)
+        let navigatesCurrentTab = browserContext.floatingBarCommitNavigatesCurrentTab(in: windowState)
         text = ""
         activeSiteSearch = nil
         selectedSuggestionIndex = -1
         DispatchQueue.main.async {
-            browserManager.commitFloatingBarSuggestion(
+            browserContext.commitFloatingBarSuggestion(
                 suggestion,
                 in: windowState,
                 navigatesCurrentTab: navigatesCurrentTab
@@ -716,7 +709,7 @@ struct FloatingBarView: View {
                 DispatchQueue.main.async {
                     windowState.window?.makeFirstResponder(nil)
                     isSearchFocused = false
-                    browserManager.dismissFloatingBar(in: windowState, preserveDraft: true)
+                    browserContext.dismissFloatingBar(in: windowState, preserveDraft: true)
                 }
             }
         }

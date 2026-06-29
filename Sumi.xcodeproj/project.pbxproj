@@ -52,6 +52,7 @@
 				"FloatingBar Accessories/GenericSuggestionItem.swift",
 				"FloatingBar Accessories/HistorySuggestionItem.swift",
 				"FloatingBar Accessories/TabSuggestionItem.swift",
+				FloatingBarBrowserContext.swift,
 				FloatingBarLayoutPolicy.swift,
 				FloatingBarMotionPolicy.swift,
 				FloatingBarResultsPanelView.swift,
