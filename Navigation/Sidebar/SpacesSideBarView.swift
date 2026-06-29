@@ -102,8 +102,7 @@ struct SpacesSideBarView: View {
         let visualSpaceId = visualSelectedSpaceId(in: spaces)
 
         return VStack(spacing: 8) {
-            SidebarHeader()
-                .environmentObject(browserManager)
+            SidebarHeader(browserManager: browserManager)
                 .environment(windowState)
 
             if let creationSession = windowState.activeSpaceCreationSession {
@@ -136,11 +135,11 @@ struct SpacesSideBarView: View {
                     }
 
                     SidebarBottomBar(
+                        browserContext: sidebarBrowserContext,
                         visualSelectedSpaceId: visualSpaceId,
                         onNewSpaceTap: beginSpaceCreationMode,
                         onSelectSpace: { switchSpace(to: $0, spaces: spaces) }
                     )
-                    .environmentObject(browserManager)
                     .environment(windowState)
                 }
                 .padding(.bottom, 8)

@@ -8,9 +8,9 @@ import SwiftUI
 
 /// Bottom bar of the sidebar containing downloads, spaces list, and new space button.
 struct SidebarBottomBar: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarPresentationContext) private var presentationContext
+    let browserContext: SidebarBrowserContext
     let visualSelectedSpaceId: UUID?
     let onNewSpaceTap: () -> Void
     let onSelectSpace: (Space) -> Void
@@ -18,10 +18,10 @@ struct SidebarBottomBar: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
             DownloadsToolbarButton(
-                downloadManager: browserManager.downloadManager,
-                popoverPresenter: browserManager.downloadsPopoverPresenter,
+                downloadManager: browserContext.downloadManager,
+                popoverPresenter: browserContext.downloadsPopoverPresenter,
                 action: {
-                    browserManager.toggleDownloadsPopover(in: windowState)
+                    browserContext.toggleDownloadsPopover(windowState)
                 }
             )
                 .environment(windowState)
@@ -29,11 +29,11 @@ struct SidebarBottomBar: View {
             // Hide spaces list in incognito windows (only one ephemeral space)
             if !windowState.isIncognito {
                 SpacesList(
+                    browserContext: browserContext,
                     visualSelectedSpaceId: visualSelectedSpaceId,
                     onSelectSpace: onSelectSpace
                 )
                     .frame(maxWidth: .infinity)
-                    .environmentObject(browserManager)
                     .environment(windowState)
             }
 
@@ -147,18 +147,18 @@ struct SidebarBottomBar: View {
     }
 
     private func createFolderInCurrentSpace() {
-        browserManager.createFolderInCurrentSpace(in: windowState)
+        browserContext.createFolderInCurrentSpace(windowState)
     }
 
     private func createRSSLiveFolderInCurrentSpace() {
-        browserManager.createRSSLiveFolderInCurrentSpace(in: windowState)
+        browserContext.createRSSLiveFolderInCurrentSpace(windowState)
     }
 
     private func createGitHubPullRequestsLiveFolderInCurrentSpace() {
-        browserManager.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
+        browserContext.createGitHubPullRequestsLiveFolderInCurrentSpace(windowState)
     }
 
     private func createGitHubIssuesLiveFolderInCurrentSpace() {
-        browserManager.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
+        browserContext.createGitHubIssuesLiveFolderInCurrentSpace(windowState)
     }
 }

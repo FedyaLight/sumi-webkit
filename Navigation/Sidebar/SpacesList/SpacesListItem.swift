@@ -7,12 +7,12 @@
 import SwiftUI
 
 struct SpacesListItem: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
     let space: Space
+    let browserContext: SidebarBrowserContext
     let isActive: Bool
     let compact: Bool
     let isFaded: Bool
@@ -25,6 +25,7 @@ struct SpacesListItem: View {
 
     init(
         space: Space,
+        browserContext: SidebarBrowserContext,
         isActive: Bool,
         compact: Bool,
         isFaded: Bool,
@@ -33,6 +34,7 @@ struct SpacesListItem: View {
         onHoverChange: ((Bool) -> Void)? = nil
     ) {
         self.space = space
+        self.browserContext = browserContext
         self.isActive = isActive
         self.compact = compact
         self.isFaded = isFaded
@@ -96,8 +98,8 @@ struct SpacesListItem: View {
                     .onChange(of: emojiManager.selectedEmoji) { _, newValue in
                         guard !newValue.isEmpty else { return }
                         space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
-                        browserManager.tabManager.markAllSpacesStructurallyDirty()
-                        browserManager.tabManager.scheduleStructuralPersistence()
+                        browserContext.tabManager.markAllSpacesStructurallyDirty()
+                        browserContext.tabManager.scheduleStructuralPersistence()
                     }
             } else {
                 Image(systemName: SumiPersistentGlyph.resolvedSpaceSystemImageName(space.icon))
@@ -107,8 +109,8 @@ struct SpacesListItem: View {
                     .onChange(of: emojiManager.selectedEmoji) { _, newValue in
                         guard !newValue.isEmpty else { return }
                         space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(newValue)
-                        browserManager.tabManager.markAllSpacesStructurallyDirty()
-                        browserManager.tabManager.scheduleStructuralPersistence()
+                        browserContext.tabManager.markAllSpacesStructurallyDirty()
+                        browserContext.tabManager.scheduleStructuralPersistence()
                     }
             }
         }
@@ -129,7 +131,7 @@ struct SpacesListItem: View {
 
     private func spaceContextMenuEntries() -> [SidebarContextMenuEntry] {
         let deleteSpaceAction: (() -> Void)?
-        if browserManager.tabManager.spaces.count > 1 {
+        if browserContext.tabManager.spaces.count > 1 {
             deleteSpaceAction = { showDeleteConfirmation() }
         } else {
             deleteSpaceAction = nil
@@ -137,17 +139,17 @@ struct SpacesListItem: View {
 
         let actions = SidebarSpaceMenuActions(
             edit: {
-                browserManager.showSpaceEditor(
-                    for: space,
-                    in: windowState,
-                    themeContext: themeContext,
-                    source: windowState.resolveSidebarPresentationSource()
+                browserContext.presentationActions.showSpaceEditor(
+                    space,
+                    windowState,
+                    themeContext,
+                    windowState.resolveSidebarPresentationSource()
                 )
             },
             changeTheme: {
-                browserManager.showGradientEditor(
-                    for: space,
-                    source: windowState.resolveSidebarPresentationSource()
+                browserContext.presentationActions.showGradientEditorForSpace(
+                    space,
+                    windowState.resolveSidebarPresentationSource()
                 )
             },
             deleteSpace: deleteSpaceAction
@@ -159,10 +161,9 @@ struct SpacesListItem: View {
     // MARK: - Helper Methods
 
     private func showDeleteConfirmation() {
-        SpaceDeletionConfirmationPresenter.confirmDelete(
-            space: space,
-            browserManager: browserManager,
-            window: windowState.window
+        browserContext.presentationActions.confirmDeleteSpace(
+            space,
+            windowState
         )
     }
 }

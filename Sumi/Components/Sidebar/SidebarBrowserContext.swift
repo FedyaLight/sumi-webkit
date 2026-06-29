@@ -17,6 +17,8 @@ struct SidebarBrowserContext {
     let profileManager: ProfileManager
     let liveFolderManager: SumiLiveFolderManager
     let splitManager: SplitViewManager
+    let downloadManager: DownloadManager
+    let downloadsPopoverPresenter: DownloadsPopoverPresenter
     let presentationActions: SidebarBrowserPresentationActions
     let tabStructuralRevision: () -> UInt
     let isTransitioningProfile: () -> Bool
@@ -32,6 +34,11 @@ struct SidebarBrowserContext {
     let openNewTabOrFloatingBar: (BrowserWindowState) -> Void
     let duplicateTab: (Tab, BrowserWindowState) -> Void
     let pinShortcutGlobally: (ShortcutPin, BrowserWindowState, UUID, Tab?) -> Void
+    let toggleDownloadsPopover: (BrowserWindowState) -> Void
+    let createFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let createRSSLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let createGitHubPullRequestsLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let createGitHubIssuesLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
 
     static func live(browserManager: BrowserManager) -> SidebarBrowserContext {
         SidebarBrowserContext(
@@ -39,6 +46,8 @@ struct SidebarBrowserContext {
             profileManager: browserManager.profileManager,
             liveFolderManager: browserManager.liveFolderManager,
             splitManager: browserManager.splitManager,
+            downloadManager: browserManager.downloadManager,
+            downloadsPopoverPresenter: browserManager.downloadsPopoverPresenter,
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { [weak browserManager] pin, windowState, themeContext, source in
                     browserManager?.showShortcutEditor(
@@ -138,6 +147,21 @@ struct SidebarBrowserContext {
                     syntheticTab,
                     context: .init(windowState: windowState, spaceId: spaceId)
                 )
+            },
+            toggleDownloadsPopover: { [weak browserManager] windowState in
+                browserManager?.toggleDownloadsPopover(in: windowState)
+            },
+            createFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.createFolderInCurrentSpace(in: windowState)
+            },
+            createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.createRSSLiveFolderInCurrentSpace(in: windowState)
+            },
+            createGitHubPullRequestsLiveFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
+            },
+            createGitHubIssuesLiveFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
             }
         )
     }

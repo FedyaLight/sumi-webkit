@@ -9,7 +9,7 @@ import SwiftUI
 
 /// Header section of the sidebar (window controls, navigation buttons, URL bar)
 struct SidebarHeader: View {
-    @EnvironmentObject var browserManager: BrowserManager
+    let browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
 
@@ -22,8 +22,11 @@ struct SidebarHeader: View {
 
     private var controlStrip: some View {
         HStack(spacing: SidebarChromeMetrics.controlSpacing) {
-            SidebarWindowControlsView()
-                .environmentObject(browserManager)
+            SidebarWindowControlsView(
+                toggleSidebar: {
+                    browserManager.toggleSidebar(for: windowState)
+                }
+            )
                 .environment(windowState)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -49,11 +52,11 @@ struct SidebarHeader: View {
 
 // MARK: - Sidebar Window Controls
 struct SidebarWindowControlsView: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @State private var isBrowserWindowFullScreen = false
+    let toggleSidebar: () -> Void
 
     var body: some View {
         HStack(spacing: SidebarChromeMetrics.controlSpacing) {
@@ -114,10 +117,6 @@ struct SidebarWindowControlsView: View {
 
     private var browserWindowIdentity: ObjectIdentifier? {
         windowState.window.map { ObjectIdentifier($0) }
-    }
-
-    private func toggleSidebar() {
-        browserManager.toggleSidebar(for: windowState)
     }
 
     private func handleFullScreenNotification(_ notification: Notification) {

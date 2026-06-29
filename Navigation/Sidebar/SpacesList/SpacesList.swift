@@ -7,11 +7,11 @@
 import SwiftUI
 
 struct SpacesList: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.controlSize) private var controlSize
+    let browserContext: SidebarBrowserContext
     let visualSelectedSpaceId: UUID?
     let onSelectSpace: (Space) -> Void
     @State private var availableWidth: CGFloat = 0
@@ -41,7 +41,7 @@ struct SpacesList: View {
         if windowState.isIncognito {
             return windowState.ephemeralSpaces
         }
-        return browserManager.tabManager.spaces
+        return browserContext.tabManager.spaces
     }
 
     private var displayedSpaces: [Space] {
@@ -97,6 +97,7 @@ struct SpacesList: View {
             ForEach(spaces, id: \.id) { space in
                 SpacesListItem(
                     space: space,
+                    browserContext: browserContext,
                     isActive: visualSelectedSpaceId == space.id,
                     compact: layoutMode == .compact,
                     isFaded: false,
@@ -110,7 +111,6 @@ struct SpacesList: View {
                         handleHoverChange(isHovering, for: space)
                     }
                 )
-                .environmentObject(browserManager)
                 .environment(windowState)
                 .gesture(spaceInteractionGesture(for: space, spaces: spaces))
                 .opacity(reorderState.hidesInlineSpace(space.id) ? 0 : 1)
@@ -188,7 +188,7 @@ struct SpacesList: View {
                     windowState.sidebarInteractionState.syncSidebarItemDrag(false)
                 }
                 if let drop {
-                    browserManager.tabManager.reorderSpace(
+                    browserContext.tabManager.reorderSpace(
                         spaceId: drop.spaceId,
                         to: drop.targetIndex
                     )
@@ -209,6 +209,7 @@ struct SpacesList: View {
            let frame = reorderState.draggedOverlayFrame() {
             SpacesListItem(
                 space: draggedSpace,
+                browserContext: browserContext,
                 isActive: visualSelectedSpaceId == draggedSpace.id,
                 compact: layoutMode == .compact,
                 isFaded: false,
@@ -216,7 +217,6 @@ struct SpacesList: View {
                 onSelect: { _ = () },
                 onHoverChange: nil
             )
-            .environmentObject(browserManager)
             .environment(windowState)
             .frame(width: frame.width, height: frame.height)
             .offset(x: frame.minX, y: frame.minY)
