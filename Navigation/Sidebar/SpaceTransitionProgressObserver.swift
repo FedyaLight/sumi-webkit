@@ -5,15 +5,17 @@ import SwiftUI
 /// Interactive swipe updates bypass this observer and push progress directly.
 struct SpaceTransitionProgressObserver: @MainActor AnimatableModifier {
     var progress: Double
-    let onChange: (Double) -> Void
+    let transitionIdentity: SpaceTransitionIdentity?
+    let onChange: (Double, SpaceTransitionIdentity?) -> Void
 
     var animatableData: Double {
         get { progress }
         set {
             progress = newValue
             let callback = onChange
+            let transitionIdentity = transitionIdentity
             DispatchQueue.main.async {
-                callback(newValue)
+                callback(newValue, transitionIdentity)
             }
         }
     }

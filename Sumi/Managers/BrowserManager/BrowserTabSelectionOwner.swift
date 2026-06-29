@@ -84,7 +84,7 @@ final class BrowserTabSelectionOwner {
 
         actions.syncWindowSpaceContext(windowState, updateTheme)
 
-        if updateTheme && !windowState.isInteractiveSpaceTransition {
+        if updateTheme && shouldUpdateWorkspaceTheme(for: windowState) {
             if let currentSpace = actions.space(windowState.currentSpaceId) {
                 let animateWorkspaceTheme = selectionApplication.previousSpaceId != currentSpace.id
                 actions.updateWorkspaceTheme(windowState, currentSpace.workspaceTheme, animateWorkspaceTheme)
@@ -124,6 +124,11 @@ final class BrowserTabSelectionOwner {
         if persistSelection {
             actions.persistWindowSession(windowState)
         }
+    }
+
+    private func shouldUpdateWorkspaceTheme(for windowState: BrowserWindowState) -> Bool {
+        guard windowState.isInteractiveSpaceTransition else { return true }
+        return windowState.currentSpaceId != windowState.spaceTransitionSourceSpaceId
     }
 
     func materializeVisibleTabWebViewIfNeeded(

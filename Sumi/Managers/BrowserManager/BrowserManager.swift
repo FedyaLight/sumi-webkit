@@ -1055,8 +1055,16 @@ class BrowserManager: ObservableObject {
     }
 
     /// Set active space for a specific window
-    func setActiveSpace(_ space: Space, in windowState: BrowserWindowState) {
-        windowSpaceStateOwner.setActiveSpace(space, in: windowState)
+    func setActiveSpace(
+        _ space: Space,
+        in windowState: BrowserWindowState,
+        completingTransition identity: SpaceTransitionIdentity? = nil
+    ) {
+        windowSpaceStateOwner.setActiveSpace(
+            space,
+            in: windowState,
+            completingTransition: identity
+        )
     }
 
     /// Validate and fix window states after tab/space mutations

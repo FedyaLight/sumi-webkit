@@ -1,5 +1,21 @@
 import Foundation
 
+struct SpaceTransitionIdentity: Equatable, Hashable {
+    let id: UUID
+    let sourceSpaceId: UUID
+    let destinationSpaceId: UUID
+
+    init(
+        id: UUID = UUID(),
+        sourceSpaceId: UUID,
+        destinationSpaceId: UUID
+    ) {
+        self.id = id
+        self.sourceSpaceId = sourceSpaceId
+        self.destinationSpaceId = destinationSpaceId
+    }
+}
+
 enum WindowThemeTransitionMode: Equatable {
     case idle
     case programmatic
@@ -15,6 +31,7 @@ struct WindowThemeState: Equatable {
     var token: UUID?
     var sourceSpaceId: UUID?
     var destinationSpaceId: UUID?
+    var interactiveSpaceTransitionIdentity: SpaceTransitionIdentity?
 
     var isTransitioning: Bool {
         mode != .idle && sourceTheme != nil && targetTheme != nil
@@ -47,6 +64,7 @@ struct WindowThemeState: Equatable {
         token = nil
         sourceSpaceId = nil
         destinationSpaceId = nil
+        interactiveSpaceTransitionIdentity = nil
     }
 
     mutating func beginProgrammatic(
@@ -62,23 +80,45 @@ struct WindowThemeState: Equatable {
         self.token = token
         sourceSpaceId = nil
         destinationSpaceId = nil
+        interactiveSpaceTransitionIdentity = nil
     }
 
+    @discardableResult
     mutating func beginInteractive(
         sourceSpaceId: UUID,
         destinationSpaceId: UUID,
         from sourceTheme: WorkspaceTheme,
         to destinationTheme: WorkspaceTheme,
         initialProgress: Double
-    ) {
+    ) -> SpaceTransitionIdentity {
+        beginInteractive(
+            identity: SpaceTransitionIdentity(
+                sourceSpaceId: sourceSpaceId,
+                destinationSpaceId: destinationSpaceId
+            ),
+            from: sourceTheme,
+            to: destinationTheme,
+            initialProgress: initialProgress
+        )
+    }
+
+    @discardableResult
+    mutating func beginInteractive(
+        identity: SpaceTransitionIdentity,
+        from sourceTheme: WorkspaceTheme,
+        to destinationTheme: WorkspaceTheme,
+        initialProgress: Double
+    ) -> SpaceTransitionIdentity {
         committedTheme = sourceTheme
         self.sourceTheme = sourceTheme
         targetTheme = destinationTheme
         progress = min(max(initialProgress, 0.0), 1.0)
         mode = .interactive
-        token = UUID()
-        self.sourceSpaceId = sourceSpaceId
-        self.destinationSpaceId = destinationSpaceId
+        token = identity.id
+        sourceSpaceId = identity.sourceSpaceId
+        destinationSpaceId = identity.destinationSpaceId
+        interactiveSpaceTransitionIdentity = identity
+        return identity
     }
 
     mutating func updateProgress(_ progress: Double) {
@@ -87,5 +127,13 @@ struct WindowThemeState: Equatable {
 
     mutating func cancel() {
         restore(sourceTheme ?? committedTheme)
+    }
+
+    func matchesInteractiveSpaceTransition(_ identity: SpaceTransitionIdentity?) -> Bool {
+        guard isInteractive else { return false }
+        guard let currentIdentity = interactiveSpaceTransitionIdentity else {
+            return identity == nil
+        }
+        return currentIdentity == identity
     }
 }

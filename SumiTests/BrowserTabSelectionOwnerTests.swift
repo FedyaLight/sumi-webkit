@@ -84,6 +84,98 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         )
     }
 
+    func testSelectionWithinInteractiveSourceSkipsWorkspaceThemeUpdate() {
+        let owner = BrowserTabSelectionOwner()
+        let sourceSpace = Space(id: UUID(), name: "Source", workspaceTheme: WorkspaceTheme(gradientTheme: .default))
+        let destinationSpace = Space(id: UUID(), name: "Destination", workspaceTheme: WorkspaceTheme(gradientTheme: .incognito))
+        let previousTab = makeTab(spaceId: sourceSpace.id)
+        let selectedTab = makeTab(spaceId: sourceSpace.id)
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = sourceSpace.id
+        windowState.currentTabId = previousTab.id
+        windowState.windowThemeState.beginInteractive(
+            sourceSpaceId: sourceSpace.id,
+            destinationSpaceId: destinationSpace.id,
+            from: sourceSpace.workspaceTheme,
+            to: destinationSpace.workspaceTheme,
+            initialProgress: 0.2
+        )
+        let probe = ActionProbe(activeWindowId: windowState.id)
+
+        owner.applyTabSelection(
+            selectedTab,
+            in: windowState,
+            updateSpaceFromTab: true,
+            updateTheme: true,
+            rememberSelection: true,
+            persistSelection: true,
+            loadPolicy: .immediate,
+            actions: makeActions(
+                probe: probe,
+                space: sourceSpace,
+                tabsById: [previousTab.id: previousTab]
+            )
+        )
+
+        XCTAssertEqual(windowState.currentSpaceId, sourceSpace.id)
+        XCTAssertFalse(probe.events.contains { $0.hasPrefix("workspaceTheme:") })
+    }
+
+    func testSelectionToDifferentSpaceDuringInteractiveUpdatesWorkspaceTheme() {
+        let owner = BrowserTabSelectionOwner()
+        let sourceSpace = Space(id: UUID(), name: "Source", workspaceTheme: WorkspaceTheme(gradientTheme: .default))
+        let transitionDestination = Space(
+            id: UUID(),
+            name: "Transition Destination",
+            workspaceTheme: WorkspaceTheme(gradientTheme: .incognito)
+        )
+        let committedDestination = Space(
+            id: UUID(),
+            name: "Committed",
+            workspaceTheme: WorkspaceTheme(
+                gradientTheme: WorkspaceGradientTheme(
+                    colors: [
+                        WorkspaceThemeColor(hex: "#0A84FF", isPrimary: true, position: .topLeft),
+                        WorkspaceThemeColor(hex: "#FFD60A", position: .bottom),
+                    ],
+                    opacity: 0.72,
+                    texture: 0.1
+                )
+            )
+        )
+        let previousTab = makeTab(spaceId: sourceSpace.id)
+        let selectedTab = makeTab(spaceId: committedDestination.id)
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = sourceSpace.id
+        windowState.currentTabId = previousTab.id
+        windowState.windowThemeState.beginInteractive(
+            sourceSpaceId: sourceSpace.id,
+            destinationSpaceId: transitionDestination.id,
+            from: sourceSpace.workspaceTheme,
+            to: transitionDestination.workspaceTheme,
+            initialProgress: 0.2
+        )
+        let probe = ActionProbe(activeWindowId: windowState.id)
+
+        owner.applyTabSelection(
+            selectedTab,
+            in: windowState,
+            updateSpaceFromTab: true,
+            updateTheme: true,
+            rememberSelection: true,
+            persistSelection: true,
+            loadPolicy: .immediate,
+            actions: makeActions(
+                probe: probe,
+                space: committedDestination,
+                tabsById: [previousTab.id: previousTab]
+            )
+        )
+
+        XCTAssertEqual(windowState.currentSpaceId, committedDestination.id)
+        XCTAssertTrue(probe.events.contains("workspaceTheme:true"))
+    }
+
     func testShortcutSyncTracksCurrentLiveShortcutTab() {
         let owner = BrowserTabSelectionOwner()
         let spaceId = UUID()

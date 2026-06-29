@@ -12,7 +12,7 @@ final class BrowserWindowSpaceStateOwner {
         let syncShortcutSelectionState: (BrowserWindowState) -> Void
         let updateWorkspaceTheme: (BrowserWindowState, WorkspaceTheme, Bool) -> Void
         let commitWorkspaceTheme: (WorkspaceTheme, BrowserWindowState) -> Void
-        let finishInteractiveSpaceTransition: (Space, BrowserWindowState) -> Void
+        let finishInteractiveSpaceTransition: (Space, BrowserWindowState, SpaceTransitionIdentity?) -> Void
         let applyTabSelection: (Tab, BrowserWindowState, Bool, Bool, Bool, Bool) -> Void
         let performImmediateVisualHandoffIfPossible: (BrowserWindowState) -> Void
         let showEmptyState: (BrowserWindowState) -> Void
@@ -53,9 +53,21 @@ final class BrowserWindowSpaceStateOwner {
         updateProfileRuntimeStates(activeWindowState: windowState)
     }
 
-    func setActiveSpace(_ space: Space, in windowState: BrowserWindowState) {
+    func setActiveSpace(
+        _ space: Space,
+        in windowState: BrowserWindowState,
+        completingTransition identity: SpaceTransitionIdentity? = nil
+    ) {
+        if let identity {
+            guard identity.destinationSpaceId == space.id,
+                  windowState.windowThemeState.matchesInteractiveSpaceTransition(identity) else {
+                return
+            }
+        }
+
         let isSameSpace = windowState.currentSpaceId == space.id
-        if isSameSpace,
+        if identity == nil,
+           isSameSpace,
            hasValidCurrentSelection(in: windowState),
            currentTabIfSessionResolved(for: windowState) != nil {
             dependencies.sanitizeFloatingBarState(windowState)
@@ -75,9 +87,9 @@ final class BrowserWindowSpaceStateOwner {
         }
 
         applySpaceContext(space, to: windowState)
-        if windowState.spaceTransitionDestinationSpaceId == space.id {
-            dependencies.finishInteractiveSpaceTransition(space, windowState)
-        } else if !windowState.isInteractiveSpaceTransition {
+        if let identity {
+            dependencies.finishInteractiveSpaceTransition(space, windowState, identity)
+        } else {
             dependencies.updateWorkspaceTheme(windowState, space.workspaceTheme, true)
         }
 
@@ -273,8 +285,12 @@ extension BrowserWindowSpaceStateOwner.Dependencies {
             commitWorkspaceTheme: { [weak browserManager] theme, windowState in
                 browserManager?.commitWorkspaceTheme(theme, for: windowState)
             },
-            finishInteractiveSpaceTransition: { [weak browserManager] space, windowState in
-                browserManager?.finishInteractiveSpaceTransition(to: space, in: windowState)
+            finishInteractiveSpaceTransition: { [weak browserManager] space, windowState, identity in
+                browserManager?.finishInteractiveSpaceTransition(
+                    to: space,
+                    in: windowState,
+                    identity: identity
+                )
             },
             applyTabSelection: {
                 [weak browserManager] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in

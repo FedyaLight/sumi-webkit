@@ -69,6 +69,7 @@ struct SpaceSidebarTransitionState: Equatable {
     var isCommitArmed = false
     var phase: SpaceSidebarTransitionPhase = .idle
     var trigger: SpaceSidebarTransitionTrigger?
+    var transitionIdentity: SpaceTransitionIdentity?
 
     var isGestureActive: Bool {
         phase != .idle && sourceSpaceId != nil
@@ -118,6 +119,7 @@ struct SpaceSidebarTransitionState: Equatable {
         isCommitArmed = true
         phase = .clickAnimating
         trigger = .click
+        transitionIdentity = nil
         return true
     }
 
@@ -148,6 +150,7 @@ struct SpaceSidebarTransitionState: Equatable {
         phase = .interactive
         isCommitArmed = false
         trigger = .swipe
+        transitionIdentity = nil
         return true
     }
 
@@ -173,6 +176,9 @@ struct SpaceSidebarTransitionState: Equatable {
         }
 
         guard let resolvedDirection = latchedDirection else {
+            if destinationSpaceId != nil {
+                transitionIdentity = nil
+            }
             destinationSpaceId = nil
             direction = 0
             isCommitArmed = false
@@ -183,12 +189,19 @@ struct SpaceSidebarTransitionState: Equatable {
 
         let destinationIndex = sourceIndex + resolvedDirection
         guard orderedSpaceIds.indices.contains(destinationIndex) else {
+            if destinationSpaceId != nil {
+                transitionIdentity = nil
+            }
             destinationSpaceId = nil
             isCommitArmed = false
             return
         }
 
-        destinationSpaceId = orderedSpaceIds[destinationIndex]
+        let nextDestinationSpaceId = orderedSpaceIds[destinationIndex]
+        if destinationSpaceId != nextDestinationSpaceId {
+            transitionIdentity = nil
+        }
+        destinationSpaceId = nextDestinationSpaceId
         isCommitArmed = true
     }
 
@@ -200,6 +213,14 @@ struct SpaceSidebarTransitionState: Equatable {
     mutating func markSettling() {
         guard isGestureActive else { return }
         phase = .settling
+    }
+
+    mutating func bindTransitionIdentity(_ identity: SpaceTransitionIdentity) {
+        guard sourceSpaceId == identity.sourceSpaceId,
+              destinationSpaceId == identity.destinationSpaceId else {
+            return
+        }
+        transitionIdentity = identity
     }
 
     mutating func syncSpaces(
@@ -262,6 +283,7 @@ struct SpaceSidebarTransitionState: Equatable {
         isCommitArmed = false
         phase = .idle
         trigger = nil
+        transitionIdentity = nil
     }
 
     static func transitionDirection(

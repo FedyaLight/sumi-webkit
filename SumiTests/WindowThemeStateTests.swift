@@ -79,7 +79,7 @@ final class WindowThemeStateTests: XCTestCase {
     }
 
     @MainActor
-    func testInteractiveThemeCoordinatorCoalescesTinyProgressUpdatesButPreservesTerminalValues() {
+    func testInteractiveThemeCoordinatorCoalescesTinyProgressUpdatesButPreservesTerminalValues() throws {
         let sourceSpace = Space(
             name: "Source",
             workspaceTheme: WorkspaceTheme(gradientTheme: .default)
@@ -91,24 +91,170 @@ final class WindowThemeStateTests: XCTestCase {
         let windowState = BrowserWindowState()
         let coordinator = WorkspaceThemeCoordinator()
 
-        coordinator.beginInteractiveTransition(
+        let identity = try XCTUnwrap(coordinator.beginInteractiveTransition(
             from: sourceSpace,
             to: destinationSpace,
             initialProgress: 0.4,
             in: windowState
-        )
-        coordinator.updateInteractiveTransition(progress: 0.401, in: windowState)
+        ))
+        coordinator.updateInteractiveTransition(progress: 0.401, identity: identity, in: windowState)
 
         XCTAssertEqual(windowState.themeTransitionProgress, 0.4, accuracy: 0.0001)
 
-        coordinator.updateInteractiveTransition(progress: 0.403, in: windowState)
+        coordinator.updateInteractiveTransition(progress: 0.403, identity: identity, in: windowState)
         XCTAssertEqual(windowState.themeTransitionProgress, 0.403, accuracy: 0.0001)
 
-        coordinator.updateInteractiveTransition(progress: 1.0, in: windowState)
+        coordinator.updateInteractiveTransition(progress: 1.0, identity: identity, in: windowState)
         XCTAssertEqual(windowState.themeTransitionProgress, 1.0, accuracy: 0.0001)
 
-        coordinator.updateInteractiveTransition(progress: 0.0, in: windowState)
+        coordinator.updateInteractiveTransition(progress: 0.0, identity: identity, in: windowState)
         XCTAssertEqual(windowState.themeTransitionProgress, 0.0, accuracy: 0.0001)
+    }
+
+    @MainActor
+    func testStaleInteractiveProgressTokenDoesNotUpdateReplacementTransition() throws {
+        let sourceSpace = Space(name: "Source", workspaceTheme: WorkspaceTheme(gradientTheme: .default))
+        let firstDestination = Space(name: "First", workspaceTheme: WorkspaceTheme(gradientTheme: .incognito))
+        let secondDestination = Space(name: "Second", workspaceTheme: makeTheme(opacity: 0.72))
+        let windowState = BrowserWindowState()
+        let coordinator = WorkspaceThemeCoordinator()
+
+        let firstIdentity = try XCTUnwrap(coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: firstDestination,
+            initialProgress: 0.2,
+            in: windowState
+        ))
+        let secondIdentity = try XCTUnwrap(coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: secondDestination,
+            initialProgress: 0.45,
+            in: windowState
+        ))
+
+        coordinator.updateInteractiveTransition(
+            progress: 0.9,
+            identity: firstIdentity,
+            in: windowState
+        )
+
+        XCTAssertEqual(windowState.interactiveSpaceTransitionIdentity, secondIdentity)
+        XCTAssertEqual(windowState.spaceTransitionDestinationSpaceId, secondDestination.id)
+        XCTAssertEqual(windowState.themeTransitionProgress, 0.45, accuracy: 0.0001)
+    }
+
+    @MainActor
+    func testNilInteractiveProgressDoesNotUpdateIdentifiedReplacementTransition() throws {
+        let sourceSpace = Space(name: "Source", workspaceTheme: WorkspaceTheme(gradientTheme: .default))
+        let firstDestination = Space(name: "First", workspaceTheme: WorkspaceTheme(gradientTheme: .incognito))
+        let secondDestination = Space(name: "Second", workspaceTheme: makeTheme(opacity: 0.72))
+        let windowState = BrowserWindowState()
+        let coordinator = WorkspaceThemeCoordinator()
+
+        _ = try XCTUnwrap(coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: firstDestination,
+            initialProgress: 0.2,
+            in: windowState
+        ))
+        let secondIdentity = try XCTUnwrap(coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: secondDestination,
+            initialProgress: 0.45,
+            in: windowState
+        ))
+
+        coordinator.updateInteractiveTransition(progress: 0.9, in: windowState)
+
+        XCTAssertEqual(windowState.interactiveSpaceTransitionIdentity, secondIdentity)
+        XCTAssertEqual(windowState.spaceTransitionDestinationSpaceId, secondDestination.id)
+        XCTAssertEqual(windowState.themeTransitionProgress, 0.45, accuracy: 0.0001)
+    }
+
+    @MainActor
+    func testStaleInteractiveCancelTokenDoesNotCancelReplacementTransition() throws {
+        let sourceSpace = Space(name: "Source", workspaceTheme: WorkspaceTheme(gradientTheme: .default))
+        let firstDestination = Space(name: "First", workspaceTheme: WorkspaceTheme(gradientTheme: .incognito))
+        let secondDestination = Space(name: "Second", workspaceTheme: makeTheme(opacity: 0.72))
+        let windowState = BrowserWindowState()
+        let coordinator = WorkspaceThemeCoordinator()
+
+        let firstIdentity = try XCTUnwrap(coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: firstDestination,
+            initialProgress: 0.2,
+            in: windowState
+        ))
+        let secondIdentity = try XCTUnwrap(coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: secondDestination,
+            initialProgress: 0.45,
+            in: windowState
+        ))
+
+        coordinator.cancelInteractiveTransition(in: windowState, identity: firstIdentity)
+
+        XCTAssertTrue(windowState.isInteractiveSpaceTransition)
+        XCTAssertEqual(windowState.interactiveSpaceTransitionIdentity, secondIdentity)
+        XCTAssertEqual(windowState.spaceTransitionDestinationSpaceId, secondDestination.id)
+    }
+
+    @MainActor
+    func testStaleInteractiveFinishTokenDoesNotRestoreOldDestinationTheme() throws {
+        let sourceSpace = Space(name: "Source", workspaceTheme: WorkspaceTheme(gradientTheme: .default))
+        let firstDestination = Space(name: "First", workspaceTheme: WorkspaceTheme(gradientTheme: .incognito))
+        let secondDestination = Space(name: "Second", workspaceTheme: makeTheme(opacity: 0.72))
+        let windowState = BrowserWindowState()
+        let coordinator = WorkspaceThemeCoordinator()
+
+        let firstIdentity = try XCTUnwrap(coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: firstDestination,
+            initialProgress: 0.2,
+            in: windowState
+        ))
+        let secondIdentity = try XCTUnwrap(coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: secondDestination,
+            initialProgress: 0.45,
+            in: windowState
+        ))
+
+        coordinator.finishInteractiveTransition(
+            to: firstDestination.workspaceTheme,
+            in: windowState,
+            identity: firstIdentity
+        )
+
+        XCTAssertTrue(windowState.isInteractiveSpaceTransition)
+        XCTAssertEqual(windowState.interactiveSpaceTransitionIdentity, secondIdentity)
+        XCTAssertEqual(windowState.spaceTransitionDestinationSpaceId, secondDestination.id)
+        XCTAssertFalse(windowState.displayedWorkspaceTheme.visuallyEquals(firstDestination.workspaceTheme))
+    }
+
+    @MainActor
+    func testNilInteractiveFinishDoesNotFinishIdentifiedTransition() throws {
+        let sourceSpace = Space(name: "Source", workspaceTheme: WorkspaceTheme(gradientTheme: .default))
+        let destinationSpace = Space(name: "Destination", workspaceTheme: WorkspaceTheme(gradientTheme: .incognito))
+        let windowState = BrowserWindowState()
+        let coordinator = WorkspaceThemeCoordinator()
+
+        let identity = try XCTUnwrap(coordinator.beginInteractiveTransition(
+            from: sourceSpace,
+            to: destinationSpace,
+            initialProgress: 0.2,
+            in: windowState
+        ))
+
+        coordinator.finishInteractiveTransition(
+            to: destinationSpace.workspaceTheme,
+            in: windowState
+        )
+
+        XCTAssertTrue(windowState.isInteractiveSpaceTransition)
+        XCTAssertEqual(windowState.interactiveSpaceTransitionIdentity, identity)
+        XCTAssertEqual(windowState.spaceTransitionDestinationSpaceId, destinationSpace.id)
+        XCTAssertFalse(windowState.displayedWorkspaceTheme.visuallyEquals(destinationSpace.workspaceTheme))
     }
 
     func testResolvedGradientInterpolationPreservesEndpointsAndBlendsMidpoint() {

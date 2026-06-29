@@ -44,6 +44,11 @@ extension BrowserWindowState {
         set { windowThemeState.destinationSpaceId = newValue }
     }
 
+    var interactiveSpaceTransitionIdentity: SpaceTransitionIdentity? {
+        get { windowThemeState.interactiveSpaceTransitionIdentity }
+        set { windowThemeState.interactiveSpaceTransitionIdentity = newValue }
+    }
+
     var isInteractiveSpaceTransition: Bool {
         get { windowThemeState.isInteractive }
         set { windowThemeState.mode = newValue ? .interactive : .idle }

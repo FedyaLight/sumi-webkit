@@ -20,38 +20,51 @@ extension BrowserManager {
         workspaceThemeCoordinator.restore(workspaceTheme, in: windowState)
     }
 
+    @discardableResult
     func beginInteractiveSpaceTransition(
         from sourceSpace: Space,
         to destinationSpace: Space,
+        identity: SpaceTransitionIdentity? = nil,
         initialProgress: Double = 0,
         in windowState: BrowserWindowState
-    ) {
+    ) -> SpaceTransitionIdentity? {
         workspaceThemeCoordinator.beginInteractiveTransition(
             from: sourceSpace,
             to: destinationSpace,
+            identity: identity,
             initialProgress: initialProgress,
             in: windowState
         )
     }
 
-    func updateInteractiveSpaceTransition(progress: Double, in windowState: BrowserWindowState) {
+    func updateInteractiveSpaceTransition(
+        progress: Double,
+        identity: SpaceTransitionIdentity? = nil,
+        in windowState: BrowserWindowState
+    ) {
         workspaceThemeCoordinator.updateInteractiveTransition(
             progress: progress,
+            identity: identity,
             in: windowState
         )
     }
 
-    func cancelInteractiveSpaceTransition(in windowState: BrowserWindowState) {
-        workspaceThemeCoordinator.cancelInteractiveTransition(in: windowState)
+    func cancelInteractiveSpaceTransition(
+        identity: SpaceTransitionIdentity? = nil,
+        in windowState: BrowserWindowState
+    ) {
+        workspaceThemeCoordinator.cancelInteractiveTransition(in: windowState, identity: identity)
     }
 
     func finishInteractiveSpaceTransition(
         to destinationSpace: Space,
-        in windowState: BrowserWindowState
+        in windowState: BrowserWindowState,
+        identity: SpaceTransitionIdentity? = nil
     ) {
         workspaceThemeCoordinator.finishInteractiveTransition(
             to: destinationSpace.workspaceTheme,
-            in: windowState
+            in: windowState,
+            identity: identity
         )
     }
 

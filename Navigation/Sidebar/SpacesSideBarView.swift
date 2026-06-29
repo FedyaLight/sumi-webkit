@@ -208,8 +208,15 @@ struct SpacesSideBarView: View {
                 GeometryReader { geo in
                     spaceTransitionContainer(spaces: spaces, size: geo.size)
                         .modifier(
-                            SpaceTransitionProgressObserver(progress: transitionState.progress) { progress in
-                                handleTransitionProgressFrame(progress, spaces: spaces)
+                            SpaceTransitionProgressObserver(
+                                progress: transitionState.progress,
+                                transitionIdentity: transitionState.transitionIdentity
+                            ) { progress, transitionIdentity in
+                                handleTransitionProgressFrame(
+                                    progress,
+                                    transitionIdentity: transitionIdentity,
+                                    spaces: spaces
+                                )
                             }
                         )
                         .overlay {
@@ -234,7 +241,7 @@ struct SpacesSideBarView: View {
                     refreshCommittedSidebarDragGeometryIfInteractive(spaces: spaces)
                 }
                 .onChange(of: committedSpaceId(in: spaces)) { _, _ in
-                    refreshCommittedSidebarDragGeometryIfInteractive(spaces: spaces)
+                    handleCommittedSpaceChange(spaces)
                 }
                 .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
                     if allowsInteractiveWork {
@@ -543,12 +550,18 @@ struct SpacesSideBarView: View {
         transitionCoordinator.handleSpacesCollectionChange(transitionContext(spaces: spaces))
     }
 
+    private func handleCommittedSpaceChange(_ spaces: [Space]) {
+        transitionCoordinator.handleCommittedSpaceChange(transitionContext(spaces: spaces))
+    }
+
     private func handleTransitionProgressFrame(
         _ progress: Double,
+        transitionIdentity: SpaceTransitionIdentity?,
         spaces: [Space]
     ) {
         transitionCoordinator.handleTransitionProgressFrame(
             progress,
+            transitionIdentity: transitionIdentity,
             context: transitionContext(spaces: spaces)
         )
     }

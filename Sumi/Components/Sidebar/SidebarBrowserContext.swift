@@ -35,9 +35,10 @@ struct SidebarBrowserContext {
     let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
     let completePendingSplitGroupFocusIfReady: (BrowserWindowState, UUID) -> Void
     let setActiveSpace: (Space, BrowserWindowState) -> Void
-    let beginInteractiveSpaceTransition: (Space, Space, BrowserWindowState) -> Void
-    let updateInteractiveSpaceTransition: (Double, BrowserWindowState) -> Void
-    let cancelInteractiveSpaceTransition: (BrowserWindowState) -> Void
+    let setActiveSpaceFromTransition: (Space, BrowserWindowState, SpaceTransitionIdentity) -> Void
+    let beginInteractiveSpaceTransition: (Space, Space, SpaceTransitionIdentity, BrowserWindowState) -> SpaceTransitionIdentity?
+    let updateInteractiveSpaceTransition: (Double, SpaceTransitionIdentity?, BrowserWindowState) -> Void
+    let cancelInteractiveSpaceTransition: (SpaceTransitionIdentity?, BrowserWindowState) -> Void
     let canCreateFolderInCurrentSpace: (BrowserWindowState) -> Bool
     let showGradientEditor: (SidebarTransientPresentationSource) -> Void
     let toggleSidebar: (BrowserWindowState) -> Void
@@ -166,21 +167,30 @@ struct SidebarBrowserContext {
             setActiveSpace: { [weak browserManager] space, windowState in
                 browserManager?.setActiveSpace(space, in: windowState)
             },
-            beginInteractiveSpaceTransition: { [weak browserManager] source, destination, windowState in
+            setActiveSpaceFromTransition: { [weak browserManager] space, windowState, identity in
+                browserManager?.setActiveSpace(
+                    space,
+                    in: windowState,
+                    completingTransition: identity
+                )
+            },
+            beginInteractiveSpaceTransition: { [weak browserManager] source, destination, identity, windowState in
                 browserManager?.beginInteractiveSpaceTransition(
                     from: source,
                     to: destination,
+                    identity: identity,
                     in: windowState
                 )
             },
-            updateInteractiveSpaceTransition: { [weak browserManager] progress, windowState in
+            updateInteractiveSpaceTransition: { [weak browserManager] progress, identity, windowState in
                 browserManager?.updateInteractiveSpaceTransition(
                     progress: progress,
+                    identity: identity,
                     in: windowState
                 )
             },
-            cancelInteractiveSpaceTransition: { [weak browserManager] windowState in
-                browserManager?.cancelInteractiveSpaceTransition(in: windowState)
+            cancelInteractiveSpaceTransition: { [weak browserManager] identity, windowState in
+                browserManager?.cancelInteractiveSpaceTransition(identity: identity, in: windowState)
             },
             canCreateFolderInCurrentSpace: { [weak browserManager] windowState in
                 browserManager?.spaceForSidebarActions(in: windowState) != nil

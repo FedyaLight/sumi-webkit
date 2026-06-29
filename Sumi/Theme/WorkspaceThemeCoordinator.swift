@@ -53,38 +53,52 @@ final class WorkspaceThemeCoordinator {
         }
     }
 
+    @discardableResult
     func beginInteractiveTransition(
         from sourceSpace: Space,
         to destinationSpace: Space,
+        identity requestedIdentity: SpaceTransitionIdentity? = nil,
         initialProgress: Double,
         in windowState: BrowserWindowState
-    ) {
-        guard !windowState.isIncognito else { return }
+    ) -> SpaceTransitionIdentity? {
+        guard !windowState.isIncognito else { return nil }
 
         if windowState.spaceTransitionSourceSpaceId == sourceSpace.id,
            windowState.spaceTransitionDestinationSpaceId == destinationSpace.id,
            windowState.isInteractiveSpaceTransition {
+            guard requestedIdentity == nil || windowState.interactiveSpaceTransitionIdentity == requestedIdentity else {
+                return beginNewInteractiveTransition(
+                    from: sourceSpace,
+                    to: destinationSpace,
+                    identity: requestedIdentity,
+                    initialProgress: initialProgress,
+                    in: windowState
+                )
+            }
             updateInteractiveTransition(
                 progress: initialProgress,
+                identity: requestedIdentity,
                 in: windowState
             )
-            return
+            return windowState.interactiveSpaceTransitionIdentity ?? requestedIdentity
         }
 
-        windowState.windowThemeState.beginInteractive(
-            sourceSpaceId: sourceSpace.id,
-            destinationSpaceId: destinationSpace.id,
-            from: sourceSpace.workspaceTheme,
-            to: destinationSpace.workspaceTheme,
-            initialProgress: initialProgress
+        return beginNewInteractiveTransition(
+            from: sourceSpace,
+            to: destinationSpace,
+            identity: requestedIdentity,
+            initialProgress: initialProgress,
+            in: windowState
         )
     }
 
     func updateInteractiveTransition(
         progress: Double,
+        identity: SpaceTransitionIdentity? = nil,
         in windowState: BrowserWindowState
     ) {
         guard windowState.isInteractiveSpaceTransition else { return }
+        guard windowState.windowThemeState.matchesInteractiveSpaceTransition(identity) else { return }
         let clampedProgress = min(max(progress, 0.0), 1.0)
         guard clampedProgress == 0.0
             || clampedProgress == 1.0
@@ -97,15 +111,46 @@ final class WorkspaceThemeCoordinator {
         windowState.windowThemeState.updateProgress(clampedProgress)
     }
 
-    func cancelInteractiveTransition(in windowState: BrowserWindowState) {
+    func cancelInteractiveTransition(
+        in windowState: BrowserWindowState,
+        identity: SpaceTransitionIdentity? = nil
+    ) {
         guard windowState.isInteractiveSpaceTransition else { return }
+        guard windowState.windowThemeState.matchesInteractiveSpaceTransition(identity) else { return }
         windowState.windowThemeState.cancel()
     }
 
     func finishInteractiveTransition(
         to destinationTheme: WorkspaceTheme,
-        in windowState: BrowserWindowState
+        in windowState: BrowserWindowState,
+        identity: SpaceTransitionIdentity? = nil
     ) {
+        guard windowState.isInteractiveSpaceTransition else { return }
+        guard windowState.windowThemeState.matchesInteractiveSpaceTransition(identity) else { return }
         restore(destinationTheme, in: windowState)
+    }
+
+    private func beginNewInteractiveTransition(
+        from sourceSpace: Space,
+        to destinationSpace: Space,
+        identity requestedIdentity: SpaceTransitionIdentity?,
+        initialProgress: Double,
+        in windowState: BrowserWindowState
+    ) -> SpaceTransitionIdentity? {
+        let identity = requestedIdentity ?? SpaceTransitionIdentity(
+            sourceSpaceId: sourceSpace.id,
+            destinationSpaceId: destinationSpace.id
+        )
+        guard identity.sourceSpaceId == sourceSpace.id,
+              identity.destinationSpaceId == destinationSpace.id else {
+            return nil
+        }
+
+        return windowState.windowThemeState.beginInteractive(
+            identity: identity,
+            from: sourceSpace.workspaceTheme,
+            to: destinationSpace.workspaceTheme,
+            initialProgress: initialProgress
+        )
     }
 }
