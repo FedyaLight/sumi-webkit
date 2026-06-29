@@ -12,6 +12,16 @@ struct SidebarBrowserPresentationActions {
 }
 
 @MainActor
+struct SidebarSpaceTransitionActions {
+    let completePendingSplitGroupFocusIfReady: (BrowserWindowState, UUID) -> Void
+    let setActiveSpace: (Space, BrowserWindowState) -> Void
+    let setActiveSpaceFromTransition: (Space, BrowserWindowState, SpaceTransitionIdentity) -> Void
+    let beginInteractiveSpaceTransition: (Space, Space, SpaceTransitionIdentity, BrowserWindowState) -> SpaceTransitionIdentity?
+    let updateInteractiveSpaceTransition: (Double, SpaceTransitionIdentity?, BrowserWindowState) -> Void
+    let cancelInteractiveSpaceTransition: (SpaceTransitionIdentity?, BrowserWindowState) -> Void
+}
+
+@MainActor
 struct SidebarBrowserContext {
     let tabManager: TabManager
     let profileManager: ProfileManager
@@ -33,12 +43,7 @@ struct SidebarBrowserContext {
     let savedSidebarWidth: (BrowserWindowState) -> CGFloat
     let performDrop: (NSPasteboard, SidebarDropResolution, BrowserWindowState?) -> Bool
     let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
-    let completePendingSplitGroupFocusIfReady: (BrowserWindowState, UUID) -> Void
-    let setActiveSpace: (Space, BrowserWindowState) -> Void
-    let setActiveSpaceFromTransition: (Space, BrowserWindowState, SpaceTransitionIdentity) -> Void
-    let beginInteractiveSpaceTransition: (Space, Space, SpaceTransitionIdentity, BrowserWindowState) -> SpaceTransitionIdentity?
-    let updateInteractiveSpaceTransition: (Double, SpaceTransitionIdentity?, BrowserWindowState) -> Void
-    let cancelInteractiveSpaceTransition: (SpaceTransitionIdentity?, BrowserWindowState) -> Void
+    let spaceTransitions: SidebarSpaceTransitionActions
     let canCreateFolderInCurrentSpace: (BrowserWindowState) -> Bool
     let showGradientEditor: (SidebarTransientPresentationSource) -> Void
     let toggleSidebar: (BrowserWindowState) -> Void
@@ -158,40 +163,7 @@ struct SidebarBrowserContext {
                 guard let browserManager else { return }
                 mediaStore.configure(browserManager: browserManager, windowState: windowState)
             },
-            completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
-                browserManager?.completePendingSplitGroupFocusIfReady(
-                    in: windowState,
-                    spaceId: spaceId
-                )
-            },
-            setActiveSpace: { [weak browserManager] space, windowState in
-                browserManager?.setActiveSpace(space, in: windowState)
-            },
-            setActiveSpaceFromTransition: { [weak browserManager] space, windowState, identity in
-                browserManager?.setActiveSpace(
-                    space,
-                    in: windowState,
-                    completingTransition: identity
-                )
-            },
-            beginInteractiveSpaceTransition: { [weak browserManager] source, destination, identity, windowState in
-                browserManager?.beginInteractiveSpaceTransition(
-                    from: source,
-                    to: destination,
-                    identity: identity,
-                    in: windowState
-                )
-            },
-            updateInteractiveSpaceTransition: { [weak browserManager] progress, identity, windowState in
-                browserManager?.updateInteractiveSpaceTransition(
-                    progress: progress,
-                    identity: identity,
-                    in: windowState
-                )
-            },
-            cancelInteractiveSpaceTransition: { [weak browserManager] identity, windowState in
-                browserManager?.cancelInteractiveSpaceTransition(identity: identity, in: windowState)
-            },
+            spaceTransitions: browserManager.sidebarSpaceTransitionRoutingOwner.makeActions(),
             canCreateFolderInCurrentSpace: { [weak browserManager] windowState in
                 browserManager?.spaceForSidebarActions(in: windowState) != nil
             },

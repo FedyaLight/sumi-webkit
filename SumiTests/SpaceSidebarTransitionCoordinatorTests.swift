@@ -128,6 +128,50 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertNil(coordinator.transitionSnapshot)
         XCTAssertFalse(coordinator.transitionState.hasDestination)
     }
+
+    func testSpacesCollectionChangeFallbackActivatesFirstSpaceThroughTransitionActions() throws {
+        let windowState = BrowserWindowState()
+        let fallbackSpace = Space(name: "Fallback")
+        let secondSpace = Space(name: "Second")
+        let browserHarness = try TestSidebarBrowserContextHarness(spaces: [fallbackSpace, secondSpace])
+        let settingsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
+        let coordinator = SpaceSidebarTransitionCoordinator()
+
+        defer {
+            coordinator.cancelPendingSpaceTransition()
+            settingsHarness.reset()
+        }
+
+        windowState.tabManager = browserHarness.tabManager
+        windowState.currentSpaceId = UUID()
+
+        let context = SpaceSidebarTransitionCoordinator.Context(
+            spaces: [fallbackSpace, secondSpace],
+            currentSpaces: { browserHarness.tabManager.spaces },
+            windowState: windowState,
+            browserContext: browserHarness.context,
+            dragState: SidebarDragState(),
+            settings: settings,
+            allowsInteractiveWork: false,
+            reduceMotion: true
+        )
+
+        coordinator.handleSpacesCollectionChange(context)
+
+        XCTAssertEqual(windowState.currentSpaceId, fallbackSpace.id)
+        XCTAssertEqual(browserHarness.tabManager.currentSpace?.id, fallbackSpace.id)
+        XCTAssertEqual(browserHarness.transitionEvents, [.setActiveSpace(fallbackSpace.id)])
+    }
+}
+
+private enum TestSidebarTransitionEvent: Equatable {
+    case setActiveSpace(UUID)
+    case setActiveSpaceFromTransition(UUID, SpaceTransitionIdentity)
+}
+
+private final class TransitionEventRecorder {
+    var events: [TestSidebarTransitionEvent] = []
 }
 
 @MainActor
@@ -144,6 +188,11 @@ private final class TestSidebarBrowserContextHarness {
     private let glanceManager = GlanceManager()
     private let extensionSurfaceStore = BrowserExtensionSurfaceStore(extensionManager: nil)
     private let workspaceThemeCoordinator = WorkspaceThemeCoordinator()
+    private let transitionEventRecorder = TransitionEventRecorder()
+
+    var transitionEvents: [TestSidebarTransitionEvent] {
+        transitionEventRecorder.events
+    }
 
     init(spaces: [Space]) throws {
         container = try ModelContainer(
@@ -166,6 +215,7 @@ private final class TestSidebarBrowserContextHarness {
         let glanceManager = glanceManager
         let extensionSurfaceStore = extensionSurfaceStore
         let workspaceThemeCoordinator = workspaceThemeCoordinator
+        let transitionEventRecorder = transitionEventRecorder
 
         context = SidebarBrowserContext(
             tabManager: tabManager,
@@ -197,52 +247,56 @@ private final class TestSidebarBrowserContextHarness {
             savedSidebarWidth: { _ in BrowserWindowState.sidebarDefaultWidth },
             performDrop: { _, _, _ in false },
             configureMediaStore: { _, _ in },
-            completePendingSplitGroupFocusIfReady: { _, _ in },
-            setActiveSpace: { space, windowState in
-                tabManager.currentSpace = space
-                windowState.currentSpaceId = space.id
-                workspaceThemeCoordinator.update(
-                    for: windowState,
-                    to: space.workspaceTheme,
-                    animate: true,
-                    isActiveWindow: true
-                )
-            },
-            setActiveSpaceFromTransition: { space, windowState, identity in
-                guard identity.destinationSpaceId == space.id,
-                      windowState.windowThemeState.matchesInteractiveSpaceTransition(identity) else {
-                    return
+            spaceTransitions: SidebarSpaceTransitionActions(
+                completePendingSplitGroupFocusIfReady: { _, _ in },
+                setActiveSpace: { space, windowState in
+                    transitionEventRecorder.events.append(.setActiveSpace(space.id))
+                    tabManager.currentSpace = space
+                    windowState.currentSpaceId = space.id
+                    workspaceThemeCoordinator.update(
+                        for: windowState,
+                        to: space.workspaceTheme,
+                        animate: true,
+                        isActiveWindow: true
+                    )
+                },
+                setActiveSpaceFromTransition: { space, windowState, identity in
+                    guard identity.destinationSpaceId == space.id,
+                          windowState.windowThemeState.matchesInteractiveSpaceTransition(identity) else {
+                        return
+                    }
+                    transitionEventRecorder.events.append(.setActiveSpaceFromTransition(space.id, identity))
+                    tabManager.currentSpace = space
+                    windowState.currentSpaceId = space.id
+                    workspaceThemeCoordinator.finishInteractiveTransition(
+                        to: space.workspaceTheme,
+                        in: windowState,
+                        identity: identity
+                    )
+                },
+                beginInteractiveSpaceTransition: { source, destination, identity, windowState in
+                    workspaceThemeCoordinator.beginInteractiveTransition(
+                        from: source,
+                        to: destination,
+                        identity: identity,
+                        initialProgress: 0,
+                        in: windowState
+                    )
+                },
+                updateInteractiveSpaceTransition: { progress, identity, windowState in
+                    workspaceThemeCoordinator.updateInteractiveTransition(
+                        progress: progress,
+                        identity: identity,
+                        in: windowState
+                    )
+                },
+                cancelInteractiveSpaceTransition: { identity, windowState in
+                    workspaceThemeCoordinator.cancelInteractiveTransition(
+                        in: windowState,
+                        identity: identity
+                    )
                 }
-                tabManager.currentSpace = space
-                windowState.currentSpaceId = space.id
-                workspaceThemeCoordinator.finishInteractiveTransition(
-                    to: space.workspaceTheme,
-                    in: windowState,
-                    identity: identity
-                )
-            },
-            beginInteractiveSpaceTransition: { source, destination, identity, windowState in
-                workspaceThemeCoordinator.beginInteractiveTransition(
-                    from: source,
-                    to: destination,
-                    identity: identity,
-                    initialProgress: 0,
-                    in: windowState
-                )
-            },
-            updateInteractiveSpaceTransition: { progress, identity, windowState in
-                workspaceThemeCoordinator.updateInteractiveTransition(
-                    progress: progress,
-                    identity: identity,
-                    in: windowState
-                )
-            },
-            cancelInteractiveSpaceTransition: { identity, windowState in
-                workspaceThemeCoordinator.cancelInteractiveTransition(
-                    in: windowState,
-                    identity: identity
-                )
-            },
+            ),
             canCreateFolderInCurrentSpace: { _ in true },
             showGradientEditor: { _ in },
             toggleSidebar: { _ in },

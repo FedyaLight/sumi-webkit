@@ -531,7 +531,7 @@ struct SpacesSideBarView: View {
         guard let request else { return }
 
         if windowState.currentSpaceId == request.targetSpaceId {
-            browserContext.completePendingSplitGroupFocusIfReady(
+            browserContext.spaceTransitions.completePendingSplitGroupFocusIfReady(
                 windowState,
                 request.targetSpaceId
             )
@@ -872,7 +872,7 @@ struct SpacesSideBarView: View {
             profileId: profileId
         )
         if let resolvedSpace = browserContext.tabManager.spaces.first(where: { $0.id == newSpace.id }) {
-            browserContext.setActiveSpace(resolvedSpace, windowState)
+            browserContext.spaceTransitions.setActiveSpace(resolvedSpace, windowState)
         }
 
         windowState.finishSpaceCreationSession(

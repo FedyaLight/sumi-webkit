@@ -95,6 +95,9 @@ class BrowserManager: ObservableObject {
     lazy var sidebarEditorPresentationOwner = BrowserSidebarEditorPresentationOwner(
         dependencies: .live(browserManager: self)
     )
+    lazy var sidebarSpaceTransitionRoutingOwner = BrowserSidebarSpaceTransitionRoutingOwner(
+        dependencies: .live(browserManager: self)
+    )
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
         guard let self else { return [] }

@@ -18,7 +18,8 @@ final class SpaceSidebarTransitionCoordinator {
     private struct CompletionContext {
         let currentSpaces: @MainActor () -> [Space]
         let windowState: BrowserWindowState
-        let browserContext: SidebarBrowserContext
+        let spaceTransitions: SidebarSpaceTransitionActions
+        let currentProfileId: @MainActor () -> UUID?
         let dragState: SidebarDragState
         let allowsInteractiveWork: Bool
     }
@@ -105,7 +106,7 @@ final class SpaceSidebarTransitionCoordinator {
         guard let currentSpaceId = context.windowState.currentSpaceId,
               context.spaces.contains(where: { $0.id == currentSpaceId })
         else {
-            context.browserContext.setActiveSpace(firstSpace, context.windowState)
+            context.browserContext.spaceTransitions.setActiveSpace(firstSpace, context.windowState)
             return
         }
     }
@@ -324,11 +325,16 @@ final class SpaceSidebarTransitionCoordinator {
         let transitionIdentity = transitionState.transitionIdentity
         let hadThemeTransition = hasActiveThemeTransition(in: context)
         let completionToken = UUID()
+        let spaceTransitions = context.browserContext.spaceTransitions
+        let currentProfile = context.browserContext.currentProfile
 
         pendingCompletionContext = CompletionContext(
             currentSpaces: context.currentSpaces,
             windowState: context.windowState,
-            browserContext: context.browserContext,
+            spaceTransitions: spaceTransitions,
+            currentProfileId: {
+                currentProfile()?.id
+            },
             dragState: context.dragState,
             allowsInteractiveWork: context.allowsInteractiveWork
         )
@@ -374,7 +380,7 @@ final class SpaceSidebarTransitionCoordinator {
             sourceSpaceId: sourceSpace.id,
             destinationSpaceId: destinationSpace.id
         )
-        if let activeIdentity = context.browserContext.beginInteractiveSpaceTransition(
+        if let activeIdentity = context.browserContext.spaceTransitions.beginInteractiveSpaceTransition(
             sourceSpace,
             destinationSpace,
             identity,
@@ -389,7 +395,7 @@ final class SpaceSidebarTransitionCoordinator {
         transitionIdentity: SpaceTransitionIdentity? = nil,
         context: Context
     ) {
-        context.browserContext.updateInteractiveSpaceTransition(
+        context.browserContext.spaceTransitions.updateInteractiveSpaceTransition(
             progress,
             transitionIdentity ?? transitionState.transitionIdentity,
             context.windowState
@@ -403,7 +409,7 @@ final class SpaceSidebarTransitionCoordinator {
     ) {
         let shouldCancel = hadThemeTransition ?? hasActiveThemeTransition(in: context)
         guard shouldCancel else { return }
-        context.browserContext.cancelInteractiveSpaceTransition(
+        context.browserContext.spaceTransitions.cancelInteractiveSpaceTransition(
             identity ?? activeThemeTransitionIdentity(in: context),
             context.windowState
         )
@@ -415,7 +421,7 @@ final class SpaceSidebarTransitionCoordinator {
         identity: SpaceTransitionIdentity?
     ) {
         guard hadThemeTransition else { return }
-        context.browserContext.cancelInteractiveSpaceTransition(identity, context.windowState)
+        context.spaceTransitions.cancelInteractiveSpaceTransition(identity, context.windowState)
     }
 
     private func reconcileSwipeThemeTransition(
@@ -504,13 +510,13 @@ final class SpaceSidebarTransitionCoordinator {
            let destinationSpaceId = completedDestinationSpaceId ?? destinationSpaceId,
            let destinationSpace = space(for: destinationSpaceId, in: currentSpaces) {
             if let transitionIdentity {
-                context.browserContext.setActiveSpaceFromTransition(
+                context.spaceTransitions.setActiveSpaceFromTransition(
                     destinationSpace,
                     context.windowState,
                     transitionIdentity
                 )
             } else {
-                context.browserContext.setActiveSpace(destinationSpace, context.windowState)
+                context.spaceTransitions.setActiveSpace(destinationSpace, context.windowState)
             }
         } else {
             cancelInteractiveThemeTransitionIfNeeded(
@@ -525,7 +531,7 @@ final class SpaceSidebarTransitionCoordinator {
             spaces: currentSpaces,
             windowState: context.windowState,
             dragState: context.dragState,
-            fallbackProfileId: context.browserContext.currentProfile()?.id,
+            fallbackProfileId: context.currentProfileId(),
             allowsInteractiveWork: context.allowsInteractiveWork
         )
         pendingCompletionContext = nil
@@ -540,7 +546,7 @@ final class SpaceSidebarTransitionCoordinator {
             spaces: context.currentSpaces(),
             windowState: context.windowState,
             dragState: context.dragState,
-            fallbackProfileId: context.browserContext.currentProfile()?.id,
+            fallbackProfileId: context.currentProfileId(),
             allowsInteractiveWork: context.allowsInteractiveWork
         )
         pendingCompletionContext = nil
