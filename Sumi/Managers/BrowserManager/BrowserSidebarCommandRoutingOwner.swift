@@ -153,18 +153,11 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
                 browserManager?.duplicateTab(tab, in: windowState)
             },
             pinShortcutGlobally: { [weak browserManager] pin, windowState, spaceId, liveTab in
-                guard let browserManager else { return }
-                let syntheticTab = Tab(
-                    url: pin.launchURL,
-                    name: pin.resolvedDisplayTitle(liveTab: liveTab),
-                    favicon: SumiPersistentGlyph.launcherSystemImageFallback,
+                browserManager?.sidebarShortcutPromotionOwner.pinShortcutGlobally(
+                    pin,
+                    in: windowState,
                     spaceId: spaceId,
-                    index: 0,
-                    browserManager: browserManager
-                )
-                browserManager.tabManager.pinTab(
-                    syntheticTab,
-                    context: .init(windowState: windowState, spaceId: spaceId)
+                    liveTab: liveTab
                 )
             },
             toggleDownloadsPopover: { [weak browserManager] windowState in
