@@ -79,7 +79,10 @@ extension TabManager {
             favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: pin.role == .essential ? nil : pin.spaceId,
             index: pin.index,
-            browserManager: browserManager
+            browserManager: browserManager,
+            faviconService: faviconService,
+            faviconImageService: faviconImageService,
+            visitedLinkStore: visitedLinkStore
         )
         tab.bindToShortcutPin(pin)
         tab.profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: pin.spaceId)

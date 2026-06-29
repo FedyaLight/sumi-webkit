@@ -239,7 +239,10 @@ extension TabManager {
                     spaceId: spaceId,
                     index: snapshotTab.index,
                     browserManager: browserManager,
-                    loadsCachedFaviconOnInit: false
+                    loadsCachedFaviconOnInit: false,
+                    faviconService: faviconService,
+                    faviconImageService: faviconImageService,
+                    visitedLinkStore: visitedLinkStore
                 )
                 tab.canGoBack = snapshotTab.canGoBack
                 tab.canGoForward = snapshotTab.canGoForward

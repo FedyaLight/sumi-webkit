@@ -20,6 +20,9 @@ final class TabTransientWebKitTabLifecycleOwner {
         let scheduleStructuralPersistence: () -> Void
         let setActiveTab: (Tab) -> Void
         let tabForID: (UUID) -> Tab?
+        let faviconService: () -> any BrowserFaviconServicing
+        let faviconImageService: () -> any BrowserFaviconImageServicing
+        let visitedLinkStore: () -> any BrowserVisitedLinkStoreManaging
     }
 
     private let dependencies: Dependencies
@@ -54,7 +57,10 @@ final class TabTransientWebKitTabLifecycleOwner {
             favicon: "globe",
             spaceId: sid,
             index: nextIndex,
-            browserManager: dependencies.browserManager()
+            browserManager: dependencies.browserManager(),
+            faviconService: dependencies.faviconService(),
+            faviconImageService: dependencies.faviconImageService(),
+            visitedLinkStore: dependencies.visitedLinkStore()
         )
         tab.profileId = targetSpace.profileId
         tab.webExtensionContextOverride = webExtensionContextOverride
@@ -83,7 +89,10 @@ final class TabTransientWebKitTabLifecycleOwner {
             favicon: "globe",
             spaceId: openerTab?.spaceId,
             index: -1,
-            browserManager: dependencies.browserManager()
+            browserManager: dependencies.browserManager(),
+            faviconService: dependencies.faviconService(),
+            faviconImageService: dependencies.faviconImageService(),
+            visitedLinkStore: dependencies.visitedLinkStore()
         )
         tab.isAuxiliaryMiniWindow = true
         tab.profileId = resolvedProfileId

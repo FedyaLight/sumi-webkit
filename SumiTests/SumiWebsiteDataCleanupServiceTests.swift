@@ -445,10 +445,12 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
             policyStore: policyStore,
             cleanupService: cleanupService
         )
+        let faviconService = FakeBrowserFaviconService()
         let viewModel = URLBarSiteDataDetailsViewModel(
             cleanupService: cleanupService,
             policyStore: policyStore,
-            enforcementService: enforcementService
+            enforcementService: enforcementService,
+            faviconService: faviconService
         )
         let profile = Profile(
             name: "Primary",
@@ -468,6 +470,9 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
         XCTAssertEqual(cleanupService.removedExactHosts.count, 1)
         XCTAssertEqual(cleanupService.removedExactHosts[0].host, "accounts.youtube.com")
+        XCTAssertEqual(faviconService.invalidatedSites.count, 1)
+        XCTAssertEqual(faviconService.invalidatedSites[0].domain, "accounts.youtube.com")
+        XCTAssertEqual(faviconService.invalidatedSites[0].profileId, profile.id)
         XCTAssertTrue(cleanupService.removedExactHosts[0].includingCookies)
         XCTAssertEqual(
             cleanupService.removedExactHosts[0].dataTypes,
@@ -1312,6 +1317,40 @@ private final class FakeFaviconCleaner: SumiBrowsingDataFaviconCleaning {
     func invalidateSite(domain: String, partition: SumiFaviconPartition) {
         invalidateSiteCalls.append((domain, partition))
     }
+}
+
+@MainActor
+private final class FakeBrowserFaviconService: BrowserFaviconServicing {
+    private(set) var invalidatedSites: [(domain: String, profileId: UUID?)] = []
+
+    func partition(profile: Profile?) -> SumiFaviconPartition {
+        .regular(profile?.id)
+    }
+
+    func invalidateSite(domain: String, profile: Profile?) {
+        invalidatedSites.append((domain, profile?.id))
+    }
+
+    func syncShortcutPins(_ pins: [ShortcutPin]) {
+        _ = pins
+    }
+
+    func syncBookmarks(
+        _ bookmarks: [SumiBookmark],
+        partition: SumiFaviconPartition
+    ) {
+        _ = (bookmarks, partition)
+    }
+
+    func clearFaviconPartition(for profile: Profile) {
+        _ = profile
+    }
+
+#if DEBUG
+    func drainRuntimeTasksForTests(cancel: Bool) async {
+        _ = cancel
+    }
+#endif
 }
 
 @MainActor

@@ -13,16 +13,19 @@ final class URLBarSiteDataDetailsViewModel: ObservableObject {
     private let cleanupService: any SumiWebsiteDataCleanupServicing
     private let policyStore: SumiSiteDataPolicyStore
     private let enforcementService: SumiSiteDataPolicyEnforcementService
+    private let faviconService: any BrowserFaviconServicing
     private var loadGeneration: UInt64 = 0
 
     init(
         cleanupService: (any SumiWebsiteDataCleanupServicing)? = nil,
         policyStore: SumiSiteDataPolicyStore? = nil,
-        enforcementService: SumiSiteDataPolicyEnforcementService? = nil
+        enforcementService: SumiSiteDataPolicyEnforcementService? = nil,
+        faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService
     ) {
         self.cleanupService = cleanupService ?? SumiWebsiteDataCleanupService.shared
         self.policyStore = policyStore ?? .shared
         self.enforcementService = enforcementService ?? .shared
+        self.faviconService = faviconService
     }
 
     func load(url: URL?, profile: Profile?) async {
@@ -94,7 +97,7 @@ final class URLBarSiteDataDetailsViewModel: ObservableObject {
             includingCookies: true,
             in: profile.dataStore
         )
-        SumiFaviconSystem.shared.invalidateSite(domain: host, profile: profile)
+        faviconService.invalidateSite(domain: host, profile: profile)
         await profile.refreshDataStoreStats()
         await load(url: url, profile: profile)
     }

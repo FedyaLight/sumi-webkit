@@ -661,7 +661,11 @@ class BrowserManager: ObservableObject {
             lastWindowSessionKey: Self.lastWindowSessionKey,
             modelContext: startupModelContext
         )
-        self.profileManager = ProfileManager(context: startupModelContext)
+        self.profileManager = ProfileManager(
+            context: startupModelContext,
+            faviconService: resolvedDataServices.faviconService,
+            visitedLinkStore: resolvedDataServices.visitedLinkStore
+        )
         // Ensure at least one profile exists and set current immediately for manager initialization
         self.profileManager.ensureDefaultProfile()
         let initialProfile = self.profileManager.profiles.first
@@ -673,7 +677,13 @@ class BrowserManager: ObservableObject {
                 initialProfileProvider: { initialProfile }
             )
 
-        self.tabManager = TabManager(browserManager: nil, context: startupModelContext)
+        self.tabManager = TabManager(
+            browserManager: nil,
+            context: startupModelContext,
+            faviconService: resolvedDataServices.faviconService,
+            faviconImageService: resolvedDataServices.faviconImageService,
+            visitedLinkStore: resolvedDataServices.visitedLinkStore
+        )
         // settingsManager will be injected from SumiApp
         self.downloadManager = DownloadManager()
         self.downloadsPopoverPresenter = DownloadsPopoverPresenter()

@@ -320,6 +320,9 @@ private struct TabRestoreRuntimeState {
 @MainActor
 private struct TabRestoreRuntimeStateBuilder {
     let browserManager: BrowserManager?
+    let faviconService: any BrowserFaviconServicing
+    let faviconImageService: any BrowserFaviconImageServicing
+    let visitedLinkStore: any BrowserVisitedLinkStoreManaging
 
     func makeState(from payload: TabRestorePayload) -> TabRestoreRuntimeState {
         var repairReasons = payload.repairReasons
@@ -415,7 +418,10 @@ private struct TabRestoreRuntimeStateBuilder {
             spaceId: dto.spaceId,
             index: dto.index,
             browserManager: browserManager,
-            loadsCachedFaviconOnInit: false
+            loadsCachedFaviconOnInit: false,
+            faviconService: faviconService,
+            faviconImageService: faviconImageService,
+            visitedLinkStore: visitedLinkStore
         )
         tab.folderId = dto.folderId
         tab.profileId = dto.profileId
@@ -803,7 +809,12 @@ extension TabManager {
             category: "TabManager"
         )
 
-        let restoredState = TabRestoreRuntimeStateBuilder(browserManager: browserManager)
+        let restoredState = TabRestoreRuntimeStateBuilder(
+            browserManager: browserManager,
+            faviconService: faviconService,
+            faviconImageService: faviconImageService,
+            visitedLinkStore: visitedLinkStore
+        )
             .makeState(from: payload)
 
         spaces = restoredState.spaces

@@ -72,7 +72,7 @@ struct HistorySuggestionItem: View {
     }
 
     private var faviconPartition: SumiFaviconPartition {
-        SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
+        browserManager.dataServices.faviconService.partition(profile: browserManager.currentProfile)
     }
 
     @ViewBuilder
@@ -81,7 +81,11 @@ struct HistorySuggestionItem: View {
             Image(nsImage: resolvedFavicon)
                 .accessibilityHidden(true)
         } else {
-            Image(nsImage: SumiFaviconResolver.menuImage(for: entry.url, partition: faviconPartition))
+            Image(nsImage: SumiFaviconResolver.menuImage(
+                for: entry.url,
+                partition: faviconPartition,
+                faviconImageService: browserManager.dataServices.faviconImageService
+            ))
                 .accessibilityHidden(true)
         }
     }
@@ -161,7 +165,11 @@ struct HistorySuggestionItem: View {
             return
         }
 
-        guard let image = await SumiFaviconResolver.image(for: url, partition: faviconPartition) else {
+        guard let image = await SumiFaviconResolver.image(
+            for: url,
+            partition: faviconPartition,
+            faviconImageService: browserManager.dataServices.faviconImageService
+        ) else {
             await MainActor.run { self.resolvedFavicon = nil }
             return
         }

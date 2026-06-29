@@ -206,7 +206,7 @@ extension TabManager {
         else {
             return .regular(profileId)
         }
-        return SumiFaviconSystem.shared.partition(profile: profile)
+        return faviconService.partition(profile: profile)
     }
 
     func updateTransientShortcutBindings(for pin: ShortcutPin) {
@@ -615,7 +615,10 @@ private extension TabManager {
             favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: targetSpaceId,
             index: 0,
-            browserManager: browserManager
+            browserManager: browserManager,
+            faviconService: faviconService,
+            faviconImageService: faviconImageService,
+            visitedLinkStore: visitedLinkStore
         )
         _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
         attach(tab)

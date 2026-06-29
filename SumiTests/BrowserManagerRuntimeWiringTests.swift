@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftData
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -489,6 +490,46 @@ private final class FakeBrowserFaviconService: BrowserFaviconServicing {
 private final class FakeBrowserVisitedLinkStore: BrowserVisitedLinkStoreManaging {
     private(set) var replacedProfileIds: [UUID] = []
     private(set) var discardedProfileIds: [UUID] = []
+    private(set) var appliedProfileIds: [UUID] = []
+    private(set) var enabledRecordingCount = 0
+    private(set) var recordedLinkURLs: [URL] = []
+    private(set) var preloadedProfileIds: [UUID] = []
+
+    func applyStore(to configuration: WKWebViewConfiguration, for profile: Profile) {
+        _ = configuration
+        appliedProfileIds.append(profile.id)
+    }
+
+    func applyStore(to configuration: WKWebViewConfiguration, profileId: UUID) {
+        _ = configuration
+        appliedProfileIds.append(profileId)
+    }
+
+    func applyStoreFromSourceIfAvailable(
+        to configuration: WKWebViewConfiguration,
+        source: WKWebViewConfiguration?
+    ) {
+        _ = (configuration, source)
+    }
+
+    func enableVisitedLinkRecording(on webView: WKWebView) {
+        _ = webView
+        enabledRecordingCount += 1
+    }
+
+    func recordVisitedLink(
+        _ url: URL,
+        for profile: Profile,
+        sourceConfiguration: WKWebViewConfiguration?
+    ) {
+        _ = (profile, sourceConfiguration)
+        recordedLinkURLs.append(url)
+    }
+
+    func preloadVisitedLinks(_ urls: [URL], for profileId: UUID) {
+        _ = urls
+        preloadedProfileIds.append(profileId)
+    }
 
     func replaceVisitedLinks(_ urls: [URL], for profileId: UUID) {
         _ = urls

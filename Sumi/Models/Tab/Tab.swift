@@ -366,6 +366,21 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     weak var browserManager: BrowserManager?
     weak var sumiSettings: SumiSettingsService?
+    private let fallbackFaviconService: any BrowserFaviconServicing
+    private let fallbackFaviconImageService: any BrowserFaviconImageServicing
+    private let fallbackVisitedLinkStore: any BrowserVisitedLinkStoreManaging
+
+    var faviconService: any BrowserFaviconServicing {
+        browserManager?.dataServices.faviconService ?? fallbackFaviconService
+    }
+
+    var faviconImageService: any BrowserFaviconImageServicing {
+        browserManager?.dataServices.faviconImageService ?? fallbackFaviconImageService
+    }
+
+    var visitedLinkStore: any BrowserVisitedLinkStoreManaging {
+        browserManager?.dataServices.visitedLinkStore ?? fallbackVisitedLinkStore
+    }
 
     // MARK: - Link Hover Callback
     var onLinkHover: ((String?) -> Void)?
@@ -527,7 +542,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         index: Int = 0,
         browserManager: BrowserManager? = nil,
         existingWebView: WKWebView? = nil,
-        loadsCachedFaviconOnInit: Bool = true
+        loadsCachedFaviconOnInit: Bool = true,
+        faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService,
+        faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService,
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = BrowserManagerDataServices.productionVisitedLinkStore
     ) {
         self.id = id
         self.url = url
@@ -537,6 +555,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.spaceId = spaceId
         self.index = index
         self.browserManager = browserManager
+        self.fallbackFaviconService = faviconService
+        self.fallbackFaviconImageService = faviconImageService
+        self.fallbackVisitedLinkStore = visitedLinkStore
         super.init()
         navigationStateController.delegate = self
         self._existingWebView = existingWebView

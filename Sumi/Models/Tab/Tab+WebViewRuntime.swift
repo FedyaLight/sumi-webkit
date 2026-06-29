@@ -38,7 +38,7 @@ extension Tab {
         applyOwnedTabWebViewNavigationSetup(to: webView)
         applyOwnedTabWebViewOwnershipBaseline(to: webView)
         applyOwnedTabWebViewNavigationPreferences(to: webView)
-        SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
+        visitedLinkStore.enableVisitedLinkRecording(on: webView)
         installRuntimeObservers(on: webView)
 
         if isExtensionOriginated {
@@ -65,7 +65,7 @@ extension Tab {
         applyOwnedTabWebViewNavigationSetup(to: webView)
         applyOwnedTabWebViewOwnershipBaseline(to: webView)
         applyOwnedTabWebViewNavigationPreferences(to: webView)
-        SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
+        visitedLinkStore.enableVisitedLinkRecording(on: webView)
         installRuntimeObservers(on: webView)
 
         if isExtensionOriginated {
@@ -126,7 +126,7 @@ extension Tab {
         applyOwnedTabWebViewNavigationSetup(to: webView)
         applyOwnedTabWebViewOwnershipBaseline(to: webView)
         applyOwnedTabWebViewNavigationPreferences(to: webView)
-        SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
+        visitedLinkStore.enableVisitedLinkRecording(on: webView)
         installRuntimeObservers(on: webView)
         if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {
             ensureFaviconsTabExtension(using: scriptsProvider.faviconScripts)
@@ -305,7 +305,7 @@ extension Tab {
 
         if let webView = _webView {
             if didReuseExistingWebView || !(webView is FocusableWKWebView) {
-                SharedVisitedLinkStoreProvider.shared.enableVisitedLinkRecording(on: webView)
+                visitedLinkStore.enableVisitedLinkRecording(on: webView)
                 applyOwnedTabWebViewNavigationSetup(to: webView)
                 installRuntimeObservers(on: webView)
                 if let scriptsProvider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider {

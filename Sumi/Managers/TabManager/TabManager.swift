@@ -24,6 +24,9 @@ class TabManager: ObservableObject {
     let context: ModelContext
     let persistence: TabSnapshotRepository
     let runtimeStateCoalescer: RuntimeStateCoalescer
+    let faviconService: any BrowserFaviconServicing
+    let faviconImageService: any BrowserFaviconImageServicing
+    let visitedLinkStore: any BrowserVisitedLinkStoreManaging
 
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
     lazy var folderMutationOwner = TabFolderMutationOwner(tabManager: self)
@@ -93,7 +96,10 @@ class TabManager: ObservableObject {
             },
             scheduleStructuralPersistence: { [unowned self] in self.scheduleStructuralPersistence() },
             setActiveTab: { [unowned self] tab in self.setActiveTab(tab) },
-            tabForID: { [unowned self] id in self.tab(for: id) }
+            tabForID: { [unowned self] id in self.tab(for: id) },
+            faviconService: { [unowned self] in self.faviconService },
+            faviconImageService: { [unowned self] in self.faviconImageService },
+            visitedLinkStore: { [unowned self] in self.visitedLinkStore }
         )
     )
     /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for persistence completion—`scheduleStructuralPersistence()` does not send this.
@@ -233,11 +239,17 @@ class TabManager: ObservableObject {
     init(
         browserManager: BrowserManager? = nil,
         context: ModelContext,
-        loadPersistedState: Bool = true
+        loadPersistedState: Bool = true,
+        faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService,
+        faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService,
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = BrowserManagerDataServices.productionVisitedLinkStore
     ) {
         self.browserManager = browserManager
         self.runtimeContext = browserManager.map(BrowserManagerTabRuntimeContext.init)
         self.context = context
+        self.faviconService = faviconService
+        self.faviconImageService = faviconImageService
+        self.visitedLinkStore = visitedLinkStore
         let persistence = TabSnapshotRepository(container: context.container)
         self.persistence = persistence
         self.runtimeStateCoalescer = RuntimeStateCoalescer(
@@ -326,7 +338,7 @@ class TabManager: ObservableObject {
     func setPinnedTabs(_ items: [ShortcutPin], for profileId: UUID) {
         let previousPins = pinnedByProfile[profileId] ?? []
         pinnedByProfile[profileId] = items
-        SumiFaviconSystem.shared.syncShortcutPins(Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined()))
+        faviconService.syncShortcutPins(Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined()))
         markPinnedSnapshotDirty(for: profileId)
         recordShortcutPinsStructuralChange(previous: previousPins, current: items)
         requestStructuralPublish()
@@ -335,7 +347,7 @@ class TabManager: ObservableObject {
     func setSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) {
         let previousPins = spacePinnedShortcuts[spaceId] ?? []
         spacePinnedShortcuts[spaceId] = items
-        SumiFaviconSystem.shared.syncShortcutPins(Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined()))
+        faviconService.syncShortcutPins(Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined()))
         markSpacePinnedSnapshotDirty(for: spaceId)
         recordShortcutPinsStructuralChange(previous: previousPins, current: items)
         requestStructuralPublish()
@@ -485,7 +497,10 @@ class TabManager: ObservableObject {
                 favicon: "globe",
                 spaceId: targetSpace.id,
                 index: 0,
-                browserManager: browserManager
+                browserManager: browserManager,
+                faviconService: faviconService,
+                faviconImageService: faviconImageService,
+                visitedLinkStore: visitedLinkStore
             )
 
             let insertionIndex = anchor
@@ -861,7 +876,10 @@ class TabManager: ObservableObject {
             favicon: "globe",
             spaceId: nil,
             index: nextIndex,
-            browserManager: browserManager
+            browserManager: browserManager,
+            faviconService: faviconService,
+            faviconImageService: faviconImageService,
+            visitedLinkStore: visitedLinkStore
         )
         newTab.profileId = profile.id
 

@@ -539,7 +539,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         }
 
         if let profile = explicitPopupOpenerProfile(for: tab, browserManager: browserManager) {
-            SharedVisitedLinkStoreProvider.shared.applyStore(
+            tab.visitedLinkStore.applyStore(
                 to: configuration,
                 for: profile
             )

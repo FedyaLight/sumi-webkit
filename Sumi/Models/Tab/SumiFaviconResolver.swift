@@ -12,7 +12,8 @@ enum SumiFaviconResolver {
     @MainActor
     static func menuImage(
         for url: URL?,
-        partition: SumiFaviconPartition = .regular(nil)
+        partition: SumiFaviconPartition = .regular(nil),
+        faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService
     ) -> NSImage {
         guard let url else {
             return menuSystemImage("globe")
@@ -25,7 +26,8 @@ enum SumiFaviconResolver {
         if let image = TabFaviconStore.getCachedImage(
             forDocumentURL: url,
             partition: partition,
-            context: .menu
+            context: .menu,
+            faviconImageService: faviconImageService
         ) {
             return image
         }
@@ -49,18 +51,20 @@ enum SumiFaviconResolver {
     static func image(
         for url: URL,
         partition: SumiFaviconPartition = .regular(nil),
-        webView: WKWebView? = nil
+        webView: WKWebView? = nil,
+        faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService
     ) async -> NSImage? {
         if let image = await TabFaviconStore.loadCachedDisplayImage(
             forDocumentURL: url,
             partition: partition,
             context: .tabSidebar,
-            priority: webView == nil ? .historyBookmarkVisibleRow : .visibleSidebarOrTabStrip
+            priority: webView == nil ? .historyBookmarkVisibleRow : .visibleSidebarOrTabStrip,
+            faviconImageService: faviconImageService
         ) {
             return image
         }
 
-        SumiFaviconSystem.shared.service.scheduleColdFetch(
+        faviconImageService.scheduleColdFetch(
             for: url,
             partition: partition,
             priority: webView == nil ? .historyBookmarkVisibleRow : .visibleSidebarOrTabStrip

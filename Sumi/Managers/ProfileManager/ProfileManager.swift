@@ -13,13 +13,21 @@ import SwiftUI
 final class ProfileManager: ObservableObject {
     let context: ModelContext
     @Published var profiles: [Profile] = []
+    private let faviconService: any BrowserFaviconServicing
+    private let visitedLinkStore: any BrowserVisitedLinkStoreManaging
 
     // MARK: - Ephemeral Profiles (Incognito)
     /// Active ephemeral profiles (one per incognito window)
     private var ephemeralProfiles: [UUID: Profile] = [:] // windowId -> profile
 
-    init(context: ModelContext) {
+    init(
+        context: ModelContext,
+        faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService,
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging = BrowserManagerDataServices.productionVisitedLinkStore
+    ) {
         self.context = context
+        self.faviconService = faviconService
+        self.visitedLinkStore = visitedLinkStore
         loadProfiles()
     }
 
@@ -136,13 +144,13 @@ final class ProfileManager: ObservableObject {
 
         // Remove from tracking immediately to stop tracking
         ephemeralProfiles.removeValue(forKey: windowId)
-        SharedVisitedLinkStoreProvider.shared.discardStore(for: profile.id)
+        visitedLinkStore.discardStore(for: profile.id)
         _ = BasicAuthCredentialStore().deleteCredentials(
             profilePartitionId: profile.id,
             isEphemeralProfile: true
         )
 
-        SumiFaviconSystem.shared.clearFaviconPartition(for: profile)
+        faviconService.clearFaviconPartition(for: profile)
         profile.destroyEphemeralDataStore()
 
         RuntimeDiagnostics.emit("🔒 [ProfileManager] Ephemeral profile removed: \(profile.id) for window: \(windowId)")

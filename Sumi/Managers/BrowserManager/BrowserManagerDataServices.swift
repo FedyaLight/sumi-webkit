@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import WebKit
 
 @MainActor
 protocol BrowserFaviconServicing: AnyObject {
@@ -17,6 +19,41 @@ protocol BrowserFaviconServicing: AnyObject {
 }
 
 extension SumiFaviconSystem: BrowserFaviconServicing {}
+
+protocol BrowserFaviconImageServicing: AnyObject, Sendable {
+    func cachedPreparedImage(for request: SumiPreparedFaviconRequest) -> NSImage?
+    func cachedSelection(
+        for pageURL: URL,
+        partition: SumiFaviconPartition
+    ) -> SumiStoredFaviconSelection?
+    func preparedImage(
+        for request: SumiPreparedFaviconRequest,
+        priority: SumiFaviconFetchPriority,
+        scheduleFetchOnMiss: Bool
+    ) async -> NSImage?
+    @MainActor
+    func ingestVisibleTabDiscovery(
+        links: [SumiFaviconDiscoveredLink],
+        documentURL: URL,
+        baseURL: URL?,
+        partition: SumiFaviconPartition,
+        webView: WKWebView?,
+        aliasPageURLs: [URL]
+    ) async -> NSImage?
+    func scheduleColdFetch(
+        for pageURL: URL,
+        partition: SumiFaviconPartition,
+        priority: SumiFaviconFetchPriority
+    )
+    func ingestLocalExtensionIcon(
+        fileURL: URL,
+        documentURL: URL,
+        partition: SumiFaviconPartition,
+        context: SumiFaviconDisplayContext
+    ) async -> NSImage?
+}
+
+extension SumiFaviconService: BrowserFaviconImageServicing {}
 
 @MainActor
 protocol BrowserSiteDataPolicyEnforcing: AnyObject {
@@ -51,6 +88,19 @@ extension BrowserPrivacyService: BrowserPrivacyServicing {}
 
 @MainActor
 protocol BrowserVisitedLinkStoreManaging: SumiVisitedLinkStoreReplacing {
+    func applyStore(to configuration: WKWebViewConfiguration, for profile: Profile)
+    func applyStore(to configuration: WKWebViewConfiguration, profileId: UUID)
+    func applyStoreFromSourceIfAvailable(
+        to configuration: WKWebViewConfiguration,
+        source: WKWebViewConfiguration?
+    )
+    func enableVisitedLinkRecording(on webView: WKWebView)
+    func recordVisitedLink(
+        _ url: URL,
+        for profile: Profile,
+        sourceConfiguration: WKWebViewConfiguration?
+    )
+    func preloadVisitedLinks(_ urls: [URL], for profileId: UUID)
     func discardStore(for profileId: UUID)
 }
 
@@ -62,13 +112,48 @@ struct BrowserManagerDataServices {
     let automaticBrowsingDataCleanupService: any BrowserAutomaticBrowsingDataCleanupScheduling
     let siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing
     let faviconService: any BrowserFaviconServicing
+    let faviconImageService: any BrowserFaviconImageServicing
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
     let privacyService: any BrowserPrivacyServicing
 
+    init(
+        browsingDataCleanupService: SumiBrowsingDataCleanupService,
+        automaticBrowsingDataCleanupService: any BrowserAutomaticBrowsingDataCleanupScheduling,
+        siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing,
+        faviconService: any BrowserFaviconServicing,
+        faviconImageService: any BrowserFaviconImageServicing = Self.productionFaviconImageService,
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging,
+        privacyService: any BrowserPrivacyServicing
+    ) {
+        self.browsingDataCleanupService = browsingDataCleanupService
+        self.automaticBrowsingDataCleanupService = automaticBrowsingDataCleanupService
+        self.siteDataPolicyEnforcementService = siteDataPolicyEnforcementService
+        self.faviconService = faviconService
+        self.faviconImageService = faviconImageService
+        self.visitedLinkStore = visitedLinkStore
+        self.privacyService = privacyService
+    }
+
+    private static var productionFaviconSystem: SumiFaviconSystem {
+        SumiFaviconSystem.shared
+    }
+
+    static var productionFaviconService: any BrowserFaviconServicing {
+        productionFaviconSystem
+    }
+
+    static var productionFaviconImageService: any BrowserFaviconImageServicing {
+        productionFaviconSystem.service
+    }
+
+    static var productionVisitedLinkStore: any BrowserVisitedLinkStoreManaging {
+        SharedVisitedLinkStoreProvider.shared
+    }
+
     static var production: Self {
         let websiteDataCleanupService = SumiWebsiteDataCleanupService.shared
-        let faviconSystem = SumiFaviconSystem.shared
-        let visitedLinkStore = SharedVisitedLinkStoreProvider.shared
+        let faviconSystem = productionFaviconSystem
+        let visitedLinkStore = productionVisitedLinkStore
         return BrowserManagerDataServices(
             browsingDataCleanupService: SumiBrowsingDataCleanupService(
                 websiteDataCleanupService: websiteDataCleanupService,
@@ -83,6 +168,7 @@ struct BrowserManagerDataServices {
                 cleanupService: websiteDataCleanupService
             ),
             faviconService: faviconSystem,
+            faviconImageService: faviconSystem.service,
             visitedLinkStore: visitedLinkStore,
             privacyService: BrowserPrivacyService(
                 cleanupService: websiteDataCleanupService,
@@ -101,6 +187,7 @@ struct BrowserManagerDataServices {
             automaticBrowsingDataCleanupService: automaticBrowsingDataCleanupService,
             siteDataPolicyEnforcementService: siteDataPolicyEnforcementService,
             faviconService: faviconService,
+            faviconImageService: faviconImageService,
             visitedLinkStore: visitedLinkStore,
             privacyService: privacyService
         )

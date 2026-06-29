@@ -121,7 +121,10 @@ final class TabRegularLifecycleOwner {
                 favicon: "globe",
                 spaceId: sid,
                 index: nextIndex,
-                browserManager: tabManager.browserManager
+                browserManager: tabManager.browserManager,
+                faviconService: tabManager.faviconService,
+                faviconImageService: tabManager.faviconImageService,
+                visitedLinkStore: tabManager.visitedLinkStore
             )
             newTab.profileId = targetSpace.profileId
             newTab.webExtensionContextOverride = webExtensionContextOverride
@@ -177,7 +180,10 @@ final class TabRegularLifecycleOwner {
                 spaceId: sid,
                 index: nextIndex,
                 browserManager: tabManager.browserManager,
-                existingWebView: existingWebView
+                existingWebView: existingWebView,
+                faviconService: tabManager.faviconService,
+                faviconImageService: tabManager.faviconImageService,
+                visitedLinkStore: tabManager.visitedLinkStore
             )
             addTab(newTab, regularInsertionIndex: nil)
             tabManager.setActiveTab(newTab)
@@ -214,7 +220,10 @@ final class TabRegularLifecycleOwner {
                 favicon: "globe",
                 spaceId: sid,
                 index: resolvedIndex,
-                browserManager: tabManager.browserManager
+                browserManager: tabManager.browserManager,
+                faviconService: tabManager.faviconService,
+                faviconImageService: tabManager.faviconImageService,
+                visitedLinkStore: tabManager.visitedLinkStore
             )
             newTab.isPopupHost = true
             if let webViewConfigurationOverride {

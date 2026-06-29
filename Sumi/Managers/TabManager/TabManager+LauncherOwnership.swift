@@ -172,7 +172,10 @@ extension TabManager {
                     favicon: SumiPersistentGlyph.launcherSystemImageFallback,
                     spaceId: targetSpaceId,
                     index: 0,
-                    browserManager: browserManager
+                    browserManager: browserManager,
+                    faviconService: faviconService,
+                    faviconImageService: faviconImageService,
+                    visitedLinkStore: visitedLinkStore
                 )
                 duplicateTab.favicon = liveTab.favicon
                 duplicateTab.faviconIsTemplateGlobePlaceholder = liveTab.faviconIsTemplateGlobePlaceholder
@@ -377,7 +380,10 @@ extension TabManager {
                 favicon: SumiPersistentGlyph.launcherSystemImageFallback,
                 spaceId: resolvedSpaceId,
                 index: 0,
-                browserManager: browserManager
+                browserManager: browserManager,
+                faviconService: faviconService,
+                faviconImageService: faviconImageService,
+                visitedLinkStore: visitedLinkStore
             )
             tab.bindToShortcutPin(pin)
             tab.profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)

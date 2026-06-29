@@ -117,7 +117,7 @@ final class TabFaviconRuntime {
     ) -> Bool {
         let defaultFavicon = SwiftUI.Image(systemName: "globe")
         let referenceKey = TabFaviconStore.referenceKey(forDocumentURL: url)
-        let partition = SumiFaviconSystem.shared.partition(profile: tab.resolveProfile())
+        let partition = tab.faviconService.partition(profile: tab.resolveProfile())
 
         if SumiSurface.isSettingsSurfaceURL(url) {
             tab.favicon = SwiftUI.Image(systemName: SumiSurface.settingsTabFaviconSystemImageName)
@@ -145,7 +145,8 @@ final class TabFaviconRuntime {
               let image = TabFaviconStore.getCachedImage(
                 forReferenceKey: referenceKey,
                 partition: partition,
-                context: .tabSidebar
+                context: .tabSidebar,
+                faviconImageService: tab.faviconImageService
               )
         else {
             if resolvedCacheKey == referenceKey,
@@ -171,7 +172,7 @@ final class TabFaviconRuntime {
             return
         }
 
-        let partition = SumiFaviconSystem.shared.partition(profile: tab.resolveProfile())
+        let partition = tab.faviconService.partition(profile: tab.resolveProfile())
         if let image = await loadExtensionPageFavicon(
             for: requestedURL,
             partition: partition,
@@ -189,7 +190,8 @@ final class TabFaviconRuntime {
             forDocumentURL: requestedURL,
             partition: partition,
             context: .tabSidebar,
-            priority: .visibleSidebarOrTabStrip
+            priority: .visibleSidebarOrTabStrip,
+            faviconImageService: tab.faviconImageService
         ),
            !Task.isCancelled,
            tab.url == requestedURL {
@@ -207,7 +209,9 @@ final class TabFaviconRuntime {
 
         let extensionInstance = FaviconsTabExtension(
             scriptsPublisher: Just(scriptsProvider).eraseToAnyPublisher(),
-            tab: tab
+            tab: tab,
+            faviconService: tab.faviconService,
+            faviconImageService: tab.faviconImageService
         )
         tabExtension = extensionInstance
         extensionInstance.loadCachedFavicon(previousURL: nil, error: nil)
@@ -252,7 +256,8 @@ final class TabFaviconRuntime {
             forDocumentURL: url,
             iconFileURL: URL(fileURLWithPath: iconPath),
             partition: partition,
-            context: .tabSidebar
+            context: .tabSidebar,
+            faviconImageService: tab.faviconImageService
         )
     }
 }
@@ -367,7 +372,7 @@ final class HistoryTabRecorder {
         ) {
             localVisitIDs.append(visitID)
             if let profile {
-                SharedVisitedLinkStoreProvider.shared.recordVisitedLink(
+                tab.visitedLinkStore.recordVisitedLink(
                     url,
                     for: profile,
                     sourceConfiguration: tab.existingWebView?.configuration

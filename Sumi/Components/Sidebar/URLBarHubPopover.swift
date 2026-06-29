@@ -85,8 +85,31 @@ struct URLBarHubPopover: View {
     @AppStorage("URLBarHubScreenshotQualityScale") private var screenshotQualityScale = URLBarHubScreenshotQuality.twoX.rawValue
     @AppStorage("URLBarHubScreenshotCaptureTarget") private var screenshotCaptureTarget = URLBarHubScreenshotCaptureTarget.visiblePage.rawValue
     @AppStorage("URLBarHubScreenshotDestination") private var screenshotDestination = URLBarHubScreenshotDestination.askEveryTime.rawValue
-    @StateObject private var siteDataDetailsModel = URLBarSiteDataDetailsViewModel()
+    @StateObject private var siteDataDetailsModel: URLBarSiteDataDetailsViewModel
     @StateObject private var currentSitePermissionsModel = SumiCurrentSitePermissionsViewModel()
+
+    @MainActor
+    init(
+        bookmarkManager: SumiBookmarkManager,
+        bookmarkPresentationRequest: SumiBookmarkEditorPresentationRequest?,
+        currentTab: Tab?,
+        profile: Profile?,
+        profileId: UUID?,
+        faviconService: any BrowserFaviconServicing,
+        onClose: @escaping () -> Void,
+        onContentSizeChange: @escaping (CGSize) -> Void
+    ) {
+        self.bookmarkManager = bookmarkManager
+        self.bookmarkPresentationRequest = bookmarkPresentationRequest
+        self.currentTab = currentTab
+        self.profile = profile
+        self.profileId = profileId
+        self.onClose = onClose
+        self.onContentSizeChange = onContentSizeChange
+        self._siteDataDetailsModel = StateObject(
+            wrappedValue: URLBarSiteDataDetailsViewModel(faviconService: faviconService)
+        )
+    }
 
     private var snapshot: SiteControlsSnapshot {
         _ = refreshNonce

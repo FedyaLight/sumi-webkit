@@ -12,6 +12,8 @@ import WebKit
 final class FaviconsTabExtension {
     private weak var tab: Tab?
     private weak var faviconUserScript: SumiFaviconUserScript?
+    private let faviconService: any BrowserFaviconServicing
+    private let faviconImageService: any BrowserFaviconImageServicing
     private var cancellables = Set<AnyCancellable>()
     private var faviconHandlingTask: Task<Void, Never>? {
         willSet {
@@ -28,9 +30,13 @@ final class FaviconsTabExtension {
 
     init(
         scriptsPublisher: some Publisher<SumiFaviconUserScripts, Never>,
-        tab: Tab
+        tab: Tab,
+        faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService,
+        faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService
     ) {
         self.tab = tab
+        self.faviconService = faviconService
+        self.faviconImageService = faviconImageService
 
         scriptsPublisher
             .sink { [weak self] scripts in
@@ -45,11 +51,12 @@ final class FaviconsTabExtension {
         guard let tab, error == nil else { return }
         let currentURL = tab.existingWebView?.url ?? tab.url
 
-        let partition = SumiFaviconSystem.shared.partition(profile: tab.resolveProfile())
+        let partition = faviconService.partition(profile: tab.resolveProfile())
         if let cachedFavicon = TabFaviconStore.getCachedImage(
             forDocumentURL: currentURL,
             partition: partition,
-            context: .tabSidebar
+            context: .tabSidebar,
+            faviconImageService: faviconImageService
         ) {
             if cachedFavicon != favicon {
                 favicon = cachedFavicon
@@ -64,7 +71,8 @@ final class FaviconsTabExtension {
                 forDocumentURL: currentURL,
                 partition: partition,
                 context: .tabSidebar,
-                priority: .visibleSidebarOrTabStrip
+                priority: .visibleSidebarOrTabStrip,
+                faviconImageService: faviconImageService
             ) else { return }
             guard let tab = self.tab,
                   currentURL == (tab.existingWebView?.url ?? tab.url) else { return }
@@ -99,8 +107,8 @@ extension FaviconsTabExtension: SumiFaviconUserScriptDelegate {
 
         faviconHandlingTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            let partition = SumiFaviconSystem.shared.partition(profile: tab.resolveProfile())
-            let image = await SumiFaviconSystem.shared.service.ingestVisibleTabDiscovery(
+            let partition = faviconService.partition(profile: tab.resolveProfile())
+            let image = await faviconImageService.ingestVisibleTabDiscovery(
                 links: faviconLinks.map(\.discoveredLink),
                 documentURL: documentUrl,
                 baseURL: baseURL,
