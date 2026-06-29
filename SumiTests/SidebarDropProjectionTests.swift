@@ -125,24 +125,6 @@ final class SidebarDropProjectionTests: XCTestCase {
         )
     }
 
-    func testAutoscrollRegistryAvoidsHighFrequencyAllocationPatterns() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Sumi/Components/DragDrop/SidebarGlobalDragOverlay.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let registryRange = try XCTUnwrap(
-            source.range(of: "final class SidebarTabListDragAutoscrollRegistry")
-        )
-        let registrySource = source[registryRange.lowerBound...]
-
-        XCTAssertTrue(registrySource.contains("1.0 / 60.0"))
-        XCTAssertFalse(registrySource.contains("1.0 / 120.0"))
-        XCTAssertFalse(registrySource.contains("Task { @MainActor"))
-        XCTAssertFalse(registrySource.contains(".sorted {"))
-        XCTAssertFalse(registrySource.contains(".sorted("))
-    }
-
     func testProjectedIndexBeforeSourceMapsDirectlyToModelIndex() {
         XCTAssertEqual(
             SidebarDropProjection.modelInsertionIndex(

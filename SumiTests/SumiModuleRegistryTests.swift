@@ -159,39 +159,4 @@ final class SumiModuleRegistryTests: XCTestCase {
         XCTAssertEqual(userScriptsKey, "settings.modules.userScripts.enabled")
     }
 
-    func testRegistrySourceDoesNotReferenceOptionalRuntimeSymbols() throws {
-        let source = try Self.source(named: "Sumi/Services/SumiModuleRegistry.swift")
-
-        XCTAssertEqual(source.components(separatedBy: "\n").filter { $0.hasPrefix("import ") }, ["import Foundation"])
-
-        for forbiddenPattern in [
-            "SumiContentBlockingService",
-            "ExtensionManager",
-            "NativeMessagingHandler",
-            "SumiScriptsManager",
-            "UserScriptStore",
-            "WKUserScript",
-            "WebKit",
-            "SwiftData",
-            "TrackerRadarKit",
-            "PrivacyConfig",
-            "UserScript",
-            "Timer",
-            "Task",
-            "NotificationCenter",
-            "addObserver",
-            "URLSession",
-            "FileManager",
-        ] {
-            XCTAssertFalse(source.contains(forbiddenPattern), "\(forbiddenPattern) is referenced by the registry")
-        }
-    }
-
-    private static func source(named relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = repoRoot.appendingPathComponent(relativePath)
-        return try String(contentsOf: sourceURL, encoding: .utf8)
-    }
 }

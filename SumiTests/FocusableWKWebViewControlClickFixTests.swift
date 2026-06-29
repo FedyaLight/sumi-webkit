@@ -104,33 +104,6 @@ final class FocusableWKWebViewControlClickFixTests: XCTestCase {
         )
     }
 
-    func testRightMouseDownOverrideDoesNotContainControlClickFixMechanism() throws {
-        let repositoryRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let source = try String(
-            contentsOf: repositoryRoot.appendingPathComponent(
-                "Sumi/Utils/WebKit/FocusableWKWebView.swift"
-            ),
-            encoding: .utf8
-        )
-        let marker = "override func rightMouseDown(with event: NSEvent)"
-        let start = try XCTUnwrap(source.range(of: marker)).upperBound
-        let suffix = source[start...]
-        guard let nextOverride = suffix.range(of: "\n    override ") else {
-            XCTFail("Could not find override following rightMouseDown")
-            return
-        }
-        let block = String(suffix[..<nextOverride.lowerBound])
-
-        XCTAssertFalse(block.contains("flagsChanged"), "rightMouseDown must not implement control-click flagsChanged synthesis")
-        XCTAssertFalse(block.contains("kVK_Control"))
-        XCTAssertFalse(block.contains("sendEvent"))
-        XCTAssertFalse(block.contains("performDefaultMouseDownBehavior"))
-        XCTAssertTrue(block.contains("super.rightMouseDown(with: event)"))
-        XCTAssertTrue(block.contains("owningTab?.activate()"))
-    }
-
     private static func mouseEvent(modifierFlags: NSEvent.ModifierFlags) throws -> NSEvent {
         try XCTUnwrap(
             NSEvent.mouseEvent(

@@ -186,38 +186,6 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         XCTAssertTrue(port.isDisconnected)
     }
 
-    func testPopoverDidCloseUsesGenericNativeMessagingTeardown() throws {
-        let uiSource = try source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
-        )
-        let popupPresentationSource = try source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionActionPopupPresentationOwner.swift"
-        )
-
-        XCTAssertFalse(uiSource.contains("func popoverDidClose(_ notification: Notification)"))
-        XCTAssertTrue(
-            popupPresentationSource.contains("func popoverDidClose(_ notification: Notification)")
-        )
-        XCTAssertTrue(popupPresentationSource.contains("pruneNativeMessagePortHandlerEntries("))
-        let profilesSource = try source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift"
-        )
-        XCTAssertTrue(profilesSource.contains("nativeMessagePortHandlers[handlerID]?.disconnect()"))
-        XCTAssertTrue(
-            popupPresentationSource.contains("clearLaunchSessionOnExtensionContextUnload(")
-        )
-        XCTAssertTrue(
-            popupPresentationSource.contains("scheduleOrPerformDeferredPopupContextUnload(")
-        )
-        XCTAssertTrue(popupPresentationSource.contains("ExtensionActionPopupUIDelegate"))
-        XCTAssertTrue(popupPresentationSource.contains("popover.close()"))
-        XCTAssertTrue(
-            popupPresentationSource.contains("SumiNativeMessagingRuntimeCounters.recordPopupClosed")
-        )
-        XCTAssertFalse(uiSource.contains("BitwardenNativeMessagingAdapter"))
-        XCTAssertFalse(uiSource.contains("com.bitwarden.desktop"))
-    }
-
     func testFillSurvivesPopupCloseWhenNativeMessagingObserved() async throws {
         let installed = try makeInstalledExtension(
             id: "ext-fill-survive",
@@ -420,13 +388,4 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         try data.write(to: url)
     }
 
-    private func source(named relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: root.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }

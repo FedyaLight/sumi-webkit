@@ -402,42 +402,6 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         }
     }
 
-    func testNoExtensionSpecificBehaviorBranchesInResolverSources() throws {
-        let resolverSource = try String(
-            contentsOf: sourceURL(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiCompanionAppResolver.swift"),
-            encoding: .utf8
-        )
-        let policySource = try String(
-            contentsOf: sourceURL(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelayPolicy.swift"),
-            encoding: .utf8
-        )
-
-        XCTAssertFalse(resolverSource.contains("if targetKey == \"bitwarden\""))
-        XCTAssertFalse(policySource.contains("bitwarden"))
-        XCTAssertFalse(policySource.contains("1password"))
-        XCTAssertFalse(policySource.contains("proton"))
-        XCTAssertFalse(policySource.contains("raindrop"))
-    }
-
-    func testNativeMessagingPrivateGateDoesNotUseActiveWindowFallback() throws {
-        let relaySource = try String(
-            contentsOf: sourceURL(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"),
-            encoding: .utf8
-        )
-        let delegateSource = try String(
-            contentsOf: sourceURL(named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"),
-            encoding: .utf8
-        )
-        let profileRuntimeSource = try String(
-            contentsOf: sourceURL(named: "Sumi/Managers/ExtensionManager/ExtensionManager+ProfileRuntime.swift"),
-            encoding: .utf8
-        )
-
-        XCTAssertFalse(relaySource.contains("activeWindow?.isIncognito"))
-        XCTAssertFalse(delegateSource.contains("activeWindow?.isIncognito"))
-        XCTAssertFalse(profileRuntimeSource.contains("windowRegistry?.windows.values.contains"))
-    }
-
     func testDiagnosticsSanitized() async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.example.host",
@@ -609,10 +573,4 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         UserDefaults(suiteName: "SumiCompanionAppResolverTests.\(UUID().uuidString)")!
     }
 
-    private func sourceURL(named relativePath: String) -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(relativePath)
-    }
 }

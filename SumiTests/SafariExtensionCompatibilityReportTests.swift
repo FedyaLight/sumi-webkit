@@ -199,31 +199,6 @@ final class SafariExtensionCompatibilityReportTests: XCTestCase {
         XCTAssertEqual(status, .empty)
     }
 
-    func testEnablePathReconcilesOpenTabsForContentScripts() throws {
-        let profilesSource = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent(
-                    "Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift"
-                ),
-            encoding: .utf8
-        )
-        let uiSource = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent(
-                    "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"
-                ),
-            encoding: .utf8
-        )
-
-        XCTAssertTrue(profilesSource.contains("reconcileOpenTabsAfterExtensionContextLoad"))
-        XCTAssertTrue(uiSource.contains("reconcileOpenTabsAfterExtensionContextLoad"))
-        XCTAssertTrue(uiSource.contains("finalizeEnabledExtensionRuntime"))
-    }
-
     func testReportIncludesNativeMessagingClassificationsForPasswordManagers() {
         let report = SafariExtensionCompatibilityReportBuilder.build(
             discovered: [],

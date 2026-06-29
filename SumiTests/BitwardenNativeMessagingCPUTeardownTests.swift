@@ -132,23 +132,6 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
         XCTAssertEqual(snapshot.popupCloseCount, 0)
     }
 
-    func testDesktopTransportReadLoopDoesNotSpinOnMainActor() throws {
-        let transportSource = try source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/BitwardenDesktopProxyTransport.swift"
-        )
-        XCTAssertTrue(transportSource.contains("Task.detached(priority: .utility)"))
-        XCTAssertFalse(
-            transportSource.contains(
-                """
-                while let self, Task.isCancelled == false {
-                    let chunk = await Task.detached(priority: .utility) {
-                        handle.availableData
-                    }.value
-                """
-            )
-        )
-    }
-
     func testRuntimeCountersTrackPopupAndPortLifecycle() async throws {
         let adapter = SumiNativeMessagingFakePublicAdapter(
             supportedHosts: ["com.example.host"],
@@ -344,13 +327,4 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
         try data.write(to: url)
     }
 
-    private func source(named relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: root.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }

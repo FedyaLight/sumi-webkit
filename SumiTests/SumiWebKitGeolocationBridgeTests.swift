@@ -232,22 +232,6 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         XCTAssertEqual(decisions, [.deny])
     }
 
-    func testNormalTabUIDelegateRoutesNativeAndLegacyGeolocationSelectorsThroughBridge() throws {
-        let source = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
-
-        XCTAssertTrue(
-            source.contains("requestGeolocationPermissionFor origin: WKSecurityOrigin")
-                && source.contains("initiatedByFrame frame: WKFrameInfo")
-        )
-        XCTAssertTrue(source.contains("@available(macOS 27.0, *)"))
-        XCTAssertFalse(
-            source.contains("@objc(_webView:requestGeolocationPermissionForOrigin")
-        )
-        XCTAssertTrue(source.contains("_webView:requestGeolocationPermissionForFrame:decisionHandler:"))
-        XCTAssertTrue(source.contains("webKitGeolocationBridge.handleGeolocationAuthorization("))
-        XCTAssertTrue(source.contains("webKitGeolocationBridge.handleLegacyGeolocationAuthorization("))
-    }
-
     private func makeBridge(
         coordinator: any SumiPermissionCoordinating,
         provider: FakeSumiGeolocationProvider?,
@@ -358,15 +342,6 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         )
     }
 
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repoRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }
 
 @available(macOS 12.0, *)

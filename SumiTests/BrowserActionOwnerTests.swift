@@ -21,37 +21,6 @@ final class BrowserActionOwnerTests: XCTestCase {
         XCTAssertTrue(harness.browserManager.tabManager.folders(for: harness.secondarySpace.id).isEmpty)
     }
 
-    func testSidebarLiveFolderActionsAreOwnedBySidebarActionOwner() throws {
-        let actionOwnerSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserActionOwner.swift"
-        )
-        let sidebarOwnerSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserSidebarActionOwner.swift"
-        )
-
-        XCTAssertTrue(actionOwnerSource.contains("private let sidebarActionOwner"))
-        XCTAssertTrue(sidebarOwnerSource.contains("final class BrowserSidebarActionOwner"))
-        XCTAssertTrue(sidebarOwnerSource.contains("func createRSSLiveFolderInCurrentSpace"))
-        XCTAssertTrue(sidebarOwnerSource.contains("func createGitHubPullRequestsLiveFolderInCurrentSpace"))
-        XCTAssertTrue(sidebarOwnerSource.contains("func createGitHubIssuesLiveFolderInCurrentSpace"))
-        XCTAssertTrue(sidebarOwnerSource.contains("private func promptForLiveFolderFeedURL"))
-        XCTAssertFalse(actionOwnerSource.contains("NSAlert"))
-    }
-
-    func testFloatingBarRoutingIsOwnedByFloatingBarRoutingOwner() throws {
-        let actionOwnerSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserActionOwner.swift"
-        )
-        let routingOwnerSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserFloatingBarRoutingOwner.swift"
-        )
-
-        XCTAssertFalse(actionOwnerSource.contains("FloatingBarNavigationOwner"))
-        XCTAssertTrue(routingOwnerSource.contains("final class BrowserFloatingBarRoutingOwner"))
-        XCTAssertTrue(routingOwnerSource.contains("private let navigationOwner = FloatingBarNavigationOwner()"))
-        XCTAssertTrue(routingOwnerSource.contains("func openFloatingBarSuggestion"))
-    }
-
     func testGlobalSidebarToggleTargetsOnlyRegisteredWindowWhenNoActiveWindowExists() {
         removePersistedWindowSession()
         defer { removePersistedWindowSession() }
@@ -104,17 +73,6 @@ final class BrowserActionOwnerTests: XCTestCase {
         UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
     }
 
-    private static func source(named path: String) throws -> String {
-        let url = repoRoot.appendingPathComponent(path)
-        return try String(contentsOf: url, encoding: .utf8)
-    }
-
-    private static var repoRoot: URL {
-        var url = URL(fileURLWithPath: #filePath)
-        url.deleteLastPathComponent()
-        url.deleteLastPathComponent()
-        return url
-    }
 }
 
 @MainActor

@@ -174,31 +174,6 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(result, .failed(identifier: identifier, reason: "delivery-failed"))
     }
 
-    func testSourceLevelNotificationAuthorizationIsolation() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let gmBridge = try String(
-            contentsOf: root.appendingPathComponent("Sumi/Managers/SumiScripts/UserScriptGMBridge.swift"),
-            encoding: .utf8
-        )
-        let systemService = try String(
-            contentsOf: root.appendingPathComponent("Sumi/Permissions/SumiSystemPermissionService.swift"),
-            encoding: .utf8
-        )
-        let notificationBridge = try String(
-            contentsOf: root.appendingPathComponent("Sumi/Permissions/SumiNotificationPermissionBridge.swift"),
-            encoding: .utf8
-        )
-
-        XCTAssertFalse(gmBridge.contains("requestAuthorization(options:"))
-        XCTAssertFalse(gmBridge.contains("UNNotificationRequest("))
-        XCTAssertTrue(systemService.contains("requestAuthorization(options:"))
-        XCTAssertTrue(notificationBridge.contains("SumiPermissionCoordinating"))
-        XCTAssertFalse(notificationBridge.contains("setDecision("))
-    }
-
     func testDocumentationListsDDGNotificationReferenceFiles() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

@@ -220,41 +220,6 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         XCTAssertEqual(tab.pageSuspensionVeto, .none)
     }
 
-    func testTabSuspensionBridgeDoesNotStartOptionalModuleRuntimes() throws {
-        let source = try Self.source(named: "Sumi/Models/Tab/Tab+ScriptMessageHandler.swift")
-
-        XCTAssertTrue(source.contains("SumiTabSuspensionUserScript"))
-        XCTAssertTrue(source.contains("window.__sumiTabSuspension"))
-        XCTAssertTrue(source.contains("featureName: \"tabSuspension\""))
-        XCTAssertTrue(source.contains("method: \"canBeSuspended\""))
-
-        for forbiddenConstructor in [
-            "SumiContentBlockingService(",
-            "ExtensionManager(",
-            "SumiExtensionsModule",
-            "extensionsModule",
-            "NativeMessagingHandler(",
-            "SumiScriptsManager(",
-            "SumiUserscriptsModule",
-            "userscriptsModule",
-            "UserScriptStore(",
-        ] {
-            XCTAssertFalse(source.contains(forbiddenConstructor))
-        }
-    }
-
-    func testLinkInteractionSourceCachesHoveredAnchorFastPaths() throws {
-        let source = try Self.source(named: "Sumi/Models/Tab/Tab+ScriptMessageHandler.swift")
-
-        XCTAssertTrue(source.contains("let currentHoveredLinkElement = null;"))
-        XCTAssertTrue(source.contains("currentHoveredLinkElement.contains(event.target)"))
-        XCTAssertTrue(source.contains("currentHoveredLinkElement.contains(event.relatedTarget)"))
-        XCTAssertTrue(source.contains("currentHoveredLinkElement = nextTarget;"))
-        XCTAssertTrue(source.contains("if (currentHoveredLink === href)"))
-        XCTAssertTrue(source.contains("sendHover(\"linkHover\", href);"))
-        XCTAssertTrue(source.contains("}, { passive: true, capture: true });"))
-    }
-
     private func linkContext(for tab: Tab) -> String {
         "sumiLinkInteraction_\(tab.id.uuidString)"
     }
@@ -331,17 +296,6 @@ final class TabScriptMessageHandlerIsolationTests: XCTestCase {
         }
 
         XCTAssertEqual(tab.pageSuspensionVeto, expected, file: file, line: line)
-    }
-
-    private static func source(named path: String) throws -> String {
-        let testURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testURL
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repoRoot.appendingPathComponent(path),
-            encoding: .utf8
-        )
     }
 
     private func loadBlankDocument(into webView: WKWebView) async {

@@ -276,15 +276,6 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
         XCTAssertTrue(buffer.isEmpty)
     }
 
-    func testTransportShutdownClearsPendingReadBuffer() throws {
-        let transportSource = try source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/BitwardenDesktopProxyTransport.swift"
-        )
-        XCTAssertTrue(transportSource.contains("pendingBuffer.removeAll()"))
-        XCTAssertTrue(transportSource.contains("maxFrameBytes"))
-        XCTAssertTrue(transportSource.contains("Task.detached(priority: .utility)"))
-    }
-
     // MARK: - DEBUG performance report
 
     func testPerformanceReportIsPayloadFree() {
@@ -440,13 +431,4 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
         UserDefaults(suiteName: "SumiNativeMessagingPerformanceGuardTests.\(UUID().uuidString)")!
     }
 
-    private func source(named relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: root.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }

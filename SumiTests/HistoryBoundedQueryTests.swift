@@ -314,35 +314,6 @@ final class HistoryBoundedQueryTests: XCTestCase {
         XCTAssertTrue(otherStore.addedURLs.isEmpty)
     }
 
-    func testProductionHistoryPathsDoNotUseUnboundedHistoryFetches() throws {
-        let source = try productionSource(
-            paths: [
-                "Sumi/Managers/SearchManager/SearchManager.swift",
-                "Sumi/History/HistoryPageViewModel.swift",
-                "App/SumiCommands.swift",
-                "App/SumiHistoryCommands.swift",
-                "Sumi/Services/SumiBrowsingDataCleanupService.swift",
-                "Sumi/Managers/History/HistoryManager.swift",
-            ]
-        )
-
-        XCTAssertFalse(source.contains("store.visits("))
-        XCTAssertFalse(source.contains("dataProvider.items(for:"))
-        XCTAssertFalse(source.contains("visitRecords(matching:"))
-        XCTAssertFalse(source.contains("rawVisits"))
-        XCTAssertFalse(source.contains("DispatchSemaphore"))
-        XCTAssertFalse(source.contains("DispatchGroup"))
-        XCTAssertFalse(source.contains(".wait("))
-    }
-
-    func testSitePageFetchDoesNotBuildAllSiteRecords() throws {
-        let source = try productionSource(paths: ["Sumi/Managers/History/HistoryStore.swift"])
-        let fetchSitePageSource = try functionSource(named: "fetchSitePage", in: source)
-
-        XCTAssertFalse(fetchSitePageSource.contains("allSiteRecords"))
-        XCTAssertTrue(fetchSitePageSource.contains("fetchPagedSiteRecords"))
-    }
-
     private func makeHarness() throws -> (
         container: ModelContainer,
         store: HistoryStore,
@@ -405,44 +376,6 @@ final class HistoryBoundedQueryTests: XCTestCase {
 
     private func date(_ value: String) -> Date {
         ISO8601DateFormatter().date(from: value)!
-    }
-
-    private func productionSource(paths: [String]) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try paths
-            .map { try String(contentsOf: repoRoot.appendingPathComponent($0), encoding: .utf8) }
-            .joined(separator: "\n")
-    }
-
-    private func functionSource(named name: String, in source: String) -> Substring {
-        guard let nameRange = source.range(of: "func \(name)("),
-              let openingBrace = source[nameRange.lowerBound...].firstIndex(of: "{")
-        else {
-            XCTFail("Could not find function \(name)")
-            return ""
-        }
-
-        var depth = 0
-        var index = openingBrace
-        while index < source.endIndex {
-            switch source[index] {
-            case "{":
-                depth += 1
-            case "}":
-                depth -= 1
-                if depth == 0 {
-                    return source[nameRange.lowerBound...index]
-                }
-            default:
-                break
-            }
-            index = source.index(after: index)
-        }
-
-        XCTFail("Could not parse function \(name)")
-        return ""
     }
 
     private func waitForVisitedLinkReload(

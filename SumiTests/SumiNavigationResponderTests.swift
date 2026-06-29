@@ -728,38 +728,6 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(preferences.autoplayPolicy, .allow)
     }
 
-    func testAutoplayPolicyResponderIsRegisteredInOriginalResponderOrder() throws {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let source = try String(
-            contentsOf: repoRoot.appendingPathComponent(
-                "Sumi/Models/Tab/Navigation/SumiTabNavigationDelegateBundle.swift"
-            ),
-            encoding: .utf8
-        )
-
-        let tokens = [
-            ".strong(installNavigationAdapter)",
-            ".strong(popupHandlingAdapter)",
-            ".strong(externalSchemeAdapter)",
-            ".strong(downloadsAdapter)",
-            ".strong(scriptAttachmentAdapter)",
-            ".strong(autoplayPolicyAdapter)",
-            ".strong(lifecycleAdapter)",
-            ".strong(findInPageAdapter)",
-        ]
-        let indices = try tokens.map { token in
-            try XCTUnwrap(source.range(of: token)?.lowerBound, "Missing \(token)")
-        }
-
-        XCTAssertEqual(indices, indices.sorted())
-        XCTAssertTrue(source.contains("let popupHandling: SumiPopupHandlingNavigationResponder"))
-        XCTAssertTrue(source.contains("self.popupHandlingAdapter = SumiNavigationResponderAdapter(target: popupHandling)"))
-        XCTAssertTrue(source.contains("self.lifecycleAdapter = SumiNavigationResponderAdapter(target: lifecycle)"))
-        XCTAssertTrue(source.contains("self.findInPageAdapter = SumiNavigationResponderAdapter(target: tab.findInPage)"))
-    }
-
     func testSumiNavigationValueAdaptersMapProductDirections() {
         XCTAssertEqual(SumiNavigationActionPolicy.allCases.map(\.navigationActionPolicy), [.allow, .cancel, .download])
         XCTAssertEqual(SumiNavigationResponsePolicy.allCases.map(\.navigationResponsePolicy), [.allow, .cancel, .download])

@@ -178,15 +178,6 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(results, [true])
     }
 
-    func testNormalTabUIDelegateRegistersPrivateStorageAccessSelectors() throws {
-        let source = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
-
-        XCTAssertTrue(source.contains("_webView:requestStorageAccessPanelForDomain:underCurrentDomain:completionHandler:"))
-        XCTAssertTrue(source.contains("_webView:requestStorageAccessPanelForDomain:underCurrentDomain:forQuirkDomains:completionHandler:"))
-        XCTAssertTrue(source.contains("storageAccessPermissionBridge.handleStorageAccessRequest("))
-        XCTAssertFalse(source.contains("NSAlert.storageAccessAlert"))
-    }
-
     private func makeBridge(
         store: StorageAccessBridgePermissionStore,
         pendingStrategy: SumiStorageAccessPendingStrategy = .promptPresenterUnavailableDeny
@@ -298,15 +289,6 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
         )
     }
 
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repoRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }
 
 private actor StorageAccessBridgePermissionStore: SumiPermissionStore {

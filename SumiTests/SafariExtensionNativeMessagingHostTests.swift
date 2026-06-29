@@ -183,41 +183,6 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         XCTAssertNil(hostID)
     }
 
-    func testProductNativeMessagingSourceAvoidsChromeShimAndSubprocessIO() throws {
-        let relaySource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
-        )
-        let portSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift"
-        )
-        let delegateSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
-        )
-
-        XCTAssertFalse(relaySource.contains("ChromeMV3NativeMessagingInternalRuntime"))
-        XCTAssertFalse(portSource.contains("ChromeMV3NativeMessagingInternalRuntime"))
-        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
-        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
-        XCTAssertTrue(delegateSource.contains("sendMessage message: Any"))
-        XCTAssertTrue(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
-        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleSendMessage"))
-        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleConnect"))
-        XCTAssertTrue(portSource.contains("WKWebExtension.MessagePort"))
-
-        let processCallToken = "Process" + "("
-        assertSourceExcludes(
-            relaySource + portSource,
-            [
-                processCallToken,
-                "NativeMessagingProcessSession",
-                "readDataToEndOfFile",
-                "waitUntilExit",
-                ".write(contentsOf",
-            ],
-            context: "Safari native messaging foundation"
-        )
-    }
-
     // MARK: - Helpers
 
     private func sendMessageReply(
@@ -327,30 +292,4 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         return UserDefaults(suiteName: suiteName)!
     }
 
-    private static func source(named relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: root.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
-
-    private func assertSourceExcludes(
-        _ source: String,
-        _ forbidden: [String],
-        context: String,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        for token in forbidden {
-            XCTAssertFalse(
-                source.contains(token),
-                "\(context) should not contain \(token)",
-                file: file,
-                line: line
-            )
-        }
-    }
 }

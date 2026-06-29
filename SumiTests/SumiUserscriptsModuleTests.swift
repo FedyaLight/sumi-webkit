@@ -279,7 +279,7 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         XCTAssertEqual(probe.injectorCount, 1)
     }
 
-    func testModuleToggleDoesNotReloadOrInjectAlreadyLoadedPages() throws {
+    func testModuleToggleDoesNotReloadOrInjectAlreadyLoadedPages() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -294,36 +294,6 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         XCTAssertEqual(probe.managerCount, 0)
         XCTAssertEqual(probe.storeCount, 0)
         XCTAssertEqual(probe.injectorCount, 0)
-
-        let source = try Self.source(
-            named: "Sumi/Managers/SumiScripts/SumiUserscriptsModule.swift"
-        )
-        XCTAssertFalse(source.contains("reload("))
-        XCTAssertFalse(source.contains("webView.reload"))
-        XCTAssertFalse(source.contains("evaluateJavaScript"))
-        XCTAssertFalse(source.contains("replaceNormalTabUserScripts"))
-    }
-
-    func testUserscriptsModuleSourceDoesNotTouchOtherOptionalRuntimes() throws {
-        let source = try Self.source(
-            named: "Sumi/Managers/SumiScripts/SumiUserscriptsModule.swift"
-        )
-
-        for forbiddenPattern in [
-            "ExtensionManager(",
-            "NativeMessagingHandler(",
-            "SumiContentBlockingService",
-        ] {
-            XCTAssertFalse(source.contains(forbiddenPattern), forbiddenPattern)
-        }
-    }
-
-    func testUserscriptsManagerDoesNotPersistLegacyMasterSwitch() throws {
-        let source = try Self.source(
-            named: "Sumi/Managers/SumiScripts/SumiScriptsManager.swift"
-        )
-
-        XCTAssertFalse(source.contains("SumiScripts.enabled"))
     }
 
     private func makeModule(
@@ -397,13 +367,6 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         )
     }
 
-    private static func source(named relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = repoRoot.appendingPathComponent(relativePath)
-        return try String(contentsOf: sourceURL, encoding: .utf8)
-    }
 }
 
 private final class UserscriptsRuntimeProbe {

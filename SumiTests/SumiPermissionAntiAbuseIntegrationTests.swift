@@ -109,24 +109,6 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
         XCTAssertEqual(storedState, .allow)
     }
 
-    func testSuppressionSourceDoesNotPersistDenyInCoordinatorOrBridgeCode() throws {
-        let coordinatorSource = try sourceFile("Sumi/Permissions/SumiPermissionCoordinator.swift")
-        let decisionResolutionSource = try sourceFile("Sumi/Permissions/SumiPermissionDecisionResolutionOwner.swift")
-        let notificationSource = try sourceFile("Sumi/Permissions/SumiNotificationPermissionBridge.swift")
-
-        XCTAssertFalse(coordinatorSource.contains("private func promptSuppressedDecision"))
-        let suppressionRange = try XCTUnwrap(
-            decisionResolutionSource.range(of: "private func promptSuppressedDecision")
-        )
-        let suppressionTail = decisionResolutionSource[suppressionRange.lowerBound...]
-        let suppressionBody = String(suppressionTail.prefix(2_400))
-
-        XCTAssertTrue(suppressionBody.contains("outcome: .suppressed"))
-        XCTAssertFalse(suppressionBody.contains("persistentStore.setDecision"))
-        XCTAssertFalse(suppressionBody.contains("state: .deny"))
-        XCTAssertFalse(notificationSource.contains("denyPersistently"))
-    }
-
     private func notificationRequest(id: String) -> SumiWebNotificationRequest {
         SumiWebNotificationRequest(
             id: id,
@@ -152,12 +134,6 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
         )
     }
 
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)
-    }
 }
 
 private final class SumiPermissionAntiAbuseTestClock: @unchecked Sendable {

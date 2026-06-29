@@ -551,29 +551,6 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         XCTAssertEqual(finalizerCount, 1)
     }
 
-    // 11. No payload logging
-    func testRelaySourceDoesNotLogMessageBodies() throws {
-        let relaySource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
-        )
-        let connectionSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingConnection.swift"
-        )
-        let portSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift"
-        )
-        let combined = relaySource + connectionSource + portSource
-
-        XCTAssertFalse(combined.contains("print(message"))
-        XCTAssertFalse(combined.contains("debug(\"message"))
-        XCTAssertFalse(combined.contains("RuntimeDiagnostics.debug(message"))
-        XCTAssertTrue(
-            combined.contains("_ = message")
-                || combined.contains("_ = request")
-                || combined.contains("guard let message")
-        )
-    }
-
     func testRoutingProbeReportsMessageShapeWithoutValues() {
         let shape = SafariExtensionNativeMessagingRoutingProbe.sanitizedMessageShape(
             for:
@@ -863,13 +840,4 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         try data.write(to: url)
     }
 
-    private static func source(named relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: root.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }

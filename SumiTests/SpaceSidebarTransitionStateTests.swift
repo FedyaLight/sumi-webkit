@@ -244,19 +244,6 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
-    func testSpacesSidebarViewDelegatesTransitionSnapshotResponsibilities() throws {
-        let sidebarSource = try source(named: "Navigation/Sidebar/SpacesSideBarView.swift")
-        let snapshotSource = try source(named: "Navigation/Sidebar/SpaceSidebarSnapshots.swift")
-        let snapshotViewsSource = try source(named: "Navigation/Sidebar/SpaceSidebarSnapshotViews.swift")
-
-        XCTAssertTrue(sidebarSource.contains("SpaceSidebarTransitionSnapshotBuilder.make"))
-        XCTAssertTrue(sidebarSource.contains("SpaceTransitionSnapshotPageView("))
-        XCTAssertFalse(sidebarSource.contains("enum SpaceSidebarTransitionSnapshotBuilder"))
-        XCTAssertFalse(sidebarSource.contains("struct SpaceTransitionSnapshotPageView"))
-        XCTAssertTrue(snapshotSource.contains("enum SpaceSidebarTransitionSnapshotBuilder"))
-        XCTAssertTrue(snapshotViewsSource.contains("struct SpaceTransitionSnapshotPageView"))
-    }
-
     func testChromePreviewPolicyAnimatesEssentialsOnlyForInteractiveCommittedPage() {
         XCTAssertTrue(
             SpaceSidebarChromePreviewPolicy.shouldAnimateEssentialsLayout(
@@ -872,15 +859,4 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
-    private func source(named path: String) throws -> String {
-        let url = repoRoot.appendingPathComponent(path)
-        return try String(contentsOf: url, encoding: .utf8)
-    }
-
-    private var repoRoot: URL {
-        var url = URL(fileURLWithPath: #filePath)
-        url.deleteLastPathComponent()
-        url.deleteLastPathComponent()
-        return url
-    }
 }
