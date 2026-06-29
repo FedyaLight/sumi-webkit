@@ -116,16 +116,16 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
                 browserManager?.closeDownloadsPopover(in: windowState)
             },
             requestUserTabActivation: { [weak browserManager] tab, windowState in
-                browserManager?.requestUserTabActivation(tab, in: windowState)
+                browserManager?.sidebarTabCommandOwner.requestUserTabActivation(tab, in: windowState)
             },
             closeTab: { [weak browserManager] tab, windowState in
-                browserManager?.closeTab(tab, in: windowState)
+                browserManager?.sidebarTabCommandOwner.closeTab(tab, in: windowState)
             },
             moveTabUp: { [weak browserManager] tabId in
-                browserManager?.tabManager.moveTabUp(tabId)
+                browserManager?.sidebarTabCommandOwner.moveTabUp(tabId)
             },
             moveTabDown: { [weak browserManager] tabId in
-                browserManager?.tabManager.moveTabDown(tabId)
+                browserManager?.sidebarTabCommandOwner.moveTabDown(tabId)
             },
             focusSplitGroup: { [weak browserManager] group, windowState in
                 browserManager?.sidebarSplitShortcutRoutingOwner.focusSplitGroup(group, in: windowState)
@@ -138,19 +138,17 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
                 )
             },
             openForegroundTab: { [weak browserManager] url, windowState, preferredSpaceId in
-                browserManager?.openNewTab(
-                    url: url,
-                    context: .foreground(
-                        windowState: windowState,
-                        preferredSpaceId: preferredSpaceId
-                    )
+                browserManager?.sidebarTabCommandOwner.openForegroundTab(
+                    url,
+                    in: windowState,
+                    preferredSpaceId: preferredSpaceId
                 )
             },
             openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                browserManager?.openNewTabOrFloatingBar(in: windowState)
+                browserManager?.sidebarTabCommandOwner.openNewTabOrFloatingBar(in: windowState)
             },
             duplicateTab: { [weak browserManager] tab, windowState in
-                browserManager?.duplicateTab(tab, in: windowState)
+                browserManager?.sidebarTabCommandOwner.duplicateTab(tab, in: windowState)
             },
             pinShortcutGlobally: { [weak browserManager] pin, windowState, spaceId, liveTab in
                 browserManager?.sidebarShortcutPromotionOwner.pinShortcutGlobally(
