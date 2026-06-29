@@ -316,7 +316,10 @@ extension BrowserWindowSpaceStateOwner.Dependencies {
                 browserManager?.persistWindowSession(for: windowState)
             },
             completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
-                browserManager?.completePendingSplitGroupFocusIfReady(in: windowState, spaceId: spaceId)
+                browserManager?.sidebarSplitShortcutRoutingOwner.completePendingSplitGroupFocusIfReady(
+                    in: windowState,
+                    spaceId: spaceId
+                )
             },
             refreshCompositor: { [weak browserManager] windowState in
                 browserManager?.refreshCompositor(for: windowState)

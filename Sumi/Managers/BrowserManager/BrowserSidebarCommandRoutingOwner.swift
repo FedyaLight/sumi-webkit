@@ -128,10 +128,14 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
                 browserManager?.tabManager.moveTabDown(tabId)
             },
             focusSplitGroup: { [weak browserManager] group, windowState in
-                browserManager?.focusSplitGroup(group, in: windowState)
+                browserManager?.sidebarSplitShortcutRoutingOwner.focusSplitGroup(group, in: windowState)
             },
             restoreShortcutSplitMember: { [weak browserManager] memberId, group, windowState in
-                browserManager?.restoreShortcutSplitMember(memberId, from: group, in: windowState)
+                browserManager?.sidebarSplitShortcutRoutingOwner.restoreShortcutSplitMember(
+                    memberId,
+                    from: group,
+                    in: windowState
+                )
             },
             openForegroundTab: { [weak browserManager] url, windowState, preferredSpaceId in
                 browserManager?.openNewTab(

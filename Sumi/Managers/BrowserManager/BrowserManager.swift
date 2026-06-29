@@ -95,6 +95,9 @@ class BrowserManager: ObservableObject {
     lazy var sidebarEditorPresentationOwner = BrowserSidebarEditorPresentationOwner(
         dependencies: .live(browserManager: self)
     )
+    lazy var sidebarSplitShortcutRoutingOwner = BrowserSidebarSplitShortcutRoutingOwner(
+        dependencies: .live(browserManager: self)
+    )
     lazy var sidebarSpaceTransitionRoutingOwner = BrowserSidebarSpaceTransitionRoutingOwner(
         dependencies: .live(browserManager: self)
     )

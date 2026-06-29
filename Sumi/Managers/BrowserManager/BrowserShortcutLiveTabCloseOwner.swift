@@ -127,7 +127,7 @@ extension BrowserShortcutLiveTabCloseOwner.Dependencies {
             },
             restoreShortcutSplitMember: {
                 [weak browserManager] itemId, group, windowState, preserveLiveInstance in
-                browserManager?.restoreShortcutSplitMember(
+                browserManager?.sidebarSplitShortcutRoutingOwner.restoreShortcutSplitMember(
                     itemId,
                     from: group,
                     in: windowState,
@@ -135,7 +135,7 @@ extension BrowserShortcutLiveTabCloseOwner.Dependencies {
                 )
             },
             unloadShortcutHostedSplitGroup: { [weak browserManager] group, windowState in
-                browserManager?.unloadShortcutHostedSplitGroup(group, in: windowState)
+                browserManager?.sidebarSplitShortcutRoutingOwner.unloadShortcutHostedSplitGroup(group, in: windowState)
             }
         )
     }
