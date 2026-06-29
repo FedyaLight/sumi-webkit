@@ -236,6 +236,61 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         )
     }
 
+    func testUserTabActivationCoalescesBeforeApplyingSelection() async {
+        let owner = BrowserTabSelectionOwner()
+        let space = Space(id: UUID(), name: "Work")
+        let firstTab = makeTab(spaceId: space.id)
+        let secondTab = makeTab(spaceId: space.id)
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        let probe = ActionProbe(activeWindowId: windowState.id)
+
+        owner.requestUserTabActivation(
+            firstTab,
+            in: windowState,
+            loadPolicy: .immediate,
+            actions: makeActions(
+                probe: probe,
+                windowState: windowState,
+                space: space,
+                tabsById: [
+                    firstTab.id: firstTab,
+                    secondTab.id: secondTab,
+                ]
+            )
+        )
+        owner.requestUserTabActivation(
+            secondTab,
+            in: windowState,
+            loadPolicy: .deferred,
+            actions: makeActions(
+                probe: probe,
+                windowState: windowState,
+                space: space,
+                tabsById: [
+                    firstTab.id: firstTab,
+                    secondTab.id: secondTab,
+                ],
+                currentTab: secondTab
+            )
+        )
+
+        await drainScheduledActivationWork()
+
+        XCTAssertEqual(windowState.currentTabId, secondTab.id)
+        XCTAssertEqual(windowState.currentSpaceId, space.id)
+        XCTAssertEqual(windowState.activeTabForSpace[space.id], secondTab.id)
+        XCTAssertEqual(
+            probe.events.filter { $0 == "persistWindowSession" }.count,
+            1
+        )
+        XCTAssertFalse(
+            probe.events.contains { event in
+                event == "notifyActivated:\(firstTab.id.uuidString)"
+            }
+        )
+    }
+
     private final class ActionProbe {
         let activeWindowId: UUID?
         var events: [String] = []
@@ -247,15 +302,22 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
 
     private func makeActions(
         probe: ActionProbe,
+        windowState: BrowserWindowState? = nil,
         space: Space? = nil,
         tabsById: [UUID: Tab] = [:],
+        ephemeralTabsById: [UUID: Tab] = [:],
         currentTab: Tab? = nil,
         liveShortcutTabs: [Tab] = [],
         selectionTarget: Tab? = nil
     ) -> BrowserTabSelectionOwner.Actions {
         BrowserTabSelectionOwner.Actions(
             activeWindowId: { probe.activeWindowId },
+            window: { windowId in
+                guard let windowState, windowState.id == windowId else { return nil }
+                return windowState
+            },
             tab: { tabsById[$0] },
+            ephemeralTab: { tabId, _ in ephemeralTabsById[tabId] },
             currentTab: { _ in currentTab },
             liveShortcutTabs: { _ in liveShortcutTabs },
             updateActiveSplitSide: { _, _ in probe.events.append("splitSide") },
@@ -294,6 +356,15 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
             updateProfileRuntimeStates: { _ in probe.events.append("updateProfileRuntimeStates") },
             showNewTabFloatingBar: { _ in probe.events.append("showNewTabFloatingBar") }
         )
+    }
+
+    private func drainScheduledActivationWork() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async {
+                continuation.resume()
+            }
+        }
+        await Task.yield()
     }
 
     private func makeTab(

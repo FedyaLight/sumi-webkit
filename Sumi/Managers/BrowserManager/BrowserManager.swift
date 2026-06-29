@@ -215,7 +215,6 @@ class BrowserManager: ObservableObject {
     private var tabManagerLoadObserverToken: NSObjectProtocol?
     private var browsingDataRetentionObserverToken: NSObjectProtocol?
     private var startupProtectionRuntime: BrowserStartupProtectionRuntime!
-    private let windowTabActivationBatcher = WindowTabActivationBatcher()
     private lazy var windowVisualMutationOwner = BrowserWindowVisualMutationOwner(
         dependencies: .live(browserManager: self)
     )
@@ -902,32 +901,12 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy = .immediate
     ) {
-        windowTabActivationBatcher.requestActivation(
-            tabId: tab.id,
-            in: windowState.id,
-            loadPolicy: loadPolicy
-        ) { [weak self] windowId, activation in
-            guard let self,
-                  let windowState = self.windowRegistry?.windows[windowId],
-                  let tab = self.resolvedTab(for: activation.tabId, in: windowState)
-            else {
-                return
-            }
-
-            self.applyTabSelection(
-                tab,
-                in: windowState,
-                updateSpaceFromTab: true,
-                updateTheme: true,
-                rememberSelection: true,
-                loadPolicy: activation.loadPolicy
-            )
-        }
-    }
-
-    private func resolvedTab(for tabId: UUID, in windowState: BrowserWindowState) -> Tab? {
-        tabManager.tab(for: tabId)
-            ?? windowState.ephemeralTabs.first(where: { $0.id == tabId })
+        tabSelectionOwner.requestUserTabActivation(
+            tab,
+            in: windowState,
+            loadPolicy: loadPolicy,
+            actions: tabSelectionActions
+        )
     }
 
     func applyTabSelection(

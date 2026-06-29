@@ -9,7 +9,9 @@ final class BrowserTabSelectionOwner {
 
     struct Actions {
         let activeWindowId: () -> UUID?
+        let window: (UUID) -> BrowserWindowState?
         let tab: (UUID) -> Tab?
+        let ephemeralTab: (UUID, BrowserWindowState) -> Tab?
         let currentTab: (BrowserWindowState) -> Tab?
         let liveShortcutTabs: (UUID) -> [Tab]
         let updateActiveSplitSide: (UUID, UUID) -> Void
@@ -36,6 +38,8 @@ final class BrowserTabSelectionOwner {
         let showNewTabFloatingBar: (BrowserWindowState) -> Void
     }
 
+    private let userActivationBatcher = WindowTabActivationBatcher()
+
     func selectTab(
         _ tab: Tab,
         in windowState: BrowserWindowState,
@@ -52,6 +56,41 @@ final class BrowserTabSelectionOwner {
             loadPolicy: loadPolicy,
             actions: actions
         )
+    }
+
+    func requestUserTabActivation(
+        _ tab: Tab,
+        in windowState: BrowserWindowState,
+        loadPolicy: BrowserManager.TabSelectionLoadPolicy,
+        actions: Actions
+    ) {
+        userActivationBatcher.requestActivation(
+            tabId: tab.id,
+            in: windowState.id,
+            loadPolicy: loadPolicy
+        ) { [weak self, actions] windowId, activation in
+            guard let self,
+                  let windowState = actions.window(windowId),
+                  let tab = Self.resolvedTab(
+                    activation.tabId,
+                    in: windowState,
+                    actions: actions
+                  )
+            else {
+                return
+            }
+
+            self.applyTabSelection(
+                tab,
+                in: windowState,
+                updateSpaceFromTab: true,
+                updateTheme: true,
+                rememberSelection: true,
+                persistSelection: true,
+                loadPolicy: activation.loadPolicy,
+                actions: actions
+            )
+        }
     }
 
     func applyTabSelection(
@@ -124,6 +163,15 @@ final class BrowserTabSelectionOwner {
         if persistSelection {
             actions.persistWindowSession(windowState)
         }
+    }
+
+    private static func resolvedTab(
+        _ tabId: UUID,
+        in windowState: BrowserWindowState,
+        actions: Actions
+    ) -> Tab? {
+        actions.tab(tabId)
+            ?? actions.ephemeralTab(tabId, windowState)
     }
 
     private func shouldUpdateWorkspaceTheme(for windowState: BrowserWindowState) -> Bool {

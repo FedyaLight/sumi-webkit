@@ -6,8 +6,14 @@ extension BrowserTabSelectionOwner {
             activeWindowId: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow?.id
             },
+            window: { [weak browserManager] windowId in
+                browserManager?.windowRegistry?.windows[windowId]
+            },
             tab: { [weak browserManager] tabId in
                 browserManager?.tabManager.tab(for: tabId)
+            },
+            ephemeralTab: { tabId, windowState in
+                windowState.ephemeralTabs.first(where: { $0.id == tabId })
             },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.currentTab(for: windowState)
