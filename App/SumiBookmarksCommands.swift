@@ -21,12 +21,17 @@ final class SumiBookmarkMenuSnapshotStore: ObservableObject {
 
 struct SumiBookmarksCommands: Commands {
     let browserManager: BrowserManager
+    private let faviconService: any BrowserFaviconServicing
     @ObservedObject private var bookmarkManager: SumiBookmarkManager
     @ObservedObject private var snapshotStore: SumiBookmarkMenuSnapshotStore
     @ObservedObject private var menuFaviconInvalidator = SumiMenuFaviconInvalidator.shared
 
-    init(browserManager: BrowserManager) {
+    init(
+        browserManager: BrowserManager,
+        faviconService: any BrowserFaviconServicing
+    ) {
         self.browserManager = browserManager
+        self.faviconService = faviconService
         let bookmarkManager = browserManager.bookmarkManager
         self.bookmarkManager = bookmarkManager
         self.snapshotStore = SumiBookmarkMenuSnapshotStore(bookmarkManager: bookmarkManager)
@@ -39,7 +44,7 @@ struct SumiBookmarksCommands: Commands {
 
     private var bookmarkMenuFaviconPartition: SumiFaviconPartition {
         _ = menuFaviconInvalidator.revision
-        return SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
+        return faviconService.partition(profile: browserManager.currentProfile)
     }
 
     var body: some Commands {

@@ -29,6 +29,7 @@ final class HistoryPageViewModel: ObservableObject {
     private weak var browserManager: BrowserManager?
     private weak var windowState: BrowserWindowState?
     private let historyManager: HistoryManager
+    private let faviconService: any BrowserFaviconServicing
     private let confirmDeletion: @MainActor (_ title: String, _ message: String) -> Bool
     private let calendar = Calendar.autoupdatingCurrent
     private let sectionDateFormatter: DateFormatter
@@ -44,11 +45,13 @@ final class HistoryPageViewModel: ObservableObject {
     init(
         browserManager: BrowserManager,
         windowState: BrowserWindowState?,
+        faviconService: any BrowserFaviconServicing,
         confirmDeletion: @escaping @MainActor (_ title: String, _ message: String) -> Bool = HistoryPageViewModel.showDeleteConfirmation
     ) {
         self.browserManager = browserManager
         self.windowState = windowState
         self.historyManager = browserManager.historyManager
+        self.faviconService = faviconService
         self.confirmDeletion = confirmDeletion
         let sectionDateFormatter = DateFormatter()
         sectionDateFormatter.locale = Locale(identifier: "en_US")
@@ -75,7 +78,7 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     var faviconPartition: SumiFaviconPartition {
-        SumiFaviconSystem.shared.partition(profile: browserManager?.currentProfile)
+        faviconService.partition(profile: browserManager?.currentProfile)
     }
 
     var selectionCount: Int {

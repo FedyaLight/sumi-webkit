@@ -24,7 +24,8 @@ struct SumiHistoryTabRootView: View {
         _viewModel = StateObject(
             wrappedValue: HistoryPageViewModel(
                 browserManager: browserManager,
-                windowState: windowState
+                windowState: windowState,
+                faviconService: browserManager.dataServices.faviconService
             )
         )
     }

@@ -23,7 +23,8 @@ struct SumiBookmarksTabRootView: View {
         _viewModel = StateObject(
             wrappedValue: SumiBookmarksPageViewModel(
                 browserManager: browserManager,
-                windowState: windowState
+                windowState: windowState,
+                faviconService: browserManager.dataServices.faviconService
             )
         )
     }

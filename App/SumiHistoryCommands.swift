@@ -3,13 +3,19 @@ import SwiftUI
 struct SumiHistoryCommands: Commands {
     let browserManager: BrowserManager
     let shortcutManager: KeyboardShortcutManager
+    private let faviconService: any BrowserFaviconServicing
     @ObservedObject private var historyManager: HistoryManager
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @ObservedObject private var menuFaviconInvalidator = SumiMenuFaviconInvalidator.shared
 
-    init(browserManager: BrowserManager, shortcutManager: KeyboardShortcutManager) {
+    init(
+        browserManager: BrowserManager,
+        shortcutManager: KeyboardShortcutManager,
+        faviconService: any BrowserFaviconServicing
+    ) {
         self.browserManager = browserManager
         self.shortcutManager = shortcutManager
+        self.faviconService = faviconService
         self.historyManager = browserManager.historyManager
         self.recentlyClosedManager = browserManager.recentlyClosedManager
     }
@@ -25,7 +31,7 @@ struct SumiHistoryCommands: Commands {
 
     private var historyMenuFaviconPartition: SumiFaviconPartition {
         _ = menuFaviconInvalidator.revision
-        return SumiFaviconSystem.shared.partition(profile: browserManager.currentProfile)
+        return faviconService.partition(profile: browserManager.currentProfile)
     }
 
     private var recentVisitedItems: [HistoryListItem] {

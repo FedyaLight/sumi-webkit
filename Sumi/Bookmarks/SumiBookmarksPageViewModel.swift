@@ -20,13 +20,19 @@ final class SumiBookmarksPageViewModel: ObservableObject {
     private weak var browserManager: BrowserManager?
     private weak var windowState: BrowserWindowState?
     private let bookmarkManager: SumiBookmarkManager
+    private let faviconService: any BrowserFaviconServicing
     private var revisionCancellable: AnyCancellable?
     private(set) var draggedEntityIDs: Set<String> = []
 
-    init(browserManager: BrowserManager, windowState: BrowserWindowState?) {
+    init(
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState?,
+        faviconService: any BrowserFaviconServicing
+    ) {
         self.browserManager = browserManager
         self.windowState = windowState
         self.bookmarkManager = browserManager.bookmarkManager
+        self.faviconService = faviconService
         let selected = windowState
             .flatMap { browserManager.currentTab(for: $0) }
             .flatMap { SumiSurface.bookmarksSelectedFolderID(from: $0.url) }
@@ -50,7 +56,7 @@ final class SumiBookmarksPageViewModel: ObservableObject {
     }
 
     var faviconPartition: SumiFaviconPartition {
-        SumiFaviconSystem.shared.partition(profile: browserManager?.currentProfile)
+        faviconService.partition(profile: browserManager?.currentProfile)
     }
 
     var selectionCount: Int {

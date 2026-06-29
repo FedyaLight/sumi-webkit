@@ -202,6 +202,47 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(automaticCleanupService.schedules[1].delayNanoseconds, 0)
     }
 
+    func testNativeSurfaceViewModelsUseInjectedFaviconService() throws {
+        let injectedPartition = SumiFaviconPartition(
+            profileIdentifier: "injected-view-models",
+            isPrivate: true
+        )
+        let browsingDataCleanupService = SumiBrowsingDataCleanupService()
+        let faviconService = FakeBrowserFaviconService(partitionToReturn: injectedPartition)
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            dataServices: BrowserManagerDataServices(
+                browsingDataCleanupService: browsingDataCleanupService,
+                automaticBrowsingDataCleanupService: FakeAutomaticBrowsingDataCleanupScheduler(),
+                siteDataPolicyEnforcementService: FakeBrowserSiteDataPolicyService(),
+                faviconService: faviconService,
+                privacyService: FakeBrowserPrivacyService()
+            ),
+            permissionSiteActivityStore: try makeSiteActivityStore()
+        )
+        let initialProfile = try XCTUnwrap(browserManager.currentProfile)
+
+        let historyViewModel = HistoryPageViewModel(
+            browserManager: browserManager,
+            windowState: nil,
+            faviconService: browserManager.dataServices.faviconService
+        )
+        let bookmarksViewModel = SumiBookmarksPageViewModel(
+            browserManager: browserManager,
+            windowState: nil,
+            faviconService: browserManager.dataServices.faviconService
+        )
+
+        XCTAssertEqual(historyViewModel.faviconPartition, injectedPartition)
+        XCTAssertEqual(bookmarksViewModel.faviconPartition, injectedPartition)
+        XCTAssertEqual(
+            faviconService.partitionProfileIds,
+            [initialProfile.id, initialProfile.id, initialProfile.id]
+        )
+    }
+
     func testRuntimeNotificationsPreserveLazyExtensionRuntime() throws {
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
@@ -296,10 +337,15 @@ private final class FakeBrowserSiteDataPolicyService: BrowserSiteDataPolicyEnfor
 private final class FakeBrowserFaviconService: BrowserFaviconServicing {
     private(set) var partitionProfileIds: [UUID?] = []
     private(set) var invalidatedSites: [(domain: String, profileId: UUID?)] = []
+    private let partitionToReturn: SumiFaviconPartition?
+
+    init(partitionToReturn: SumiFaviconPartition? = nil) {
+        self.partitionToReturn = partitionToReturn
+    }
 
     func partition(profile: Profile?) -> SumiFaviconPartition {
         partitionProfileIds.append(profile?.id)
-        return .regular(profile?.id)
+        return partitionToReturn ?? .regular(profile?.id)
     }
 
     func invalidateSite(domain: String, profile: Profile?) {

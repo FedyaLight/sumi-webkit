@@ -87,10 +87,14 @@ struct SumiCommands: Commands {
     private var secondaryCommandMenus: some Commands {
         SumiHistoryCommands(
             browserManager: browserManager,
-            shortcutManager: shortcutManager
+            shortcutManager: shortcutManager,
+            faviconService: browserManager.dataServices.faviconService
         )
 
-        SumiBookmarksCommands(browserManager: browserManager)
+        SumiBookmarksCommands(
+            browserManager: browserManager,
+            faviconService: browserManager.dataServices.faviconService
+        )
 
         CommandMenu("Extensions") {
             Button("Manage Extensions...") {
