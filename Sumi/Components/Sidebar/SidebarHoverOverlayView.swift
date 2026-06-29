@@ -83,7 +83,7 @@ struct SidebarHoverOverlayView: View {
         resolvedThemeContext: ResolvedThemeContext,
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
         windowChromeSize: CGSize,
-        sidebarDragState: SidebarDragState = SidebarDragState.shared
+        sidebarDragState: SidebarDragState
     ) {
         self.resolvedThemeContext = resolvedThemeContext
         self.chromeBackgroundResolvedThemeContext = chromeBackgroundResolvedThemeContext

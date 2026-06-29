@@ -76,21 +76,33 @@ protocol WindowWebContentBrowserContext: AnyObject {
     )
 }
 
-extension BrowserManager: WindowWebContentBrowserContext {
-    var sidebarDragState: SidebarDragState {
-        SidebarDragState.shared
+@MainActor
+final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContext {
+    private let browserManager: BrowserManager
+    let sidebarDragState: SidebarDragState
+
+    init(
+        browserManager: BrowserManager,
+        sidebarDragState: SidebarDragState
+    ) {
+        self.browserManager = browserManager
+        self.sidebarDragState = sidebarDragState
+    }
+
+    func currentTab(for windowState: BrowserWindowState) -> Tab? {
+        browserManager.currentTab(for: windowState)
     }
 
     func tab(for tabId: UUID) -> Tab? {
-        tabManager.tab(for: tabId)
+        browserManager.tabManager.tab(for: tabId)
     }
 
     func splitGroup(for windowId: UUID) -> SplitGroup? {
-        splitManager.splitGroup(for: windowId)
+        browserManager.splitManager.splitGroup(for: windowId)
     }
 
     func removeSplitGroup(id: UUID) {
-        tabManager.removeSplitGroup(id: id)
+        browserManager.tabManager.removeSplitGroup(id: id)
     }
 
     func updateSplitLayoutSizes(
@@ -99,7 +111,7 @@ extension BrowserManager: WindowWebContentBrowserContext {
         sizes: [Double],
         for windowId: UUID
     ) {
-        splitManager.updateLayoutSizes(
+        browserManager.splitManager.updateLayoutSizes(
             groupId: groupId,
             path: path,
             sizes: sizes,
@@ -107,9 +119,20 @@ extension BrowserManager: WindowWebContentBrowserContext {
         )
     }
 
+    func schedulePrepareVisibleWebViews(for windowState: BrowserWindowState) {
+        browserManager.schedulePrepareVisibleWebViews(for: windowState)
+    }
+
+    func enqueueWindowMutationDuringHistorySwipe(
+        _ kind: HistorySwipeDeferredWindowMutationKind,
+        for windowState: BrowserWindowState
+    ) {
+        browserManager.enqueueWindowMutationDuringHistorySwipe(kind, for: windowState)
+    }
+
     func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {
-        view.browserManager = self
-        view.splitManager = splitManager
+        view.browserManager = browserManager
+        view.splitManager = browserManager.splitManager
         view.sidebarDragState = sidebarDragState
         view.windowId = windowId
     }
@@ -121,8 +144,8 @@ extension BrowserManager: WindowWebContentBrowserContext {
     ) {
         controls.configure(
             tab: tab,
-            browserManager: self,
-            splitManager: splitManager,
+            browserManager: browserManager,
+            splitManager: browserManager.splitManager,
             windowState: windowState,
             sidebarDragState: sidebarDragState
         )
@@ -922,7 +945,8 @@ private final class WindowWebContentHostLifecycleOwner {
 }
 
 struct TabCompositorWrapper: NSViewControllerRepresentable {
-    let browserContext: any WindowWebContentBrowserContext
+    private let makeBrowserContext: () -> any WindowWebContentBrowserContext
+    private let currentTabForDisplayState: (BrowserWindowState) -> Tab?
     let webViewCoordinator: WebViewCoordinator
     @Binding var hoveredLink: String?
     var splitGroup: SplitGroup?
@@ -930,6 +954,58 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     var chromeGeometry: BrowserChromeGeometry
     let windowState: BrowserWindowState
     var contentBackgroundColor: Color
+
+    init(
+        browserManager: BrowserManager,
+        sidebarDragState: SidebarDragState,
+        webViewCoordinator: WebViewCoordinator,
+        hoveredLink: Binding<String?>,
+        splitGroup: SplitGroup?,
+        isSplitDropCaptureActive: Bool,
+        chromeGeometry: BrowserChromeGeometry,
+        windowState: BrowserWindowState,
+        contentBackgroundColor: Color
+    ) {
+        self.makeBrowserContext = {
+            BrowserManagerWindowWebContentContext(
+                browserManager: browserManager,
+                sidebarDragState: sidebarDragState
+            )
+        }
+        self.currentTabForDisplayState = { windowState in
+            browserManager.currentTab(for: windowState)
+        }
+        self.webViewCoordinator = webViewCoordinator
+        self._hoveredLink = hoveredLink
+        self.splitGroup = splitGroup
+        self.isSplitDropCaptureActive = isSplitDropCaptureActive
+        self.chromeGeometry = chromeGeometry
+        self.windowState = windowState
+        self.contentBackgroundColor = contentBackgroundColor
+    }
+
+    init(
+        browserContext: any WindowWebContentBrowserContext,
+        webViewCoordinator: WebViewCoordinator,
+        hoveredLink: Binding<String?>,
+        splitGroup: SplitGroup?,
+        isSplitDropCaptureActive: Bool,
+        chromeGeometry: BrowserChromeGeometry,
+        windowState: BrowserWindowState,
+        contentBackgroundColor: Color
+    ) {
+        self.makeBrowserContext = { browserContext }
+        self.currentTabForDisplayState = { windowState in
+            browserContext.currentTab(for: windowState)
+        }
+        self.webViewCoordinator = webViewCoordinator
+        self._hoveredLink = hoveredLink
+        self.splitGroup = splitGroup
+        self.isSplitDropCaptureActive = isSplitDropCaptureActive
+        self.chromeGeometry = chromeGeometry
+        self.windowState = windowState
+        self.contentBackgroundColor = contentBackgroundColor
+    }
 
     final class Coordinator {
         var hoveredLink: Binding<String?>
@@ -976,7 +1052,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
 
     func makeNSViewController(context: Context) -> WindowWebContentController {
         WindowWebContentController(
-            browserContext: browserContext,
+            browserContext: makeBrowserContext(),
             webViewCoordinator: webViewCoordinator,
             chromeGeometry: chromeGeometry,
             windowState: windowState
@@ -1005,7 +1081,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     }
 
     private func makeDisplayState() -> WebsiteDisplayState {
-        let currentTab = browserContext.currentTab(for: windowState)
+        let currentTab = currentTabForDisplayState(windowState)
         let currentId = currentTab?.id
         return WebsiteDisplayState(
             splitGroup: splitGroup,

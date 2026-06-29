@@ -130,7 +130,7 @@ struct WebsiteView: View {
 
     private let dragCoordinateSpace = "splitPreview"
 
-    init(sidebarDragState: SidebarDragState = SidebarDragState.shared) {
+    init(sidebarDragState: SidebarDragState) {
         self._sidebarDragState = ObservedObject(wrappedValue: sidebarDragState)
     }
 
@@ -210,7 +210,8 @@ struct WebsiteView: View {
 
     private var tabCompositor: some View {
         TabCompositorWrapper(
-            browserContext: browserManager,
+            browserManager: browserManager,
+            sidebarDragState: sidebarDragState,
             webViewCoordinator: webViewCoordinator,
             hoveredLink: $hoveredLink,
             splitGroup: splitManager.splitGroup(for: windowState.id),

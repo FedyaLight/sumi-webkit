@@ -61,7 +61,7 @@ struct SidebarFloatingDragPreview: View {
     @EnvironmentObject private var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
 
-    init(sidebarDragState: SidebarDragState = SidebarDragState.shared) {
+    init(sidebarDragState: SidebarDragState) {
         self._dragState = ObservedObject(wrappedValue: sidebarDragState)
         self._locationTracker = ObservedObject(wrappedValue: sidebarDragState.locationTracker)
     }

@@ -8,8 +8,8 @@ import Foundation
 import SwiftUI
 
 extension View {
-    public func backgroundDraggable() -> some View {
-        modifier(BackgroundDraggableModifier(gesture: WindowDragGesture()))
+    func backgroundDraggable(sidebarDragState: SidebarDragState) -> some View {
+        modifier(BackgroundDraggableModifier(gesture: WindowDragGesture(sidebarDragState: sidebarDragState)))
     }
 }
 
@@ -25,10 +25,12 @@ private struct BackgroundDraggableModifier<G: Gesture>: ViewModifier {
 }
 
 struct WindowDragGesture: Gesture {
+    let sidebarDragState: SidebarDragState
+
     var body: some Gesture {
         DragGesture(minimumDistance: 0, coordinateSpace: .global)
             .onChanged { _ in
-                if !SidebarDragState.shared.isDragging {
+                if !sidebarDragState.isDragging {
                     if let event = NSApp.currentEvent,
                        let window = event.window ?? NSApp.keyWindow {
                         if event.clickCount == 2 {

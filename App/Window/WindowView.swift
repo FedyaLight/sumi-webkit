@@ -34,6 +34,11 @@ struct WindowView: View {
     @State private var dockedSidebarLayoutGeneration: UInt64 = 0
     /// Bumps when system/window effective appearance changes so `globalColorScheme` refreshes while in auto mode.
     @State private var effectiveAppearanceRevision: UInt = 0
+    private let sidebarDragState: SidebarDragState
+
+    init(sidebarDragState: SidebarDragState = SidebarDragState.shared) {
+        self.sidebarDragState = sidebarDragState
+    }
 
     var body: some View {
         GeometryReader { windowProxy in
@@ -69,7 +74,8 @@ struct WindowView: View {
                         SidebarHoverOverlayView(
                             resolvedThemeContext: resolvedThemeContext,
                             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
-                            windowChromeSize: windowChromeSize
+                            windowChromeSize: windowChromeSize,
+                            sidebarDragState: sidebarDragState
                         )
                             .environmentObject(hoverSidebarManager)
                             .environment(windowState)
@@ -121,7 +127,7 @@ struct WindowView: View {
                 }
 
                 chromeThemeScope {
-                    SidebarFloatingDragPreview()
+                    SidebarFloatingDragPreview(sidebarDragState: sidebarDragState)
                         .environmentObject(browserManager)
                         .environment(windowState)
                         .environment(\.sumiSettings, sumiSettings)
@@ -249,7 +255,7 @@ struct WindowView: View {
             surface: .toolbarChrome,
             nativeMaterialRole: .nativeGlassChrome
         )
-        .backgroundDraggable()
+        .backgroundDraggable(sidebarDragState: sidebarDragState)
         .environment(windowState)
     }
 
@@ -319,7 +325,7 @@ struct WindowView: View {
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
             windowChromeSize: windowChromeSize,
-            sidebarDragState: SidebarDragState.shared,
+            sidebarDragState: sidebarDragState,
             presentationContext: presentationContext
         )
         .id("docked-sidebar-column")
@@ -374,7 +380,7 @@ struct WindowView: View {
     @ViewBuilder
     private func webContent() -> some View {
         ZStack(alignment: .top) {
-            WebsiteView()
+            WebsiteView(sidebarDragState: sidebarDragState)
                 .zIndex(2000)
 
             if let currentTab = browserManager.currentTab(for: windowState) {
