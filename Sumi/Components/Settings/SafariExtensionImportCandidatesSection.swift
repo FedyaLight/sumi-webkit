@@ -6,8 +6,7 @@
 import SwiftUI
 
 struct SafariExtensionImportCandidatesSection: View {
-    @EnvironmentObject private var browserManager: BrowserManager
-
+    let extensionsModule: SumiExtensionsModule
     let installedExtensions: [InstalledExtension]
     let onStatus: (String) -> Void
 
@@ -154,7 +153,7 @@ struct SafariExtensionImportCandidatesSection: View {
         isScanning = true
         Task { @MainActor in
             defer { isScanning = false }
-            guard browserManager.extensionsModule.isEnabled else {
+            guard extensionsModule.isEnabled else {
                 candidates = []
                 contentBlockerRecords = []
                 return
@@ -162,9 +161,9 @@ struct SafariExtensionImportCandidatesSection: View {
 
             var issues: [SafariExtensionScannerIssue] = []
             let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-            browserManager.extensionsModule.refreshDiscoveredSafariWebExtensionCandidates(discovered)
+            extensionsModule.refreshDiscoveredSafariWebExtensionCandidates(discovered)
             candidates = discovered
-            contentBlockerRecords = browserManager.extensionsModule.installedSafariContentBlockers()
+            contentBlockerRecords = extensionsModule.installedSafariContentBlockers()
         }
     }
 
@@ -173,7 +172,7 @@ struct SafariExtensionImportCandidatesSection: View {
         Task { @MainActor in
             defer { enablingIDs.remove(candidate.id) }
             do {
-                let installed = try await browserManager.extensionsModule.enableSafariAppExtension(
+                let installed = try await extensionsModule.enableSafariAppExtension(
                     from: candidate
                 )
                 onStatus("Enabled \(installed.name).")
@@ -193,12 +192,12 @@ struct SafariExtensionImportCandidatesSection: View {
             defer { contentBlockerBusyIDs.remove(candidate.id) }
             do {
                 if enabled {
-                    let record = try await browserManager.extensionsModule
+                    let record = try await extensionsModule
                         .enableSafariContentBlocker(from: candidate)
                     statusMessage = "Enabled \(record.displayName). Reload pages to apply content blocker changes."
                     onStatus(statusMessage ?? "")
                 } else {
-                    _ = try await browserManager.extensionsModule
+                    _ = try await extensionsModule
                         .setSafariContentBlockerEnabled(
                             false,
                             bundleIdentifier: candidate.extensionBundleIdentifier
@@ -210,7 +209,7 @@ struct SafariExtensionImportCandidatesSection: View {
                 statusMessage = error.localizedDescription
                 onStatus(error.localizedDescription)
             }
-            contentBlockerRecords = browserManager.extensionsModule.installedSafariContentBlockers()
+            contentBlockerRecords = extensionsModule.installedSafariContentBlockers()
         }
     }
 }

@@ -330,7 +330,11 @@ struct SumiSettingsTabRootView: View {
         case .shortcuts:
             ShortcutsSettingsView(shortcutManager: keyboardShortcutManager)
         case .extensions, .userScripts:
-            SumiExtensionsSettingsPane()
+            SumiExtensionsSettingsPane(
+                extensionsModule: browserManager.extensionsModule,
+                userscriptsModule: browserManager.userscriptsModule,
+                currentProfileID: browserManager.currentProfile?.id
+            )
         case .advanced:
             SumiDataRecoverySettingsPane(
                 actions: SumiDataRecoveryActions(

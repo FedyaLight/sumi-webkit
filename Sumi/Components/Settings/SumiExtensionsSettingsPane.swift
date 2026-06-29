@@ -7,8 +7,11 @@ import AppKit
 import SwiftUI
 
 struct SumiExtensionsSettingsPane: View {
+    let extensionsModule: SumiExtensionsModule
+    let userscriptsModule: SumiUserscriptsModule
+    let currentProfileID: UUID?
+
     @Environment(\.sumiSettings) private var sumiSettingsModel
-    @EnvironmentObject private var browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @State private var busyExtensionIDs: Set<String> = []
     @State private var extensionPendingRemoval: InstalledExtension?
@@ -36,7 +39,7 @@ struct SumiExtensionsSettingsPane: View {
                 }
             case .userScripts:
                 SumiSettingsModuleToggleGate(descriptor: .userScripts) {
-                    if let manager = browserManager.userscriptsModule.managerIfEnabled() {
+                    if let manager = userscriptsModule.managerIfEnabled() {
                         SumiScriptsManagerView(manager: manager)
                     }
                 }
@@ -70,7 +73,7 @@ struct SumiExtensionsSettingsPane: View {
 
     @ViewBuilder
     private var extensionsManagerBody: some View {
-        if browserManager.extensionsModule.managerIfEnabled() != nil {
+        if extensionsModule.managerIfEnabled() != nil {
             let installedExtensions = extensionSurfaceStore.installedExtensions
             extensionsBody(
                 installedExtensions: installedExtensions,
@@ -79,12 +82,12 @@ struct SumiExtensionsSettingsPane: View {
             )
             .task(
                 id: ExtensionsSiteAccessPolicyRefreshKey(
-                    profileId: browserManager.currentProfile?.id,
+                    profileId: currentProfileID,
                     extensionIds: installedExtensions.map(\.id)
                 )
             ) {
                 extensionSurfaceStore.refreshSiteAccessPolicies(
-                    profileId: browserManager.currentProfile?.id
+                    profileId: currentProfileID
                 )
             }
         } else {
@@ -129,32 +132,32 @@ struct SumiExtensionsSettingsPane: View {
                                     toggleExtension(ext)
                                 },
                                 onDefaultSiteAccessChanged: { access in
-                                    browserManager.extensionsModule.setDefaultSiteAccess(
+                                    extensionsModule.setDefaultSiteAccess(
                                         access,
                                         extensionId: ext.id,
-                                        profileId: browserManager.currentProfile?.id
+                                        profileId: currentProfileID
                                     )
                                 },
                                 onPrivateAccessChanged: { isAllowed in
-                                    browserManager.extensionsModule.setPrivateBrowsingAccess(
+                                    extensionsModule.setPrivateBrowsingAccess(
                                         isAllowed,
                                         extensionId: ext.id,
-                                        profileId: browserManager.currentProfile?.id
+                                        profileId: currentProfileID
                                     )
                                 },
                                 onConfiguredSiteAccessChanged: { matchPattern, access in
-                                    browserManager.extensionsModule.setConfiguredSiteAccess(
+                                    extensionsModule.setConfiguredSiteAccess(
                                         access,
                                         extensionId: ext.id,
-                                        profileId: browserManager.currentProfile?.id,
+                                        profileId: currentProfileID,
                                         matchPatternString: matchPattern
                                     )
                                 },
                                 onOpenOptions: {
                                     Task { @MainActor in
-                                        await browserManager.extensionsModule.openOptionsPage(
+                                        await extensionsModule.openOptionsPage(
                                             extensionId: ext.id,
-                                            profileId: browserManager.currentProfile?.id
+                                            profileId: currentProfileID
                                         )
                                     }
                                 },
@@ -172,6 +175,7 @@ struct SumiExtensionsSettingsPane: View {
                 subtitle: "Discover Safari Web Extensions bundled in installed macOS apps"
             ) {
                 SafariExtensionImportCandidatesSection(
+                    extensionsModule: extensionsModule,
                     installedExtensions: installedExtensions,
                     onStatus: { _ in }
                 )
@@ -185,11 +189,11 @@ struct SumiExtensionsSettingsPane: View {
         extensionOperationTasks[extensionRecord.id] = Task { @MainActor in
             do {
                 if extensionRecord.isEnabled {
-                    try await browserManager.extensionsModule.disableExtension(
+                    try await extensionsModule.disableExtension(
                         extensionRecord.id
                     )
                 } else {
-                    _ = try await browserManager.extensionsModule.enableExtension(
+                    _ = try await extensionsModule.enableExtension(
                         extensionRecord.id
                     )
                 }
@@ -205,7 +209,7 @@ struct SumiExtensionsSettingsPane: View {
         busyExtensionIDs.insert(extensionRecord.id)
         extensionOperationTasks[extensionRecord.id] = Task { @MainActor in
             do {
-                try await browserManager.extensionsModule.uninstallExtension(
+                try await extensionsModule.uninstallExtension(
                     extensionRecord.id
                 )
             } catch {}
