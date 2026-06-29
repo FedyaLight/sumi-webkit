@@ -6,7 +6,7 @@ extension Tab {
     ) -> SumiSafariContentBlockerAttachmentState {
         reloadPolicyStateOwner.safariContentBlockerDesiredAttachmentState(
             for: targetURL,
-            browserManager: browserManager
+            runtime: reloadPolicyRuntime
         )
     }
 
@@ -21,7 +21,7 @@ extension Tab {
     ) -> SumiProtectionAttachmentState {
         reloadPolicyStateOwner.protectionDesiredAttachmentState(
             for: targetURL,
-            browserManager: browserManager
+            runtime: reloadPolicyRuntime
         )
     }
 
@@ -39,7 +39,7 @@ extension Tab {
                 afterChangingPolicyFor: changedURL,
                 currentURL: url,
                 existingWebView: existingWebView,
-                browserManager: browserManager
+                runtime: reloadPolicyRuntime
             )
         )
     }
@@ -52,7 +52,7 @@ extension Tab {
                 afterChangingPolicyFor: changedURL,
                 currentURL: url,
                 existingWebView: existingWebView,
-                browserManager: browserManager
+                runtime: reloadPolicyRuntime
             )
         )
     }
@@ -62,7 +62,7 @@ extension Tab {
             reloadPolicyStateOwner.updateSafariContentBlockerReloadRequirementForCurrentSite(
                 currentURL: url,
                 existingWebView: existingWebView,
-                browserManager: browserManager
+                runtime: reloadPolicyRuntime
             )
         )
     }
@@ -71,7 +71,7 @@ extension Tab {
         publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.clearSafariContentBlockerReloadRequirementIfResolved(
                 for: committedURL,
-                browserManager: browserManager
+                runtime: reloadPolicyRuntime
             )
         )
     }
@@ -81,7 +81,7 @@ extension Tab {
             reloadPolicyStateOwner.updateProtectionReloadRequirementForCurrentSite(
                 currentURL: url,
                 existingWebView: existingWebView,
-                browserManager: browserManager
+                runtime: reloadPolicyRuntime
             )
         )
     }
@@ -90,7 +90,7 @@ extension Tab {
         publishNavigationStateChangeIfNeeded(
             reloadPolicyStateOwner.clearProtectionReloadRequirementIfResolved(
                 for: committedURL,
-                browserManager: browserManager
+                runtime: reloadPolicyRuntime
             )
         )
     }
@@ -99,7 +99,7 @@ extension Tab {
         reloadPolicyStateOwner.protectionCurrentTabDiagnostics(
             for: url,
             existingWebView: existingWebView,
-            browserManager: browserManager
+            runtime: reloadPolicyRuntime
         )
     }
 
@@ -110,7 +110,7 @@ extension Tab {
         reloadPolicyStateOwner.noteProtectionManualReloadResult(
             rebuiltForConfigurationPolicy: rebuiltForConfigurationPolicy,
             targetURL: targetURL,
-            browserManager: browserManager
+            runtime: reloadPolicyRuntime
         )
     }
 
@@ -121,7 +121,7 @@ extension Tab {
                 currentURL: url,
                 existingWebView: existingWebView,
                 profile: resolveProfile(),
-                browserManager: browserManager
+                runtime: reloadPolicyRuntime
             )
         )
     }
@@ -132,7 +132,7 @@ extension Tab {
                 currentURL: url,
                 existingWebView: existingWebView,
                 profile: resolveProfile(),
-                browserManager: browserManager
+                runtime: reloadPolicyRuntime
             )
         )
     }
@@ -144,7 +144,7 @@ extension Tab {
                 currentURL: url,
                 existingWebView: existingWebView,
                 profile: resolveProfile(),
-                browserManager: browserManager
+                runtime: reloadPolicyRuntime
             )
         )
     }
@@ -157,7 +157,7 @@ extension Tab {
             existingWebView: existingWebView,
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
-            browserManager: browserManager
+            runtime: reloadPolicyRuntime
         )
     }
 
@@ -169,7 +169,7 @@ extension Tab {
             existingWebView: existingWebView,
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
-            browserManager: browserManager
+            runtime: reloadPolicyRuntime
         )
     }
 
@@ -197,6 +197,7 @@ extension Tab {
         reloadPolicyStateOwner.rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
             targetURL: targetURL,
             reason: reason,
+            runtime: reloadPolicyRuntime,
             context: reloadPolicyWebViewRebuildContext()
         )
     }
@@ -209,6 +210,7 @@ extension Tab {
         reloadPolicyStateOwner.rebuildNormalWebViewForAutoplayIfNeeded(
             targetURL: targetURL,
             reason: reason,
+            runtime: reloadPolicyRuntime,
             context: reloadPolicyWebViewRebuildContext()
         )
     }
@@ -230,14 +232,36 @@ extension Tab {
 
     private func reloadPolicyWebViewRebuildContext() -> TabReloadPolicyWebViewRebuildContext {
         TabReloadPolicyWebViewRebuildContext(
-            tabId: id,
             currentURL: url,
             existingWebView: { self.existingWebView },
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
             profile: resolveProfile(),
-            browserManager: browserManager,
+            replacementContext: configurationPolicyWebViewReplacementContext(),
+            publishNavigationStateChangeIfNeeded: { didChange in
+                self.publishNavigationStateChangeIfNeeded(didChange)
+            }
+        )
+    }
+
+    private func configurationPolicyWebViewReplacementContext() -> TabConfigurationPolicyWebViewReplacementContext {
+        TabConfigurationPolicyWebViewReplacementContext(
+            tabId: id,
+            existingWebView: { self.existingWebView },
             primaryWindowId: primaryWindowId,
+            trackedWindowIdContainingWebView: { webView in
+                self.browserManager?.webViewCoordinator?.windowID(containing: webView)
+            },
+            hasTrackedWebViews: { tabId in
+                self.browserManager?.webViewCoordinator?.windowIDs(for: tabId).isEmpty == false
+            },
+            setTrackedWebView: { webView, tabId, windowId in
+                self.browserManager?.webViewCoordinator?.setWebView(
+                    webView,
+                    for: tabId,
+                    in: windowId
+                )
+            },
             makeNormalTabWebView: { reason in
                 self.makeNormalTabWebView(reason: reason)
             },
@@ -259,9 +283,16 @@ extension Tab {
             assignWebViewToWindow: { webView, windowId in
                 self.assignWebViewToWindow(webView, windowId: windowId)
             },
-            publishNavigationStateChangeIfNeeded: { didChange in
-                self.publishNavigationStateChangeIfNeeded(didChange)
+            refreshWindowAfterWebViewReplacement: { windowId in
+                guard let browserManager = self.browserManager,
+                      let windowState = browserManager.windowRegistry?.windows[windowId]
+                else { return }
+                browserManager.refreshCompositor(for: windowState)
             }
         )
+    }
+
+    private var reloadPolicyRuntime: TabReloadPolicyRuntime {
+        TabReloadPolicyRuntime.live(browserManager: browserManager)
     }
 }
