@@ -537,10 +537,33 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertFalse(methodSource.contains("CGRequestScreenCaptureAccess"))
     }
 
-    func testWebKitPermissionBridgeDoesNotRequestSystemScreenCaptureAuthorization() throws {
-        let source = try sourceFile("Sumi/Permissions/SumiWebKitPermissionBridge.swift")
+    func testDisplayCaptureGrantReturnsWebKitScreenPromptThroughCoordinatorOnly() async {
+        let runtime = FakeSumiRuntimePermissionController(screenCaptureRuntimeState: .unsupported)
+        let coordinator = FakePermissionCoordinator(
+            mode: .immediate(
+                decision(
+                    .granted,
+                    reason: "stored-screen-allow",
+                    permissionTypes: [.screenCapture]
+                )
+            )
+        )
+        let bridge = makeBridge(
+            coordinator: coordinator,
+            runtimeController: runtime
+        )
 
-        XCTAssertFalse(source.contains("CGRequestScreenCaptureAccess"))
+        let decisions = await resolveDisplay(
+            bridge: bridge,
+            request: displayRequest(permissionTypes: [.screenCapture])
+        )
+
+        XCTAssertEqual(decisions, [SumiWebKitDisplayCapturePermissionDecision.screenPrompt.rawValue])
+        XCTAssertEqual(runtime.currentRuntimeStateCallCount, 1)
+        XCTAssertEqual(runtime.resumeRuntimePermissionsCallCount, 0)
+        XCTAssertEqual(runtime.revokeRuntimePermissionsCallCount, 0)
+        let contexts = await coordinator.recordedContexts()
+        XCTAssertEqual(contexts.map(\.request.permissionTypes), [[.screenCapture]])
     }
 
     private func makeBridge(
@@ -836,6 +859,10 @@ private actor FakePermissionCoordinator: SumiPermissionCoordinating {
 
     func lastReturnedDecision() -> SumiPermissionCoordinatorDecision? {
         returnedDecision
+    }
+
+    func recordedContexts() -> [SumiPermissionSecurityContext] {
+        contexts
     }
 
     private func authorizationQuery(

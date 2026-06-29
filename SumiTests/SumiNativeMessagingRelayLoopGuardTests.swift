@@ -188,48 +188,75 @@ final class SumiNativeMessagingRelayLoopGuardTests: XCTestCase {
         )
     }
 
-    func testRelaySourceHasNoExtensionSpecificBranches() throws {
-        let relaySource = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent(
-                    "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
-                ),
-            encoding: .utf8
-        )
-        let loopGuardSource = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent(
-                    "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelayLoopGuard.swift"
-                ),
-            encoding: .utf8
-        )
+    func testLoopGuardSuppressionIsGenericAcrossUnsupportedCompanionIds() {
+        let cases = [
+            ("ext-1password", "com.1password.1password"),
+            ("ext-proton", "me.proton.pass.catalyst"),
+            ("ext-raindrop", "io.raindrop.raindropmac"),
+            ("ext-generic", "com.example.host"),
+        ]
 
-        for token in ["1password", "proton", "raindrop"] {
-            XCTAssertFalse(loopGuardSource.localizedCaseInsensitiveContains(token))
+        for (extensionId, hostBundleIdentifier) in cases {
+            let loopGuard = SumiNativeMessagingRelayLoopGuard()
+            let key = SumiNativeMessagingRelayLoopGuard.SessionKey(
+                profileId: nil,
+                extensionId: extensionId,
+                applicationIdentifier: hostBundleIdentifier
+            )
+
+            let first = loopGuard.evaluate(
+                key: key,
+                hostBundleIdentifier: hostBundleIdentifier
+            )
+            XCTAssertFalse(first.shouldLaunchHost, extensionId)
+            XCTAssertFalse(first.launchSuppressed, extensionId)
+            XCTAssertFalse(first.isWithinCooldown, extensionId)
+            XCTAssertEqual(first.retryCountBucket, .none, extensionId)
+
+            loopGuard.recordCompanionAppProtocolUnknown(key: key, launchAttempted: false)
+
+            let repeated = loopGuard.evaluate(
+                key: key,
+                hostBundleIdentifier: hostBundleIdentifier
+            )
+            XCTAssertFalse(repeated.shouldLaunchHost, extensionId)
+            XCTAssertTrue(repeated.launchSuppressed, extensionId)
+            XCTAssertTrue(repeated.isWithinCooldown, extensionId)
+            XCTAssertEqual(repeated.retryCountBucket, .first, extensionId)
         }
-        XCTAssertTrue(
-            loopGuardSource.contains("supportedRelayProtocolHostBundleIdentifiers")
-        )
-        XCTAssertFalse(relaySource.contains("if extensionId =="))
-        XCTAssertFalse(relaySource.contains("switch extensionId"))
     }
 
-    func testDiagnosticsLoggerDoesNotIncludeMessageBodies() throws {
-        let relaySource = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent(
-                    "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
-                ),
-            encoding: .utf8
+    func testRoutingProbeSanitizesMessageBodiesToShapeOnly() {
+        let objectShape = SafariExtensionNativeMessagingRoutingProbe.sanitizedMessageShape(
+            for: [
+                "type": "unlock",
+                "username": "alice@example.com",
+                "password": "super-secret",
+                "nested": ["token": "body-token"],
+            ] as [String: Any]
         )
-        XCTAssertFalse(relaySource.contains("message.body"))
-        XCTAssertFalse(relaySource.contains("String(describing: message)"))
+        let jsonShape = SafariExtensionNativeMessagingRoutingProbe.sanitizedMessageShape(
+            for: #"{"type":"unlock","username":"alice@example.com","password":"super-secret"}"#
+        )
+
+        XCTAssertEqual(objectShape.container, "object")
+        XCTAssertEqual(objectShape.topLevelKeys, ["nested", "password", "type", "username"])
+        XCTAssertEqual(objectShape.typeKeys, ["type"])
+        XCTAssertEqual(jsonShape.container, "jsonStringObject")
+        XCTAssertEqual(jsonShape.topLevelKeys, ["password", "type", "username"])
+        XCTAssertEqual(jsonShape.typeKeys, ["type"])
+
+        let logSurface = [
+            objectShape.container,
+            objectShape.keysForLog,
+            objectShape.typeKeysForLog,
+            jsonShape.container,
+            jsonShape.keysForLog,
+            jsonShape.typeKeysForLog,
+        ].joined(separator: " ")
+        XCTAssertFalse(logSurface.contains("super-secret"))
+        XCTAssertFalse(logSurface.contains("alice@example.com"))
+        XCTAssertFalse(logSurface.contains("body-token"))
     }
 
     func testRepeated100SendNativeMessageCoalescesDiagnostics() async throws {
