@@ -91,6 +91,47 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertEqual(state.activePressedSourceID, "tab-row-test")
     }
 
+    func testSidebarInteractiveItemUsesInjectedDragStateForArmedGeometry() {
+        let injectedDragState = SidebarDragState()
+        let sharedDragState = SidebarDragState.shared
+        let itemId = UUID()
+        let spaceId = UUID()
+        let item = SumiDragItem(
+            tabId: itemId,
+            title: "Injected drag state"
+        )
+        let scope = SidebarDragScope(
+            windowId: UUID(),
+            spaceId: spaceId,
+            profileId: nil,
+            sourceContainer: .spaceRegular(spaceId),
+            sourceItemId: itemId,
+            sourceItemKind: .tab
+        )
+        let view = SidebarInteractiveItemView(frame: NSRect(x: 0, y: 0, width: 160, height: 36))
+
+        injectedDragState.resetInteractionState()
+        sharedDragState.resetInteractionState()
+        view.sidebarDragState = injectedDragState
+        view.update(
+            configuration: SidebarAppKitItemConfiguration(
+                dragSource: SidebarDragSourceConfiguration(
+                    item: item,
+                    sourceZone: .spaceRegular(spaceId),
+                    previewKind: .row
+                ),
+                dragScope: scope
+            )
+        )
+
+        view.mouseDown(with: mouseEvent(.leftMouseDown))
+
+        XCTAssertTrue(injectedDragState.isInternalDragGeometryArmed)
+        XCTAssertFalse(sharedDragState.isInternalDragGeometryArmed)
+        XCTAssertEqual(injectedDragState.armedDragScope, scope)
+        XCTAssertNil(sharedDragState.armedDragScope)
+    }
+
     func testPrimaryActionWithSourceIDUsesAppKitOwnerForPressTrackingInDockedSidebar() {
         let context = SidebarPresentationContext.docked(sidebarWidth: 280)
 

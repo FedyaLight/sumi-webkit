@@ -55,7 +55,8 @@ final class SplitPaneControlsView: NSVisualEffectView {
         tab: Tab,
         browserManager: BrowserManager,
         splitManager: SplitViewManager,
-        windowState: BrowserWindowState
+        windowState: BrowserWindowState,
+        sidebarDragState: SidebarDragState
     ) {
         self.tab = tab
         self.splitManager = splitManager
@@ -64,7 +65,8 @@ final class SplitPaneControlsView: NSVisualEffectView {
             tab: tab,
             windowState: windowState,
             browserManager: browserManager,
-            splitManager: splitManager
+            splitManager: splitManager,
+            sidebarDragState: sidebarDragState
         )
     }
 
@@ -214,6 +216,7 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
     private weak var windowState: BrowserWindowState?
     private weak var browserManager: BrowserManager?
     private weak var splitManager: SplitViewManager?
+    private var sidebarDragState: SidebarDragState?
     private var didStartDrag = false
     private var mouseDownEvent: NSEvent?
     private var splitDropShieldHandler: ((Bool) -> Void)?
@@ -227,12 +230,14 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
         tab: Tab,
         windowState: BrowserWindowState,
         browserManager: BrowserManager,
-        splitManager: SplitViewManager
+        splitManager: SplitViewManager,
+        sidebarDragState: SidebarDragState
     ) {
         self.tab = tab
         self.windowState = windowState
         self.browserManager = browserManager
         self.splitManager = splitManager
+        self.sidebarDragState = sidebarDragState
     }
 
     func setSplitDropShieldHandler(_ handler: @escaping (Bool) -> Void) {
@@ -279,7 +284,7 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
             callbackScreenPoint: screenPoint,
             in: self
         ) else { return }
-        SidebarDragState.shared.updateDragLocation(
+        sidebarDragState?.updateDragLocation(
             locations.dropLocation,
             previewLocation: locations.previewLocation
         )
@@ -290,7 +295,7 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
         endedAt screenPoint: NSPoint,
         operation: NSDragOperation
     ) {
-        SidebarDragState.shared.resetInteractionState()
+        sidebarDragState?.resetInteractionState()
         setSplitDropShieldActive(false)
         NotificationCenter.default.post(name: .tabDragDidEnd, object: nil)
         didStartDrag = false
@@ -298,7 +303,7 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
     }
 
     private func startDrag(with event: NSEvent, sessionEvent: NSEvent) {
-        guard let tab, let windowState else { return }
+        guard let tab, let windowState, let sidebarDragState else { return }
         let spaceId = tab.spaceId ?? windowState.currentSpaceId
         guard let spaceId else { return }
 
@@ -340,7 +345,7 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
         )
 
         didStartDrag = true
-        SidebarDragState.shared.beginInternalDragSession(
+        sidebarDragState.beginInternalDragSession(
             itemId: tab.id,
             location: dragLocation,
             previewLocation: previewLocation,

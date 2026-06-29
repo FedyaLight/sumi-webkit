@@ -9,15 +9,18 @@ import SwiftUI
 struct SidebarAppKitItemBridge: NSViewRepresentable {
     let controller: SidebarContextMenuController
     let configuration: SidebarAppKitItemConfiguration
+    @EnvironmentObject private var dragState: SidebarDragState
 
     func makeNSView(context: Context) -> SidebarInteractiveItemView {
         let view = SidebarInteractiveItemView(frame: .zero)
+        view.sidebarDragState = dragState
         view.contextMenuController = controller
         view.update(configuration: configuration)
         return view
     }
 
     func updateNSView(_ nsView: SidebarInteractiveItemView, context: Context) {
+        nsView.sidebarDragState = dragState
         nsView.contextMenuController = controller
         nsView.update(configuration: configuration)
     }

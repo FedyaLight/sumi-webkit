@@ -10,6 +10,8 @@ import SwiftUI
 final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransientInteractionDisarmable {
     private let dragThreshold: CGFloat = 3
 
+    var sidebarDragState: SidebarDragState?
+
     weak var contextMenuController: SidebarContextMenuController? {
         didSet {
             guard oldValue !== contextMenuController else { return }
@@ -113,7 +115,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             isTrackingDragGesture = true
             beginPressTracking()
             if capturesDrag {
-                SidebarDragState.shared.armInternalDragGeometry(
+                sidebarDragState?.armInternalDragGeometry(
                     scope: itemConfiguration.dragScope
                 )
             }
@@ -194,7 +196,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         endedAt screenPoint: NSPoint,
         operation: NSDragOperation
     ) {
-        SidebarDragState.shared.resetInteractionState()
+        sidebarDragState?.resetInteractionState()
         resetMouseState()
     }
 
@@ -226,8 +228,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
 
         if !effectiveInteractionEnabled,
            didStartDrag,
-           !shouldPreserveSharedDragStateOnTeardown {
-            SidebarDragState.shared.resetInteractionState()
+           !shouldPreserveDragStateOnTeardown {
+            sidebarDragState?.resetInteractionState()
         }
 
         isInteractive = effectiveInteractionEnabled
@@ -376,7 +378,8 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
               isInteractive,
               configuration.isEnabled,
               allowsTransientDragSourceHitTesting,
-              let dragScope = itemConfiguration.dragScope
+              let dragScope = itemConfiguration.dragScope,
+              let sidebarDragState
         else {
             return
         }
@@ -399,7 +402,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             fromLocalPoint: point,
             in: self
         )
-        SidebarDragState.shared.beginInternalDragSession(
+        sidebarDragState.beginInternalDragSession(
             itemId: configuration.item.tabId,
             location: dragLocation,
             previewLocation: previewLocation,
@@ -409,7 +412,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
             scope: dragScope
         )
         itemConfiguration.interactionState?.syncSidebarItemDrag(true)
-        SidebarDragState.shared.flushDeferredGeometryForDragStart()
+        sidebarDragState.flushDeferredGeometryForDragStart()
         updateInternalDragState(
             at: dragLocation,
             previewLocation: previewLocation
@@ -434,22 +437,23 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         at location: CGPoint,
         previewLocation: CGPoint? = nil
     ) {
-        guard let configuration = itemConfiguration.dragSource else { return }
+        guard let configuration = itemConfiguration.dragSource,
+              let sidebarDragState else { return }
         SidebarDropResolver.updateState(
             location: location,
             previewLocation: previewLocation,
-            state: SidebarDragState.shared,
+            state: sidebarDragState,
             draggedItem: configuration.item
         )
     }
 
-    private var shouldPreserveSharedDragStateOnTeardown: Bool {
+    private var shouldPreserveDragStateOnTeardown: Bool {
         guard didStartDrag,
-              let dragItemID = itemConfiguration.dragSource?.item.tabId else {
+              let dragItemID = itemConfiguration.dragSource?.item.tabId,
+              let state = sidebarDragState else {
             return false
         }
 
-        let state = SidebarDragState.shared
         return state.isDragging
             && state.isInternalDragSession
             && state.activeDragItemId == dragItemID
@@ -468,7 +472,7 @@ final class SidebarInteractiveItemView: NSView, NSDraggingSource, SidebarTransie
         isTrackingDragGesture = false
         endPressTracking()
         if shouldCancelArmedGeometry {
-            SidebarDragState.shared.cancelArmedDragGeometry()
+            sidebarDragState?.cancelArmedDragGeometry()
         }
         contextMenuController?.endPrimaryMouseTracking(self)
     }

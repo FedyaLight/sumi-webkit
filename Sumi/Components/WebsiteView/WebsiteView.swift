@@ -125,10 +125,14 @@ struct WebsiteView: View {
     @EnvironmentObject var splitManager: SplitViewManager
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @ObservedObject private var sidebarDragState = SidebarDragState.shared
+    @ObservedObject private var sidebarDragState: SidebarDragState
     @State private var hoveredLink: String?
 
     private let dragCoordinateSpace = "splitPreview"
+
+    init(sidebarDragState: SidebarDragState = SidebarDragState.shared) {
+        self._sidebarDragState = ObservedObject(wrappedValue: sidebarDragState)
+    }
 
     private var chromeGeometry: BrowserChromeGeometry {
         BrowserChromeGeometry(settings: sumiSettings)

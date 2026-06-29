@@ -56,10 +56,15 @@ enum SidebarFloatingDragPreviewPolicy {
 }
 
 struct SidebarFloatingDragPreview: View {
-    @ObservedObject private var dragState = SidebarDragState.shared
-    @ObservedObject private var locationTracker = SidebarDragState.shared.locationTracker
+    @ObservedObject private var dragState: SidebarDragState
+    @ObservedObject private var locationTracker: SidebarDragLocationTracker
     @EnvironmentObject private var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
+
+    init(sidebarDragState: SidebarDragState = SidebarDragState.shared) {
+        self._dragState = ObservedObject(wrappedValue: sidebarDragState)
+        self._locationTracker = ObservedObject(wrappedValue: sidebarDragState.locationTracker)
+    }
 
     var body: some View {
         Group {

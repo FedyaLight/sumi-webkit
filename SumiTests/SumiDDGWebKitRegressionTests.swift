@@ -2438,6 +2438,8 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
 
     @MainActor
     private final class CompositorBrowserContextStub: WindowWebContentBrowserContext {
+        let sidebarDragState = SidebarDragState()
+
         func currentTab(for _: BrowserWindowState) -> Tab? {
             nil
         }

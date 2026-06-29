@@ -159,7 +159,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var resolvedThemeContext: ResolvedThemeContext
     var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     var windowChromeSize: CGSize
-    var sidebarDragState: SidebarDragState = SidebarDragState.shared
+    var sidebarDragState: SidebarDragState
     var presentationContext: SidebarPresentationContext
 
     func makeNSViewController(context: Context) -> SidebarColumnViewController {

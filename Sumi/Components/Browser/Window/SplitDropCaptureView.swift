@@ -52,6 +52,7 @@ enum SplitDropCaptureHitPolicy {
 final class SplitDropCaptureView: NSView {
     weak var browserManager: BrowserManager?
     weak var splitManager: SplitViewManager?
+    var sidebarDragState: SidebarDragState?
     var windowId: UUID?
     private var currentTarget: SplitDropTarget?
     private var isDragActive = false
@@ -192,8 +193,8 @@ final class SplitDropCaptureView: NSView {
     }
 
     private func updateSidebarDragPreviewLocation(_ sender: NSDraggingInfo) {
-        let state = SidebarDragState.shared
-        guard state.isInternalDragSession,
+        guard let state = sidebarDragState,
+              state.isInternalDragSession,
               let dragLocation = SidebarDragLocationMapper.swiftUIGlobalPoint(
                 fromWindowPoint: sender.draggingLocation,
                 in: self
@@ -228,7 +229,7 @@ final class SplitDropCaptureView: NSView {
             NotificationCenter.default.post(name: .tabDragDidEnd, object: nil)
         }
         if resetSidebarDragState {
-            SidebarDragState.shared.resetInteractionState()
+            sidebarDragState?.resetInteractionState()
         }
     }
 

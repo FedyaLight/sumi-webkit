@@ -51,6 +51,8 @@ struct WebsiteDisplayState: Equatable {
 
 @MainActor
 protocol WindowWebContentBrowserContext: AnyObject {
+    var sidebarDragState: SidebarDragState { get }
+
     func currentTab(for windowState: BrowserWindowState) -> Tab?
     func tab(for tabId: UUID) -> Tab?
     func splitGroup(for windowId: UUID) -> SplitGroup?
@@ -75,6 +77,10 @@ protocol WindowWebContentBrowserContext: AnyObject {
 }
 
 extension BrowserManager: WindowWebContentBrowserContext {
+    var sidebarDragState: SidebarDragState {
+        SidebarDragState.shared
+    }
+
     func tab(for tabId: UUID) -> Tab? {
         tabManager.tab(for: tabId)
     }
@@ -104,6 +110,7 @@ extension BrowserManager: WindowWebContentBrowserContext {
     func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {
         view.browserManager = self
         view.splitManager = splitManager
+        view.sidebarDragState = sidebarDragState
         view.windowId = windowId
     }
 
@@ -116,7 +123,8 @@ extension BrowserManager: WindowWebContentBrowserContext {
             tab: tab,
             browserManager: self,
             splitManager: splitManager,
-            windowState: windowState
+            windowState: windowState,
+            sidebarDragState: sidebarDragState
         )
     }
 }
