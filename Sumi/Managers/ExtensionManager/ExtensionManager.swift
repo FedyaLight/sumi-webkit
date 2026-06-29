@@ -7,7 +7,6 @@
 
 import AppKit
 import Combine
-import Darwin
 import Foundation
 import OSLog
 import SwiftData
@@ -23,22 +22,10 @@ final class ExtensionManager: NSObject, ObservableObject {
             safariWebExtensionURLScheme
         )
     }()
-    static let controllerIdentifierKey =
-        "\(SumiAppIdentity.bundleIdentifier).WKWebExtensionController.Identifier"
     nonisolated static let extensionPermissionDecisionsStorageKey =
         SafariExtensionSiteAccessPolicyStore.legacyPermissionDecisionsStorageKey
     nonisolated static let extensionSiteAccessStorageKey =
         SafariExtensionSiteAccessPolicyStore.siteAccessStorageKey
-    #if DEBUG
-        nonisolated static let testControllerIdentifiersDefaultsKey =
-            "\(SumiAppIdentity.bundleIdentifier).tests.WKWebExtensionController.Identifiers"
-        nonisolated private static var currentProcessTestControllerIdentifiersDefaultsKey: String {
-            "\(testControllerIdentifiersDefaultsKey).\(ProcessInfo.processInfo.processIdentifier)"
-        }
-        nonisolated static let installTestControllerStorageCleanupAtExit: Void = {
-            removeInactiveTestWebExtensionControllerStorage()
-        }()
-    #endif
     @Published var installedExtensions: [InstalledExtension] = []
     @Published var actionStatesByExtensionID:
         [String: BrowserExtensionActionSurfaceState] = [:]
@@ -141,9 +128,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
     }
-    var controllerIdentifierStorage: UUID?
+    private let controllerIdentifierOwner =
+        ExtensionRuntimeControllerIdentifierOwner()
     var controllerIdentifier: UUID {
-        ensureRuntimeControllerIdentifier()
+        controllerIdentifierOwner.identifier
     }
 
     weak var browserManager: BrowserManager?
@@ -310,103 +298,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         PerformanceTrace.emitEvent("ExtensionManager.lazyRuntimeDeferred")
     }
 
-    @discardableResult
-    private func ensureRuntimeControllerIdentifier() -> UUID {
-        if let controllerIdentifierStorage {
-            return controllerIdentifierStorage
-        }
-
-        let identifier = Self.makeRuntimeControllerIdentifier()
-        controllerIdentifierStorage = identifier
-        return identifier
-    }
-
-    private static func makeRuntimeControllerIdentifier() -> UUID {
-        #if DEBUG
-            if RuntimeDiagnostics.isRunningTests {
-                _ = installTestControllerStorageCleanupAtExit
-                let uuid = UUID()
-                registerTestWebExtensionControllerIdentifier(uuid)
-                return uuid
-            }
-        #endif
-
-        if let raw = UserDefaults.standard.string(forKey: controllerIdentifierKey),
-           let uuid = UUID(uuidString: raw) {
-            return uuid
-        }
-
-        let uuid = UUID()
-        UserDefaults.standard.set(uuid.uuidString, forKey: controllerIdentifierKey)
-        return uuid
-    }
-
-    #if DEBUG
-        nonisolated private static func registerTestWebExtensionControllerIdentifier(
-            _ controllerIdentifier: UUID
-        ) {
-            var identifiers = UserDefaults.standard.stringArray(
-                forKey: currentProcessTestControllerIdentifiersDefaultsKey
-            ) ?? []
-            identifiers.append(controllerIdentifier.uuidString.uppercased())
-            UserDefaults.standard.set(
-                Array(Set(identifiers)).sorted(),
-                forKey: currentProcessTestControllerIdentifiersDefaultsKey
-            )
-        }
-
-        nonisolated private static func removeInactiveTestWebExtensionControllerStorage() {
-            let defaults = UserDefaults.standard
-            let prefix = "\(testControllerIdentifiersDefaultsKey)."
-            let processKey = currentProcessTestControllerIdentifiersDefaultsKey
-            for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
-                guard key != processKey,
-                      let rawPID = key.dropFirst(prefix.count).split(separator: ".").first,
-                      let pid = pid_t(rawPID),
-                      kill(pid, 0) != 0
-                else {
-                    continue
-                }
-
-                let identifiers = defaults.stringArray(forKey: key) ?? []
-                removeTestWebExtensionControllerStorage(identifiers: identifiers)
-                defaults.removeObject(forKey: key)
-            }
-        }
-
-        nonisolated private static func removeTestWebExtensionControllerStorage(
-            identifiers: [String]
-        ) {
-            for identifier in identifiers {
-                guard let uuid = UUID(uuidString: identifier) else {
-                    continue
-                }
-                removeTestWebExtensionControllerStorageIfNeeded(for: uuid)
-            }
-        }
-
-        nonisolated private static func removeTestWebExtensionControllerStorageIfNeeded(
-            for controllerIdentifier: UUID
-        ) {
-            guard RuntimeDiagnostics.isRunningTests else {
-                return
-            }
-            guard let libraryDirectory = FileManager.default.urls(
-                for: .libraryDirectory,
-                in: .userDomainMask
-            ).first else {
-                return
-            }
-
-            let storageURL = libraryDirectory
-                .appendingPathComponent("WebKit", isDirectory: true)
-                .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
-                .appendingPathComponent("WebExtensions", isDirectory: true)
-                .appendingPathComponent(controllerIdentifier.uuidString.uppercased(), isDirectory: true)
-            try? FileManager.default.removeItem(at: storageURL)
-        }
-    #endif
-
     isolated deinit {
         let signpostState = PerformanceTrace.beginInterval("ExtensionManager.deinit")
         defer {
@@ -422,13 +313,7 @@ final class ExtensionManager: NSObject, ObservableObject {
             clearDebugState()
         #endif
 
-        #if DEBUG
-            if let controllerIdentifierStorage {
-                Self.removeTestWebExtensionControllerStorageIfNeeded(
-                    for: controllerIdentifierStorage
-                )
-            }
-        #endif
+        controllerIdentifierOwner.removeTestStorageIfNeededForLoadedIdentifier()
     }
 
     func normalTabUserScripts() -> [SumiUserScript] {
