@@ -227,6 +227,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         let report = SafariExtensionRuntimeDiagnosticsBuilder.build(
             targets: [SafariExtensionCompatibilityTargets.all[0]],
             discovered: [],
+            importStore: EmptySafariExtensionImportRecordProvider(),
             extensionsModuleEnabled: true
         )
         XCTAssertEqual(
@@ -288,5 +289,11 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
+    }
+}
+
+private final class EmptySafariExtensionImportRecordProvider: SafariExtensionImportRecordProviding {
+    func importedRecords() -> [SafariExtensionImportedRecord] {
+        []
     }
 }

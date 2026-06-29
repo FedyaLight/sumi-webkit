@@ -69,6 +69,12 @@ struct SafariExtensionCompatibilityReport: Codable, Equatable, Sendable {
     let sdkProbeNote: String
 }
 
+protocol SafariExtensionImportRecordProviding: AnyObject {
+    func importedRecords() -> [SafariExtensionImportedRecord]
+}
+
+extension SafariExtensionImportStore: SafariExtensionImportRecordProviding {}
+
 /// PM target extensions for manual acceptance and dev-machine bundle probes.
 enum SafariExtensionCompatibilityTargets {
     struct Target: Equatable, Sendable {
@@ -137,7 +143,7 @@ enum SafariExtensionCompatibilityReportBuilder {
     static func build(
         targets: [SafariExtensionCompatibilityTargets.Target] = SafariExtensionCompatibilityTargets.all,
         discovered: [DiscoveredSafariExtensionCandidate],
-        importStore: SafariExtensionImportStore = .shared,
+        importStore: any SafariExtensionImportRecordProviding,
         installedExtensions: [InstalledExtension] = [],
         extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true
@@ -376,14 +382,13 @@ extension SumiExtensionsModule {
     func safariExtensionCompatibilityReport() -> SafariExtensionCompatibilityReport {
         var issues: [SafariExtensionScannerIssue] = []
         let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-        SafariExtensionImportStore.shared.refreshDiscoveredCandidates(
-            discovered.filter { $0.bundleKind == .webExtension }
-        )
+        refreshDiscoveredSafariWebExtensionCandidates(discovered)
 
         let manager = managerIfLoadedAndEnabled()
         let installed = manager?.installedExtensions ?? []
         let report = SafariExtensionCompatibilityReportBuilder.build(
             discovered: discovered,
+            importStore: safariExtensionImportRecordsForDiagnostics(),
             installedExtensions: installed,
             extensionManager: manager,
             extensionsModuleEnabled: isEnabled

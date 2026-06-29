@@ -87,7 +87,7 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
     static func build(
         targets: [SafariExtensionCompatibilityTargets.Target] = SafariExtensionCompatibilityTargets.all,
         discovered: [DiscoveredSafariExtensionCandidate],
-        importStore: SafariExtensionImportStore = .shared,
+        importStore: any SafariExtensionImportRecordProviding,
         installedExtensions: [InstalledExtension] = [],
         contentBlockerRecords: [InstalledSafariContentBlockerRecord] = [],
         attachedSafariContentRuleListIdentifiers: [String] = [],
@@ -583,13 +583,14 @@ extension SumiExtensionsModule {
     func safariExtensionRuntimeDiagnosticReport() -> SafariExtensionRuntimeDiagnosticReport {
         var issues: [SafariExtensionScannerIssue] = []
         let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-        SafariExtensionImportStore.shared.refreshDiscoveredCandidates(discovered)
+        refreshDiscoveredSafariWebExtensionCandidates(discovered)
 
         let manager = managerIfLoadedAndEnabled()
         let adapterRegistry = manager?.loadedNativeMessagingRelay?.diagnosticsAdapterRegistry
             ?? SumiNativeMessagingAdapterRegistry.production()
         let report = SafariExtensionRuntimeDiagnosticsBuilder.build(
             discovered: discovered,
+            importStore: safariExtensionImportRecordsForDiagnostics(),
             installedExtensions: manager?.installedExtensions ?? [],
             contentBlockerRecords: installedSafariContentBlockers(),
             attachedSafariContentRuleListIdentifiers: safariContentBlockerAttachedRuleListIdentifiers(),

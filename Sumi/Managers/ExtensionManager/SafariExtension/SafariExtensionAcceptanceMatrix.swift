@@ -52,7 +52,7 @@ enum SafariExtensionAcceptanceMatrixBuilder {
     static func build(
         targets: [SafariExtensionCompatibilityTargets.Target] = SafariExtensionCompatibilityTargets.all,
         discovered: [DiscoveredSafariExtensionCandidate],
-        importStore: SafariExtensionImportStore = .shared,
+        importStore: any SafariExtensionImportRecordProviding,
         installedExtensions: [InstalledExtension] = [],
         extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true,
@@ -332,7 +332,7 @@ enum SafariExtensionAcceptanceMatrixBuilder {
     private static func resolveInstalled(
         target: SafariExtensionCompatibilityTargets.Target,
         candidate: DiscoveredSafariExtensionCandidate?,
-        importStore: SafariExtensionImportStore,
+        importStore: any SafariExtensionImportRecordProviding,
         installedExtensions: [InstalledExtension]
     ) -> InstalledExtension? {
         let importedByAppexID = Dictionary(
@@ -446,13 +446,12 @@ extension SumiExtensionsModule {
     func safariExtensionAcceptanceMatrix() -> SafariExtensionAcceptanceMatrix {
         var issues: [SafariExtensionScannerIssue] = []
         let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-        SafariExtensionImportStore.shared.refreshDiscoveredCandidates(
-            discovered.filter { $0.bundleKind == .webExtension }
-        )
+        refreshDiscoveredSafariWebExtensionCandidates(discovered)
 
         let manager = managerIfLoadedAndEnabled()
         let matrix = SafariExtensionAcceptanceMatrixBuilder.build(
             discovered: discovered,
+            importStore: safariExtensionImportRecordsForDiagnostics(),
             installedExtensions: manager?.installedExtensions ?? [],
             extensionManager: manager,
             extensionsModuleEnabled: isEnabled

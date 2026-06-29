@@ -33,6 +33,17 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
         XCTAssertEqual(importStore.refreshedCandidateBatches, [[webExtension]])
     }
 
+    func testExtensionsModuleDiagnosticsRefreshInjectedImportStore() {
+        let importStore = RecordingSafariExtensionImportStore()
+        let module = SumiExtensionsModule(safariExtensionImportStore: importStore)
+
+        _ = module.safariExtensionCompatibilityReport()
+        _ = module.safariExtensionAcceptanceMatrix()
+        _ = module.safariExtensionRuntimeDiagnosticReport()
+
+        XCTAssertEqual(importStore.refreshedCandidateBatches.count, 3)
+    }
+
     private func makeCandidate(
         bundleIdentifier: String,
         bundleKind: SafariExtensionBundleKind,
@@ -55,10 +66,12 @@ final class SafariExtensionImportAutoEnableTests: XCTestCase {
     }
 }
 
-private final class RecordingSafariExtensionImportStore: SafariExtensionImportStoring {
+private final class RecordingSafariExtensionImportStore: SafariExtensionImportStoring,
+    SafariExtensionImportRecordProviding {
     var refreshedCandidateBatches: [[DiscoveredSafariExtensionCandidate]] = []
     var removedInstalledExtensionIds: [String] = []
     var markedImports: [(candidate: DiscoveredSafariExtensionCandidate, installedExtensionId: String)] = []
+    var importedRecordResults: [SafariExtensionImportedRecord] = []
 
     func refreshDiscoveredCandidates(_ candidates: [DiscoveredSafariExtensionCandidate]) {
         refreshedCandidateBatches.append(candidates)
@@ -73,5 +86,9 @@ private final class RecordingSafariExtensionImportStore: SafariExtensionImportSt
         installedExtensionId: String
     ) {
         markedImports.append((candidate, installedExtensionId))
+    }
+
+    func importedRecords() -> [SafariExtensionImportedRecord] {
+        importedRecordResults
     }
 }

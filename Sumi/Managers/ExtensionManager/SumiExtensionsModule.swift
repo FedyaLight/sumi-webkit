@@ -11,7 +11,7 @@ final class SumiExtensionsModule {
     private let context: ModelContext?
     private let browserConfiguration: BrowserConfiguration
     private let initialProfileProvider: @MainActor () -> Profile?
-    private let safariExtensionImportStore: any SafariExtensionImportStoring
+    private let safariExtensionImportStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding
     private let managerFactory: @MainActor (
         ModelContext,
         Profile?,
@@ -31,7 +31,7 @@ final class SumiExtensionsModule {
         context: ModelContext? = nil,
         browserConfiguration: BrowserConfiguration? = nil,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
-        safariExtensionImportStore: any SafariExtensionImportStoring = SafariExtensionImportStore.shared,
+        safariExtensionImportStore: any SafariExtensionImportStoring & SafariExtensionImportRecordProviding = SafariExtensionImportStore.shared,
         managerFactory: @escaping @MainActor (
             ModelContext,
             Profile?,
@@ -335,6 +335,10 @@ final class SumiExtensionsModule {
         safariExtensionImportStore.refreshDiscoveredCandidates(
             candidates.filter { $0.bundleKind == .webExtension }
         )
+    }
+
+    func safariExtensionImportRecordsForDiagnostics() -> any SafariExtensionImportRecordProviding {
+        safariExtensionImportStore
     }
 
     func installedSafariContentBlockers() -> [InstalledSafariContentBlockerRecord] {
