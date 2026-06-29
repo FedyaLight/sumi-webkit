@@ -268,45 +268,11 @@ extension BrowserManager {
     }
 
     func handleWindowWillClose(_ windowId: UUID) {
-        guard let windowState = windowRegistry?.windows[windowId],
-              !windowState.isIncognito
-        else {
-            refreshLastSessionWindowsStore(excludingWindowID: windowId)
-            return
-        }
-
-        let snapshot = windowSessionService.makeWindowSessionSnapshot(
-            for: windowState,
-            delegate: self
-        )
-        if snapshot.currentTabId != nil || snapshot.splitSession != nil || !snapshot.isShowingEmptyState {
-            recentlyClosedManager.captureClosedWindow(
-                title: windowDisplayTitle(for: windowState),
-                session: snapshot
-            )
-        }
-
-        refreshLastSessionWindowsStore(excludingWindowID: windowId)
+        windowHistorySessionOwner.handleWindowWillClose(windowId)
     }
 
     func refreshLastSessionWindowsStore(excludingWindowID: UUID?) {
-        if canOfferStartupLastSessionRestoreShortcut,
-           let startupLastSessionTabSnapshot {
-            lastSessionWindowsStore.updateSnapshots(
-                startupLastSessionWindowSnapshots,
-                tabSnapshot: startupLastSessionTabSnapshot
-            )
-            return
-        }
-
-        var snapshots = currentRegularWindowSnapshots(excludingWindowID: excludingWindowID)
-        if snapshots.isEmpty, excludingWindowID != nil {
-            snapshots = currentRegularWindowSnapshots(excludingWindowID: nil)
-        }
-        if snapshots.count > 1 {
-            didConsumeStartupLastSessionRestoreOffer = true
-        }
-        lastSessionWindowsStore.updateSnapshots(snapshots)
+        windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludingWindowID)
     }
 
     private func reopenClosedTab(_ tabState: RecentlyClosedTabState) {
@@ -506,22 +472,10 @@ extension BrowserManager {
     func currentRegularWindowSnapshots(
         excludingWindowID: UUID?
     ) -> [LastSessionWindowSnapshot] {
-        let regularWindows = (windowRegistry?.allWindows ?? [])
-            .filter { $0.isIncognito == false }
-            .filter { $0.id != excludingWindowID }
-
-        return regularWindows.map { windowState in
-            LastSessionWindowSnapshot(
-                id: windowState.id,
-                session: windowSessionService.makeWindowSessionSnapshot(
-                    for: windowState,
-                    delegate: self
-                )
-            )
-        }
+        windowHistorySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludingWindowID)
     }
 
-    private func windowDisplayTitle(for windowState: BrowserWindowState) -> String {
+    func windowDisplayTitle(for windowState: BrowserWindowState) -> String {
         if let currentTab = currentTab(for: windowState) {
             return currentTab.name
         }

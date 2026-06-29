@@ -552,6 +552,43 @@ class BrowserManager: ObservableObject {
     private var startupProtectionRuntime: BrowserStartupProtectionRuntime!
     private let windowTabActivationBatcher = WindowTabActivationBatcher()
     private let historySwipeWindowMutationFlushOwner = HistorySwipeWindowMutationFlushOwner()
+    lazy var windowHistorySessionOwner = BrowserWindowHistorySessionOwner(
+        dependencies: BrowserWindowHistorySessionOwner.Dependencies(
+            windowState: { [unowned self] windowId in
+                self.windowRegistry?.windows[windowId]
+            },
+            allWindows: { [unowned self] in
+                self.windowRegistry?.allWindows ?? []
+            },
+            makeWindowSessionSnapshot: { [unowned self] windowState in
+                self.windowSessionService.makeWindowSessionSnapshot(
+                    for: windowState,
+                    delegate: self
+                )
+            },
+            windowDisplayTitle: { [unowned self] windowState in
+                self.windowDisplayTitle(for: windowState)
+            },
+            recentlyClosedManager: { [unowned self] in
+                self.recentlyClosedManager
+            },
+            lastSessionWindowsStore: { [unowned self] in
+                self.lastSessionWindowsStore
+            },
+            canOfferStartupLastSessionRestoreShortcut: { [unowned self] in
+                self.canOfferStartupLastSessionRestoreShortcut
+            },
+            startupLastSessionWindowSnapshots: { [unowned self] in
+                self.startupLastSessionWindowSnapshots
+            },
+            startupLastSessionTabSnapshot: { [unowned self] in
+                self.startupLastSessionTabSnapshot
+            },
+            markStartupLastSessionRestoreOfferConsumed: { [unowned self] in
+                self.didConsumeStartupLastSessionRestoreOffer = true
+            }
+        )
+    )
     private lazy var windowSessionActivationOwner = BrowserWindowSessionActivationOwner(
         dependencies: BrowserWindowSessionActivationOwner.Dependencies(
             windowSessionService: windowSessionService,
