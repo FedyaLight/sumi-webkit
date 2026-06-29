@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 @MainActor
@@ -92,5 +93,28 @@ final class BrowserNativeSurfaceRoutingOwner {
     ) {
         guard case .settings = kind else { return }
         dependencies.settings()?.applyNavigationFromSettingsSurfaceURL(url)
+    }
+}
+
+extension BrowserNativeSurfaceRoutingOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let tabOpeningOwner = browserManager.tabOpeningOwner
+        return Self(
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            settings: { [weak browserManager] in browserManager?.sumiSettings },
+            openNewTab: { url, context in
+                tabOpeningOwner.openNewTab(url: url, context: context)
+            },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            focusWindow: { windowState in
+                windowState.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        )
     }
 }

@@ -77,3 +77,37 @@ final class BrowserWindowHistorySessionOwner {
             }
     }
 }
+
+extension BrowserWindowHistorySessionOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let startupRestoreOwner = browserManager.startupSessionRestoreOwner
+        return Self(
+            windowState: { [weak browserManager] windowId in
+                browserManager?.windowRegistry?.windows[windowId]
+            },
+            allWindows: { [weak browserManager] in
+                browserManager?.windowRegistry?.allWindows ?? []
+            },
+            makeWindowSessionSnapshot: { [weak browserManager] windowState in
+                guard let browserManager else { return nil }
+                return browserManager.windowSessionService.makeWindowSessionSnapshot(
+                    for: windowState,
+                    delegate: browserManager
+                )
+            },
+            windowDisplayTitle: { [weak browserManager] windowState in
+                browserManager?.windowDisplayTitle(for: windowState) ?? ""
+            },
+            recentlyClosedManager: {
+                [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
+                browserManager?.recentlyClosedManager ?? recentlyClosedManager
+            },
+            lastSessionWindowsStore: {
+                [weak browserManager, lastSessionWindowsStore = browserManager.lastSessionWindowsStore] in
+                browserManager?.lastSessionWindowsStore ?? lastSessionWindowsStore
+            },
+            startupRestore: startupRestoreOwner
+        )
+    }
+}

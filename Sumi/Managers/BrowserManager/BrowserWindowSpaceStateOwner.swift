@@ -247,3 +247,64 @@ final class BrowserWindowSpaceStateOwner {
         updateProfileRuntimeStates(activeWindowState: windowState)
     }
 }
+
+extension BrowserWindowSpaceStateOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let profileRouter = browserManager.sumiProfileRouter
+        let selectionService = browserManager.shellSelectionService
+        return Self(
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
+            currentProfile: { [weak browserManager] in browserManager?.currentProfile },
+            profileRouter: profileRouter,
+            selectionService: selectionService,
+            sanitizeFloatingBarState: { [weak browserManager] windowState in
+                browserManager?.sanitizeFloatingBarState(in: windowState)
+            },
+            syncShortcutSelectionState: { [weak browserManager] windowState in
+                browserManager?.syncShortcutSelectionState(for: windowState)
+            },
+            updateWorkspaceTheme: { [weak browserManager] windowState, theme, animate in
+                browserManager?.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
+            },
+            commitWorkspaceTheme: { [weak browserManager] theme, windowState in
+                browserManager?.commitWorkspaceTheme(theme, for: windowState)
+            },
+            finishInteractiveSpaceTransition: { [weak browserManager] space, windowState in
+                browserManager?.finishInteractiveSpaceTransition(to: space, in: windowState)
+            },
+            applyTabSelection: {
+                [weak browserManager] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
+                browserManager?.applyTabSelection(
+                    tab,
+                    in: windowState,
+                    updateSpaceFromTab: updateSpaceFromTab,
+                    updateTheme: updateTheme,
+                    rememberSelection: rememberSelection,
+                    persistSelection: persistSelection
+                )
+            },
+            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
+                _ = browserManager?.performImmediateVisualHandoffIfPossible(in: windowState)
+            },
+            showEmptyState: { [weak browserManager] windowState in
+                browserManager?.showEmptyState(in: windowState)
+            },
+            adoptProfileForSpaceChange: { [weak browserManager] windowState in
+                browserManager?.adoptProfileForSpaceChange(windowState)
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.persistWindowSession(for: windowState)
+            },
+            completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
+                browserManager?.completePendingSplitGroupFocusIfReady(in: windowState, spaceId: spaceId)
+            },
+            refreshCompositor: { [weak browserManager] windowState in
+                browserManager?.refreshCompositor(for: windowState)
+            }
+        )
+    }
+}

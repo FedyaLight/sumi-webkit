@@ -99,3 +99,44 @@ final class BrowserShortcutLiveTabCloseOwner {
         )
     }
 }
+
+extension BrowserShortcutLiveTabCloseOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let fallbackPlanner = browserManager.tabCloseFallbackPlanner
+        return Self(
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            recentlyClosedManager: {
+                [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
+                browserManager?.recentlyClosedManager ?? recentlyClosedManager
+            },
+            fallbackPlanner: { fallbackPlanner },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
+                _ = browserManager?.performImmediateVisualHandoffIfPossible(in: windowState)
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.persistWindowSession(for: windowState)
+            },
+            showEmptyState: { [weak browserManager] windowState in
+                browserManager?.showEmptyState(in: windowState)
+            },
+            restoreShortcutSplitMember: {
+                [weak browserManager] itemId, group, windowState, preserveLiveInstance in
+                browserManager?.restoreShortcutSplitMember(
+                    itemId,
+                    from: group,
+                    in: windowState,
+                    preserveLiveInstance: preserveLiveInstance
+                )
+            },
+            unloadShortcutHostedSplitGroup: { [weak browserManager] group, windowState in
+                browserManager?.unloadShortcutHostedSplitGroup(group, in: windowState)
+            }
+        )
+    }
+}

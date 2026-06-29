@@ -131,3 +131,17 @@ final class BrowserProfileSwitchTransitionOwner {
 }
 
 extension BrowserManager: BrowserProfileSwitchTransitionHost {}
+
+extension BrowserProfileSwitchTransitionOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        Self(
+            auxiliaryWindowManager: browserManager.auxiliaryWindowManager,
+            bookmarkManager: browserManager.bookmarkManager,
+            extensionsModule: browserManager.extensionsModule,
+            faviconService: browserManager.dataServices.faviconService,
+            historyManager: browserManager.historyManager,
+            tabManager: browserManager.tabManager
+        )
+    }
+}

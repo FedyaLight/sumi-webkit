@@ -6,6 +6,32 @@ enum BrowserTabOpenActivationPolicy {
     case background
 }
 
+extension BrowserTabOpeningOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        Self(
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            browserManager: { [weak browserManager] in browserManager },
+            settings: { [weak browserManager] in browserManager?.sumiSettings },
+            activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
+            windowStateContainingTab: { [weak browserManager] tab in
+                browserManager?.windowState(containing: tab)
+            },
+            canMaterializeBackgroundTab: { [weak browserManager] tab in
+                browserManager?.canMaterializeNormalTabWebViewDuringStartup(tab) ?? true
+            },
+            deferBackgroundTabUntilStartupReady: { [weak browserManager] tab in
+                browserManager?.deferBackgroundTabUntilStartupReady(tab)
+            },
+            selectTab: { [weak browserManager] tab, windowState, loadPolicy in
+                browserManager?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
+            }
+        )
+    }
+}
+
 struct BrowserTabOpenContext {
     let windowState: BrowserWindowState?
     let sourceTab: Tab?

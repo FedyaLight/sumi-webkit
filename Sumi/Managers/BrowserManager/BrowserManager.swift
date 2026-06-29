@@ -101,149 +101,22 @@ class BrowserManager: ObservableObject {
         return self.splitManager.visibleTabIds(for: windowId)
     }
     private lazy var windowSpaceStateOwner = BrowserWindowSpaceStateOwner(
-        dependencies: BrowserWindowSpaceStateOwner.Dependencies(
-            tabManager: { [weak self, tabManager] in self?.tabManager ?? tabManager },
-            windowRegistry: { [weak self] in self?.windowRegistry },
-            currentProfile: { [weak self] in self?.currentProfile },
-            profileRouter: sumiProfileRouter,
-            selectionService: shellSelectionService,
-            sanitizeFloatingBarState: { [weak self] windowState in
-                self?.sanitizeFloatingBarState(in: windowState)
-            },
-            syncShortcutSelectionState: { [weak self] windowState in
-                self?.syncShortcutSelectionState(for: windowState)
-            },
-            updateWorkspaceTheme: { [weak self] windowState, theme, animate in
-                self?.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
-            },
-            commitWorkspaceTheme: { [weak self] theme, windowState in
-                self?.commitWorkspaceTheme(theme, for: windowState)
-            },
-            finishInteractiveSpaceTransition: { [weak self] space, windowState in
-                self?.finishInteractiveSpaceTransition(to: space, in: windowState)
-            },
-            applyTabSelection: { [weak self] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
-                self?.applyTabSelection(
-                    tab,
-                    in: windowState,
-                    updateSpaceFromTab: updateSpaceFromTab,
-                    updateTheme: updateTheme,
-                    rememberSelection: rememberSelection,
-                    persistSelection: persistSelection
-                )
-            },
-            performImmediateVisualHandoffIfPossible: { [weak self] windowState in
-                _ = self?.performImmediateVisualHandoffIfPossible(in: windowState)
-            },
-            showEmptyState: { [weak self] windowState in
-                self?.showEmptyState(in: windowState)
-            },
-            adoptProfileForSpaceChange: { [weak self] windowState in
-                self?.adoptProfileIfNeeded(for: windowState, context: .spaceChange)
-            },
-            persistWindowSession: { [weak self] windowState in
-                self?.persistWindowSession(for: windowState)
-            },
-            completePendingSplitGroupFocusIfReady: { [weak self] windowState, spaceId in
-                self?.completePendingSplitGroupFocusIfReady(in: windowState, spaceId: spaceId)
-            },
-            refreshCompositor: { [weak self] windowState in
-                self?.refreshCompositor(for: windowState)
-            }
-        )
+        dependencies: .live(browserManager: self)
     )
     lazy var tabCloseFallbackPlanner = BrowserTabCloseFallbackPlanner(
         selectionService: shellSelectionService
     )
     lazy var shortcutLiveTabCloseOwner = BrowserShortcutLiveTabCloseOwner(
-        dependencies: BrowserShortcutLiveTabCloseOwner.Dependencies(
-            tabManager: { [weak self, tabManager] in self?.tabManager ?? tabManager },
-            recentlyClosedManager: { [weak self, recentlyClosedManager] in
-                self?.recentlyClosedManager ?? recentlyClosedManager
-            },
-            fallbackPlanner: { [tabCloseFallbackPlanner] in tabCloseFallbackPlanner },
-            selectTab: { [weak self] tab, windowState in
-                self?.selectTab(tab, in: windowState)
-            },
-            performImmediateVisualHandoffIfPossible: { [weak self] windowState in
-                _ = self?.performImmediateVisualHandoffIfPossible(in: windowState)
-            },
-            persistWindowSession: { [weak self] windowState in
-                self?.persistWindowSession(for: windowState)
-            },
-            showEmptyState: { [weak self] windowState in
-                self?.showEmptyState(in: windowState)
-            },
-            restoreShortcutSplitMember: { [weak self] itemId, group, windowState, preserveLiveInstance in
-                self?.restoreShortcutSplitMember(
-                    itemId,
-                    from: group,
-                    in: windowState,
-                    preserveLiveInstance: preserveLiveInstance
-                )
-            },
-            unloadShortcutHostedSplitGroup: { [weak self] group, windowState in
-                self?.unloadShortcutHostedSplitGroup(group, in: windowState)
-            }
-        )
+        dependencies: .live(browserManager: self)
     )
     private lazy var tabCloseOrchestrationOwner = BrowserTabCloseOrchestrationOwner(
-        dependencies: BrowserTabCloseOrchestrationOwner.Dependencies(
-            activeWindow: { [weak self] in self?.windowRegistry?.activeWindow },
-            currentTab: { [weak self] windowState in
-                self?.currentTab(for: windowState)
-            },
-            glanceManager: glanceManager,
-            tabManager: { [weak self, tabManager] in self?.tabManager ?? tabManager },
-            fallbackPlanner: { [tabCloseFallbackPlanner] in tabCloseFallbackPlanner },
-            shortcutLiveTabCloseOwner: { [shortcutLiveTabCloseOwner] in shortcutLiveTabCloseOwner },
-            selectTab: { [weak self] tab, windowState in
-                self?.selectTab(tab, in: windowState)
-            },
-            performImmediateVisualHandoffIfPossible: { [weak self] windowState in
-                _ = self?.performImmediateVisualHandoffIfPossible(in: windowState)
-            },
-            showEmptyState: { [weak self] windowState in
-                self?.showEmptyState(in: windowState)
-            },
-            persistWindowSession: { [weak self] windowState in
-                self?.persistWindowSession(for: windowState)
-            }
-        )
+        dependencies: .live(browserManager: self)
     )
     lazy var tabOpeningOwner = BrowserTabOpeningOwner(
-        dependencies: BrowserTabOpeningOwner.Dependencies(
-            tabManager: { [weak self, tabManager] in self?.tabManager ?? tabManager },
-            browserManager: { [weak self] in self },
-            settings: { [weak self] in self?.sumiSettings },
-            activeWindow: { [weak self] in self?.windowRegistry?.activeWindow },
-            windowStateContainingTab: { [weak self] tab in self?.windowState(containing: tab) },
-            canMaterializeBackgroundTab: { [weak self] tab in
-                self?.canMaterializeNormalTabWebViewDuringStartup(tab) ?? true
-            },
-            deferBackgroundTabUntilStartupReady: { [weak self] tab in
-                self?.startupProtectionRuntime.deferBackgroundTabUntilStartupReady(tab)
-            },
-            selectTab: { [weak self] tab, windowState, loadPolicy in
-                self?.selectTab(tab, in: windowState, loadPolicy: loadPolicy)
-            }
-        )
+        dependencies: .live(browserManager: self)
     )
     lazy var nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
-        dependencies: BrowserNativeSurfaceRoutingOwner.Dependencies(
-            tabManager: { [weak self, tabManager] in self?.tabManager ?? tabManager },
-            settings: { [weak self] in self?.sumiSettings },
-            openNewTab: { [tabOpeningOwner] url, context in
-                tabOpeningOwner.openNewTab(url: url, context: context)
-            },
-            selectTab: { [weak self] tab, windowState in
-                self?.selectTab(tab, in: windowState)
-            },
-            focusWindow: { windowState in
-                windowState.window?.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-            }
-        )
+        dependencies: .live(browserManager: self)
     )
     lazy var historyNavigationOwner = BrowserHistoryNavigationOwner(
         dependencies: .live(browserManager: self)
@@ -258,27 +131,7 @@ class BrowserManager: ObservableObject {
         dependencies: .live(browserManager: self)
     )
     private lazy var browserActionOwner = BrowserActionOwner(
-        dependencies: BrowserActionOwner.Dependencies(
-            tabOpeningOwner: { [tabOpeningOwner] in tabOpeningOwner },
-            tabManager: { [weak self, tabManager] in self?.tabManager ?? tabManager },
-            liveFolderManager: { [liveFolderManager] in liveFolderManager },
-            windowRegistry: { [weak self] in self?.windowRegistry },
-            updateSavedSidebarVisibility: { [weak self] isVisible in
-                self?.savedSidebarVisibility = isVisible
-            },
-            toggleSavedSidebarVisibility: { [weak self] in
-                self?.savedSidebarVisibility.toggle()
-            },
-            updateSavedSidebarWidth: { [weak self] width in
-                self?.savedSidebarWidth = width
-            },
-            schedulePersistWindowSession: { [weak self] windowState, delayNanoseconds in
-                self?.schedulePersistWindowSession(
-                    for: windowState,
-                    delayNanoseconds: delayNanoseconds
-                )
-            }
-        )
+        dependencies: .live(browserManager: self)
     )
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
@@ -296,14 +149,7 @@ class BrowserManager: ObservableObject {
     var auxiliaryWindowManager = AuxiliaryWindowManager()
     private lazy var profileSwitchTransitionOwner = BrowserProfileSwitchTransitionOwner(
         host: self,
-        dependencies: BrowserProfileSwitchTransitionOwner.Dependencies(
-            auxiliaryWindowManager: auxiliaryWindowManager,
-            bookmarkManager: bookmarkManager,
-            extensionsModule: extensionsModule,
-            faviconService: dataServices.faviconService,
-            historyManager: historyManager,
-            tabManager: tabManager
-        )
+        dependencies: .live(browserManager: self)
     )
     let glanceManager = GlanceManager()
 
@@ -352,72 +198,10 @@ class BrowserManager: ObservableObject {
     private let windowTabActivationBatcher = WindowTabActivationBatcher()
     private let historySwipeWindowMutationFlushOwner = HistorySwipeWindowMutationFlushOwner()
     lazy var windowHistorySessionOwner = BrowserWindowHistorySessionOwner(
-        dependencies: BrowserWindowHistorySessionOwner.Dependencies(
-            windowState: { [weak self] windowId in
-                self?.windowRegistry?.windows[windowId]
-            },
-            allWindows: { [weak self] in
-                self?.windowRegistry?.allWindows ?? []
-            },
-            makeWindowSessionSnapshot: { [weak self] windowState in
-                guard let self else { return nil }
-                return self.windowSessionService.makeWindowSessionSnapshot(
-                    for: windowState,
-                    delegate: self
-                )
-            },
-            windowDisplayTitle: { [weak self] windowState in
-                self?.windowDisplayTitle(for: windowState) ?? ""
-            },
-            recentlyClosedManager: { [weak self, recentlyClosedManager] in
-                self?.recentlyClosedManager ?? recentlyClosedManager
-            },
-            lastSessionWindowsStore: { [weak self, lastSessionWindowsStore] in
-                self?.lastSessionWindowsStore ?? lastSessionWindowsStore
-            },
-            startupRestore: startupSessionRestoreOwner
-        )
+        dependencies: .live(browserManager: self)
     )
     private lazy var windowSessionActivationOwner = BrowserWindowSessionActivationOwner(
-        dependencies: BrowserWindowSessionActivationOwner.Dependencies(
-            windowSessionService: windowSessionService,
-            delegate: { [weak self] in self },
-            refreshSplitPublishedState: { [weak self] windowId in
-                self?.splitManager.refreshPublishedState(for: windowId)
-            },
-            updateFindManagerCurrentTab: { [weak self] in
-                self?.updateFindManagerCurrentTab()
-            },
-            notifyExtensionWindowOpened: { [weak self] windowState in
-                guard let self else { return }
-                BrowserManagerRuntimeWiring.notifyExtensionWindowOpened(windowState, for: self)
-            },
-            notifyExtensionWindowFocused: { [weak self] windowState in
-                guard let self else { return }
-                BrowserManagerRuntimeWiring.notifyExtensionWindowFocused(windowState, for: self)
-            },
-            reconcileStartupSessionIfPossible: { [weak self] in
-                self?.reconcileStartupSessionIfPossible()
-            },
-            adoptProfileForWindowActivation: { [weak self] windowState in
-                self?.adoptProfileIfNeeded(for: windowState, context: .windowActivation)
-            },
-            scheduleNativeNowPlayingRefresh: { [nativeNowPlayingController] delayNanoseconds in
-                nativeNowPlayingController.scheduleRefresh(delayNanoseconds: delayNanoseconds)
-            },
-            scheduleBackgroundMediaReconcile: { [backgroundMediaOptimizationService] reason in
-                backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
-            },
-            pauseGeolocationForApplicationBackgroundIfNeeded: { [permissionRuntime] in
-                permissionRuntime.pauseGeolocationForApplicationBackgroundIfNeeded()
-            },
-            resumeGeolocationForApplicationForegroundIfNeeded: { [permissionRuntime] in
-                permissionRuntime.resumeGeolocationForApplicationForegroundIfNeeded()
-            },
-            refreshLastSessionWindowsStore: { [weak self] in
-                self?.refreshLastSessionWindowsStore(excludingWindowID: nil)
-            }
-        )
+        dependencies: .live(browserManager: self)
     )
 
     private func adoptProfileIfNeeded(
@@ -428,6 +212,14 @@ class BrowserManager: ObservableObject {
             context: context,
             support: self
         )
+    }
+
+    func adoptProfileForSpaceChange(_ windowState: BrowserWindowState) {
+        adoptProfileIfNeeded(for: windowState, context: .spaceChange)
+    }
+
+    func adoptProfileForWindowActivation(_ windowState: BrowserWindowState) {
+        adoptProfileIfNeeded(for: windowState, context: .windowActivation)
     }
 
     init(
@@ -669,6 +461,10 @@ class BrowserManager: ObservableObject {
         startupProtectionRuntime.canMaterializeNormalTabWebViewDuringStartup(tab)
     }
 
+    func deferBackgroundTabUntilStartupReady(_ tab: Tab) {
+        startupProtectionRuntime.deferBackgroundTabUntilStartupReady(tab)
+    }
+
     enum ProfileSwitchContext {
         case userInitiated
         case spaceChange
@@ -700,6 +496,18 @@ class BrowserManager: ObservableObject {
         if persist {
             schedulePersistWindowSession(for: windowState)
         }
+    }
+
+    func updateSavedSidebarVisibility(_ isVisible: Bool) {
+        savedSidebarVisibility = isVisible
+    }
+
+    func toggleSavedSidebarVisibility() {
+        savedSidebarVisibility.toggle()
+    }
+
+    func updateSavedSidebarWidth(_ width: CGFloat) {
+        savedSidebarWidth = width
     }
 
     func toggleSidebar() {

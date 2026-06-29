@@ -101,3 +101,35 @@ final class BrowserTabCloseOrchestrationOwner {
         }
     }
 }
+
+extension BrowserTabCloseOrchestrationOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let fallbackPlanner = browserManager.tabCloseFallbackPlanner
+        let shortcutLiveTabCloseOwner = browserManager.shortcutLiveTabCloseOwner
+        return Self(
+            activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
+            currentTab: { [weak browserManager] windowState in
+                browserManager?.currentTab(for: windowState)
+            },
+            glanceManager: browserManager.glanceManager,
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            fallbackPlanner: { fallbackPlanner },
+            shortcutLiveTabCloseOwner: { shortcutLiveTabCloseOwner },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowState in
+                _ = browserManager?.performImmediateVisualHandoffIfPossible(in: windowState)
+            },
+            showEmptyState: { [weak browserManager] windowState in
+                browserManager?.showEmptyState(in: windowState)
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.persistWindowSession(for: windowState)
+            }
+        )
+    }
+}

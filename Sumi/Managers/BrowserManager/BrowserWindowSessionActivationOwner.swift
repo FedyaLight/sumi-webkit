@@ -99,3 +99,53 @@ final class BrowserWindowSessionActivationOwner {
         dependencies.refreshLastSessionWindowsStore()
     }
 }
+
+extension BrowserWindowSessionActivationOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let windowSessionService = browserManager.windowSessionService
+        let nativeNowPlayingController = browserManager.nativeNowPlayingController
+        let backgroundMediaOptimizationService = browserManager.backgroundMediaOptimizationService
+        let permissionRuntime = browserManager.permissionRuntime
+
+        return Self(
+            windowSessionService: windowSessionService,
+            delegate: { [weak browserManager] in browserManager },
+            refreshSplitPublishedState: { [weak browserManager] windowId in
+                browserManager?.splitManager.refreshPublishedState(for: windowId)
+            },
+            updateFindManagerCurrentTab: { [weak browserManager] in
+                browserManager?.updateFindManagerCurrentTab()
+            },
+            notifyExtensionWindowOpened: { [weak browserManager] windowState in
+                guard let browserManager else { return }
+                BrowserManagerRuntimeWiring.notifyExtensionWindowOpened(windowState, for: browserManager)
+            },
+            notifyExtensionWindowFocused: { [weak browserManager] windowState in
+                guard let browserManager else { return }
+                BrowserManagerRuntimeWiring.notifyExtensionWindowFocused(windowState, for: browserManager)
+            },
+            reconcileStartupSessionIfPossible: { [weak browserManager] in
+                browserManager?.reconcileStartupSessionIfPossible()
+            },
+            adoptProfileForWindowActivation: { [weak browserManager] windowState in
+                browserManager?.adoptProfileForWindowActivation(windowState)
+            },
+            scheduleNativeNowPlayingRefresh: { delayNanoseconds in
+                nativeNowPlayingController.scheduleRefresh(delayNanoseconds: delayNanoseconds)
+            },
+            scheduleBackgroundMediaReconcile: { reason in
+                backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
+            },
+            pauseGeolocationForApplicationBackgroundIfNeeded: {
+                permissionRuntime.pauseGeolocationForApplicationBackgroundIfNeeded()
+            },
+            resumeGeolocationForApplicationForegroundIfNeeded: {
+                permissionRuntime.resumeGeolocationForApplicationForegroundIfNeeded()
+            },
+            refreshLastSessionWindowsStore: { [weak browserManager] in
+                browserManager?.refreshLastSessionWindowsStore(excludingWindowID: nil)
+            }
+        )
+    }
+}

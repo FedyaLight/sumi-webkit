@@ -147,3 +147,34 @@ final class BrowserActionOwner {
         return nil
     }
 }
+
+extension BrowserActionOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let tabOpeningOwner = browserManager.tabOpeningOwner
+        let liveFolderManager = browserManager.liveFolderManager
+        return Self(
+            tabOpeningOwner: { tabOpeningOwner },
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            liveFolderManager: { liveFolderManager },
+            windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
+            updateSavedSidebarVisibility: { [weak browserManager] isVisible in
+                browserManager?.updateSavedSidebarVisibility(isVisible)
+            },
+            toggleSavedSidebarVisibility: { [weak browserManager] in
+                browserManager?.toggleSavedSidebarVisibility()
+            },
+            updateSavedSidebarWidth: { [weak browserManager] width in
+                browserManager?.updateSavedSidebarWidth(width)
+            },
+            schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
+                browserManager?.schedulePersistWindowSession(
+                    for: windowState,
+                    delayNanoseconds: delayNanoseconds
+                )
+            }
+        )
+    }
+}
