@@ -544,14 +544,12 @@ extension Tab {
     func webNotificationTabContext(for webView: WKWebView?) -> SumiWebNotificationTabContext? {
         guard let profile = resolveProfile() else { return nil }
 
-        let tabId = id.uuidString.lowercased()
-        let pageGeneration = String(extensionRuntimeDocumentSequence)
-        let pageId = "\(tabId):\(pageGeneration)"
+        let identity = currentExtensionPageIdentity()
         let committedURL = extensionRuntimeCommittedMainDocumentURL
         let surfaceState = permissionRequestSurfaceState(for: webView)
         return SumiWebNotificationTabContext(
-            tabId: tabId,
-            pageId: pageId,
+            tabId: identity.tabId,
+            pageId: identity.pageId,
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -559,11 +557,13 @@ extension Tab {
             mainFrameURL: committedURL ?? webView?.url ?? url,
             isActiveTab: surfaceState.isActive,
             isVisibleTab: surfaceState.isVisible,
-            navigationOrPageGeneration: pageGeneration,
+            navigationOrPageGeneration: identity.pageGeneration,
             isCurrentPage: { [weak self] in
                 guard let self else { return false }
-                return self.currentPermissionPageId() == pageId
-                    && String(self.extensionRuntimeDocumentSequence) == pageGeneration
+                return self.isCurrentExtensionPage(
+                    pageId: identity.pageId,
+                    pageGeneration: identity.pageGeneration
+                )
             }
         )
     }

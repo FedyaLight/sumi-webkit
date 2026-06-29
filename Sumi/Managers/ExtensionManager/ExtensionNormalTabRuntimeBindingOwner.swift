@@ -82,10 +82,10 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         manager.extensionRuntimeTrace(
             "didOpenTab start generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) controller=\(manager.extensionRuntimeControllerDescription(controller)) \(manager.extensionRuntimeTabDescription(tab)) adapter=\(manager.extensionRuntimeObjectDescription(adapter))"
         )
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = tab.extensionRuntimeDocumentSequence
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration =
-            manager.extensionContextBindingGeneration(for: profileId)
-        tab.extensionRuntimeOpenNotifiedWithLoadedContexts = true
+        tab.noteExtensionRuntimeOpenNotification(
+            extensionContextBindingGeneration: manager.extensionContextBindingGeneration(for: profileId),
+            loadedContexts: true
+        )
         controller.didOpenTab(adapter)
         #if DEBUG
             manager.testHooks.didOpenTab?(tab.id)
@@ -144,8 +144,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             return
         }
 
-        tab.didNotifyOpenToExtensions = true
-        tab.lastExtensionOpenNotificationGeneration = generation
+        tab.markDidOpenTabToExtensions(generation: generation)
         manager.extensionRuntimeTrace(
             "notifyTabOpenedIfNeeded marked reason=\(reason) generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
         )
@@ -259,7 +258,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             return
         }
 
-        tab.lastExtensionOpenNotificationGeneration = 0
+        tab.resetExtensionOpenNotificationGeneration()
         manager.extensionRuntimeTrace(
             "prepareExtensionRuntimeBeforeCommittedMainFrameNavigation proceed reason=\(reason) destination=\(destinationURL.absoluteString) documentSequence=\(tab.extensionRuntimeDocumentSequence) \(manager.extensionRuntimeTabDescription(tab))"
         )
@@ -305,7 +304,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             #if DEBUG
                 manager.testHooks.didCloseTab?(tab.id)
             #endif
-            tab.lastExtensionOpenNotificationGeneration = 0
+            tab.resetExtensionOpenNotificationGeneration()
         }
 
         registerTabWithExtensionRuntime(
@@ -330,7 +329,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             return
         }
 
-        tab.extensionRuntimeEligibleGeneration = generation
+        tab.markExtensionRuntimeEligible(for: generation)
         manager.ensureExtensionControllerAttachedForTab(
             tab,
             reason: reason,
@@ -354,7 +353,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             return
         }
 
-        tab.extensionRuntimeEligibleGeneration = generation
+        tab.markExtensionRuntimeEligible(for: generation)
         manager.ensureExtensionControllerAttachedForTab(tab, reason: reason)
         notifyTabOpenedIfNeeded(tab, reason: reason)
     }
@@ -450,7 +449,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         _ tab: Tab,
         generation: UInt64
     ) -> Bool {
-        tab.extensionRuntimeEligibleGeneration == generation
+        tab.isEligibleForExtensionRuntime(generation: generation)
     }
 
     private func isExtensionInjectableCommittedURL(_ url: URL) -> Bool {

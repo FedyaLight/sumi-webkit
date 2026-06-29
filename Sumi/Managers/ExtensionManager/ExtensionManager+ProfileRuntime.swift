@@ -465,9 +465,9 @@ extension ExtensionManager {
         reason: String = #function
     ) {
         guard tab.isEphemeral == false else { return }
-        if tab.lastExtensionOpenNotificationGeneration == tabOpenNotificationGeneration,
-           tab.extensionRuntimeOpenNotifiedDocumentSequence == tab.extensionRuntimeDocumentSequence,
-           tab.extensionRuntimeOpenNotifiedWithLoadedContexts == true {
+        if tab.hasExtensionOpenNotificationForCurrentDocumentWithLoadedContexts(
+            generation: tabOpenNotificationGeneration
+        ) {
             return
         }
 
@@ -477,7 +477,7 @@ extension ExtensionManager {
             return
         }
 
-        tab.lastExtensionOpenNotificationGeneration = 0
+        tab.resetExtensionOpenNotificationGeneration()
         registerTabWithExtensionRuntime(tab, reason: reason)
     }
 
@@ -661,7 +661,7 @@ extension ExtensionManager {
             coordinator.rebuildLiveWebViews(for: tab)
             // WebKit only injects manifest content scripts when the controller is on the
             // configuration before navigation; allow `notifyTabOpenedIfNeeded` to run again.
-            tab.lastExtensionOpenNotificationGeneration = 0
+            tab.resetExtensionOpenNotificationGeneration()
         }
     }
 

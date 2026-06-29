@@ -141,10 +141,15 @@ extension URLBarView {
                 tab?.existingWebView
             },
             isCurrentPage: { [weak tab] tabId, pageId, navigationOrPageGeneration in
-                guard let tab else { return false }
+                guard let tab,
+                      let pageId,
+                      let navigationOrPageGeneration
+                else { return false }
                 return tab.id.uuidString.lowercased() == tabId
-                    && tab.currentPermissionPageId() == pageId
-                    && String(tab.extensionRuntimeDocumentSequence) == navigationOrPageGeneration
+                    && tab.isCurrentExtensionPage(
+                        pageId: pageId,
+                        pageGeneration: navigationOrPageGeneration
+                    )
             },
             reloadPage: { [weak tab] in
                 guard let tab,

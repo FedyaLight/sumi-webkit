@@ -317,9 +317,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
     static func context(tab: Tab?, profile: Profile?) -> Context? {
         guard let tab, let profile else { return nil }
 
-        let tabId = tab.id.uuidString.lowercased()
-        let pageGeneration = String(tab.extensionRuntimeDocumentSequence)
-        let pageId = tab.currentPermissionPageId()
+        let identity = tab.currentExtensionPageIdentity()
         let committedURL = tab.extensionRuntimeCommittedMainDocumentURL
         let visibleURL = tab.existingWebView?.url ?? tab.url
         let mainFrameURL = committedURL ?? visibleURL
@@ -327,8 +325,8 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         let displayDomain = displayDomain(for: origin, fallbackURL: mainFrameURL)
 
         return Context(
-            tabId: tabId,
-            pageId: pageId,
+            tabId: identity.tabId,
+            pageId: identity.pageId,
             committedURL: committedURL,
             visibleURL: visibleURL,
             mainFrameURL: mainFrameURL,
@@ -336,7 +334,7 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
             profilePartitionId: profile.id.uuidString,
             isEphemeralProfile: profile.isEphemeral,
             displayDomain: displayDomain,
-            navigationOrPageGeneration: pageGeneration
+            navigationOrPageGeneration: identity.pageGeneration
         )
     }
 

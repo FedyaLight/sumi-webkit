@@ -275,7 +275,7 @@ final class ExtensionRequestedTabLifecycleOwner {
     ) {
         let generation = manager.tabOpenNotificationGeneration
         tab.prepareExtensionRuntimeGeneration(generation)
-        tab.extensionRuntimeEligibleGeneration = generation
+        tab.markExtensionRuntimeEligible(for: generation)
 
         guard tab.lastExtensionOpenNotificationGeneration != generation else {
             manager.extensionRuntimeTrace(
@@ -291,15 +291,18 @@ final class ExtensionRequestedTabLifecycleOwner {
             return
         }
 
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = tab.extensionRuntimeDocumentSequence
         if let profileId = manager.resolvedProfileId(for: tab) {
-            tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration =
-                manager.extensionContextBindingGeneration(for: profileId)
-            tab.extensionRuntimeOpenNotifiedWithLoadedContexts =
-                manager.profileHasLoadedContentScriptContexts(profileId: profileId)
+            tab.noteExtensionRuntimeOpenNotification(
+                extensionContextBindingGeneration: manager.extensionContextBindingGeneration(for: profileId),
+                loadedContexts: manager.profileHasLoadedContentScriptContexts(profileId: profileId)
+            )
+        } else {
+            tab.noteExtensionRuntimeOpenNotification(
+                extensionContextBindingGeneration: nil,
+                loadedContexts: nil
+            )
         }
-        tab.didNotifyOpenToExtensions = true
-        tab.lastExtensionOpenNotificationGeneration = generation
+        tab.markDidOpenTabToExtensions(generation: generation)
         manager.extensionRuntimeTrace(
             "registerExtensionCreatedTab marked reason=\(reason) generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
         )

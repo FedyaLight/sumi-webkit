@@ -684,7 +684,7 @@ extension ExtensionManager {
             tab.webExtensionContextOverride = nil
             tab.webViewConfigurationOverride = nil
             tab.resetExtensionRuntimeDocumentBindingForContentScriptRebind()
-            tab.lastExtensionOpenNotificationGeneration = 0
+            tab.resetExtensionOpenNotificationGeneration()
 
             extensionRuntimeTrace(
                 "runtimeTeardown rebuildLiveWebViews reason=\(reason) \(extensionRuntimeTabDescription(tab))"

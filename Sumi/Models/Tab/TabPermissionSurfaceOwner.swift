@@ -10,7 +10,7 @@ final class TabPermissionSurfaceOwner {
     }
 
     func currentPageId() -> String {
-        "\(tab.id.uuidString.lowercased()):\(tab.extensionRuntimeDocumentSequence)"
+        tab.currentExtensionPageIdentity().pageId
     }
 
     func surfaceState(for webView: WKWebView?) -> (isActive: Bool, isVisible: Bool) {
@@ -204,7 +204,7 @@ final class TabPermissionSurfaceOwner {
                 reason: reason
             )
         )
-        tab.extensionRuntimeDocumentSequence &+= 1
+        tab.invalidateCurrentExtensionPageForWebViewReplacement()
     }
 
     private func isActiveGlancePreviewSurface(for webView: WKWebView) -> Bool {
@@ -221,9 +221,8 @@ final class TabPermissionSurfaceOwner {
     }
 
     private func pageIdentity() -> (tabId: String, pageGeneration: String, pageId: String) {
-        let tabId = tab.id.uuidString.lowercased()
-        let pageGeneration = String(tab.extensionRuntimeDocumentSequence)
-        return (tabId, pageGeneration, "\(tabId):\(pageGeneration)")
+        let identity = tab.currentExtensionPageIdentity()
+        return (identity.tabId, identity.pageGeneration, identity.pageId)
     }
 
     private func isCurrentPageClosure(
@@ -233,8 +232,10 @@ final class TabPermissionSurfaceOwner {
         let tab = self.tab
         return { [weak tab] in
             guard let tab else { return false }
-            return tab.currentPermissionPageId() == pageId
-                && String(tab.extensionRuntimeDocumentSequence) == pageGeneration
+            return tab.isCurrentExtensionPage(
+                pageId: pageId,
+                pageGeneration: pageGeneration
+            )
         }
     }
 }

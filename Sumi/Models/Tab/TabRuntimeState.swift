@@ -285,6 +285,149 @@ final class TabExtensionRuntimeState {
     var eligibleGeneration: UInt64 = 0
 }
 
+struct TabExtensionPageIdentity: Equatable, Sendable {
+    let tabId: String
+    let pageGeneration: String
+    let pageId: String
+}
+
+@MainActor
+final class TabExtensionPageRuntimeOwner {
+    private let state = TabExtensionRuntimeState()
+
+    var didNotifyOpenToExtensions: Bool {
+        state.didReportOpenForGeneration != 0
+    }
+
+    var lastOpenNotificationGeneration: UInt64 {
+        get { state.didReportOpenForGeneration }
+        set { state.didReportOpenForGeneration = newValue }
+    }
+
+    var controllerGeneration: UInt64 {
+        get { state.controllerGeneration }
+        set { state.controllerGeneration = newValue }
+    }
+
+    var documentSequence: UInt64 {
+        get { state.documentSequence }
+        set { state.documentSequence = newValue }
+    }
+
+    var committedMainDocumentURL: URL? {
+        get { state.committedMainDocumentURL }
+        set { state.committedMainDocumentURL = newValue }
+    }
+
+    var openNotifiedDocumentSequence: UInt64? {
+        get { state.openNotifiedDocumentSequence }
+        set { state.openNotifiedDocumentSequence = newValue }
+    }
+
+    var openNotifiedExtensionContextBindingGeneration: UInt64? {
+        get { state.openNotifiedExtensionContextBindingGeneration }
+        set { state.openNotifiedExtensionContextBindingGeneration = newValue }
+    }
+
+    var openNotifiedWithLoadedContexts: Bool? {
+        get { state.openNotifiedWithLoadedContexts }
+        set { state.openNotifiedWithLoadedContexts = newValue }
+    }
+
+    var lastReportedURL: URL? {
+        get { state.lastReportedURL }
+        set { state.lastReportedURL = newValue }
+    }
+
+    var lastReportedLoadingComplete: Bool? {
+        get { state.lastReportedLoadingComplete }
+        set { state.lastReportedLoadingComplete = newValue }
+    }
+
+    var lastReportedTitle: String? {
+        get { state.lastReportedTitle }
+        set { state.lastReportedTitle = newValue }
+    }
+
+    var eligibleGeneration: UInt64 {
+        get { state.eligibleGeneration }
+        set { state.eligibleGeneration = newValue }
+    }
+
+    func clearOpenNotificationGeneration() {
+        state.didReportOpenForGeneration = 0
+    }
+
+    func prepareGeneration(_ generation: UInt64) {
+        guard state.controllerGeneration != generation else { return }
+        state.controllerGeneration = generation
+        state.lastReportedURL = nil
+        state.lastReportedLoadingComplete = nil
+        state.lastReportedTitle = nil
+        state.didReportOpenForGeneration = 0
+        state.eligibleGeneration = 0
+        clearOpenNotificationDocumentBinding()
+    }
+
+    func markEligible(for generation: UInt64) {
+        state.eligibleGeneration = generation
+    }
+
+    func noteCommittedMainDocumentNavigation(to url: URL) {
+        state.documentSequence &+= 1
+        state.committedMainDocumentURL = url
+    }
+
+    func resetDocumentBindingForContentScriptRebind() {
+        state.documentSequence = 0
+        state.committedMainDocumentURL = nil
+        clearOpenNotificationDocumentBinding()
+    }
+
+    func invalidateCurrentPageForWebViewReplacement() {
+        state.documentSequence &+= 1
+    }
+
+    func noteOpenNotification(
+        extensionContextBindingGeneration: UInt64?,
+        loadedContexts: Bool?
+    ) {
+        state.openNotifiedDocumentSequence = state.documentSequence
+        state.openNotifiedExtensionContextBindingGeneration = extensionContextBindingGeneration
+        state.openNotifiedWithLoadedContexts = loadedContexts
+    }
+
+    func markDidOpenTab(generation: UInt64) {
+        state.didReportOpenForGeneration = generation
+    }
+
+    func pageIdentity(tabId: UUID) -> TabExtensionPageIdentity {
+        let tabIdString = tabId.uuidString.lowercased()
+        let pageGeneration = String(state.documentSequence)
+        return TabExtensionPageIdentity(
+            tabId: tabIdString,
+            pageGeneration: pageGeneration,
+            pageId: "\(tabIdString):\(pageGeneration)"
+        )
+    }
+
+    func isCurrentPage(
+        tabId: UUID,
+        pageId: String,
+        pageGeneration: String
+    ) -> Bool {
+        let identity = pageIdentity(tabId: tabId)
+        return identity.pageId == pageId
+            && identity.pageGeneration == pageGeneration
+    }
+
+    private func clearOpenNotificationDocumentBinding() {
+        state.openNotifiedDocumentSequence = nil
+        state.openNotifiedExtensionContextBindingGeneration = nil
+        state.openNotifiedWithLoadedContexts = nil
+    }
+}
+
 @MainActor
 final class TabWebViewOwnershipOwner {
     private(set) var webView: WKWebView?
@@ -356,7 +499,6 @@ final class TabWebViewOwnershipOwner {
 final class TabWebViewRuntime {
     var profileAwaitCancellable: AnyCancellable?
     let reloadPolicyStateOwner = TabReloadPolicyStateOwner()
-    let extensionRuntimeState = TabExtensionRuntimeState()
     let findInPage = FindInPageTabExtension()
 }
 
