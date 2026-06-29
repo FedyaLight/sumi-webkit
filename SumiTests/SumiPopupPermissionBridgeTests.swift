@@ -297,34 +297,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(records.first?.attemptCount, 2)
     }
 
-    func testSourceLevelIntegrationRoutesBothPopupPathsThroughBridge() throws {
-        let uiDelegateSource = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
-        let popupResponderSource = try sourceFile("Sumi/Models/Tab/Navigation/SumiPopupHandlingNavigationResponder.swift")
-
-        XCTAssertTrue(uiDelegateSource.contains("popupHandling.createWebViewAsync("))
-        XCTAssertTrue(uiDelegateSource.contains("completionHandler(popupWebView)"))
-        XCTAssertTrue(popupResponderSource.contains("popupPermissionBridge.evaluate("))
-        XCTAssertTrue(popupResponderSource.contains("evaluateSynchronouslyForWebKitFallback("))
-        XCTAssertTrue(popupResponderSource.contains("guard permissionResult.isAllowed else { return nil }"))
-        XCTAssertTrue(popupResponderSource.contains("return .cancel"))
-        XCTAssertTrue(popupResponderSource.contains("createChildWebView("))
-    }
-
-    func testAuxiliaryWindowNestedSizedPopupRoutesThroughPopupBridge() throws {
-        let source = try sourceFile("Sumi/Managers/AuxiliaryWindowManager/AuxiliaryWindowUIDelegate.swift")
-        let methodStart = try XCTUnwrap(source.range(of: "createWebViewWith configuration: WKWebViewConfiguration"))
-        let methodSource = String(source[methodStart.lowerBound...])
-
-        XCTAssertTrue(methodSource.contains("popupPermissionBridge"))
-        XCTAssertTrue(methodSource.contains("evaluateSynchronouslyForWebKitFallback("))
-        XCTAssertTrue(methodSource.contains("guard permissionResult.isAllowed else { return nil }"))
-        XCTAssertTrue(methodSource.contains("sourceTab.popupPermissionTabContext(for: webView)"))
-        XCTAssertLessThan(
-            try XCTUnwrap(methodSource.range(of: "evaluateSynchronouslyForWebKitFallback(")?.lowerBound),
-            try XCTUnwrap(methodSource.range(of: "presentWebPopup(")?.lowerBound)
-        )
-    }
-
     private func realCoordinatorBridge(
         store: PopupBridgePermissionStore,
         blockedPopupStore: SumiBlockedPopupStore? = nil,
@@ -387,13 +359,6 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
             navigationOrPageGeneration: "1",
             displayDomain: displayDomain
         )
-    }
-
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 }
 

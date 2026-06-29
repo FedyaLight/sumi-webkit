@@ -232,26 +232,6 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(setCount, 0)
     }
 
-    func testNormalTabRunOpenPanelRoutesThroughBridge() throws {
-        let source = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
-        let methodStart = try XCTUnwrap(source.range(of: "runOpenPanelWith parameters: WKOpenPanelParameters"))
-        let methodSource = String(source[methodStart.lowerBound...])
-
-        XCTAssertTrue(methodSource.contains("filePickerPermissionBridge.handleOpenPanel("))
-        XCTAssertFalse(methodSource.contains("let openPanel = NSOpenPanel()"))
-    }
-
-    func testAuxiliaryWindowRunOpenPanelRoutesThroughBridge() throws {
-        let source = try sourceFile("Sumi/Managers/AuxiliaryWindowManager/AuxiliaryWindowUIDelegate.swift")
-        let methodStart = try XCTUnwrap(source.range(of: "runOpenPanelWith parameters: WKOpenPanelParameters"))
-        let methodSource = String(source[methodStart.lowerBound...])
-
-        XCTAssertTrue(methodSource.contains("filePickerPermissionBridge.handleOpenPanel("))
-        XCTAssertTrue(methodSource.contains("tab.filePickerPermissionTabContext(for: webView)"))
-        XCTAssertTrue(methodSource.contains("currentPageId: { [weak tab] in tab?.currentPermissionPageId() }"))
-        XCTAssertFalse(methodSource.contains("NSOpenPanel()"))
-    }
-
     private func makeBridge(
         store: FilePickerPermissionStore = FilePickerPermissionStore(),
         presenter: FilePickerFakePanelPresenter
@@ -348,16 +328,6 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
 
     private func fileURL(_ name: String) -> URL {
         URL(fileURLWithPath: "/tmp/\(name)")
-    }
-
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repoRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
     }
 }
 

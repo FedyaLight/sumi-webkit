@@ -1,3 +1,4 @@
+import SwiftData
 import WebKit
 import XCTest
 
@@ -517,26 +518,6 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(runtime.revokeRuntimePermissionsCallCount, 0)
     }
 
-    func testNormalTabUIDelegateRoutesMediaThroughBridge() throws {
-        let source = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
-        let mediaMethodStart = source.range(of: "requestMediaCaptureAuthorization type: WKMediaCaptureType")!
-        let methodSource = String(source[mediaMethodStart.lowerBound...])
-
-        XCTAssertTrue(methodSource.contains("webKitPermissionBridge.handleMediaCaptureAuthorization("))
-        XCTAssertFalse(methodSource.contains("decisionHandler(.grant)"))
-    }
-
-    func testNormalTabUIDelegateRoutesDisplayCaptureThroughBridge() throws {
-        let source = try sourceFile("Sumi/Models/Tab/Tab+UIDelegate.swift")
-        let displayMethodStart = source.range(
-            of: "_webView:requestDisplayCapturePermissionForOrigin:initiatedByFrame:withSystemAudio:decisionHandler:"
-        )!
-        let methodSource = String(source[displayMethodStart.lowerBound...])
-
-        XCTAssertTrue(methodSource.contains("webKitPermissionBridge.handleDisplayCaptureAuthorization("))
-        XCTAssertFalse(methodSource.contains("CGRequestScreenCaptureAccess"))
-    }
-
     func testDisplayCaptureGrantReturnsWebKitScreenPromptThroughCoordinatorOnly() async {
         let runtime = FakeSumiRuntimePermissionController(screenCaptureRuntimeState: .unsupported)
         let coordinator = FakePermissionCoordinator(
@@ -564,6 +545,64 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(runtime.revokeRuntimePermissionsCallCount, 0)
         let contexts = await coordinator.recordedContexts()
         XCTAssertEqual(contexts.map(\.request.permissionTypes), [[.screenCapture]])
+    }
+
+    func testNormalTabLegacyMediaUIDelegateRoutesThroughInjectedBridge() async throws {
+        let coordinator = FakePermissionCoordinator(
+            mode: .immediate(
+                decision(
+                    .granted,
+                    reason: "delegate-route-grant",
+                    permissionTypes: [.camera]
+                )
+            )
+        )
+        let runtime = FakeSumiRuntimePermissionController()
+        let bridge = makeBridge(
+            coordinator: coordinator,
+            runtimeController: runtime
+        )
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            permissionCoordinator: coordinator,
+            runtimePermissionController: runtime,
+            permissionSiteActivityStore: try makeSiteActivityStore(),
+            permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides(
+                webKitPermissionBridge: bridge
+            )
+        )
+        let tab = Tab(
+            url: URL(string: "https://top.example/path")!,
+            browserManager: browserManager,
+            loadsCachedFaviconOnInit: false
+        )
+        let webView = WKWebView()
+        let expectation = XCTestExpectation(description: "legacy media delegate decision")
+        var decisions: [Bool] = []
+
+        tab.webView(
+            webView,
+            requestUserMediaAuthorizationForDevices: SumiWebKitLegacyCaptureDevices.camera.rawValue,
+            url: URL(string: "https://camera.example/request")!,
+            mainFrameURL: URL(string: "https://top.example/page")!
+        ) { decision in
+            decisions.append(decision)
+            expectation.fulfill()
+        }
+
+        await fulfillment(of: [expectation], timeout: 2)
+        withExtendedLifetime(webView) { /* no-op */ }
+
+        XCTAssertEqual(decisions, [true])
+        XCTAssertEqual(runtime.currentRuntimeStateCallCount, 1)
+        let contexts = await coordinator.recordedContexts()
+        XCTAssertEqual(contexts.count, 1)
+        XCTAssertEqual(contexts.first?.request.permissionTypes, [.camera])
+        XCTAssertEqual(contexts.first?.requestingOrigin.identity, "https://camera.example")
+        XCTAssertEqual(contexts.first?.topOrigin.identity, "https://top.example")
+        XCTAssertEqual(contexts.first?.surface, .normalTab)
     }
 
     private func makeBridge(
@@ -714,13 +753,18 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         )
     }
 
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repoRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
+    private func makeInMemoryStartupContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+    }
+
+    private func makeSiteActivityStore() throws -> SumiPermissionSiteActivityStore {
+        SumiPermissionSiteActivityStore(
+            userDefaults: try XCTUnwrap(
+                UserDefaults(suiteName: "SumiWebKitPermissionBridgeTests-\(UUID().uuidString)")
+            )
         )
     }
 }

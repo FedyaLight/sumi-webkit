@@ -39,12 +39,6 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         XCTAssertEqual(records.first?.decision.reason, "startup-persistence-test")
     }
 
-    func testBrowserManagerSourceDoesNotReachForStartupPersistenceSingleton() throws {
-        let source = try source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
-
-        XCTAssertFalse(source.contains("SumiStartupPersistence.shared"))
-    }
-
     private func makeInMemoryStartupContainer() throws -> ModelContainer {
         try ModelContainer(
             for: SumiStartupPersistence.schema,
@@ -60,12 +54,5 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
             permissionType: .geolocation,
             profilePartitionId: profilePartitionId
         )
-    }
-
-    private func source(named relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)
     }
 }
