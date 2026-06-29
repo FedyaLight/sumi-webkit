@@ -32,24 +32,14 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     }
 
     private var tabUnavailableUntilReloadError: NSError {
-        NSError(
-            domain: "ExtensionTabAdapter",
-            code: 3,
-            userInfo: [
-                NSLocalizedDescriptionKey: "Tab is not available to extensions until it is reloaded or navigates to a new document",
-            ]
-        )
+        ExtensionBridgeAdapterCallbackError.tabUnavailableUntilReload.nsError()
     }
 
     private var tabUnavailableError: NSError {
         if tab != nil {
             return tabUnavailableUntilReloadError
         }
-        return NSError(
-            domain: "ExtensionTabAdapter",
-            code: 1,
-            userInfo: [NSLocalizedDescriptionKey: "Tab is no longer available"]
-        )
+        return ExtensionBridgeAdapterCallbackError.tabUnavailable.nsError()
     }
 
     private func eligibleTab() -> Tab? {
@@ -216,11 +206,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .tabAdapterCompletion,
-                error: NSError(
-                    domain: "ExtensionTabAdapter",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "No live web view is available for this tab"]
-                )
+                error: ExtensionBridgeAdapterCallbackError.tabWebViewUnavailable.nsError()
             )
             return
         }

@@ -46,6 +46,79 @@ final class SumiWebExtensionCallbackErrorMapperTests: XCTestCase {
         XCTAssertEqual(error.userInfo["anchorSource"] as? String, "stale")
     }
 
+    func testExtensionBridgeAdapterErrorsPreserveLegacyNSErrorShape() {
+        let cases: [(ExtensionBridgeAdapterCallbackError, String, Int, String)] = [
+            (
+                .windowUnavailable(operation: .focus),
+                "ExtensionWindowAdapter",
+                1,
+                "Window is no longer available"
+            ),
+            (
+                .windowUnavailable(operation: .setWindowState),
+                "ExtensionWindowAdapter",
+                2,
+                "Window is no longer available"
+            ),
+            (
+                .windowUnavailable(operation: .setFrame),
+                "ExtensionWindowAdapter",
+                3,
+                "Window is no longer available"
+            ),
+            (
+                .windowUnavailable(operation: .close),
+                "ExtensionWindowAdapter",
+                4,
+                "Window is no longer available"
+            ),
+            (
+                .miniWindowUnavailable(operation: .close),
+                "ExtensionMiniWindowAdapter",
+                1,
+                "Mini-window is no longer available"
+            ),
+            (
+                .miniWindowUnavailable(operation: .setWindowState),
+                "ExtensionMiniWindowAdapter",
+                2,
+                "Mini-window is no longer available"
+            ),
+            (
+                .miniWindowUnavailable(operation: .setFrame),
+                "ExtensionMiniWindowAdapter",
+                3,
+                "Mini-window is no longer available"
+            ),
+            (
+                .tabUnavailable,
+                "ExtensionTabAdapter",
+                1,
+                "Tab is no longer available"
+            ),
+            (
+                .tabWebViewUnavailable,
+                "ExtensionTabAdapter",
+                2,
+                "No live web view is available for this tab"
+            ),
+            (
+                .tabUnavailableUntilReload,
+                "ExtensionTabAdapter",
+                3,
+                "Tab is not available to extensions until it is reloaded or navigates to a new document"
+            ),
+        ]
+
+        for (callbackError, domain, code, message) in cases {
+            let error = callbackError.nsError()
+
+            XCTAssertEqual(error.domain, domain)
+            XCTAssertEqual(error.code, code)
+            XCTAssertEqual(error.localizedDescription, message)
+        }
+    }
+
     func testExtensionManagerCallbackErrorMapsWithStableMessage() {
         let source = ExtensionManagerCallbackError.extensionPopupWindowUnavailable.nsError()
 

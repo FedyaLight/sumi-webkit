@@ -90,6 +90,82 @@ enum ExtensionManagerCallbackError: LocalizedError, Equatable, Sendable {
     }
 }
 
+enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
+    enum WindowOperation: Int, Sendable {
+        case focus = 1
+        case setWindowState = 2
+        case setFrame = 3
+        case close = 4
+    }
+
+    enum MiniWindowOperation: Int, Sendable {
+        case close = 1
+        case setWindowState = 2
+        case setFrame = 3
+    }
+
+    case windowUnavailable(operation: WindowOperation)
+    case miniWindowUnavailable(operation: MiniWindowOperation)
+    case tabUnavailable
+    case tabWebViewUnavailable
+    case tabUnavailableUntilReload
+
+    var domain: String {
+        switch self {
+        case .windowUnavailable:
+            return "ExtensionWindowAdapter"
+        case .miniWindowUnavailable:
+            return "ExtensionMiniWindowAdapter"
+        case .tabUnavailable,
+             .tabWebViewUnavailable,
+             .tabUnavailableUntilReload:
+            return "ExtensionTabAdapter"
+        }
+    }
+
+    var code: Int {
+        switch self {
+        case .windowUnavailable(let operation):
+            return operation.rawValue
+        case .miniWindowUnavailable(let operation):
+            return operation.rawValue
+        case .tabUnavailable:
+            return 1
+        case .tabWebViewUnavailable:
+            return 2
+        case .tabUnavailableUntilReload:
+            return 3
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .windowUnavailable:
+            return "Window is no longer available"
+        case .miniWindowUnavailable:
+            return "Mini-window is no longer available"
+        case .tabUnavailable:
+            return "Tab is no longer available"
+        case .tabWebViewUnavailable:
+            return "No live web view is available for this tab"
+        case .tabUnavailableUntilReload:
+            return "Tab is not available to extensions until it is reloaded or navigates to a new document"
+        }
+    }
+
+    var errorDescription: String? {
+        message
+    }
+
+    func nsError() -> NSError {
+        NSError(
+            domain: domain,
+            code: code,
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
+    }
+}
+
 enum BrowserExtensionActionPopupBlocker:
     String,
     Codable,

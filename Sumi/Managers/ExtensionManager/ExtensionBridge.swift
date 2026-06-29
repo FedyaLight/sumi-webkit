@@ -500,11 +500,9 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
-                error: NSError(
-                    domain: "ExtensionWindowAdapter",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Window is no longer available"]
-                )
+                error: ExtensionBridgeAdapterCallbackError
+                    .windowUnavailable(operation: .focus)
+                    .nsError()
             )
             return
         }
@@ -539,11 +537,9 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
-                error: NSError(
-                    domain: "ExtensionWindowAdapter",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "Window is no longer available"]
-                )
+                error: ExtensionBridgeAdapterCallbackError
+                    .windowUnavailable(operation: .setWindowState)
+                    .nsError()
             )
             return
         }
@@ -582,11 +578,9 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
-                error: NSError(
-                    domain: "ExtensionWindowAdapter",
-                    code: 3,
-                    userInfo: [NSLocalizedDescriptionKey: "Window is no longer available"]
-                )
+                error: ExtensionBridgeAdapterCallbackError
+                    .windowUnavailable(operation: .setFrame)
+                    .nsError()
             )
             return
         }
@@ -603,11 +597,9 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
-                error: NSError(
-                    domain: "ExtensionWindowAdapter",
-                    code: 4,
-                    userInfo: [NSLocalizedDescriptionKey: "Window is no longer available"]
-                )
+                error: ExtensionBridgeAdapterCallbackError
+                    .windowUnavailable(operation: .close)
+                    .nsError()
             )
             return
         }
@@ -704,11 +696,9 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
-                error: NSError(
-                    domain: "ExtensionMiniWindowAdapter",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "Mini-window is no longer available"]
-                )
+                error: ExtensionBridgeAdapterCallbackError
+                    .miniWindowUnavailable(operation: .setWindowState)
+                    .nsError()
             )
             return
         }
@@ -747,11 +737,9 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
-                error: NSError(
-                    domain: "ExtensionMiniWindowAdapter",
-                    code: 3,
-                    userInfo: [NSLocalizedDescriptionKey: "Mini-window is no longer available"]
-                )
+                error: ExtensionBridgeAdapterCallbackError
+                    .miniWindowUnavailable(operation: .setFrame)
+                    .nsError()
             )
             return
         }
@@ -782,11 +770,9 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
-                error: NSError(
-                    domain: "ExtensionMiniWindowAdapter",
-                    code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "Mini-window is no longer available"]
-                )
+                error: ExtensionBridgeAdapterCallbackError
+                    .miniWindowUnavailable(operation: .close)
+                    .nsError()
             )
             return
         }
