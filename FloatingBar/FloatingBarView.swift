@@ -10,67 +10,43 @@ import SwiftUI
 struct FloatingBarView: View {
     let browserContext: FloatingBarBrowserContext
     @Environment(BrowserWindowState.self) private var windowState
-    @State private var searchManager = SearchManager()
+    @State private var searchSession = FloatingBarSearchSessionOwner()
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     @FocusState private var isSearchFocused: Bool
-    @State private var text: String = ""
-    @State private var selectedSuggestionIndex: Int = -1
-    @State private var hoveredSuggestionIndex: Int? = nil
-    @State private var activeSiteSearch: SumiSearchEngine? = nil
     @State private var searchModeConfirmation: FloatingBarSearchModeConfirmation?
     @State private var searchModeConfirmationProgress: CGFloat = 1
     @State private var floatingBarCardView: NSView?
     @State private var outsideClickMonitor = ChromeLocalEventMonitor()
-    @State private var searchDebouncer = MainActorDebouncedTask()
-    @State private var suppressNextTextSearch = false
-    @State private var isWaitingForSearchDebounce = false
-    @State private var committedSuggestionLayoutCount = 0
-    @State private var isSuggestionPreviewActive = false
-    @State private var suggestionPreviewRestorationText: String?
     @State private var focusRequestOwner = FloatingBarFocusRequestOwner()
     @State private var searchFocusRequestID = 0
     @State private var searchFocusSelectAll = false
 
     private var siteSearchMatch: SumiSearchEngine? {
-        guard activeSiteSearch == nil else { return nil }
-        return SumiSearchEngine.match(for: text, in: sumiSettings.searchEngines)
+        searchSession.siteSearchMatch(in: sumiSettings.searchEngines)
     }
 
     private var visibleSuggestions: [SearchManager.SearchSuggestion] {
-        if activeSiteSearch != nil {
-            return searchManager.suggestions.filter {
-                if case .search = $0.type { return true }
-                return false
-            }
-        }
-        return searchManager.suggestions
+        searchSession.visibleSuggestions
     }
 
     private var urlBarPlaceholderString: String {
-        if let site = activeSiteSearch {
-            return "Search \(site.name)..."
-        }
-        return "Search..."
+        searchSession.urlBarPlaceholderString()
     }
 
     private var isWaitingForSuggestions: Bool {
-        FloatingBarLayoutPolicy.shouldWaitForSuggestionLayout(
-            isDebouncing: isWaitingForSearchDebounce,
-            isLoading: searchManager.isLoadingSuggestions,
-            visibleLayoutCount: visibleSuggestionLayoutCount
-        )
+        searchSession.isWaitingForSuggestions()
     }
 
     private var visibleSuggestionLayoutCount: Int {
-        FloatingBarLayoutPolicy.layoutCount(forVisibleCount: visibleSuggestions.count)
+        searchSession.visibleSuggestionLayoutCount
     }
 
     private var suggestionLayoutCount: Int {
-        committedSuggestionLayoutCount
+        searchSession.suggestionLayoutCount
     }
 
     private var shouldShowEmptyStateSuggestions: Bool {
@@ -109,6 +85,18 @@ struct FloatingBarView: View {
         let urlBarPlaceholder = urlBarPlaceholderString
         let textFieldFont = Font.system(size: 13, weight: .semibold)
         let siteSearchMatchID = siteSearchMatch?.id
+        let textBinding = Binding(
+            get: { searchSession.text },
+            set: { searchSession.text = $0 }
+        )
+        let selectedSuggestionBinding = Binding(
+            get: { searchSession.selectedSuggestionIndex },
+            set: { searchSession.selectedSuggestionIndex = $0 }
+        )
+        let hoveredSuggestionBinding = Binding(
+            get: { searchSession.hoveredSuggestionIndex },
+            set: { searchSession.hoveredSuggestionIndex = $0 }
+        )
 
         ZStack {
             VStack {
@@ -119,27 +107,21 @@ struct FloatingBarView: View {
                         VStack(alignment: .center, spacing: 0) {
                             HStack(spacing: 15) {
                                 Image(
-                                    systemName: activeSiteSearch != nil
+                                    systemName: searchSession.activeSiteSearch != nil
                                         ? "magnifyingglass"
-                                        : isLikelyURL(text)
+                                        : isLikelyURL(searchSession.text)
                                             ? "globe" : "magnifyingglass"
                                 )
-                                .id(activeSiteSearch != nil ? "magnifyingglass" : isLikelyURL(text) ? "globe" : "magnifyingglass")
+                                .id(searchSession.activeSiteSearch != nil ? "magnifyingglass" : isLikelyURL(searchSession.text) ? "globe" : "magnifyingglass")
                                 .transition(FloatingBarMotionPolicy.chromeElementTransition(for: motionMode))
                                 .font(.system(size: 13, weight: .regular))
                                 .foregroundStyle(tokens.secondaryText)
                                 .frame(width: 15)
 
-                                if let site = activeSiteSearch {
+                                if let site = searchSession.activeSiteSearch {
                                     Text(site.name)
                                         .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(
-                                            ThemeContrastResolver.contrastingShade(
-                                                of: site.color,
-                                                targetRatio: 4.5,
-                                                minimumBlend: 0.68
-                                            ) ?? ThemeContrastResolver.preferredForeground(on: site.color)
-                                        )
+                                        .foregroundStyle(siteSearchTokenForeground(for: site))
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 4)
                                         .lineLimit(1)
@@ -153,30 +135,30 @@ struct FloatingBarView: View {
 
                                 ZStack(alignment: .trailing) {
                                     ZStack(alignment: .leading) {
-                                        if text.isEmpty {
+                                        if searchSession.text.isEmpty {
                                             Text(urlBarPlaceholder)
                                                 .font(textFieldFont)
                                                 .foregroundStyle(tokens.secondaryText)
                                                 .allowsHitTesting(false)
                                         }
                                         FloatingBarInlineCompletionTextField(
-                                            text: $text,
+                                            text: textBinding,
                                             isFocused: $isSearchFocused,
                                             font: .systemFont(ofSize: 13, weight: .semibold),
                                             primaryColor: NSColor(tokens.primaryText),
-                                            hidesCaret: isSuggestionPreviewActive,
-                                            movesInsertionPointToEnd: isSuggestionPreviewActive,
+                                            hidesCaret: searchSession.isSuggestionPreviewActive,
+                                            movesInsertionPointToEnd: searchSession.isSuggestionPreviewActive,
                                             focusRequestID: searchFocusRequestID,
                                             focusSelectAll: searchFocusSelectAll,
                                             onBeginEditing: {
-                                                commitSuggestionPreviewForEditing()
+                                                searchSession.commitSuggestionPreviewForEditing()
                                             },
                                             onTab: {
-                                                if isSuggestionPreviewActive {
-                                                    commitSuggestionPreviewForEditing()
+                                                if searchSession.isSuggestionPreviewActive {
+                                                    searchSession.commitSuggestionPreviewForEditing()
                                                     return true
                                                 }
-                                                if let match = siteSearchMatch, activeSiteSearch == nil {
+                                                if let match = siteSearchMatch, searchSession.activeSiteSearch == nil {
                                                     enterSiteSearch(match)
                                                     return true
                                                 }
@@ -186,44 +168,45 @@ struct FloatingBarView: View {
                                                 handleReturn()
                                             },
                                             onMoveSelection: { direction in
-                                                navigateSuggestions(direction: direction)
+                                                searchSession.navigateSuggestions(direction: direction)
                                             },
                                             onEscape: {
-                                                if activeSiteSearch != nil {
-                                                    updateWithMotion(chromeContentAnimation) {
-                                                        activeSiteSearch = nil
-                                                    }
+                                                if searchSession.activeSiteSearch != nil {
+                                                    searchSession.clearActiveSiteSearch(
+                                                        chromeContentAnimation: chromeContentAnimation
+                                                    )
                                                 } else {
                                                     browserContext.dismissFloatingBar(in: windowState, preserveDraft: true)
                                                 }
                                             },
                                             onDeleteAtEmptySiteSearch: {
-                                                guard activeSiteSearch != nil && text.isEmpty else { return false }
-                                                updateWithMotion(chromeContentAnimation) {
-                                                    activeSiteSearch = nil
-                                                }
+                                                guard searchSession.activeSiteSearch != nil && searchSession.text.isEmpty else { return false }
+                                                searchSession.clearActiveSiteSearch(
+                                                    chromeContentAnimation: chromeContentAnimation
+                                                )
                                                 return true
                                             }
                                         )
                                             .tint(tokens.primaryText)
                                             .accessibilityIdentifier("floating-bar-input")
                                             .accessibilityLabel("Search")
-                                            .onChange(of: text) { _, newValue in
+                                            .onChange(of: searchSession.text) { _, newValue in
                                                 // Defer floating bar / window session writes so `BrowserWindowState` is not mutated during SwiftUI view updates.
                                                 Task { @MainActor in
                                                     browserContext.updateFloatingBarDraft(in: windowState, text: newValue)
-                                                    guard !suppressNextTextSearch else {
-                                                        suppressNextTextSearch = false
-                                                        return
-                                                    }
-                                                    commitSuggestionPreviewForEditing()
-                                                    scheduleSearchSuggestions(for: newValue)
-                                                    selectedSuggestionIndex = -1
+                                                    searchSession.handleTextChanged(
+                                                        newValue,
+                                                        isFloatingBarVisible: windowState.isFloatingBarVisible,
+                                                        presentationReason: windowState.floatingBarPresentationReason,
+                                                        emptyStateMode: sumiSettings.floatingBarEmptyStateMode,
+                                                        windowState: windowState,
+                                                        chromeContentAnimation: chromeContentAnimation
+                                                    )
                                                 }
                                             }
                                     }
 
-                                    if activeSiteSearch == nil, let match = siteSearchMatch {
+                                    if searchSession.activeSiteSearch == nil, let match = siteSearchMatch {
                                         HStack(spacing: 6) {
                                             Text("Search \(match.name)")
                                                 .font(textFieldFont)
@@ -267,8 +250,8 @@ struct FloatingBarView: View {
                                 tokens: tokens,
                                 suggestions: visibleSuggestions,
                                 layoutSuggestionCount: suggestionLayoutCount,
-                                selectedIndex: $selectedSuggestionIndex,
-                                hoveredIndex: $hoveredSuggestionIndex,
+                                selectedIndex: selectedSuggestionBinding,
+                                hoveredIndex: hoveredSuggestionBinding,
                                 onSelect: { suggestion in
                                     selectSuggestion(suggestion)
                                 },
@@ -350,35 +333,31 @@ struct FloatingBarView: View {
             handleVisibilityChanged(newVisible)
         }
         .onDisappear {
-            searchDebouncer.cancel()
+            searchSession.cancelPendingSearch()
             removeOutsideClickMonitor()
         }
         .onChange(of: browserContext.currentProfileId) { _, _ in
-            if windowState.isFloatingBarVisible {
-                searchManager.updateProfileContext()
-                searchManager.clearSuggestions()
-            }
+            searchSession.handleProfileContextChanged(
+                isFloatingBarVisible: windowState.isFloatingBarVisible
+            )
         }
-        .onChange(of: searchManager.suggestions.count) { _, _ in
-            let count = visibleSuggestions.count
-            if count == 0 {
-                selectedSuggestionIndex = -1
-            } else if selectedSuggestionIndex >= count {
-                selectedSuggestionIndex = count - 1
-            }
-            commitSuggestionLayoutCountIfReady()
+        .onChange(of: searchSession.searchManager.suggestions.count) { _, _ in
+            searchSession.handleSuggestionsChanged(chromeContentAnimation: chromeContentAnimation)
         }
-        .onChange(of: searchManager.isLoadingSuggestions) { _, isLoading in
-            if !isLoading {
-                commitSuggestionLayoutCount()
-            }
+        .onChange(of: searchSession.searchManager.isLoadingSuggestions) { _, isLoading in
+            searchSession.handleSuggestionLoadingChanged(
+                isLoading: isLoading,
+                chromeContentAnimation: chromeContentAnimation
+            )
         }
-        .onChange(of: activeSiteSearch != nil) { _, _ in
-            commitSuggestionLayoutCountIfReady()
+        .onChange(of: searchSession.activeSiteSearch != nil) { _, _ in
+            searchSession.commitSuggestionLayoutCountIfReady(
+                chromeContentAnimation: chromeContentAnimation
+            )
         }
         .onChange(of: windowState.floatingBarDraftText) { _, newValue in
-            if isVisible, newValue != text {
-                text = newValue
+            if isVisible, newValue != searchSession.text {
+                searchSession.text = newValue
                 focusSearchField(selectAll: false)
             }
         }
@@ -405,20 +384,12 @@ struct FloatingBarView: View {
         themeContext.tokens(settings: sumiSettings)
     }
 
-    private func scheduleSearchSuggestions(for query: String) {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty else {
-            searchDebouncer.cancel()
-            setWaitingForSearchDebounce(false)
-            refreshEmptyStateSuggestionsIfNeeded()
-            return
-        }
-
-        setWaitingForSearchDebounce(true)
-        searchDebouncer.schedule(delayNanoseconds: 160_000_000) {
-            setWaitingForSearchDebounce(false)
-            searchManager.searchSuggestions(for: trimmedQuery)
-        }
+    private func siteSearchTokenForeground(for site: SumiSearchEngine) -> Color {
+        ThemeContrastResolver.contrastingShade(
+            of: site.color,
+            targetRatio: 4.5,
+            minimumBlend: 0.68
+        ) ?? ThemeContrastResolver.preferredForeground(on: site.color)
     }
 
     private func handleVisibilityChanged(_ newVisible: Bool) {
@@ -426,88 +397,35 @@ struct FloatingBarView: View {
             let windowID = windowState.id
             focusRequestOwner.beginSession(windowID: windowID)
             installOutsideClickMonitorIfNeeded()
-            browserContext.configureSearchManager(searchManager)
+            browserContext.configureSearchManager(searchSession.searchManager)
 
-            text = windowState.floatingBarDraftText
+            searchSession.text = windowState.floatingBarDraftText
             refreshEmptyStateSuggestionsIfNeeded()
 
             focusRequestOwner.scheduleDeferredFocus(windowID: windowID) {
                 guard windowState.id == windowID,
                       windowState.isFloatingBarVisible
                 else { return }
-                focusSearchField(selectAll: !text.isEmpty)
+                focusSearchField(selectAll: !searchSession.text.isEmpty)
             }
         } else {
             focusRequestOwner.endSession()
-            searchDebouncer.cancel()
-            isWaitingForSearchDebounce = false
             removeOutsideClickMonitor()
             isSearchFocused = false
-            searchManager.clearSuggestions()
-            text = ""
-            activeSiteSearch = nil
+            searchSession.resetForHiddenBar()
             searchModeConfirmation = nil
             searchModeConfirmationProgress = 1
-            selectedSuggestionIndex = -1
-            committedSuggestionLayoutCount = 0
-            isSuggestionPreviewActive = false
-            suggestionPreviewRestorationText = nil
-            suppressNextTextSearch = false
         }
     }
 
     private func refreshEmptyStateSuggestionsIfNeeded() {
-        guard windowState.isFloatingBarVisible,
-              activeSiteSearch == nil,
-              text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
-
-        searchDebouncer.cancel()
-        setWaitingForSearchDebounce(false)
-        if windowState.floatingBarPresentationReason == .splitTabPicker {
-            setCommittedSuggestionLayoutCount(
-                FloatingBarLayoutPolicy.suggestionsVisibleRowLimit,
-                animated: false
-            )
-            searchManager.showActiveTabSuggestions(for: windowState)
-        } else if sumiSettings.floatingBarEmptyStateMode == .topLinks {
-            setCommittedSuggestionLayoutCount(
-                FloatingBarLayoutPolicy.suggestionsVisibleRowLimit,
-                animated: false
-            )
-            searchManager.showTopLinkSuggestions(
-                limit: FloatingBarLayoutPolicy.suggestionsVisibleRowLimit
-            )
-        } else {
-            searchManager.clearSuggestions()
-            setCommittedSuggestionLayoutCount(0, animated: true)
-        }
-    }
-
-    private func setWaitingForSearchDebounce(_ isWaiting: Bool) {
-        updateWithoutMotion {
-            isWaitingForSearchDebounce = isWaiting
-        }
-    }
-
-    private func commitSuggestionLayoutCountIfReady() {
-        guard !isWaitingForSuggestions else { return }
-        commitSuggestionLayoutCount()
-    }
-
-    private func commitSuggestionLayoutCount() {
-        let nextCount = visibleSuggestionLayoutCount
-        guard committedSuggestionLayoutCount != nextCount else { return }
-        setCommittedSuggestionLayoutCount(
-            nextCount,
-            animated: chromeContentAnimation != nil
+        searchSession.refreshEmptyStateSuggestionsIfNeeded(
+            isFloatingBarVisible: windowState.isFloatingBarVisible,
+            presentationReason: windowState.floatingBarPresentationReason,
+            emptyStateMode: sumiSettings.floatingBarEmptyStateMode,
+            windowState: windowState,
+            chromeContentAnimation: chromeContentAnimation
         )
-    }
-
-    private func setCommittedSuggestionLayoutCount(_ count: Int, animated: Bool) {
-        updateWithMotion(animated ? chromeContentAnimation : nil) {
-            committedSuggestionLayoutCount = count
-        }
     }
 
     private func focusSearchField(selectAll: Bool) {
@@ -518,10 +436,7 @@ struct FloatingBarView: View {
     }
 
     private func enterSiteSearch(_ site: SumiSearchEngine) {
-        updateWithMotion(chromeContentAnimation) {
-            activeSiteSearch = site
-            text = ""
-        }
+        searchSession.enterSiteSearch(site, chromeContentAnimation: chromeContentAnimation)
         triggerSearchModeConfirmation(color: site.color)
     }
 
@@ -546,74 +461,33 @@ struct FloatingBarView: View {
         }
     }
 
-    private func updateWithMotion(
-        _ animation: Animation?,
-        _ updates: () -> Void
-    ) {
-        guard let animation else {
-            updateWithoutMotion(updates)
-            return
-        }
-
-        withAnimation(animation) {
-            updates()
-        }
-    }
-
-    private func updateWithoutMotion(_ updates: () -> Void) {
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            updates()
-        }
-    }
-
     private func deleteHistoryEntry(_ entry: HistoryListItem) {
         Task { @MainActor in
             await browserContext.deleteHistoryEntry(entry)
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = searchSession.text.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 refreshEmptyStateSuggestionsIfNeeded()
             } else {
-                searchManager.searchSuggestions(for: trimmed)
+                searchSession.searchManager.searchSuggestions(for: trimmed)
             }
         }
     }
 
-    private func completionText(for suggestion: SearchManager.SearchSuggestion) -> String {
-        switch suggestion.type {
-        case .search:
-            return suggestion.text
-        case .url:
-            return suggestion.text
-        case .history(let entry):
-            return entry.url.absoluteString
-        case .bookmark(let bookmark):
-            return bookmark.url.absoluteString
-        case .tab(let tab):
-            return tab.url.absoluteString
-        }
-    }
-
-    private func commitSuggestionPreviewForEditing() {
-        isSuggestionPreviewActive = false
-        suggestionPreviewRestorationText = nil
-    }
-
     private func handleReturn() {
-        if let site = activeSiteSearch {
+        if let site = searchSession.activeSiteSearch {
             let query: String
-            if selectedSuggestionIndex >= 0 && selectedSuggestionIndex < visibleSuggestions.count {
-                query = visibleSuggestions[selectedSuggestionIndex].text
+            if searchSession.selectedSuggestionIndex >= 0
+                && searchSession.selectedSuggestionIndex < visibleSuggestions.count {
+                query = visibleSuggestions[searchSession.selectedSuggestionIndex].text
             } else {
-                query = text
+                query = searchSession.text
             }
             guard !query.isEmpty else { return }
             let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
             let navigatesCurrentTab = browserContext.floatingBarCommitNavigatesCurrentTab(in: windowState)
-            text = ""
-            activeSiteSearch = nil
-            selectedSuggestionIndex = -1
+            searchSession.text = ""
+            searchSession.activeSiteSearch = nil
+            searchSession.selectedSuggestionIndex = -1
             DispatchQueue.main.async {
                 browserContext.commitFloatingBarNavigation(
                     to: navigateURL,
@@ -624,12 +498,12 @@ struct FloatingBarView: View {
             return
         }
 
-        if selectedSuggestionIndex >= 0
-            && selectedSuggestionIndex < visibleSuggestions.count {
-            let suggestion = visibleSuggestions[selectedSuggestionIndex]
+        if searchSession.selectedSuggestionIndex >= 0
+            && searchSession.selectedSuggestionIndex < visibleSuggestions.count {
+            let suggestion = visibleSuggestions[searchSession.selectedSuggestionIndex]
             selectSuggestion(suggestion)
         } else {
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = searchSession.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
 
             let newSuggestion = SearchManager.SearchSuggestion(
@@ -642,9 +516,9 @@ struct FloatingBarView: View {
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion) {
         let navigatesCurrentTab = browserContext.floatingBarCommitNavigatesCurrentTab(in: windowState)
-        text = ""
-        activeSiteSearch = nil
-        selectedSuggestionIndex = -1
+        searchSession.text = ""
+        searchSession.activeSiteSearch = nil
+        searchSession.selectedSuggestionIndex = -1
         DispatchQueue.main.async {
             browserContext.commitFloatingBarSuggestion(
                 suggestion,
@@ -665,42 +539,6 @@ struct FloatingBarView: View {
         components.path = "/search"
         components.queryItems = [URLQueryItem(name: "q", value: query)]
         return components.url ?? URL(string: "https://\(site.domain)")!
-    }
-
-    private func navigateSuggestions(direction: Int) {
-        let maxIndex = visibleSuggestions.count - 1
-        guard maxIndex >= 0 else {
-            selectedSuggestionIndex = -1
-            isSuggestionPreviewActive = false
-            suggestionPreviewRestorationText = nil
-            return
-        }
-
-        let oldIndex = selectedSuggestionIndex
-        let newIndex: Int
-        if direction > 0 {
-            newIndex = min(selectedSuggestionIndex + 1, maxIndex)
-        } else {
-            newIndex = max(selectedSuggestionIndex - 1, -1)
-        }
-
-        guard newIndex != oldIndex else { return }
-
-        if oldIndex == -1, suggestionPreviewRestorationText == nil {
-            suggestionPreviewRestorationText = text
-        }
-
-        selectedSuggestionIndex = newIndex
-        suppressNextTextSearch = true
-
-        if newIndex == -1 {
-            text = suggestionPreviewRestorationText ?? text
-            isSuggestionPreviewActive = false
-            suggestionPreviewRestorationText = nil
-        } else {
-            text = completionText(for: visibleSuggestions[newIndex])
-            isSuggestionPreviewActive = true
-        }
     }
 
     private func installOutsideClickMonitorIfNeeded() {
