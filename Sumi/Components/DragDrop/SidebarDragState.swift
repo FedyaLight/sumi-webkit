@@ -19,6 +19,8 @@ final class SidebarDragState: ObservableObject {
         set { locationTracker.previewLocation = newValue }
     }
     @Published private var dropCommitProjection = SidebarDropCommitProjectionState()
+    private var dropCommitProjectionGeneration = 0
+    private var pendingDropCommitProjectionFinish: DispatchWorkItem?
     private(set) var isInternalDragGeometryArmed: Bool = false
     private(set) var armedDragScope: SidebarDragScope?
 
@@ -265,6 +267,8 @@ final class SidebarDragState: ObservableObject {
     }
 
     func beginDropCommit() {
+        cancelPendingDropCommitProjectionFinish()
+        dropCommitProjectionGeneration += 1
         var projection = dropCommitProjection
         projection.begin(
             itemId: activeDragItemId,
@@ -287,9 +291,8 @@ final class SidebarDragState: ObservableObject {
         isInternalDragSession = false
         activeDragScope = nil
         if isCompletingDrop {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.finishDropCommitProjection()
-            }
+            let expectedProjectionGeneration = dropCommitProjectionGeneration
+            scheduleDropCommitProjectionFinish(expectedGeneration: expectedProjectionGeneration)
         } else {
             finishDropCommitProjection()
         }
@@ -300,7 +303,27 @@ final class SidebarDragState: ObservableObject {
         requestGeometryRefresh()
     }
 
-    private func finishDropCommitProjection() {
+    private func scheduleDropCommitProjectionFinish(expectedGeneration: Int) {
+        cancelPendingDropCommitProjectionFinish()
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.finishDropCommitProjection(expectedGeneration: expectedGeneration)
+            }
+        }
+        pendingDropCommitProjectionFinish = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: workItem)
+    }
+
+    private func cancelPendingDropCommitProjectionFinish() {
+        pendingDropCommitProjectionFinish?.cancel()
+        pendingDropCommitProjectionFinish = nil
+    }
+
+    private func finishDropCommitProjection(expectedGeneration: Int? = nil) {
+        if let expectedGeneration, expectedGeneration != dropCommitProjectionGeneration {
+            return
+        }
+        cancelPendingDropCommitProjectionFinish()
         var projection = dropCommitProjection
         projection.finish()
         dropCommitProjection = projection

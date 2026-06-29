@@ -155,6 +155,52 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
     }
 
+    func testDelayedDropCommitCleanupFinishesWithoutNewDrop() async throws {
+        let state = SidebarDragState()
+        let spaceId = UUID()
+        let draggedItemId = UUID()
+        state.isDragging = true
+        state.activeDragItemId = draggedItemId
+        state.hoveredSlot = .spacePinned(spaceId: spaceId, slot: 0)
+
+        state.beginDropCommit()
+        state.resetInteractionState()
+
+        XCTAssertTrue(state.isCompletingDrop)
+        XCTAssertTrue(state.isDropProjectionActive)
+        XCTAssertEqual(state.projectionDragItemId, draggedItemId)
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertFalse(state.isCompletingDrop)
+        XCTAssertFalse(state.isDropProjectionActive)
+        XCTAssertNil(state.projectionDragItemId)
+        XCTAssertEqual(state.projectionHoveredSlot, .empty)
+    }
+
+    func testStaleDelayedDropCommitCleanupDoesNotClearNewDropProjection() async throws {
+        let state = SidebarDragState()
+        let spaceId = UUID()
+        let firstDraggedItemId = UUID()
+        let secondDraggedItemId = UUID()
+        state.isDragging = true
+        state.activeDragItemId = firstDraggedItemId
+        state.hoveredSlot = .spacePinned(spaceId: spaceId, slot: 0)
+        state.beginDropCommit()
+        state.resetInteractionState()
+
+        state.isDragging = true
+        state.activeDragItemId = secondDraggedItemId
+        state.hoveredSlot = .spacePinned(spaceId: spaceId, slot: 1)
+        state.beginDropCommit()
+
+        try await Task.sleep(for: .milliseconds(100))
+
+        XCTAssertTrue(state.isCompletingDrop)
+        XCTAssertTrue(state.isDropProjectionActive)
+        XCTAssertEqual(state.projectionDragItemId, secondDraggedItemId)
+    }
+
     func testRegularTabReorderStaysInsideCurrentSpace() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()

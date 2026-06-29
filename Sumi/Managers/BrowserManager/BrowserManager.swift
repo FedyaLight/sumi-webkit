@@ -289,6 +289,22 @@ class BrowserManager: ObservableObject {
             }
         )
     )
+    lazy var nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
+        dependencies: BrowserNativeSurfaceRoutingOwner.Dependencies(
+            tabManager: { [weak self, tabManager] in self?.tabManager ?? tabManager },
+            settings: { [weak self] in self?.sumiSettings },
+            openNewTab: { [tabOpeningOwner] url, context in
+                tabOpeningOwner.openNewTab(url: url, context: context)
+            },
+            selectTab: { [weak self] tab, windowState in
+                self?.selectTab(tab, in: windowState)
+            },
+            focusWindow: { windowState in
+                windowState.window?.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        )
+    )
     private lazy var floatingBarRoutingOwner = BrowserFloatingBarRoutingOwner(
         dependencies: BrowserFloatingBarRoutingOwner.Dependencies(
             tabOpeningOwner: { [tabOpeningOwner] in tabOpeningOwner },

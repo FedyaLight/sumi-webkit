@@ -428,111 +428,28 @@ extension Tab: WKUIDelegate {
     private func geolocationTabContext(
         for webView: WKWebView
     ) -> SumiWebKitGeolocationTabContext? {
-        guard let profile = resolveProfile() else { return nil }
-
-        let tabId = id.uuidString.lowercased()
-        let pageGeneration = String(extensionRuntimeDocumentSequence)
-        let pageId = "\(tabId):\(pageGeneration)"
-        let committedURL = extensionRuntimeCommittedMainDocumentURL
-        let surfaceState = permissionRequestSurfaceState(for: webView)
-        return SumiWebKitGeolocationTabContext(
-            tabId: tabId,
-            pageId: pageId,
-            profilePartitionId: profile.id.uuidString.lowercased(),
-            isEphemeralProfile: profile.isEphemeral,
-            committedURL: committedURL,
-            visibleURL: webView.url ?? url,
-            mainFrameURL: committedURL ?? webView.url ?? url,
-            isActiveTab: surfaceState.isActive,
-            isVisibleTab: surfaceState.isVisible,
-            navigationOrPageGeneration: pageGeneration,
-            isCurrentPage: { [weak self] in
-                guard let self else { return false }
-                return self.currentPermissionPageId() == pageId
-                    && String(self.extensionRuntimeDocumentSequence) == pageGeneration
-            }
-        )
+        permissionSurfaceOwner.geolocationContext(for: webView)
     }
 
     private func mediaCaptureTabContext(
         for webView: WKWebView,
         fallbackMainFrameURL: URL? = nil
     ) -> SumiWebKitMediaCaptureTabContext? {
-        guard let profile = resolveProfile() else { return nil }
-
-        let tabId = id.uuidString.lowercased()
-        let pageGeneration = String(extensionRuntimeDocumentSequence)
-        let pageId = "\(tabId):\(pageGeneration)"
-        let committedURL = extensionRuntimeCommittedMainDocumentURL
-        let surfaceState = permissionRequestSurfaceState(for: webView)
-        return SumiWebKitMediaCaptureTabContext(
-            tabId: tabId,
-            pageId: pageId,
-            profilePartitionId: profile.id.uuidString.lowercased(),
-            isEphemeralProfile: profile.isEphemeral,
-            committedURL: committedURL,
-            visibleURL: webView.url ?? url,
-            mainFrameURL: committedURL ?? fallbackMainFrameURL ?? webView.url ?? url,
-            isActiveTab: surfaceState.isActive,
-            isVisibleTab: surfaceState.isVisible,
-            navigationOrPageGeneration: pageGeneration,
-            isCurrentPage: { [weak self] in
-                guard let self else { return false }
-                return self.currentPermissionPageId() == pageId
-                    && String(self.extensionRuntimeDocumentSequence) == pageGeneration
-            }
+        permissionSurfaceOwner.mediaCaptureContext(
+            for: webView,
+            fallbackMainFrameURL: fallbackMainFrameURL
         )
     }
 
     func filePickerPermissionTabContext(
         for webView: WKWebView
     ) -> SumiFilePickerPermissionTabContext? {
-        guard let profile = resolveProfile() else { return nil }
-
-        let tabId = id.uuidString.lowercased()
-        let pageGeneration = String(extensionRuntimeDocumentSequence)
-        let committedURL = extensionRuntimeCommittedMainDocumentURL
-        let surfaceState = permissionRequestSurfaceState(for: webView)
-        return SumiFilePickerPermissionTabContext(
-            tabId: tabId,
-            pageId: "\(tabId):\(pageGeneration)",
-            profilePartitionId: profile.id.uuidString.lowercased(),
-            isEphemeralProfile: profile.isEphemeral,
-            committedURL: committedURL,
-            visibleURL: webView.url ?? url,
-            mainFrameURL: committedURL ?? webView.url ?? url,
-            isActiveTab: surfaceState.isActive,
-            isVisibleTab: surfaceState.isVisible,
-            navigationOrPageGeneration: pageGeneration
-        )
+        permissionSurfaceOwner.filePickerContext(for: webView)
     }
 
     private func storageAccessTabContext(
         for webView: WKWebView
     ) -> SumiStorageAccessTabContext? {
-        guard let profile = resolveProfile() else { return nil }
-
-        let tabId = id.uuidString.lowercased()
-        let pageGeneration = String(extensionRuntimeDocumentSequence)
-        let pageId = "\(tabId):\(pageGeneration)"
-        let committedURL = extensionRuntimeCommittedMainDocumentURL
-        let surfaceState = permissionRequestSurfaceState(for: webView)
-        return SumiStorageAccessTabContext(
-            tabId: tabId,
-            pageId: pageId,
-            profilePartitionId: profile.id.uuidString.lowercased(),
-            isEphemeralProfile: profile.isEphemeral,
-            committedURL: committedURL,
-            visibleURL: webView.url ?? url,
-            mainFrameURL: committedURL ?? webView.url ?? url,
-            isActiveTab: surfaceState.isActive,
-            isVisibleTab: surfaceState.isVisible,
-            navigationOrPageGeneration: pageGeneration,
-            isCurrentPage: { [weak self] in
-                guard let self else { return false }
-                return self.currentPermissionPageId() == pageId
-                    && String(self.extensionRuntimeDocumentSequence) == pageGeneration
-            }
-        )
+        permissionSurfaceOwner.storageAccessContext(for: webView)
     }
 }

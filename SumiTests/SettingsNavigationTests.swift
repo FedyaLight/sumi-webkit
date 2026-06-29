@@ -318,6 +318,36 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(settings.currentSettingsTab, .about)
     }
 
+    func testOpenSettingsTabReusesEphemeralSettingsSurfaceInIncognitoWindow() throws {
+        let (browserManager, _, settings, windowState, space) = makeHarness()
+        let ephemeralProfile = Profile.createEphemeral()
+        windowState.isIncognito = true
+        windowState.ephemeralProfile = ephemeralProfile
+        windowState.currentProfileId = ephemeralProfile.id
+
+        browserManager.openSettingsTab(selecting: .privacy, in: windowState)
+
+        let firstSettingsTab = try XCTUnwrap(
+            windowState.ephemeralTabs.first(where: \.representsSumiSettingsSurface)
+        )
+        XCTAssertEqual(firstSettingsTab.profileId, ephemeralProfile.id)
+        XCTAssertEqual(firstSettingsTab.url, SettingsTabs.privacy.settingsSurfaceURL)
+        XCTAssertEqual(firstSettingsTab.name, "Settings")
+        XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
+        XCTAssertEqual(settings.currentSettingsTab, .privacy)
+        XCTAssertTrue(browserManager.tabManager.tabs(in: space).filter(\.representsSumiSettingsSurface).isEmpty)
+
+        browserManager.openSettingsTab(selecting: .about, in: windowState)
+
+        let settingsTabs = windowState.ephemeralTabs.filter(\.representsSumiSettingsSurface)
+        XCTAssertEqual(settingsTabs.count, 1)
+        XCTAssertEqual(settingsTabs.first?.id, firstSettingsTab.id)
+        XCTAssertEqual(firstSettingsTab.url, SettingsTabs.about.settingsSurfaceURL)
+        XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
+        XCTAssertEqual(settings.currentSettingsTab, .about)
+        XCTAssertTrue(browserManager.tabManager.tabs(in: space).filter(\.representsSumiSettingsSurface).isEmpty)
+    }
+
     func testFloatingBarCurrentSettingsURLCommitAppliesPaneNavigation() {
         let (browserManager, _, settings, windowState, space) = makeHarness()
         let existing = browserManager.tabManager.createNewTab(

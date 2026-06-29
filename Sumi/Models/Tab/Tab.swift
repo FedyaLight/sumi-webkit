@@ -53,6 +53,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     private let webViewRuntime = TabWebViewRuntime()
     private let suspensionStateOwner = TabSuspensionStateOwner()
     private let webViewInteractionStateOwner = TabWebViewInteractionStateOwner()
+    lazy var permissionSurfaceOwner = TabPermissionSurfaceOwner(tab: self)
     private let dependencyStateOwner: TabDependencyStateOwner
 
     // MARK: - Pin State

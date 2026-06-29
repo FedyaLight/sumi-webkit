@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import SwiftUI
 
 @MainActor
@@ -43,63 +43,11 @@ extension BrowserManager {
         in windowState: BrowserWindowState,
         preferredSpaceId: UUID? = nil
     ) {
-        if windowState.isIncognito, let profile = windowState.ephemeralProfile {
-            if let existing = windowState.ephemeralTabs.first(where: { kind.matches($0) }) {
-                kind.configure(existing, url: url)
-                applySettingsSurfaceNavigationIfNeeded(kind, url: url)
-                selectTab(existing, in: windowState)
-            } else {
-                let newTab = tabManager.createEphemeralTab(
-                    url: url,
-                    in: windowState,
-                    profile: profile
-                )
-                kind.configure(newTab, url: url)
-                applySettingsSurfaceNavigationIfNeeded(kind, url: url)
-                selectTab(newTab, in: windowState)
-            }
-            focusWindow(windowState)
-            return
-        }
-
-        let targetSpace =
-            preferredSpaceId.flatMap { id in tabManager.spaces.first(where: { $0.id == id }) }
-            ?? windowState.currentSpaceId.flatMap { id in tabManager.spaces.first(where: { $0.id == id }) }
-            ?? windowState.currentProfileId.flatMap { pid in tabManager.spaces.first(where: { $0.profileId == pid }) }
-            ?? tabManager.currentSpace
-
-        let spaceIdForLookup = targetSpace?.id ?? tabManager.currentSpace?.id
-        if let sid = spaceIdForLookup,
-           let existing = (tabManager.tabsBySpace[sid] ?? []).first(where: { kind.matches($0) }) {
-            kind.configure(existing, url: url)
-            applySettingsSurfaceNavigationIfNeeded(kind, url: url)
-            selectTab(existing, in: windowState)
-            tabManager.scheduleRuntimeStatePersistence(for: existing)
-            focusWindow(windowState)
-            return
-        }
-
-        let newTab = openNewTab(
-            url: url.absoluteString,
-            context: .foreground(
-                windowState: windowState,
-                preferredSpaceId: targetSpace?.id,
-                loadPolicy: .deferred
-            )
+        nativeSurfaceRoutingOwner.openNativeBrowserSurface(
+            kind,
+            url: url,
+            in: windowState,
+            preferredSpaceId: preferredSpaceId
         )
-        kind.configure(newTab, url: url)
-        applySettingsSurfaceNavigationIfNeeded(kind, url: url)
-        tabManager.scheduleRuntimeStatePersistence(for: newTab)
-        focusWindow(windowState)
-    }
-
-    private func applySettingsSurfaceNavigationIfNeeded(_ kind: SumiNativeBrowserSurfaceKind, url: URL) {
-        guard case .settings = kind else { return }
-        sumiSettings?.applyNavigationFromSettingsSurfaceURL(url)
-    }
-
-    private func focusWindow(_ windowState: BrowserWindowState) {
-        windowState.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 }

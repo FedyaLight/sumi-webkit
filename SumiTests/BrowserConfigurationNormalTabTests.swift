@@ -127,6 +127,97 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(Set(summary.addedToUserContentControllerIdentifiers), expectedIdentifiers)
     }
 
+    func testTabNormalWebViewCreationInstallsProtectionAndSafariContentBlockerRules() async throws {
+        let fixture = try makePreparedProtectionBundleFixture()
+        let safariContentBlocker = try makeSafariContentBlockerCandidate(
+            blockedHost: "safari-content-blocked.example"
+        )
+        let safariRuleListIdentifiers = Set(
+            safariContentBlocker.locatedRules.definitions.map(\.webKitStoreIdentifier)
+        )
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.setEnabled(true, for: .extensions)
+        let startupContainer = try Self.makeInMemoryStartupContainer()
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: startupContainer.mainContext
+        )
+        let installedSafariContentBlocker = try await extensionsModule.enableSafariContentBlocker(
+            from: safariContentBlocker.candidate
+        )
+        let settings = SumiProtectionSettings(userDefaults: harness.defaults)
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: fixture.manifestStoreRoot)
+        let adBlockingModule = SumiAdBlockingModule(
+            moduleRegistry: registry,
+            preparedBundleResourceURL: fixture.resourceRoot,
+            preparedBundleRemoteRootURL: fixture.remoteRoot,
+            preparedBundleGeneratedRootURL: nil,
+            ruleListStoreFactory: { isEnabled in
+                AdblockWebKitRuleListStore(
+                    isAdblockEnabled: isEnabled,
+                    manifestStore: manifestStore,
+                    embeddedBundleURLProvider: { fixture.bundleURL }
+                )
+            }
+        )
+        let protectionCoordinator = SumiProtectionCoordinator(
+            settings: settings,
+            adBlockingModule: adBlockingModule,
+            bundleUpdateStatusStore: SumiProtectionBundleUpdateStatusStore(userDefaults: harness.defaults)
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            startupPersistence: BrowserManagerStartupPersistence(container: startupContainer),
+            adBlockingModule: adBlockingModule,
+            protectionCoordinator: protectionCoordinator,
+            extensionsModule: extensionsModule
+        )
+        await waitForStartupProtectionRestore(on: browserManager)
+
+        settings.setLevel(.protection)
+        settings.setAppliedLevel(.protection)
+        _ = try await protectionCoordinator.restoreAppliedLevelForStartup()
+
+        let profile = try XCTUnwrap(browserManager.currentProfile)
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/protection-and-safari-content-blocker",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let protectionDecision = protectionCoordinator.normalTabDecision(
+            for: tab.url,
+            profileId: profile.id
+        )
+        let protectionRuleListIdentifiers = Set(protectionDecision.plan.expectedRuleListIdentifiers)
+        XCTAssertNotNil(protectionDecision.contentBlockingService)
+
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.protectionAndSafariContentBlockerRules"
+        )
+        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
+        let summary = controller.contentBlockingAssetSummary
+        let expectedIdentifiers = protectionRuleListIdentifiers.union(safariRuleListIdentifiers)
+
+        XCTAssertTrue(summary.isInstalled)
+        XCTAssertTrue(summary.isContentBlockingFeatureEnabled)
+        XCTAssertEqual(summary.globalRuleListCount, expectedIdentifiers.count)
+        XCTAssertEqual(summary.updateRuleCount, expectedIdentifiers.count)
+        XCTAssertEqual(Set(summary.globalRuleListIdentifiers), expectedIdentifiers)
+        XCTAssertTrue(protectionRuleListIdentifiers.isSubset(of: Set(summary.globalRuleListIdentifiers)))
+        XCTAssertTrue(safariRuleListIdentifiers.isSubset(of: Set(summary.globalRuleListIdentifiers)))
+        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
+        XCTAssertEqual(
+            tab.safariContentBlockerAppliedAttachmentState?.enabledContentBlockerIds,
+            [installedSafariContentBlocker.id]
+        )
+    }
+
     func testBrowserManagerStartupWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -785,6 +876,46 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
     }
 
+    private func makeSafariContentBlockerCandidate(
+        blockedHost: String
+    ) throws -> (
+        candidate: DiscoveredSafariExtensionCandidate,
+        locatedRules: SafariContentBlockerLocatedRules
+    ) {
+        let appURL = try SafariExtensionScannerTestSupport.makeContainingAppBundle(
+            in: temporaryDirectory(prefix: "SumiNormalTabSafariContentBlocker"),
+            appName: "SafariContentBlocker",
+            appBundleIdentifier: "com.example.sumi.normal-tab-content-blocker.app",
+            extensions: [
+                .init(
+                    name: "Content Blocker",
+                    bundleIdentifier: "com.example.sumi.normal-tab-content-blocker",
+                    displayName: "Content Blocker",
+                    extensionPointIdentifier: SafariExtensionScanner.safariContentBlockerExtensionPointIdentifier,
+                    includeManifest: false,
+                    includeExtensionAttributes: false,
+                    resourceFiles: [
+                        .init(
+                            relativePath: "blockerList.json",
+                            data: Self.validSafariContentBlockerRuleListData(blockedHost: blockedHost)
+                        ),
+                    ]
+                ),
+            ]
+        )
+        var issues: [SafariExtensionScannerIssue] = []
+        let candidate = try XCTUnwrap(
+            SafariExtensionScanner()
+                .inspectContainingAppBundle(at: appURL, issues: &issues)
+                .first
+        )
+        XCTAssertTrue(issues.isEmpty)
+        return (
+            candidate: candidate,
+            locatedRules: try SafariContentBlockerRuleLocator.locateRules(in: candidate)
+        )
+    }
+
     private func writePreparedBundleShard(
         bundleURL: URL,
         group: SumiProtectionGroupKind,
@@ -884,6 +1015,19 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 "action": {
                   "type": "block"
                 }
+              }
+            ]
+            """.utf8
+        )
+    }
+
+    private static func validSafariContentBlockerRuleListData(blockedHost: String) -> Data {
+        Data(
+            """
+            [
+              {
+                "action": { "type": "block" },
+                "trigger": { "url-filter": ".*", "if-domain": ["\(blockedHost)"] }
               }
             ]
             """.utf8

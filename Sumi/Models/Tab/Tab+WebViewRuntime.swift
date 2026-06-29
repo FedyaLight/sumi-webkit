@@ -471,6 +471,23 @@ extension Tab {
         if let protectionDecision {
             noteProtectionAttachmentApplied(protectionDecision.attachmentState)
         }
+        let safariContentBlockerAttachmentState = browserManager?
+            .extensionsModule
+            .safariContentBlockerAttachmentState(for: url)
+        let additionalContentBlockingServices: [SumiContentBlockingService]
+        if safariContentBlockerAttachmentState?.isEnabled == true {
+            additionalContentBlockingServices = browserManager?
+                .extensionsModule
+                .enabledSafariContentBlockingServices(
+                    for: url,
+                    profileId: profile.id
+                ) ?? []
+        } else {
+            additionalContentBlockingServices = []
+        }
+        if let safariContentBlockerAttachmentState {
+            noteSafariContentBlockerAttachmentApplied(safariContentBlockerAttachmentState)
+        }
 
         let autoplayPolicy = BrowserConfiguration.shared.resolvedAutoplayPolicy(
             for: url,
@@ -483,7 +500,8 @@ extension Tab {
             url: url,
             autoplayPolicy: autoplayPolicy,
             userScriptsProvider: userScriptsProvider,
-            contentBlockingService: protectionDecision?.contentBlockingService
+            contentBlockingService: protectionDecision?.contentBlockingService,
+            additionalContentBlockingServices: additionalContentBlockingServices
         )
     }
 
