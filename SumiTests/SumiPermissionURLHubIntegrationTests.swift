@@ -137,24 +137,60 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
             isEphemeralProfile: context.isEphemeralProfile
         ).isEmpty)
 
-        let settingsSource = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionsViewModel.swift")
-        XCTAssertFalse(settingsSource.contains("removeWebsiteData"))
-        XCTAssertFalse(settingsSource.contains("tracking"))
-        XCTAssertFalse(settingsSource.contains("cookies"))
     }
 
-    func testUnsupportedContentSettingsRemainAbsentFromURLHubSource() throws {
-        let source = try sourceFile("Sumi/Permissions/UI/SumiCurrentSitePermissionRowsBuilder.swift")
+    func testURLHubRowsExposeOnlySupportedCurrentSitePermissionSurfaces() async throws {
+        let harness = makeHarness()
+        let context = currentSiteContext()
+        let profile = sumiPermissionIntegrationProfile()
+        let indicatorStore = SumiPermissionIndicatorEventStore()
+        let siteActivityStore = makeSiteActivityStore()
+        let dependencies = dependencies(
+            coordinator: harness.coordinator,
+            runtime: nil,
+            autoplay: harness.autoplayStore,
+            blockedPopupStore: SumiBlockedPopupStore(),
+            externalStore: SumiExternalSchemeSessionStore(),
+            indicatorStore: indicatorStore,
+            siteActivityStore: siteActivityStore
+        )
 
-        XCTAssertTrue(source.contains("appendSitePermissionRowIfRelevant(\n            .camera"))
-        XCTAssertTrue(source.contains("appendSitePermissionRowIfRelevant(\n            .storageAccess"))
-        XCTAssertTrue(source.contains("shouldShowSitePermissionRow("))
-        XCTAssertTrue(source.contains("recentEventCount > 0 || runtimeStatus != nil || siteActivity != nil"))
-        XCTAssertTrue(source.contains("hasResolvedDecision(for: key)"))
-        XCTAssertFalse(source.contains("javascript"))
-        XCTAssertFalse(source.contains("background-sync"))
-        XCTAssertFalse(source.contains("automatic downloads"))
-        XCTAssertFalse(source.contains("sound"))
+        try await harness.coordinator.setSiteDecision(
+            for: context.key(for: .camera),
+            state: .allow,
+            source: .user,
+            reason: "seed"
+        )
+        indicatorStore.record(indicatorEvent(
+            context: context,
+            permissionTypes: [.storageAccess],
+            category: .pendingRequest,
+            visualStyle: .attention,
+            priority: .storageAccessBlockedOrPending
+        ))
+
+        let viewModel = SumiCurrentSitePermissionsViewModel()
+        await viewModel.load(
+            context: context,
+            webView: nil,
+            profile: profile,
+            reloadRequired: false,
+            dependencies: dependencies
+        )
+
+        let rowIds = Set(viewModel.rows.map(\.id))
+        XCTAssertTrue(rowIds.contains("camera"))
+        XCTAssertTrue(rowIds.contains("storage-access"))
+        XCTAssertFalse(rowIds.contains("javascript"))
+        XCTAssertFalse(rowIds.contains("background-sync"))
+        XCTAssertFalse(rowIds.contains("automatic-downloads"))
+        XCTAssertFalse(rowIds.contains("sound"))
+
+        let sitePermissionIdentities = Set(viewModel.rows.compactMap { row -> String? in
+            guard case .sitePermission(let permissionType) = row.kind else { return nil }
+            return permissionType.identity
+        })
+        XCTAssertEqual(sitePermissionIdentities, ["camera", "storage-access"])
     }
 
     private func makeHarness() -> (
@@ -267,16 +303,20 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
     }
 
     private func indicatorEvent(
-        context: SumiCurrentSitePermissionsViewModel.Context
+        context: SumiCurrentSitePermissionsViewModel.Context,
+        permissionTypes: [SumiPermissionType] = [.notifications],
+        category: SumiPermissionIndicatorCategory = .blockedEvent,
+        visualStyle: SumiPermissionIndicatorVisualStyle = .blocked,
+        priority: SumiPermissionIndicatorPriority = .blockedNotification
     ) -> SumiPermissionIndicatorEventRecord {
         SumiPermissionIndicatorEventRecord(
             tabId: context.tabId!,
             pageId: context.pageId!,
             displayDomain: context.displayDomain,
-            permissionTypes: [.notifications],
-            category: .blockedEvent,
-            visualStyle: .blocked,
-            priority: .blockedNotification,
+            permissionTypes: permissionTypes,
+            category: category,
+            visualStyle: visualStyle,
+            priority: priority,
             reason: "test",
             requestingOrigin: context.origin,
             topOrigin: context.origin,
@@ -286,10 +326,4 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
         )
     }
 
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(contentsOf: repoRoot.appendingPathComponent(relativePath), encoding: .utf8)
-    }
 }

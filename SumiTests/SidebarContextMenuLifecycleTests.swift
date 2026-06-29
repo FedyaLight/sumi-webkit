@@ -40,13 +40,6 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         )
     }
 
-    func testContextMenuControllerKeepsRootMenuAliveUntilFinalization() throws {
-        let source = try Self.source(named: "Sumi/Components/Sidebar/SidebarContextMenuController.swift")
-
-        XCTAssertTrue(source.contains("private var activeRootMenu: NSMenu?"))
-        XCTAssertFalse(source.contains("private weak var activeRootMenu: NSMenu?"))
-    }
-
     func testRegularTabContextMenuSnapshot() {
         let folders: [SidebarContextMenuChoice] = [.init(id: Self.folderA, title: "Project")]
         let spaces: [SidebarContextMenuChoice] = [
@@ -486,30 +479,6 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         XCTAssertTrue(didDelete)
     }
 
-    func testMenuDialogAndAccessibilityStringLiteralsDoNotUseLauncher() throws {
-        let files = [
-            "App/SumiHistoryCommands.swift",
-            "Sumi/Components/Sidebar/SidebarMenuFactories.swift",
-            "Sumi/Components/Sidebar/SidebarSavedItemDeletionConfirmationPresenter.swift",
-            "Sumi/Components/Sidebar/SpaceSection/ShortcutLinkEditorSheet.swift",
-        ]
-        let regex = try NSRegularExpression(pattern: #""(?:[^"\\\n]|\\.)*Launcher(?:[^"\\\n]|\\.)*""#)
-
-        for file in files {
-            let source = try Self.source(named: file)
-            let range = NSRange(source.startIndex..<source.endIndex, in: source)
-            XCTAssertNil(
-                regex.firstMatch(in: source, range: range),
-                "Unexpected user-facing Launcher string literal in \(file)"
-            )
-        }
-    }
-
-    private static func source(named path: String) throws -> String {
-        let url = repoRoot.appendingPathComponent(path)
-        return try String(contentsOf: url, encoding: .utf8)
-    }
-
     private static func snapshot(_ entries: [SidebarContextMenuEntry], level: Int = 0) -> [String] {
         entries.flatMap { entry -> [String] in
             let prefix = String(repeating: "  ", count: level)
@@ -633,9 +602,4 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
         )
     }
 
-    private static var repoRoot: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-    }
 }

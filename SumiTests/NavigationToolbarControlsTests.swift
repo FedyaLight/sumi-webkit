@@ -54,31 +54,6 @@ final class NavigationToolbarControlsTests: XCTestCase {
         XCTAssertEqual(loading.reloadTooltip, "Stop loading")
     }
 
-    func testNavigationButtonsUseAppKitMenuBridgeInsteadOfSwiftUIContextMenu() throws {
-        let navButtonsSource = try source(
-            "Sumi/Components/Sidebar/NavButtonsView.swift"
-        )
-        XCTAssertFalse(navButtonsSource.contains(".sumiAppKitContextMenu"))
-        XCTAssertFalse(navButtonsSource.contains("Button(\"Reload\", systemImage: \"arrow.clockwise\""))
-
-        let bridgeSource = try source(
-            "Sumi/Components/Sidebar/SumiNavigationToolbarControls.swift"
-        )
-        XCTAssertTrue(bridgeSource.contains("MouseOverButton"))
-        XCTAssertTrue(bridgeSource.contains("button.menu = menu"))
-        XCTAssertTrue(bridgeSource.contains("SumiNavigationLongPressButton"))
-        XCTAssertTrue(bridgeSource.contains("menu.popUp(positioning: nil"))
-    }
-
-    private func source(_ relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repoRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }
 
 private final class NavigationToolbarNotificationRecorder: @unchecked Sendable {

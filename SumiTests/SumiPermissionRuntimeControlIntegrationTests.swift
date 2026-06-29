@@ -1,72 +1,60 @@
 import XCTest
 
+@testable import Sumi
+
+@MainActor
 final class SumiPermissionRuntimeControlIntegrationTests: XCTestCase {
-    func testRuntimeControlsDoNotWritePersistentPermissionDecisionsOrRequestSystemAuthorization() throws {
-        let sources = try [
-            sourceFile("Sumi/Permissions/UI/SumiPermissionRuntimeControlResult.swift"),
-            sourceFile("Sumi/Permissions/UI/SumiPermissionRuntimeControl.swift"),
-            sourceFile("Sumi/Permissions/UI/SumiPermissionRuntimeControlsViewModel.swift"),
-            sourceFile("Sumi/Permissions/UI/SumiPermissionRuntimeControlsView.swift"),
-        ].joined(separator: "\n")
-
-        XCTAssertFalse(sources.contains("SwiftData"))
-        XCTAssertFalse(sources.contains("setSiteDecision"))
-        XCTAssertFalse(sources.contains("resetSiteDecision"))
-        XCTAssertFalse(sources.contains("requestAuthorization"))
-        XCTAssertFalse(sources.contains("approveOnce"))
-        XCTAssertFalse(sources.contains("denyOnce"))
-        XCTAssertFalse(sources.contains("WKPermissionDecision"))
-        XCTAssertFalse(sources.contains("decisionHandler"))
-        XCTAssertFalse(sources.contains("SitePermissionOverridesStore"))
-        XCTAssertFalse(sources.contains("UserDefaults"))
-    }
-
-    func testRuntimeControlsDoNotExposeFakeScreenCaptureStop() throws {
-        let viewModel = try sourceFile("Sumi/Permissions/UI/SumiPermissionRuntimeControlsViewModel.swift")
-        let view = try sourceFile("Sumi/Permissions/UI/SumiPermissionRuntimeControlsView.swift")
-
-        XCTAssertFalse(viewModel.contains("stopScreenCapture"))
-        XCTAssertFalse(view.contains("stopScreenCapture"))
-        XCTAssertTrue(viewModel.contains("screenSharingControlledByWebKit"))
-    }
-
-    func testURLBarIndicatorRoutesRuntimeStatesToPopoverWithoutOverlappingPrompt() throws {
-        let source = try [
-            sourceFile("Sumi/Components/Sidebar/URLBarView.swift"),
-            sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift"),
-            sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift"),
-        ].joined(separator: "\n")
-
-        XCTAssertTrue(source.contains("permissionPromptPresenter.presentFromIndicatorClick()"))
-        XCTAssertFalse(source.contains("initialMode: .permissions"))
-        XCTAssertFalse(source.contains("browserManager.presentURLBarHubPopover(in: windowState, initialMode: .controls)"))
-        XCTAssertTrue(source.contains("URLBarHubPopoverAnchorView("))
-        XCTAssertTrue(source.contains(".onChange(of: permissionPromptPresenter.isPresented)"))
-        XCTAssertTrue(source.contains("browserManager.closeURLBarHubPopover(in: windowState)"))
-        XCTAssertTrue(source.contains("SumiPermissionIndicatorActionPopover"))
-        XCTAssertTrue(source.contains("permissionRuntimeControlsModel.load"))
-        XCTAssertFalse(source.contains("SumiPermissionIndicatorDeviceMenuRow"))
-        XCTAssertFalse(source.contains("AVCaptureDevice.DiscoverySession"))
-    }
-
-    func testRuntimeControlsAreLimitedToCurrentSiteAndIndicatorSurfaces() throws {
-        let indicatorView = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
-        let siteSettingsView = try sourceFile("Sumi/Permissions/UI/SumiSiteSettingsView.swift")
-        let siteDetailView = try sourceFile("Sumi/Permissions/UI/SumiSiteSettingsSiteDetailView.swift")
-
-        XCTAssertTrue(indicatorView.contains("SumiPermissionRuntimeControlsView"))
-        XCTAssertTrue(indicatorView.contains("queryPermissionState"))
-        XCTAssertFalse(siteSettingsView.contains("SumiPermissionRuntimeControlsView"))
-        XCTAssertFalse(siteDetailView.contains("SumiPermissionRuntimeControlsView"))
-    }
-
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: repoRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
+    func testActiveCameraRuntimeControlExposesOnlyRuntimeActions() throws {
+        let controls = SumiPermissionRuntimeControlsViewModel.makeControls(
+            runtimeState: SumiRuntimePermissionState(camera: .active, microphone: .none),
+            reloadRequired: false,
+            displayDomain: "example.com"
         )
+
+        let camera = try XCTUnwrap(controls.first { $0.id == SumiPermissionType.camera.identity })
+        XCTAssertEqual(controls.map(\.id), [SumiPermissionType.camera.identity])
+        XCTAssertEqual(camera.actions.map(\.kind), [.muteCamera, .stopCamera])
+        XCTAssertEqual(camera.actions.map(\.isDestructive), [false, true])
+        XCTAssertNil(camera.disabledReason)
+    }
+
+    func testScreenCaptureRuntimeControlIsInformationalOnly() throws {
+        let controls = SumiPermissionRuntimeControlsViewModel.makeControls(
+            runtimeState: SumiRuntimePermissionState(
+                camera: .none,
+                microphone: .none,
+                screenCapture: .active
+            ),
+            reloadRequired: false,
+            displayDomain: "screen.example"
+        )
+
+        let screenCapture = try XCTUnwrap(
+            controls.first { $0.id == SumiPermissionType.screenCapture.identity }
+        )
+        XCTAssertEqual(controls.map(\.id), [SumiPermissionType.screenCapture.identity])
+        XCTAssertEqual(screenCapture.subtitle, SumiPermissionRuntimeControlsStrings.screenSharingControlledByWebKit)
+        XCTAssertTrue(screenCapture.actions.isEmpty)
+        XCTAssertEqual(screenCapture.disabledReason, screenCapture.subtitle)
+    }
+
+    func testAutoplayReloadControlIsOnlyShownWhenReloadRequired() throws {
+        XCTAssertTrue(
+            SumiPermissionRuntimeControlsViewModel.makeControls(
+                runtimeState: nil,
+                reloadRequired: false,
+                displayDomain: "video.example"
+            ).isEmpty
+        )
+
+        let controls = SumiPermissionRuntimeControlsViewModel.makeControls(
+            runtimeState: nil,
+            reloadRequired: true,
+            displayDomain: "video.example"
+        )
+
+        let autoplay = try XCTUnwrap(controls.first { $0.id == SumiPermissionType.autoplay.identity })
+        XCTAssertEqual(controls.map(\.id), [SumiPermissionType.autoplay.identity])
+        XCTAssertEqual(autoplay.actions.map(\.kind), [.reloadAutoplay])
     }
 }

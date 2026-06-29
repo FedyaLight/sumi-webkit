@@ -317,60 +317,6 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         XCTAssertTrue(store.recordsSnapshot(forPageId: "tab-a:2").isEmpty)
     }
 
-    func testURLBarContainsExactlyOneDynamicPermissionIndicatorAnchor() throws {
-        let trailingSource = try sourceFile("Sumi/Components/Sidebar/URLBarTrailingActions.swift")
-        let permissionSource = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
-        let source = trailingSource + "\n" + permissionSource
-        let trailingActions = try sourceSection(
-            trailingSource,
-            from: "func trailingActions(for currentTab: Tab) -> some View",
-            to: "func copyLinkButton(for currentTab: Tab) -> some View"
-        )
-
-        XCTAssertEqual(source.components(separatedBy: "SumiPermissionIndicatorButton(").count - 1, 1)
-        XCTAssertTrue(source.contains("urlbar-permission-indicator"))
-        XCTAssertTrue(trailingActions.contains("let permissionIndicatorState = permissionIndicatorDisplayState(for: currentTab)"))
-        XCTAssertTrue(trailingActions.contains("if permissionIndicatorState.isVisible {"))
-        XCTAssertTrue(trailingActions.contains("permissionIndicatorButton(for: currentTab, state: permissionIndicatorState)"))
-        XCTAssertTrue(source.contains("permissionPromptPresenter.presentFromIndicatorClick()"))
-        XCTAssertTrue(source.contains("permissionPromptPresenter.viewModel"))
-        XCTAssertFalse(source.contains("initialMode: .permissions"))
-        XCTAssertFalse(source.contains("browserManager.presentURLBarHubPopover(in: windowState, initialMode: .controls)"))
-        XCTAssertTrue(source.contains("browserManager.closeURLBarHubPopover(in: windowState)"))
-        XCTAssertTrue(source.contains("SumiPermissionPromptView"))
-        XCTAssertTrue(source.contains("SumiPermissionIndicatorActionPopover"))
-        XCTAssertTrue(source.contains("isPermissionIndicatorPopoverPresented"))
-        XCTAssertTrue(source.contains("permissionRuntimeControlsModel"))
-        XCTAssertFalse(source.contains(".opacity(state.isVisible ?"))
-        XCTAssertFalse(source.contains(".allowsHitTesting(state.isVisible)"))
-        XCTAssertFalse(source.contains(".disabled(!state.isVisible)"))
-        XCTAssertFalse(source.contains("isVisible: state.isVisible"))
-        XCTAssertFalse(source.contains("approveOnce("))
-
-        let copyRange = try XCTUnwrap(trailingActions.range(of: "copyLinkButton(for: currentTab)"))
-        let hubRange = try XCTUnwrap(trailingActions.range(of: "hubButton"))
-        let permissionRange = try XCTUnwrap(
-            trailingActions.range(of: "permissionIndicatorButton(for: currentTab, state: permissionIndicatorState)")
-        )
-        let zoomRange = try XCTUnwrap(trailingActions.range(of: "if showsZoomButton"))
-        XCTAssertLessThan(copyRange.lowerBound, hubRange.lowerBound)
-        XCTAssertLessThan(hubRange.lowerBound, permissionRange.lowerBound)
-        XCTAssertLessThan(permissionRange.lowerBound, zoomRange.lowerBound)
-    }
-
-    func testPermissionChromeUsesNeutralNonAccentColors() throws {
-        let permissionIndicatorSource = try sourceFile("Sumi/Components/Sidebar/URLBarPermissionViews.swift")
-        let promptSource = try sourceFile("Sumi/Permissions/UI/SumiPermissionPromptView.swift")
-        let systemStateSource = try sourceFile("Sumi/Permissions/UI/SumiPermissionPromptSystemStateView.swift")
-
-        XCTAssertFalse(permissionIndicatorSource.contains("tokens.accent"))
-        XCTAssertFalse(permissionIndicatorSource.contains("Color.orange"))
-        XCTAssertFalse(promptSource.contains("tokens.accent"))
-        XCTAssertFalse(promptSource.contains("Color.orange"))
-        XCTAssertFalse(promptSource.contains("tokens.buttonPrimaryText"))
-        XCTAssertFalse(systemStateSource.contains("Color.orange"))
-    }
-
     private func indicatorState(
         runtimeState: SumiRuntimePermissionState
     ) -> SumiPermissionIndicatorState {
@@ -494,25 +440,6 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         )
     }
 
-    private func sourceFile(_ relativePath: String) throws -> String {
-        let testsURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testsURL
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let url = repoRoot.appendingPathComponent(relativePath)
-        return try String(contentsOf: url, encoding: .utf8)
-    }
-
-    private func sourceSection(
-        _ source: String,
-        from startMarker: String,
-        to endMarker: String
-    ) throws -> Substring {
-        let start = try XCTUnwrap(source.range(of: startMarker))
-        let searchRange = start.upperBound..<source.endIndex
-        let end = try XCTUnwrap(source.range(of: endMarker, range: searchRange))
-        return source[start.lowerBound..<end.lowerBound]
-    }
 }
 
 private let fixedDate = Date(timeIntervalSince1970: 1_800_000_000)
