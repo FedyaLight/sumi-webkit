@@ -629,15 +629,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         editingName = ""
     }
 
-    func authoritativeMediaWebView(
-        using browserManager: BrowserManager,
-        in windowState: BrowserWindowState
-    ) -> WKWebView? {
-        browserManager.getWebView(for: id, in: windowState.id)
-            ?? assignedWebView
-            ?? existingWebView
-    }
-
     func loadWebViewIfNeeded() {
         if _webView == nil {
             beginSuspendedRestoreIfNeeded()
@@ -671,22 +662,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         suspensionStateOwner.finishRestoreIfNeeded(tab: self, hasWebView: _webView != nil)
     }
 
-    func toggleMute() {
-        setMuted(!audioState.isMuted)
-    }
-
-    func setMuted(_ muted: Bool) {
-        if let webView = _webView {
-            _ = webView.sumiSetAudioMuted(muted)
-        } else {
-            RuntimeDiagnostics.emit("🔇 [Tab] Mute state queued at \(muted); base webView not loaded yet")
-        }
-
-        browserManager?.setMuteState(muted, for: id)
-
-        applyAudioState(audioState.withMuted(muted))
-    }
-
     // MARK: - Navigation State Observation
 
     /// Set up KVO observers for navigation state properties
@@ -703,10 +678,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         browserManager?.tabManager.setActiveTab(self)
     }
 
-    func resetPlaybackActivity() {
-        applyAudioState(audioState.withPlayingAudio(false))
-        lastMediaActivityAt = .distantPast
-    }
 }
 
 // MARK: - Hashable & Equatable
@@ -718,26 +689,5 @@ extension Tab {
 
     public override var hash: Int {
         id.hashValue
-    }
-}
-
-// MARK: - NSColor Extension
-extension NSColor {
-    convenience init?(hex: String) {
-        var hexString = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        if hexString.hasPrefix("#") {
-            hexString.removeFirst()
-        }
-
-        guard hexString.count == 6 else { return nil }
-
-        var rgbValue: UInt64 = 0
-        guard Scanner(string: hexString).scanHexInt64(&rgbValue) else { return nil }
-
-        let red = CGFloat((rgbValue & 0xFF0000) >> 16) / 255.0
-        let green = CGFloat((rgbValue & 0x00FF00) >> 8) / 255.0
-        let blue = CGFloat(rgbValue & 0x0000FF) / 255.0
-
-        self.init(red: red, green: green, blue: blue, alpha: 1.0)
     }
 }
