@@ -59,7 +59,8 @@ final class SumiBrowserImportService {
 
     func previewFileImport(fileURL: URL) throws -> SumiImportPreview {
         let raw = try Data(contentsOf: fileURL)
-        if let archive = try? backupService.readBackup(from: fileURL) {
+        if isSumiBackupCandidate(fileURL: fileURL, data: raw) {
+            let archive = try backupService.readBackup(from: raw)
             return SumiImportPreview(
                 title: fileURL.lastPathComponent,
                 sourceKind: .sumiBackup,
@@ -79,6 +80,24 @@ final class SumiBrowserImportService {
             warnings: warnings(for: data, source: "Browser Export"),
             defaultMode: .merge
         )
+    }
+
+    private func isSumiBackupCandidate(fileURL: URL, data: Data) -> Bool {
+        if fileURL.pathExtension.caseInsensitiveCompare("sumibackup") == .orderedSame {
+            return true
+        }
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            return false
+        }
+        guard let dictionary = object as? [String: Any],
+              let format = dictionary["format"] as? String
+        else {
+            return false
+        }
+        return format == SumiPortableArchive.format
     }
 
     private func warnings(for data: SumiPortableData, source: String) -> [String] {

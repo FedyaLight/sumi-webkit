@@ -390,6 +390,108 @@ final class SumiImportExportTests: XCTestCase {
         XCTAssertEqual(decoded.data, data)
     }
 
+    @MainActor
+    func testPreviewFileImportReportsNewerSumiBackupInsteadOfFallingBackToBrowser2Zen() throws {
+        var archive = SumiPortableArchive(
+            includedCategories: [.profiles],
+            data: SumiPortableData(
+                profiles: [
+                    SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0),
+                ]
+            )
+        )
+        archive.version = SumiPortableArchive.currentVersion + 1
+        let url = temporaryImportFile(named: "future-\(UUID().uuidString).sumibackup")
+        try encodeBackup(archive).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertThrowsError(try SumiBrowserImportService().previewFileImport(fileURL: url)) { error in
+            guard case SumiImportExportError.unsupportedFile(let message) = error else {
+                XCTFail("Expected unsupported Sumi backup error, got \(error)")
+                return
+            }
+            XCTAssertEqual(message, "This Sumi backup was created by a newer version of Sumi.")
+        }
+    }
+
+    @MainActor
+    func testPreviewFileImportRecognizesRenamedSumiBackupByFormat() throws {
+        let archive = SumiPortableArchive(
+            includedCategories: [.profiles],
+            warnings: ["logical only"],
+            data: SumiPortableData(
+                profiles: [
+                    SumiPortableProfile(id: "profile-a", name: "Profile A", icon: "person", index: 0),
+                ]
+            )
+        )
+        let url = temporaryImportFile(named: "backup-\(UUID().uuidString).json")
+        try encodeBackup(archive).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let preview = try SumiBrowserImportService().previewFileImport(fileURL: url)
+
+        XCTAssertEqual(preview.sourceKind, .sumiBackup)
+        XCTAssertEqual(preview.defaultMode, .replace)
+        XCTAssertEqual(preview.data.profiles.map(\.name), ["Profile A"])
+        XCTAssertEqual(preview.warnings, ["logical only"])
+    }
+
+    @MainActor
+    func testPreviewFileImportKeepsBrowser2ZenFallbackForNonBackupJSON() throws {
+        let document = SumiBrowser2ZenDocument(
+            source: "arc",
+            totalSpaces: 1,
+            spaces: [
+                SumiBrowser2ZenSpace(
+                    spaceId: "space-a",
+                    spaceName: "Work",
+                    icon: nil,
+                    color: nil,
+                    totalPinnedTabs: nil,
+                    totalOpenTabs: nil,
+                    totalFolders: nil,
+                    pinnedTabs: [
+                        SumiBrowser2ZenTab(
+                            url: "https://docs.example.com",
+                            title: "Docs",
+                            spaceId: nil,
+                            spaceName: nil,
+                            folderPath: [],
+                            tabId: "tab-a",
+                            parentId: nil,
+                            index: 0,
+                            isEssential: false
+                        ),
+                    ],
+                    openTabs: [],
+                    folders: []
+                ),
+            ],
+            sumi: nil
+        )
+        let url = temporaryImportFile(named: "browser2zen-\(UUID().uuidString).json")
+        try JSONEncoder().encode(document).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let preview = try SumiBrowserImportService().previewFileImport(fileURL: url)
+
+        XCTAssertEqual(preview.sourceKind, .browser2zen)
+        XCTAssertEqual(preview.defaultMode, .merge)
+        XCTAssertEqual(preview.data.spaces.map(\.name), ["Work"])
+        XCTAssertEqual(preview.data.pinnedLaunchers.map(\.title), ["Docs"])
+    }
+
+    private func temporaryImportFile(named name: String) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(name, isDirectory: false)
+    }
+
+    private func encodeBackup(_ archive: SumiPortableArchive) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(archive)
+    }
+
     private func mozLZ4(_ payload: Data) throws -> Data {
         let outputCapacity = payload.count + 64
         var output = Data(count: outputCapacity)

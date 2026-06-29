@@ -35,7 +35,18 @@ final class SumiBackupService {
 
     func readBackup(from source: URL) throws -> SumiPortableArchive {
         let payload = try Data(contentsOf: source)
-        let archive = try decoder.decode(SumiPortableArchive.self, from: payload)
+        return try readBackup(from: payload)
+    }
+
+    func readBackup(from payload: Data) throws -> SumiPortableArchive {
+        let archive: SumiPortableArchive
+        do {
+            archive = try decoder.decode(SumiPortableArchive.self, from: payload)
+        } catch {
+            throw SumiImportExportError.unsupportedFile(
+                "This Sumi backup could not be read: \(error.localizedDescription)"
+            )
+        }
         guard archive.format == SumiPortableArchive.format else {
             throw SumiImportExportError.unsupportedFile("This file is not a Sumi backup.")
         }
