@@ -33,13 +33,22 @@ extension URLBarView {
         .popover(isPresented: $isZoomPopoverPresented, arrowEdge: .bottom) {
             URLBarZoomPopoverView(
                 currentTab: currentTab,
+                zoomManager: browserManager.zoomManager,
+                zoomRevision: browserManager.zoomStateRevision,
+                resetZoom: {
+                    browserManager.resetZoomCurrentTab(in: windowState)
+                },
+                zoomOut: {
+                    browserManager.zoomOutCurrentTab(in: windowState)
+                },
+                zoomIn: {
+                    browserManager.zoomInCurrentTab(in: windowState)
+                },
                 onMouseOverChange: { hovering in
                     isZoomPopoverHovering = hovering
                     updateZoomPopoverAutoCloseTask()
                 }
             )
-            .environmentObject(browserManager)
-            .environment(windowState)
             .frame(width: zoomPopoverSize.width, height: zoomPopoverSize.height)
             .onDisappear {
                 cancelZoomPopoverHideTask()
@@ -135,12 +144,15 @@ struct URLBarZoomButtonVisibility {
 }
 
 private struct URLBarZoomPopoverView: View {
-    @EnvironmentObject private var browserManager: BrowserManager
-    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
     let currentTab: Tab
+    let zoomManager: ZoomManager
+    let zoomRevision: Int
+    let resetZoom: () -> Void
+    let zoomOut: () -> Void
+    let zoomIn: () -> Void
     let onMouseOverChange: (Bool) -> Void
 
     private var tokens: ChromeThemeTokens {
@@ -148,9 +160,8 @@ private struct URLBarZoomPopoverView: View {
     }
 
     var body: some View {
-        let zoomManager = browserManager.zoomManager
         let tabId = currentTab.id
-        let _ = browserManager.zoomStateRevision
+        let _ = zoomRevision
 
         HStack(spacing: 0) {
             Text(zoomManager.getZoomPercentageDisplay(for: tabId))
@@ -162,14 +173,14 @@ private struct URLBarZoomPopoverView: View {
                 .padding(.leading, 16)
 
             Button("Reset") {
-                browserManager.resetZoomCurrentTab(in: windowState)
+                resetZoom()
             }
             .buttonStyle(URLBarZoomPopoverButtonStyle(minWidth: 59))
             .help("Reset Zoom")
             .padding(.leading, 8)
 
             Button("Zoom Out", systemImage: "minus") {
-                browserManager.zoomOutCurrentTab(in: windowState)
+                zoomOut()
             }
             .labelStyle(.iconOnly)
             .buttonStyle(URLBarZoomPopoverButtonStyle(width: 37))
@@ -178,7 +189,7 @@ private struct URLBarZoomPopoverView: View {
             .padding(.leading, 8)
 
             Button("Zoom In", systemImage: "plus") {
-                browserManager.zoomInCurrentTab(in: windowState)
+                zoomIn()
             }
             .labelStyle(.iconOnly)
             .buttonStyle(URLBarZoomPopoverButtonStyle(width: 37))

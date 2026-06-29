@@ -1,8 +1,7 @@
 import SwiftUI
 
 struct URLBarBookmarkEditorView: View {
-    @EnvironmentObject private var browserManager: BrowserManager
-
+    let bookmarkManager: SumiBookmarkManager
     let state: SumiBookmarkEditorState
     let currentTab: Tab?
     let folders: [SumiBookmarkFolder]
@@ -14,12 +13,14 @@ struct URLBarBookmarkEditorView: View {
     @State private var errorMessage: String?
 
     init(
+        bookmarkManager: SumiBookmarkManager,
         state: SumiBookmarkEditorState,
         currentTab: Tab?,
         folders: [SumiBookmarkFolder],
         onClose: @escaping () -> Void,
         onDidMutate: @escaping () -> Void
     ) {
+        self.bookmarkManager = bookmarkManager
         self.state = state
         self.currentTab = currentTab
         self.folders = folders
@@ -227,7 +228,7 @@ struct URLBarBookmarkEditorView: View {
         do {
             switch state.mode {
             case .add:
-                _ = try browserManager.bookmarkManager.createBookmark(
+                _ = try bookmarkManager.createBookmark(
                     url: url,
                     title: title,
                     folderID: folderID
@@ -236,7 +237,7 @@ struct URLBarBookmarkEditorView: View {
                 guard let bookmarkID = state.bookmarkID else {
                     throw SumiBookmarkError.missingBookmark
                 }
-                _ = try browserManager.bookmarkManager.updateBookmark(
+                _ = try bookmarkManager.updateBookmark(
                     id: bookmarkID,
                     title: title,
                     url: url,
@@ -256,7 +257,7 @@ struct URLBarBookmarkEditorView: View {
             guard let bookmarkID = state.bookmarkID else {
                 throw SumiBookmarkError.missingBookmark
             }
-            try browserManager.bookmarkManager.removeBookmark(id: bookmarkID)
+            try bookmarkManager.removeBookmark(id: bookmarkID)
             errorMessage = nil
             onDidMutate()
             onClose()

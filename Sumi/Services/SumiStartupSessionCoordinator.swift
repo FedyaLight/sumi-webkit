@@ -77,7 +77,7 @@ extension BrowserManager {
     }
 
     func reconcileStartupSessionIfPossible() {
-        startupSessionCoordinator.applyIfReady(browserManager: self)
+        startupSessionRestoreOwner.reconcileIfReady(browserManager: self)
     }
 
     func applyStartupPolicy(_ mode: SumiStartupMode) {
@@ -121,20 +121,10 @@ extension BrowserManager {
     }
 
     private func archiveLoadedStartupSessionForManualRestore() {
-        let archivedWindowSnapshots = startupLastSessionWindowSnapshots.isEmpty
-            ? currentRegularWindowSnapshots(excludingWindowID: nil)
-            : startupLastSessionWindowSnapshots
-        let tabSnapshot = tabManager._buildSnapshot()
-        guard !archivedWindowSnapshots.isEmpty || !tabSnapshot.tabs.isEmpty else {
-            return
-        }
-        startupLastSessionWindowSnapshots = archivedWindowSnapshots
-        startupLastSessionTabSnapshot = tabSnapshot
-        lastSessionWindowsStore.updateSnapshots(
-            archivedWindowSnapshots,
-            tabSnapshot: tabSnapshot
+        startupSessionRestoreOwner.archiveLoadedSessionForManualRestore(
+            currentWindowSnapshots: { currentRegularWindowSnapshots(excludingWindowID: nil) },
+            currentTabSnapshot: { tabManager._buildSnapshot() }
         )
-        didConsumeStartupLastSessionRestoreOffer = false
     }
 
     private func resetWindowStatesForCleanStartup(selectedWindow: BrowserWindowState) {
@@ -165,9 +155,9 @@ extension BrowserManager {
     }
 
     private func restoreAdditionalStartupWindowsIfNeeded() {
-        guard !startupLastSessionWindowSnapshots.isEmpty else { return }
+        guard !startupSessionRestoreOwner.windowSnapshots.isEmpty else { return }
 
-        didConsumeStartupLastSessionRestoreOffer = true
+        startupSessionRestoreOwner.markRestoreOfferConsumed()
         Task { @MainActor [weak self] in
             guard let self else { return }
             let existingSessions = Set(
@@ -175,7 +165,7 @@ extension BrowserManager {
             )
             let startupWindow = self.firstRegularWindowForStartupPolicy
             let restorationPlan = StartupWindowRestorationPlanner.plan(
-                archivedSnapshots: self.startupLastSessionWindowSnapshots,
+                archivedSnapshots: self.startupSessionRestoreOwner.windowSnapshots,
                 existingSessions: existingSessions,
                 hasStartupWindow: startupWindow != nil
             )

@@ -15,7 +15,7 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
             closedWindow.id: closedSession,
             survivingWindow.id: survivingSession,
         ]
-        var didConsumeStartupOffer = false
+        let startupRestore = FakeBrowserStartupSessionRestoreProvider()
 
         let owner = BrowserWindowHistorySessionOwner(
             dependencies: BrowserWindowHistorySessionOwner.Dependencies(
@@ -37,18 +37,7 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
                 lastSessionWindowsStore: {
                     store
                 },
-                canOfferStartupLastSessionRestoreShortcut: {
-                    false
-                },
-                startupLastSessionWindowSnapshots: {
-                    []
-                },
-                startupLastSessionTabSnapshot: {
-                    nil
-                },
-                markStartupLastSessionRestoreOfferConsumed: {
-                    didConsumeStartupOffer = true
-                }
+                startupRestore: startupRestore
             )
         )
 
@@ -63,7 +52,7 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
             store.snapshots,
             [LastSessionWindowSnapshot(id: survivingWindow.id, session: survivingSession)]
         )
-        XCTAssertFalse(didConsumeStartupOffer)
+        XCTAssertFalse(startupRestore.didConsumeRestoreOffer)
     }
 
     func testRefreshLastSessionWindowsStoreMarksStartupOfferConsumedWhenMultipleWindowsRemain() throws {
@@ -76,7 +65,7 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
             firstWindow.id: firstSession,
             secondWindow.id: secondSession,
         ]
-        var didConsumeStartupOffer = false
+        let startupRestore = FakeBrowserStartupSessionRestoreProvider()
 
         let owner = BrowserWindowHistorySessionOwner(
             dependencies: BrowserWindowHistorySessionOwner.Dependencies(
@@ -94,18 +83,7 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
                 lastSessionWindowsStore: {
                     store
                 },
-                canOfferStartupLastSessionRestoreShortcut: {
-                    false
-                },
-                startupLastSessionWindowSnapshots: {
-                    []
-                },
-                startupLastSessionTabSnapshot: {
-                    nil
-                },
-                markStartupLastSessionRestoreOfferConsumed: {
-                    didConsumeStartupOffer = true
-                }
+                startupRestore: startupRestore
             )
         )
 
@@ -118,7 +96,7 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
                 LastSessionWindowSnapshot(id: secondWindow.id, session: secondSession),
             ]
         )
-        XCTAssertTrue(didConsumeStartupOffer)
+        XCTAssertTrue(startupRestore.didConsumeRestoreOffer)
     }
 
     func testRefreshLastSessionWindowsStorePreservesStartupArchiveWhileManualRestoreIsOffered() throws {
@@ -135,7 +113,11 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
             folders: [],
             state: TabSnapshotRepository.SnapshotState(currentTabID: nil, currentSpaceID: nil)
         )
-        var didConsumeStartupOffer = false
+        let startupRestore = FakeBrowserStartupSessionRestoreProvider(
+            canOfferRestoreShortcut: true,
+            windowSnapshots: [startupSnapshot],
+            tabSnapshot: startupTabSnapshot
+        )
 
         let owner = BrowserWindowHistorySessionOwner(
             dependencies: BrowserWindowHistorySessionOwner.Dependencies(
@@ -153,18 +135,7 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
                 lastSessionWindowsStore: {
                     store
                 },
-                canOfferStartupLastSessionRestoreShortcut: {
-                    true
-                },
-                startupLastSessionWindowSnapshots: {
-                    [startupSnapshot]
-                },
-                startupLastSessionTabSnapshot: {
-                    startupTabSnapshot
-                },
-                markStartupLastSessionRestoreOfferConsumed: {
-                    didConsumeStartupOffer = true
-                }
+                startupRestore: startupRestore
             )
         )
 
@@ -172,7 +143,7 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
 
         XCTAssertEqual(store.snapshots, [startupSnapshot])
         XCTAssertNotNil(store.tabSnapshot)
-        XCTAssertFalse(didConsumeStartupOffer)
+        XCTAssertFalse(startupRestore.didConsumeRestoreOffer)
     }
 
     private func makeLastSessionWindowsStore() throws -> LastSessionWindowsStore {
@@ -211,5 +182,28 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
             floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
             splitSession: splitSession
         )
+    }
+}
+
+@MainActor
+private final class FakeBrowserStartupSessionRestoreProvider: BrowserStartupSessionRestoreProviding {
+    var canOfferRestoreShortcut: Bool
+    var windowSnapshots: [LastSessionWindowSnapshot]
+    var tabSnapshot: TabSnapshotRepository.Snapshot?
+    private(set) var didConsumeRestoreOffer = false
+
+    init(
+        canOfferRestoreShortcut: Bool = false,
+        windowSnapshots: [LastSessionWindowSnapshot] = [],
+        tabSnapshot: TabSnapshotRepository.Snapshot? = nil
+    ) {
+        self.canOfferRestoreShortcut = canOfferRestoreShortcut
+        self.windowSnapshots = windowSnapshots
+        self.tabSnapshot = tabSnapshot
+    }
+
+    func markRestoreOfferConsumed() {
+        didConsumeRestoreOffer = true
+        canOfferRestoreShortcut = false
     }
 }

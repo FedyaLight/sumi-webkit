@@ -4,7 +4,7 @@ import Foundation
 final class BrowserWindowSessionActivationOwner {
     struct Dependencies {
         let windowSessionService: WindowSessionService
-        let delegate: @MainActor () -> WindowSessionServiceDelegate
+        let delegate: @MainActor () -> WindowSessionServiceDelegate?
         let refreshSplitPublishedState: @MainActor (UUID) -> Void
         let updateFindManagerCurrentTab: @MainActor () -> Void
         let notifyExtensionWindowOpened: @MainActor (BrowserWindowState) -> Void
@@ -25,19 +25,21 @@ final class BrowserWindowSessionActivationOwner {
     }
 
     func setupWindowState(_ windowState: BrowserWindowState) {
+        guard let delegate = dependencies.delegate() else { return }
         dependencies.windowSessionService.setupWindowState(
             windowState,
-            delegate: dependencies.delegate()
+            delegate: delegate
         )
         dependencies.notifyExtensionWindowOpened(windowState)
         dependencies.reconcileStartupSessionIfPossible()
     }
 
     func setActiveWindowState(_ windowState: BrowserWindowState) {
+        guard let delegate = dependencies.delegate() else { return }
         dependencies.refreshSplitPublishedState(windowState.id)
         dependencies.windowSessionService.setActiveWindowState(
             windowState,
-            delegate: dependencies.delegate()
+            delegate: delegate
         )
         dependencies.updateFindManagerCurrentTab()
         dependencies.notifyExtensionWindowFocused(windowState)
@@ -84,6 +86,7 @@ final class BrowserWindowSessionActivationOwner {
     }
 
     private func persistWindowSessionNow(for windowState: BrowserWindowState) {
+        guard let delegate = dependencies.delegate() else { return }
         let signpostState = PerformanceTrace.beginInterval("WindowSession.persist")
         defer {
             PerformanceTrace.endInterval("WindowSession.persist", signpostState)
@@ -91,7 +94,7 @@ final class BrowserWindowSessionActivationOwner {
 
         dependencies.windowSessionService.persistWindowSession(
             for: windowState,
-            delegate: dependencies.delegate()
+            delegate: delegate
         )
         dependencies.refreshLastSessionWindowsStore()
     }

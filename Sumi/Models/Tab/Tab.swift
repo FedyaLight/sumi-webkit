@@ -23,8 +23,15 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     @Published var favicon: SwiftUI.Image
     /// True while the tab shows the SF Symbol ``globe`` fallback (no bitmap favicon yet / resolver miss).
     @Published var faviconIsTemplateGlobePlaceholder: Bool = false
-    var spaceId: UUID?
-    var index: Int
+    private let placementStateOwner = TabPlacementStateOwner()
+    var spaceId: UUID? {
+        get { placementStateOwner.spaceId }
+        set { placementStateOwner.spaceId = newValue }
+    }
+    var index: Int {
+        get { placementStateOwner.index }
+        set { placementStateOwner.index = newValue }
+    }
     var profileId: UUID?
     // If true, this tab is created to host a popup window; do not perform initial load.
     var isPopupHost: Bool = false
@@ -42,12 +49,30 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     private let suspensionStateOwner = TabSuspensionStateOwner()
 
     // MARK: - Pin State
-    var isPinned: Bool = false // Global pinned (essentials)
-    var isSpacePinned: Bool = false // Space-level pinned
-    var folderId: UUID? // Folder membership for tabs within spacepinned area
-    var shortcutPinId: UUID?
-    var shortcutPinRole: ShortcutPinRole?
-    var isShortcutLiveInstance: Bool = false
+    var isPinned: Bool {
+        get { placementStateOwner.isPinned }
+        set { placementStateOwner.isPinned = newValue }
+    }
+    var isSpacePinned: Bool {
+        get { placementStateOwner.isSpacePinned }
+        set { placementStateOwner.isSpacePinned = newValue }
+    }
+    var folderId: UUID? {
+        get { placementStateOwner.folderId }
+        set { placementStateOwner.folderId = newValue }
+    }
+    var shortcutPinId: UUID? {
+        get { placementStateOwner.shortcutPinId }
+        set { placementStateOwner.shortcutPinId = newValue }
+    }
+    var shortcutPinRole: ShortcutPinRole? {
+        get { placementStateOwner.shortcutPinRole }
+        set { placementStateOwner.shortcutPinRole = newValue }
+    }
+    var isShortcutLiveInstance: Bool {
+        get { placementStateOwner.isShortcutLiveInstance }
+        set { placementStateOwner.isShortcutLiveInstance = newValue }
+    }
 
     // MARK: - Ephemeral State
     /// Whether this tab belongs to an ephemeral/incognito session
@@ -553,13 +578,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.name = name
         self.favicon = Image(systemName: favicon)
         self.faviconIsTemplateGlobePlaceholder = (favicon == "globe")
-        self.spaceId = spaceId
-        self.index = index
         self.browserManager = browserManager
         self.fallbackFaviconService = faviconService
         self.fallbackFaviconImageService = faviconImageService
         self.fallbackVisitedLinkStore = visitedLinkStore
         super.init()
+        self.spaceId = spaceId
+        self.index = index
         navigationStateController.delegate = self
         self._existingWebView = existingWebView
 
@@ -570,15 +595,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func bindToShortcutPin(_ pin: ShortcutPin) {
-        shortcutPinId = pin.id
-        shortcutPinRole = pin.role
-        isShortcutLiveInstance = true
+        placementStateOwner.bindToShortcutPin(pin)
     }
 
     func clearShortcutBinding() {
-        shortcutPinId = nil
-        shortcutPinRole = nil
-        isShortcutLiveInstance = false
+        placementStateOwner.clearShortcutBinding()
     }
 
     // MARK: - Tab Actions

@@ -17,8 +17,7 @@ extension BrowserManager {
     }
 
     var canOfferStartupLastSessionRestoreShortcut: Bool {
-        !didConsumeStartupLastSessionRestoreOffer
-            && !startupLastSessionWindowSnapshots.isEmpty
+        startupSessionRestoreOwner.canOfferRestoreShortcut
     }
 
     var canRestoreAnyLastSession: Bool {
@@ -224,22 +223,22 @@ extension BrowserManager {
             }
         }
         recentlyClosedManager.remove(item)
-        didConsumeStartupLastSessionRestoreOffer = true
+        startupSessionRestoreOwner.markRestoreOfferConsumed()
     }
 
     func reopenAllWindowsFromLastSession() {
         let useStartupArchive = canOfferStartupLastSessionRestoreShortcut
         let sourceSnapshots = useStartupArchive
-            ? startupLastSessionWindowSnapshots
+            ? startupSessionRestoreOwner.windowSnapshots
             : lastSessionWindowsStore.snapshots
         let sourceTabSnapshot = useStartupArchive
-            ? (startupLastSessionTabSnapshot ?? lastSessionWindowsStore.tabSnapshot)
+            ? (startupSessionRestoreOwner.tabSnapshot ?? lastSessionWindowsStore.tabSnapshot)
             : lastSessionWindowsStore.tabSnapshot
         let existingSessions = Set(currentRegularWindowSnapshots(excludingWindowID: nil).map(\.session))
         let snapshotsToRestore = sourceSnapshots.filter { !existingSessions.contains($0.session) }
         guard !snapshotsToRestore.isEmpty else { return }
 
-        didConsumeStartupLastSessionRestoreOffer = true
+        startupSessionRestoreOwner.markRestoreOfferConsumed()
         Task { @MainActor [weak self] in
             guard let self else { return }
             if let sourceTabSnapshot {

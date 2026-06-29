@@ -186,10 +186,13 @@ final class SumiBrowsingDataAppResidueCleaner: SumiBrowsingDataAppResidueCleanin
 final class SumiBrowsingDataCleanupService {
     let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
     private let localCleanupOwner: SumiBrowsingDataLocalCleanupOwner
-    private let appResidueCleaner: any SumiBrowsingDataAppResidueCleaning
-    private let sharedWebsiteDataStoreProvider: @MainActor () -> WKWebsiteDataStore
+    private let domainInventory: SumiBrowsingDataDomainInventory
+    private let manualWebsiteDataCleanupOwner: SumiManualWebsiteDataCleanupOwner
     private let referenceDateProvider: @MainActor () -> Date
-    weak var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
+    var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)? {
+        get { manualWebsiteDataCleanupOwner.destructiveCleanupPreparer }
+        set { manualWebsiteDataCleanupOwner.destructiveCleanupPreparer = newValue }
+    }
 
     init(
         websiteDataCleanupService: any SumiWebsiteDataCleanupServicing,
@@ -203,21 +206,29 @@ final class SumiBrowsingDataCleanupService {
         },
         referenceDateProvider: @escaping @MainActor () -> Date = { Date() }
     ) {
+        let domainInventory = SumiBrowsingDataDomainInventory(
+            websiteDataCleanupService: websiteDataCleanupService
+        )
         self.websiteDataCleanupService = websiteDataCleanupService
         self.localCleanupOwner = SumiBrowsingDataLocalCleanupOwner(
             faviconCacheCleaner: faviconCacheCleaner,
             basicAuthCredentialStore: basicAuthCredentialStore,
             visitedLinkStore: visitedLinkStore
         )
-        self.appResidueCleaner = appResidueCleaner
-        self.destructiveCleanupPreparer = destructiveCleanupPreparer
-        self.sharedWebsiteDataStoreProvider = sharedWebsiteDataStoreProvider
+        self.domainInventory = domainInventory
+        self.manualWebsiteDataCleanupOwner = SumiManualWebsiteDataCleanupOwner(
+            websiteDataCleanupService: websiteDataCleanupService,
+            appResidueCleaner: appResidueCleaner,
+            domainInventory: domainInventory,
+            destructiveCleanupPreparer: destructiveCleanupPreparer,
+            sharedWebsiteDataStoreProvider: sharedWebsiteDataStoreProvider,
+            referenceDateProvider: referenceDateProvider
+        )
         self.referenceDateProvider = referenceDateProvider
     }
 
     func prepareForDestructiveWebsiteDataCleanup(profileIDs: Set<UUID>) async {
-        guard !profileIDs.isEmpty else { return }
-        await destructiveCleanupPreparer?.prepareForDestructiveDataCleanup(
+        await manualWebsiteDataCleanupOwner.prepareForDestructiveWebsiteDataCleanup(
             profileIDs: profileIDs
         )
     }
@@ -250,14 +261,14 @@ final class SumiBrowsingDataCleanupService {
     ) async -> SumiBrowsingDataSummary {
         let referenceDate = referenceDateProvider()
         let query = range.historyQuery(referenceDate: referenceDate)
-        let historyVisitCount = await countVisits(
+        let historyVisitCount = await domainInventory.countVisits(
             matching: query,
             profileId: historyProfileId,
             referenceDate: referenceDate,
             historyManager: historyManager
         )
-        let visitedDomains = normalizeDomains(
-            await visitDomains(
+        let visitedDomains = domainInventory.normalizeDomains(
+            await domainInventory.visitDomains(
                 matching: query,
                 profileId: historyProfileId,
                 referenceDate: referenceDate,
@@ -277,14 +288,14 @@ final class SumiBrowsingDataCleanupService {
         var cacheDomains = Set<String>()
         for dataStore in profileDataStores {
             siteDataDomains.formUnion(
-                await websiteDataDomains(
+                await domainInventory.websiteDataDomains(
                     ofTypes: WKWebsiteDataStore.sumiSiteDataTypes,
                     includeCookies: true,
                     in: dataStore
                 )
             )
             cacheDomains.formUnion(
-                await websiteDataDomains(
+                await domainInventory.websiteDataDomains(
                     ofTypes: WKWebsiteDataStore.sumiCacheDataTypes,
                     includeCookies: false,
                     in: dataStore
@@ -338,8 +349,8 @@ final class SumiBrowsingDataCleanupService {
         let referenceDate = referenceDateProvider()
         let query = range.historyQuery(referenceDate: referenceDate)
         let historyProfileId = includeAllProfiles ? nil : historyManager.currentProfileId
-        let domains = normalizeDomains(
-            await visitDomains(
+        let domains = domainInventory.normalizeDomains(
+            await domainInventory.visitDomains(
                 matching: query,
                 profileId: historyProfileId,
                 referenceDate: referenceDate,
@@ -360,28 +371,21 @@ final class SumiBrowsingDataCleanupService {
             )
         }
 
-        await prepareForDestructiveWebsiteDataCleanupIfNeeded(
+        await manualWebsiteDataCleanupOwner.prepareForDestructiveWebsiteDataCleanupIfNeeded(
             range: range,
             categories: categories,
             targetProfiles: targetProfiles
         )
 
-        let dataTypes = websiteDataTypes(for: categories)
+        let dataTypes = manualWebsiteDataCleanupOwner.websiteDataTypes(for: categories)
         let includesCookies = categories.contains(.siteData)
         for profile in targetProfiles {
-            let siteDataFaviconDomains = await siteDataFaviconDomainsToInvalidate(
+            let siteDataFaviconDomains = await manualWebsiteDataCleanupOwner.clearProfileWebsiteData(
                 range: range,
                 categories: categories,
                 domains: domains,
                 dataTypes: dataTypes,
                 includesCookies: includesCookies,
-                dataStore: profile.dataStore
-            )
-            await clearWebsiteData(
-                range: range,
-                dataTypes: dataTypes,
-                includesCookies: includesCookies,
-                domains: domains,
                 dataStore: profile.dataStore
             )
             localCleanupOwner.invalidateSiteDataFavicons(
@@ -390,27 +394,20 @@ final class SumiBrowsingDataCleanupService {
             )
         }
 
-        await clearAppLevelWebsiteResidueIfNeeded(
+        await manualWebsiteDataCleanupOwner.clearAppLevelWebsiteResidueIfNeeded(
             range: range,
             categories: categories,
             dataTypes: dataTypes,
             includesCookies: includesCookies
         )
 
-        if includeAllProfiles,
-           range == .allTime,
-           !targetProfiles.isEmpty,
-           categories.contains(.siteData) || categories.contains(.cache) {
-            let prunedDataStoreIdentifiers = await websiteDataCleanupService.prunePersistentDataStores(
-                keeping: targetProfileIds
-            )
-            if !prunedDataStoreIdentifiers.isEmpty {
-                RuntimeDiagnostics.debug(
-                    "Manual browsing data cleanup pruned \(prunedDataStoreIdentifiers.count) orphan WebKit persistent data stores.",
-                    category: "BrowsingDataCleanup"
-                )
-            }
-        }
+        await manualWebsiteDataCleanupOwner.prunePersistentDataStoresIfNeeded(
+            range: range,
+            categories: categories,
+            targetProfiles: targetProfiles,
+            targetProfileIds: targetProfileIds,
+            includeAllProfiles: includeAllProfiles
+        )
 
         localCleanupOwner.clearSavedHTTPAuthCredentialsIfNeeded(
             range: range,
@@ -424,211 +421,6 @@ final class SumiBrowsingDataCleanupService {
         )
     }
 
-    private func clearAppLevelWebsiteResidueIfNeeded(
-        range: SumiBrowsingDataTimeRange,
-        categories: Set<SumiBrowsingDataCategory>,
-        dataTypes: Set<String>,
-        includesCookies: Bool
-    ) async {
-        guard range == .allTime else { return }
-
-        if categories.contains(.cache) {
-            appResidueCleaner.clearSharedURLCache()
-            appResidueCleaner.clearFaviconNegativeCache()
-        }
-
-        guard categories == SumiBrowsingDataCategory.defaultSelection else { return }
-        await clearWebsiteData(
-            range: range,
-            dataTypes: dataTypes,
-            includesCookies: includesCookies,
-            domains: [],
-            dataStore: sharedWebsiteDataStoreProvider()
-        )
-    }
-
-    private func clearWebsiteData(
-        range: SumiBrowsingDataTimeRange,
-        dataTypes: Set<String>,
-        includesCookies: Bool,
-        domains: Set<String>,
-        dataStore: WKWebsiteDataStore
-    ) async {
-        guard !dataTypes.isEmpty || includesCookies else { return }
-
-        if range == .allTime {
-            if dataTypes == WKWebsiteDataStore.sumiManualFullCleanupDataTypes,
-               includesCookies {
-                await websiteDataCleanupService.clearAllProfileWebsiteData(in: dataStore)
-                return
-            }
-            await websiteDataCleanupService.removeWebsiteData(
-                ofTypes: dataTypes,
-                modifiedSince: .distantPast,
-                in: dataStore
-            )
-            if includesCookies {
-                await websiteDataCleanupService.removeCookies(.all, in: dataStore)
-            }
-            return
-        }
-
-        if !domains.isEmpty {
-            await websiteDataCleanupService.removeWebsiteDataForDomains(
-                domains,
-                ofTypes: dataTypes,
-                includingCookies: includesCookies,
-                in: dataStore
-            )
-        }
-
-        if dataTypes.contains(WKWebsiteDataTypeSearchFieldRecentSearches),
-           let startDate = range.startDate(referenceDate: referenceDateProvider()) {
-            await websiteDataCleanupService.removeWebsiteData(
-                ofTypes: [WKWebsiteDataTypeSearchFieldRecentSearches],
-                modifiedSince: startDate,
-                in: dataStore
-            )
-        }
-    }
-
-    private func prepareForDestructiveWebsiteDataCleanupIfNeeded(
-        range: SumiBrowsingDataTimeRange,
-        categories: Set<SumiBrowsingDataCategory>,
-        targetProfiles: [Profile]
-    ) async {
-        guard range == .allTime else { return }
-        guard categories.contains(.siteData) || categories.contains(.cache) else { return }
-        await prepareForDestructiveWebsiteDataCleanup(
-            profileIDs: Set(targetProfiles.map(\.id))
-        )
-    }
-
-    private func websiteDataTypes(
-        for categories: Set<SumiBrowsingDataCategory>
-    ) -> Set<String> {
-        var dataTypes = Set<String>()
-        if categories.contains(.history) {
-            dataTypes.formUnion(WKWebsiteDataStore.sumiHistoryDataTypes)
-        }
-        if categories.contains(.siteData) {
-            dataTypes.formUnion(WKWebsiteDataStore.sumiSiteDataTypes)
-        }
-        if categories.contains(.cache) {
-            dataTypes.formUnion(WKWebsiteDataStore.sumiCacheDataTypes)
-        }
-        if categories == SumiBrowsingDataCategory.defaultSelection {
-            dataTypes = WKWebsiteDataStore.sumiManualFullCleanupDataTypes
-        }
-        return dataTypes
-    }
-
-    private func countVisits(
-        matching query: HistoryQuery,
-        profileId: UUID?,
-        referenceDate: Date,
-        historyManager: HistoryManager
-    ) async -> Int {
-        do {
-            return try await historyManager.store.countVisits(
-                matching: query,
-                profileId: profileId,
-                referenceDate: referenceDate,
-                calendar: .autoupdatingCurrent
-            )
-        } catch {
-            RuntimeDiagnostics.emit("Error counting browsing history: \(error)")
-            return 0
-        }
-    }
-
-    private func visitDomains(
-        matching query: HistoryQuery,
-        profileId: UUID?,
-        referenceDate: Date,
-        historyManager: HistoryManager
-    ) async -> Set<String> {
-        do {
-            return try await historyManager.store.domains(
-                matching: query,
-                profileId: profileId,
-                referenceDate: referenceDate,
-                calendar: .autoupdatingCurrent
-            )
-        } catch {
-            RuntimeDiagnostics.emit("Error loading browsing history domains: \(error)")
-            return []
-        }
-    }
-
-    private func siteDataFaviconDomainsToInvalidate(
-        range: SumiBrowsingDataTimeRange,
-        categories: Set<SumiBrowsingDataCategory>,
-        domains: Set<String>,
-        dataTypes: Set<String>,
-        includesCookies: Bool,
-        dataStore: WKWebsiteDataStore
-    ) async -> Set<String> {
-        guard categories.contains(.siteData) else { return [] }
-        guard !categories.contains(.history) else { return [] }
-
-        if range == .allTime {
-            return normalizeDomains(
-                await websiteDataDomains(
-                    ofTypes: dataTypes,
-                    includeCookies: includesCookies,
-                    in: dataStore
-                )
-            )
-        }
-        return domains
-    }
-
-    private func normalizeDomains(_ domains: Set<String>) -> Set<String> {
-        Set(
-            domains
-                .map(\.normalizedBrowsingDataDomain)
-                .filter { !$0.isEmpty }
-        )
-    }
-
-    private func websiteDataDomains(
-        ofTypes dataTypes: Set<String>,
-        includeCookies: Bool,
-        in dataStore: WKWebsiteDataStore
-    ) async -> Set<String> {
-        let records = await websiteDataCleanupService.fetchWebsiteDataRecords(
-            ofTypes: dataTypes,
-            in: dataStore
-        )
-        var domains = Set(
-            records
-                .map(\.displayName)
-                .map { siteDomain(for: $0) }
-                .filter { !$0.isEmpty }
-        )
-
-        if includeCookies {
-            let cookies = await websiteDataCleanupService.fetchCookies(in: dataStore)
-            domains.formUnion(
-                cookies
-                    .map(\.domain)
-                    .map { siteDomain(for: $0) }
-                    .filter { !$0.isEmpty }
-            )
-        }
-
-        return domains
-    }
-
-    private func siteDomain(for domain: String) -> String {
-        let normalizedDomain = domain.normalizedBrowsingDataDomain
-        guard !normalizedDomain.isEmpty else { return "" }
-        guard let url = URL(string: "https://\(normalizedDomain)") else {
-            return normalizedDomain
-        }
-        return HistoryDomainResolver.siteDomain(for: url) ?? normalizedDomain
-    }
 }
 
 @MainActor
@@ -835,18 +627,5 @@ final class SumiAutomaticBrowsingDataCleanupService {
             RuntimeDiagnostics.emit("Error during automatic browsing data cleanup: \(error)")
             return 0
         }
-    }
-}
-
-private extension String {
-    var normalizedBrowsingDataDomain: String {
-        trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingPrefix(".")
-            .lowercased()
-    }
-
-    func trimmingPrefix(_ prefix: String) -> String {
-        guard hasPrefix(prefix) else { return self }
-        return String(dropFirst(prefix.count))
     }
 }

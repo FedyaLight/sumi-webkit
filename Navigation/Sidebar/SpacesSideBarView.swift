@@ -999,9 +999,9 @@ struct SpacesSideBarView: View {
             ExtensionActionView(
                 extensions: extensionSurfaceStore.enabledExtensions,
                 layout: .sidebarGrid,
-                profileId: profileId
+                profileId: profileId,
+                browserManager: browserManager
             )
-            .environmentObject(browserManager)
             .environment(windowState)
             .padding(.horizontal, 8)
             .allowsHitTesting(allowsInteractiveWork)

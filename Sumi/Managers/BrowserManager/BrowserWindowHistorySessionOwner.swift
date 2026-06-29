@@ -5,14 +5,11 @@ final class BrowserWindowHistorySessionOwner {
     struct Dependencies {
         let windowState: @MainActor (UUID) -> BrowserWindowState?
         let allWindows: @MainActor () -> [BrowserWindowState]
-        let makeWindowSessionSnapshot: @MainActor (BrowserWindowState) -> WindowSessionSnapshot
+        let makeWindowSessionSnapshot: @MainActor (BrowserWindowState) -> WindowSessionSnapshot?
         let windowDisplayTitle: @MainActor (BrowserWindowState) -> String
         let recentlyClosedManager: @MainActor () -> RecentlyClosedManager
         let lastSessionWindowsStore: @MainActor () -> LastSessionWindowsStore
-        let canOfferStartupLastSessionRestoreShortcut: @MainActor () -> Bool
-        let startupLastSessionWindowSnapshots: @MainActor () -> [LastSessionWindowSnapshot]
-        let startupLastSessionTabSnapshot: @MainActor () -> TabSnapshotRepository.Snapshot?
-        let markStartupLastSessionRestoreOfferConsumed: @MainActor () -> Void
+        let startupRestore: any BrowserStartupSessionRestoreProviding
     }
 
     private let dependencies: Dependencies
@@ -29,7 +26,10 @@ final class BrowserWindowHistorySessionOwner {
             return
         }
 
-        let snapshot = dependencies.makeWindowSessionSnapshot(windowState)
+        guard let snapshot = dependencies.makeWindowSessionSnapshot(windowState) else {
+            refreshLastSessionWindowsStore(excludingWindowID: windowId)
+            return
+        }
         if snapshot.currentTabId != nil || snapshot.splitSession != nil || !snapshot.isShowingEmptyState {
             dependencies.recentlyClosedManager().captureClosedWindow(
                 title: dependencies.windowDisplayTitle(windowState),
@@ -41,10 +41,10 @@ final class BrowserWindowHistorySessionOwner {
     }
 
     func refreshLastSessionWindowsStore(excludingWindowID: UUID?) {
-        if dependencies.canOfferStartupLastSessionRestoreShortcut(),
-           let startupLastSessionTabSnapshot = dependencies.startupLastSessionTabSnapshot() {
+        if dependencies.startupRestore.canOfferRestoreShortcut,
+           let startupLastSessionTabSnapshot = dependencies.startupRestore.tabSnapshot {
             dependencies.lastSessionWindowsStore().updateSnapshots(
-                dependencies.startupLastSessionWindowSnapshots(),
+                dependencies.startupRestore.windowSnapshots,
                 tabSnapshot: startupLastSessionTabSnapshot
             )
             return
@@ -55,7 +55,7 @@ final class BrowserWindowHistorySessionOwner {
             snapshots = currentRegularWindowSnapshots(excludingWindowID: nil)
         }
         if snapshots.count > 1 {
-            dependencies.markStartupLastSessionRestoreOfferConsumed()
+            dependencies.startupRestore.markRestoreOfferConsumed()
         }
         dependencies.lastSessionWindowsStore().updateSnapshots(snapshots)
     }
@@ -66,10 +66,13 @@ final class BrowserWindowHistorySessionOwner {
         dependencies.allWindows()
             .filter { !$0.isIncognito }
             .filter { $0.id != excludingWindowID }
-            .map { windowState in
-                LastSessionWindowSnapshot(
+            .compactMap { windowState in
+                guard let session = dependencies.makeWindowSessionSnapshot(windowState) else {
+                    return nil
+                }
+                return LastSessionWindowSnapshot(
                     id: windowState.id,
-                    session: dependencies.makeWindowSessionSnapshot(windowState)
+                    session: session
                 )
             }
     }

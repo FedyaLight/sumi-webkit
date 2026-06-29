@@ -62,9 +62,9 @@ extension URLBarView {
         if ExtensionActionPlacement.resolve(totalActions: orderedExtensionActionCount) == .urlBar {
             ExtensionActionView(
                 extensions: extensionSurfaceStore.enabledExtensions,
-                layout: .compactStrip
+                layout: .compactStrip,
+                browserManager: browserManager
             )
-            .environmentObject(browserManager)
             .environment(windowState)
             .accessibilityIdentifier("urlbar-extension-action-strip")
         }

@@ -6,12 +6,8 @@ import SwiftUI
 final class SidebarDragState: ObservableObject {
     static let shared = SidebarDragState()
 
-    @Published var isDragging: Bool = false
-    @Published var hoveredSlot: DropZoneSlot = .empty
-    @Published var folderDropIntent: FolderDropIntent = .none
-    @Published var activeHoveredFolderId: UUID? = nil
-    @Published var activeSplitTarget: SplitDropSide? = nil
-    @Published var activeDragItemId: UUID? = nil
+    let interactionStateOwner = SidebarDragInteractionStateOwner()
+    private var interactionStateCancellables: Set<AnyCancellable> = []
     let locationTracker = SidebarDragLocationTracker()
 
     var dragLocation: CGPoint? {
@@ -22,16 +18,7 @@ final class SidebarDragState: ObservableObject {
         get { locationTracker.previewLocation }
         set { locationTracker.previewLocation = newValue }
     }
-    @Published var previewKind: SidebarDragPreviewKind? = nil
-    @Published var previewAssets: [SidebarDragPreviewKind: SidebarDragPreviewAsset] = [:]
-    @Published var previewModel: SidebarDragPreviewModel? = nil
-    @Published var isInternalDragSession: Bool = false
-    @Published var activeDragScope: SidebarDragScope? = nil
-    @Published private(set) var isCompletingDrop: Bool = false
-    private var completingDropItemId: UUID?
-    private var completingDropScope: SidebarDragScope?
-    private var completingDropSlot: DropZoneSlot = .empty
-    private var completingDropFolderIntent: FolderDropIntent = .none
+    @Published private var dropCommitProjection = SidebarDropCommitProjectionState()
     private(set) var isInternalDragGeometryArmed: Bool = false
     private(set) var armedDragScope: SidebarDragScope?
 
@@ -65,39 +52,48 @@ final class SidebarDragState: ObservableObject {
         }
     )
 
-    init() {}
+    init() {
+        interactionStateOwner.objectWillChange
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &interactionStateCancellables)
+    }
 
     var shouldAnimateDropLayout: Bool {
         isDragging && !isCompletingDrop
     }
 
+    var isCompletingDrop: Bool {
+        dropCommitProjection.isCompletingDrop
+    }
+
     var isDropProjectionActive: Bool {
-        isDragging || isCompletingDrop
+        dropCommitProjection.isDropProjectionActive(isDragging: isDragging)
     }
 
     var projectionDragItemId: UUID? {
-        activeDragItemId ?? completingDropItemId
+        dropCommitProjection.dragItemId(activeDragItemId: activeDragItemId)
     }
 
     var projectionDragScope: SidebarDragScope? {
-        activeDragScope ?? completingDropScope
+        dropCommitProjection.dragScope(activeDragScope: activeDragScope)
     }
 
     var projectionHoveredSlot: DropZoneSlot {
-        hoveredSlot != .empty ? hoveredSlot : completingDropSlot
+        dropCommitProjection.hoveredSlot(activeHoveredSlot: hoveredSlot)
     }
 
     var projectionFolderDropIntent: FolderDropIntent {
-        folderDropIntent != .none ? folderDropIntent : completingDropFolderIntent
+        dropCommitProjection.folderDropIntent(activeFolderDropIntent: folderDropIntent)
     }
 
     func shouldHideCommittedCrossContainerPlaceholder(
         into targetContainer: TabDragManager.DragContainer,
         targetAlreadyContainsDraggedItem: Bool
     ) -> Bool {
-        SidebarDragPlaceholderPolicy.shouldHideCommittedCrossContainerPlaceholder(
-            isCompletingDrop: isCompletingDrop,
-            sourceContainer: projectionDragScope?.sourceContainer,
+        dropCommitProjection.shouldHideCommittedCrossContainerPlaceholder(
+            activeDragScope: activeDragScope,
             targetContainer: targetContainer,
             targetAlreadyContainsDraggedItem: targetAlreadyContainsDraggedItem
         )
@@ -269,11 +265,14 @@ final class SidebarDragState: ObservableObject {
     }
 
     func beginDropCommit() {
-        completingDropItemId = activeDragItemId
-        completingDropScope = activeDragScope
-        completingDropSlot = hoveredSlot
-        completingDropFolderIntent = folderDropIntent
-        isCompletingDrop = true
+        var projection = dropCommitProjection
+        projection.begin(
+            itemId: activeDragItemId,
+            scope: activeDragScope,
+            slot: hoveredSlot,
+            folderIntent: folderDropIntent
+        )
+        dropCommitProjection = projection
     }
 
     func resetInteractionState() {
@@ -302,11 +301,9 @@ final class SidebarDragState: ObservableObject {
     }
 
     private func finishDropCommitProjection() {
-        isCompletingDrop = false
-        completingDropItemId = nil
-        completingDropScope = nil
-        completingDropSlot = .empty
-        completingDropFolderIntent = .none
+        var projection = dropCommitProjection
+        projection.finish()
+        dropCommitProjection = projection
     }
 
     func beginPendingGeometryEpoch(

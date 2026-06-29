@@ -135,32 +135,30 @@ struct ExtensionActionView: View {
     var layout: ExtensionActionLayout = .compactStrip
     var visibleActionLimit: Int?
     var profileId: UUID?
-    @EnvironmentObject var browserManager: BrowserManager
+    let browserManager: BrowserManager
 
     var body: some View {
         switch layout {
         case .compactStrip:
             CompactExtensionActionStrip(
                 extensions: extensions,
-                visibleActionLimit: visibleActionLimit
+                visibleActionLimit: visibleActionLimit,
+                browserManager: browserManager
             )
-            .environmentObject(browserManager)
         case .sidebarGrid:
             SidebarExtensionActionGrid(
                 extensions: extensions,
-                profileId: profileId
+                profileId: profileId,
+                browserManager: browserManager
             )
-                .environmentObject(browserManager)
         case .hubTiles:
             LazyVGrid(columns: hubTileColumns, alignment: .leading, spacing: 8) {
                 if browserManager.userscriptsModule.isEnabled {
-                    SumiScriptsToolbarControl(layout: .hubTile)
-                        .environmentObject(browserManager)
+                    SumiScriptsToolbarControl(layout: .hubTile, browserManager: browserManager)
                 }
 
                 ForEach(hubExtensions, id: \.id) { ext in
-                    ExtensionActionButton(ext: ext, layout: .hubTiles)
-                        .environmentObject(browserManager)
+                    ExtensionActionButton(ext: ext, layout: .hubTiles, browserManager: browserManager)
                 }
             }
         }
@@ -184,8 +182,8 @@ struct ExtensionActionView: View {
 private struct SidebarExtensionActionGrid: View {
     let extensions: [InstalledExtension]
     let profileId: UUID?
+    let browserManager: BrowserManager
     private static let gridSpacing: CGFloat = 8
-    @EnvironmentObject private var browserManager: BrowserManager
 
     var body: some View {
         let slots = pinnedSlots
@@ -194,15 +192,14 @@ private struct SidebarExtensionActionGrid: View {
             ForEach(slots) { slot in
                 switch slot {
                 case .sumiScriptsManager:
-                    SumiScriptsToolbarControl(layout: .sidebarGrid)
-                        .environmentObject(browserManager)
+                    SumiScriptsToolbarControl(layout: .sidebarGrid, browserManager: browserManager)
                 case .webExtension(let ext):
                     ExtensionActionButton(
                         ext: ext,
                         layout: .sidebarGrid,
-                        profileId: profileId
+                        profileId: profileId,
+                        browserManager: browserManager
                     )
-                        .environmentObject(browserManager)
                 }
             }
         }
@@ -238,18 +235,16 @@ private struct SidebarExtensionActionGrid: View {
 private struct CompactExtensionActionStrip: View {
     let extensions: [InstalledExtension]
     let visibleActionLimit: Int?
-    @EnvironmentObject private var browserManager: BrowserManager
+    let browserManager: BrowserManager
 
     var body: some View {
         HStack(spacing: 4) {
             ForEach(visiblePinnedSlots) { slot in
                 switch slot {
                 case .sumiScriptsManager:
-                    SumiScriptsToolbarControl(layout: .compactStrip)
-                        .environmentObject(browserManager)
+                    SumiScriptsToolbarControl(layout: .compactStrip, browserManager: browserManager)
                 case .webExtension(let ext):
-                    ExtensionActionButton(ext: ext, layout: .compactStrip)
-                        .environmentObject(browserManager)
+                    ExtensionActionButton(ext: ext, layout: .compactStrip, browserManager: browserManager)
                 }
             }
         }
@@ -287,8 +282,8 @@ private enum SumiScriptsToolbarLayout {
 @available(macOS 15.5, *)
 private struct SumiScriptsToolbarControl: View {
     let layout: SumiScriptsToolbarLayout
+    let browserManager: BrowserManager
 
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -447,7 +442,7 @@ struct ExtensionActionButton: View {
     let ext: InstalledExtension
     var layout: ExtensionActionLayout = .compactStrip
     var profileId: UUID?
-    @EnvironmentObject var browserManager: BrowserManager
+    let browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore:
         BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
@@ -740,7 +735,7 @@ struct ExtensionActionButton: View {
 
 @available(macOS 15.5, *)
 #Preview {
-    ExtensionActionView(extensions: [])
+    ExtensionActionView(extensions: [], browserManager: BrowserManager())
 }
 
 @available(macOS 15.5, *)

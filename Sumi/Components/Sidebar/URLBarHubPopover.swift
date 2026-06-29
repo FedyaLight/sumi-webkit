@@ -325,6 +325,7 @@ struct URLBarHubPopover: View {
             )
         case .bookmark(let state):
             URLBarBookmarkEditorView(
+                bookmarkManager: bookmarkManager,
                 state: state,
                 currentTab: currentTab,
                 folders: bookmarkManager.folders(),
@@ -481,9 +482,9 @@ struct URLBarHubPopover: View {
 
             ExtensionActionView(
                 extensions: unpinnedEnabledExtensionActions,
-                layout: .hubTiles
+                layout: .hubTiles,
+                browserManager: browserManager
             )
-            .environmentObject(browserManager)
             .environment(windowState)
         }
         .contentShape(Rectangle())

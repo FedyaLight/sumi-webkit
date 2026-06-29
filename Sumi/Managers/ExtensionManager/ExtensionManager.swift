@@ -160,15 +160,40 @@ final class ExtensionManager: NSObject, ObservableObject {
         get { profileRuntimeOwner.contextBindingGenerationsByProfile }
         set { profileRuntimeOwner.replaceContextBindingGenerations(newValue) }
     }
+    let runtimeSessionOwner = ExtensionRuntimeSessionOwner()
     /// Parsed extension resources are profile-agnostic; each profile gets its own context.
-    var cachedWebExtensionsByID: [String: WKWebExtension] = [:]
-    var cachedWebExtensionRuntimeSourceKeysByID: [String: WebExtensionRuntimeSourceKey] = [:]
-    var lastExtensionLoadErrors: [String: Error] = [:]
-    var extensionRuntimeResidencyState = ExtensionRuntimeResidencyState()
-    var runtimeState: ExtensionRuntimeState = .idle
-    var extensionRuntimeAllowsWithoutEnabledExtensions = false
-    var runtimeInitializationTask: Task<Void, Never>?
-    var loadedExtensionManifests: [String: [String: Any]] = [:]
+    var cachedWebExtensionsByID: [String: WKWebExtension] {
+        get { runtimeSessionOwner.cachedWebExtensionsByID }
+        set { runtimeSessionOwner.cachedWebExtensionsByID = newValue }
+    }
+    var cachedWebExtensionRuntimeSourceKeysByID: [String: WebExtensionRuntimeSourceKey] {
+        get { runtimeSessionOwner.cachedWebExtensionRuntimeSourceKeysByID }
+        set { runtimeSessionOwner.cachedWebExtensionRuntimeSourceKeysByID = newValue }
+    }
+    var lastExtensionLoadErrors: [String: Error] {
+        get { runtimeSessionOwner.lastExtensionLoadErrors }
+        set { runtimeSessionOwner.lastExtensionLoadErrors = newValue }
+    }
+    var extensionRuntimeResidencyState: ExtensionRuntimeResidencyState {
+        get { runtimeSessionOwner.extensionRuntimeResidencyState }
+        set { runtimeSessionOwner.extensionRuntimeResidencyState = newValue }
+    }
+    var runtimeState: ExtensionRuntimeState {
+        get { runtimeSessionOwner.runtimeState }
+        set { runtimeSessionOwner.runtimeState = newValue }
+    }
+    var extensionRuntimeAllowsWithoutEnabledExtensions: Bool {
+        get { runtimeSessionOwner.extensionRuntimeAllowsWithoutEnabledExtensions }
+        set { runtimeSessionOwner.extensionRuntimeAllowsWithoutEnabledExtensions = newValue }
+    }
+    var runtimeInitializationTask: Task<Void, Never>? {
+        get { runtimeSessionOwner.runtimeInitializationTask }
+        set { runtimeSessionOwner.runtimeInitializationTask = newValue }
+    }
+    var loadedExtensionManifests: [String: [String: Any]] {
+        get { runtimeSessionOwner.loadedExtensionManifests }
+        set { runtimeSessionOwner.loadedExtensionManifests = newValue }
+    }
     let installCapabilityOwner = SafariExtensionInstallCapabilityOwner()
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
     let runtimeTeardownOwner = ExtensionRuntimeTeardownOwner()
@@ -213,7 +238,10 @@ final class ExtensionManager: NSObject, ObservableObject {
         normalTabRuntimeBindingOwnerStorage = owner
         return owner
     }
-    var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] = [:]
+    var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] {
+        get { runtimeSessionOwner.runtimeMetricsByExtensionID }
+        set { runtimeSessionOwner.runtimeMetricsByExtensionID = newValue }
+    }
     var actionAnchors: [String: [WeakAnchor]] = [:]
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()
     var anchorObserverTokens: [String: [ObjectIdentifier: NSObjectProtocol]] = [:]
@@ -254,8 +282,14 @@ final class ExtensionManager: NSObject, ObservableObject {
     var loadedNativeMessagingRelay: SumiNativeMessagingRelay? {
         nativeMessagingRelayStorage
     }
-    var extensionLoadGeneration: UInt64 = 0
-    var tabOpenNotificationGeneration: UInt64 = 1
+    var extensionLoadGeneration: UInt64 {
+        get { runtimeSessionOwner.extensionLoadGeneration }
+        set { runtimeSessionOwner.extensionLoadGeneration = newValue }
+    }
+    var tabOpenNotificationGeneration: UInt64 {
+        get { runtimeSessionOwner.tabOpenNotificationGeneration }
+        set { runtimeSessionOwner.tabOpenNotificationGeneration = newValue }
+    }
     let extensionPermissionPromptPresentationOwner =
         ExtensionPermissionPromptPresentationOwner()
     var permissionsOriginsCompatibilityInstallations:
@@ -540,9 +574,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         for extensionId: String,
         update: (inout ExtensionRuntimeMetrics) -> Void
     ) {
-        var metrics = runtimeMetricsByExtensionID[extensionId] ?? ExtensionRuntimeMetrics()
-        update(&metrics)
-        runtimeMetricsByExtensionID[extensionId] = metrics
+        runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
     }
 
     func extensionRuntimeObjectDescription(_ object: AnyObject?) -> String {
