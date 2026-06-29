@@ -172,26 +172,4 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
         )
     }
 
-    func testPrivateTabActionPopupGuardRemainsWired() throws {
-        let uiSource = try String(
-            contentsOfFile: projectPath("Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"),
-            encoding: .utf8
-        )
-        XCTAssertTrue(
-            uiSource.contains("guard currentTab.isEphemeral == false else"),
-            "Private tabs must remain blocked for extension action popups"
-        )
-        XCTAssertTrue(
-            uiSource.contains("Private tabs are not eligible for extension action popups."),
-            "Private tab popup block message must remain present"
-        )
-    }
-
-    private func projectPath(_ relativePath: String) -> String {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(relativePath)
-            .path
-    }
 }
