@@ -106,7 +106,7 @@ struct SpacesSideBarView: View {
         let visualSpaceId = visualSelectedSpaceId(in: spaces)
 
         return VStack(spacing: 8) {
-            SidebarHeader(browserManager: browserManager)
+            SidebarHeader(browserContext: browserManager.sidebarHeaderBrowserContext(for: windowState))
                 .environment(windowState)
 
             if let creationSession = windowState.activeSpaceCreationSession {

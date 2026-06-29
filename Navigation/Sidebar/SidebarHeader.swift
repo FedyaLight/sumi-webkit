@@ -7,9 +7,16 @@
 import AppKit
 import SwiftUI
 
+@MainActor
+struct SidebarHeaderBrowserContext {
+    let navigationToolbarContext: NavigationToolbarBrowserContext
+    let urlBarBrowserContext: URLBarBrowserContext
+    let toggleSidebar: () -> Void
+}
+
 /// Header section of the sidebar (window controls, navigation buttons, URL bar)
 struct SidebarHeader: View {
-    let browserManager: BrowserManager
+    let browserContext: SidebarHeaderBrowserContext
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
 
@@ -23,15 +30,13 @@ struct SidebarHeader: View {
     private var controlStrip: some View {
         HStack(spacing: SidebarChromeMetrics.controlSpacing) {
             SidebarWindowControlsView(
-                toggleSidebar: {
-                    browserManager.toggleSidebar(for: windowState)
-                }
+                toggleSidebar: browserContext.toggleSidebar
             )
                 .environment(windowState)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             NavButtonsView(
-                browserContext: browserManager.navigationToolbarContext(for: windowState)
+                browserContext: browserContext.navigationToolbarContext
             )
             .environment(windowState)
         }
@@ -42,7 +47,7 @@ struct SidebarHeader: View {
 
     private var sidebarURLBar: some View {
         URLBarView(
-            browserContext: browserManager.urlBarBrowserContext,
+            browserContext: browserContext.urlBarBrowserContext,
             presentationMode: .sidebar
         )
         .environment(windowState)

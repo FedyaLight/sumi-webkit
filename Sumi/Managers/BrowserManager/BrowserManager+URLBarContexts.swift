@@ -3,6 +3,19 @@ import SwiftUI
 
 @MainActor
 extension BrowserManager {
+    func sidebarHeaderBrowserContext(
+        for windowState: BrowserWindowState
+    ) -> SidebarHeaderBrowserContext {
+        SidebarHeaderBrowserContext(
+            navigationToolbarContext: navigationToolbarContext(for: windowState),
+            urlBarBrowserContext: urlBarBrowserContext,
+            toggleSidebar: { [weak self, weak windowState] in
+                guard let windowState else { return }
+                self?.toggleSidebar(for: windowState)
+            }
+        )
+    }
+
     var urlBarBrowserContext: URLBarBrowserContext {
         URLBarBrowserContext(
             zoom: urlBarZoomContext,
