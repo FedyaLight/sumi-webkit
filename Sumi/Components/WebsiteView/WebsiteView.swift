@@ -240,7 +240,6 @@ struct WebsiteView: View {
                 browserManager: browserManager,
                 windowState: windowState
             )
-            .environmentObject(browserManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environment(\.resolvedThemeContext, currentTabThemeContext)
             .browserContentSurface(
@@ -253,7 +252,6 @@ struct WebsiteView: View {
                 browserManager: browserManager,
                 windowState: windowState
             )
-            .environmentObject(browserManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .environment(\.resolvedThemeContext, currentTabThemeContext)
             .browserContentSurface(
@@ -266,7 +264,6 @@ struct WebsiteView: View {
                 browserManager: browserManager,
                 windowState: windowState
             )
-            .environmentObject(browserManager)
             .environmentObject(browserManager.extensionSurfaceStore)
             .environment(keyboardShortcutManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity)

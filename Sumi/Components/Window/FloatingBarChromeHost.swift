@@ -12,7 +12,6 @@ struct FloatingBarChromeHost: View {
         Group {
             if isPresented {
                 FloatingBarView()
-                    .environmentObject(browserManager)
                     .environment(windowState)
                     .environment(\.sumiSettings, sumiSettings)
                     .environment(\.resolvedThemeContext, resolvedThemeContext)

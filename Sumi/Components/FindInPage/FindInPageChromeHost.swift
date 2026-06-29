@@ -29,7 +29,6 @@ struct FindInPageChromeHost: View {
             keepsChromeMounted: shouldPresent,
             isInteractive: shouldPresent
         )
-        .environmentObject(browserManager)
         .environment(windowRegistry)
         .environment(\.sumiSettings, sumiSettings)
         .environment(\.resolvedThemeContext, resolvedThemeContext)
