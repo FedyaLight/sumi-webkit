@@ -120,7 +120,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     func testWebViewCoordinatorWiringUsesInjectedBrowsingDataCleanupService() throws {
-        let cleanupService = SumiBrowsingDataCleanupService()
+        let cleanupService = makeBrowsingDataCleanupService()
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
@@ -137,7 +137,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
     }
 
     func testBrowserManagerRuntimeDataServicesUseInjectedBundle() async throws {
-        let browsingDataCleanupService = SumiBrowsingDataCleanupService()
+        let browsingDataCleanupService = makeBrowsingDataCleanupService()
         let automaticCleanupService = FakeAutomaticBrowsingDataCleanupScheduler()
         let siteDataPolicyService = FakeBrowserSiteDataPolicyService()
         let faviconService = FakeBrowserFaviconService()
@@ -217,7 +217,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             profileIdentifier: "injected-view-models",
             isPrivate: true
         )
-        let browsingDataCleanupService = SumiBrowsingDataCleanupService()
+        let browsingDataCleanupService = makeBrowsingDataCleanupService()
         let faviconService = FakeBrowserFaviconService(partitionToReturn: injectedPartition)
         let visitedLinkStore = FakeBrowserVisitedLinkStore()
         let browserManager = BrowserManager(
@@ -320,6 +320,16 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         XCTAssertEqual(nowPlayingController.unloadedTabIds, [tab.id])
         XCTAssertEqual(nowPlayingController.scheduledRefreshDelays, [0, 0])
+    }
+
+    private func makeBrowsingDataCleanupService() -> SumiBrowsingDataCleanupService {
+        SumiBrowsingDataCleanupService(
+            websiteDataCleanupService: SumiWebsiteDataCleanupService.shared,
+            faviconCacheCleaner: FakeBrowserFaviconService(),
+            appResidueCleaner: SumiBrowsingDataAppResidueCleaner(),
+            basicAuthCredentialStore: FakeBrowsingDataCredentialStore(),
+            visitedLinkStore: FakeBrowserVisitedLinkStore()
+        )
     }
 
     private func makeInMemoryStartupContainer() throws -> ModelContainer {
@@ -449,7 +459,7 @@ private final class FakeBrowserSiteDataPolicyService: BrowserSiteDataPolicyEnfor
 }
 
 @MainActor
-private final class FakeBrowserFaviconService: BrowserFaviconServicing, HistoryFaviconCleaning {
+private final class FakeBrowserFaviconService: BrowserFaviconServicing, HistoryFaviconCleaning, SumiBrowsingDataFaviconCleaning {
     private(set) var partitionProfileIds: [UUID?] = []
     private(set) var invalidatedSites: [(domain: String, profileId: UUID?)] = []
     private(set) var syncedShortcutPinURLs: [[URL]] = []
@@ -471,6 +481,11 @@ private final class FakeBrowserFaviconService: BrowserFaviconServicing, HistoryF
 
     func invalidateSite(domain: String, profile: Profile?) {
         invalidatedSites.append((domain, profile?.id))
+    }
+
+    func invalidateSite(domain: String, partition: SumiFaviconPartition) {
+        _ = partition
+        invalidatedSites.append((domain, nil))
     }
 
     func syncShortcutPins(_ pins: [ShortcutPin]) {
@@ -562,6 +577,21 @@ private final class FakeBrowserVisitedLinkStore: BrowserVisitedLinkStoreManaging
 
     func discardStore(for profileId: UUID) {
         discardedProfileIds.append(profileId)
+    }
+}
+
+@MainActor
+private final class FakeBrowsingDataCredentialStore: SumiBasicAuthCredentialCleaning {
+    func allCredentialHosts() -> Set<String> {
+        []
+    }
+
+    func deleteCredentials(
+        profilePartitionId: UUID?,
+        isEphemeralProfile: Bool?
+    ) -> Bool {
+        _ = (profilePartitionId, isEphemeralProfile)
+        return true
     }
 }
 

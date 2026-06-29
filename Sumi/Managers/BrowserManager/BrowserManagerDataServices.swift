@@ -160,15 +160,19 @@ struct BrowserManagerDataServices {
         let websiteDataCleanupService = SumiWebsiteDataCleanupService.shared
         let faviconSystem = productionFaviconSystem
         let visitedLinkStore = SharedVisitedLinkStoreProvider.shared
+        let basicAuthCredentialStore = BasicAuthCredentialStore()
         return BrowserManagerDataServices(
             browsingDataCleanupService: SumiBrowsingDataCleanupService(
                 websiteDataCleanupService: websiteDataCleanupService,
                 faviconCacheCleaner: faviconSystem,
+                appResidueCleaner: SumiBrowsingDataAppResidueCleaner(),
+                basicAuthCredentialStore: basicAuthCredentialStore,
                 visitedLinkStore: visitedLinkStore
             ),
             automaticBrowsingDataCleanupService: SumiAutomaticBrowsingDataCleanupService(
                 websiteDataCleanupService: websiteDataCleanupService,
-                faviconCacheCleaner: faviconSystem
+                faviconCacheCleaner: faviconSystem,
+                basicAuthCredentialStore: basicAuthCredentialStore
             ),
             siteDataPolicyEnforcementService: SumiSiteDataPolicyEnforcementService(
                 cleanupService: websiteDataCleanupService
