@@ -218,8 +218,21 @@ extension SpaceView {
                 group: group,
                 items: items,
                 spaceId: space.id,
+                tabManager: browserManager.tabManager,
                 isAppKitInteractionEnabled: isInteractive,
                 accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
+                onActivateTab: { tab in
+                    browserManager.requestUserTabActivation(tab, in: windowState)
+                },
+                onActivateGroup: { group in
+                    browserManager.focusSplitGroup(group, in: windowState)
+                },
+                onRestoreShortcutSplitMember: { item, group in
+                    browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+                },
+                onCloseTab: { tab in
+                    browserManager.closeTab(tab, in: windowState)
+                },
                 onPrepareShortcutRestoreGap: { item, group in
                     prepareShortcutRestoreGap(for: item, in: group)
                 },
@@ -227,7 +240,6 @@ extension SpaceView {
                     performShortcutRestoreWithPreparedGap(for: item, in: group, update: update)
                 }
             )
-            .environmentObject(browserManager)
             .environmentObject(splitManager)
             .sidebarTopLevelPinnedItemGeometry(
                 itemId: group.id,

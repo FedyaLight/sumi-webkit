@@ -4,12 +4,16 @@ struct ShortcutHostedSplitGroupRow: View {
     let group: SplitGroup
     let items: [SplitGroupSidebarItem]
     let spaceId: UUID
+    let tabManager: TabManager
     let isAppKitInteractionEnabled: Bool
     let accessibilityID: String
+    let onActivateTab: (Tab) -> Void
+    let onActivateGroup: (SplitGroup) -> Void
+    let onRestoreShortcutSplitMember: (SplitGroupSidebarItem, SplitGroup) -> Void
+    let onCloseTab: (Tab) -> Void
     let onPrepareShortcutRestoreGap: (SplitGroupSidebarItem, SplitGroup) -> Void
     let onPerformShortcutRestoreWithPreparedGap: (SplitGroupSidebarItem, SplitGroup, @escaping () -> Void) -> Void
 
-    @EnvironmentObject private var browserManager: BrowserManager
     @EnvironmentObject private var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
 
@@ -28,10 +32,10 @@ struct ShortcutHostedSplitGroupRow: View {
             },
             contextMenuEntries: { _ in [] },
             onActivate: { tab in
-                browserManager.requestUserTabActivation(tab, in: windowState)
+                onActivateTab(tab)
             },
             onActivateGroup: {
-                browserManager.focusSplitGroup(group, in: windowState)
+                onActivateGroup(group)
             },
             onSegmentActionAnimationStart: { item in
                 if SplitGroupSidebarModel.segmentAction(for: item, in: group) == .restore {
@@ -42,7 +46,6 @@ struct ShortcutHostedSplitGroupRow: View {
                 performShortcutHostedSegmentAction(for: item)
             }
         )
-        .environmentObject(browserManager)
         .environmentObject(splitManager)
         .accessibilityIdentifier(accessibilityID)
     }
@@ -51,7 +54,7 @@ struct ShortcutHostedSplitGroupRow: View {
         if SplitGroupSidebarModel.segmentAction(for: item, in: group) == .restore {
             onPerformShortcutRestoreWithPreparedGap(item, group) {
                 SidebarMotionTransaction.withoutAnimation {
-                    browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+                    onRestoreShortcutSplitMember(item, group)
                 }
             }
             return
@@ -59,7 +62,7 @@ struct ShortcutHostedSplitGroupRow: View {
 
         guard let tab = item.tab else { return }
         SidebarMotionTransaction.withoutAnimation {
-            browserManager.closeTab(tab, in: windowState)
+            onCloseTab(tab)
         }
     }
 
@@ -70,7 +73,7 @@ struct ShortcutHostedSplitGroupRow: View {
         if let pin = SplitGroupSidebarModel.shortcutPin(
             for: item,
             member: member,
-            tabManager: browserManager.tabManager
+            tabManager: tabManager
         ) {
             let dragItemId = item.tab?.id ?? pin.id
             return SidebarDragSourceConfiguration(
@@ -84,7 +87,7 @@ struct ShortcutHostedSplitGroupRow: View {
                 previewIcon: item.tab?.favicon ?? pin.storedFavicon,
                 exclusionZones: [.trailingStrip(32)],
                 onActivate: {
-                    browserManager.focusSplitGroup(group, in: windowState)
+                    onActivateGroup(group)
                 },
                 isEnabled: isAppKitInteractionEnabled
             )
@@ -102,7 +105,7 @@ struct ShortcutHostedSplitGroupRow: View {
             previewIcon: tab.favicon,
             exclusionZones: [.trailingStrip(32)],
             onActivate: {
-                browserManager.requestUserTabActivation(tab, in: windowState)
+                onActivateTab(tab)
             },
             isEnabled: isAppKitInteractionEnabled
         )

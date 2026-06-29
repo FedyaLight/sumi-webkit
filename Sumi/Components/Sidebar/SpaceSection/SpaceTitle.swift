@@ -1,12 +1,22 @@
 import SwiftUI
 
+struct SpaceTitleActions {
+    let canDeleteSpace: Bool
+    let renameSpace: (String) -> Void
+    let updateSpaceIcon: (String) -> Void
+    let persistCommittedEmoji: (String) -> Void
+    let editSpace: () -> Void
+    let changeTheme: () -> Void
+    let deleteSpace: () -> Void
+}
+
 struct SpaceTitle: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
 
     let space: Space
+    let actions: SpaceTitleActions
     var isAppKitInteractionEnabled: Bool = true
 
     /// Matches favicon / SF Symbol scale in tab and launcher rows (`SidebarRowLayout.faviconSize`).
@@ -43,7 +53,7 @@ struct SpaceTitle: View {
                     SpaceTitleEmojiPickModifier(
                         emojiManager: emojiManager,
                         space: space,
-                        browserManager: browserManager
+                        persistCommittedEmoji: actions.persistCommittedEmoji
                     )
                 )
             }
@@ -135,7 +145,7 @@ struct SpaceTitle: View {
     }
 
     private var canDeleteSpace: Bool {
-        browserManager.tabManager.spaces.count > 1
+        actions.canDeleteSpace
     }
 
     private var tokens: ChromeThemeTokens {
@@ -166,14 +176,7 @@ struct SpaceTitle: View {
     private func commitRename() {
         let newName = draftName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !newName.isEmpty, newName != space.name {
-            do {
-                try browserManager.tabManager.renameSpace(
-                    spaceId: space.id,
-                    newName: newName
-                )
-            } catch {
-                RuntimeDiagnostics.emit("⚠️ Failed to rename space \(space.id.uuidString):", error)
-            }
+            actions.renameSpace(newName)
         }
         isRenaming = false
         nameFieldFocused = false
@@ -190,18 +193,10 @@ struct SpaceTitle: View {
         return makeSpaceContextMenuEntries(
             actions: .init(
                 edit: {
-                    browserManager.showSpaceEditor(
-                        for: space,
-                        in: windowState,
-                        themeContext: themeContext,
-                        source: windowState.resolveSidebarPresentationSource()
-                    )
+                    actions.editSpace()
                 },
                 changeTheme: {
-                    browserManager.showGradientEditor(
-                        for: space,
-                        source: windowState.resolveSidebarPresentationSource()
-                    )
+                    actions.changeTheme()
                 },
                 deleteSpace: deleteSpaceAction
             )
@@ -209,11 +204,7 @@ struct SpaceTitle: View {
     }
 
     private func showDeleteConfirmation() {
-        SpaceDeletionConfirmationPresenter.confirmDelete(
-            space: space,
-            browserManager: browserManager,
-            window: windowState.window
-        )
+        actions.deleteSpace()
     }
 
     private func toggleSpaceIconPicker() {
@@ -228,11 +219,7 @@ struct SpaceTitle: View {
 
     private func commitSpaceIcon(_ picked: String) {
         let normalized = SumiPersistentGlyph.normalizedSpaceIconValue(picked)
-        do {
-            try browserManager.tabManager.updateSpaceIcon(spaceId: space.id, icon: normalized)
-        } catch {
-            RuntimeDiagnostics.emit("⚠️ Failed to update space icon \(space.id.uuidString):", error)
-        }
+        actions.updateSpaceIcon(normalized)
     }
 }
 
@@ -241,7 +228,7 @@ struct SpaceTitle: View {
 private struct SpaceTitleEmojiPickModifier: ViewModifier {
     @ObservedObject var emojiManager: EmojiPickerManager
     let space: Space
-    let browserManager: BrowserManager
+    let persistCommittedEmoji: (String) -> Void
 
     func body(content: Content) -> some View {
         content
@@ -251,8 +238,7 @@ private struct SpaceTitleEmojiPickModifier: ViewModifier {
                 let picked = newValue
                 DispatchQueue.main.async {
                     space.icon = SumiPersistentGlyph.normalizedSpaceIconValue(picked)
-                    browserManager.tabManager.markAllSpacesStructurallyDirty()
-                    browserManager.tabManager.scheduleStructuralPersistence()
+                    persistCommittedEmoji(picked)
                 }
             }
     }

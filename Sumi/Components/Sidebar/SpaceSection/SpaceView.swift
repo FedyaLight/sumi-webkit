@@ -65,6 +65,54 @@ struct SpaceView: View {
         max(outerWidth - 16, 0)
     }
 
+    var spaceTitleActions: SpaceTitleActions {
+        SpaceTitleActions(
+            canDeleteSpace: browserManager.tabManager.spaces.count > 1,
+            renameSpace: { newName in
+                do {
+                    try browserManager.tabManager.renameSpace(
+                        spaceId: space.id,
+                        newName: newName
+                    )
+                } catch {
+                    RuntimeDiagnostics.emit("⚠️ Failed to rename space \(space.id.uuidString):", error)
+                }
+            },
+            updateSpaceIcon: { icon in
+                do {
+                    try browserManager.tabManager.updateSpaceIcon(spaceId: space.id, icon: icon)
+                } catch {
+                    RuntimeDiagnostics.emit("⚠️ Failed to update space icon \(space.id.uuidString):", error)
+                }
+            },
+            persistCommittedEmoji: { _ in
+                browserManager.tabManager.markAllSpacesStructurallyDirty()
+                browserManager.tabManager.scheduleStructuralPersistence()
+            },
+            editSpace: {
+                browserManager.showSpaceEditor(
+                    for: space,
+                    in: windowState,
+                    themeContext: themeContext,
+                    source: windowState.resolveSidebarPresentationSource()
+                )
+            },
+            changeTheme: {
+                browserManager.showGradientEditor(
+                    for: space,
+                    source: windowState.resolveSidebarPresentationSource()
+                )
+            },
+            deleteSpace: {
+                SpaceDeletionConfirmationPresenter.confirmDelete(
+                    space: space,
+                    browserManager: browserManager,
+                    window: windowState.window
+                )
+            }
+        )
+    }
+
     var isInteractive: Bool {
         renderMode.isInteractive && allowsInteraction
     }
@@ -72,7 +120,11 @@ struct SpaceView: View {
     var body: some View {
         SidebarTabStructuralRevisionReader(browserManager: browserManager) { _ in
             VStack(spacing: 4) {
-                SpaceTitle(space: space, isAppKitInteractionEnabled: isInteractive)
+                SpaceTitle(
+                    space: space,
+                    actions: spaceTitleActions,
+                    isAppKitInteractionEnabled: isInteractive
+                )
 
                 mainContentContainer
             }

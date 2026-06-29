@@ -195,7 +195,10 @@ struct TabFolderView: View {
             space: space,
             shortcutPins: shortcutPins,
             childFolders: childFolders,
-            shortcutRestoreGaps: shortcutRestoreGaps
+            shortcutRestoreGaps: shortcutRestoreGaps,
+            tabManager: browserManager.tabManager,
+            liveFolderManager: browserManager.liveFolderManager,
+            currentTab: browserManager.currentTab(for: windowState)
         ) { projection in
             let dragSnapshot = folderDragSnapshot
             let contentProjection = folderContentProjection(
@@ -613,12 +616,24 @@ struct TabFolderView: View {
                 group: group,
                 items: items,
                 spaceId: space.id,
+                tabManager: browserManager.tabManager,
                 isAppKitInteractionEnabled: isInteractive,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
+                onActivateTab: { tab in
+                    browserManager.requestUserTabActivation(tab, in: windowState)
+                },
+                onActivateGroup: { group in
+                    browserManager.focusSplitGroup(group, in: windowState)
+                },
+                onRestoreShortcutSplitMember: { item, group in
+                    browserManager.restoreShortcutSplitMember(item.id, from: group, in: windowState)
+                },
+                onCloseTab: { tab in
+                    browserManager.closeTab(tab, in: windowState)
+                },
                 onPrepareShortcutRestoreGap: onPrepareShortcutRestoreGap,
                 onPerformShortcutRestoreWithPreparedGap: onPerformShortcutRestoreWithPreparedGap
             )
-            .environmentObject(browserManager)
             .environmentObject(splitManager)
         }
     }

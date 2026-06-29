@@ -457,9 +457,11 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
     let shortcutPins: [ShortcutPin]
     let childFolders: [TabFolder]
     let shortcutRestoreGaps: [ShortcutRestoreGap]
+    let tabManager: TabManager
+    let liveFolderManager: SumiLiveFolderManager
+    let currentTab: Tab?
     @ViewBuilder let content: (SidebarFolderViewProjection) -> Content
 
-    @EnvironmentObject private var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
 
     var body: some View {
@@ -470,9 +472,9 @@ struct SidebarFolderViewProjectionReader<Content: View>: View {
                 shortcutPins: shortcutPins,
                 childFolders: childFolders,
                 shortcutRestoreGaps: shortcutRestoreGaps,
-                tabManager: browserManager.tabManager,
-                liveFolderManager: browserManager.liveFolderManager,
-                currentTab: browserManager.currentTab(for: windowState),
+                tabManager: tabManager,
+                liveFolderManager: liveFolderManager,
+                currentTab: currentTab,
                 windowState: windowState
             )
         )
