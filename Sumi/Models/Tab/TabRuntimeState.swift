@@ -2,7 +2,6 @@ import AppKit
 import Combine
 import Foundation
 import ObjectiveC.runtime
-import OSLog
 import SwiftUI
 import WebKit
 
@@ -292,14 +291,6 @@ final class TabWebViewRuntime {
     var webViewConfigurationOverride: WKWebViewConfiguration?
     var webExtensionContextOverride: WKWebExtensionContext?
     var primaryWindowId: UUID?
-    var isSuspended: Bool = false
-    var lastSuspendedURL: URL?
-    var lastSelectedAt: Date?
-    var pageSuspensionVeto: TabPageSuspensionVeto = .none
-    var hasPictureInPictureVideo: Bool = false
-    var isDisplayingPDFDocument: Bool = false
-    var isSuspensionRestoreInProgress: Bool = false
-    var suspensionRestoreTraceState: OSSignpostIntervalState?
     var profileAwaitCancellable: AnyCancellable?
     let reloadPolicyStateOwner = TabReloadPolicyStateOwner()
     var lastWebViewInteractionEvent: NSEvent?

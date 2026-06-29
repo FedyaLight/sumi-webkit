@@ -39,6 +39,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let popupUserActivationTracker = SumiPopupUserActivationTracker()
     let faviconRuntime = TabFaviconRuntime()
     private let webViewRuntime = TabWebViewRuntime()
+    private let suspensionStateOwner = TabSuspensionStateOwner()
 
     // MARK: - Pin State
     var isPinned: Bool = false // Global pinned (essentials)
@@ -328,32 +329,32 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set { webViewRuntime.primaryWindowId = newValue }
     }
     var isSuspended: Bool {
-        get { webViewRuntime.isSuspended }
-        set { webViewRuntime.isSuspended = newValue }
+        get { suspensionStateOwner.isSuspended }
+        set { suspensionStateOwner.isSuspended = newValue }
     }
     var lastSuspendedURL: URL? {
-        get { webViewRuntime.lastSuspendedURL }
-        set { webViewRuntime.lastSuspendedURL = newValue }
+        get { suspensionStateOwner.lastSuspendedURL }
+        set { suspensionStateOwner.lastSuspendedURL = newValue }
     }
     var lastSelectedAt: Date? {
-        get { webViewRuntime.lastSelectedAt }
-        set { webViewRuntime.lastSelectedAt = newValue }
+        get { suspensionStateOwner.lastSelectedAt }
+        set { suspensionStateOwner.lastSelectedAt = newValue }
     }
     var pageSuspensionVeto: TabPageSuspensionVeto {
-        get { webViewRuntime.pageSuspensionVeto }
-        set { webViewRuntime.pageSuspensionVeto = newValue }
+        get { suspensionStateOwner.pageSuspensionVeto }
+        set { suspensionStateOwner.pageSuspensionVeto = newValue }
     }
     var hasPictureInPictureVideo: Bool {
-        get { webViewRuntime.hasPictureInPictureVideo }
-        set { webViewRuntime.hasPictureInPictureVideo = newValue }
+        get { suspensionStateOwner.hasPictureInPictureVideo }
+        set { suspensionStateOwner.hasPictureInPictureVideo = newValue }
     }
     var isDisplayingPDFDocument: Bool {
-        get { webViewRuntime.isDisplayingPDFDocument }
-        set { webViewRuntime.isDisplayingPDFDocument = newValue }
+        get { suspensionStateOwner.isDisplayingPDFDocument }
+        set { suspensionStateOwner.isDisplayingPDFDocument = newValue }
     }
     var isSuspensionRestoreInProgress: Bool {
-        get { webViewRuntime.isSuspensionRestoreInProgress }
-        set { webViewRuntime.isSuspensionRestoreInProgress = newValue }
+        get { suspensionStateOwner.isRestoreInProgress }
+        set { suspensionStateOwner.isRestoreInProgress = newValue }
     }
     var lastWebViewInteractionEvent: NSEvent? {
         get { webViewRuntime.lastWebViewInteractionEvent }
@@ -744,13 +745,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func noteSuspensionAccess(at date: Date = Date()) {
-        lastSelectedAt = date
+        suspensionStateOwner.noteAccess(at: date)
     }
 
     func resetPageSuspensionRuntimeState() {
-        pageSuspensionVeto = .none
-        hasPictureInPictureVideo = false
-        isDisplayingPDFDocument = false
+        suspensionStateOwner.resetRuntimeState()
     }
 
     func safariContentBlockerDesiredAttachmentState(
@@ -1013,36 +1012,15 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func markSuspended(at date: Date = Date()) {
-        objectWillChange.send()
-        isSuspended = true
-        isSuspensionRestoreInProgress = false
-        lastSuspendedURL = url
-        if lastSelectedAt == nil {
-            lastSelectedAt = date
-        }
-        resetPlaybackActivity()
-        loadingState = .idle
-        stateChangeEmitter.postLifecycleDidChange(for: self)
+        suspensionStateOwner.markSuspended(tab: self, at: date)
     }
 
     func beginSuspendedRestoreIfNeeded() {
-        guard isSuspended, !isSuspensionRestoreInProgress else { return }
-        isSuspensionRestoreInProgress = true
-        webViewRuntime.suspensionRestoreTraceState = PerformanceTrace.beginInterval("TabSuspension.restore")
-        PerformanceTrace.emitEvent("TabSuspension.restoreStart")
+        suspensionStateOwner.beginRestoreIfNeeded()
     }
 
     func finishSuspendedRestoreIfNeeded() {
-        guard isSuspensionRestoreInProgress, _webView != nil else { return }
-        objectWillChange.send()
-        isSuspended = false
-        isSuspensionRestoreInProgress = false
-        if let traceState = webViewRuntime.suspensionRestoreTraceState {
-            PerformanceTrace.endInterval("TabSuspension.restore", traceState)
-            webViewRuntime.suspensionRestoreTraceState = nil
-        }
-        PerformanceTrace.emitEvent("TabSuspension.restoreEnd")
-        stateChangeEmitter.postLifecycleDidChange(for: self)
+        suspensionStateOwner.finishRestoreIfNeeded(tab: self, hasWebView: _webView != nil)
     }
 
     func toggleMute() {
