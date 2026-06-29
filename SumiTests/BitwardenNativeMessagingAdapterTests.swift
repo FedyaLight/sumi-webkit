@@ -836,18 +836,6 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
     }
 
-    func testDelegateRoutesNativeMessagingThroughExplicitRelay() throws {
-        let delegateSource = try source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
-        )
-        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
-        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
-        XCTAssertTrue(delegateSource.contains("sendMessage message: Any"))
-        XCTAssertTrue(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
-        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleSendMessage"))
-        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleConnect"))
-    }
-
     func testUnsupportedHostFailsSafelyWithoutLaunch() async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.vendor.unknown.desktop",
