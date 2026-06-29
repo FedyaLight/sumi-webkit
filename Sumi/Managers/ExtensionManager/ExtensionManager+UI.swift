@@ -593,50 +593,11 @@ extension ExtensionManager {
     }
 
     func setActionAnchor(for extensionId: String, anchorView: NSView) {
-        pruneActionAnchors(for: extensionId, keeping: anchorView)
-
-        let anchor = WeakAnchor(view: anchorView, window: anchorView.window)
-        var anchors = actionAnchors[extensionId] ?? []
-
-        if let index = anchors.firstIndex(where: { $0.view === anchorView }) {
-            anchors[index] = anchor
-        } else {
-            anchors.append(anchor)
-        }
-        actionAnchors[extensionId] = anchors
-
-        let viewIdentifier = ObjectIdentifier(anchorView)
-        anchorView.postsFrameChangedNotifications = true
-
-        if anchorObserverTokens[extensionId]?[viewIdentifier] != nil {
-            return
-        }
-
-        let token = NotificationCenter.default.addObserver(
-            forName: NSView.frameDidChangeNotification,
-            object: anchorView,
-            queue: .main
-        ) { [weak self, weak anchorView] _ in
-            guard let anchorView else { return }
-            Task { @MainActor [weak self] in
-                guard let index = self?.actionAnchors[extensionId]?.firstIndex(where: { $0.view === anchorView }) else {
-                    return
-                }
-                self?.actionAnchors[extensionId]?[index] = WeakAnchor(
-                    view: anchorView,
-                    window: anchorView.window
-                )
-                self?.pruneActionAnchors(for: extensionId, keeping: anchorView)
-            }
-        }
-
-        anchorObserverTokens[extensionId, default: [:]][viewIdentifier] = token
-        enforceActionAnchorLimit(for: extensionId, keeping: anchorView)
+        actionAnchorStore.setAnchor(for: extensionId, anchorView: anchorView)
     }
 
     func clearActionAnchors(for extensionId: String) {
-        removeAnchorObservers(for: extensionId)
-        actionAnchors.removeValue(forKey: extensionId)
+        actionAnchorStore.clearAnchors(for: extensionId)
     }
 
     func closeOptionsWindow(for extensionId: String) {
@@ -876,110 +837,6 @@ extension ExtensionManager {
             manager: self,
             completionHandler: completionHandler
         )
-    }
-
-    private func removeAnchorObservers(for extensionId: String) {
-        guard let tokens = anchorObserverTokens.removeValue(forKey: extensionId) else {
-            return
-        }
-
-        for (_, token) in tokens {
-            NotificationCenter.default.removeObserver(token)
-        }
-    }
-
-    private func pruneActionAnchors(
-        for extensionId: String,
-        keeping anchorView: NSView? = nil
-    ) {
-        guard var anchors = actionAnchors[extensionId] else {
-            return
-        }
-
-        anchors.removeAll { anchor in
-            guard let view = anchor.view else { return true }
-            if let anchorView, view === anchorView {
-                return false
-            }
-            return anchor.window == nil || view.window == nil
-        }
-
-        if anchors.isEmpty {
-            actionAnchors.removeValue(forKey: extensionId)
-        } else {
-            actionAnchors[extensionId] = anchors
-        }
-
-        let liveViewIDs = Set(anchors.compactMap { anchor -> ObjectIdentifier? in
-            guard let view = anchor.view else { return nil }
-            return ObjectIdentifier(view)
-        })
-        let keptViewID = anchorView.map(ObjectIdentifier.init)
-
-        guard var tokens = anchorObserverTokens[extensionId] else {
-            return
-        }
-
-        for viewID in Array(tokens.keys) {
-            guard liveViewIDs.contains(viewID) == false,
-                  viewID != keptViewID
-            else {
-                continue
-            }
-            if let token = tokens.removeValue(forKey: viewID) {
-                NotificationCenter.default.removeObserver(token)
-            }
-        }
-
-        if tokens.isEmpty {
-            anchorObserverTokens.removeValue(forKey: extensionId)
-        } else {
-            anchorObserverTokens[extensionId] = tokens
-        }
-    }
-
-    private func enforceActionAnchorLimit(
-        for extensionId: String,
-        keeping anchorView: NSView
-    ) {
-        let maxAnchors = 32
-        guard var anchors = actionAnchors[extensionId],
-              anchors.count > maxAnchors else {
-            return
-        }
-
-        var removedViewIDs: [ObjectIdentifier] = []
-        while anchors.count > maxAnchors {
-            guard let removalIndex = anchors.firstIndex(where: { anchor in
-                guard let view = anchor.view else { return true }
-                return view !== anchorView
-            }) else {
-                break
-            }
-
-            if let view = anchors[removalIndex].view {
-                removedViewIDs.append(ObjectIdentifier(view))
-            }
-            anchors.remove(at: removalIndex)
-        }
-
-        actionAnchors[extensionId] = anchors
-
-        guard var tokens = anchorObserverTokens[extensionId] else {
-            return
-        }
-
-        for viewID in removedViewIDs {
-            if let token = tokens.removeValue(forKey: viewID) {
-                NotificationCenter.default.removeObserver(token)
-            }
-        }
-
-        if tokens.isEmpty {
-            anchorObserverTokens.removeValue(forKey: extensionId)
-        } else {
-            anchorObserverTokens[extensionId] = tokens
-        }
     }
 
     private func showErrorAlert(_ error: ExtensionError) {

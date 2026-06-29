@@ -38,7 +38,7 @@ final class ExtensionRuntimeTeardownOwner {
         manager.cancelNativeMessagingBackgroundWakeTasks()
         manager.backgroundRuntimeStateOwner.cancelAllWakeTasks()
 
-        let uiStateIDs = removeUIState ? Array(manager.actionAnchors.keys) : []
+        let uiStateIDs = removeUIState ? manager.actionAnchorStore.extensionIDs : []
         let loadedIDs = manager.allLoadedExtensionIDs()
             .union(manager.loadedExtensionManifests.keys)
             .union(manager.optionsWindows.keys)
@@ -59,7 +59,7 @@ final class ExtensionRuntimeTeardownOwner {
         manager.extensionErrorObserverTokens.removeAll()
 
         if removeUIState {
-            for extensionId in Array(manager.actionAnchors.keys) {
+            for extensionId in manager.actionAnchorStore.extensionIDs {
                 manager.clearActionAnchors(for: extensionId)
             }
         }

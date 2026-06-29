@@ -193,9 +193,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         normalTabRuntimeBindingOwnerStorage = owner
         return owner
     }
-    var actionAnchors: [String: [WeakAnchor]] = [:]
+    let actionAnchorStore = ExtensionActionAnchorStore()
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()
-    var anchorObserverTokens: [String: [ObjectIdentifier: NSObjectProtocol]] = [:]
     var extensionErrorObserverTokens: [String: NSObjectProtocol] = [:]
     var lastLoggedExtensionErrorFingerprints: [String: String] = [:]
     var optionsWindows: [String: NSWindow] = [:]

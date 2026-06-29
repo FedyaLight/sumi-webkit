@@ -197,22 +197,12 @@ extension ExtensionManager {
         for extensionId: String,
         windowId: UUID
     ) -> NSView? {
-        guard var anchors = actionAnchors[extensionId] else { return nil }
-        anchors.removeAll { $0.view == nil || $0.view?.window == nil }
-        actionAnchors[extensionId] = anchors.isEmpty ? nil : anchors
-
         let targetWindow = browserBridgeContext?.extensionWindowState(for: windowId)?.window
-        if let targetWindow,
-           let match = anchors.first(where: {
-               $0.window === targetWindow && isActionPopupAnchorViewReady($0.view)
-           }),
-           let view = match.view {
-            return view
-        }
-
-        return anchors.first(where: {
-            isActionPopupAnchorViewReady($0.view)
-        })?.view
+        return actionAnchorStore.liveAnchorView(
+            for: extensionId,
+            matching: targetWindow,
+            isReady: { isActionPopupAnchorViewReady($0) }
+        )
     }
 
     private func urlHubFallbackAnchorView(for windowId: UUID) -> NSView? {
