@@ -608,8 +608,7 @@ actor AdblockGenerationGarbageCollector {
             for generationId in generationIdsOnDisk where !preservedGenerationIds.contains(generationId) {
                 let url = await manifestStore.generationDirectoryURL(generationId: generationId)
                 if isInsideAdblockRoot(url) {
-                    try? fileManager.removeItem(at: url)
-                    report.removedFilePaths.append(url.path)
+                    removeItemIfPresent(at: url, report: &report)
                 }
             }
             if activeManifest.previousGenerationId != nil {
@@ -619,8 +618,7 @@ actor AdblockGenerationGarbageCollector {
             if fileManager.fileExists(atPath: stagingRoot.path) {
                 for url in try fileManager.contentsOfDirectory(at: stagingRoot, includingPropertiesForKeys: nil) {
                     if isInsideAdblockRoot(url) {
-                        try? fileManager.removeItem(at: url)
-                        report.removedFilePaths.append(url.path)
+                        removeItemIfPresent(at: url, report: &report)
                     }
                 }
             }
@@ -636,6 +634,16 @@ actor AdblockGenerationGarbageCollector {
         let root = manifestStore.storageRoot.standardizedFileURL.path
         let candidate = url.standardizedFileURL.path
         return candidate == root || candidate.hasPrefix(root + "/")
+    }
+
+    private func removeItemIfPresent(at url: URL, report: inout AdblockGenerationCleanupReport) {
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        do {
+            try fileManager.removeItem(at: url)
+            report.removedFilePaths.append(url.path)
+        } catch {
+            report.diagnostics.append("Failed to remove \(url.path): \(error.localizedDescription)")
+        }
     }
 }
 

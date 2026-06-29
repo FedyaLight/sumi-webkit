@@ -1,4 +1,5 @@
 import CryptoKit
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -367,6 +368,44 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         XCTAssertEqual(Array(staged.keys), ["network-0001"])
     }
 
+    func testAdblockGenerationCleanupReportsOnlyRemovedDirectories() async throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory
+            .appendingPathComponent("SumiProtectionBundleCleanupTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fileManager.removeItem(at: root) }
+        let manifestStore = AdblockUpdateManifestStore(rootDirectory: root)
+        let activeManifest = Self.makeCompiledManifest(
+            bundleId: "active-bundle",
+            generationId: "active-generation",
+            profileId: SumiProtectionBundleProfile.adblock
+        )
+        try await manifestStore.commit(manifest: activeManifest, stagedCompiledShardURLs: [:])
+        let staleGenerationURL = await manifestStore.generationDirectoryURL(generationId: "stale-generation")
+        try fileManager.createDirectory(at: staleGenerationURL, withIntermediateDirectories: true)
+        let staleFileURL = staleGenerationURL.appendingPathComponent("stale.json")
+        try Data("[]".utf8).write(to: staleFileURL)
+        let staleStagingURL = await manifestStore.stagingDirectoryURL()
+            .appendingPathComponent("stale-staging", isDirectory: true)
+        try fileManager.createDirectory(at: staleStagingURL, withIntermediateDirectories: true)
+        try Data("[]".utf8).write(to: staleStagingURL.appendingPathComponent("stale.json"))
+        let collector = AdblockGenerationGarbageCollector(
+            manifestStore: manifestStore,
+            contentRuleListStore: FakeAdblockCleanupRuleListStore(),
+            fileManager: FileManager()
+        )
+
+        let report = await collector.cleanupAfterSuccessfulUpdate()
+
+        let removedPaths = Set(report.removedFilePaths.map(Self.canonicalTemporaryPath))
+        let expectedRemovedPaths = Set([staleGenerationURL, staleStagingURL].map {
+            Self.canonicalTemporaryPath($0.path)
+        })
+        XCTAssertEqual(removedPaths, expectedRemovedPaths)
+        XCTAssertTrue(report.diagnostics.isEmpty)
+        XCTAssertFalse(fileManager.fileExists(atPath: staleGenerationURL.path))
+        XCTAssertFalse(fileManager.fileExists(atPath: staleStagingURL.path))
+    }
+
     private static func makeBundleManifest(
         networkHash: String,
         networkByteSize: Int,
@@ -432,6 +471,10 @@ final class SumiProtectionBundleRemoteUpdateTests: XCTestCase {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    private static func canonicalTemporaryPath(_ path: String) -> String {
+        path.replacingOccurrences(of: "/private/var/", with: "/var/")
     }
 
     private static func signatureEnvelopeData(
@@ -566,6 +609,30 @@ private final class FakeBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating,
     func fetchLatestApprovedBundle(profileId _: String) async throws -> SumiProtectionRemoteBundleFetchResult {
         try result.get()
     }
+}
+
+@MainActor
+private final class FakeAdblockCleanupRuleListStore: SumiContentRuleListCompiling, @unchecked Sendable {
+    func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
+        nil
+    }
+
+    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool {
+        false
+    }
+
+    func compileContentRuleList(
+        forIdentifier identifier: String,
+        encodedContentRuleList: String
+    ) async throws -> WKContentRuleList {
+        throw TestActivationError.failed
+    }
+
+    func availableContentRuleListIdentifiers() async -> [String] {
+        []
+    }
+
+    func removeContentRuleList(forIdentifier identifier: String) async throws {}
 }
 
 private enum TestActivationError: LocalizedError, Equatable {
