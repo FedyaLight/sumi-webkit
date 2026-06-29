@@ -302,12 +302,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
-        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+        let snapshot = makeTransitionSnapshot(
             sourceSpace: source,
             destinationSpace: destination,
             browserManager: browserManager,
             windowState: windowState,
-            splitManager: browserManager.splitManager,
             settings: settings
         )
 
@@ -332,12 +331,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         windowState.currentProfileId = sourceProfileId
         windowState.currentSpaceId = source.id
 
-        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+        let snapshot = makeTransitionSnapshot(
             sourceSpace: source,
             destinationSpace: destination,
             browserManager: browserManager,
             windowState: windowState,
-            splitManager: browserManager.splitManager,
             settings: settings
         )
 
@@ -375,12 +373,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         windowState.currentSpaceId = source.id
         windowState.currentTabId = second.id
 
-        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+        let snapshot = makeTransitionSnapshot(
             sourceSpace: source,
             destinationSpace: destination,
             browserManager: browserManager,
             windowState: windowState,
-            splitManager: browserManager.splitManager,
             settings: settings
         )
 
@@ -409,12 +406,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         windowState.currentSpaceId = source.id
         windowState.currentTabId = unloadedTab.id
 
-        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+        let snapshot = makeTransitionSnapshot(
             sourceSpace: source,
             destinationSpace: destination,
             browserManager: browserManager,
             windowState: windowState,
-            splitManager: browserManager.splitManager,
             settings: settings
         )
 
@@ -524,12 +520,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             currentSpaceId: source.id
         )
 
-        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+        let snapshot = makeTransitionSnapshot(
             sourceSpace: source,
             destinationSpace: destination,
             browserManager: browserManager,
             windowState: windowState,
-            splitManager: browserManager.splitManager,
             settings: settings
         )
 
@@ -561,12 +556,11 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         windowState.currentProfileId = profileId
         windowState.currentSpaceId = source.id
 
-        let snapshot = SpaceSidebarTransitionSnapshotBuilder.make(
+        let snapshot = makeTransitionSnapshot(
             sourceSpace: source,
             destinationSpace: destination,
             browserManager: browserManager,
             windowState: windowState,
-            splitManager: browserManager.splitManager,
             settings: settings
         )
 
@@ -829,6 +823,22 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         let suiteName = "SpaceSidebarTransitionStateTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         return SumiSettingsService(userDefaults: defaults)
+    }
+
+    private func makeTransitionSnapshot(
+        sourceSpace: Space,
+        destinationSpace: Space,
+        browserManager: BrowserManager,
+        windowState: BrowserWindowState,
+        settings: SumiSettingsService
+    ) -> SpaceSidebarTransitionSnapshot {
+        SpaceSidebarTransitionSnapshotBuilder.make(
+            sourceSpace: sourceSpace,
+            destinationSpace: destinationSpace,
+            browserContext: SidebarBrowserContext.live(browserManager: browserManager),
+            windowState: windowState,
+            settings: settings
+        )
     }
 
     private func makeEssentialPin(profileId: UUID, title: String) -> ShortcutPin {

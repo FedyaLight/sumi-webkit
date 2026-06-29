@@ -176,19 +176,18 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     static func make(
         sourceSpace: Space,
         destinationSpace: Space,
-        browserManager: BrowserManager,
+        browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState,
-        splitManager: SplitViewManager,
         settings: SumiSettingsService
     ) -> SpaceSidebarTransitionSnapshot {
         let sourceProfileId = resolvedProfileId(
             for: sourceSpace,
-            browserManager: browserManager,
+            browserContext: browserContext,
             windowState: windowState
         )
         let destinationProfileId = resolvedProfileId(
             for: destinationSpace,
-            browserManager: browserManager,
+            browserContext: browserContext,
             windowState: windowState
         )
         let sharedEssentials = SpaceSidebarEssentialsPlacementPolicy.usesSharedPinnedGrid(
@@ -199,25 +198,22 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         let sourcePage = pageSnapshot(
             for: sourceSpace,
             profileId: sourceProfileId,
-            browserManager: browserManager,
+            browserContext: browserContext,
             windowState: windowState,
-            splitManager: splitManager,
             settings: settings
         )
         let destinationPage = pageSnapshot(
             for: destinationSpace,
             profileId: destinationProfileId,
-            browserManager: browserManager,
+            browserContext: browserContext,
             windowState: windowState,
-            splitManager: splitManager,
             settings: settings
         )
         let stationaryEssentials = sharedEssentials && !windowState.isIncognito
             ? essentialsSnapshot(
                 profileId: sourceProfileId,
-                browserManager: browserManager,
-                windowState: windowState,
-                splitManager: splitManager
+                browserContext: browserContext,
+                windowState: windowState
             )
             : nil
 
@@ -231,17 +227,16 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     private static func pageSnapshot(
         for space: Space,
         profileId: UUID?,
-        browserManager: BrowserManager,
+        browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState,
-        splitManager: SplitViewManager,
         settings: SumiSettingsService
     ) -> SpaceSidebarPageSnapshot {
         let projection = windowState.isIncognito
             ? nil
-            : browserManager.tabManager.launcherProjection(for: space.id, in: windowState.id)
+            : browserContext.tabManager.launcherProjection(for: space.id, in: windowState.id)
         let tabs = windowState.isIncognito
             ? windowState.ephemeralTabs.sorted { $0.index < $1.index }
-            : (projection?.regularTabs ?? browserManager.tabManager.tabs(in: space))
+            : (projection?.regularTabs ?? browserContext.tabManager.tabs(in: space))
         let regularTabs = tabs.map { tabSnapshot($0, currentTabId: windowState.currentTabId) }
 
         return SpaceSidebarPageSnapshot(
@@ -252,21 +247,19 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 ? nil
                 : extensionActionsSnapshot(
                     profileId: profileId,
-                    browserManager: browserManager
+                    browserContext: browserContext
                 ),
             essentials: windowState.isIncognito
                 ? nil
                 : essentialsSnapshot(
                     profileId: profileId,
-                    browserManager: browserManager,
-                    windowState: windowState,
-                    splitManager: splitManager
+                    browserContext: browserContext,
+                    windowState: windowState
                 ),
             pinnedItems: pinnedItemsSnapshot(
                 projection: projection,
-                browserManager: browserManager,
+                browserContext: browserContext,
                 windowState: windowState,
-                splitManager: splitManager
             ),
             regularItems: regularTabs,
             regularTabs: regularTabs,
@@ -279,14 +272,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
     private static func extensionActionsSnapshot(
         profileId: UUID?,
-        browserManager: BrowserManager
+        browserContext: SidebarBrowserContext
     ) -> ExtensionActionGridSnapshot? {
-        let surfaceStore = browserManager.extensionsModule.surfaceStore
-        let slots = browserManager.extensionsModule.orderedPinnedToolbarSlots(
-            enabledExtensions: surfaceStore.enabledExtensions,
-            sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled,
-            profileId: profileId
-        )
+        let surfaceStore = browserContext.extensionSurfaceStore
+        let slots = browserContext.extensionToolbarSlots(surfaceStore.enabledExtensions, profileId)
         guard ExtensionActionPlacement.resolve(totalActions: slots.count) == .sidebarGrid else {
             return nil
         }
@@ -329,28 +318,26 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
     private static func resolvedProfileId(
         for space: Space?,
-        browserManager: BrowserManager,
+        browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState
     ) -> UUID? {
-        space?.profileId ?? windowState.currentProfileId ?? browserManager.currentProfile?.id
+        space?.profileId ?? windowState.currentProfileId ?? browserContext.currentProfile()?.id
     }
 
     private static func essentialsSnapshot(
         profileId: UUID?,
-        browserManager: BrowserManager,
-        windowState: BrowserWindowState,
-        splitManager: SplitViewManager
+        browserContext: SidebarBrowserContext,
+        windowState: BrowserWindowState
     ) -> EssentialsSnapshot {
         EssentialsSnapshot(
             items: profileId == nil
                 ? []
-                : browserManager.tabManager.essentialPins(for: profileId).map {
+                : browserContext.tabManager.essentialPins(for: profileId).map {
                     shortcutSnapshot(
                         for: $0,
-                        liveTab: browserManager.tabManager.shortcutLiveTab(for: $0.id, in: windowState.id),
-                        browserManager: browserManager,
-                        windowState: windowState,
-                        splitManager: splitManager
+                        liveTab: browserContext.tabManager.shortcutLiveTab(for: $0.id, in: windowState.id),
+                        browserContext: browserContext,
+                        windowState: windowState
                     )
                 }
         )
@@ -358,9 +345,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
     private static func pinnedItemsSnapshot(
         projection: TabManager.SpaceLauncherProjection?,
-        browserManager: BrowserManager,
-        windowState: BrowserWindowState,
-        splitManager: SplitViewManager
+        browserContext: SidebarBrowserContext,
+        windowState: BrowserWindowState
     ) -> [SpacePinnedItemSnapshot] {
         guard let projection else { return [] }
 
@@ -374,9 +360,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                             childFoldersByParentId: projection.childFolders,
                             folderPinsByFolderId: projection.folderPins,
                             liveTabsByPinId: projection.liveTabsByPinId,
-                            browserManager: browserManager,
+                            browserContext: browserContext,
                             windowState: windowState,
-                            splitManager: splitManager,
                             visitedFolderIds: []
                         )
                     )
@@ -389,9 +374,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                         shortcutSnapshot(
                             for: pin,
                             liveTab: projection.liveTabsByPinId[pin.id],
-                            browserManager: browserManager,
-                            windowState: windowState,
-                            splitManager: splitManager
+                            browserContext: browserContext,
+                            windowState: windowState
                         )
                     )
                 )
@@ -418,7 +402,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         childFoldersByParentId: [UUID: [TabFolder]],
         folderPinsByFolderId: [UUID: [ShortcutPin]],
         liveTabsByPinId: [UUID: Tab],
-        browserManager: BrowserManager,
         windowState: BrowserWindowState
     ) -> Bool {
         if let currentShortcutPinId = windowState.currentShortcutPinId {
@@ -482,9 +465,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         childFoldersByParentId: [UUID: [TabFolder]],
         folderPinsByFolderId: [UUID: [ShortcutPin]],
         liveTabsByPinId: [UUID: Tab],
-        browserManager: BrowserManager,
+        browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState,
-        splitManager: SplitViewManager,
         visitedFolderIds: Set<UUID>
     ) -> SpaceFolderSnapshot {
         var nextVisited = visitedFolderIds
@@ -505,9 +487,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 childFoldersByParentId: childFoldersByParentId,
                 folderPinsByFolderId: folderPinsByFolderId,
                 liveTabsByPinId: liveTabsByPinId,
-                browserManager: browserManager,
+                browserContext: browserContext,
                 windowState: windowState,
-                splitManager: splitManager,
                 visitedFolderIds: nextVisited
             )
             hasActiveSelection = projectionState.hasActiveProjection || childSnapshots.containsActiveSelection
@@ -518,9 +499,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     shortcutSnapshot(
                         for: pin,
                         liveTab: liveTabsByPinId[pin.id],
-                        browserManager: browserManager,
-                        windowState: windowState,
-                        splitManager: splitManager
+                        browserContext: browserContext,
+                        windowState: windowState
                     )
                 )
             }
@@ -529,7 +509,6 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 childFoldersByParentId: childFoldersByParentId,
                 folderPinsByFolderId: folderPinsByFolderId,
                 liveTabsByPinId: liveTabsByPinId,
-                browserManager: browserManager,
                 windowState: windowState
             )
         }
@@ -561,9 +540,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         childFoldersByParentId: [UUID: [TabFolder]],
         folderPinsByFolderId: [UUID: [ShortcutPin]],
         liveTabsByPinId: [UUID: Tab],
-        browserManager: BrowserManager,
+        browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState,
-        splitManager: SplitViewManager,
         visitedFolderIds: Set<UUID>
     ) -> [SpacePinnedItemSnapshot] {
         (
@@ -577,9 +555,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                             childFoldersByParentId: childFoldersByParentId,
                             folderPinsByFolderId: folderPinsByFolderId,
                             liveTabsByPinId: liveTabsByPinId,
-                            browserManager: browserManager,
+                            browserContext: browserContext,
                             windowState: windowState,
-                            splitManager: splitManager,
                             visitedFolderIds: visitedFolderIds
                         )
                     )
@@ -593,9 +570,8 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                         shortcutSnapshot(
                             for: pin,
                             liveTab: liveTabsByPinId[pin.id],
-                            browserManager: browserManager,
-                            windowState: windowState,
-                            splitManager: splitManager
+                            browserContext: browserContext,
+                            windowState: windowState
                         )
                     )
                 )
@@ -635,21 +611,20 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     private static func shortcutSnapshot(
         for pin: ShortcutPin,
         liveTab: Tab?,
-        browserManager: BrowserManager,
-        windowState: BrowserWindowState,
-        splitManager: SplitViewManager
+        browserContext: SidebarBrowserContext,
+        windowState: BrowserWindowState
     ) -> SpaceShortcutSnapshot {
-        let presentationState = browserManager.tabManager.shortcutPresentationState(
+        let presentationState = browserContext.tabManager.shortcutPresentationState(
             for: pin,
             in: windowState
         )
-        let isInVisibleSplit = liveTab.map { splitManager.isTabVisibleInSplit($0.id, in: windowState.id) } == true
-        let essentialRuntimeState = browserManager.tabManager.essentialRuntimeState(
+        let isInVisibleSplit = liveTab.map { browserContext.splitManager.isTabVisibleInSplit($0.id, in: windowState.id) } == true
+        let essentialRuntimeState = browserContext.tabManager.essentialRuntimeState(
             for: pin,
             in: windowState,
-            splitManager: splitManager
+            splitManager: browserContext.splitManager
         )
-        let isSplitPlaceholder = browserManager.tabManager.splitGroup(containingPinId: pin.id) != nil
+        let isSplitPlaceholder = browserContext.tabManager.splitGroup(containingPinId: pin.id) != nil
 
         return SpaceShortcutSnapshot(
             id: pin.id,
@@ -657,7 +632,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             icon: shortcutIcon(
                 for: pin,
                 liveTab: liveTab,
-                browserManager: browserManager,
+                browserContext: browserContext,
                 windowState: windowState
             ),
             presentationState: presentationState,
@@ -704,7 +679,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     private static func shortcutIcon(
         for pin: ShortcutPin,
         liveTab: Tab?,
-        browserManager: BrowserManager,
+        browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState
     ) -> SpaceSidebarSnapshotIcon {
         if let iconAsset = pin.iconAsset {
@@ -714,7 +689,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             return .system(SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
         }
 
-        let faviconPartition = browserManager.tabManager.resolvedFaviconPartition(
+        let faviconPartition = browserContext.tabManager.resolvedFaviconPartition(
             for: pin,
             currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
         )

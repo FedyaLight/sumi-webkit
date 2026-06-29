@@ -838,9 +838,8 @@ struct SpacesSideBarView: View {
         transitionSnapshot = SpaceSidebarTransitionSnapshotBuilder.make(
             sourceSpace: sourceSpace,
             destinationSpace: destinationSpace,
-            browserManager: browserManager,
+            browserContext: sidebarBrowserContext,
             windowState: windowState,
-            splitManager: browserManager.splitManager,
             settings: sumiSettings
         )
     }

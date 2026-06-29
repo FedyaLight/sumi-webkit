@@ -13,6 +13,14 @@ final class ExtensionActionAnchorStore {
         Array(anchorsByExtensionID.keys)
     }
 
+    var isEmpty: Bool {
+        anchorsByExtensionID.isEmpty
+    }
+
+    func anchorCount(for extensionId: String) -> Int {
+        anchorsByExtensionID[extensionId]?.count ?? 0
+    }
+
     func setAnchor(for extensionId: String, anchorView: NSView) {
         pruneAnchors(for: extensionId, keeping: anchorView)
 

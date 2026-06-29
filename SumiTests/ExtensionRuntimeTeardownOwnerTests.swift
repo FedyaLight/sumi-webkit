@@ -55,9 +55,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         manager.lastLoggedExtensionErrorFingerprints["alpha"] = "fingerprint"
         manager.extensionPageUserContentControllersByProfile[profile.id] =
             WKUserContentController()
-        manager.actionAnchors["alpha"] = [
-            WeakAnchor(view: anchorView, window: nil)
-        ]
+        manager.actionAnchorStore.setAnchor(for: "alpha", anchorView: anchorView)
         manager.nativeMessagingPortRegistry.nativeMessagePortExtensionIDs[nativePortKey] = "alpha"
         manager.nativeMessagingPortRegistry.nativeMessagePortProfileIDs[nativePortKey] = profile.id
 
@@ -85,7 +83,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         XCTAssertTrue(manager.runtimeMetricsByExtensionID.isEmpty)
         XCTAssertTrue(manager.lastLoggedExtensionErrorFingerprints.isEmpty)
         XCTAssertTrue(manager.extensionPageUserContentControllersByProfile.isEmpty)
-        XCTAssertTrue(manager.actionAnchors.isEmpty)
+        XCTAssertTrue(manager.actionAnchorStore.isEmpty)
         XCTAssertTrue(manager.nativeMessagingPortRegistry.nativeMessagePortExtensionIDs.isEmpty)
         XCTAssertTrue(manager.nativeMessagingPortRegistry.nativeMessagePortProfileIDs.isEmpty)
         XCTAssertFalse(manager.hasLoadedUserExtensionRuntime)
@@ -114,9 +112,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         manager.runtimeState = .ready
         manager.extensionRuntimeAllowsWithoutEnabledExtensions = true
         manager.loadedExtensionManifests["alpha"] = ["manifest_version": 3]
-        manager.actionAnchors["alpha"] = [
-            WeakAnchor(view: anchorView, window: nil)
-        ]
+        manager.actionAnchorStore.setAnchor(for: "alpha", anchorView: anchorView)
 
         manager.tearDownExtensionRuntime(
             reason: "ExtensionRuntimeTeardownOwnerTests.partial",
@@ -133,7 +129,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         XCTAssertEqual(manager.runtimeState, .ready)
         XCTAssertTrue(manager.extensionsLoaded)
         XCTAssertTrue(manager.loadedExtensionManifests.isEmpty)
-        XCTAssertEqual(manager.actionAnchors["alpha"]?.count, 1)
+        XCTAssertEqual(manager.actionAnchorStore.anchorCount(for: "alpha"), 1)
     }
 
     private func makeManager(

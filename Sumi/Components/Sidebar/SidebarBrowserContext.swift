@@ -19,12 +19,14 @@ struct SidebarBrowserContext {
     let splitManager: SplitViewManager
     let downloadManager: DownloadManager
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
+    let extensionSurfaceStore: BrowserExtensionSurfaceStore
     let presentationActions: SidebarBrowserPresentationActions
     let tabStructuralRevision: () -> UInt
     let isTransitioningProfile: () -> Bool
     let currentProfile: () -> Profile?
     let currentTab: (BrowserWindowState) -> Tab?
     let space: (UUID?) -> Space?
+    let extensionToolbarSlots: ([InstalledExtension], UUID?) -> [PinnedToolbarSlot]
     let savedSidebarWidth: (BrowserWindowState) -> CGFloat
     let requestUserTabActivation: (Tab, BrowserWindowState) -> Void
     let closeTab: (Tab, BrowserWindowState) -> Void
@@ -48,6 +50,7 @@ struct SidebarBrowserContext {
             splitManager: browserManager.splitManager,
             downloadManager: browserManager.downloadManager,
             downloadsPopoverPresenter: browserManager.downloadsPopoverPresenter,
+            extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { [weak browserManager] pin, windowState, themeContext, source in
                     browserManager?.showShortcutEditor(
@@ -102,6 +105,14 @@ struct SidebarBrowserContext {
             },
             space: { [weak browserManager] spaceId in
                 browserManager?.space(for: spaceId)
+            },
+            extensionToolbarSlots: { [weak browserManager] enabledExtensions, profileId in
+                guard let browserManager else { return [] }
+                return browserManager.extensionsModule.orderedPinnedToolbarSlots(
+                    enabledExtensions: enabledExtensions,
+                    sumiScriptsManagerEnabled: browserManager.userscriptsModule.isEnabled,
+                    profileId: profileId
+                )
             },
             savedSidebarWidth: { [weak browserManager] windowState in
                 browserManager?.getSavedSidebarWidth(for: windowState) ?? BrowserWindowState.sidebarDefaultWidth
