@@ -5,15 +5,16 @@ import SwiftUI
 /// Publishes geometry into `SidebarDragState` on the next main run loop turn so SwiftUI does not emit
 /// "Publishing changes from within view updates" during layout/preference application.
 @MainActor
-private enum SidebarDragStateDeferredGeometry {
+enum SidebarDragStateDeferredGeometry {
     static func setPageGeometry(
+        dragState: SidebarDragState,
         spaceId: UUID,
         profileId: UUID?,
         renderMode: SidebarPageGeometryRenderMode,
         generation: Int,
         _ frame: CGRect?
     ) {
-        SidebarDragState.shared.schedulePageGeometry(
+        dragState.schedulePageGeometry(
             spaceId: spaceId,
             profileId: profileId,
             frame: frame,
@@ -23,12 +24,13 @@ private enum SidebarDragStateDeferredGeometry {
     }
 
     static func setSectionFrame(
+        dragState: SidebarDragState,
         spaceId: UUID,
         section: SidebarSectionPrefix,
         generation: Int,
         _ frame: CGRect?
     ) {
-        SidebarDragState.shared.scheduleSectionFrame(
+        dragState.scheduleSectionFrame(
             spaceId: spaceId,
             section: section,
             frame: frame,
@@ -37,6 +39,7 @@ private enum SidebarDragStateDeferredGeometry {
     }
 
     static func updateFolderDropTarget(
+        dragState: SidebarDragState,
         isActive: Bool,
         folderId: UUID,
         spaceId: UUID,
@@ -48,7 +51,7 @@ private enum SidebarDragStateDeferredGeometry {
         frame: CGRect,
         generation: Int
     ) {
-        SidebarDragState.shared.scheduleFolderDropTarget(
+        dragState.scheduleFolderDropTarget(
             folderId: folderId,
             spaceId: spaceId,
             parentFolderId: parentFolderId,
@@ -62,8 +65,13 @@ private enum SidebarDragStateDeferredGeometry {
         )
     }
 
-    static func removeFolderDropTarget(folderId: UUID, region: SidebarFolderDragRegion, generation: Int) {
-        SidebarDragState.shared.scheduleFolderDropTarget(
+    static func removeFolderDropTarget(
+        dragState: SidebarDragState,
+        folderId: UUID,
+        region: SidebarFolderDragRegion,
+        generation: Int
+    ) {
+        dragState.scheduleFolderDropTarget(
             folderId: folderId,
             spaceId: UUID(),
             parentFolderId: nil,
@@ -78,6 +86,7 @@ private enum SidebarDragStateDeferredGeometry {
     }
 
     static func updateTopLevelPinnedItemTarget(
+        dragState: SidebarDragState,
         isActive: Bool,
         itemId: UUID,
         spaceId: UUID,
@@ -85,7 +94,7 @@ private enum SidebarDragStateDeferredGeometry {
         frame: CGRect,
         generation: Int
     ) {
-        SidebarDragState.shared.scheduleTopLevelPinnedItemTarget(
+        dragState.scheduleTopLevelPinnedItemTarget(
             itemId: itemId,
             spaceId: spaceId,
             topLevelIndex: topLevelIndex,
@@ -95,8 +104,12 @@ private enum SidebarDragStateDeferredGeometry {
         )
     }
 
-    static func removeTopLevelPinnedItemTarget(itemId: UUID, generation: Int) {
-        SidebarDragState.shared.scheduleTopLevelPinnedItemTarget(
+    static func removeTopLevelPinnedItemTarget(
+        dragState: SidebarDragState,
+        itemId: UUID,
+        generation: Int
+    ) {
+        dragState.scheduleTopLevelPinnedItemTarget(
             itemId: itemId,
             spaceId: UUID(),
             topLevelIndex: 0,
@@ -107,6 +120,7 @@ private enum SidebarDragStateDeferredGeometry {
     }
 
     static func updateFolderChildDropTarget(
+        dragState: SidebarDragState,
         isActive: Bool,
         folderId: UUID,
         childId: UUID,
@@ -114,7 +128,7 @@ private enum SidebarDragStateDeferredGeometry {
         frame: CGRect,
         generation: Int
     ) {
-        SidebarDragState.shared.scheduleFolderChildDropTarget(
+        dragState.scheduleFolderChildDropTarget(
             folderId: folderId,
             childId: childId,
             index: index,
@@ -124,8 +138,12 @@ private enum SidebarDragStateDeferredGeometry {
         )
     }
 
-    static func removeFolderChildDropTarget(childId: UUID, generation: Int) {
-        SidebarDragState.shared.scheduleFolderChildDropTarget(
+    static func removeFolderChildDropTarget(
+        dragState: SidebarDragState,
+        childId: UUID,
+        generation: Int
+    ) {
+        dragState.scheduleFolderChildDropTarget(
             folderId: UUID(),
             childId: childId,
             index: 0,
@@ -135,8 +153,14 @@ private enum SidebarDragStateDeferredGeometry {
         )
     }
 
-    static func updateRegularListHitTarget(spaceId: UUID, frame: CGRect, itemCount: Int, generation: Int) {
-        SidebarDragState.shared.scheduleRegularListHitTarget(
+    static func updateRegularListHitTarget(
+        dragState: SidebarDragState,
+        spaceId: UUID,
+        frame: CGRect,
+        itemCount: Int,
+        generation: Int
+    ) {
+        dragState.scheduleRegularListHitTarget(
             spaceId: spaceId,
             frame: frame,
             itemCount: itemCount,
@@ -144,8 +168,12 @@ private enum SidebarDragStateDeferredGeometry {
         )
     }
 
-    static func removeRegularListHitTarget(spaceId: UUID, generation: Int) {
-        SidebarDragState.shared.scheduleRegularListHitTarget(
+    static func removeRegularListHitTarget(
+        dragState: SidebarDragState,
+        spaceId: UUID,
+        generation: Int
+    ) {
+        dragState.scheduleRegularListHitTarget(
             spaceId: spaceId,
             frame: nil,
             itemCount: 0,
@@ -154,6 +182,7 @@ private enum SidebarDragStateDeferredGeometry {
     }
 
     static func updateEssentialsLayoutMetrics(
+        dragState: SidebarDragState,
         spaceId: UUID,
         profileId: UUID?,
         frame: CGRect,
@@ -171,7 +200,7 @@ private enum SidebarDragStateDeferredGeometry {
         maxDropRowCount: Int,
         generation: Int
     ) {
-        SidebarDragState.shared.scheduleEssentialsLayoutMetrics(
+        dragState.scheduleEssentialsLayoutMetrics(
             spaceId: spaceId,
             profileId: profileId,
             frame: frame,
@@ -191,8 +220,12 @@ private enum SidebarDragStateDeferredGeometry {
         )
     }
 
-    static func removeEssentialsLayoutMetrics(spaceId: UUID, generation: Int) {
-        SidebarDragState.shared.scheduleEssentialsLayoutMetrics(
+    static func removeEssentialsLayoutMetrics(
+        dragState: SidebarDragState,
+        spaceId: UUID,
+        generation: Int
+    ) {
+        dragState.scheduleEssentialsLayoutMetrics(
             spaceId: spaceId,
             profileId: nil,
             frame: nil,
@@ -219,7 +252,7 @@ struct SidebarPageGeometryReporter: ViewModifier {
     let renderMode: SidebarPageGeometryRenderMode
     let generation: Int
     let isEnabled: Bool
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     func body(content: Content) -> some View {
         let shouldReport = isEnabled && renderMode == .interactive
@@ -230,6 +263,7 @@ struct SidebarPageGeometryReporter: ViewModifier {
                         Color.clear
                             .onChange(of: geo.frame(in: .global)) { _, newFrame in
                                 SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     profileId: profileId,
                                     renderMode: renderMode,
@@ -239,6 +273,7 @@ struct SidebarPageGeometryReporter: ViewModifier {
                             }
                             .onChange(of: generation) { _, newGeneration in
                                 SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     profileId: profileId,
                                     renderMode: renderMode,
@@ -248,6 +283,7 @@ struct SidebarPageGeometryReporter: ViewModifier {
                             }
                             .onChange(of: dragState.geometryRevision) { _, _ in
                                 SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     profileId: profileId,
                                     renderMode: renderMode,
@@ -257,6 +293,7 @@ struct SidebarPageGeometryReporter: ViewModifier {
                             }
                             .onAppear {
                                 SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     profileId: profileId,
                                     renderMode: renderMode,
@@ -266,6 +303,7 @@ struct SidebarPageGeometryReporter: ViewModifier {
                             }
                             .onDisappear {
                                 SidebarDragStateDeferredGeometry.setPageGeometry(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     profileId: profileId,
                                     renderMode: renderMode,
@@ -284,7 +322,7 @@ struct SidebarSectionGeometryReporter: ViewModifier {
     let section: SidebarSectionPrefix
     let generation: Int
     let isEnabled: Bool
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     func body(content: Content) -> some View {
         content
@@ -294,6 +332,7 @@ struct SidebarSectionGeometryReporter: ViewModifier {
                         Color.clear
                             .onChange(of: geo.frame(in: .global)) { _, newFrame in
                                 SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     section: section,
                                     generation: generation,
@@ -302,6 +341,7 @@ struct SidebarSectionGeometryReporter: ViewModifier {
                             }
                             .onChange(of: generation) { _, newGeneration in
                                 SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     section: section,
                                     generation: newGeneration,
@@ -310,6 +350,7 @@ struct SidebarSectionGeometryReporter: ViewModifier {
                             }
                             .onChange(of: dragState.geometryRevision) { _, _ in
                                 SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     section: section,
                                     generation: generation,
@@ -318,6 +359,7 @@ struct SidebarSectionGeometryReporter: ViewModifier {
                             }
                             .onAppear {
                                 SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     section: section,
                                     generation: generation,
@@ -326,6 +368,7 @@ struct SidebarSectionGeometryReporter: ViewModifier {
                             }
                             .onDisappear {
                                 SidebarDragStateDeferredGeometry.setSectionFrame(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     section: section,
                                     generation: generation,
@@ -504,7 +547,7 @@ struct SidebarFolderDropGeometryReporter: ViewModifier {
     let region: SidebarFolderDragRegion
     let isActive: Bool
     let generation: Int
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     func body(content: Content) -> some View {
         let shouldReport = isActive
@@ -545,6 +588,7 @@ struct SidebarFolderDropGeometryReporter: ViewModifier {
                             }
                             .onDisappear {
                                 SidebarDragStateDeferredGeometry.removeFolderDropTarget(
+                                    dragState: dragState,
                                     folderId: folderId,
                                     region: region,
                                     generation: generation
@@ -557,6 +601,7 @@ struct SidebarFolderDropGeometryReporter: ViewModifier {
 
     private func update(frame: CGRect) {
         SidebarDragStateDeferredGeometry.updateFolderDropTarget(
+            dragState: dragState,
             isActive: isActive,
             folderId: folderId,
             spaceId: spaceId,
@@ -577,7 +622,7 @@ struct SidebarTopLevelPinnedItemGeometryReporter: ViewModifier {
     let topLevelIndex: Int
     let generation: Int
     let isActive: Bool
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     func body(content: Content) -> some View {
         let shouldReport = isActive
@@ -604,6 +649,7 @@ struct SidebarTopLevelPinnedItemGeometryReporter: ViewModifier {
                             }
                             .onDisappear {
                                 SidebarDragStateDeferredGeometry.removeTopLevelPinnedItemTarget(
+                                    dragState: dragState,
                                     itemId: itemId,
                                     generation: generation
                                 )
@@ -615,6 +661,7 @@ struct SidebarTopLevelPinnedItemGeometryReporter: ViewModifier {
 
     private func update(frame: CGRect) {
         SidebarDragStateDeferredGeometry.updateTopLevelPinnedItemTarget(
+            dragState: dragState,
             isActive: isActive,
             itemId: itemId,
             spaceId: spaceId,
@@ -632,7 +679,7 @@ struct SidebarFolderChildDropGeometryReporter: ViewModifier {
     let index: Int
     let generation: Int
     let isActive: Bool
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     func body(content: Content) -> some View {
         let shouldReport = isActive
@@ -659,6 +706,7 @@ struct SidebarFolderChildDropGeometryReporter: ViewModifier {
                             }
                             .onDisappear {
                                 SidebarDragStateDeferredGeometry.removeFolderChildDropTarget(
+                                    dragState: dragState,
                                     childId: childId,
                                     generation: generation
                                 )
@@ -670,6 +718,7 @@ struct SidebarFolderChildDropGeometryReporter: ViewModifier {
 
     private func update(frame: CGRect) {
         SidebarDragStateDeferredGeometry.updateFolderChildDropTarget(
+            dragState: dragState,
             isActive: isActive,
             folderId: folderId,
             childId: childId,
@@ -685,7 +734,7 @@ struct SidebarRegularListHitGeometryReporter: ViewModifier {
     let itemCount: Int
     let generation: Int
     let isEnabled: Bool
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     func body(content: Content) -> some View {
         let shouldReport = isEnabled
@@ -712,6 +761,7 @@ struct SidebarRegularListHitGeometryReporter: ViewModifier {
                             }
                             .onDisappear {
                                 SidebarDragStateDeferredGeometry.removeRegularListHitTarget(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     generation: generation
                                 )
@@ -724,6 +774,7 @@ struct SidebarRegularListHitGeometryReporter: ViewModifier {
     private func update(frame: CGRect) {
         if isEnabled {
             SidebarDragStateDeferredGeometry.updateRegularListHitTarget(
+                dragState: dragState,
                 spaceId: spaceId,
                 frame: frame,
                 itemCount: itemCount,
@@ -731,6 +782,7 @@ struct SidebarRegularListHitGeometryReporter: ViewModifier {
             )
         } else {
             SidebarDragStateDeferredGeometry.removeRegularListHitTarget(
+                dragState: dragState,
                 spaceId: spaceId,
                 generation: generation
             )
@@ -792,7 +844,7 @@ struct SidebarEssentialsLayoutGeometryReporter: ViewModifier {
     let canAcceptDrop: Bool
     let generation: Int
     let isEnabled: Bool
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     func body(content: Content) -> some View {
         let signature = geometrySignature
@@ -817,6 +869,7 @@ struct SidebarEssentialsLayoutGeometryReporter: ViewModifier {
                             }
                             .onDisappear {
                                 SidebarDragStateDeferredGeometry.removeEssentialsLayoutMetrics(
+                                    dragState: dragState,
                                     spaceId: spaceId,
                                     generation: generation
                                 )
@@ -865,6 +918,7 @@ struct SidebarEssentialsLayoutGeometryReporter: ViewModifier {
                 )
             }
             SidebarDragStateDeferredGeometry.updateEssentialsLayoutMetrics(
+                dragState: dragState,
                 spaceId: spaceId,
                 profileId: profileId,
                 frame: frame,
@@ -884,6 +938,7 @@ struct SidebarEssentialsLayoutGeometryReporter: ViewModifier {
             )
         } else {
             SidebarDragStateDeferredGeometry.removeEssentialsLayoutMetrics(
+                dragState: dragState,
                 spaceId: spaceId,
                 generation: generation
             )

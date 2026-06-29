@@ -6,6 +6,26 @@ import XCTest
 
 @MainActor
 final class SidebarDragCurrentContextTests: XCTestCase {
+    func testDeferredGeometryWriterUsesInjectedDragState() {
+        let injectedState = SidebarDragState()
+        let sharedState = SidebarDragState.shared
+        let spaceId = UUID()
+        let frame = CGRect(x: 10, y: 20, width: 30, height: 40)
+        let key = SidebarSectionGeometryKey(spaceId: spaceId, section: .spaceRegular)
+
+        SidebarDragStateDeferredGeometry.setSectionFrame(
+            dragState: injectedState,
+            spaceId: spaceId,
+            section: .spaceRegular,
+            generation: injectedState.activeGeometryGeneration,
+            frame
+        )
+        injectedState.flushDeferredGeometryForDragStart()
+
+        XCTAssertEqual(injectedState.geometrySnapshot.sectionFramesBySpace[key], frame)
+        XCTAssertNil(sharedState.geometrySnapshot.sectionFramesBySpace[key])
+    }
+
     func testEssentialsNativeDragPreviewUsesActualSourceTileSize() {
         let sourceSize = CGSize(width: 132, height: 56)
         let descriptor = SumiNativeDragPreviewDescriptor(
