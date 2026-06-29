@@ -19,7 +19,7 @@ struct FloatingBarView: View {
     @FocusState private var isSearchFocused: Bool
     @State private var searchModeConfirmation: FloatingBarSearchModeConfirmation?
     @State private var searchModeConfirmationProgress: CGFloat = 1
-    @State private var floatingBarCardView: NSView?
+    @State private var interactionCommitOwner = FloatingBarInteractionCommitOwner()
     @State private var outsideClickMonitor = ChromeLocalEventMonitor()
     @State private var focusRequestOwner = FloatingBarFocusRequestOwner()
     @State private var searchFocusRequestID = 0
@@ -299,9 +299,7 @@ struct FloatingBarView: View {
                         )
                         .background(
                             FloatingBarCardBoundsReader { view in
-                                if floatingBarCardView !== view {
-                                    floatingBarCardView = view
-                                }
+                                interactionCommitOwner.updateCardView(view)
                             }
                         )
                         .accessibilityElement(children: .contain)
@@ -396,6 +394,7 @@ struct FloatingBarView: View {
         if newVisible {
             let windowID = windowState.id
             focusRequestOwner.beginSession(windowID: windowID)
+            interactionCommitOwner.beginSession(windowID: windowID)
             installOutsideClickMonitorIfNeeded()
             browserContext.configureSearchManager(searchSession.searchManager)
 
@@ -410,6 +409,7 @@ struct FloatingBarView: View {
             }
         } else {
             focusRequestOwner.endSession()
+            interactionCommitOwner.endSession()
             removeOutsideClickMonitor()
             isSearchFocused = false
             searchSession.resetForHiddenBar()
@@ -485,16 +485,16 @@ struct FloatingBarView: View {
             guard !query.isEmpty else { return }
             let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
             let navigatesCurrentTab = browserContext.floatingBarCommitNavigatesCurrentTab(in: windowState)
-            searchSession.text = ""
-            searchSession.activeSiteSearch = nil
-            searchSession.selectedSuggestionIndex = -1
-            DispatchQueue.main.async {
+            guard interactionCommitOwner.requestCommit(in: windowState, perform: {
                 browserContext.commitFloatingBarNavigation(
                     to: navigateURL,
                     in: windowState,
                     navigatesCurrentTab: navigatesCurrentTab
                 )
-            }
+            }) else { return }
+            searchSession.text = ""
+            searchSession.activeSiteSearch = nil
+            searchSession.selectedSuggestionIndex = -1
             return
         }
 
@@ -516,16 +516,16 @@ struct FloatingBarView: View {
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion) {
         let navigatesCurrentTab = browserContext.floatingBarCommitNavigatesCurrentTab(in: windowState)
-        searchSession.text = ""
-        searchSession.activeSiteSearch = nil
-        searchSession.selectedSuggestionIndex = -1
-        DispatchQueue.main.async {
+        guard interactionCommitOwner.requestCommit(in: windowState, perform: {
             browserContext.commitFloatingBarSuggestion(
                 suggestion,
                 in: windowState,
                 navigatesCurrentTab: navigatesCurrentTab
             )
-        }
+        }) else { return }
+        searchSession.text = ""
+        searchSession.activeSiteSearch = nil
+        searchSession.selectedSuggestionIndex = -1
     }
 
     private func resolvedSiteSearchURL(site: SumiSearchEngine, query: String) -> URL {
@@ -546,13 +546,12 @@ struct FloatingBarView: View {
         outsideClickMonitor.install(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         ) { event in
-            FloatingBarOutsideClickRouting.monitorResult(
+            interactionCommitOwner.monitorResult(
                 for: event,
-                isFloatingBarVisible: windowState.isFloatingBarVisible,
-                cardView: floatingBarCardView
+                isFloatingBarVisible: windowState.isFloatingBarVisible
             ) {
-                // Close asynchronously and return the original event so sidebar/browser chrome handles this click.
-                DispatchQueue.main.async {
+                // Defer the state mutation and return the original event so sidebar/browser chrome handles this click.
+                interactionCommitOwner.requestDismiss(in: windowState) {
                     windowState.window?.makeFirstResponder(nil)
                     isSearchFocused = false
                     browserContext.dismissFloatingBar(in: windowState, preserveDraft: true)

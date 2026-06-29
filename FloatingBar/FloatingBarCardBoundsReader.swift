@@ -18,15 +18,11 @@ struct FloatingBarCardBoundsReader: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = FloatingBarCardBoundsProbeView()
-        DispatchQueue.main.async {
-            onResolve(view)
-        }
+        onResolve(view)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            onResolve(nsView)
-        }
+        onResolve(nsView)
     }
 }

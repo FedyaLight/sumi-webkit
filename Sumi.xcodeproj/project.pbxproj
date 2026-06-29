@@ -56,6 +56,7 @@
 				FloatingBarCardBoundsReader.swift,
 				FloatingBarFocusRequestOwner.swift,
 				FloatingBarInlineCompletionTextField.swift,
+				FloatingBarInteractionCommitOwner.swift,
 				FloatingBarLayoutPolicy.swift,
 				FloatingBarMotionPolicy.swift,
 				FloatingBarOutsideClickRouting.swift,
