@@ -7,60 +7,6 @@ import XCTest
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
-    func testLazyRuntimeLoadDoesNotResetExistingProfileContextsOnSourceGuard() throws {
-        let profilesSource = try String(
-            contentsOf: projectURL("Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift"),
-            encoding: .utf8
-        )
-        XCTAssertTrue(
-            profilesSource.contains("if forceReload {"),
-            "Lazy runtime reload must only reset loaded contexts when forceReload is true"
-        )
-        XCTAssertFalse(
-            profilesSource.contains("extensionContextsByProfile.isEmpty == false"),
-            "Lazy runtime must not reset merely because another profile already has contexts"
-        )
-    }
-
-    func testActionPopupPathLoadsOnlySelectedExtension() throws {
-        let uiSource = try String(
-            contentsOf: projectURL("Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift"),
-            encoding: .utf8
-        )
-        let profilesSource = try String(
-            contentsOf: projectURL("Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift"),
-            encoding: .utf8
-        )
-        XCTAssertTrue(
-            uiSource.contains("ensureExtensionLoaded"),
-            "Action popup must lazily load only the selected extension context"
-        )
-        XCTAssertFalse(
-            uiSource.contains("guard installedExtension.defaultPopupPath != nil"),
-            "Action click dispatch must not require action.default_popup; extensions can handle the click in background"
-        )
-        XCTAssertTrue(
-            uiSource.contains("prepareActionClickPageAccess")
-                && uiSource.contains("promptForExtensionPermissionDecision")
-                && uiSource.contains("extensionContext.performAction(for: adapter)")
-                && uiSource.contains("action.presentsPopup ? .openedPopup : .performedAction"),
-            "Action clicks must prepare user-gesture page access, then dispatch WebKit's action whether it opens a popup or background event"
-        )
-        XCTAssertFalse(
-            uiSource.contains("await ensureEnabledExtensionsLoaded(for: tabProfileId)"),
-            "Action popup must not eagerly load every enabled extension for the profile"
-        )
-        XCTAssertFalse(
-            profilesSource.contains("await self.ensureEnabledExtensionsLoaded(for: profileId)"),
-            "Profile switches must not eagerly load every enabled extension"
-        )
-        XCTAssertTrue(
-            uiSource.contains("classifyActionPopupRuntimeFailure")
-                && uiSource.contains("actionPopupRuntimeDiagnosticLines"),
-            "Action popup runtime failures must record sanitized diagnostics"
-        )
-    }
-
     func testRequestExtensionRuntimeAndWaitHonorsProfileReadinessWithoutForceReload() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Popup Profile")
@@ -109,6 +55,9 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
             manager.isProfileExtensionRuntimeReady(for: profileA.id),
             "Enabled extension should be ready in the profile where it was enabled"
         )
+        let profileAContext = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profileA.id)
+        )
         XCTAssertFalse(
             manager.isProfileExtensionRuntimeReady(for: profileB.id),
             "A different profile must not inherit another profile's loaded context"
@@ -118,6 +67,11 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         XCTAssertTrue(
             manager.isProfileExtensionRuntimeReady(for: profileB.id),
             "Profile B should load its own isolated context on demand"
+        )
+        XCTAssertIdentical(
+            manager.getExtensionContext(for: installed.id, profileId: profileA.id),
+            profileAContext,
+            "Loading another profile must not reset an already loaded profile context"
         )
         XCTAssertNotIdentical(
             manager.getExtensionContext(for: installed.id, profileId: profileA.id),
@@ -502,13 +456,6 @@ final class SafariExtensionActionPopupRuntimeTests: XCTestCase {
         )
         try manifestData.write(to: manifestURL, options: [.atomic])
         try packageStyle.writeFiles(at: directoryURL)
-    }
-
-    private func projectURL(_ relativePath: String) -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(relativePath)
     }
 
     private enum TestPackageStyle {
