@@ -32,12 +32,12 @@ struct SpacesSideBarView: View {
     @Environment(\.sidebarPresentationContext) private var sidebarPresentationContext
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
+    @EnvironmentObject private var dragState: SidebarDragState
 
     @State private var isSidebarHovered: Bool = false
     @State private var transitionState = SpaceSidebarTransitionState()
     @State private var transitionSnapshot: SpaceSidebarTransitionSnapshot?
     @State private var transitionTask: Task<Void, Never>?
-    @ObservedObject private var dragState = SidebarDragState.shared
     @ObservedObject private var nowPlayingController = SumiNativeNowPlayingController.shared
     @ObservedObject private var updaterService = SumiUpdaterService.shared
     @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()

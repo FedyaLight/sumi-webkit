@@ -9,6 +9,7 @@ struct SidebarHostEnvironmentContext {
     let resolvedThemeContext: ResolvedThemeContext
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     let windowChromeSize: CGSize
+    let sidebarDragState: SidebarDragState
 }
 
 enum SidebarPresentationMode: Equatable {
@@ -118,6 +119,8 @@ extension View {
             .environmentObject(context.browserManager.extensionSurfaceStore)
             .environment(context.windowState)
             .environment(context.windowRegistry)
+            .environmentObject(context.sidebarDragState)
+            .environmentObject(context.sidebarDragState.locationTracker)
             .environment(\.sumiSettings, context.sumiSettings)
             .environment(\.resolvedThemeContext, context.resolvedThemeContext)
     }

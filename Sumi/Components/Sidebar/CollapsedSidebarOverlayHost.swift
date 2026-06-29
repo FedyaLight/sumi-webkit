@@ -23,6 +23,7 @@ struct CollapsedSidebarOverlayHost: View {
     var resolvedThemeContext: ResolvedThemeContext
     var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     var windowChromeSize: CGSize
+    var sidebarDragState: SidebarDragState
     var presentationContext: SidebarPresentationContext
     var isHostRequested: Bool
 
@@ -51,6 +52,7 @@ struct CollapsedSidebarOverlayHost: View {
                     resolvedThemeContext: resolvedThemeContext,
                     chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
                     windowChromeSize: windowChromeSize,
+                    sidebarDragState: sidebarDragState,
                     presentationContext: presentationContext
                 )
 

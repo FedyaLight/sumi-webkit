@@ -132,6 +132,7 @@ enum SidebarColumnHostedRoot {
         resolvedThemeContext: ResolvedThemeContext,
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
         windowChromeSize: CGSize,
+        sidebarDragState: SidebarDragState,
         presentationContext: SidebarPresentationContext
     ) -> SidebarColumnHostedRootView {
         SidebarColumnHostedRootView(
@@ -142,7 +143,8 @@ enum SidebarColumnHostedRoot {
                 sumiSettings: sumiSettings,
                 resolvedThemeContext: resolvedThemeContext,
                 chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
-                windowChromeSize: windowChromeSize
+                windowChromeSize: windowChromeSize,
+                sidebarDragState: sidebarDragState
             ),
             presentationContext: presentationContext
         )
@@ -157,6 +159,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var resolvedThemeContext: ResolvedThemeContext
     var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     var windowChromeSize: CGSize
+    var sidebarDragState: SidebarDragState = SidebarDragState.shared
     var presentationContext: SidebarPresentationContext
 
     func makeNSViewController(context: Context) -> SidebarColumnViewController {
@@ -172,6 +175,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
             windowChromeSize: windowChromeSize,
+            sidebarDragState: sidebarDragState,
             presentationContext: presentationContext
         )
         controller.updateHostedSidebar(

@@ -40,7 +40,7 @@ struct TabFolderView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     private var folderDragSnapshot: SidebarFolderDragSnapshot {
         SidebarFolderDragSnapshot(dragState: dragState)

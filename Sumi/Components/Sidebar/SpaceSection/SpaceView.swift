@@ -35,8 +35,8 @@ struct SpaceView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) var windowState
     @Environment(\.sumiSettings) var sumiSettings
-    @ObservedObject var dragState = SidebarDragState.shared
-    @ObservedObject var locationTracker = SidebarDragState.shared.locationTracker
+    @EnvironmentObject var dragState: SidebarDragState
+    @EnvironmentObject var locationTracker: SidebarDragLocationTracker
     @State var isNewTabHovered = false
     @State var regularTabsListAnimation = RegularTabsListAnimationState()
     @State var regularSplitSegmentRemovalIds = Set<UUID>()

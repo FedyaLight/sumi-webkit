@@ -70,13 +70,25 @@ struct SidebarHoverOverlayView: View {
     let resolvedThemeContext: ResolvedThemeContext
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     let windowChromeSize: CGSize
+    @ObservedObject private var dragState: SidebarDragState
 
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var hoverManager: HoverSidebarManager
-    @ObservedObject private var dragState = SidebarDragState.shared
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
+
+    init(
+        resolvedThemeContext: ResolvedThemeContext,
+        chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
+        windowChromeSize: CGSize,
+        sidebarDragState: SidebarDragState = SidebarDragState.shared
+    ) {
+        self.resolvedThemeContext = resolvedThemeContext
+        self.chromeBackgroundResolvedThemeContext = chromeBackgroundResolvedThemeContext
+        self.windowChromeSize = windowChromeSize
+        self._dragState = ObservedObject(wrappedValue: sidebarDragState)
+    }
 
     /// Keep the hover sidebar on-screen while any sidebar transient UI is alive in compact mode.
     private var transientUIPinsHoverSidebar: Bool {
@@ -176,7 +188,7 @@ struct SidebarHoverOverlayView: View {
             }
         }
         .onChange(of: presentationContext) { _, _ in
-            SidebarDragState.shared.requestGeometryRefresh()
+            dragState.requestGeometryRefresh()
         }
         .onAppear {
             hoverManager.deferOverlayHostRetentionWhileCollapsed()
@@ -198,6 +210,7 @@ struct SidebarHoverOverlayView: View {
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
             windowChromeSize: windowChromeSize,
+            sidebarDragState: dragState,
             presentationContext: presentationContext,
             isHostRequested: shouldMountCollapsedSidebarHost
         )

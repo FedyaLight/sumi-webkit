@@ -290,7 +290,7 @@ struct PinnedGrid: View {
         .accessibilityHidden(true)
     }
 
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     private func pinPresentationState(_ pin: ShortcutPin) -> ShortcutPresentationState {
         browserManager.tabManager.shortcutPresentationState(for: pin, in: windowState)

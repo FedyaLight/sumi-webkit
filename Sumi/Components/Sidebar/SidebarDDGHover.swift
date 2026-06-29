@@ -333,7 +333,7 @@ private struct SidebarDDGHoverModifier: ViewModifier {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sidebarPresentationContext) private var presentationContext
     @Environment(\.nativeSurfaceHoverUpdatesEnabled) private var nativeSurfaceHoverUpdatesEnabled
-    @ObservedObject private var dragState = SidebarDragState.shared
+    @EnvironmentObject private var dragState: SidebarDragState
 
     private var effectiveIsEnabled: Bool {
         isEnabled

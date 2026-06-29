@@ -257,7 +257,7 @@ extension SpaceView {
     }
 
     private func visibleSplitGroups(currentTabs: [Tab]) -> [SplitGroup] {
-        guard !SidebarDragState.shared.isDragging else { return [] }
+        guard !dragState.isDragging else { return [] }
         let currentTabIds = Set(currentTabs.map(\.id))
         var seenGroupIds = Set<UUID>()
         return currentTabs.compactMap { tab in
