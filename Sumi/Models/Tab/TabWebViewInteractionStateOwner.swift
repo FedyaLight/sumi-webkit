@@ -10,6 +10,7 @@ struct SumiGlanceOriginSnapshot {
 @MainActor
 final class TabWebViewInteractionStateOwner {
     var lastWebViewInteractionEvent: NSEvent?
+    var clickModifierFlags: NSEvent.ModifierFlags = []
     var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     var onLinkHover: ((String?) -> Void)?
     var lastHoveredLinkURL: URL?

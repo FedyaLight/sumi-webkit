@@ -19,6 +19,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     /// True while the tab shows the SF Symbol ``globe`` fallback (no bitmap favicon yet / resolver miss).
     @Published var faviconIsTemplateGlobePlaceholder: Bool = false
     private let placementStateOwner = TabPlacementStateOwner()
+    private let surfaceStateOwner = TabSurfaceStateOwner()
     var spaceId: UUID? {
         get { placementStateOwner.spaceId }
         set { placementStateOwner.spaceId = newValue }
@@ -29,12 +30,21 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
     var profileId: UUID?
     // If true, this tab is created to host a popup window; do not perform initial load.
-    var isPopupHost: Bool = false
+    var isPopupHost: Bool {
+        get { surfaceStateOwner.isPopupHost }
+        set { surfaceStateOwner.isPopupHost = newValue }
+    }
     // If true, this tab hosts content in a compact auxiliary mini-window (not in sidebar).
-    var isAuxiliaryMiniWindow: Bool = false
+    var isAuxiliaryMiniWindow: Bool {
+        get { surfaceStateOwner.isAuxiliaryMiniWindow }
+        set { surfaceStateOwner.isAuxiliaryMiniWindow = newValue }
+    }
 
     // Track the current click modifiers for native popup/link routing fallback.
-    var clickModifierFlags: NSEvent.ModifierFlags = []
+    var clickModifierFlags: NSEvent.ModifierFlags {
+        get { webViewInteractionStateOwner.clickModifierFlags }
+        set { webViewInteractionStateOwner.clickModifierFlags = newValue }
+    }
     let stateChangeEmitter = TabStateChangeEmitter()
     private let navigationRuntime = TabNavigationRuntime()
     let mediaRuntime = TabMediaRuntime()
@@ -43,6 +53,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     private let webViewRuntime = TabWebViewRuntime()
     private let suspensionStateOwner = TabSuspensionStateOwner()
     private let webViewInteractionStateOwner = TabWebViewInteractionStateOwner()
+    private let dependencyStateOwner: TabDependencyStateOwner
 
     // MARK: - Pin State
     var isPinned: Bool {
@@ -74,58 +85,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     /// Whether this tab belongs to an ephemeral/incognito session
     var isEphemeral: Bool {
         resolveProfile()?.isEphemeral ?? false
-    }
-
-    // MARK: - Loading State
-    enum LoadingState: Equatable {
-        case idle
-        case didStartProvisionalNavigation
-        case didCommit
-        case didFinish
-        case didFail(Error)
-        case didFailProvisionalNavigation(Error)
-
-        static func == (lhs: LoadingState, rhs: LoadingState) -> Bool {
-            switch (lhs, rhs) {
-            case (.idle, .idle),
-                 (.didStartProvisionalNavigation, .didStartProvisionalNavigation),
-                 (.didCommit, .didCommit),
-                 (.didFinish, .didFinish):
-                return true
-            case (.didFail, .didFail),
-                 (.didFailProvisionalNavigation, .didFailProvisionalNavigation):
-                // Compare error descriptions for equality
-                return lhs.description == rhs.description
-            default:
-                return false
-            }
-        }
-
-        var isLoading: Bool {
-            switch self {
-            case .idle, .didFinish, .didFail, .didFailProvisionalNavigation:
-                return false
-            case .didStartProvisionalNavigation, .didCommit:
-                return true
-            }
-        }
-
-        var description: String {
-            switch self {
-            case .idle:
-                return "Idle"
-            case .didStartProvisionalNavigation:
-                return "Loading started"
-            case .didCommit:
-                return "Content loading"
-            case .didFinish:
-                return "Loading finished"
-            case .didFail(let error):
-                return "Loading failed: \(error.localizedDescription)"
-            case .didFailProvisionalNavigation(let error):
-                return "Connection failed: \(error.localizedDescription)"
-            }
-        }
     }
 
     var loadingState: LoadingState {
@@ -389,22 +348,26 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set { webViewInteractionStateOwner.webViewInteractionCancellables = newValue }
     }
 
-    weak var browserManager: BrowserManager?
-    weak var sumiSettings: SumiSettingsService?
-    private let fallbackFaviconService: any BrowserFaviconServicing
-    private let fallbackFaviconImageService: any BrowserFaviconImageServicing
-    private let fallbackVisitedLinkStore: any BrowserVisitedLinkStoreManaging
+    var browserManager: BrowserManager? {
+        get { dependencyStateOwner.browserManager }
+        set { dependencyStateOwner.browserManager = newValue }
+    }
+
+    var sumiSettings: SumiSettingsService? {
+        get { dependencyStateOwner.sumiSettings }
+        set { dependencyStateOwner.sumiSettings = newValue }
+    }
 
     var faviconService: any BrowserFaviconServicing {
-        browserManager?.dataServices.faviconService ?? fallbackFaviconService
+        dependencyStateOwner.faviconService
     }
 
     var faviconImageService: any BrowserFaviconImageServicing {
-        browserManager?.dataServices.faviconImageService ?? fallbackFaviconImageService
+        dependencyStateOwner.faviconImageService
     }
 
     var visitedLinkStore: any BrowserVisitedLinkStoreManaging {
-        browserManager?.dataServices.visitedLinkStore ?? fallbackVisitedLinkStore
+        dependencyStateOwner.visitedLinkStore
     }
 
     // MARK: - Link Hover Callback
@@ -517,40 +480,42 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     var representsSumiEmptySurface: Bool {
-        !isPopupHost && SumiSurface.isEmptyNewTabURL(url)
+        surfaceStateOwner.representsSumiEmptySurface(for: url)
     }
 
     var representsSumiSettingsSurface: Bool {
-        !isPopupHost && SumiSurface.isSettingsSurfaceURL(url)
+        surfaceStateOwner.representsSumiSettingsSurface(for: url)
     }
 
     var representsSumiHistorySurface: Bool {
-        !isPopupHost && SumiSurface.isHistorySurfaceURL(url)
+        surfaceStateOwner.representsSumiHistorySurface(for: url)
     }
 
     var representsSumiBookmarksSurface: Bool {
-        !isPopupHost && SumiSurface.isBookmarksSurfaceURL(url)
+        surfaceStateOwner.representsSumiBookmarksSurface(for: url)
     }
 
     /// Native Sumi surfaces rendered outside WebKit.
     var representsSumiNativeSurface: Bool {
-        representsSumiSettingsSurface || representsSumiHistorySurface || representsSumiBookmarksSurface
+        surfaceStateOwner.representsSumiNativeSurface(for: url)
     }
 
     /// Internal Sumi surfaces that use chrome-template presentation.
     var representsSumiInternalSurface: Bool {
-        representsSumiNativeSurface
+        surfaceStateOwner.representsSumiInternalSurface(for: url)
     }
 
     var requiresPrimaryWebView: Bool {
-        !representsSumiNativeSurface && !representsSumiEmptySurface
+        surfaceStateOwner.requiresPrimaryWebView(for: url)
     }
 
     /// Sidebar / split tab row: tint template SF Symbol favicons like `NavButtonStyle` (`tokens.primaryText`).
     /// Covers empty tab, internal Sumi surfaces, and the ordinary ``globe`` placeholder until a bitmap favicon loads.
     var usesChromeThemedTemplateFavicon: Bool {
-        !isPopupHost
-            && (representsSumiEmptySurface || representsSumiInternalSurface || faviconIsTemplateGlobePlaceholder)
+        surfaceStateOwner.usesChromeThemedTemplateFavicon(
+            for: url,
+            faviconIsTemplateGlobePlaceholder: faviconIsTemplateGlobePlaceholder
+        )
     }
 
     // MARK: - Initializers
@@ -573,10 +538,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.name = name
         self.favicon = Image(systemName: favicon)
         self.faviconIsTemplateGlobePlaceholder = (favicon == "globe")
-        self.browserManager = browserManager
-        self.fallbackFaviconService = faviconService
-        self.fallbackFaviconImageService = faviconImageService
-        self.fallbackVisitedLinkStore = visitedLinkStore
+        self.dependencyStateOwner = TabDependencyStateOwner(
+            browserManager: browserManager,
+            faviconService: faviconService,
+            faviconImageService: faviconImageService,
+            visitedLinkStore: visitedLinkStore
+        )
         super.init()
         self.spaceId = spaceId
         self.index = index
@@ -748,10 +715,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             ?? existingWebView
     }
 
-    func unloadWebView() {
-        TabWebViewCleanupOwner.unloadWebView(context: webViewCleanupContext())
-    }
-
     func loadWebViewIfNeeded() {
         if _webView == nil {
             beginSuspendedRestoreIfNeeded()
@@ -811,53 +774,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     /// Remove KVO observers for navigation state properties
     func removeNavigationStateObservers(from webView: WKWebView) {
         navigationStateController.remove(webView)
-    }
-
-    /// MEMORY LEAK FIX: Comprehensive WebView cleanup to prevent memory leaks
-    func cleanupCloneWebView(_ webView: WKWebView) {
-        TabWebViewCleanupOwner.cleanupWebView(webView, context: webViewCleanupContext())
-    }
-
-    /// MEMORY LEAK FIX: Comprehensive cleanup for the main tab WebView
-    public func performComprehensiveWebViewCleanup() {
-        TabWebViewCleanupOwner.performComprehensiveCleanup(context: webViewCleanupContext())
-    }
-
-    private func webViewCleanupContext() -> TabWebViewCleanupOwner.Context {
-        TabWebViewCleanupOwner.Context(
-            tabId: id,
-            tabName: { self.name },
-            browserManager: browserManager,
-            nowPlayingController: browserManager?.nativeNowPlayingController,
-            currentWebView: { self._webView },
-            clearCurrentWebView: { self._webView = nil },
-            removeAllWebViews: { closeActiveFullscreenMedia in
-                self.browserManager?.webViewCoordinator?.removeAllWebViews(
-                    for: self,
-                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
-                ) ?? false
-            },
-            currentPermissionPageId: { self.currentPermissionPageId() },
-            profilePartitionId: { self.resolveProfile()?.id.uuidString },
-            invalidateCurrentPermissionPageForWebViewReplacement: { reason in
-                self.invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
-            },
-            unbindAudioState: { webView in
-                self.unbindAudioState(from: webView)
-            },
-            removeNavigationStateObservers: { webView in
-                self.removeNavigationStateObservers(from: webView)
-            },
-            removeNavigationDelegateBundle: { webView in
-                self.removeNavigationDelegateBundle(for: webView)
-            },
-            resetPlaybackActivity: {
-                self.resetPlaybackActivity()
-            },
-            setLoadingIdle: {
-                self.loadingState = .idle
-            }
-        )
     }
 
     func activate() {
