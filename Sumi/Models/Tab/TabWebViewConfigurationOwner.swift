@@ -2,6 +2,86 @@ import Foundation
 import WebKit
 
 @MainActor
+struct TabWebViewConfigurationContext {
+    let browserConfiguration: BrowserConfiguration
+    let extensionNormalTabUserScripts: () -> [SumiUserScript]
+    let userscriptsNormalTabUserScripts: (URL, UUID, UUID?, Bool) -> [SumiUserScript]
+    let boostsNormalTabUserScripts: (URL, UUID?, Bool) -> [SumiUserScript]
+    let protectionDecision: (URL, UUID) -> SumiProtectionNormalTabDecision?
+    let protectionDesiredAttachmentState: (URL?) -> SumiProtectionAttachmentState
+    let safariContentBlockerAttachmentState: (URL) -> SumiSafariContentBlockerAttachmentState?
+    let safariContentBlockerDesiredAttachmentState: (URL?) -> SumiSafariContentBlockerAttachmentState
+    let enabledSafariContentBlockingServices: (URL, UUID) -> [SumiContentBlockingService]
+    let prepareWebViewConfigurationForExtensionRuntime: (WKWebViewConfiguration, UUID?, String) -> Void
+
+    static let empty = TabWebViewConfigurationContext(
+        browserConfiguration: .shared,
+        extensionNormalTabUserScripts: { [] },
+        userscriptsNormalTabUserScripts: { _, _, _, _ in [] },
+        boostsNormalTabUserScripts: { _, _, _ in [] },
+        protectionDecision: { _, _ in nil },
+        protectionDesiredAttachmentState: { _ in .disabled(siteHost: nil) },
+        safariContentBlockerAttachmentState: { _ in nil },
+        safariContentBlockerDesiredAttachmentState: { _ in .disabled(siteHost: nil) },
+        enabledSafariContentBlockingServices: { _, _ in [] },
+        prepareWebViewConfigurationForExtensionRuntime: { _, _, _ in }
+    )
+
+    static func live(browserManager: BrowserManager?) -> Self {
+        guard let browserManager else { return .empty }
+        return TabWebViewConfigurationContext(
+            browserConfiguration: .shared,
+            extensionNormalTabUserScripts: {
+                browserManager.extensionsModule.normalTabUserScripts()
+            },
+            userscriptsNormalTabUserScripts: { url, tabId, profileId, isEphemeral in
+                browserManager.userscriptsModule.normalTabUserScripts(
+                    for: url,
+                    webViewId: tabId,
+                    profileId: profileId,
+                    isEphemeral: isEphemeral
+                )
+            },
+            boostsNormalTabUserScripts: { url, profileId, isEphemeral in
+                browserManager.boostsModule.normalTabUserScripts(
+                    for: url,
+                    profileId: profileId,
+                    isEphemeral: isEphemeral
+                )
+            },
+            protectionDecision: { url, profileId in
+                browserManager.protectionCoordinator.normalTabDecision(
+                    for: url,
+                    profileId: profileId
+                )
+            },
+            protectionDesiredAttachmentState: { url in
+                browserManager.protectionCoordinator.desiredAttachmentState(for: url)
+            },
+            safariContentBlockerAttachmentState: { url in
+                browserManager.extensionsModule.safariContentBlockerAttachmentState(for: url)
+            },
+            safariContentBlockerDesiredAttachmentState: { url in
+                browserManager.extensionsModule.safariContentBlockerAttachmentState(for: url)
+            },
+            enabledSafariContentBlockingServices: { url, profileId in
+                browserManager.extensionsModule.enabledSafariContentBlockingServices(
+                    for: url,
+                    profileId: profileId
+                )
+            },
+            prepareWebViewConfigurationForExtensionRuntime: { configuration, profileId, reason in
+                browserManager.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
+                    configuration,
+                    profileId: profileId,
+                    reason: reason
+                )
+            }
+        )
+    }
+}
+
+@MainActor
 final class TabWebViewConfigurationOwner {
     var webViewConfigurationOverride: WKWebViewConfiguration?
     var webExtensionContextOverride: WKWebExtensionContext?
@@ -11,7 +91,7 @@ final class TabWebViewConfigurationOwner {
         coreUserScripts: [SumiUserScript],
         tabId: UUID,
         profileIdProvider: () -> UUID?,
-        browserManager: BrowserManager?,
+        context: TabWebViewConfigurationContext,
         isEphemeral: Bool
     ) -> SumiNormalTabUserScripts {
         SumiNormalTabUserScripts(
@@ -20,7 +100,7 @@ final class TabWebViewConfigurationOwner {
                 coreUserScripts: coreUserScripts,
                 tabId: tabId,
                 profileIdProvider: profileIdProvider,
-                browserManager: browserManager,
+                context: context,
                 isEphemeral: isEphemeral
             )
         )
@@ -31,28 +111,28 @@ final class TabWebViewConfigurationOwner {
         coreUserScripts: [SumiUserScript],
         tabId: UUID,
         profileIdProvider: () -> UUID?,
-        browserManager: BrowserManager?,
+        context: TabWebViewConfigurationContext,
         isEphemeral: Bool
     ) -> [SumiUserScript] {
         var scripts = coreUserScripts
-        scripts.append(contentsOf: browserManager?.extensionsModule.normalTabUserScripts() ?? [])
+        scripts.append(contentsOf: context.extensionNormalTabUserScripts())
 
         if let targetURL {
             scripts.append(
-                contentsOf: browserManager?.userscriptsModule.normalTabUserScripts(
-                    for: targetURL,
-                    webViewId: tabId,
-                    profileId: profileIdProvider(),
-                    isEphemeral: isEphemeral
-                ) ?? []
+                contentsOf: context.userscriptsNormalTabUserScripts(
+                    targetURL,
+                    tabId,
+                    profileIdProvider(),
+                    isEphemeral
+                )
             )
 
             scripts.append(
-                contentsOf: browserManager?.boostsModule.normalTabUserScripts(
-                    for: targetURL,
-                    profileId: profileIdProvider(),
-                    isEphemeral: isEphemeral
-                ) ?? []
+                contentsOf: context.boostsNormalTabUserScripts(
+                    targetURL,
+                    profileIdProvider(),
+                    isEphemeral
+                )
             )
         }
 
@@ -63,26 +143,21 @@ final class TabWebViewConfigurationOwner {
         for url: URL,
         profile: Profile,
         userScriptsProvider: SumiNormalTabUserScripts,
-        browserManager: BrowserManager?,
+        context: TabWebViewConfigurationContext,
         reloadPolicyStateOwner: TabReloadPolicyStateOwner
     ) -> WKWebViewConfiguration {
-        let protectionDecision = browserManager?.protectionCoordinator
-            .normalTabDecision(for: url, profileId: profile.id)
+        let protectionDecision = context.protectionDecision(url, profile.id)
         if let protectionDecision {
             reloadPolicyStateOwner.noteProtectionAttachmentApplied(protectionDecision.attachmentState)
         }
 
-        let safariContentBlockerAttachmentState = browserManager?
-            .extensionsModule
-            .safariContentBlockerAttachmentState(for: url)
+        let safariContentBlockerAttachmentState = context.safariContentBlockerAttachmentState(url)
         let additionalContentBlockingServices: [SumiContentBlockingService]
         if safariContentBlockerAttachmentState?.isEnabled == true {
-            additionalContentBlockingServices = browserManager?
-                .extensionsModule
-                .enabledSafariContentBlockingServices(
-                    for: url,
-                    profileId: profile.id
-                ) ?? []
+            additionalContentBlockingServices = context.enabledSafariContentBlockingServices(
+                url,
+                profile.id
+            )
         } else {
             additionalContentBlockingServices = []
         }
@@ -92,12 +167,12 @@ final class TabWebViewConfigurationOwner {
             )
         }
 
-        let autoplayPolicy = BrowserConfiguration.shared.resolvedAutoplayPolicy(
+        let autoplayPolicy = context.browserConfiguration.resolvedAutoplayPolicy(
             for: url,
             profile: profile
         )
 
-        return BrowserConfiguration.shared.normalTabWebViewConfiguration(
+        return context.browserConfiguration.normalTabWebViewConfiguration(
             for: profile,
             url: url,
             autoplayPolicy: autoplayPolicy,
@@ -109,17 +184,17 @@ final class TabWebViewConfigurationOwner {
 
     func auxiliaryOverrideConfiguration(
         for profile: Profile,
-        browserManager: BrowserManager?
+        context: TabWebViewConfigurationContext
     ) -> WKWebViewConfiguration? {
         if let configuration = webExtensionContextWebViewConfiguration(
             profile: profile,
-            browserManager: browserManager
+            context: context
         ) {
             return configuration
         }
 
         return webViewConfigurationOverride.map { override in
-            BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
+            context.browserConfiguration.auxiliaryWebViewConfiguration(
                 from: override,
                 for: profile,
                 surface: .extensionOptions,
@@ -131,17 +206,17 @@ final class TabWebViewConfigurationOwner {
     func applyWebViewConfigurationOverride(
         _ configuration: WKWebViewConfiguration,
         profileId: UUID?,
-        browserManager: BrowserManager?
+        context: TabWebViewConfigurationContext
     ) {
-        let isolatedConfiguration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
+        let isolatedConfiguration = context.browserConfiguration.auxiliaryWebViewConfiguration(
             from: configuration,
             surface: .extensionOptions,
             additionalUserScripts: configuration.userContentController.userScripts
         )
-        browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
+        context.prepareWebViewConfigurationForExtensionRuntime(
             isolatedConfiguration,
-            profileId: profileId,
-            reason: "Tab.applyWebViewConfigurationOverride"
+            profileId,
+            "Tab.applyWebViewConfigurationOverride"
         )
         webViewConfigurationOverride = isolatedConfiguration
     }
@@ -151,17 +226,14 @@ final class TabWebViewConfigurationOwner {
         fallbackURL: URL,
         tabId: UUID,
         profile: Profile?,
-        browserManager: BrowserManager?,
+        context: TabWebViewConfigurationContext,
         reloadPolicyStateOwner: TabReloadPolicyStateOwner
     ) -> Bool {
         guard webView.configuration.sumiIsNormalTabWebViewConfiguration else {
             return false
         }
 
-        let desiredProtectionState = reloadPolicyStateOwner.protectionDesiredAttachmentState(
-            for: webView.url ?? fallbackURL,
-            browserManager: browserManager
-        )
+        let desiredProtectionState = context.protectionDesiredAttachmentState(webView.url ?? fallbackURL)
         if let appliedProtectionState = reloadPolicyStateOwner.protectionAppliedAttachmentState {
             guard appliedProtectionState == desiredProtectionState else {
                 return false
@@ -170,11 +242,8 @@ final class TabWebViewConfigurationOwner {
             return false
         }
 
-        let desiredSafariContentBlockerState = reloadPolicyStateOwner
-            .safariContentBlockerDesiredAttachmentState(
-                for: webView.url ?? fallbackURL,
-                browserManager: browserManager
-            )
+        let desiredSafariContentBlockerState = context
+            .safariContentBlockerDesiredAttachmentState(webView.url ?? fallbackURL)
         if let appliedSafariContentBlockerState =
             reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState {
             guard appliedSafariContentBlockerState
@@ -224,16 +293,16 @@ final class TabWebViewConfigurationOwner {
 
     private func webExtensionContextWebViewConfiguration(
         profile: Profile,
-        browserManager: BrowserManager?
+        context: TabWebViewConfigurationContext
     ) -> WKWebViewConfiguration? {
-        guard let context = webExtensionContextOverride,
-              let configuration = context.webViewConfiguration
+        guard let webExtensionContext = webExtensionContextOverride,
+              let configuration = webExtensionContext.webViewConfiguration
         else { return nil }
 
-        browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
+        context.prepareWebViewConfigurationForExtensionRuntime(
             configuration,
-            profileId: profile.id,
-            reason: "Tab.webExtensionContextWebViewConfiguration"
+            profile.id,
+            "Tab.webExtensionContextWebViewConfiguration"
         )
         return configuration
     }

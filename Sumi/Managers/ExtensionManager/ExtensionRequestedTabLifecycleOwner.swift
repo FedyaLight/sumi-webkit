@@ -466,7 +466,7 @@ final class ExtensionRequestedTabLifecycleOwner {
                 in: targetWindow
             )
         } else {
-            tab._webView = replacementWebView
+            tab.replaceUntrackedWebView(replacementWebView)
         }
         if let previousWebView, previousWebView !== replacementWebView {
             tab.cleanupCloneWebView(previousWebView)

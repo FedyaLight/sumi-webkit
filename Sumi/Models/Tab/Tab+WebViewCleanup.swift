@@ -23,7 +23,7 @@ extension Tab {
             browserManager: browserManager,
             nowPlayingController: browserManager?.nativeNowPlayingController,
             currentWebView: { self._webView },
-            clearCurrentWebView: { self._webView = nil },
+            clearCurrentWebView: { self.clearCurrentWebViewOwnership() },
             removeAllWebViews: { closeActiveFullscreenMedia in
                 self.browserManager?.webViewCoordinator?.removeAllWebViews(
                     for: self,

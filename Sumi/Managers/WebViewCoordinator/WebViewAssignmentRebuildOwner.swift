@@ -70,12 +70,7 @@ final class WebViewAssignmentRebuildOwner {
         runtime: Runtime
     ) {
         guard let replacement = runtime.primaryCandidate(tab.id, browserManager) else {
-            if tab._webView != nil {
-                tab._webView = nil
-            }
-            if tab.primaryWindowId != nil {
-                tab.primaryWindowId = nil
-            }
+            tab.clearCurrentWebViewOwnership()
             return
         }
 
@@ -160,9 +155,7 @@ final class WebViewAssignmentRebuildOwner {
         cleanup(tab.existingWebView)
 
         tab.cancelPendingMainFrameNavigation()
-        tab._webView = nil
-        tab._existingWebView = nil
-        tab.primaryWindowId = nil
+        tab.clearAllWebViewOwnership()
         tab.url = targetURL
 
         guard let recreatedPrimary = tab.ensureWebView() else {

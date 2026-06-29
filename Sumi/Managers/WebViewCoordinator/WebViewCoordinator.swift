@@ -542,9 +542,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
 
         tab.cancelPendingMainFrameNavigation()
-        tab._webView = nil
-        tab._existingWebView = nil
-        tab.primaryWindowId = nil
+        tab.clearAllWebViewOwnership()
 
         RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
             "Suspension released \(cleanedIdentifiers.count) WebView(s) for tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)."

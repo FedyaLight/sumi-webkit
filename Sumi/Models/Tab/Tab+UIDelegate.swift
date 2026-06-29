@@ -72,10 +72,7 @@ extension Tab: WKUIDelegate {
         }
 
         cleanupCloneWebView(webView)
-        if _webView === webView {
-            _webView = nil
-            primaryWindowId = nil
-        }
+        clearCurrentWebViewOwnershipIfIdentical(to: webView)
     }
 
     public func webView(

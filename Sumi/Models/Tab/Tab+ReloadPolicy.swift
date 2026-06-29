@@ -250,14 +250,11 @@ extension Tab {
             cleanupCloneWebView: { webView in
                 self.cleanupCloneWebView(webView)
             },
-            clearOwnedWebView: {
-                self._webView = nil
+            clearCurrentWebViewOwnership: {
+                self.clearCurrentWebViewOwnership()
             },
-            clearPrimaryWindowId: {
-                self.primaryWindowId = nil
-            },
-            assignOwnedWebView: { webView in
-                self._webView = webView
+            replaceUntrackedWebView: { webView in
+                self.replaceUntrackedWebView(webView)
             },
             assignWebViewToWindow: { webView, windowId in
                 self.assignWebViewToWindow(webView, windowId: windowId)

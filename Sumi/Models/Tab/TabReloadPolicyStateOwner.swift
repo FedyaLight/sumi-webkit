@@ -15,9 +15,8 @@ struct TabReloadPolicyWebViewRebuildContext {
     let invalidateCurrentPermissionPageForWebViewReplacement: (String) -> Void
     let removeTrackedWebViews: () -> Bool
     let cleanupCloneWebView: (WKWebView) -> Void
-    let clearOwnedWebView: () -> Void
-    let clearPrimaryWindowId: () -> Void
-    let assignOwnedWebView: (WKWebView) -> Void
+    let clearCurrentWebViewOwnership: () -> Void
+    let replaceUntrackedWebView: (WKWebView) -> Void
     let assignWebViewToWindow: (WKWebView, UUID) -> Void
     let publishNavigationStateChangeIfNeeded: (Bool) -> Void
 }
@@ -532,8 +531,7 @@ final class TabReloadPolicyStateOwner {
 
         if !removedTrackedWebViews {
             context.cleanupCloneWebView(previousWebView)
-            context.clearOwnedWebView()
-            context.clearPrimaryWindowId()
+            context.clearCurrentWebViewOwnership()
         }
 
         if let previousWindowId {
@@ -543,7 +541,7 @@ final class TabReloadPolicyStateOwner {
                 context.browserManager?.refreshCompositor(for: windowState)
             }
         } else {
-            context.assignOwnedWebView(replacementWebView)
+            context.replaceUntrackedWebView(replacementWebView)
         }
 
         return true

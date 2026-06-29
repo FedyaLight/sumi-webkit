@@ -273,8 +273,7 @@ final class GlanceManager: ObservableObject {
         if !preservesPreviewWebView,
            let webView = session.previewTab.existingWebView {
             session.previewTab.cleanupCloneWebView(webView)
-            session.previewTab._webView = nil
-            session.previewTab.primaryWindowId = nil
+            session.previewTab.clearCurrentWebViewOwnership()
         }
 
         let shouldResetFindManager = browserManager?.findManager.currentTab?.id == session.previewTab.id

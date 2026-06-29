@@ -51,6 +51,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let popupUserActivationTracker = SumiPopupUserActivationTracker()
     let faviconRuntime = TabFaviconRuntime()
     let profileResolutionOwner = TabProfileResolutionOwner()
+    private let webViewOwnershipOwner = TabWebViewOwnershipOwner()
     private let webViewRuntime = TabWebViewRuntime()
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
@@ -183,7 +184,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
     // MARK: - Tab State
     var isUnloaded: Bool {
-        _webView == nil
+        webViewOwnershipOwner.isUnloaded
     }
 
     /// True when the tab row should show the web-content-unloaded favicon affordance.
@@ -193,12 +194,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     var _webView: WKWebView? {
-        get { webViewRuntime.webView }
-        set { webViewRuntime.webView = newValue }
+        get { webViewOwnershipOwner.webView }
+        set { webViewOwnershipOwner.setCurrentWebViewForLegacyBridge(newValue) }
     }
     var _existingWebView: WKWebView? {
-        get { webViewRuntime.existingWebView }
-        set { webViewRuntime.existingWebView = newValue }
+        get { webViewOwnershipOwner.existingWebView }
+        set { webViewOwnershipOwner.setExistingWebViewForLegacyBridge(newValue) }
     }
     var webViewConfigurationOverride: WKWebViewConfiguration? {
         get { webViewConfigurationOwner.webViewConfigurationOverride }
@@ -316,8 +317,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     /// The window ID that currently "owns" the primary WebView for this tab
     /// If nil, no window is displaying this tab yet
     var primaryWindowId: UUID? {
-        get { webViewRuntime.primaryWindowId }
-        set { webViewRuntime.primaryWindowId = newValue }
+        get { webViewOwnershipOwner.primaryWindowId }
+        set { webViewOwnershipOwner.setPrimaryWindowIdForLegacyBridge(newValue) }
     }
     var isSuspended: Bool {
         get { suspensionStateOwner.isSuspended }
@@ -556,12 +557,45 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.spaceId = spaceId
         self.index = index
         navigationStateController.delegate = self
-        self._existingWebView = existingWebView
+        parkExistingWebView(existingWebView)
 
         applyCachedFaviconOrPlaceholder(
             for: url,
             allowCacheLookup: loadsCachedFaviconOnInit
         )
+    }
+
+    func parkExistingWebView(_ webView: WKWebView?) {
+        webViewOwnershipOwner.parkExistingWebView(webView)
+    }
+
+    func clearParkedExistingWebView() {
+        webViewOwnershipOwner.clearParkedExistingWebView()
+    }
+
+    func adoptParkedWebViewAsCurrent(_ webView: WKWebView) {
+        webViewOwnershipOwner.adoptParkedWebViewAsCurrent(webView)
+    }
+
+    func replaceUntrackedWebView(_ webView: WKWebView) {
+        webViewOwnershipOwner.replaceUntrackedWebView(webView)
+    }
+
+    func assignPrimaryWebView(_ webView: WKWebView, windowId: UUID) {
+        webViewOwnershipOwner.assignPrimaryWebView(webView, windowId: windowId)
+    }
+
+    func clearCurrentWebViewOwnership() {
+        webViewOwnershipOwner.clearCurrentWebViewOwnership()
+    }
+
+    func clearAllWebViewOwnership() {
+        webViewOwnershipOwner.clearAllWebViewOwnership()
+    }
+
+    @discardableResult
+    func clearCurrentWebViewOwnershipIfIdentical(to webView: WKWebView) -> Bool {
+        webViewOwnershipOwner.clearCurrentWebViewOwnershipIfIdentical(to: webView)
     }
 
     func bindToShortcutPin(_ pin: ShortcutPin) {

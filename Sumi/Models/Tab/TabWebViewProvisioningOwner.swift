@@ -21,7 +21,7 @@ final class TabWebViewProvisioningOwner {
         reason: String
     ) -> WKWebView {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
             webView,
@@ -43,7 +43,7 @@ final class TabWebViewProvisioningOwner {
         reason: String
     ) -> WKWebView {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        tab._webView = webView
+        tab.replaceUntrackedWebView(webView)
 
         tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
             webView,
@@ -57,8 +57,7 @@ final class TabWebViewProvisioningOwner {
     }
 
     func assignWebViewToWindow(_ webView: WKWebView, tab: Tab, windowId: UUID) {
-        tab._webView = webView
-        tab.primaryWindowId = windowId
+        tab.assignPrimaryWebView(webView, windowId: windowId)
         tab.ownedWebViewPreparationOwner.prepareAssignedWebView(webView)
     }
 
@@ -89,10 +88,11 @@ final class TabWebViewProvisioningOwner {
             return nil
         }
 
-        tab.browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
+        let configurationContext = TabWebViewConfigurationContext.live(browserManager: tab.browserManager)
+        configurationContext.prepareWebViewConfigurationForExtensionRuntime(
             configuration,
-            profileId: profile.id,
-            reason: "\(reason).configuration"
+            profile.id,
+            "\(reason).configuration"
         )
         prepareConfiguration?(configuration)
 
@@ -129,14 +129,15 @@ final class TabWebViewProvisioningOwner {
             return
         }
 
+        let configurationContext = TabWebViewConfigurationContext.live(browserManager: tab.browserManager)
         let auxiliaryOverrideConfiguration = tab.webViewConfigurationOwner.auxiliaryOverrideConfiguration(
             for: profile,
-            browserManager: tab.browserManager
+            context: configurationContext
         )
 
         if let existingWebView = reusableExistingWebView {
             if canReuseAsNormalTabWebView(existingWebView, tab: tab) {
-                tab._webView = existingWebView
+                tab.adoptParkedWebViewAsCurrent(existingWebView)
                 didReuseExistingWebView = true
                 Task { @MainActor [weak tab, weak existingWebView] in
                     guard let tab, let existingWebView else { return }
@@ -147,23 +148,25 @@ final class TabWebViewProvisioningOwner {
                 }
             } else {
                 tab.cleanupCloneWebView(existingWebView)
-                tab._existingWebView = nil
+                tab.clearParkedExistingWebView()
             }
         }
 
         if tab._webView == nil {
             if let auxiliaryOverrideConfiguration {
-                tab.browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
+                configurationContext.prepareWebViewConfigurationForExtensionRuntime(
                     auxiliaryOverrideConfiguration,
-                    profileId: profile.id,
-                    reason: "Tab.setupWebView.configuration"
+                    profile.id,
+                    "Tab.setupWebView.configuration"
                 )
                 let newWebView = FocusableWKWebView(frame: .zero, configuration: auxiliaryOverrideConfiguration)
-                tab._webView = newWebView
+                tab.replaceUntrackedWebView(newWebView)
                 didCreateAuxiliaryOverrideWebView = true
                 configureAuxiliaryOverrideWebView(newWebView, tab: tab, reason: "Tab.setupWebView")
             } else {
-                tab._webView = makeNormalTabWebView(for: tab, reason: "Tab.setupWebView")
+                if let normalWebView = makeNormalTabWebView(for: tab, reason: "Tab.setupWebView") {
+                    tab.replaceUntrackedWebView(normalWebView)
+                }
             }
         }
 
@@ -224,7 +227,7 @@ final class TabWebViewProvisioningOwner {
         tab.webViewConfigurationOwner.applyWebViewConfigurationOverride(
             configuration,
             profileId: tab.resolveProfile()?.id ?? tab.profileId,
-            browserManager: tab.browserManager
+            context: TabWebViewConfigurationContext.live(browserManager: tab.browserManager)
         )
     }
 
@@ -259,7 +262,7 @@ final class TabWebViewProvisioningOwner {
             for: tab.url,
             profile: profile,
             userScriptsProvider: tab.normalTabUserScriptsProvider(for: tab.url),
-            browserManager: tab.browserManager,
+            context: TabWebViewConfigurationContext.live(browserManager: tab.browserManager),
             reloadPolicyStateOwner: tab.reloadPolicyStateOwner
         )
     }
@@ -289,7 +292,7 @@ final class TabWebViewProvisioningOwner {
             fallbackURL: tab.url,
             tabId: tab.id,
             profile: tab.resolveProfile(),
-            browserManager: tab.browserManager,
+            context: TabWebViewConfigurationContext.live(browserManager: tab.browserManager),
             reloadPolicyStateOwner: tab.reloadPolicyStateOwner
         )
     }

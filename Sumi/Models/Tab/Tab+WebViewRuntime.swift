@@ -96,7 +96,7 @@ extension Tab {
             coreUserScripts: normalTabCoreUserScripts(),
             tabId: id,
             profileIdProvider: { self.resolveProfile()?.id ?? self.profileId },
-            browserManager: browserManager,
+            context: TabWebViewConfigurationContext.live(browserManager: browserManager),
             isEphemeral: isEphemeral
         )
     }
@@ -107,7 +107,7 @@ extension Tab {
             coreUserScripts: normalTabCoreUserScripts(),
             tabId: id,
             profileIdProvider: { self.resolveProfile()?.id ?? self.profileId },
-            browserManager: browserManager,
+            context: TabWebViewConfigurationContext.live(browserManager: browserManager),
             isEphemeral: isEphemeral
         )
     }

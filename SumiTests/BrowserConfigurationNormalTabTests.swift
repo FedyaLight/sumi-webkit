@@ -59,6 +59,53 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(contentBlockingSummary.globalRuleListCount, 0)
     }
 
+    func testTabWebViewConfigurationContextSuppliesSafariContentBlockerAttachment() throws {
+        let owner = TabWebViewConfigurationOwner()
+        let profile = Profile(name: "Default")
+        let url = try XCTUnwrap(URL(string: "https://example.com/context"))
+        let attachmentState = SumiSafariContentBlockerAttachmentState(
+            siteHost: "example.com",
+            isEnabledForSite: true,
+            enabledContentBlockerIds: ["safari-blocker"],
+            enabledContentBlockerRuleIdentities: ["safari-blocker:fingerprint"]
+        )
+        var requestedAttachmentURL: URL?
+        var requestedServiceLookup: (url: URL, profileId: UUID)?
+        let context = TabWebViewConfigurationContext(
+            browserConfiguration: BrowserConfiguration(),
+            extensionNormalTabUserScripts: { [] },
+            userscriptsNormalTabUserScripts: { _, _, _, _ in [] },
+            boostsNormalTabUserScripts: { _, _, _ in [] },
+            protectionDecision: { _, _ in nil },
+            protectionDesiredAttachmentState: { _ in .disabled(siteHost: nil) },
+            safariContentBlockerAttachmentState: { requestedURL in
+                requestedAttachmentURL = requestedURL
+                return attachmentState
+            },
+            safariContentBlockerDesiredAttachmentState: { _ in attachmentState },
+            enabledSafariContentBlockingServices: { requestedURL, requestedProfileId in
+                requestedServiceLookup = (requestedURL, requestedProfileId)
+                return [SumiContentBlockingService(policy: .disabled)]
+            },
+            prepareWebViewConfigurationForExtensionRuntime: { _, _, _ in }
+        )
+        let reloadPolicyStateOwner = TabReloadPolicyStateOwner()
+
+        let configuration = owner.normalTabWebViewConfiguration(
+            for: url,
+            profile: profile,
+            userScriptsProvider: SumiNormalTabUserScripts(),
+            context: context,
+            reloadPolicyStateOwner: reloadPolicyStateOwner
+        )
+
+        XCTAssertEqual(requestedAttachmentURL, url)
+        XCTAssertEqual(requestedServiceLookup?.url, url)
+        XCTAssertEqual(requestedServiceLookup?.profileId, profile.id)
+        XCTAssertEqual(reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState, attachmentState)
+        XCTAssertNotNil(configuration.userContentController.sumiNormalTabUserContentController)
+    }
+
     func testTabNormalWebViewCreationInstallsProtectionCoordinatorPreparedBundleRules() async throws {
         let fixture = try makePreparedProtectionBundleFixture()
         let harness = TestDefaultsHarness()
