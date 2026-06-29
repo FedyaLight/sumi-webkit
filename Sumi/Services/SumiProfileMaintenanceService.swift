@@ -12,6 +12,7 @@ final class SumiProfileMaintenanceService {
         var currentProfile: @MainActor () -> Profile?
         var profileManager: ProfileManager
         var tabManager: TabManager
+        var browsingDataCleanupService: SumiBrowsingDataCleanupService
         var faviconService: any BrowserFaviconServicing
         var visitedLinkStore: any BrowserVisitedLinkStoreManaging
         var showNotice: @MainActor (Notice) -> Void
@@ -43,7 +44,9 @@ final class SumiProfileMaintenanceService {
                 profile.id,
                 fallbackProfileId: replacement.id
             )
-            await profile.clearAllData()
+            await profile.clearAllData(
+                cleanupService: context.browsingDataCleanupService
+            )
             context.faviconService.clearFaviconPartition(for: profile)
 
             let deleted = context.profileManager.deleteProfile(profile)

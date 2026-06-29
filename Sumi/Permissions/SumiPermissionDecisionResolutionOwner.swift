@@ -320,7 +320,7 @@ struct SumiPermissionDecisionResolutionOwner {
         error: any Error
     ) {
         Self.logger.error(
-            "Permission decision store failure \(failure.rawValue, privacy: .public) permission=\(evaluation.key.permissionType.identity, privacy: .public) domain=\(evaluation.key.displayDomain, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            "Permission decision store failure \(failure.rawValue, privacy: .public) permission=\(evaluation.key.permissionType.identity, privacy: .public) domain=\(evaluation.key.displayDomain, privacy: .private) error=\(error.localizedDescription, privacy: .public)"
         )
     }
 

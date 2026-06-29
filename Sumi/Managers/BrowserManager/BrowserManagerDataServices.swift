@@ -114,6 +114,8 @@ struct BrowserManagerDataServices {
     let faviconService: any BrowserFaviconServicing
     let faviconImageService: any BrowserFaviconImageServicing
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
+    let historyFaviconCleaner: any HistoryFaviconCleaning
+    let historyVisitedLinkStore: any HistoryVisitedLinkStoring
     let privacyService: any BrowserPrivacyServicing
 
     init(
@@ -123,6 +125,8 @@ struct BrowserManagerDataServices {
         faviconService: any BrowserFaviconServicing,
         faviconImageService: any BrowserFaviconImageServicing = Self.productionFaviconImageService,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging,
+        historyFaviconCleaner: any HistoryFaviconCleaning,
+        historyVisitedLinkStore: any HistoryVisitedLinkStoring,
         privacyService: any BrowserPrivacyServicing
     ) {
         self.browsingDataCleanupService = browsingDataCleanupService
@@ -131,6 +135,8 @@ struct BrowserManagerDataServices {
         self.faviconService = faviconService
         self.faviconImageService = faviconImageService
         self.visitedLinkStore = visitedLinkStore
+        self.historyFaviconCleaner = historyFaviconCleaner
+        self.historyVisitedLinkStore = historyVisitedLinkStore
         self.privacyService = privacyService
     }
 
@@ -153,7 +159,7 @@ struct BrowserManagerDataServices {
     static var production: Self {
         let websiteDataCleanupService = SumiWebsiteDataCleanupService.shared
         let faviconSystem = productionFaviconSystem
-        let visitedLinkStore = productionVisitedLinkStore
+        let visitedLinkStore = SharedVisitedLinkStoreProvider.shared
         return BrowserManagerDataServices(
             browsingDataCleanupService: SumiBrowsingDataCleanupService(
                 websiteDataCleanupService: websiteDataCleanupService,
@@ -170,6 +176,8 @@ struct BrowserManagerDataServices {
             faviconService: faviconSystem,
             faviconImageService: faviconSystem.service,
             visitedLinkStore: visitedLinkStore,
+            historyFaviconCleaner: faviconSystem,
+            historyVisitedLinkStore: visitedLinkStore,
             privacyService: BrowserPrivacyService(
                 cleanupService: websiteDataCleanupService,
                 faviconInvalidator: { domain, profile in
@@ -189,6 +197,8 @@ struct BrowserManagerDataServices {
             faviconService: faviconService,
             faviconImageService: faviconImageService,
             visitedLinkStore: visitedLinkStore,
+            historyFaviconCleaner: historyFaviconCleaner,
+            historyVisitedLinkStore: historyVisitedLinkStore,
             privacyService: privacyService
         )
     }

@@ -153,6 +153,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 siteDataPolicyEnforcementService: siteDataPolicyService,
                 faviconService: faviconService,
                 visitedLinkStore: visitedLinkStore,
+                historyFaviconCleaner: faviconService,
+                historyVisitedLinkStore: visitedLinkStore,
                 privacyService: privacyService
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
@@ -204,6 +206,10 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(automaticCleanupService.schedules[1].force)
         XCTAssertEqual(automaticCleanupService.schedules[1].reason, "unit-test")
         XCTAssertEqual(automaticCleanupService.schedules[1].delayNanoseconds, 0)
+
+        await browserManager.historyManager.clearAll()
+
+        XCTAssertEqual(faviconService.historyClearBurnCount, 1)
     }
 
     func testNativeSurfaceViewModelsUseInjectedFaviconService() throws {
@@ -224,6 +230,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 siteDataPolicyEnforcementService: FakeBrowserSiteDataPolicyService(),
                 faviconService: faviconService,
                 visitedLinkStore: visitedLinkStore,
+                historyFaviconCleaner: faviconService,
+                historyVisitedLinkStore: visitedLinkStore,
                 privacyService: FakeBrowserPrivacyService()
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
@@ -441,13 +449,15 @@ private final class FakeBrowserSiteDataPolicyService: BrowserSiteDataPolicyEnfor
 }
 
 @MainActor
-private final class FakeBrowserFaviconService: BrowserFaviconServicing {
+private final class FakeBrowserFaviconService: BrowserFaviconServicing, HistoryFaviconCleaning {
     private(set) var partitionProfileIds: [UUID?] = []
     private(set) var invalidatedSites: [(domain: String, profileId: UUID?)] = []
     private(set) var syncedShortcutPinURLs: [[URL]] = []
     private(set) var syncedBookmarkURLs: [[URL]] = []
     private(set) var syncedBookmarkPartitions: [SumiFaviconPartition] = []
     private(set) var clearedProfileIds: [UUID] = []
+    private(set) var historyClearBurnCount = 0
+    private(set) var historyBurnDomains: [Set<String>] = []
     private let partitionToReturn: SumiFaviconPartition?
 
     init(partitionToReturn: SumiFaviconPartition? = nil) {
@@ -479,6 +489,20 @@ private final class FakeBrowserFaviconService: BrowserFaviconServicing {
         clearedProfileIds.append(profile.id)
     }
 
+    func burnAfterHistoryClear(savedLogins: Set<String>) async {
+        _ = savedLogins
+        historyClearBurnCount += 1
+    }
+
+    func burnDomains(
+        _ domains: Set<String>,
+        remainingHistoryHosts: Set<String>,
+        savedLogins: Set<String>
+    ) async {
+        _ = (remainingHistoryHosts, savedLogins)
+        historyBurnDomains.append(domains)
+    }
+
 #if DEBUG
     func drainRuntimeTasksForTests(cancel: Bool) async {
         _ = cancel
@@ -487,7 +511,7 @@ private final class FakeBrowserFaviconService: BrowserFaviconServicing {
 }
 
 @MainActor
-private final class FakeBrowserVisitedLinkStore: BrowserVisitedLinkStoreManaging {
+private final class FakeBrowserVisitedLinkStore: BrowserVisitedLinkStoreManaging, HistoryVisitedLinkStoring {
     private(set) var replacedProfileIds: [UUID] = []
     private(set) var discardedProfileIds: [UUID] = []
     private(set) var appliedProfileIds: [UUID] = []

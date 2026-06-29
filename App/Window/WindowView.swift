@@ -36,7 +36,7 @@ struct WindowView: View {
     @State private var effectiveAppearanceRevision: UInt = 0
     private let sidebarDragState: SidebarDragState
 
-    init(sidebarDragState: SidebarDragState = SidebarDragState.shared) {
+    init(sidebarDragState: SidebarDragState) {
         self.sidebarDragState = sidebarDragState
     }
 

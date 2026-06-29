@@ -13,6 +13,7 @@ struct ContentView: View {
     private let providedWindowState: BrowserWindowState?
 
     @State private var defaultWindowState: BrowserWindowState
+    @StateObject private var sidebarDragState = SidebarDragState()
 
     init(
         windowLifecycleHandler: any BrowserWindowLifecycleHandling,
@@ -34,7 +35,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        WindowView()
+        WindowView(sidebarDragState: sidebarDragState)
             .environment(windowState)
             .background(BrowserWindowBridge(windowState: windowState, windowRegistry: windowRegistry))
             .frame(

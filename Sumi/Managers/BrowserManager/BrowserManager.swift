@@ -694,7 +694,14 @@ class BrowserManager: ObservableObject {
         self.shortcutEditorPopoverPresenter = ShortcutEditorPopoverPresenter()
         self.authenticationManager = AuthenticationManager()
         // Initialize managers with current profile context for isolation
-        self.historyManager = HistoryManager(context: startupModelContext, profileId: initialProfile?.id)
+        self.historyManager = HistoryManager(
+            context: startupModelContext,
+            profileId: initialProfile?.id,
+            dependencies: HistoryManager.Dependencies(
+                faviconCleaner: resolvedDataServices.historyFaviconCleaner,
+                visitedLinkStore: resolvedDataServices.historyVisitedLinkStore
+            )
+        )
         self.bookmarkManager = SumiBookmarkManager(
             faviconService: resolvedDataServices.faviconService
         )

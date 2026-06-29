@@ -16,6 +16,7 @@ extension BrowserManager {
             },
             profileManager: profileManager,
             tabManager: tabManager,
+            browsingDataCleanupService: browsingDataCleanupService,
             faviconService: dataServices.faviconService,
             visitedLinkStore: dataServices.visitedLinkStore,
             showNotice: { [weak self] notice in

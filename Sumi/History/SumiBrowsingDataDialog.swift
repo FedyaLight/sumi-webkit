@@ -12,7 +12,7 @@ struct SumiBrowsingDataDialog: View {
         _viewModel = StateObject(
             wrappedValue: SumiBrowsingDataDialogViewModel(
                 browserManager: browserManager,
-                cleanupService: cleanupService ?? .shared
+                cleanupService: cleanupService ?? browserManager.browsingDataCleanupService
             )
         )
     }
