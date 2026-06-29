@@ -827,93 +827,7 @@ class BrowserManager: ObservableObject {
     }
 
     private var tabSelectionActions: BrowserTabSelectionOwner.Actions {
-        BrowserTabSelectionOwner.Actions(
-            activeWindowId: { [weak self] in
-                self?.windowRegistry?.activeWindow?.id
-            },
-            tab: { [weak self] tabId in
-                self?.tabManager.tab(for: tabId)
-            },
-            currentTab: { [weak self] windowState in
-                self?.currentTab(for: windowState)
-            },
-            liveShortcutTabs: { [weak self] windowId in
-                self?.tabManager.liveShortcutTabs(in: windowId) ?? []
-            },
-            updateActiveSplitSide: { [weak self] tabId, windowId in
-                self?.splitManager.updateActiveSide(for: tabId, in: windowId)
-            },
-            syncWindowSpaceContext: { [weak self] windowState, animateTheme in
-                self?.windowSpaceStateOwner.syncWindowSpaceContext(
-                    in: windowState,
-                    animateTheme: animateTheme
-                )
-            },
-            space: { [weak self] spaceId in
-                self?.space(for: spaceId)
-            },
-            updateWorkspaceTheme: { [weak self] windowState, theme, animate in
-                self?.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
-            },
-            applySettingsSurfaceNavigation: { [weak self] url in
-                self?.sumiSettings?.applyNavigationFromSettingsSurfaceURL(url)
-            },
-            canMaterializeNormalTabWebViewDuringStartup: { [weak self] tab in
-                self?.canMaterializeNormalTabWebViewDuringStartup(tab) ?? true
-            },
-            markTabAccessed: { [weak self] tabId in
-                self?.compositorManager.markTabAccessed(tabId)
-            },
-            webViewCoordinator: { [weak self] in
-                self?.webViewCoordinator
-            },
-            handleNativeNowPlayingTabActivated: { [weak self] tabId in
-                self?.nativeNowPlayingController.handleTabActivated(tabId)
-            },
-            scheduleNativeNowPlayingRefresh: { [weak self] delayNanoseconds in
-                self?.nativeNowPlayingController.scheduleRefresh(delayNanoseconds: delayNanoseconds)
-            },
-            fetchVisibleFavicon: { tab in
-                Task { @MainActor [weak tab] in
-                    guard let tab else { return }
-                    await tab.fetchFaviconForVisiblePresentation()
-                }
-            },
-            dismissFloatingBarAfterSelection: { [weak self] windowState in
-                self?.dismissFloatingBarAfterSelection(in: windowState)
-            },
-            updateFindManagerCurrentTab: { [weak self] in
-                self?.updateFindManagerCurrentTab()
-            },
-            clearFindManagerCurrentTab: { [weak self] in
-                self?.findManager.updateCurrentTab(nil)
-            },
-            schedulePrepareVisibleWebViews: { [weak self] windowState in
-                self?.schedulePrepareVisibleWebViews(for: windowState)
-            },
-            refreshCompositor: { [weak self] windowState in
-                self?.refreshCompositor(for: windowState)
-            },
-            runtimeNotifications: BrowserManagerRuntimeWiring.tabSelectionRuntimeNotifications(for: self),
-            updateActiveTabState: { [weak self] tab in
-                self?.tabManager.updateActiveTabState(tab)
-            },
-            persistWindowSession: { [weak self] windowState in
-                self?.persistWindowSession(for: windowState)
-            },
-            selectionTargetForSpaceActivation: { [weak self] space, windowState in
-                self?.windowSpaceStateOwner.selectionTargetForSpaceActivation(
-                    in: space,
-                    windowState: windowState
-                )
-            },
-            updateProfileRuntimeStates: { [weak self] windowState in
-                self?.windowSpaceStateOwner.updateProfileRuntimeStates(activeWindowState: windowState)
-            },
-            showNewTabFloatingBar: { [weak self] windowState in
-                self?.floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)
-            }
-        )
+        BrowserTabSelectionOwner.liveActions(for: self)
     }
 
     func focusFloatingBarForActiveWindow(
@@ -1071,7 +985,7 @@ class BrowserManager: ObservableObject {
         )
     }
 
-    private func dismissFloatingBarAfterSelection(in windowState: BrowserWindowState) {
+    func dismissFloatingBarAfterSelection(in windowState: BrowserWindowState) {
         floatingBarRoutingOwner.dismissFloatingBarAfterSelection(in: windowState)
     }
 
@@ -1441,6 +1355,30 @@ class BrowserManager: ObservableObject {
 
     func space(for spaceId: UUID?) -> Space? {
         windowSpaceStateOwner.space(for: spaceId)
+    }
+
+    func syncWindowSpaceContext(
+        in windowState: BrowserWindowState,
+        animateTheme: Bool
+    ) {
+        windowSpaceStateOwner.syncWindowSpaceContext(
+            in: windowState,
+            animateTheme: animateTheme
+        )
+    }
+
+    func selectionTargetForSpaceActivation(
+        in space: Space,
+        windowState: BrowserWindowState
+    ) -> Tab? {
+        windowSpaceStateOwner.selectionTargetForSpaceActivation(
+            in: space,
+            windowState: windowState
+        )
+    }
+
+    func updateProfileRuntimeStates(activeWindowState: BrowserWindowState?) {
+        windowSpaceStateOwner.updateProfileRuntimeStates(activeWindowState: activeWindowState)
     }
 
     private func isBackForwardGestureActive(in windowState: BrowserWindowState) -> Bool {
