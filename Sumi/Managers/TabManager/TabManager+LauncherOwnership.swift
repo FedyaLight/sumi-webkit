@@ -32,6 +32,59 @@ extension TabManager {
         }
     }
 
+    @discardableResult
+    func copyShortcutPinToEssentials(
+        _ pin: ShortcutPin,
+        title: String,
+        context: EssentialsTargetContext? = nil
+    ) -> ShortcutPin? {
+        withStructuralUpdateTransaction {
+            guard let insertion = resolveEssentialsInsertion(
+                using: EssentialsInsertionContext(target: context)
+            ) else { return nil }
+            if essentialPins(for: insertion.profileId).contains(where: { $0.launchURL == pin.launchURL }) {
+                return nil
+            }
+
+            let copiedPin = ShortcutPin(
+                id: UUID(),
+                role: .essential,
+                profileId: insertion.profileId,
+                executionProfileId: copiedShortcutExecutionProfileId(
+                    for: pin,
+                    targetProfileId: insertion.profileId,
+                    context: context
+                ),
+                spaceId: nil,
+                index: insertion.index,
+                folderId: nil,
+                launchURL: pin.launchURL,
+                title: title,
+                iconAsset: pin.iconAsset
+            )
+            guard let insertedPin = insertShortcutPin(copiedPin, at: insertion.index) else {
+                return nil
+            }
+
+            logEssentialsTargetMismatchIfNeeded(
+                resolution: insertion.resolution,
+                context: context
+            )
+            scheduleStructuralPersistence()
+            return insertedPin
+        }
+    }
+
+    private func copiedShortcutExecutionProfileId(
+        for pin: ShortcutPin,
+        targetProfileId: UUID,
+        context: EssentialsTargetContext?
+    ) -> UUID? {
+        let currentSpaceId = context?.spaceId ?? context?.windowState?.currentSpaceId
+        let executionProfileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
+        return executionProfileId == targetProfileId ? nil : executionProfileId
+    }
+
     func removeShortcutPin(_ pin: ShortcutPin) {
         withStructuralUpdateTransaction {
             if shortcutPin(by: pin.id) != nil {
