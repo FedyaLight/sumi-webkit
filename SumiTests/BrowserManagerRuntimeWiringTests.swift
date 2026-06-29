@@ -139,6 +139,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let automaticCleanupService = FakeAutomaticBrowsingDataCleanupScheduler()
         let siteDataPolicyService = FakeBrowserSiteDataPolicyService()
         let faviconService = FakeBrowserFaviconService()
+        let visitedLinkStore = FakeBrowserVisitedLinkStore()
         let privacyService = FakeBrowserPrivacyService()
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
@@ -149,6 +150,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 automaticBrowsingDataCleanupService: automaticCleanupService,
                 siteDataPolicyEnforcementService: siteDataPolicyService,
                 faviconService: faviconService,
+                visitedLinkStore: visitedLinkStore,
                 privacyService: privacyService
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
@@ -209,6 +211,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
         let browsingDataCleanupService = SumiBrowsingDataCleanupService()
         let faviconService = FakeBrowserFaviconService(partitionToReturn: injectedPartition)
+        let visitedLinkStore = FakeBrowserVisitedLinkStore()
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
@@ -218,6 +221,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 automaticBrowsingDataCleanupService: FakeAutomaticBrowsingDataCleanupScheduler(),
                 siteDataPolicyEnforcementService: FakeBrowserSiteDataPolicyService(),
                 faviconService: faviconService,
+                visitedLinkStore: visitedLinkStore,
                 privacyService: FakeBrowserPrivacyService()
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
@@ -337,6 +341,10 @@ private final class FakeBrowserSiteDataPolicyService: BrowserSiteDataPolicyEnfor
 private final class FakeBrowserFaviconService: BrowserFaviconServicing {
     private(set) var partitionProfileIds: [UUID?] = []
     private(set) var invalidatedSites: [(domain: String, profileId: UUID?)] = []
+    private(set) var syncedShortcutPinURLs: [[URL]] = []
+    private(set) var syncedBookmarkURLs: [[URL]] = []
+    private(set) var syncedBookmarkPartitions: [SumiFaviconPartition] = []
+    private(set) var clearedProfileIds: [UUID] = []
     private let partitionToReturn: SumiFaviconPartition?
 
     init(partitionToReturn: SumiFaviconPartition? = nil) {
@@ -352,11 +360,42 @@ private final class FakeBrowserFaviconService: BrowserFaviconServicing {
         invalidatedSites.append((domain, profile?.id))
     }
 
+    func syncShortcutPins(_ pins: [ShortcutPin]) {
+        syncedShortcutPinURLs.append(pins.map(\.launchURL))
+    }
+
+    func syncBookmarks(
+        _ bookmarks: [SumiBookmark],
+        partition: SumiFaviconPartition
+    ) {
+        syncedBookmarkURLs.append(bookmarks.map(\.url))
+        syncedBookmarkPartitions.append(partition)
+    }
+
+    func clearFaviconPartition(for profile: Profile) {
+        clearedProfileIds.append(profile.id)
+    }
+
 #if DEBUG
     func drainRuntimeTasksForTests(cancel: Bool) async {
         _ = cancel
     }
 #endif
+}
+
+@MainActor
+private final class FakeBrowserVisitedLinkStore: BrowserVisitedLinkStoreManaging {
+    private(set) var replacedProfileIds: [UUID] = []
+    private(set) var discardedProfileIds: [UUID] = []
+
+    func replaceVisitedLinks(_ urls: [URL], for profileId: UUID) {
+        _ = urls
+        replacedProfileIds.append(profileId)
+    }
+
+    func discardStore(for profileId: UUID) {
+        discardedProfileIds.append(profileId)
+    }
 }
 
 @MainActor

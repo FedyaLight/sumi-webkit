@@ -247,6 +247,33 @@ final class SumiImportExportTests: XCTestCase {
     }
 
     @MainActor
+    func testDetectedZenProfilesUsesInjectedRootAndSkipsNonProfiles() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZenProfiles-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let beta = root.appendingPathComponent("Beta.default", isDirectory: true)
+        let alpha = root.appendingPathComponent("Alpha.default", isDirectory: true)
+        let missingPlaces = root.appendingPathComponent("MissingPlaces.default", isDirectory: true)
+        try FileManager.default.createDirectory(at: beta, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: alpha, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: missingPlaces, withIntermediateDirectories: true)
+        try Data().write(to: beta.appendingPathComponent("places.sqlite"))
+        try Data().write(to: alpha.appendingPathComponent("places.sqlite"))
+        try Data().write(to: root.appendingPathComponent("NotAProfile.txt"))
+
+        let service = SumiBrowserImportService(
+            zenProfilesRootProvider: { root }
+        )
+
+        XCTAssertEqual(
+            service.detectedZenProfiles().map(\.lastPathComponent),
+            ["Alpha.default", "Beta.default"]
+        )
+    }
+
+    @MainActor
     func testImportNormalizationPreservesMixedFolderPinnedOrderWithinParent() {
         let spaceId = "space-a"
         let parentId = "folder-parent"

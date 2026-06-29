@@ -682,7 +682,9 @@ class BrowserManager: ObservableObject {
         self.authenticationManager = AuthenticationManager()
         // Initialize managers with current profile context for isolation
         self.historyManager = HistoryManager(context: startupModelContext, profileId: initialProfile?.id)
-        self.bookmarkManager = SumiBookmarkManager()
+        self.bookmarkManager = SumiBookmarkManager(
+            faviconService: resolvedDataServices.faviconService
+        )
         if let initialProfile {
             self.bookmarkManager.setFaviconPrefetchPartition(
                 resolvedDataServices.faviconService.partition(profile: initialProfile)

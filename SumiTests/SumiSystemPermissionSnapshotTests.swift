@@ -55,4 +55,8 @@ final class SumiSystemPermissionSnapshotTests: XCTestCase {
         )
         XCTAssertEqual(decodedSnapshot, snapshot)
     }
+
+    func testInvalidStoredSnapshotReturnsNil() {
+        XCTAssertNil(SumiPermissionCoordinatorDecision.decodedSnapshot("{not-json"))
+    }
 }

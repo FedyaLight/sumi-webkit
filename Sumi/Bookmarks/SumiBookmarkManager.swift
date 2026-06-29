@@ -7,6 +7,7 @@ final class SumiBookmarkManager: ObservableObject {
 
     private let repository: any SumiBookmarkRepository
     private let syncFavicons: Bool
+    private let faviconService: (any BrowserFaviconServicing)?
     private var faviconPrefetchPartition: SumiFaviconPartition = .regular(nil)
     private var bookmarksByID: [String: SumiBookmark] = [:]
     private var bookmarkIDByURLKey: [String: String] = [:]
@@ -14,9 +15,32 @@ final class SumiBookmarkManager: ObservableObject {
     private var didInstallSaveObserver = false
     private var saveObserver: NSObjectProtocol?
 
-    init(
+    convenience init(
         database: SumiBookmarkDatabase = SumiBookmarkDatabase(),
-        syncFavicons: Bool = true
+        faviconService: any BrowserFaviconServicing
+    ) {
+        self.init(
+            database: database,
+            syncFavicons: true,
+            faviconService: faviconService
+        )
+    }
+
+    convenience init(
+        database: SumiBookmarkDatabase = SumiBookmarkDatabase(),
+        syncFavicons: Bool
+    ) {
+        self.init(
+            database: database,
+            syncFavicons: syncFavicons,
+            faviconService: nil
+        )
+    }
+
+    private init(
+        database: SumiBookmarkDatabase,
+        syncFavicons: Bool,
+        faviconService: (any BrowserFaviconServicing)?
     ) {
         if let unavailableReason = database.unavailableReason {
             self.repository = SumiUnavailableBookmarkRepository(reason: unavailableReason.description)
@@ -24,6 +48,7 @@ final class SumiBookmarkManager: ObservableObject {
             self.repository = SumiDDGBookmarkRepository(database: database)
         }
         self.syncFavicons = syncFavicons
+        self.faviconService = faviconService
         reload(notify: false)
         installSaveObserver()
     }
@@ -77,7 +102,7 @@ final class SumiBookmarkManager: ObservableObject {
         guard faviconPrefetchPartition != partition else { return }
         faviconPrefetchPartition = partition
         guard syncFavicons, !bookmarksByID.isEmpty else { return }
-        SumiFaviconSystem.shared.syncBookmarks(
+        faviconService?.syncBookmarks(
             Array(bookmarksByID.values),
             partition: faviconPrefetchPartition
         )
@@ -295,7 +320,7 @@ final class SumiBookmarkManager: ObservableObject {
         foldersCache = repository.snapshot(sortMode: .manual).flattenedFolders
 
         if syncFavicons {
-            SumiFaviconSystem.shared.syncBookmarks(
+            faviconService?.syncBookmarks(
                 bookmarks,
                 partition: faviconPrefetchPartition
             )

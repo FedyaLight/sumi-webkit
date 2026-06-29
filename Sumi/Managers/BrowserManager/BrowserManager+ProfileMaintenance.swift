@@ -16,6 +16,8 @@ extension BrowserManager {
             },
             profileManager: profileManager,
             tabManager: tabManager,
+            faviconService: dataServices.faviconService,
+            visitedLinkStore: dataServices.visitedLinkStore,
             showNotice: { [weak self] notice in
                 self?.presentProfileMaintenanceNotice(notice)
             },

@@ -31,6 +31,26 @@ final class SumiBookmarkManagerTests: XCTestCase {
         )
     }
 
+    func testBookmarkFaviconSyncUsesInjectedService() throws {
+        let faviconService = FakeBookmarkFaviconService()
+        let directory = try temporaryDirectory(named: "SumiBookmarkInjectedFavicon")
+        let manager = SumiBookmarkManager(
+            database: SumiBookmarkDatabase(directory: directory),
+            faviconService: faviconService
+        )
+        let partition = SumiFaviconPartition(
+            profileIdentifier: "bookmark-profile",
+            isPrivate: false
+        )
+        manager.setFaviconPrefetchPartition(partition)
+        let url = try XCTUnwrap(URL(string: "https://favicon.example"))
+
+        _ = try manager.createBookmark(url: url, title: "Favicon")
+
+        XCTAssertEqual(faviconService.syncedBookmarkURLs.last, [url])
+        XCTAssertEqual(faviconService.syncedBookmarkPartitions.last, partition)
+    }
+
     func testRepeatedCreateReturnsExistingBookmark() throws {
         let manager = makeManager()
         let firstURL = try XCTUnwrap(URL(string: "https://repeat.example"))
@@ -524,4 +544,40 @@ private struct BookmarkSaveNotificationSnapshot: Sendable {
     var contextName: String?
     var insertedBookmarkUUIDs = Set<String>()
     var isMainThread: Bool?
+}
+
+@MainActor
+private final class FakeBookmarkFaviconService: BrowserFaviconServicing {
+    private(set) var syncedBookmarkURLs: [[URL]] = []
+    private(set) var syncedBookmarkPartitions: [SumiFaviconPartition] = []
+
+    func partition(profile: Profile?) -> SumiFaviconPartition {
+        .regular(profile?.id)
+    }
+
+    func invalidateSite(domain: String, profile: Profile?) {
+        _ = (domain, profile)
+    }
+
+    func syncShortcutPins(_ pins: [ShortcutPin]) {
+        _ = pins
+    }
+
+    func syncBookmarks(
+        _ bookmarks: [SumiBookmark],
+        partition: SumiFaviconPartition
+    ) {
+        syncedBookmarkURLs.append(bookmarks.map(\.url))
+        syncedBookmarkPartitions.append(partition)
+    }
+
+    func clearFaviconPartition(for profile: Profile) {
+        _ = profile
+    }
+
+#if DEBUG
+    func drainRuntimeTasksForTests(cancel: Bool) async {
+        _ = cancel
+    }
+#endif
 }

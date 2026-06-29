@@ -535,11 +535,17 @@ actor SumiPermissionCoordinator {
                 return
             }
             for key in pending.keys {
-                try? await memoryStore.setDecision(
-                    for: key,
-                    decision: storedDecision,
-                    sessionOwnerId: sessionOwnerId
-                )
+                do {
+                    try await memoryStore.setDecision(
+                        for: key,
+                        decision: storedDecision,
+                        sessionOwnerId: sessionOwnerId
+                    )
+                } catch {
+                    RuntimeDiagnostics.emit(
+                        "[Permissions] Failed to store transient permission decision for \(key.permissionType.identity): \(error.localizedDescription)"
+                    )
+                }
             }
         case .persistent:
             guard let persistentStore else { return }
@@ -973,12 +979,24 @@ actor SumiPermissionCoordinator {
     }
 
     private func encodedSnapshot(_ snapshot: SumiSystemPermissionSnapshot?) -> String? {
-        guard let snapshot,
-              let data = try? JSONEncoder().encode(snapshot)
-        else {
+        guard let snapshot else {
             return nil
         }
-        return String(data: data, encoding: .utf8)
+        do {
+            let data = try JSONEncoder().encode(snapshot)
+            guard let encoded = String(data: data, encoding: .utf8) else {
+                RuntimeDiagnostics.emit(
+                    "[Permissions] Failed to UTF-8 encode system permission snapshot."
+                )
+                return nil
+            }
+            return encoded
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[Permissions] Failed to encode system permission snapshot: \(error.localizedDescription)"
+            )
+            return nil
+        }
     }
 
     private static func normalizedPageId(_ value: String) -> String {

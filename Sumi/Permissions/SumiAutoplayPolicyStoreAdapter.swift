@@ -138,7 +138,14 @@ final class SumiAutoplayPolicyStoreAdapter {
         }
         var descriptor = FetchDescriptor<PermissionDecisionEntity>(predicate: predicate)
         descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first?.record()
+        do {
+            return try context.fetch(descriptor).first?.record()
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[Permissions] Failed to fetch autoplay policy for \(key.displayDomain): \(error.localizedDescription)"
+            )
+            return nil
+        }
     }
 
     private func ephemeralRecord(

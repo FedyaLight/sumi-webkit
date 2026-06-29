@@ -12,6 +12,8 @@ final class SumiProfileMaintenanceService {
         var currentProfile: @MainActor () -> Profile?
         var profileManager: ProfileManager
         var tabManager: TabManager
+        var faviconService: any BrowserFaviconServicing
+        var visitedLinkStore: any BrowserVisitedLinkStoreManaging
         var showNotice: @MainActor (Notice) -> Void
         var switchToProfile: @MainActor (Profile) async -> Void
     }
@@ -42,7 +44,7 @@ final class SumiProfileMaintenanceService {
                 fallbackProfileId: replacement.id
             )
             await profile.clearAllData()
-            SumiFaviconSystem.shared.clearFaviconPartition(for: profile)
+            context.faviconService.clearFaviconPartition(for: profile)
 
             let deleted = context.profileManager.deleteProfile(profile)
             if deleted == false {
@@ -55,7 +57,7 @@ final class SumiProfileMaintenanceService {
                 )
             } else {
                 _ = await profile.removePersistentDataStore()
-                SharedVisitedLinkStoreProvider.shared.discardStore(for: profile.id)
+                context.visitedLinkStore.discardStore(for: profile.id)
             }
         }
     }

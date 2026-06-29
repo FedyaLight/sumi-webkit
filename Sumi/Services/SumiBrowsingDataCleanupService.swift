@@ -159,8 +159,6 @@ protocol SumiVisitedLinkStoreReplacing: AnyObject {
     func replaceVisitedLinks(_ urls: [URL], for profileId: UUID)
 }
 
-extension SharedVisitedLinkStoreProvider: SumiVisitedLinkStoreReplacing {}
-
 @MainActor
 final class SumiBrowsingDataAppResidueCleaner: SumiBrowsingDataAppResidueCleaning {
     static let shared = SumiBrowsingDataAppResidueCleaner()

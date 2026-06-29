@@ -5,13 +5,19 @@ import Foundation
 final class SumiBrowserImportService {
     private let transferService: SumiTransferExportService
     private let backupService: SumiBackupService
+    private let zenProfilesRootProvider: @MainActor () -> URL
 
     init(
         transferService: SumiTransferExportService = SumiTransferExportService(),
-        backupService: SumiBackupService = SumiBackupService()
+        backupService: SumiBackupService = SumiBackupService(),
+        zenProfilesRootProvider: @escaping @MainActor () -> URL = {
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support/zen/Profiles", isDirectory: true)
+        }
     ) {
         self.transferService = transferService
         self.backupService = backupService
+        self.zenProfilesRootProvider = zenProfilesRootProvider
     }
 
     func previewArcImport() throws -> SumiImportPreview {
@@ -29,18 +35,39 @@ final class SumiBrowserImportService {
     }
 
     func detectedZenProfiles() -> [URL] {
-        let root = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/zen/Profiles", isDirectory: true)
-        guard let children = try? FileManager.default.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        let root = zenProfilesRootProvider()
+        let children: [URL]
+        do {
+            children = try FileManager.default.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            let cocoaError = error as NSError
+            if cocoaError.domain == NSCocoaErrorDomain,
+               cocoaError.code == CocoaError.fileReadNoSuchFile.rawValue {
+                return []
+            }
+            RuntimeDiagnostics.emit(
+                "[ImportExport] Failed to enumerate Zen profiles at \(root.path): \(error.localizedDescription)"
+            )
             return []
         }
-        return children.filter { url in
-            (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-                && FileManager.default.fileExists(atPath: url.appendingPathComponent("places.sqlite").path)
+        return children.compactMap { url in
+            do {
+                guard try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true,
+                      FileManager.default.fileExists(atPath: url.appendingPathComponent("places.sqlite").path)
+                else {
+                    return nil
+                }
+                return url
+            } catch {
+                RuntimeDiagnostics.emit(
+                    "[ImportExport] Skipping Zen profile candidate at \(url.path): \(error.localizedDescription)"
+                )
+                return nil
+            }
         }
         .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }

@@ -440,7 +440,9 @@ final class SumiImportApplier {
             browserManager.tabManager.resetStructuralDirtySet()
             browserManager.tabManager.requestStructuralPublish()
         }
-        SumiFaviconSystem.shared.syncShortcutPins(Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined()))
+        browserManager.dataServices.faviconService.syncShortcutPins(
+            Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined())
+        )
     }
 
     private func applyBookmarks(

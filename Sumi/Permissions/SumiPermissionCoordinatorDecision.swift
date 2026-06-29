@@ -116,6 +116,13 @@ struct SumiPermissionCoordinatorDecision: Equatable, Sendable {
         else {
             return nil
         }
-        return try? JSONDecoder().decode(SumiSystemPermissionSnapshot.self, from: data)
+        do {
+            return try JSONDecoder().decode(SumiSystemPermissionSnapshot.self, from: data)
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[Permissions] Failed to decode stored system permission snapshot: \(error.localizedDescription)"
+            )
+            return nil
+        }
     }
 }
