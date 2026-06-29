@@ -344,6 +344,28 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         XCTAssertEqual(store.hostsDeletingWhenAllWindowsClosed(profileId: profileB), ["accounts.youtube.com"])
     }
 
+    func testSiteDataPolicyStoreClassifiesUnreadablePayload() {
+        let suiteName = "SumiSiteDataPolicyUnreadableTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let storageKey = "settings.siteDataPolicies.\(UUID().uuidString)"
+        let unreadablePayload = Data("not-json".utf8)
+        defaults.set(unreadablePayload, forKey: storageKey)
+
+        let store = SumiSiteDataPolicyStore(
+            userDefaults: defaults,
+            storageKey: storageKey
+        )
+
+        XCTAssertFalse(store.state(forHost: "example.com", profileId: UUID()).blockStorage)
+        XCTAssertEqual(defaults.data(forKey: "\(storageKey).unreadable"), unreadablePayload)
+        if case .failedDecode = store.diagnostics.loadOutcome {
+            // Expected classification.
+        } else {
+            XCTFail("Expected failed decode, got \(store.diagnostics.loadOutcome)")
+        }
+    }
+
     func testSiteDataBlockStoragePolicyDeletesExactHostImmediately() async {
         let suiteName = "SumiSiteDataBlockStorageTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

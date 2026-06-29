@@ -1,3 +1,5 @@
+import Compression
+
 @testable import Sumi
 import XCTest
 
@@ -210,6 +212,40 @@ final class SumiImportExportTests: XCTestCase {
         XCTAssertEqual(child.index, 5)
     }
 
+    func testZenImportWarnsWhenBookmarksCannotBeRead() throws {
+        let profileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZenProfile-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: profileURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: profileURL) }
+        let sessionJSON = Data(
+            """
+            {
+              "spaces": [
+                { "uuid": "workspace-a", "name": "Work", "icon": "💼" }
+              ],
+              "folders": [],
+              "tabs": []
+            }
+            """.utf8
+        )
+        try mozLZ4(sessionJSON).write(
+            to: profileURL.appendingPathComponent("zen-sessions.jsonlz4")
+        )
+        try FileManager.default.createDirectory(
+            at: profileURL.appendingPathComponent("places.sqlite"),
+            withIntermediateDirectories: true
+        )
+
+        let result = try SumiZenImportParser().parseWithDiagnostics(profileURL: profileURL)
+
+        XCTAssertTrue(result.data.bookmarks.isEmpty)
+        XCTAssertTrue(
+            result.warnings.contains {
+                $0.contains("Zen bookmarks were skipped because places.sqlite could not be imported")
+            }
+        )
+    }
+
     @MainActor
     func testImportNormalizationPreservesMixedFolderPinnedOrderWithinParent() {
         let spaceId = "space-a"
@@ -352,5 +388,34 @@ final class SumiImportExportTests: XCTestCase {
         XCTAssertEqual(decoded.version, SumiPortableArchive.currentVersion)
         XCTAssertEqual(decoded.includedCategories, [.profiles])
         XCTAssertEqual(decoded.data, data)
+    }
+
+    private func mozLZ4(_ payload: Data) throws -> Data {
+        let outputCapacity = payload.count + 64
+        var output = Data(count: outputCapacity)
+        let compressedSize = output.withUnsafeMutableBytes { outPtr in
+            payload.withUnsafeBytes { inPtr in
+                compression_encode_buffer(
+                    outPtr.bindMemory(to: UInt8.self).baseAddress!,
+                    outputCapacity,
+                    inPtr.bindMemory(to: UInt8.self).baseAddress!,
+                    payload.count,
+                    nil,
+                    COMPRESSION_LZ4_RAW
+                )
+            }
+        }
+        guard compressedSize > 0 else {
+            throw SumiImportExportError.exportFailed("Could not build test LZ4 payload.")
+        }
+
+        var archive = Data([0x6D, 0x6F, 0x7A, 0x4C, 0x7A, 0x34, 0x30, 0x00])
+        let size = UInt32(payload.count)
+        archive.append(UInt8(size & 0xFF))
+        archive.append(UInt8((size >> 8) & 0xFF))
+        archive.append(UInt8((size >> 16) & 0xFF))
+        archive.append(UInt8((size >> 24) & 0xFF))
+        archive.append(output.prefix(compressedSize))
+        return archive
     }
 }

@@ -59,6 +59,32 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertTrue(delegate.committedThemes.isEmpty)
     }
 
+    func testWindowSessionBootstrapClassifiesCorruptStoredSnapshot() throws {
+        let suiteName = "WindowSessionCorruptSnapshotTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let sessionKey = "SumiTests.windowSession.corrupt.\(UUID().uuidString)"
+        defaults.set(Data("not-json".utf8), forKey: sessionKey)
+
+        let result = WindowSessionBootstrapOverride.resolvedSnapshotResult(
+            userDefaults: defaults,
+            lastWindowSessionKey: sessionKey
+        )
+
+        guard case .failed(let failure) = result else {
+            return XCTFail("Expected failed decode, got \(result)")
+        }
+        XCTAssertEqual(failure.source, .userDefaultsKey(sessionKey))
+        XCTAssertEqual(failure.reason, .decodeFailed)
+        XCTAssertFalse(failure.message.isEmpty)
+        XCTAssertNil(
+            WindowSessionBootstrapOverride.resolvedSnapshot(
+                userDefaults: defaults,
+                lastWindowSessionKey: sessionKey
+            )
+        )
+    }
+
     func testBrowserManagerSuppressesGlobalCurrentTabFallbackDuringInitialSessionResolution() {
         let browserManager = BrowserManager()
         let space = Space(id: UUID(), name: "Primary")

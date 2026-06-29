@@ -1,26 +1,72 @@
 import Foundation
+import OSLog
+
+enum WindowSessionSnapshotSource: Equatable, Sendable {
+    case userDefaultsKey(String)
+    case overrideFile(URL)
+
+    var description: String {
+        switch self {
+        case .userDefaultsKey(let key):
+            return "UserDefaults(\(key))"
+        case .overrideFile(let url):
+            return url.path
+        }
+    }
+}
+
+struct WindowSessionSnapshotLoadFailure: Equatable, Sendable {
+    enum Reason: Equatable, Sendable {
+        case readFailed
+        case decodeFailed
+    }
+
+    var source: WindowSessionSnapshotSource
+    var reason: Reason
+    var message: String
+}
+
+enum WindowSessionSnapshotLoadResult {
+    case missing
+    case loaded(snapshot: WindowSessionSnapshot, data: Data)
+    case failed(WindowSessionSnapshotLoadFailure)
+}
 
 enum WindowSessionBootstrapOverride {
+    private static let log = Logger.sumi(category: "WindowSessionBootstrap")
     static let environmentPathKey = "SUMI_WINDOW_SESSION_OVERRIDE_PATH"
 
     static func resolvedSnapshot(
         userDefaults: UserDefaults = .standard,
         lastWindowSessionKey: String
     ) -> (snapshot: WindowSessionSnapshot, data: Data)? {
-        if let override = overrideSnapshot() {
-            return override
-        }
-
-        guard let data = userDefaults.data(forKey: lastWindowSessionKey),
-              let snapshot = try? JSONDecoder().decode(WindowSessionSnapshot.self, from: data)
-        else {
-            return nil
-        }
+        guard case .loaded(let snapshot, let data) = resolvedSnapshotResult(
+            userDefaults: userDefaults,
+            lastWindowSessionKey: lastWindowSessionKey
+        ) else { return nil }
 
         return (snapshot, data)
     }
 
-    private static func overrideSnapshot() -> (snapshot: WindowSessionSnapshot, data: Data)? {
+    static func resolvedSnapshotResult(
+        userDefaults: UserDefaults = .standard,
+        lastWindowSessionKey: String
+    ) -> WindowSessionSnapshotLoadResult {
+        if let override = overrideSnapshotResult() {
+            return override
+        }
+
+        guard let data = userDefaults.data(forKey: lastWindowSessionKey) else {
+            return .missing
+        }
+
+        return decodeSnapshot(
+            data,
+            source: .userDefaultsKey(lastWindowSessionKey)
+        )
+    }
+
+    private static func overrideSnapshotResult() -> WindowSessionSnapshotLoadResult? {
         guard let path = ProcessInfo.processInfo.environment[environmentPathKey],
               !path.isEmpty
         else {
@@ -28,13 +74,47 @@ enum WindowSessionBootstrapOverride {
         }
 
         let url = URL(fileURLWithPath: path, isDirectory: false)
-        guard let data = try? Data(contentsOf: url),
-              let snapshot = try? JSONDecoder().decode(WindowSessionSnapshot.self, from: data)
-        else {
-            return nil
-        }
 
-        return (snapshot, data)
+        do {
+            return decodeSnapshot(
+                try Data(contentsOf: url),
+                source: .overrideFile(url)
+            )
+        } catch {
+            log.error(
+                "Failed to read window session override at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return .failed(
+                WindowSessionSnapshotLoadFailure(
+                    source: .overrideFile(url),
+                    reason: .readFailed,
+                    message: error.localizedDescription
+                )
+            )
+        }
+    }
+
+    private static func decodeSnapshot(
+        _ data: Data,
+        source: WindowSessionSnapshotSource
+    ) -> WindowSessionSnapshotLoadResult {
+        do {
+            return .loaded(
+                snapshot: try JSONDecoder().decode(WindowSessionSnapshot.self, from: data),
+                data: data
+            )
+        } catch {
+            log.error(
+                "Failed to decode window session from \(source.description, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return .failed(
+                WindowSessionSnapshotLoadFailure(
+                    source: source,
+                    reason: .decodeFailed,
+                    message: error.localizedDescription
+                )
+            )
+        }
     }
 }
 
@@ -142,6 +222,8 @@ private enum WindowSessionSnapshotApplier {
 
 @MainActor
 final class WindowSessionService {
+    private static let log = Logger.sumi(category: "WindowSessionService")
+
     private let lastWindowSessionKey: String
     private var lastPersistedWindowSessionData: Data?
     private var pendingPersistTasks: [UUID: Task<Void, Never>] = [:]
@@ -149,6 +231,8 @@ final class WindowSessionService {
     /// The global session JSON is applied to at most one non-incognito window per "cycle"
     /// (after all windows close, `prepareForAllWindowsClosed()` clears this).
     private var didRestoreGlobalWindowSessionThisCycle = false
+    private(set) var lastRestoreFailure: WindowSessionSnapshotLoadFailure?
+    private(set) var lastPersistFailure: String?
 
     init(lastWindowSessionKey: String) {
         self.lastWindowSessionKey = lastWindowSessionKey
@@ -455,7 +539,17 @@ final class WindowSessionService {
         cancelPendingPersistence(for: windowState.id)
         guard !windowState.isIncognito else { return }
         let snapshot = makeWindowSessionSnapshot(for: windowState, delegate: delegate)
-        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(snapshot)
+            lastPersistFailure = nil
+        } catch {
+            lastPersistFailure = error.localizedDescription
+            Self.log.error(
+                "Failed to encode window session snapshot: \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
         let previousData =
             lastPersistedWindowSessionData
             ?? UserDefaults.standard.data(forKey: lastWindowSessionKey)
@@ -531,19 +625,24 @@ final class WindowSessionService {
         if didRestoreGlobalWindowSessionThisCycle {
             return false
         }
-        guard let resolvedSnapshot = WindowSessionBootstrapOverride.resolvedSnapshot(
-            lastWindowSessionKey: lastWindowSessionKey
-        ) else {
+
+        switch WindowSessionBootstrapOverride.resolvedSnapshotResult(lastWindowSessionKey: lastWindowSessionKey) {
+        case .missing:
+            lastRestoreFailure = nil
             return false
+        case .failed(let failure):
+            lastRestoreFailure = failure
+            Self.log.error(
+                "Failed to restore window session from \(failure.source.description, privacy: .public): \(failure.message, privacy: .public)"
+            )
+            return false
+        case .loaded(let snapshot, let data):
+            didRestoreGlobalWindowSessionThisCycle = true
+            lastPersistedWindowSessionData = data
+
+            WindowSessionSnapshotApplier.apply(snapshot, to: windowState, delegate: delegate)
+            return true
         }
-        let data = resolvedSnapshot.data
-        let snapshot = resolvedSnapshot.snapshot
-
-        didRestoreGlobalWindowSessionThisCycle = true
-        lastPersistedWindowSessionData = data
-
-        WindowSessionSnapshotApplier.apply(snapshot, to: windowState, delegate: delegate)
-        return true
     }
 
     private func restorePendingSplitGroupSelectionIfNeeded(

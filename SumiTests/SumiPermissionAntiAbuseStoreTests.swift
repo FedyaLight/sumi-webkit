@@ -3,6 +3,16 @@ import XCTest
 @testable import Sumi
 
 final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
+    private var temporaryDirectories: [URL] = []
+
+    override func tearDown() {
+        for directory in temporaryDirectories {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        temporaryDirectories.removeAll()
+        super.tearDown()
+    }
+
     func testRecordsAndFiltersEventsByCanonicalPermissionKey() async {
         let store = SumiPermissionAntiAbuseStore(userDefaults: nil)
         let key = antiAbuseKey(.camera)
@@ -58,7 +68,59 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
         _ = await store.events(for: antiAbuseKey(.camera), now: Date(timeIntervalSince1970: 1_800_000_000))
 
         let assertionDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        XCTAssertEqual(assertionDefaults.data(forKey: storageKey), unreadablePayload)
         XCTAssertEqual(assertionDefaults.data(forKey: "\(storageKey).unreadable"), unreadablePayload)
+    }
+
+    func testUnreadableFilePayloadIsPreservedAndNotOverwrittenByRead() async throws {
+        let directory = try temporaryDirectory()
+        let payloadURL = directory.appendingPathComponent("permission-anti-abuse-events.v1.json")
+        let unreadablePayload = Data("not-json".utf8)
+        try unreadablePayload.write(to: payloadURL)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "SumiAntiAbuseFileTests-\(UUID().uuidString)"))
+        let store = SumiPermissionAntiAbuseStore(
+            userDefaults: defaults,
+            storageDirectory: directory
+        )
+
+        let events = await store.events(
+            for: antiAbuseKey(.camera),
+            now: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        let diagnostics = await store.diagnostics()
+
+        XCTAssertTrue(events.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: payloadURL), unreadablePayload)
+        XCTAssertEqual(try Data(contentsOf: payloadURL.appendingPathExtension("unreadable")), unreadablePayload)
+        if case .failedFileDecode = diagnostics.loadOutcome {
+            // Expected classification.
+        } else {
+            XCTFail("Expected failed file decode, got \(diagnostics.loadOutcome)")
+        }
+    }
+
+    func testLegacyUserDefaultsPayloadMigratesToVersionedFileSnapshot() async throws {
+        let directory = try temporaryDirectory()
+        let suiteName = "SumiAntiAbuseMigrationTests-\(UUID().uuidString)"
+        let storageKey = "anti-abuse-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let key = antiAbuseKey(.camera)
+        let legacyEvents = [event(.userDismissed, key: key, at: now)]
+        defaults.set(try JSONEncoder().encode(legacyEvents), forKey: storageKey)
+
+        let store = SumiPermissionAntiAbuseStore(
+            userDefaults: defaults,
+            storageKey: storageKey,
+            storageDirectory: directory
+        )
+        let events = await store.events(for: key, now: now)
+        let diagnostics = await store.diagnostics()
+
+        XCTAssertEqual(events.map(\.type), [.userDismissed])
+        XCTAssertEqual(diagnostics.loadOutcome, .loadedLegacyUserDefaults)
+        let migrated = try Data(contentsOf: directory.appendingPathComponent("permission-anti-abuse-events.v1.json"))
+        XCTAssertGreaterThan(migrated.count, 0)
     }
 
     func testRetentionCapRemovesOldAndExcessEvents() async {
@@ -82,5 +144,13 @@ final class SumiPermissionAntiAbuseStoreTests: XCTestCase {
             now.addingTimeInterval(-2),
             now.addingTimeInterval(-1),
         ])
+    }
+
+    private func temporaryDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SumiAntiAbuseStoreTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        temporaryDirectories.append(directory)
+        return directory
     }
 }

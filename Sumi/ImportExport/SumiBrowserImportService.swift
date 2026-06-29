@@ -17,13 +17,13 @@ final class SumiBrowserImportService {
     func previewArcImport() throws -> SumiImportPreview {
         let sidebarURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Arc/StorableSidebar.json")
-        let data = try SumiArcImportParser().parse(sidebarURL: sidebarURL)
+        let result = try SumiArcImportParser().parseWithDiagnostics(sidebarURL: sidebarURL)
         return SumiImportPreview(
             title: "Arc",
             sourceKind: .arc,
-            data: data,
-            suggestedCategories: data.nonEmptyCategories,
-            warnings: warnings(for: data, source: "Arc"),
+            data: result.data,
+            suggestedCategories: result.data.nonEmptyCategories,
+            warnings: warnings(for: result.data, source: "Arc") + result.warnings,
             defaultMode: .merge
         )
     }
@@ -46,13 +46,13 @@ final class SumiBrowserImportService {
     }
 
     func previewZenImport(profileURL: URL) throws -> SumiImportPreview {
-        let data = try SumiZenImportParser().parse(profileURL: profileURL)
+        let result = try SumiZenImportParser().parseWithDiagnostics(profileURL: profileURL)
         return SumiImportPreview(
             title: "Zen: \(profileURL.lastPathComponent)",
             sourceKind: .zen,
-            data: data,
-            suggestedCategories: data.nonEmptyCategories,
-            warnings: warnings(for: data, source: "Zen"),
+            data: result.data,
+            suggestedCategories: result.data.nonEmptyCategories,
+            warnings: warnings(for: result.data, source: "Zen") + result.warnings,
             defaultMode: .merge
         )
     }
@@ -93,8 +93,24 @@ final class SumiBrowserImportService {
     }
 }
 
+struct SumiArcImportResult {
+    var data: SumiPortableData
+    var warnings: [String]
+}
+
 struct SumiArcImportParser {
     func parse(sidebarURL: URL) throws -> SumiPortableData {
+        var warnings: [String] = []
+        return try parse(sidebarURL: sidebarURL, warnings: &warnings)
+    }
+
+    func parseWithDiagnostics(sidebarURL: URL) throws -> SumiArcImportResult {
+        var warnings: [String] = []
+        let data = try parse(sidebarURL: sidebarURL, warnings: &warnings)
+        return SumiArcImportResult(data: data, warnings: warnings)
+    }
+
+    private func parse(sidebarURL: URL, warnings: inout [String]) throws -> SumiPortableData {
         guard FileManager.default.fileExists(atPath: sidebarURL.path) else {
             throw SumiImportExportError.unsupportedFile("Arc StorableSidebar.json was not found.")
         }
@@ -188,7 +204,7 @@ struct SumiArcImportParser {
         )
 
         folders = SumiPortableFolderHierarchyRepair.repaired(folders)
-        let bookmarks = parseArcBookmarks()
+        let bookmarks = parseArcBookmarks(warnings: &warnings)
 
         return SumiPortableData(
             profiles: Array(profileRecordsByName.values).sorted { $0.index < $1.index },
@@ -342,24 +358,54 @@ struct SumiArcImportParser {
         return output
     }
 
-    private func parseArcBookmarks() -> [SumiPortableBookmarkNode] {
+    private func parseArcBookmarks(warnings: inout [String]) -> [SumiPortableBookmarkNode] {
         let userData = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/Arc/User Data", isDirectory: true)
-        guard let profileDirs = try? FileManager.default.contentsOfDirectory(
-            at: userData,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard FileManager.default.fileExists(atPath: userData.path) else {
+            return []
+        }
+
+        let profileDirs: [URL]
+        do {
+            profileDirs = try FileManager.default.contentsOfDirectory(
+                at: userData,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            warnings.append("Arc bookmarks were skipped because the User Data directory could not be read: \(error.localizedDescription)")
             return []
         }
 
         var profileFolders: [SumiPortableBookmarkNode] = []
         for profile in profileDirs.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let file = profile.appendingPathComponent("Bookmarks")
-            guard let raw = try? Data(contentsOf: file),
-                  let object = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
-                  let roots = object["roots"] as? [String: Any]
-            else { continue }
+            guard FileManager.default.fileExists(atPath: file.path) else { continue }
+
+            let raw: Data
+            do {
+                raw = try Data(contentsOf: file)
+            } catch {
+                warnings.append("Arc bookmarks for \(profile.lastPathComponent) were skipped because Bookmarks could not be read: \(error.localizedDescription)")
+                continue
+            }
+
+            let object: [String: Any]
+            do {
+                guard let decoded = try JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
+                    warnings.append("Arc bookmarks for \(profile.lastPathComponent) were skipped because Bookmarks is not a JSON object.")
+                    continue
+                }
+                object = decoded
+            } catch {
+                warnings.append("Arc bookmarks for \(profile.lastPathComponent) were skipped because Bookmarks could not be decoded: \(error.localizedDescription)")
+                continue
+            }
+
+            guard let roots = object["roots"] as? [String: Any] else {
+                warnings.append("Arc bookmarks for \(profile.lastPathComponent) were skipped because Bookmarks has no roots object.")
+                continue
+            }
             var children: [SumiPortableBookmarkNode] = []
             for key in ["bookmark_bar", "other", "synced"] {
                 if let root = roots[key] as? [String: Any] {
@@ -451,8 +497,24 @@ private struct ArcSpaceInfo {
     var color: SumiPortableRGBColor?
 }
 
+struct SumiZenImportResult {
+    var data: SumiPortableData
+    var warnings: [String]
+}
+
 struct SumiZenImportParser {
     func parse(profileURL: URL) throws -> SumiPortableData {
+        var warnings: [String] = []
+        return try parse(profileURL: profileURL, warnings: &warnings)
+    }
+
+    func parseWithDiagnostics(profileURL: URL) throws -> SumiZenImportResult {
+        var warnings: [String] = []
+        let data = try parse(profileURL: profileURL, warnings: &warnings)
+        return SumiZenImportResult(data: data, warnings: warnings)
+    }
+
+    private func parse(profileURL: URL, warnings: inout [String]) throws -> SumiPortableData {
         let sessionsURL = profileURL.appendingPathComponent("zen-sessions.jsonlz4")
         guard FileManager.default.fileExists(atPath: sessionsURL.path) else {
             throw SumiImportExportError.unsupportedFile("This Zen profile does not contain zen-sessions.jsonlz4.")
@@ -462,7 +524,7 @@ struct SumiZenImportParser {
             throw SumiImportExportError.unsupportedFile("Zen sessions file did not decode to JSON.")
         }
 
-        let containers = parseContainers(profileURL: profileURL)
+        let containers = parseContainers(profileURL: profileURL, warnings: &warnings)
         let zenSpaces = root["spaces"] as? [[String: Any]] ?? []
         let zenFolders = root["folders"] as? [[String: Any]] ?? []
         let zenTabs = root["tabs"] as? [[String: Any]] ?? []
@@ -579,8 +641,19 @@ struct SumiZenImportParser {
             fileURL: profileURL.appendingPathComponent("places.sqlite"),
             kind: .firefoxSQLite
         )
-        let bookmarks = (try? bookmarkSource.readBookmarks())
-            .map(SumiBookmarkPortableBridge.portableNodes(from:)) ?? []
+        let bookmarks: [SumiPortableBookmarkNode]
+        if FileManager.default.fileExists(atPath: bookmarkSource.fileURL.path) {
+            do {
+                bookmarks = try SumiBookmarkPortableBridge.portableNodes(
+                    from: bookmarkSource.readBookmarks()
+                )
+            } catch {
+                warnings.append("Zen bookmarks were skipped because places.sqlite could not be imported: \(error.localizedDescription)")
+                bookmarks = []
+            }
+        } else {
+            bookmarks = []
+        }
         let folderRecords = flattenZenFolders(zenFolders, pinnedSiblingIndexes: pinnedSiblingIndexes)
 
         return SumiPortableData(
@@ -594,14 +667,34 @@ struct SumiZenImportParser {
         )
     }
 
-    private func parseContainers(profileURL: URL) -> [Int: String] {
+    private func parseContainers(profileURL: URL, warnings: inout [String]) -> [Int: String] {
         let url = profileURL.appendingPathComponent("containers.json")
-        guard let data = try? Data(contentsOf: url),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let identities = root["identities"] as? [[String: Any]]
-        else {
+        guard FileManager.default.fileExists(atPath: url.path) else {
             return [:]
         }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            warnings.append("Zen containers were skipped because containers.json could not be read: \(error.localizedDescription)")
+            return [:]
+        }
+
+        let identities: [[String: Any]]
+        do {
+            guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let decodedIdentities = root["identities"] as? [[String: Any]]
+            else {
+                warnings.append("Zen containers were skipped because containers.json did not contain identities.")
+                return [:]
+            }
+            identities = decodedIdentities
+        } catch {
+            warnings.append("Zen containers were skipped because containers.json could not be decoded: \(error.localizedDescription)")
+            return [:]
+        }
+
         var output: [Int: String] = [:]
         for identity in identities {
             if let id = identity["userContextId"] as? Int {
