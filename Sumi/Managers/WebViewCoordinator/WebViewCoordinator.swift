@@ -200,44 +200,46 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     @discardableResult
     func prepareVisibleWebViews(
+        for windowState: BrowserWindowState
+    ) -> Bool {
+        guard let browserManager else { return false }
+        return prepareVisibleWebViews(
+            for: windowState,
+            runtime: visibleWebViewPreparationRuntime(browserManager: browserManager)
+        )
+    }
+
+    @discardableResult
+    func prepareVisibleWebViews(
         for windowState: BrowserWindowState,
-        browserManager: BrowserManager
+        runtime: VisibleWebViewPreparationRuntime
     ) -> Bool {
         visibleWebViewRuntimeOwner.prepareVisibleWebViews(
             for: windowState,
-            browserManager: browserManager,
+            runtime: runtime,
             webViewRegistry: webViewRegistry,
-            resolveTab: { [self] tabId, windowState, browserManager in
-                resolveTab(for: tabId, in: windowState, browserManager: browserManager)
-            },
             existingWebView: { [self] tabId, windowId in
                 getWebView(for: tabId, in: windowId)
             },
             createWebView: { [self] tab, windowId in
                 getOrCreateWebView(for: tab, in: windowId)
-            },
-            evictHiddenWebViews: { [self] windowId, visibleTabIDs, tabManager in
-                evictHiddenWebViewsIfNeeded(
-                    in: windowId,
-                    visibleTabIDs: visibleTabIDs,
-                    tabManager: tabManager
-                )
             }
         )
     }
 
     func schedulePrepareVisibleWebViews(
-        for windowState: BrowserWindowState,
-        browserManager: BrowserManager
+        for windowState: BrowserWindowState
     ) {
+        guard let browserManager else { return }
+        let runtime = visibleWebViewPreparationRuntime(browserManager: browserManager)
         visibleWebViewRuntimeOwner.schedulePrepareVisibleWebViews(
             for: windowState,
-            browserManager: browserManager,
-            prepareVisibleWebViews: { [weak self] windowState, browserManager in
+            runtime: runtime,
+            prepareVisibleWebViews: { [weak self] windowState in
                 guard let self else { return false }
                 return self.prepareVisibleWebViews(
                     for: windowState,
-                    browserManager: browserManager
+                    runtime: runtime
                 )
             }
         )
@@ -989,10 +991,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     ) -> [UUID] {
         visibleWebViewRuntimeOwner.visibleTabIDs(
             for: windowState,
-            browserManager: browserManager,
-            resolveTab: { [self] tabId, windowState, browserManager in
-                resolveTab(for: tabId, in: windowState, browserManager: browserManager)
-            }
+            runtime: visibleWebViewPreparationRuntime(browserManager: browserManager)
         )
     }
 
@@ -1002,9 +1001,30 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     ) -> Set<UUID> {
         visibleWebViewRuntimeOwner.visibleTabIDSet(
             in: windowId,
+            runtime: browserManager.map {
+                visibleWebViewPreparationRuntime(browserManager: $0)
+            }
+        )
+    }
+
+    private func visibleWebViewPreparationRuntime(
+        browserManager: BrowserManager
+    ) -> VisibleWebViewPreparationRuntime {
+        VisibleWebViewPreparationRuntime.live(
             browserManager: browserManager,
-            resolveTab: { [self] tabId, windowState, browserManager in
-                resolveTab(for: tabId, in: windowState, browserManager: browserManager)
+            resolveTab: { [weak self] tabId, windowState, browserManager in
+                self?.resolveTab(
+                    for: tabId,
+                    in: windowState,
+                    browserManager: browserManager
+                )
+            },
+            evictHiddenWebViews: { [weak self] windowId, visibleTabIDs, tabManager in
+                self?.evictHiddenWebViewsIfNeeded(
+                    in: windowId,
+                    visibleTabIDs: visibleTabIDs,
+                    tabManager: tabManager
+                )
             }
         )
     }
@@ -1093,11 +1113,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     ) -> (owner: TrackedWebViewOwner, webView: WKWebView)? {
         visibleWebViewRuntimeOwner.preferredPrimaryWebViewCandidate(
             for: tabId,
-            browserManager: browserManager,
-            webViewRegistry: webViewRegistry,
-            resolveTab: { [self] tabId, windowState, browserManager in
-                resolveTab(for: tabId, in: windowState, browserManager: browserManager)
-            }
+            runtime: browserManager.map {
+                visibleWebViewPreparationRuntime(browserManager: $0)
+            },
+            webViewRegistry: webViewRegistry
         )
     }
 

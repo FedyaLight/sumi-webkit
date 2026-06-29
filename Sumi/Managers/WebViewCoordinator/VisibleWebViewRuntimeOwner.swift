@@ -97,12 +97,10 @@ final class VisibleWebViewRuntimeOwner {
     @discardableResult
     func prepareVisibleWebViews(
         for windowState: BrowserWindowState,
-        browserManager: BrowserManager,
+        runtime: VisibleWebViewPreparationRuntime,
         webViewRegistry: WindowWebViewRegistry,
-        resolveTab: (UUID, BrowserWindowState, BrowserManager) -> Tab?,
         existingWebView: (UUID, UUID) -> WKWebView?,
-        createWebView: (Tab, UUID) -> WKWebView?,
-        evictHiddenWebViews: (UUID, Set<UUID>, TabManager) -> Void
+        createWebView: (Tab, UUID) -> WKWebView?
     ) -> Bool {
         let signpostState = PerformanceTrace.beginInterval("WebViewCoordinator.prepareVisibleWebViews")
         defer {
@@ -114,72 +112,65 @@ final class VisibleWebViewRuntimeOwner {
 
         let visibleTabIDs = visibleTabIDs(
             for: windowState,
-            browserManager: browserManager,
-            resolveTab: resolveTab
+            runtime: runtime
         )
         webViewRegistry.noteVisibleTabs(visibleTabIDs, in: windowState.id)
 
         var didCreateWebView = false
         for tabId in visibleTabIDs {
-            guard let tab = resolveTab(tabId, windowState, browserManager) else {
+            guard let tab = runtime.resolveTab(tabId, windowState) else {
                 continue
             }
-            guard browserManager.canMaterializeNormalTabWebViewDuringStartup(tab) else {
+            guard runtime.canMaterializeNormalTabWebViewDuringStartup(tab) else {
                 continue
             }
 
-            browserManager.compositorManager.markTabAccessed(tab.id)
+            runtime.markTabAccessed(tab.id)
             if existingWebView(tab.id, windowState.id) == nil,
                createWebView(tab, windowState.id) != nil {
                 didCreateWebView = true
             }
         }
 
-        evictHiddenWebViews(
+        runtime.evictHiddenWebViews(
             windowState.id,
-            Set(visibleTabIDs),
-            browserManager.tabManager
+            Set(visibleTabIDs)
         )
-        browserManager.tabSuspensionService.scheduleProactiveTimerReconcile(
-            reason: "visible-webviews-prepared"
-        )
-        browserManager.backgroundMediaOptimizationService.scheduleReconcile(
-            reason: "visible-webviews-prepared"
-        )
+        runtime.scheduleTabSuspensionReconcile("visible-webviews-prepared")
+        runtime.scheduleBackgroundMediaReconcile("visible-webviews-prepared")
 
         return didCreateWebView
     }
 
     func schedulePrepareVisibleWebViews(
         for windowState: BrowserWindowState,
-        browserManager: BrowserManager,
-        prepareVisibleWebViews: @escaping @MainActor (BrowserWindowState, BrowserManager) -> Bool
+        runtime: VisibleWebViewPreparationRuntime,
+        prepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Bool
     ) {
         let windowId = windowState.id
         guard scheduledPrepareWindowIds.insert(windowId).inserted else { return }
 
-        DispatchQueue.main.async { [weak self, weak browserManager, weak windowState] in
+        DispatchQueue.main.async { [weak self, weak windowState] in
             guard let self else { return }
             self.scheduledPrepareWindowIds.remove(windowId)
 
-            guard let browserManager, let windowState else { return }
-            let didCreateWebView = prepareVisibleWebViews(windowState, browserManager)
+            guard let windowState else { return }
+            let didCreateWebView = prepareVisibleWebViews(windowState)
             if didCreateWebView {
-                browserManager.refreshCompositor(for: windowState)
+                runtime.refreshCompositor(windowState)
             }
         }
     }
 
     func visibleTabIDs(
         for windowState: BrowserWindowState,
-        browserManager: BrowserManager,
-        resolveTab: (UUID, BrowserWindowState, BrowserManager) -> Tab?
+        runtime: VisibleWebViewPreparationRuntime
     ) -> [UUID] {
         VisibleTabPreparationPlan.visibleTabIDs(
-            currentTabId: browserManager.currentTab(for: windowState)?.id,
-            splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
+            currentTabId: runtime.currentTabId(windowState),
+            splitTabIds: runtime.splitVisibleTabIds(windowState.id)
         ).filter { tabId in
-            guard let tab = resolveTab(tabId, windowState, browserManager) else {
+            guard let tab = runtime.resolveTab(tabId, windowState) else {
                 return false
             }
             return tab.requiresPrimaryWebView
@@ -188,28 +179,25 @@ final class VisibleWebViewRuntimeOwner {
 
     func visibleTabIDSet(
         in windowId: UUID,
-        browserManager: BrowserManager?,
-        resolveTab: (UUID, BrowserWindowState, BrowserManager) -> Tab?
+        runtime: VisibleWebViewPreparationRuntime?
     ) -> Set<UUID> {
-        guard let browserManager,
-              let windowState = browserManager.windowRegistry?.windows[windowId]
+        guard let runtime,
+              let windowState = runtime.windowState(windowId)
         else {
             return []
         }
         return Set(
             visibleTabIDs(
                 for: windowState,
-                browserManager: browserManager,
-                resolveTab: resolveTab
+                runtime: runtime
             )
         )
     }
 
     func preferredPrimaryWebViewCandidate(
         for tabId: UUID,
-        browserManager: BrowserManager?,
+        runtime: VisibleWebViewPreparationRuntime?,
         webViewRegistry: WindowWebViewRegistry,
-        resolveTab: (UUID, BrowserWindowState, BrowserManager) -> Tab?
     ) -> (owner: TrackedWebViewOwner, webView: WKWebView)? {
         let candidates = webViewRegistry.trackedWebViews(for: tabId)
         guard candidates.isEmpty == false else { return nil }
@@ -217,32 +205,28 @@ final class VisibleWebViewRuntimeOwner {
         return candidates.min { lhs, rhs in
             candidatePriority(
                 for: lhs.0,
-                browserManager: browserManager,
-                webViewRegistry: webViewRegistry,
-                resolveTab: resolveTab
+                runtime: runtime,
+                webViewRegistry: webViewRegistry
             )
                 < candidatePriority(
                     for: rhs.0,
-                    browserManager: browserManager,
-                    webViewRegistry: webViewRegistry,
-                    resolveTab: resolveTab
+                    runtime: runtime,
+                    webViewRegistry: webViewRegistry
                 )
         }
     }
 
     private func candidatePriority(
         for owner: TrackedWebViewOwner,
-        browserManager: BrowserManager?,
-        webViewRegistry: WindowWebViewRegistry,
-        resolveTab: (UUID, BrowserWindowState, BrowserManager) -> Tab?
+        runtime: VisibleWebViewPreparationRuntime?,
+        webViewRegistry: WindowWebViewRegistry
     ) -> (Int, Int, String) {
         let visibleRank: Int
-        if let browserManager,
-           let windowState = browserManager.windowRegistry?.windows[owner.windowID],
+        if let runtime,
+           let windowState = runtime.windowState(owner.windowID),
            visibleTabIDs(
                for: windowState,
-               browserManager: browserManager,
-               resolveTab: resolveTab
+               runtime: runtime
            ).contains(owner.tabID) {
             visibleRank = 0
         } else {

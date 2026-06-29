@@ -99,21 +99,13 @@ extension BrowserWindowVisualMutationOwner.Dependencies {
                 ) ?? false
             },
             prepareVisibleWebViews: { [weak browserManager] windowState in
-                guard let browserManager,
-                      let webViewCoordinator = browserManager.webViewCoordinator
-                else {
-                    return false
-                }
-                return webViewCoordinator.prepareVisibleWebViews(
-                    for: windowState,
-                    browserManager: browserManager
-                )
+                browserManager?.webViewCoordinator?.prepareVisibleWebViews(
+                    for: windowState
+                ) ?? false
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                guard let browserManager else { return }
-                browserManager.webViewCoordinator?.schedulePrepareVisibleWebViews(
-                    for: windowState,
-                    browserManager: browserManager
+                browserManager?.webViewCoordinator?.schedulePrepareVisibleWebViews(
+                    for: windowState
                 )
             }
         )
