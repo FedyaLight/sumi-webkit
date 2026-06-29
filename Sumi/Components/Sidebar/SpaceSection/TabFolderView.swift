@@ -620,16 +620,16 @@ struct TabFolderView: View {
                 isAppKitInteractionEnabled: isInteractive,
                 accessibilityID: "folder-shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateTab: { tab in
-                    browserContext.requestUserTabActivation(tab, windowState)
+                    browserContext.commands.requestUserTabActivation(tab, windowState)
                 },
                 onActivateGroup: { group in
-                    browserContext.focusSplitGroup(group, windowState)
+                    browserContext.commands.focusSplitGroup(group, windowState)
                 },
                 onRestoreShortcutSplitMember: { item, group in
-                    browserContext.restoreShortcutSplitMember(item.id, group, windowState)
+                    browserContext.commands.restoreShortcutSplitMember(item.id, group, windowState)
                 },
                 onCloseTab: { tab in
-                    browserContext.closeTab(tab, windowState)
+                    browserContext.commands.closeTab(tab, windowState)
                 },
                 onPrepareShortcutRestoreGap: onPrepareShortcutRestoreGap,
                 onPerformShortcutRestoreWithPreparedGap: onPerformShortcutRestoreWithPreparedGap
@@ -650,7 +650,7 @@ struct TabFolderView: View {
                 accessibilityID: "folder-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isInteractive,
                 action: {
-                    browserContext.focusSplitGroup(placeholderGroup, windowState)
+                    browserContext.commands.focusSplitGroup(placeholderGroup, windowState)
                 }
             )
             .opacity(
@@ -795,7 +795,7 @@ struct TabFolderView: View {
             in: windowState.id,
             currentSpaceId: space.id
         )
-        browserContext.requestUserTabActivation(
+        browserContext.commands.requestUserTabActivation(
             tab,
             windowState
         )

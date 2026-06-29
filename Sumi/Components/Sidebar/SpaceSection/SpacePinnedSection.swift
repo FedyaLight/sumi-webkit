@@ -222,16 +222,16 @@ extension SpaceView {
                 isAppKitInteractionEnabled: isInteractive,
                 accessibilityID: "shortcut-host-split-row-\(group.id.uuidString)",
                 onActivateTab: { tab in
-                    browserContext.requestUserTabActivation(tab, windowState)
+                    browserContext.commands.requestUserTabActivation(tab, windowState)
                 },
                 onActivateGroup: { group in
-                    browserContext.focusSplitGroup(group, windowState)
+                    browserContext.commands.focusSplitGroup(group, windowState)
                 },
                 onRestoreShortcutSplitMember: { item, group in
-                    browserContext.restoreShortcutSplitMember(item.id, group, windowState)
+                    browserContext.commands.restoreShortcutSplitMember(item.id, group, windowState)
                 },
                 onCloseTab: { tab in
-                    browserContext.closeTab(tab, windowState)
+                    browserContext.commands.closeTab(tab, windowState)
                 },
                 onPrepareShortcutRestoreGap: { item, group in
                     prepareShortcutRestoreGap(for: item, in: group)
@@ -432,7 +432,7 @@ extension SpaceView {
                 accessibilityID: "space-pinned-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isInteractive,
                 action: {
-                    browserContext.focusSplitGroup(placeholderGroup, windowState)
+                    browserContext.commands.focusSplitGroup(placeholderGroup, windowState)
                 }
             )
             .opacity(
@@ -654,7 +654,7 @@ extension SpaceView {
             in: windowState.id,
             currentSpaceId: space.id
         )
-        browserContext.requestUserTabActivation(
+        browserContext.commands.requestUserTabActivation(
             tab,
             windowState
         )
@@ -662,7 +662,7 @@ extension SpaceView {
 
     private func unloadShortcutPin(_ pin: ShortcutPin) {
         if let current = browserContext.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState) {
-            browserContext.closeTab(current, windowState)
+            browserContext.commands.closeTab(current, windowState)
             return
         }
 
@@ -670,7 +670,7 @@ extension SpaceView {
     }
 
     private func duplicateShortcutPin(_ pin: ShortcutPin) {
-        _ = browserContext.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
+        _ = browserContext.commands.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
@@ -718,7 +718,7 @@ extension SpaceView {
     }
 
     private func pinShortcutGlobally(_ pin: ShortcutPin) {
-        browserContext.pinShortcutGlobally(pin, windowState, space.id, activeShortcutTab(for: pin))
+        browserContext.commands.pinShortcutGlobally(pin, windowState, space.id, activeShortcutTab(for: pin))
     }
 
     private func copyLink(_ url: URL) {

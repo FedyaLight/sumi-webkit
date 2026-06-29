@@ -642,39 +642,39 @@ struct SpacesSideBarView: View {
     // MARK: - Context Menu
 
     private func sidebarContextMenuEntries() -> [SidebarContextMenuEntry] {
-        let newFolderAction: (() -> Void)? = browserContext.canCreateFolderInCurrentSpace(windowState) == false
+        let newFolderAction: (() -> Void)? = browserContext.commands.canCreateFolderInCurrentSpace(windowState) == false
             ? nil
             : {
-                browserContext.createFolderInCurrentSpace(windowState)
+                browserContext.commands.createFolderInCurrentSpace(windowState)
             }
         let changeThemeAction: (() -> Void)? = browserContext.tabManager.currentSpace == nil
             ? nil
             : {
-                browserContext.showGradientEditor(windowState.resolveSidebarPresentationSource())
+                browserContext.commands.showGradientEditor(windowState.resolveSidebarPresentationSource())
             }
 
         return makeSidebarShellContextMenuEntries(
             isCompactModeEnabled: !windowState.isSidebarVisible,
             actions: .init(
                 newTab: {
-                    browserContext.openNewTabOrFloatingBar(windowState)
+                    browserContext.commands.openNewTabOrFloatingBar(windowState)
                 },
                 newFolder: newFolderAction,
                 newRSSLiveFolder: newFolderAction.map { _ in
-                    { browserContext.createRSSLiveFolderInCurrentSpace(windowState) }
+                    { browserContext.commands.createRSSLiveFolderInCurrentSpace(windowState) }
                 },
                 newGitHubPullRequestsLiveFolder: newFolderAction.map { _ in
-                    { browserContext.createGitHubPullRequestsLiveFolderInCurrentSpace(windowState) }
+                    { browserContext.commands.createGitHubPullRequestsLiveFolderInCurrentSpace(windowState) }
                 },
                 newGitHubIssuesLiveFolder: newFolderAction.map { _ in
-                    { browserContext.createGitHubIssuesLiveFolderInCurrentSpace(windowState) }
+                    { browserContext.commands.createGitHubIssuesLiveFolderInCurrentSpace(windowState) }
                 },
                 changeTheme: changeThemeAction,
                 toggleCompactMode: {
-                    browserContext.toggleSidebar(windowState)
+                    browserContext.commands.toggleSidebar(windowState)
                 },
                 openSettings: {
-                    browserContext.openAppearanceSettings(windowState)
+                    browserContext.commands.openAppearanceSettings(windowState)
                 }
             )
         )
@@ -684,7 +684,7 @@ struct SpacesSideBarView: View {
 
     private func handleSidebarContextMenuVisibility(_ presented: Bool) {
         if presented {
-            browserContext.closeDownloadsPopover(windowState)
+            browserContext.commands.closeDownloadsPopover(windowState)
         }
     }
 
@@ -702,11 +702,11 @@ struct SpacesSideBarView: View {
             scrollHoverCoordinator: scrollHoverCoordinator,
             isSidebarHovered: $isSidebarHovered,
             onActivateTab: {
-                browserContext.requestUserTabActivation($0, windowState)
+                browserContext.commands.requestUserTabActivation($0, windowState)
             },
-            onCloseTab: { browserContext.closeTab($0, windowState) },
-            onMoveTabUp: { browserContext.moveTabUp($0.id) },
-            onMoveTabDown: { browserContext.moveTabDown($0.id) },
+            onCloseTab: { browserContext.commands.closeTab($0, windowState) },
+            onMoveTabUp: { browserContext.commands.moveTabUp($0.id) },
+            onMoveTabDown: { browserContext.commands.moveTabDown($0.id) },
             onMuteTab: { $0.toggleMute() }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

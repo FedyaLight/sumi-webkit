@@ -170,7 +170,7 @@ struct TabFolderContextMenuActionOwner {
 
     func unloadShortcutPin(_ pin: ShortcutPin) {
         if let current = browserContext.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState) {
-            browserContext.closeTab(current, windowState)
+            browserContext.commands.closeTab(current, windowState)
             return
         }
 
@@ -200,7 +200,7 @@ struct TabFolderContextMenuActionOwner {
            source?.kind == .githubPullRequests || source?.kind == .githubIssues {
             githubLoginSection = [
                 .action(.init(title: "Sign in to GitHub", systemImage: "person.crop.circle.badge.exclamationmark", classification: .presentationOnly) {
-                    _ = browserContext.openForegroundTab("https://github.com/login", windowState, space.id)
+                    _ = browserContext.commands.openForegroundTab("https://github.com/login", windowState, space.id)
                 }),
             ]
         } else {
@@ -309,7 +309,7 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func duplicateShortcutPin(_ pin: ShortcutPin) {
-        _ = browserContext.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
+        _ = browserContext.commands.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
@@ -347,7 +347,7 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func pinShortcutGlobally(_ pin: ShortcutPin) {
-        browserContext.pinShortcutGlobally(pin, windowState, space.id, activeShortcutTab(for: pin))
+        browserContext.commands.pinShortcutGlobally(pin, windowState, space.id, activeShortcutTab(for: pin))
     }
 
     private var folderHasLiveSavedTabs: Bool {

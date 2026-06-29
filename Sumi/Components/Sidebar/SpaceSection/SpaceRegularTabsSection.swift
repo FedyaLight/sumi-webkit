@@ -79,7 +79,7 @@ extension SpaceView {
 
     private func openNewTabFloatingBar() {
         guard isInteractive else { return }
-        browserContext.openNewTabOrFloatingBar(windowState)
+        browserContext.commands.openNewTabOrFloatingBar(windowState)
     }
 
     private var topNewTabButtonSection: some View {
@@ -227,7 +227,7 @@ extension SpaceView {
                             },
                             contextMenuEntries: regularTabContextMenuEntries,
                             onActivate: onActivateTab,
-                            onActivateGroup: { browserContext.focusSplitGroup(group, windowState) },
+                            onActivateGroup: { browserContext.commands.focusSplitGroup(group, windowState) },
                             onSegmentActionAnimationStart: { item in
                                 if splitSegmentAction(for: item, in: group) == .restore {
                                     prepareShortcutRestoreGap(for: item, in: group)
@@ -311,7 +311,7 @@ extension SpaceView {
         if splitMember(for: item, in: group)?.isShortcutBacked == true {
             performShortcutRestoreWithPreparedGap(for: item, in: group) {
                 performRegularSplitModelMutation {
-                    browserContext.restoreShortcutSplitMember(item.id, group, windowState)
+                    browserContext.commands.restoreShortcutSplitMember(item.id, group, windowState)
                 }
             }
             return
@@ -365,7 +365,7 @@ extension SpaceView {
                     if let tab = item.tab {
                         onActivateTab(tab)
                     } else {
-                        browserContext.focusSplitGroup(group, windowState)
+                        browserContext.commands.focusSplitGroup(group, windowState)
                     }
                 },
                 isEnabled: isInteractive
@@ -718,7 +718,7 @@ extension SpaceView {
         return makeSidebarTabContextMenuEntries(
             role: .regularTab,
             actions: .init(
-                duplicate: { browserContext.duplicateTab(tab, windowState) },
+                duplicate: { browserContext.commands.duplicateTab(tab, windowState) },
                 copyLink: { copyLink(tab.url) },
                 share: {
                     presentSharePicker(
@@ -770,7 +770,7 @@ extension SpaceView {
     }
 
     private func handleUserTabActivation(_ tab: Tab) {
-        browserContext.requestUserTabActivation(
+        browserContext.commands.requestUserTabActivation(
             tab,
             windowState
         )

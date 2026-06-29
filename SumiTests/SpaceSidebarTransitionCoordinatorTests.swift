@@ -297,26 +297,28 @@ private final class TestSidebarBrowserContextHarness {
                     )
                 }
             ),
-            canCreateFolderInCurrentSpace: { _ in true },
-            showGradientEditor: { _ in },
-            toggleSidebar: { _ in },
-            openAppearanceSettings: { _ in },
-            closeDownloadsPopover: { _ in },
-            requestUserTabActivation: { _, _ in },
-            closeTab: { _, _ in },
-            moveTabUp: { _ in },
-            moveTabDown: { _ in },
-            focusSplitGroup: { _, _ in },
-            restoreShortcutSplitMember: { _, _, _ in },
-            openForegroundTab: { _, _, _ in nil },
-            openNewTabOrFloatingBar: { _ in },
-            duplicateTab: { _, _ in },
-            pinShortcutGlobally: { _, _, _, _ in },
-            toggleDownloadsPopover: { _ in },
-            createFolderInCurrentSpace: { _ in },
-            createRSSLiveFolderInCurrentSpace: { _ in },
-            createGitHubPullRequestsLiveFolderInCurrentSpace: { _ in },
-            createGitHubIssuesLiveFolderInCurrentSpace: { _ in }
+            commands: SidebarBrowserCommandActions(
+                canCreateFolderInCurrentSpace: { _ in true },
+                showGradientEditor: { _ in },
+                toggleSidebar: { _ in },
+                openAppearanceSettings: { _ in },
+                closeDownloadsPopover: { _ in },
+                requestUserTabActivation: { _, _ in },
+                closeTab: { _, _ in },
+                moveTabUp: { _ in },
+                moveTabDown: { _ in },
+                focusSplitGroup: { _, _ in },
+                restoreShortcutSplitMember: { _, _, _ in },
+                openForegroundTab: { _, _, _ in nil },
+                openNewTabOrFloatingBar: { _ in },
+                duplicateTab: { _, _ in },
+                pinShortcutGlobally: { _, _, _, _ in },
+                toggleDownloadsPopover: { _ in },
+                createFolderInCurrentSpace: { _ in },
+                createRSSLiveFolderInCurrentSpace: { _ in },
+                createGitHubPullRequestsLiveFolderInCurrentSpace: { _ in },
+                createGitHubIssuesLiveFolderInCurrentSpace: { _ in }
+            )
         )
     }
 

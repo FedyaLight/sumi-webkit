@@ -227,7 +227,7 @@ struct PinnedGrid: View {
                 accessibilityID: "essential-split-placeholder-\(pin.id.uuidString)",
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled,
                 onActivate: {
-                    browserContext.focusSplitGroup(placeholderGroup, windowState)
+                    browserContext.commands.focusSplitGroup(placeholderGroup, windowState)
                 }
             )
             .frame(width: tileSize.width, height: tileSize.height, alignment: .center)
@@ -325,7 +325,7 @@ struct PinnedGrid: View {
             in: windowState.id,
             currentSpaceId: windowState.currentSpaceId
         )
-        browserContext.requestUserTabActivation(
+        browserContext.commands.requestUserTabActivation(
             tab,
             windowState
         )
@@ -333,7 +333,7 @@ struct PinnedGrid: View {
 
     private func unload(_ pin: ShortcutPin) {
         if let current = browserContext.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState) {
-            browserContext.closeTab(current, windowState)
+            browserContext.commands.closeTab(current, windowState)
             return
         }
 
@@ -341,7 +341,7 @@ struct PinnedGrid: View {
     }
 
     private func duplicateAsRegularTab(_ pin: ShortcutPin) {
-        _ = browserContext.openForegroundTab(
+        _ = browserContext.commands.openForegroundTab(
             pin.launchURL.absoluteString,
             windowState,
             windowState.currentSpaceId

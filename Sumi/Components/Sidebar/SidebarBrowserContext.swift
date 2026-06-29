@@ -22,6 +22,30 @@ struct SidebarSpaceTransitionActions {
 }
 
 @MainActor
+struct SidebarBrowserCommandActions {
+    let canCreateFolderInCurrentSpace: (BrowserWindowState) -> Bool
+    let showGradientEditor: (SidebarTransientPresentationSource) -> Void
+    let toggleSidebar: (BrowserWindowState) -> Void
+    let openAppearanceSettings: (BrowserWindowState) -> Void
+    let closeDownloadsPopover: (BrowserWindowState) -> Void
+    let requestUserTabActivation: (Tab, BrowserWindowState) -> Void
+    let closeTab: (Tab, BrowserWindowState) -> Void
+    let moveTabUp: (UUID) -> Void
+    let moveTabDown: (UUID) -> Void
+    let focusSplitGroup: (SplitGroup, BrowserWindowState) -> Void
+    let restoreShortcutSplitMember: (UUID, SplitGroup, BrowserWindowState) -> Void
+    let openForegroundTab: (String, BrowserWindowState, UUID?) -> Tab?
+    let openNewTabOrFloatingBar: (BrowserWindowState) -> Void
+    let duplicateTab: (Tab, BrowserWindowState) -> Void
+    let pinShortcutGlobally: (ShortcutPin, BrowserWindowState, UUID, Tab?) -> Void
+    let toggleDownloadsPopover: (BrowserWindowState) -> Void
+    let createFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let createRSSLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let createGitHubPullRequestsLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let createGitHubIssuesLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
+}
+
+@MainActor
 struct SidebarBrowserContext {
     let tabManager: TabManager
     let profileManager: ProfileManager
@@ -44,26 +68,7 @@ struct SidebarBrowserContext {
     let performDrop: (NSPasteboard, SidebarDropResolution, BrowserWindowState?) -> Bool
     let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
     let spaceTransitions: SidebarSpaceTransitionActions
-    let canCreateFolderInCurrentSpace: (BrowserWindowState) -> Bool
-    let showGradientEditor: (SidebarTransientPresentationSource) -> Void
-    let toggleSidebar: (BrowserWindowState) -> Void
-    let openAppearanceSettings: (BrowserWindowState) -> Void
-    let closeDownloadsPopover: (BrowserWindowState) -> Void
-    let requestUserTabActivation: (Tab, BrowserWindowState) -> Void
-    let closeTab: (Tab, BrowserWindowState) -> Void
-    let moveTabUp: (UUID) -> Void
-    let moveTabDown: (UUID) -> Void
-    let focusSplitGroup: (SplitGroup, BrowserWindowState) -> Void
-    let restoreShortcutSplitMember: (UUID, SplitGroup, BrowserWindowState) -> Void
-    let openForegroundTab: (String, BrowserWindowState, UUID?) -> Tab?
-    let openNewTabOrFloatingBar: (BrowserWindowState) -> Void
-    let duplicateTab: (Tab, BrowserWindowState) -> Void
-    let pinShortcutGlobally: (ShortcutPin, BrowserWindowState, UUID, Tab?) -> Void
-    let toggleDownloadsPopover: (BrowserWindowState) -> Void
-    let createFolderInCurrentSpace: (BrowserWindowState) -> Void
-    let createRSSLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
-    let createGitHubPullRequestsLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
-    let createGitHubIssuesLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let commands: SidebarBrowserCommandActions
 
     static func live(browserManager: BrowserManager) -> SidebarBrowserContext {
         SidebarBrowserContext(
@@ -164,84 +169,7 @@ struct SidebarBrowserContext {
                 mediaStore.configure(browserManager: browserManager, windowState: windowState)
             },
             spaceTransitions: browserManager.sidebarSpaceTransitionRoutingOwner.makeActions(),
-            canCreateFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.spaceForSidebarActions(in: windowState) != nil
-            },
-            showGradientEditor: { [weak browserManager] source in
-                browserManager?.showGradientEditor(source: source)
-            },
-            toggleSidebar: { [weak browserManager] windowState in
-                browserManager?.toggleSidebar(for: windowState)
-            },
-            openAppearanceSettings: { [weak browserManager] windowState in
-                browserManager?.openSettingsTab(selecting: .appearance, in: windowState)
-            },
-            closeDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.closeDownloadsPopover(in: windowState)
-            },
-            requestUserTabActivation: { [weak browserManager] tab, windowState in
-                browserManager?.requestUserTabActivation(tab, in: windowState)
-            },
-            closeTab: { [weak browserManager] tab, windowState in
-                browserManager?.closeTab(tab, in: windowState)
-            },
-            moveTabUp: { [weak browserManager] tabId in
-                browserManager?.tabManager.moveTabUp(tabId)
-            },
-            moveTabDown: { [weak browserManager] tabId in
-                browserManager?.tabManager.moveTabDown(tabId)
-            },
-            focusSplitGroup: { [weak browserManager] group, windowState in
-                browserManager?.focusSplitGroup(group, in: windowState)
-            },
-            restoreShortcutSplitMember: { [weak browserManager] memberId, group, windowState in
-                browserManager?.restoreShortcutSplitMember(memberId, from: group, in: windowState)
-            },
-            openForegroundTab: { [weak browserManager] url, windowState, preferredSpaceId in
-                browserManager?.openNewTab(
-                    url: url,
-                    context: .foreground(
-                        windowState: windowState,
-                        preferredSpaceId: preferredSpaceId
-                    )
-                )
-            },
-            openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                browserManager?.openNewTabOrFloatingBar(in: windowState)
-            },
-            duplicateTab: { [weak browserManager] tab, windowState in
-                browserManager?.duplicateTab(tab, in: windowState)
-            },
-            pinShortcutGlobally: { [weak browserManager] pin, windowState, spaceId, liveTab in
-                guard let browserManager else { return }
-                let syntheticTab = Tab(
-                    url: pin.launchURL,
-                    name: pin.resolvedDisplayTitle(liveTab: liveTab),
-                    favicon: SumiPersistentGlyph.launcherSystemImageFallback,
-                    spaceId: spaceId,
-                    index: 0,
-                    browserManager: browserManager
-                )
-                browserManager.tabManager.pinTab(
-                    syntheticTab,
-                    context: .init(windowState: windowState, spaceId: spaceId)
-                )
-            },
-            toggleDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.toggleDownloadsPopover(in: windowState)
-            },
-            createFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createFolderInCurrentSpace(in: windowState)
-            },
-            createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createRSSLiveFolderInCurrentSpace(in: windowState)
-            },
-            createGitHubPullRequestsLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
-            },
-            createGitHubIssuesLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
-            }
+            commands: browserManager.sidebarCommandRoutingOwner.makeActions()
         )
     }
 }
