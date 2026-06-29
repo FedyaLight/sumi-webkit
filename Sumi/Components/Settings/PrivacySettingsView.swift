@@ -9,14 +9,14 @@ import SwiftUI
 struct PrivacySettingsView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.sumiProtectionCoordinator) private var protectionCoordinator
-    @ObservedObject var browserManager: BrowserManager
-    var windowState: BrowserWindowState?
+    let repository: SumiPermissionSettingsRepository
+    let activeProfile: Profile?
 
     var body: some View {
         Group {
             if sumiSettings.privacySettingsRoute.isSiteSettings {
                 SumiSiteSettingsView(
-                    repository: SumiPermissionSettingsRepository(browserManager: browserManager),
+                    repository: repository,
                     profile: activeProfile,
                     initialFilter: sumiSettings.privacySettingsRoute.siteSettingsFilter
                 ) {
@@ -45,24 +45,6 @@ struct PrivacySettingsView: View {
                 }
             }
         }
-    }
-
-    private var activeProfile: Profile? {
-        if let windowState {
-            if windowState.isIncognito {
-                return windowState.ephemeralProfile
-            }
-            if let currentProfileId = windowState.currentProfileId,
-               let profile = browserManager.profileManager.profiles.first(where: { $0.id == currentProfileId }) {
-                return profile
-            }
-            if let currentTab = browserManager.currentTab(for: windowState),
-               let profileId = currentTab.profileId,
-               let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId }) {
-                return profile
-            }
-        }
-        return browserManager.currentProfile
     }
 }
 

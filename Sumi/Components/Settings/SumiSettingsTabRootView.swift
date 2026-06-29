@@ -318,7 +318,10 @@ struct SumiSettingsTabRootView: View {
         case .performance:
             SettingsPerformanceTab()
         case .privacy:
-            PrivacySettingsView(browserManager: browserManager, windowState: windowState)
+            PrivacySettingsView(
+                repository: SumiPermissionSettingsRepository(browserManager: browserManager),
+                activeProfile: activePrivacyProfile
+            )
         case .profiles:
             SumiProfilesSettingsPane(
                 profileManager: browserManager.profileManager,
@@ -372,6 +375,24 @@ struct SumiSettingsTabRootView: View {
         guard tab.url != newURL else { return }
         tab.url = newURL
         browserManager.tabManager.scheduleRuntimeStatePersistence(for: tab)
+    }
+
+    private var activePrivacyProfile: Profile? {
+        if let windowState {
+            if windowState.isIncognito {
+                return windowState.ephemeralProfile
+            }
+            if let currentProfileId = windowState.currentProfileId,
+               let profile = browserManager.profileManager.profiles.first(where: { $0.id == currentProfileId }) {
+                return profile
+            }
+            if let currentTab = browserManager.currentTab(for: windowState),
+               let profileId = currentTab.profileId,
+               let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileId }) {
+                return profile
+            }
+        }
+        return browserManager.currentProfile
     }
 }
 

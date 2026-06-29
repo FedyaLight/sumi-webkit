@@ -74,7 +74,6 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
                     self?.closeActive(committing: false)
                 }
             )
-            .environmentObject(browserManager)
             .environment(windowState)
             .environment(\.sumiSettings, browserManager.sumiSettings ?? SumiSettingsService())
             .environment(\.resolvedThemeContext, surfaceThemeContext)
