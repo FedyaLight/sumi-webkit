@@ -1067,6 +1067,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             tabId: id,
             tabName: { self.name },
             browserManager: browserManager,
+            nowPlayingController: browserManager?.nativeNowPlayingController,
             currentWebView: { self._webView },
             clearCurrentWebView: { self._webView = nil },
             removeAllWebViews: { closeActiveFullscreenMedia in

@@ -24,6 +24,7 @@ private enum WindowTransientChromeZIndex {
 struct WindowView: View {
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject private var glanceManager: GlanceManager
+    @EnvironmentObject private var nowPlayingController: SumiNativeNowPlayingController
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
@@ -314,6 +315,7 @@ struct WindowView: View {
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
+            nowPlayingController: nowPlayingController,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
             windowChromeSize: windowChromeSize,

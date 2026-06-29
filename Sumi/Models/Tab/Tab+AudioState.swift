@@ -38,7 +38,7 @@ extension Tab {
         guard oldState != newState else { return }
 
         if oldState.isPlayingAudio != newState.isPlayingAudio {
-            SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: 0)
+            browserManager?.nativeNowPlayingController.scheduleRefresh(delayNanoseconds: 0)
             browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
                 reason: "tab-audio-state-changed"
             )

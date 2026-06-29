@@ -6,6 +6,7 @@ struct SidebarHostEnvironmentContext {
     let windowState: BrowserWindowState
     let windowRegistry: WindowRegistry
     let sumiSettings: SumiSettingsService
+    let nowPlayingController: SumiNativeNowPlayingController
     let resolvedThemeContext: ResolvedThemeContext
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     let windowChromeSize: CGSize
@@ -117,6 +118,7 @@ extension View {
         self
             .environmentObject(context.browserManager)
             .environmentObject(context.browserManager.extensionSurfaceStore)
+            .environmentObject(context.nowPlayingController)
             .environment(context.windowState)
             .environment(context.windowRegistry)
             .environmentObject(context.sidebarDragState)

@@ -74,6 +74,7 @@ struct SidebarHoverOverlayView: View {
 
     @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var hoverManager: HoverSidebarManager
+    @EnvironmentObject private var nowPlayingController: SumiNativeNowPlayingController
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) private var sumiSettings
@@ -207,6 +208,7 @@ struct SidebarHoverOverlayView: View {
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
+            nowPlayingController: nowPlayingController,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
             windowChromeSize: windowChromeSize,

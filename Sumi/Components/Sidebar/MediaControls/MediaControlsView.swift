@@ -12,7 +12,13 @@ struct MediaControlsView: View {
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.scenePhase) private var scenePhase
 
-    @StateObject private var mediaStore = SumiBackgroundMediaCardStore()
+    @StateObject private var mediaStore: SumiBackgroundMediaCardStore
+
+    init(nowPlayingController: any SumiNativeNowPlayingRuntimeControlling) {
+        _mediaStore = StateObject(
+            wrappedValue: SumiBackgroundMediaCardStore(controller: nowPlayingController)
+        )
+    }
 
     var body: some View {
         Group {

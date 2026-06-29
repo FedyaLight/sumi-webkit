@@ -3,7 +3,27 @@ import Combine
 import Foundation
 
 @MainActor
-final class SumiNativeNowPlayingController: ObservableObject {
+protocol SumiNativeNowPlayingFeatureControlling: AnyObject {
+    func setFeatureEnabled(_ enabled: Bool)
+}
+
+@MainActor
+protocol SumiNativeNowPlayingRuntimeControlling: SumiNativeNowPlayingFeatureControlling {
+    var cardState: SumiBackgroundMediaCardState? { get }
+    var cardStatePublisher: AnyPublisher<SumiBackgroundMediaCardState?, Never> { get }
+
+    func configure(browserManager: BrowserManager)
+    func handleSceneActive()
+    func scheduleRefresh(delayNanoseconds: UInt64)
+    func handleTabActivated(_ tabId: UUID)
+    func handleTabUnloaded(_ tabId: UUID)
+    func activateOwner()
+    func togglePlayPause() async
+    func toggleMute() async
+}
+
+@MainActor
+final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayingRuntimeControlling {
     static let shared = SumiNativeNowPlayingController()
 
     typealias Candidate = (tab: Tab, windowState: BrowserWindowState)
@@ -24,6 +44,10 @@ final class SumiNativeNowPlayingController: ObservableObject {
     private var currentOwner: OwnerContext?
     private var pausedCardOwner: OwnerContext?
     private var refreshTask: Task<Void, Never>?
+
+    var cardStatePublisher: AnyPublisher<SumiBackgroundMediaCardState?, Never> {
+        $cardState.eraseToAnyPublisher()
+    }
 
     convenience init() {
         self.init(
@@ -497,18 +521,14 @@ extension SumiNativeNowPlayingController {
 final class SumiBackgroundMediaCardStore: ObservableObject {
     @Published private(set) var cardState: SumiBackgroundMediaCardState?
 
-    private let controller: SumiNativeNowPlayingController
+    private let controller: any SumiNativeNowPlayingRuntimeControlling
     private var cancellables: Set<AnyCancellable> = []
     weak var windowState: BrowserWindowState?
 
-    convenience init() {
-        self.init(controller: .shared)
-    }
-
-    init(controller: SumiNativeNowPlayingController) {
+    init(controller: any SumiNativeNowPlayingRuntimeControlling) {
         self.controller = controller
 
-        controller.$cardState
+        controller.cardStatePublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] state in
                 self?.applyVisibleState(state)

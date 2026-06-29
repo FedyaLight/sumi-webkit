@@ -14,7 +14,7 @@ import WebKit
 struct SumiApp: App {
     @State private var windowRegistry = WindowRegistry()
     @State private var webViewCoordinator = WebViewCoordinator()
-    @State private var settingsManager = SumiSettingsService()
+    @State private var settingsManager: SumiSettingsService
     @State private var keyboardShortcutManager = KeyboardShortcutManager()
     @State private var didSetupApplicationLifecycle = false
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -22,10 +22,14 @@ struct SumiApp: App {
     // NOTE: `BrowserManager` remains the central app coordinator; incremental refactors move
     // capabilities behind protocols and `@Environment` (see `WebViewCoordinator`, `WindowRegistry`).
     @StateObject private var browserManager: BrowserManager
+    @StateObject private var nowPlayingController: SumiNativeNowPlayingController
 
     init() {
         StartupPerformanceTrace.appLaunchStarted()
-        _browserManager = StateObject(wrappedValue: BrowserManager())
+        let nowPlayingController = SumiNativeNowPlayingController.shared
+        _nowPlayingController = StateObject(wrappedValue: nowPlayingController)
+        _settingsManager = State(initialValue: SumiSettingsService(nowPlayingController: nowPlayingController))
+        _browserManager = StateObject(wrappedValue: BrowserManager(nowPlayingController: nowPlayingController))
     }
 
     var body: some Scene {
@@ -39,6 +43,7 @@ struct SumiApp: App {
                 .environmentObject(browserManager)
                 .environmentObject(browserManager.glanceManager)
                 .environmentObject(browserManager.extensionSurfaceStore)
+                .environmentObject(nowPlayingController)
                 .environment(windowRegistry)
                 .environment(webViewCoordinator)
                 .environment(\.sumiSettings, settingsManager)
@@ -98,8 +103,8 @@ struct SumiApp: App {
         // `MediaControlsView` also configures this, but tab selection / activation can refresh the
         // shared controller before the sidebar appears; without an early configure, `refreshImmediately`
         // clears state because `browserManager` was still nil on the controller.
-        SumiNativeNowPlayingController.shared.setFeatureEnabled(settingsManager.sidebarMiniPlayerEnabled)
-        SumiNativeNowPlayingController.shared.configure(browserManager: browserManager)
+        nowPlayingController.setFeatureEnabled(settingsManager.sidebarMiniPlayerEnabled)
+        nowPlayingController.configure(browserManager: browserManager)
         browserManager.tabManager.sumiSettings = settingsManager
 
         // Start Sparkle after the first browser window appears so launch stays focused on browsing.
@@ -175,12 +180,14 @@ struct SumiApp: App {
     private func configureWindowShellContentViewFactory() {
         let settingsManager = settingsManager
         let keyboardShortcutManager = keyboardShortcutManager
+        let nowPlayingController = nowPlayingController
 
         browserManager.windowShellContentViewFactory = { browserManager, windowRegistry, webViewCoordinator, windowState in
             Self.makeWindowShellContentView(
                 browserManager: browserManager,
                 settingsManager: settingsManager,
                 keyboardShortcutManager: keyboardShortcutManager,
+                nowPlayingController: nowPlayingController,
                 windowRegistry: windowRegistry,
                 webViewCoordinator: webViewCoordinator,
                 windowState: windowState
@@ -192,6 +199,7 @@ struct SumiApp: App {
         browserManager: BrowserManager,
         settingsManager: SumiSettingsService,
         keyboardShortcutManager: KeyboardShortcutManager,
+        nowPlayingController: SumiNativeNowPlayingController,
         windowRegistry: WindowRegistry,
         webViewCoordinator: WebViewCoordinator,
         windowState: BrowserWindowState?
@@ -205,6 +213,7 @@ struct SumiApp: App {
             .environmentObject(browserManager)
             .environmentObject(browserManager.glanceManager)
             .environmentObject(browserManager.extensionSurfaceStore)
+            .environmentObject(nowPlayingController)
             .environment(windowRegistry)
             .environment(webViewCoordinator)
             .environment(\.sumiSettings, settingsManager)

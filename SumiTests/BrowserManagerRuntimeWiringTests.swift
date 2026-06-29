@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import SwiftData
 import XCTest
 
@@ -269,6 +270,49 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
     }
 
+    func testSettingsMiniPlayerFeatureUpdatesUseInjectedNowPlayingController() throws {
+        let nowPlayingController = FakeNativeNowPlayingController()
+        let suiteName = "BrowserManagerRuntimeWiringNowPlayingSettings-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = SumiSettingsService(
+            userDefaults: defaults,
+            nowPlayingController: nowPlayingController
+        )
+
+        XCTAssertEqual(nowPlayingController.featureEnabledValues, [true])
+
+        settings.sidebarMiniPlayerEnabled = false
+
+        XCTAssertEqual(nowPlayingController.featureEnabledValues, [true, false])
+    }
+
+    func testTabMediaLifecycleUsesBrowserManagerInjectedNowPlayingController() throws {
+        let nowPlayingController = FakeNativeNowPlayingController()
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            nowPlayingController: nowPlayingController,
+            permissionSiteActivityStore: try makeSiteActivityStore()
+        )
+        let tab = Tab(
+            url: URL(string: "https://example.com/video")!,
+            browserManager: browserManager,
+            loadsCachedFaviconOnInit: false
+        )
+
+        tab.applyAudioState(.unmuted(isPlayingAudio: true))
+
+        XCTAssertEqual(nowPlayingController.scheduledRefreshDelays, [0])
+
+        tab.unloadWebView()
+
+        XCTAssertEqual(nowPlayingController.unloadedTabIds, [tab.id])
+        XCTAssertEqual(nowPlayingController.scheduledRefreshDelays, [0, 0])
+    }
+
     private func makeInMemoryStartupContainer() throws -> ModelContainer {
         try ModelContainer(
             for: SumiStartupPersistence.schema,
@@ -282,6 +326,64 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 UserDefaults(suiteName: "BrowserManagerRuntimeWiringTests-\(UUID().uuidString)")
             )
         )
+    }
+}
+
+@MainActor
+private final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeControlling {
+    private let subject = CurrentValueSubject<SumiBackgroundMediaCardState?, Never>(nil)
+    private(set) var featureEnabledValues: [Bool] = []
+    private(set) var scheduledRefreshDelays: [UInt64] = []
+    private(set) var activatedTabIds: [UUID] = []
+    private(set) var unloadedTabIds: [UUID] = []
+    private(set) var configuredBrowserManagers: [BrowserManager] = []
+    private(set) var sceneActiveCallCount = 0
+    private(set) var activateOwnerCallCount = 0
+    private(set) var togglePlayPauseCallCount = 0
+    private(set) var toggleMuteCallCount = 0
+
+    var cardState: SumiBackgroundMediaCardState? {
+        subject.value
+    }
+
+    var cardStatePublisher: AnyPublisher<SumiBackgroundMediaCardState?, Never> {
+        subject.eraseToAnyPublisher()
+    }
+
+    func setFeatureEnabled(_ enabled: Bool) {
+        featureEnabledValues.append(enabled)
+    }
+
+    func configure(browserManager: BrowserManager) {
+        configuredBrowserManagers.append(browserManager)
+    }
+
+    func handleSceneActive() {
+        sceneActiveCallCount += 1
+    }
+
+    func scheduleRefresh(delayNanoseconds: UInt64) {
+        scheduledRefreshDelays.append(delayNanoseconds)
+    }
+
+    func handleTabActivated(_ tabId: UUID) {
+        activatedTabIds.append(tabId)
+    }
+
+    func handleTabUnloaded(_ tabId: UUID) {
+        unloadedTabIds.append(tabId)
+    }
+
+    func activateOwner() {
+        activateOwnerCallCount += 1
+    }
+
+    func togglePlayPause() async {
+        togglePlayPauseCallCount += 1
+    }
+
+    func toggleMute() async {
+        toggleMuteCallCount += 1
     }
 }
 

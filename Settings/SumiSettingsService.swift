@@ -47,6 +47,7 @@ class SumiSettingsService {
     private let downloadsDirectoryPathKey = "settings.downloads.directoryPath"
     private let downloadsFallbackActionKey = "settings.downloads.fallbackAction"
     private let energySaverSystemMonitor: any SumiEnergySaverSystemMonitoring
+    private let nowPlayingController: any SumiNativeNowPlayingFeatureControlling
     @ObservationIgnored
     nonisolated(unsafe) private var energySaverSystemObservationToken: UUID?
 
@@ -154,7 +155,7 @@ class SumiSettingsService {
     var sidebarMiniPlayerEnabled: Bool {
         didSet {
             userDefaults.set(sidebarMiniPlayerEnabled, forKey: sidebarMiniPlayerEnabledKey)
-            SumiNativeNowPlayingController.shared.setFeatureEnabled(sidebarMiniPlayerEnabled)
+            nowPlayingController.setFeatureEnabled(sidebarMiniPlayerEnabled)
         }
     }
 
@@ -417,10 +418,13 @@ class SumiSettingsService {
         userDefaults: UserDefaults = .standard,
         energySaverSystemMonitor: any SumiEnergySaverSystemMonitoring =
             SumiEnergySaverSystemMonitor.shared,
+        nowPlayingController: any SumiNativeNowPlayingFeatureControlling =
+            SumiNativeNowPlayingController(),
         downloadApplicationsStore: SumiDownloadApplicationsStore = SumiDownloadApplicationsStore()
     ) {
         self.userDefaults = userDefaults
         self.energySaverSystemMonitor = energySaverSystemMonitor
+        self.nowPlayingController = nowPlayingController
         self.downloadApplicationsStore = downloadApplicationsStore
 
         // Register default values
@@ -604,7 +608,7 @@ class SumiSettingsService {
             ?? SumiNewTabPageURL.defaultURLString
 
         enforceSumiChromeDefaults()
-        SumiNativeNowPlayingController.shared.setFeatureEnabled(sidebarMiniPlayerEnabled)
+        nowPlayingController.setFeatureEnabled(sidebarMiniPlayerEnabled)
         energySaverSystemObservationToken = energySaverSystemMonitor.addObserver {
             [weak self] snapshot in
             self?.energySaverSystemSnapshot = snapshot

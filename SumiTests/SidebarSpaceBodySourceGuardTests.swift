@@ -6,7 +6,8 @@ import XCTest
 @MainActor
 final class SidebarSpaceBodySourceGuardTests: XCTestCase {
     func testSidebarColumnHostedRootCarriesInjectedDragState() throws {
-        let browserManager = BrowserManager()
+        let nowPlayingController = SumiNativeNowPlayingController()
+        let browserManager = BrowserManager(nowPlayingController: nowPlayingController)
         let windowState = BrowserWindowState()
         let windowRegistry = WindowRegistry()
         let dragState = SidebarDragState()
@@ -21,6 +22,7 @@ final class SidebarSpaceBodySourceGuardTests: XCTestCase {
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: SumiSettingsService(userDefaults: settingsDefaults),
+            nowPlayingController: nowPlayingController,
             resolvedThemeContext: .default,
             chromeBackgroundResolvedThemeContext: .default,
             windowChromeSize: CGSize(width: 320, height: 640),
@@ -31,6 +33,7 @@ final class SidebarSpaceBodySourceGuardTests: XCTestCase {
         XCTAssertTrue(root.environmentContext.sidebarDragState === dragState)
         XCTAssertTrue(root.environmentContext.sidebarDragState.locationTracker === dragState.locationTracker)
         XCTAssertFalse(root.environmentContext.sidebarDragState === SidebarDragState.shared)
+        XCTAssertTrue(root.environmentContext.nowPlayingController === nowPlayingController)
         XCTAssertEqual(root.presentationContext, .docked(sidebarWidth: 280))
     }
 }

@@ -38,9 +38,13 @@ struct SpacesSideBarView: View {
     @State private var transitionState = SpaceSidebarTransitionState()
     @State private var transitionSnapshot: SpaceSidebarTransitionSnapshot?
     @State private var transitionTask: Task<Void, Never>?
-    @ObservedObject private var nowPlayingController = SumiNativeNowPlayingController.shared
+    @ObservedObject private var nowPlayingController: SumiNativeNowPlayingController
     @ObservedObject private var updaterService = SumiUpdaterService.shared
     @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
+
+    init(nowPlayingController: SumiNativeNowPlayingController) {
+        self.nowPlayingController = nowPlayingController
+    }
 
     private var shouldMountMiniPlayer: Bool {
         guard sumiSettings.sidebarMiniPlayerEnabled else { return false }
@@ -109,7 +113,7 @@ struct SpacesSideBarView: View {
                     }
 
                     if shouldMountMiniPlayer {
-                        MediaControlsView()
+                        MediaControlsView(nowPlayingController: nowPlayingController)
                             .environmentObject(browserManager)
                             .environment(windowState)
                     }

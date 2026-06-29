@@ -7,7 +7,7 @@ struct SidebarColumnHostedRootView: View {
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     var body: some View {
-        SpacesSideBarView()
+        SpacesSideBarView(nowPlayingController: environmentContext.nowPlayingController)
             .frame(width: presentationContext.sidebarWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: presentationContext.shellEdge.resizeHandleAlignment) {
@@ -129,6 +129,7 @@ enum SidebarColumnHostedRoot {
         windowState: BrowserWindowState,
         windowRegistry: WindowRegistry,
         sumiSettings: SumiSettingsService,
+        nowPlayingController: SumiNativeNowPlayingController,
         resolvedThemeContext: ResolvedThemeContext,
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
         windowChromeSize: CGSize,
@@ -141,6 +142,7 @@ enum SidebarColumnHostedRoot {
                 windowState: windowState,
                 windowRegistry: windowRegistry,
                 sumiSettings: sumiSettings,
+                nowPlayingController: nowPlayingController,
                 resolvedThemeContext: resolvedThemeContext,
                 chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
                 windowChromeSize: windowChromeSize,
@@ -156,6 +158,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var windowState: BrowserWindowState
     var windowRegistry: WindowRegistry
     var sumiSettings: SumiSettingsService
+    var nowPlayingController: SumiNativeNowPlayingController
     var resolvedThemeContext: ResolvedThemeContext
     var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     var windowChromeSize: CGSize
@@ -172,6 +175,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
+            nowPlayingController: nowPlayingController,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
             windowChromeSize: windowChromeSize,

@@ -20,6 +20,7 @@ struct CollapsedSidebarOverlayHost: View {
     var windowState: BrowserWindowState
     var windowRegistry: WindowRegistry
     var sumiSettings: SumiSettingsService
+    var nowPlayingController: SumiNativeNowPlayingController
     var resolvedThemeContext: ResolvedThemeContext
     var chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     var windowChromeSize: CGSize
@@ -49,6 +50,7 @@ struct CollapsedSidebarOverlayHost: View {
                     windowState: windowState,
                     windowRegistry: windowRegistry,
                     sumiSettings: sumiSettings,
+                    nowPlayingController: nowPlayingController,
                     resolvedThemeContext: resolvedThemeContext,
                     chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
                     windowChromeSize: windowChromeSize,

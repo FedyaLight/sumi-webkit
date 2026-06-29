@@ -193,6 +193,7 @@ class BrowserManager: ObservableObject {
     var compositorManager: TabCompositorManager
     let tabSuspensionService: TabSuspensionService
     let backgroundMediaOptimizationService = SumiBackgroundMediaOptimizationService()
+    let nativeNowPlayingController: any SumiNativeNowPlayingRuntimeControlling
     var splitManager: SplitViewManager
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
@@ -573,8 +574,8 @@ class BrowserManager: ObservableObject {
             adoptProfileForWindowActivation: { [unowned self] windowState in
                 self.adoptProfileIfNeeded(for: windowState, context: .windowActivation)
             },
-            scheduleNativeNowPlayingRefresh: { delayNanoseconds in
-                SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: delayNanoseconds)
+            scheduleNativeNowPlayingRefresh: { [unowned self] delayNanoseconds in
+                self.nativeNowPlayingController.scheduleRefresh(delayNanoseconds: delayNanoseconds)
             },
             scheduleBackgroundMediaReconcile: { [unowned self] reason in
                 self.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
@@ -613,6 +614,8 @@ class BrowserManager: ObservableObject {
         boostsModule: SumiBoostsModule? = nil,
         browsingDataCleanupService: SumiBrowsingDataCleanupService? = nil,
         dataServices: BrowserManagerDataServices = .production,
+        nowPlayingController: any SumiNativeNowPlayingRuntimeControlling =
+            SumiNativeNowPlayingController(),
         systemPermissionService: (any SumiSystemPermissionService)? = nil,
         permissionCoordinator: (any SumiPermissionCoordinating)? = nil,
         geolocationProvider: (any SumiGeolocationProviding)? = nil,
@@ -703,6 +706,7 @@ class BrowserManager: ObservableObject {
         self.findManager = FindManager()
         self.dataServices = resolvedDataServices
         self.browsingDataCleanupService = resolvedDataServices.browsingDataCleanupService
+        self.nativeNowPlayingController = nowPlayingController
         self.permissionRuntime = BrowserManagerPermissionRuntime(
             dependencies: BrowserManagerPermissionRuntime.Dependencies(
                 startupPersistence: startupPersistence,
@@ -957,11 +961,11 @@ class BrowserManager: ObservableObject {
             webViewCoordinator: { [weak self] in
                 self?.webViewCoordinator
             },
-            handleNativeNowPlayingTabActivated: { tabId in
-                SumiNativeNowPlayingController.shared.handleTabActivated(tabId)
+            handleNativeNowPlayingTabActivated: { [weak self] tabId in
+                self?.nativeNowPlayingController.handleTabActivated(tabId)
             },
-            scheduleNativeNowPlayingRefresh: { delayNanoseconds in
-                SumiNativeNowPlayingController.shared.scheduleRefresh(delayNanoseconds: delayNanoseconds)
+            scheduleNativeNowPlayingRefresh: { [weak self] delayNanoseconds in
+                self?.nativeNowPlayingController.scheduleRefresh(delayNanoseconds: delayNanoseconds)
             },
             fetchVisibleFavicon: { tab in
                 Task { @MainActor [weak tab] in
