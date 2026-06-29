@@ -284,6 +284,14 @@ private final class SpaceEditorViewController: NSViewController, NSTextFieldDele
 }
 
 @MainActor
+struct SpaceEditorPopoverPresentationContext {
+    let sidebarPosition: SidebarPosition
+    let profiles: [Profile]
+    let settings: SumiSettingsService
+    let commit: @MainActor (SpaceEditorSession) -> Void
+}
+
+@MainActor
 final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
     enum Metrics {
         static let fullContentSize = NSSize(width: 340, height: 144)
@@ -297,7 +305,7 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         let editorSession: SpaceEditorSession
         let popover: NSPopover
         weak var windowState: BrowserWindowState?
-        weak var browserManager: BrowserManager?
+        let commit: @MainActor (SpaceEditorSession) -> Void
         let source: SidebarTransientPresentationSource
         let transientSessionToken: SidebarTransientSessionToken?
         var closeFallbackTask: Task<Void, Never>?
@@ -307,14 +315,14 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             editorSession: SpaceEditorSession,
             popover: NSPopover,
             windowState: BrowserWindowState,
-            browserManager: BrowserManager,
+            commit: @escaping @MainActor (SpaceEditorSession) -> Void,
             source: SidebarTransientPresentationSource,
             transientSessionToken: SidebarTransientSessionToken?
         ) {
             self.editorSession = editorSession
             self.popover = popover
             self.windowState = windowState
-            self.browserManager = browserManager
+            self.commit = commit
             self.source = source
             self.transientSessionToken = transientSessionToken
         }
@@ -329,8 +337,8 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
     func present(
         space: Space,
         in windowState: BrowserWindowState,
-        browserManager: BrowserManager,
         themeContext: ResolvedThemeContext,
+        presentationContext: SpaceEditorPopoverPresentationContext,
         source: SidebarTransientPresentationSource
     ) {
         if activeSession != nil {
@@ -341,7 +349,7 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         guard let anchor = resolvedPresentationAnchor(
             source: source,
             in: windowState,
-            sidebarPosition: browserManager.sumiSettings?.sidebarPosition ?? .left
+            sidebarPosition: presentationContext.sidebarPosition
         ) else {
             return
         }
@@ -349,11 +357,11 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         let editorSession = SpaceEditorSession(space: space)
         let surfaceThemeContext = themeContext.nativeSurfaceThemeContext
         let surfaceColorScheme = surfaceThemeContext.nativeSurfaceColorScheme
-        let profiles = browserManager.profileManager.profiles
+        let profiles = presentationContext.profiles
         let viewController = SpaceEditorViewController(
             session: editorSession,
             profiles: profiles,
-            settings: browserManager.sumiSettings ?? SumiSettingsService(),
+            settings: presentationContext.settings,
             themeContext: surfaceThemeContext,
             onDone: { [weak self] in
                 self?.closeActive(committing: true)
@@ -384,7 +392,7 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             editorSession: editorSession,
             popover: popover,
             windowState: windowState,
-            browserManager: browserManager,
+            commit: presentationContext.commit,
             source: source,
             transientSessionToken: token
         )
@@ -435,11 +443,9 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         activeSession = nil
         closedSession.closeFallbackTask?.cancel()
 
-        let finalize: () -> Void = { [weak browserManager = closedSession.browserManager] in
-            guard let browserManager,
-                  !closedSession.editorSession.cancelsOnDismiss
-            else { return }
-            browserManager.commitSpaceEditorSession(closedSession.editorSession)
+        let finalize: () -> Void = {
+            guard !closedSession.editorSession.cancelsOnDismiss else { return }
+            closedSession.commit(closedSession.editorSession)
         }
 
         if let coordinator = closedSession.source.coordinator {
@@ -489,41 +495,5 @@ final class SpaceEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             ),
             preferredEdge
         )
-    }
-}
-
-@MainActor
-extension BrowserManager {
-    func showSpaceEditor(
-        for space: Space,
-        in windowState: BrowserWindowState,
-        themeContext: ResolvedThemeContext,
-        source: SidebarTransientPresentationSource
-    ) {
-        spaceEditorPopoverPresenter.present(
-            space: space,
-            in: windowState,
-            browserManager: self,
-            themeContext: themeContext,
-            source: source
-        )
-    }
-
-    func commitSpaceEditorSession(_ session: SpaceEditorSession) {
-        guard session.canCommit, session.hasChanges else { return }
-
-        do {
-            if session.trimmedName != session.originalName {
-                try tabManager.renameSpace(spaceId: session.spaceID, newName: session.trimmedName)
-            }
-            if session.icon != session.originalIcon {
-                try tabManager.updateSpaceIcon(spaceId: session.spaceID, icon: session.icon)
-            }
-            if let profileID = session.profileID, profileID != session.originalProfileID {
-                tabManager.assign(spaceId: session.spaceID, toProfile: profileID)
-            }
-        } catch {
-            RuntimeDiagnostics.emit("⚠️ Failed to update space \(session.spaceID.uuidString):", error)
-        }
     }
 }

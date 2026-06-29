@@ -47,9 +47,6 @@ class BrowserManager: ObservableObject {
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
     let urlBarHubPopoverPresenter: URLBarHubPopoverPresenter
     let workspaceThemePickerPopoverPresenter: WorkspaceThemePickerPopoverPresenter
-    let folderEditorPopoverPresenter: FolderEditorPopoverPresenter
-    let spaceEditorPopoverPresenter: SpaceEditorPopoverPresenter
-    let shortcutEditorPopoverPresenter: ShortcutEditorPopoverPresenter
     var authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
     var bookmarkManager: SumiBookmarkManager
@@ -95,6 +92,9 @@ class BrowserManager: ObservableObject {
     let liveFolderManager = SumiLiveFolderManager()
     private let permissionSiteSettingsRoutingOwner = BrowserPermissionSiteSettingsRoutingOwner()
     private let tabSelectionOwner = BrowserTabSelectionOwner()
+    lazy var sidebarEditorPresentationOwner = BrowserSidebarEditorPresentationOwner(
+        dependencies: .live(browserManager: self)
+    )
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
         guard let self else { return [] }
@@ -310,9 +310,6 @@ class BrowserManager: ObservableObject {
         self.downloadsPopoverPresenter = DownloadsPopoverPresenter()
         self.urlBarHubPopoverPresenter = URLBarHubPopoverPresenter()
         self.workspaceThemePickerPopoverPresenter = WorkspaceThemePickerPopoverPresenter()
-        self.folderEditorPopoverPresenter = FolderEditorPopoverPresenter()
-        self.spaceEditorPopoverPresenter = SpaceEditorPopoverPresenter()
-        self.shortcutEditorPopoverPresenter = ShortcutEditorPopoverPresenter()
         self.authenticationManager = AuthenticationManager()
         // Initialize managers with current profile context for isolation
         self.historyManager = HistoryManager(

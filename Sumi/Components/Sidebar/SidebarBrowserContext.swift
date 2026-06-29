@@ -72,7 +72,7 @@ struct SidebarBrowserContext {
             extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { [weak browserManager] pin, windowState, themeContext, source in
-                    browserManager?.showShortcutEditor(
+                    browserManager?.sidebarEditorPresentationOwner.showShortcutEditor(
                         for: pin,
                         in: windowState,
                         themeContext: themeContext,
@@ -80,7 +80,7 @@ struct SidebarBrowserContext {
                     )
                 },
                 showFolderEditor: { [weak browserManager] folder, windowState, themeContext, source in
-                    browserManager?.showFolderEditor(
+                    browserManager?.sidebarEditorPresentationOwner.showFolderEditor(
                         for: folder,
                         in: windowState,
                         themeContext: themeContext,
@@ -88,7 +88,7 @@ struct SidebarBrowserContext {
                     )
                 },
                 showSpaceEditor: { [weak browserManager] space, windowState, themeContext, source in
-                    browserManager?.showSpaceEditor(
+                    browserManager?.sidebarEditorPresentationOwner.showSpaceEditor(
                         for: space,
                         in: windowState,
                         themeContext: themeContext,

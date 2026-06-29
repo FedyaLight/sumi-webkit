@@ -2,6 +2,13 @@ import AppKit
 import SwiftUI
 
 @MainActor
+struct ShortcutEditorPopoverPresentationContext {
+    let sidebarPosition: SidebarPosition
+    let settings: SumiSettingsService
+    let commit: @MainActor (ShortcutLinkEditorSession) -> Void
+}
+
+@MainActor
 final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
     enum Metrics {
         static let contentSize = NSSize(width: 360, height: 156)
@@ -11,7 +18,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         let editorSession: ShortcutLinkEditorSession
         let popover: NSPopover
         weak var windowState: BrowserWindowState?
-        weak var browserManager: BrowserManager?
+        let commit: @MainActor (ShortcutLinkEditorSession) -> Void
         let source: SidebarTransientPresentationSource
         let transientSessionToken: SidebarTransientSessionToken?
         var closeFallbackTask: Task<Void, Never>?
@@ -21,14 +28,14 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             editorSession: ShortcutLinkEditorSession,
             popover: NSPopover,
             windowState: BrowserWindowState,
-            browserManager: BrowserManager,
+            commit: @escaping @MainActor (ShortcutLinkEditorSession) -> Void,
             source: SidebarTransientPresentationSource,
             transientSessionToken: SidebarTransientSessionToken?
         ) {
             self.editorSession = editorSession
             self.popover = popover
             self.windowState = windowState
-            self.browserManager = browserManager
+            self.commit = commit
             self.source = source
             self.transientSessionToken = transientSessionToken
         }
@@ -43,8 +50,8 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
     func present(
         pin: ShortcutPin,
         in windowState: BrowserWindowState,
-        browserManager: BrowserManager,
         themeContext: ResolvedThemeContext,
+        presentationContext: ShortcutEditorPopoverPresentationContext,
         source: SidebarTransientPresentationSource
     ) {
         if activeSession != nil {
@@ -55,7 +62,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         guard let anchor = resolvedPresentationAnchor(
             source: source,
             in: windowState,
-            sidebarPosition: browserManager.sumiSettings?.sidebarPosition ?? .left
+            sidebarPosition: presentationContext.sidebarPosition
         ) else {
             return
         }
@@ -75,7 +82,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
                 }
             )
             .environment(windowState)
-            .environment(\.sumiSettings, browserManager.sumiSettings ?? SumiSettingsService())
+            .environment(\.sumiSettings, presentationContext.settings)
             .environment(\.resolvedThemeContext, surfaceThemeContext)
             .environment(\.colorScheme, surfaceColorScheme)
             .preferredColorScheme(surfaceColorScheme)
@@ -106,7 +113,7 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             editorSession: editorSession,
             popover: popover,
             windowState: windowState,
-            browserManager: browserManager,
+            commit: presentationContext.commit,
             source: source,
             transientSessionToken: token
         )
@@ -168,10 +175,9 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         activeSession = nil
         closedSession.closeFallbackTask?.cancel()
 
-        let finalize: () -> Void = { [weak browserManager = closedSession.browserManager] in
-            guard let browserManager else { return }
+        let finalize: () -> Void = {
             if !closedSession.editorSession.cancelsOnDismiss {
-                browserManager.commitShortcutEditorSession(closedSession.editorSession)
+                closedSession.commit(closedSession.editorSession)
             }
         }
 
@@ -221,37 +227,6 @@ final class ShortcutEditorPopoverPresenter: NSObject, NSPopoverDelegate {
                 sidebarPosition: sidebarPosition
             ),
             preferredEdge
-        )
-    }
-}
-
-@MainActor
-extension BrowserManager {
-    func showShortcutEditor(
-        for pin: ShortcutPin,
-        in windowState: BrowserWindowState,
-        themeContext: ResolvedThemeContext,
-        source: SidebarTransientPresentationSource
-    ) {
-        shortcutEditorPopoverPresenter.present(
-            pin: pin,
-            in: windowState,
-            browserManager: self,
-            themeContext: themeContext,
-            source: source
-        )
-    }
-
-    func commitShortcutEditorSession(_ session: ShortcutLinkEditorSession) {
-        guard session.hasChanges,
-              let launchURL = session.normalizedURL
-        else { return }
-
-        _ = tabManager.updateShortcutPin(
-            session.pin,
-            title: session.effectiveTitle,
-            launchURL: launchURL,
-            iconAsset: .some(session.iconAsset)
         )
     }
 }

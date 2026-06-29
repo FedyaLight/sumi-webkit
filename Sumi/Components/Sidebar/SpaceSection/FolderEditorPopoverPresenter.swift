@@ -140,6 +140,13 @@ private struct FolderEditorIconPreview: View {
 }
 
 @MainActor
+struct FolderEditorPopoverPresentationContext {
+    let sidebarPosition: SidebarPosition
+    let settings: SumiSettingsService
+    let commit: @MainActor (FolderEditorSession) -> Void
+}
+
+@MainActor
 final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
     enum Metrics {
         static let contentSize = NSSize(width: 320, height: 104)
@@ -149,7 +156,7 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         let editorSession: FolderEditorSession
         let popover: NSPopover
         weak var windowState: BrowserWindowState?
-        weak var browserManager: BrowserManager?
+        let commit: @MainActor (FolderEditorSession) -> Void
         let source: SidebarTransientPresentationSource
         let transientSessionToken: SidebarTransientSessionToken?
         var closeFallbackTask: Task<Void, Never>?
@@ -159,14 +166,14 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             editorSession: FolderEditorSession,
             popover: NSPopover,
             windowState: BrowserWindowState,
-            browserManager: BrowserManager,
+            commit: @escaping @MainActor (FolderEditorSession) -> Void,
             source: SidebarTransientPresentationSource,
             transientSessionToken: SidebarTransientSessionToken?
         ) {
             self.editorSession = editorSession
             self.popover = popover
             self.windowState = windowState
-            self.browserManager = browserManager
+            self.commit = commit
             self.source = source
             self.transientSessionToken = transientSessionToken
         }
@@ -181,8 +188,8 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
     func present(
         folder: TabFolder,
         in windowState: BrowserWindowState,
-        browserManager: BrowserManager,
         themeContext: ResolvedThemeContext,
+        presentationContext: FolderEditorPopoverPresentationContext,
         source: SidebarTransientPresentationSource
     ) {
         if activeSession != nil {
@@ -193,7 +200,7 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         guard let anchor = resolvedPresentationAnchor(
             source: source,
             in: windowState,
-            sidebarPosition: browserManager.sumiSettings?.sidebarPosition ?? .left
+            sidebarPosition: presentationContext.sidebarPosition
         ) else {
             return
         }
@@ -213,7 +220,7 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
                 }
             )
             .environment(windowState)
-            .environment(\.sumiSettings, browserManager.sumiSettings ?? SumiSettingsService())
+            .environment(\.sumiSettings, presentationContext.settings)
             .environment(\.resolvedThemeContext, surfaceThemeContext)
             .environment(\.colorScheme, surfaceColorScheme)
             .preferredColorScheme(surfaceColorScheme)
@@ -244,7 +251,7 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             editorSession: editorSession,
             popover: popover,
             windowState: windowState,
-            browserManager: browserManager,
+            commit: presentationContext.commit,
             source: source,
             transientSessionToken: token
         )
@@ -306,10 +313,9 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
         activeSession = nil
         closedSession.closeFallbackTask?.cancel()
 
-        let finalize: () -> Void = { [weak browserManager = closedSession.browserManager] in
-            guard let browserManager else { return }
+        let finalize: () -> Void = {
             if !closedSession.editorSession.cancelsOnDismiss {
-                browserManager.commitFolderEditorSession(closedSession.editorSession)
+                closedSession.commit(closedSession.editorSession)
             }
         }
 
@@ -360,36 +366,5 @@ final class FolderEditorPopoverPresenter: NSObject, NSPopoverDelegate {
             ),
             preferredEdge
         )
-    }
-}
-
-@MainActor
-extension BrowserManager {
-    func showFolderEditor(
-        for folder: TabFolder,
-        in windowState: BrowserWindowState,
-        themeContext: ResolvedThemeContext,
-        source: SidebarTransientPresentationSource
-    ) {
-        folderEditorPopoverPresenter.present(
-            folder: folder,
-            in: windowState,
-            browserManager: self,
-            themeContext: themeContext,
-            source: source
-        )
-    }
-
-    func commitFolderEditorSession(_ session: FolderEditorSession) {
-        guard session.canCommit,
-              session.hasChanges
-        else { return }
-
-        if session.trimmedName != session.originalName {
-            tabManager.renameFolder(session.folderID, newName: session.trimmedName)
-        }
-        if session.icon != session.originalIcon {
-            tabManager.updateFolderIcon(session.folderID, icon: session.icon)
-        }
     }
 }
