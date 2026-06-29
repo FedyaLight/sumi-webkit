@@ -155,6 +155,44 @@ final class SafariContentBlockerRuleLocatorTests: XCTestCase {
         )
     }
 
+    func testMissingRuleResourcesDisableAttachmentStateAndStoredRecord() async throws {
+        let candidate = try makeContentBlockerCandidate(
+            resourceFiles: [
+                .init(
+                    relativePath: "blockerList.json",
+                    data: Self.validRuleListData(blockedHost: "stale.example")
+                ),
+            ]
+        )
+        let module = try makeModule()
+        let pageURL = try XCTUnwrap(URL(string: "https://stale.example/article"))
+
+        let installedRecord = try await module.enableSafariContentBlocker(from: candidate)
+        XCTAssertTrue(module.safariContentBlockerAttachmentState(for: pageURL).isEnabled)
+
+        let resourcesURL = candidate.appexURL
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("Resources", isDirectory: true)
+        try FileManager.default.removeItem(at: resourcesURL)
+
+        XCTAssertFalse(module.safariContentBlockerAttachmentState(for: pageURL).isEnabled)
+        XCTAssertTrue(
+            module.enabledSafariContentBlockingServices(
+                for: pageURL,
+                profileId: UUID()
+            ).isEmpty
+        )
+
+        let updatedRecord = try XCTUnwrap(
+            module.safariContentBlockerRecord(
+                forBundleIdentifier: installedRecord.extensionBundleIdentifier
+            )
+        )
+        XCTAssertFalse(updatedRecord.isEnabled)
+        XCTAssertEqual(updatedRecord.compileStatus, .rulesUnavailable)
+        XCTAssertEqual(updatedRecord.ruleListCount, 0)
+    }
+
     private func makeContentBlockerCandidate(
         resourceFiles: [SafariExtensionScannerTestSupport.SyntheticResourceFile]
     ) throws -> DiscoveredSafariExtensionCandidate {

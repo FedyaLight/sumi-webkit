@@ -11,6 +11,11 @@ final class SafariContentBlockerRuntimeOwner {
     private var serviceCacheKey: String?
     private var siteOverrides: [String: SumiSafariContentBlockerSiteOverride]
 
+    private struct MaterializedContentBlockerRules {
+        let record: InstalledSafariContentBlockerRecord
+        let locatedRules: SafariContentBlockerLocatedRules
+    }
+
     init(
         context: ModelContext?,
         defaults: UserDefaults,
@@ -152,40 +157,22 @@ final class SafariContentBlockerRuntimeOwner {
         profileId: UUID?
     ) -> [SumiContentBlockingService] {
         _ = profileId
+        let siteHost = Self.normalizedSiteHost(for: url)
         guard isModuleEnabled(),
-              attachmentState(for: url).isEnabled,
-              let context
+              let siteHost,
+              siteOverrides[siteHost] != .disabled
         else { return [] }
 
-        let enabledRecords = installedContentBlockers()
-            .filter { $0.isEnabled && $0.compileStatus == .available }
-        guard enabledRecords.isEmpty == false else { return [] }
+        let materializedRecords = materializedEnabledContentBlockerRules()
+        guard materializedRecords.isEmpty == false else { return [] }
 
         var definitions: [SumiContentRuleListDefinition] = []
         var cacheParts: [String] = []
-        for record in enabledRecords {
-            let appexURL = URL(fileURLWithPath: record.appexPath, isDirectory: true)
-            do {
-                let located = try SafariContentBlockerRuleLocator.locateRules(
-                    appexURL: appexURL,
-                    extensionBundleIdentifier: record.extensionBundleIdentifier,
-                    displayName: record.displayName
-                )
-                definitions.append(contentsOf: located.definitions)
-                cacheParts.append("\(record.id):\(located.resourceFingerprint):\(located.definitions.count)")
-                if located.resourceFingerprint != record.resourceFingerprint,
-                   let entity = try? entity(
-                       forBundleIdentifier: record.extensionBundleIdentifier
-                   ) {
-                    entity.resourceFingerprint = located.resourceFingerprint
-                    entity.ruleListCount = located.definitions.count
-                    entity.ignoredEmptyRuleListCount = located.ignoredEmptyRuleListCount
-                    entity.lastUpdateDate = Date()
-                    try? context.save()
-                }
-            } catch {
-                continue
-            }
+        for materialized in materializedRecords {
+            let record = materialized.record
+            let located = materialized.locatedRules
+            definitions.append(contentsOf: located.definitions)
+            cacheParts.append("\(record.id):\(located.resourceFingerprint):\(located.definitions.count)")
         }
 
         guard definitions.isEmpty == false else { return [] }
@@ -211,9 +198,8 @@ final class SafariContentBlockerRuntimeOwner {
             return .disabled(siteHost: siteHost)
         }
 
-        let enabledRecords = installedContentBlockers()
-            .filter { $0.isEnabled && $0.compileStatus == .available }
-        guard enabledRecords.isEmpty == false,
+        let materializedRecords = materializedEnabledContentBlockerRules()
+        guard materializedRecords.isEmpty == false,
               let siteHost
         else {
             return .disabled(siteHost: siteHost)
@@ -222,9 +208,9 @@ final class SafariContentBlockerRuntimeOwner {
         return SumiSafariContentBlockerAttachmentState(
             siteHost: siteHost,
             isEnabledForSite: siteOverride != .disabled,
-            enabledContentBlockerIds: enabledRecords.map(\.id).sorted(),
-            enabledContentBlockerRuleIdentities: enabledRecords
-                .map { "\($0.id):\($0.resourceFingerprint)" }
+            enabledContentBlockerIds: materializedRecords.map(\.record.id).sorted(),
+            enabledContentBlockerRuleIdentities: materializedRecords
+                .map { "\($0.record.id):\($0.locatedRules.resourceFingerprint)" }
                 .sorted()
         )
     }
@@ -243,8 +229,7 @@ final class SafariContentBlockerRuntimeOwner {
             )
         }
 
-        let enabledRecords = installedContentBlockers()
-            .filter { $0.isEnabled && $0.compileStatus == .available }
+        let enabledRecords = materializedEnabledContentBlockerRules()
         return SumiSafariContentBlockerSiteState(
             siteHost: siteHost,
             isGloballyAvailable: !enabledRecords.isEmpty,
@@ -290,6 +275,99 @@ final class SafariContentBlockerRuntimeOwner {
         guard let context else { return nil }
         return try context.fetch(FetchDescriptor<SafariContentBlockerEntity>())
             .first { $0.extensionBundleIdentifier == bundleIdentifier }
+    }
+
+    private func materializedEnabledContentBlockerRules() -> [MaterializedContentBlockerRules] {
+        guard let context else { return [] }
+        let enabledRecords = installedContentBlockers()
+            .filter { $0.isEnabled && $0.compileStatus == .available }
+        guard enabledRecords.isEmpty == false else { return [] }
+
+        var materializedRecords: [MaterializedContentBlockerRules] = []
+        var didMutateStoredRecords = false
+
+        for record in enabledRecords {
+            let appexURL = URL(fileURLWithPath: record.appexPath, isDirectory: true)
+            do {
+                let locatedRules = try SafariContentBlockerRuleLocator.locateRules(
+                    appexURL: appexURL,
+                    extensionBundleIdentifier: record.extensionBundleIdentifier,
+                    displayName: record.displayName
+                )
+                materializedRecords.append(
+                    MaterializedContentBlockerRules(
+                        record: record,
+                        locatedRules: locatedRules
+                    )
+                )
+                didMutateStoredRecords = updateStoredMetadataIfNeeded(
+                    for: record,
+                    locatedRules: locatedRules
+                ) || didMutateStoredRecords
+            } catch {
+                didMutateStoredRecords = markStoredRecordUnavailable(
+                    record,
+                    error: error
+                ) || didMutateStoredRecords
+            }
+        }
+
+        if didMutateStoredRecords {
+            try? context.save()
+            clearRuntime()
+        }
+
+        return materializedRecords
+    }
+
+    private func updateStoredMetadataIfNeeded(
+        for record: InstalledSafariContentBlockerRecord,
+        locatedRules: SafariContentBlockerLocatedRules
+    ) -> Bool {
+        guard locatedRules.resourceFingerprint != record.resourceFingerprint
+                || locatedRules.definitions.count != record.ruleListCount
+                || locatedRules.ignoredEmptyRuleListCount != record.ignoredEmptyRuleListCount,
+              let entity = try? entity(forBundleIdentifier: record.extensionBundleIdentifier)
+        else {
+            return false
+        }
+
+        entity.resourceFingerprint = locatedRules.resourceFingerprint
+        entity.ruleListCount = locatedRules.definitions.count
+        entity.ignoredEmptyRuleListCount = locatedRules.ignoredEmptyRuleListCount
+        entity.compileStatus = .available
+        entity.lastError = nil
+        entity.lastUpdateDate = Date()
+        return true
+    }
+
+    private func markStoredRecordUnavailable(
+        _ record: InstalledSafariContentBlockerRecord,
+        error: Error
+    ) -> Bool {
+        guard let entity = try? entity(forBundleIdentifier: record.extensionBundleIdentifier) else {
+            return false
+        }
+
+        let compileStatus = (error as? SafariContentBlockerRuleLocatorError)?
+            .persistedCompileStatus ?? SafariContentBlockerCompileStatus.rulesUnavailable
+        var didMutate = false
+
+        func update<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<SafariContentBlockerEntity, T>, _ value: T) {
+            guard entity[keyPath: keyPath] != value else { return }
+            entity[keyPath: keyPath] = value
+            didMutate = true
+        }
+
+        update(\.isEnabled, false)
+        update(\.compileStatus, compileStatus)
+        update(\.lastError, error.localizedDescription)
+        update(\.ruleListCount, 0)
+        update(\.ignoredEmptyRuleListCount, 0)
+        if didMutate {
+            entity.lastUpdateDate = Date()
+        }
+        return didMutate
     }
 
     private func upsertEntity(
