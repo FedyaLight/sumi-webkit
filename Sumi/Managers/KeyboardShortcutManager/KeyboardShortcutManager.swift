@@ -58,16 +58,13 @@ class KeyboardShortcutManager {
         case consume
     }
 
-    weak var browserManager: BrowserManager? {
+    weak var shortcutActionRouter: (any ShortcutActionRouting)? {
         didSet {
-            dispatcher.browserManager = browserManager
+            dispatcher.actionRouter = shortcutActionRouter
         }
     }
-    weak var windowRegistry: WindowRegistry? {
-        didSet {
-            dispatcher.windowRegistry = windowRegistry
-        }
-    }
+    weak var chromeRouter: (any KeyboardShortcutChromeRouting)?
+    weak var windowRegistry: WindowRegistry?
 
     init(userDefaults: UserDefaults = .standard, installEventMonitor: Bool = true) {
         self.store = KeyboardShortcutStore(userDefaults: userDefaults)
@@ -79,7 +76,8 @@ class KeyboardShortcutManager {
     }
 
     func setBrowserManager(_ manager: BrowserManager) {
-        browserManager = manager
+        shortcutActionRouter = manager
+        chromeRouter = manager
         windowRegistry = manager.windowRegistry
     }
 
@@ -238,8 +236,8 @@ class KeyboardShortcutManager {
         }
 
         if event.keyCode == UInt16(kVK_Escape),
-           browserManager?.findManager.isFindBarVisible == true {
-            browserManager?.findManager.hideFindBar()
+           chromeRouter?.isFindBarVisibleForShortcutRouting == true {
+            chromeRouter?.hideFindBarForShortcutRouting()
             return nil
         }
 
@@ -277,7 +275,7 @@ class KeyboardShortcutManager {
            state.isFloatingBarVisible {
             return true
         }
-        if browserManager?.isNativeModalPresented(in: keyWindow) == true {
+        if chromeRouter?.isNativeModalPresentedForShortcutRouting(in: keyWindow) == true {
             return true
         }
         return false
@@ -293,12 +291,12 @@ class KeyboardShortcutManager {
         }
 
         if keyCombination == KeyCombination(key: "escape") {
-            browserManager?.dismissFloatingBar(in: state, preserveDraft: true)
+            chromeRouter?.dismissFloatingBarForShortcutRouting(in: state, preserveDraft: true)
             return .consume
         }
 
         if systemOwnedShortcuts.contains(keyCombination) {
-            browserManager?.dismissFloatingBar(in: state, preserveDraft: true)
+            chromeRouter?.dismissFloatingBarForShortcutRouting(in: state, preserveDraft: true)
             return .pass(event)
         }
 
@@ -310,7 +308,7 @@ class KeyboardShortcutManager {
         case .focusAddressBar, .newTab:
             break
         default:
-            browserManager?.dismissFloatingBar(in: state, preserveDraft: true)
+            chromeRouter?.dismissFloatingBarForShortcutRouting(in: state, preserveDraft: true)
         }
 
         if executeShortcut(event) {

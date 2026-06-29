@@ -2,115 +2,153 @@ import AppKit
 import Foundation
 
 @MainActor
+protocol ShortcutActionRouting: AnyObject {
+    func showFindBar()
+    func goBackInActiveWindow()
+    func goForwardInActiveWindow()
+    func refreshCurrentTabInActiveWindow()
+    func clearCurrentPageCookies()
+    func openNewTabSurfaceInActiveWindow()
+    func closeCurrentTab()
+    func undoCloseTab()
+    func selectNextTabInActiveWindow()
+    func selectPreviousTabInActiveWindow()
+    func selectTabByIndexInActiveWindow(_ index: Int)
+    func selectLastTabInActiveWindow()
+    func duplicateCurrentTab()
+    func setActiveSplitLayout(_ layoutKind: SplitLayoutKind)
+    func unsplitActiveWindow()
+    func createEmptySplitInActiveWindow()
+    func selectNextSpaceInActiveWindow()
+    func selectPreviousSpaceInActiveWindow()
+    func createNewWindow()
+    func closeActiveWindow()
+    func showQuitDialog()
+    func toggleFullScreenForActiveWindow()
+    func openWebInspector()
+    func showDownloads()
+    func showHistory()
+    func expandAllFoldersInSidebar()
+    func activePageURLForActiveWindow() -> URL?
+    func focusFloatingBarForActiveWindow(prefill: String, navigateCurrentTab: Bool)
+    func zoomInCurrentTab()
+    func zoomOutCurrentTab()
+    func resetZoomCurrentTab()
+    func toggleSidebar()
+    func copyCurrentURL()
+    func hardReloadCurrentPage()
+    func toggleReaderModeInActiveWindow()
+    func toggleMuteCurrentTabInActiveWindow()
+    func showGradientEditor()
+}
+
+@MainActor
+protocol KeyboardShortcutChromeRouting: AnyObject {
+    var isFindBarVisibleForShortcutRouting: Bool { get }
+    func hideFindBarForShortcutRouting()
+    func isNativeModalPresentedForShortcutRouting(in window: NSWindow) -> Bool
+    func dismissFloatingBarForShortcutRouting(in windowState: BrowserWindowState, preserveDraft: Bool)
+}
+
+@MainActor
 final class ShortcutActionDispatcher {
-    weak var browserManager: BrowserManager?
-    weak var windowRegistry: WindowRegistry?
+    weak var actionRouter: (any ShortcutActionRouting)?
 
     func execute(_ action: ShortcutAction) {
-        guard let browserManager else { return }
+        guard let actionRouter else { return }
 
         if case .findInPage = action {
-            browserManager.showFindBar()
+            actionRouter.showFindBar()
             postShortcutExecuted(action)
             return
         }
 
-        DispatchQueue.main.async { [weak self, weak browserManager] in
-            guard let self, let browserManager else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let actionRouter = self.actionRouter else { return }
 
             switch action {
             case .goBack:
-                if let tab = browserManager.activePageTabForActiveWindow(),
-                   let windowId = self.windowRegistry?.activeWindow?.id,
-                   let webView = browserManager.activePageWebViewForActiveWindow() ?? browserManager.getWebView(for: tab.id, in: windowId),
-                   webView.canGoBack {
-                    webView.goBack()
-                }
+                actionRouter.goBackInActiveWindow()
             case .goForward:
-                if let tab = browserManager.activePageTabForActiveWindow(),
-                   let windowId = self.windowRegistry?.activeWindow?.id,
-                   let webView = browserManager.activePageWebViewForActiveWindow() ?? browserManager.getWebView(for: tab.id, in: windowId),
-                   webView.canGoForward {
-                    webView.goForward()
-                }
+                actionRouter.goForwardInActiveWindow()
             case .refresh:
-                browserManager.refreshCurrentTabInActiveWindow()
+                actionRouter.refreshCurrentTabInActiveWindow()
             case .clearCookiesAndRefresh:
-                browserManager.clearCurrentPageCookies()
-                browserManager.refreshCurrentTabInActiveWindow()
+                actionRouter.clearCurrentPageCookies()
+                actionRouter.refreshCurrentTabInActiveWindow()
             case .newTab:
-                browserManager.openNewTabSurfaceInActiveWindow()
+                actionRouter.openNewTabSurfaceInActiveWindow()
             case .closeTab:
-                browserManager.closeCurrentTab()
+                actionRouter.closeCurrentTab()
             case .undoCloseTab:
-                browserManager.undoCloseTab()
+                actionRouter.undoCloseTab()
             case .nextTab:
-                browserManager.selectNextTabInActiveWindow()
+                actionRouter.selectNextTabInActiveWindow()
             case .previousTab:
-                browserManager.selectPreviousTabInActiveWindow()
+                actionRouter.selectPreviousTabInActiveWindow()
             case .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8:
                 let tabIndex = Int(action.rawValue.components(separatedBy: "_").last ?? "0") ?? 1
-                browserManager.selectTabByIndexInActiveWindow(tabIndex - 1)
+                actionRouter.selectTabByIndexInActiveWindow(tabIndex - 1)
             case .goToLastTab:
-                browserManager.selectLastTabInActiveWindow()
+                actionRouter.selectLastTabInActiveWindow()
             case .duplicateTab:
-                browserManager.duplicateCurrentTab()
+                actionRouter.duplicateCurrentTab()
             case .splitGrid:
-                browserManager.setActiveSplitLayout(.grid)
+                actionRouter.setActiveSplitLayout(.grid)
             case .splitVertical:
-                browserManager.setActiveSplitLayout(.vertical)
+                actionRouter.setActiveSplitLayout(.vertical)
             case .splitHorizontal:
-                browserManager.setActiveSplitLayout(.horizontal)
+                actionRouter.setActiveSplitLayout(.horizontal)
             case .unsplit:
-                browserManager.unsplitActiveWindow()
+                actionRouter.unsplitActiveWindow()
             case .newEmptySplit:
-                browserManager.createEmptySplitInActiveWindow()
+                actionRouter.createEmptySplitInActiveWindow()
             case .nextSpace:
-                browserManager.selectNextSpaceInActiveWindow()
+                actionRouter.selectNextSpaceInActiveWindow()
             case .previousSpace:
-                browserManager.selectPreviousSpaceInActiveWindow()
+                actionRouter.selectPreviousSpaceInActiveWindow()
             case .newWindow:
-                browserManager.createNewWindow()
+                actionRouter.createNewWindow()
             case .closeWindow:
-                browserManager.closeActiveWindow()
+                actionRouter.closeActiveWindow()
             case .closeBrowser:
-                browserManager.showQuitDialog()
+                actionRouter.showQuitDialog()
             case .toggleFullScreen:
-                browserManager.toggleFullScreenForActiveWindow()
+                actionRouter.toggleFullScreenForActiveWindow()
             case .openDevTools:
-                browserManager.openWebInspector()
+                actionRouter.openWebInspector()
             case .viewDownloads:
-                browserManager.showDownloads()
+                actionRouter.showDownloads()
             case .viewHistory:
-                browserManager.showHistory()
+                actionRouter.showHistory()
             case .expandAllFolders:
-                browserManager.expandAllFoldersInSidebar()
+                actionRouter.expandAllFoldersInSidebar()
             case .focusAddressBar:
-                let currentURL = browserManager.activePageURLForActiveWindow()?.absoluteString ?? ""
-                browserManager.focusFloatingBarForActiveWindow(
+                let currentURL = actionRouter.activePageURLForActiveWindow()?.absoluteString ?? ""
+                actionRouter.focusFloatingBarForActiveWindow(
                     prefill: currentURL,
                     navigateCurrentTab: true
                 )
             case .findInPage:
                 break
             case .zoomIn:
-                browserManager.zoomInCurrentTab()
+                actionRouter.zoomInCurrentTab()
             case .zoomOut:
-                browserManager.zoomOutCurrentTab()
+                actionRouter.zoomOutCurrentTab()
             case .actualSize:
-                browserManager.resetZoomCurrentTab()
+                actionRouter.resetZoomCurrentTab()
             case .toggleSidebar:
-                browserManager.toggleSidebar()
+                actionRouter.toggleSidebar()
             case .copyCurrentURL:
-                browserManager.copyCurrentURL()
+                actionRouter.copyCurrentURL()
             case .hardReload:
-                browserManager.hardReloadCurrentPage()
+                actionRouter.hardReloadCurrentPage()
             case .toggleReaderMode:
-                browserManager.toggleReaderModeInActiveWindow()
+                actionRouter.toggleReaderModeInActiveWindow()
             case .muteUnmuteAudio:
-                browserManager.toggleMuteCurrentTabInActiveWindow()
+                actionRouter.toggleMuteCurrentTabInActiveWindow()
             case .customizeSpaceGradient:
-                browserManager.showGradientEditor()
+                actionRouter.showGradientEditor()
             }
 
             self.postShortcutExecuted(action)
@@ -123,5 +161,31 @@ final class ShortcutActionDispatcher {
             object: nil,
             userInfo: ["action": action]
         )
+    }
+}
+
+extension BrowserManager: ShortcutActionRouting, KeyboardShortcutChromeRouting {
+    func focusFloatingBarForActiveWindow(prefill: String, navigateCurrentTab: Bool) {
+        focusFloatingBarForActiveWindow(
+            prefill: prefill,
+            navigateCurrentTab: navigateCurrentTab,
+            presentationReason: .keyboard
+        )
+    }
+
+    var isFindBarVisibleForShortcutRouting: Bool {
+        findManager.isFindBarVisible
+    }
+
+    func hideFindBarForShortcutRouting() {
+        findManager.hideFindBar()
+    }
+
+    func isNativeModalPresentedForShortcutRouting(in window: NSWindow) -> Bool {
+        isNativeModalPresented(in: window)
+    }
+
+    func dismissFloatingBarForShortcutRouting(in windowState: BrowserWindowState, preserveDraft: Bool) {
+        dismissFloatingBar(in: windowState, preserveDraft: preserveDraft)
     }
 }
