@@ -148,25 +148,15 @@ private struct SidebarDragGeometryMutation {
 @MainActor
 final class SidebarDragGeometryMutationBuffer {
     private var mutations: [SidebarDragGeometryMutationKey: SidebarDragGeometryMutation] = [:]
-    private var isFlushScheduled = false
 
     func enqueue(
         key: SidebarDragGeometryMutationKey,
-        repository: SidebarDragGeometryRepository,
         apply: @escaping @MainActor (SidebarDragGeometryRepository) -> Void
     ) {
         mutations[key] = SidebarDragGeometryMutation(apply: apply)
-
-        guard !isFlushScheduled else { return }
-        isFlushScheduled = true
-        DispatchQueue.main.async { [weak self, weak repository] in
-            guard let self, let repository else { return }
-            self.flush(into: repository)
-        }
     }
 
     func flush(into repository: SidebarDragGeometryRepository) {
-        isFlushScheduled = false
         guard !mutations.isEmpty else { return }
 
         let pendingMutations = Array(mutations.values)

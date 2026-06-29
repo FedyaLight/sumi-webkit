@@ -566,15 +566,14 @@ final class SidebarDropProjectionTests: XCTestCase {
         let spaceId = UUID()
         var appliedValues: [Int] = []
 
-        buffer.enqueue(key: .regularList(spaceId), repository: repository) { _ in
+        buffer.enqueue(key: .regularList(spaceId)) { _ in
             appliedValues.append(1)
         }
-        buffer.enqueue(key: .regularList(spaceId), repository: repository) { _ in
+        buffer.enqueue(key: .regularList(spaceId)) { _ in
             appliedValues.append(2)
         }
         buffer.enqueue(
-            key: .section(SidebarSectionGeometryKey(spaceId: spaceId, section: .spacePinned)),
-            repository: repository
+            key: .section(SidebarSectionGeometryKey(spaceId: spaceId, section: .spacePinned))
         ) { _ in
             appliedValues.append(3)
         }

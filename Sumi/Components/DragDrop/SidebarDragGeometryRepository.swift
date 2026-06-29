@@ -29,9 +29,10 @@ final class SidebarDragGeometryRepository {
     private var pendingGeometryStore: SidebarRuntimeGeometryStore?
     private var pendingInteractivePageKey: SidebarPageGeometryKey?
     private var pendingGeometryRefreshRequested = false
-    private var isGeometryRefreshFlushScheduled = false
-    private var isGeometrySnapshotPublishScheduled = false
+    private var pendingGeometrySnapshotPublishRequested = false
+    private var isDrainingMainRunLoopGeometry = false
     private let geometryMutationBuffer = SidebarDragGeometryMutationBuffer()
+    private let mainRunLoopOwner = SidebarDragGeometryMainRunLoopOwner()
 
     private let publishSnapshot: @MainActor (SidebarGeometrySnapshot) -> Void
     private let publishRevision: @MainActor (Int) -> Void
@@ -54,8 +55,9 @@ final class SidebarDragGeometryRepository {
     }
 
     func flushDeferredGeometryForDragStart() {
-        flushDeferredGeometryMutations()
-        flushScheduledGeometrySnapshotPublish()
+        mainRunLoopOwner.drainSynchronously { [self] in
+            drainPendingMainRunLoopGeometry()
+        }
     }
 
     func schedulePageGeometry(
@@ -247,13 +249,7 @@ final class SidebarDragGeometryRepository {
 
     func requestGeometryRefresh() {
         pendingGeometryRefreshRequested = true
-
-        guard !isGeometryRefreshFlushScheduled else { return }
-        isGeometryRefreshFlushScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.flushPendingGeometryRefresh()
-        }
+        scheduleMainRunLoopGeometryDrain()
     }
 
     func promotePendingGeometryIfReady() {
@@ -596,7 +592,8 @@ final class SidebarDragGeometryRepository {
         key: SidebarDragGeometryMutationKey,
         apply: @escaping @MainActor (SidebarDragGeometryRepository) -> Void
     ) {
-        geometryMutationBuffer.enqueue(key: key, repository: self, apply: apply)
+        geometryMutationBuffer.enqueue(key: key, apply: apply)
+        scheduleMainRunLoopGeometryDrain()
     }
 
     private func flushDeferredGeometryMutations() {
@@ -726,25 +723,35 @@ final class SidebarDragGeometryRepository {
     }
 
     private func publishActiveGeometryStore() {
-        scheduleGeometrySnapshotPublish()
+        pendingGeometrySnapshotPublishRequested = true
+        scheduleMainRunLoopGeometryDrain()
     }
 
-    private func scheduleGeometrySnapshotPublish() {
-        guard !isGeometrySnapshotPublishScheduled else { return }
-        isGeometrySnapshotPublishScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.flushScheduledGeometrySnapshotPublish()
+    private func scheduleMainRunLoopGeometryDrain() {
+        guard !isDrainingMainRunLoopGeometry else { return }
+        mainRunLoopOwner.scheduleDrain { [weak self] in
+            self?.drainPendingMainRunLoopGeometry()
         }
     }
 
-    private func flushScheduledGeometrySnapshotPublish() {
-        isGeometrySnapshotPublishScheduled = false
+    private func drainPendingMainRunLoopGeometry() {
+        guard !isDrainingMainRunLoopGeometry else { return }
+        isDrainingMainRunLoopGeometry = true
+        defer { isDrainingMainRunLoopGeometry = false }
+
+        flushDeferredGeometryMutations()
+        promotePendingGeometryIfReady()
+        flushPendingGeometrySnapshotPublish()
+        flushPendingGeometryRefresh()
+    }
+
+    private func flushPendingGeometrySnapshotPublish() {
+        guard pendingGeometrySnapshotPublishRequested else { return }
+        pendingGeometrySnapshotPublishRequested = false
         setGeometrySnapshot(Self.snapshot(from: activeGeometryStore))
     }
 
     private func flushPendingGeometryRefresh() {
-        isGeometryRefreshFlushScheduled = false
         guard pendingGeometryRefreshRequested else { return }
         pendingGeometryRefreshRequested = false
         setGeometryRevision(geometryRevision &+ 1)
