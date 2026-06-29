@@ -33,9 +33,7 @@ struct SpacesSideBarView: View {
     @EnvironmentObject private var dragState: SidebarDragState
 
     @State private var isSidebarHovered: Bool = false
-    @State private var transitionState = SpaceSidebarTransitionState()
-    @State private var transitionSnapshot: SpaceSidebarTransitionSnapshot?
-    @State private var transitionTask: Task<Void, Never>?
+    @State private var transitionCoordinator = SpaceSidebarTransitionCoordinator()
     @ObservedObject private var nowPlayingController: SumiNativeNowPlayingController
     @ObservedObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @ObservedObject private var updaterService = SumiUpdaterService.shared
@@ -63,6 +61,14 @@ struct SpacesSideBarView: View {
             globalState: nowPlayingController.cardState,
             in: windowState
         )
+    }
+
+    private var transitionState: SpaceSidebarTransitionState {
+        transitionCoordinator.transitionState
+    }
+
+    private var transitionSnapshot: SpaceSidebarTransitionSnapshot? {
+        transitionCoordinator.transitionSnapshot
     }
 
     var body: some View {
@@ -251,6 +257,25 @@ struct SpacesSideBarView: View {
 
     private var allowsSidebarInteractiveWork: Bool {
         sidebarPresentationContext.allowsInteractiveWork
+    }
+
+    private func transitionContext(spaces: [Space]) -> SpaceSidebarTransitionCoordinator.Context {
+        let windowState = windowState
+        let browserContext = browserContext
+        return SpaceSidebarTransitionCoordinator.Context(
+            spaces: spaces,
+            currentSpaces: {
+                windowState.isIncognito
+                    ? windowState.ephemeralSpaces
+                    : browserContext.tabManager.spaces
+            },
+            windowState: windowState,
+            browserContext: browserContext,
+            dragState: dragState,
+            settings: sumiSettings,
+            allowsInteractiveWork: allowsSidebarInteractiveWork,
+            reduceMotion: reduceMotion
+        )
     }
 
     @ViewBuilder
@@ -454,48 +479,42 @@ struct SpacesSideBarView: View {
     }
 
     private func sourceOpacity(for travelProgress: Double) -> Double {
-        1 - (travelProgress * 0.12)
+        transitionCoordinator.sourceOpacity(for: travelProgress)
     }
 
     private func destinationOpacity(for travelProgress: Double) -> Double {
-        0.88 + (travelProgress * 0.12)
+        transitionCoordinator.destinationOpacity(for: travelProgress)
     }
 
     private func sourceOffsetX(width: CGFloat) -> CGFloat {
-        guard transitionState.hasDestination else { return 0 }
-        return -CGFloat(transitionState.direction) * width * transitionState.progress
+        transitionCoordinator.sourceOffsetX(width: width)
     }
 
     private func destinationOffsetX(width: CGFloat) -> CGFloat {
-        guard transitionState.hasDestination else { return 0 }
-        return CGFloat(transitionState.direction) * width * (1 - transitionState.progress)
+        transitionCoordinator.destinationOffsetX(width: width)
     }
 
     private func committedSpaceId(in spaces: [Space]) -> UUID? {
-        if let currentSpaceId = windowState.currentSpaceId,
-           spaces.contains(where: { $0.id == currentSpaceId }) {
-            return currentSpaceId
-        }
-        return spaces.first?.id
+        transitionCoordinator.committedSpaceId(in: transitionContext(spaces: spaces))
     }
 
     private func visualSelectedSpaceId(in spaces: [Space]) -> UUID? {
-        transitionState.visualSelectedSpaceId ?? committedSpaceId(in: spaces)
+        transitionCoordinator.visualSelectedSpaceId(in: transitionContext(spaces: spaces))
     }
 
     private func usesSharedPinnedGrid(
         sourceSpace: Space,
         destinationSpace: Space
     ) -> Bool {
-        SpaceSidebarEssentialsPlacementPolicy.usesSharedPinnedGrid(
-            sourceProfileId: resolvedPageProfileId(for: sourceSpace),
-            destinationProfileId: resolvedPageProfileId(for: destinationSpace)
+        transitionCoordinator.usesSharedPinnedGrid(
+            sourceSpace: sourceSpace,
+            destinationSpace: destinationSpace,
+            context: transitionContext(spaces: availableSpaces)
         )
     }
 
     private func space(for id: UUID?, in spaces: [Space]) -> Space? {
-        guard let id else { return nil }
-        return spaces.first(where: { $0.id == id })
+        transitionCoordinator.space(for: id, in: transitionContext(spaces: spaces))
     }
 
     private func handlePendingSplitGroupFocusRequest(
@@ -521,130 +540,33 @@ struct SpacesSideBarView: View {
     }
 
     private func handleSpacesCollectionChange(_ spaces: [Space]) {
-        let wasGestureActive = transitionState.isGestureActive
-        let hadThemeTransition = hasActiveThemeTransition
-        transitionState.syncSpaces(
-            orderedSpaceIds: spaces.map(\.id),
-            committedSpaceId: committedSpaceId(in: spaces)
-        )
-
-        if wasGestureActive && !transitionState.isGestureActive {
-            cancelPendingSpaceTransition()
-            cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: hadThemeTransition)
-            clearTransitionSnapshot()
-        }
-
-        guard let firstSpace = spaces.first else {
-            cancelLocalSpaceTransitionIfNeeded(cancelTheme: true)
-            return
-        }
-
-        guard let currentSpaceId = windowState.currentSpaceId,
-              spaces.contains(where: { $0.id == currentSpaceId })
-        else {
-            browserContext.setActiveSpace(firstSpace, windowState)
-            return
-        }
+        transitionCoordinator.handleSpacesCollectionChange(transitionContext(spaces: spaces))
     }
 
     private func handleTransitionProgressFrame(
         _ progress: Double,
         spaces: [Space]
     ) {
-        guard !(transitionState.trigger == .swipe && transitionState.phase == .interactive) else {
-            return
-        }
-
-        guard transitionState.hasDestination,
-              space(for: transitionState.sourceSpaceId, in: spaces) != nil,
-              space(for: transitionState.destinationSpaceId, in: spaces) != nil
-        else {
-            return
-        }
-
-        updateInteractiveThemeTransitionProgress(progress)
+        transitionCoordinator.handleTransitionProgressFrame(
+            progress,
+            context: transitionContext(spaces: spaces)
+        )
     }
 
     private func handleSwipeEvent(
         _ event: SpaceSwipeGestureEvent,
         spaces: [Space]
     ) {
-        let orderedSpaceIds = spaces.map(\.id)
-
-        switch event.phase {
-        case .began:
-            return
-
-        case .changed:
-            guard SpaceSidebarRenderPolicy.shouldBeginSwipeTransition(for: event) else {
-                return
-            }
-
-            if transitionState.phase == .idle {
-                _ = transitionState.beginSwipeGesture(
-                    from: committedSpaceId(in: spaces),
-                    orderedSpaceIds: orderedSpaceIds
-                )
-            }
-
-            guard transitionState.trigger == .swipe else { return }
-
-            let previousDestinationSpaceId = transitionState.destinationSpaceId
-            let hadThemeTransition = hasActiveThemeTransition
-            transitionState.updateSwipeGesture(
-                progress: event.progress,
-                latchedDirection: event.direction,
-                orderedSpaceIds: orderedSpaceIds
-            )
-
-            guard transitionState.destinationSpaceId != nil else {
-                cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: hadThemeTransition)
-                transitionState.reset()
-                clearTransitionSnapshot()
-                refreshCommittedSidebarDragGeometry(spaces: spaces)
-                return
-            }
-
-            reconcileSwipeThemeTransition(
-                previousDestinationSpaceId: previousDestinationSpaceId,
-                hadThemeTransition: hadThemeTransition,
-                spaces: spaces
-            )
-
-        case .ended:
-            guard transitionState.trigger == .swipe else { return }
-            if transitionState.destinationSpaceId == nil && transitionState.progress < 0.001 {
-                transitionState.reset()
-                clearTransitionSnapshot()
-                return
-            }
-            settleInteractiveSpaceTransition(commit: transitionState.shouldCommitSwipeOnEnd)
-
-        case .cancelled:
-            guard transitionState.trigger == .swipe else { return }
-            if transitionState.destinationSpaceId == nil && transitionState.progress < 0.001 {
-                cancelInteractiveThemeTransitionIfNeeded()
-                transitionState.reset()
-                clearTransitionSnapshot()
-                return
-            }
-            settleInteractiveSpaceTransition(commit: false)
-        }
+        transitionCoordinator.handleSwipeEvent(
+            event,
+            context: transitionContext(spaces: spaces)
+        )
     }
 
     private func settleInteractiveSpaceTransition(commit: Bool) {
-        guard transitionState.isGestureActive else { return }
-
-        transitionState.markSettling()
-        let targetProgress = commit ? 1.0 : 0.0
-
-        withAnimation(spaceSwitchAnimation()) {
-            transitionState.updateProgress(targetProgress)
-        }
-
-        scheduleTransitionCompletion(
-            after: SpaceSidebarRenderPolicy.completionDelay,
-            commit: commit
+        transitionCoordinator.settleInteractiveSpaceTransition(
+            commit: commit,
+            context: transitionContext(spaces: availableSpaces)
         )
     }
 
@@ -652,195 +574,35 @@ struct SpacesSideBarView: View {
         to targetSpace: Space,
         spaces: [Space]
     ) {
-        guard transitionState.beginClick(
-            from: committedSpaceId(in: spaces),
-            to: targetSpace.id,
-            orderedSpaceIds: spaces.map(\.id)
-        ),
-        let sourceSpace = space(for: transitionState.sourceSpaceId, in: spaces),
-        let destinationSpace = space(for: transitionState.destinationSpaceId, in: spaces)
-        else {
-            return
-        }
-
-        cancelPendingSpaceTransition()
-        captureTransitionSnapshot(sourceSpace: sourceSpace, destinationSpace: destinationSpace)
-        startInteractiveThemeTransition(from: sourceSpace, to: destinationSpace)
-        updateInteractiveThemeTransitionProgress(0)
-
-        withAnimation(spaceSwitchAnimation()) {
-            transitionState.updateProgress(1)
-        }
-
-        scheduleTransitionCompletion(
-            after: SpaceSidebarRenderPolicy.completionDelay,
-            commit: true
+        transitionCoordinator.switchSpace(
+            to: targetSpace,
+            context: transitionContext(spaces: spaces)
         )
     }
 
-    private func scheduleTransitionCompletion(
-        after duration: Double,
-        commit: Bool
-    ) {
-        cancelPendingSpaceTransition()
-        let destinationSpaceId = transitionState.destinationSpaceId
-        let hadThemeTransition = hasActiveThemeTransition
-
-        transitionTask = Task { @MainActor in
-            let nanoseconds = UInt64(max(duration, 0) * 1_000_000_000)
-            if nanoseconds > 0 {
-                try? await Task.sleep(nanoseconds: nanoseconds)
-            }
-            guard !Task.isCancelled else { return }
-
-            finishScheduledSpaceTransition(
-                commit: commit,
-                destinationSpaceId: destinationSpaceId,
-                hadThemeTransition: hadThemeTransition
-            )
-        }
-    }
-
     private func cancelPendingSpaceTransition() {
-        transitionTask?.cancel()
-        transitionTask = nil
+        transitionCoordinator.cancelPendingSpaceTransition()
     }
 
     private func cancelLocalSpaceTransitionIfNeeded(cancelTheme: Bool) {
-        cancelPendingSpaceTransition()
-        if cancelTheme {
-            cancelInteractiveThemeTransitionIfNeeded()
-        }
-        transitionState.reset()
-        clearTransitionSnapshot()
-        refreshCommittedSidebarDragGeometry(spaces: availableSpaces)
-    }
-
-    private func spaceSwitchAnimation() -> Animation {
-        SidebarMotionPolicy.spaceSwitchAnimation(
-            for: SidebarMotionPolicy.currentMode(reduceMotion: reduceMotion)
-        ) ?? .linear(duration: 0)
-    }
-
-    private var hasActiveThemeTransition: Bool {
-        transitionState.hasDestination || windowState.isInteractiveSpaceTransition
+        transitionCoordinator.cancelLocalSpaceTransitionIfNeeded(
+            context: transitionContext(spaces: availableSpaces),
+            cancelTheme: cancelTheme
+        )
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private func startInteractiveThemeTransition(
-        from sourceSpace: Space,
-        to destinationSpace: Space
-    ) {
-        browserContext.beginInteractiveSpaceTransition(
-            sourceSpace,
-            destinationSpace,
-            windowState
-        )
-    }
-
-    private func updateInteractiveThemeTransitionProgress(_ progress: Double) {
-        browserContext.updateInteractiveSpaceTransition(progress, windowState)
-    }
-
-    private func cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: Bool? = nil) {
-        let shouldCancel = hadThemeTransition ?? hasActiveThemeTransition
-        guard shouldCancel else { return }
-        browserContext.cancelInteractiveSpaceTransition(windowState)
-    }
-
-    private func reconcileSwipeThemeTransition(
-        previousDestinationSpaceId: UUID?,
-        hadThemeTransition: Bool,
-        spaces: [Space]
-    ) {
-        guard let sourceSpace = space(for: transitionState.sourceSpaceId, in: spaces) else {
-            return
-        }
-
-        if let destinationSpaceId = transitionState.destinationSpaceId,
-           let destinationSpace = space(for: destinationSpaceId, in: spaces) {
-            if previousDestinationSpaceId != destinationSpaceId || !windowState.isInteractiveSpaceTransition {
-                cancelPendingSpaceTransition()
-                captureTransitionSnapshot(sourceSpace: sourceSpace, destinationSpace: destinationSpace)
-                startInteractiveThemeTransition(from: sourceSpace, to: destinationSpace)
-            } else if transitionSnapshot == nil {
-                captureTransitionSnapshot(sourceSpace: sourceSpace, destinationSpace: destinationSpace)
-            }
-
-            updateInteractiveThemeTransitionProgress(transitionState.progress)
-            return
-        }
-
-        if previousDestinationSpaceId != nil || hadThemeTransition {
-            cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: true)
-            clearTransitionSnapshot()
-        }
-    }
-
-    private func finishScheduledSpaceTransition(
-        commit: Bool,
-        destinationSpaceId: UUID?,
-        hadThemeTransition: Bool
-    ) {
-        // Reset the local render mode before publishing the committed space.
-        // Otherwise the destination can briefly rebuild as a transition snapshot,
-        // leaving non-drag-capable AppKit row owners under the visible sidebar.
-        let completedDestinationSpaceId = transitionState.finishTransition(commit: commit)
-
-        if commit,
-           let destinationSpaceId = completedDestinationSpaceId ?? destinationSpaceId,
-           let destinationSpace = space(for: destinationSpaceId, in: availableSpaces) {
-            browserContext.setActiveSpace(destinationSpace, windowState)
-        } else {
-            cancelInteractiveThemeTransitionIfNeeded(hadThemeTransition: hadThemeTransition)
-        }
-
-        clearTransitionSnapshot()
-        refreshCommittedSidebarDragGeometry(spaces: availableSpaces)
-        transitionTask = nil
-    }
-
     private func refreshCommittedSidebarDragGeometryIfInteractive(spaces: [Space]) {
-        guard allowsSidebarInteractiveWork else { return }
-        refreshCommittedSidebarDragGeometry(spaces: spaces)
+        transitionCoordinator.refreshCommittedSidebarDragGeometryIfInteractive(
+            context: transitionContext(spaces: spaces)
+        )
     }
 
     private func refreshCommittedSidebarDragGeometry(spaces: [Space]) {
-        guard allowsSidebarInteractiveWork else { return }
-        guard transitionState.phase == .idle,
-              let committedSpace = space(for: committedSpaceId(in: spaces), in: spaces) else {
-            return
-        }
-
-        dragState.beginPendingGeometryEpoch(
-            expectedSpaceId: committedSpace.id,
-            profileId: resolvedPageProfileId(for: committedSpace)
+        transitionCoordinator.refreshCommittedSidebarDragGeometry(
+            context: transitionContext(spaces: spaces)
         )
-    }
-
-    private func captureTransitionSnapshot(
-        sourceSpace: Space,
-        destinationSpace: Space
-    ) {
-        if transitionSnapshot?.matches(
-            sourceSpaceId: sourceSpace.id,
-            destinationSpaceId: destinationSpace.id
-        ) == true {
-            return
-        }
-
-        transitionSnapshot = SpaceSidebarTransitionSnapshotBuilder.make(
-            sourceSpace: sourceSpace,
-            destinationSpace: destinationSpace,
-            browserContext: sidebarBrowserContext,
-            windowState: windowState,
-            settings: sumiSettings
-        )
-    }
-
-    private func clearTransitionSnapshot() {
-        transitionSnapshot = nil
     }
 
     private var emptyStateView: some View {
@@ -1046,7 +808,10 @@ struct SpacesSideBarView: View {
     }
 
     private func resolvedPageProfileId(for space: Space?) -> UUID? {
-        space?.profileId ?? windowState.currentProfileId ?? browserContext.currentProfile()?.id
+        transitionCoordinator.resolvedPageProfileId(
+            for: space,
+            context: transitionContext(spaces: availableSpaces)
+        )
     }
 
     // MARK: - Space Creation

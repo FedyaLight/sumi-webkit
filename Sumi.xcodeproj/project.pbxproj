@@ -74,6 +74,7 @@
 				Sidebar/SpaceSidebarRenderPolicy.swift,
 				Sidebar/SpaceSidebarSnapshots.swift,
 				Sidebar/SpaceSidebarSnapshotViews.swift,
+				Sidebar/SpaceSidebarTransitionCoordinator.swift,
 				Sidebar/SpaceSidebarTransitionState.swift,
 				Sidebar/SpacesList/SpaceReorderDragState.swift,
 				Sidebar/SpacesList/SpacesList.swift,
