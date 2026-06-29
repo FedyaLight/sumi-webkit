@@ -317,6 +317,7 @@ struct WindowView: View {
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
             windowChromeSize: windowChromeSize,
+            sidebarDragState: SidebarDragState.shared,
             presentationContext: presentationContext
         )
         .id("docked-sidebar-column")
