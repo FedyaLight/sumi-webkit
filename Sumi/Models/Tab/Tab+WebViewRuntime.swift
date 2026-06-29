@@ -159,33 +159,25 @@ extension Tab {
     // MARK: - WebView Runtime
 
     func normalTabUserScriptsProvider(for targetURL: URL?) -> SumiNormalTabUserScripts {
-        SumiNormalTabUserScripts(managedUserScripts: normalTabManagedUserScripts(for: targetURL))
+        webViewConfigurationOwner.normalTabUserScriptsProvider(
+            for: targetURL,
+            coreUserScripts: normalTabCoreUserScripts(),
+            tabId: id,
+            profileIdProvider: { self.resolveProfile()?.id ?? self.profileId },
+            browserManager: browserManager,
+            isEphemeral: isEphemeral
+        )
     }
 
     func normalTabManagedUserScripts(for targetURL: URL?) -> [SumiUserScript] {
-        var scripts = normalTabCoreUserScripts()
-        scripts.append(contentsOf: browserManager?.extensionsModule.normalTabUserScripts() ?? [])
-
-        if let targetURL {
-            scripts.append(
-                contentsOf: browserManager?.userscriptsModule.normalTabUserScripts(
-                    for: targetURL,
-                    webViewId: id,
-                    profileId: resolveProfile()?.id ?? profileId,
-                    isEphemeral: isEphemeral
-                ) ?? []
-            )
-
-            scripts.append(
-                contentsOf: browserManager?.boostsModule.normalTabUserScripts(
-                    for: targetURL,
-                    profileId: resolveProfile()?.id ?? profileId,
-                    isEphemeral: isEphemeral
-                ) ?? []
-            )
-        }
-
-        return scripts
+        webViewConfigurationOwner.normalTabManagedUserScripts(
+            for: targetURL,
+            coreUserScripts: normalTabCoreUserScripts(),
+            tabId: id,
+            profileIdProvider: { self.resolveProfile()?.id ?? self.profileId },
+            browserManager: browserManager,
+            isEphemeral: isEphemeral
+        )
     }
 
     func replaceNormalTabUserScripts(
@@ -259,16 +251,10 @@ extension Tab {
             return
         }
 
-        let auxiliaryOverrideConfiguration =
-            webExtensionContextWebViewConfiguration(profile: profile)
-            ?? webViewConfigurationOverride.map { override in
-                BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
-                    from: override,
-                    for: profile,
-                    surface: .extensionOptions,
-                    additionalUserScripts: override.userContentController.userScripts
-                )
-            }
+        let auxiliaryOverrideConfiguration = webViewConfigurationOwner.auxiliaryOverrideConfiguration(
+            for: profile,
+            browserManager: browserManager
+        )
 
         if let existingWebView = reusableExistingWebView {
             if canReuseAsNormalTabWebView(existingWebView) {
@@ -319,10 +305,12 @@ extension Tab {
         }
 
         let shouldDelayInitialNormalTabRuntimeRegistration =
-            !isPopupHost
-            && _existingWebView == nil
-            && didCreateAuxiliaryOverrideWebView == false
-            && Self.isInitialDocumentExtensionWarmupURL(url)
+            webViewConfigurationOwner.shouldDelayInitialNormalTabRuntimeRegistration(
+                isPopupHost: isPopupHost,
+                hasExistingWebView: _existingWebView != nil,
+                didCreateAuxiliaryOverrideWebView: didCreateAuxiliaryOverrideWebView,
+                url: url
+            )
 
         if shouldDelayInitialNormalTabRuntimeRegistration == false {
             registerNormalTabWithExtensionRuntimeIfNeeded(reason: "Tab.setupWebView")
@@ -385,11 +373,6 @@ extension Tab {
         finishSuspendedRestoreIfNeeded()
     }
 
-    private static func isInitialDocumentExtensionWarmupURL(_ url: URL) -> Bool {
-        let scheme = url.scheme?.lowercased()
-        return scheme == "http" || scheme == "https"
-    }
-
     private func loadExtensionOwnedInitialURL(_ targetURL: URL, on webView: WKWebView) {
         var request = URLRequest(url: targetURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -429,32 +412,11 @@ extension Tab {
     }
 
     func applyWebViewConfigurationOverride(_ configuration: WKWebViewConfiguration) {
-        let isolatedConfiguration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
-            from: configuration,
-            surface: .extensionOptions,
-            additionalUserScripts: configuration.userContentController.userScripts
-        )
-        browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
-            isolatedConfiguration,
-            profileId: resolveProfile()?.id ?? profileId,
-            reason: "Tab.applyWebViewConfigurationOverride"
-        )
-        webViewConfigurationOverride = isolatedConfiguration
-    }
-
-    private func webExtensionContextWebViewConfiguration(
-        profile: Profile
-    ) -> WKWebViewConfiguration? {
-        guard let context = webExtensionContextOverride,
-              let configuration = context.webViewConfiguration
-        else { return nil }
-
-        browserManager?.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
+        webViewConfigurationOwner.applyWebViewConfigurationOverride(
             configuration,
-            profileId: profile.id,
-            reason: "Tab.webExtensionContextWebViewConfiguration"
+            profileId: resolveProfile()?.id ?? profileId,
+            browserManager: browserManager
         )
-        return configuration
     }
 
     private func normalTabWebViewConfiguration(reason: String) -> WKWebViewConfiguration? {
@@ -466,42 +428,12 @@ extension Tab {
             return nil
         }
 
-        let protectionDecision = browserManager?.protectionCoordinator
-            .normalTabDecision(for: url, profileId: profile.id)
-        if let protectionDecision {
-            noteProtectionAttachmentApplied(protectionDecision.attachmentState)
-        }
-        let safariContentBlockerAttachmentState = browserManager?
-            .extensionsModule
-            .safariContentBlockerAttachmentState(for: url)
-        let additionalContentBlockingServices: [SumiContentBlockingService]
-        if safariContentBlockerAttachmentState?.isEnabled == true {
-            additionalContentBlockingServices = browserManager?
-                .extensionsModule
-                .enabledSafariContentBlockingServices(
-                    for: url,
-                    profileId: profile.id
-                ) ?? []
-        } else {
-            additionalContentBlockingServices = []
-        }
-        if let safariContentBlockerAttachmentState {
-            noteSafariContentBlockerAttachmentApplied(safariContentBlockerAttachmentState)
-        }
-
-        let autoplayPolicy = BrowserConfiguration.shared.resolvedAutoplayPolicy(
+        return webViewConfigurationOwner.normalTabWebViewConfiguration(
             for: url,
-            profile: profile
-        )
-        let userScriptsProvider = normalTabUserScriptsProvider(for: url)
-
-        return BrowserConfiguration.shared.normalTabWebViewConfiguration(
-            for: profile,
-            url: url,
-            autoplayPolicy: autoplayPolicy,
-            userScriptsProvider: userScriptsProvider,
-            contentBlockingService: protectionDecision?.contentBlockingService,
-            additionalContentBlockingServices: additionalContentBlockingServices
+            profile: profile,
+            userScriptsProvider: normalTabUserScriptsProvider(for: url),
+            browserManager: browserManager,
+            reloadPolicyStateOwner: reloadPolicyStateOwner
         )
     }
 
@@ -525,29 +457,14 @@ extension Tab {
     }
 
     private func canReuseAsNormalTabWebView(_ webView: WKWebView) -> Bool {
-        guard webView.configuration.sumiIsNormalTabWebViewConfiguration else {
-            return false
-        }
-        let desiredProtectionState = protectionDesiredAttachmentState(for: webView.url ?? url)
-        if let appliedProtectionState = protectionAppliedAttachmentState {
-            guard appliedProtectionState == desiredProtectionState else {
-                return false
-            }
-        } else if desiredProtectionState.isEnabled {
-            return false
-        }
-        guard let profile = resolveProfile(),
-              webView.configuration.websiteDataStore === profile.dataStore
-        else {
-            return false
-        }
-        guard let provider = webView.configuration.userContentController.sumiNormalTabUserScriptsProvider else {
-            return false
-        }
-        let suspensionContext = "sumiTabSuspension_\(id.uuidString)"
-        return provider.userScripts.contains { script in
-            script.source.contains(suspensionContext)
-        }
+        webViewConfigurationOwner.canReuseAsNormalTabWebView(
+            webView,
+            fallbackURL: url,
+            tabId: id,
+            profile: resolveProfile(),
+            browserManager: browserManager,
+            reloadPolicyStateOwner: reloadPolicyStateOwner
+        )
     }
 
     private func applyOwnedTabWebViewNavigationSetup(to webView: WKWebView) {

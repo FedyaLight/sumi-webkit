@@ -53,8 +53,12 @@
 				"FloatingBar Accessories/HistorySuggestionItem.swift",
 				"FloatingBar Accessories/TabSuggestionItem.swift",
 				FloatingBarBrowserContext.swift,
+				FloatingBarCardBoundsReader.swift,
+				FloatingBarFocusRequestOwner.swift,
+				FloatingBarInlineCompletionTextField.swift,
 				FloatingBarLayoutPolicy.swift,
 				FloatingBarMotionPolicy.swift,
+				FloatingBarOutsideClickRouting.swift,
 				FloatingBarResultsPanelView.swift,
 				FloatingBarView.swift,
 			);

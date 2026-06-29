@@ -219,3 +219,45 @@ final class BrowserFloatingBarRoutingOwner {
         )
     }
 }
+
+extension BrowserFloatingBarRoutingOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let tabOpeningOwner = browserManager.tabOpeningOwner
+        return Self(
+            tabOpeningOwner: { tabOpeningOwner },
+            windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
+            settings: { [weak browserManager] in browserManager?.sumiSettings },
+            activePageTab: { [weak browserManager] windowState in
+                browserManager?.activePageTab(for: windowState)
+            },
+            hasValidCurrentSelection: { [weak browserManager] windowState in
+                browserManager?.hasValidCurrentSelection(in: windowState) ?? false
+            },
+            cancelEmptySplitPlaceholder: { [weak browserManager] windowState in
+                browserManager?.splitManager.cancelEmptySplitPlaceholder(in: windowState)
+            },
+            commitEmptySplitPlaceholder: { [weak browserManager] tabId, windowState in
+                browserManager?.splitManager.commitEmptySplitPlaceholder(tabId: tabId, in: windowState)
+            },
+            replaceEmptySplitPlaceholder: { [weak browserManager] tab, windowState in
+                browserManager?.splitManager.replaceEmptySplitPlaceholder(with: tab, in: windowState) ?? false
+            },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            dismissWorkspaceThemePickerIfNeededDiscarding: { [weak browserManager] in
+                browserManager?.dismissWorkspaceThemePickerIfNeededDiscarding()
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.persistWindowSession(for: windowState)
+            },
+            schedulePersistWindowSession: { [weak browserManager] windowState, delayNanoseconds in
+                browserManager?.schedulePersistWindowSession(
+                    for: windowState,
+                    delayNanoseconds: delayNanoseconds
+                )
+            }
+        )
+    }
+}

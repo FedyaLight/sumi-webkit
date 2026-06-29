@@ -51,6 +51,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let popupUserActivationTracker = SumiPopupUserActivationTracker()
     let faviconRuntime = TabFaviconRuntime()
     private let webViewRuntime = TabWebViewRuntime()
+    let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     private let suspensionStateOwner = TabSuspensionStateOwner()
     private let webViewInteractionStateOwner = TabWebViewInteractionStateOwner()
     lazy var permissionSurfaceOwner = TabPermissionSurfaceOwner(tab: self)
@@ -195,12 +196,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set { webViewRuntime.existingWebView = newValue }
     }
     var webViewConfigurationOverride: WKWebViewConfiguration? {
-        get { webViewRuntime.webViewConfigurationOverride }
-        set { webViewRuntime.webViewConfigurationOverride = newValue }
+        get { webViewConfigurationOwner.webViewConfigurationOverride }
+        set { webViewConfigurationOwner.webViewConfigurationOverride = newValue }
     }
     var webExtensionContextOverride: WKWebExtensionContext? {
-        get { webViewRuntime.webExtensionContextOverride }
-        set { webViewRuntime.webExtensionContextOverride = newValue }
+        get { webViewConfigurationOwner.webExtensionContextOverride }
+        set { webViewConfigurationOwner.webExtensionContextOverride = newValue }
     }
     var reloadPolicyStateOwner: TabReloadPolicyStateOwner {
         webViewRuntime.reloadPolicyStateOwner

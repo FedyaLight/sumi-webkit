@@ -312,41 +312,10 @@ class BrowserManager: ObservableObject {
         dependencies: .live(browserManager: self)
     )
     private lazy var floatingBarRoutingOwner = BrowserFloatingBarRoutingOwner(
-        dependencies: BrowserFloatingBarRoutingOwner.Dependencies(
-            tabOpeningOwner: { [tabOpeningOwner] in tabOpeningOwner },
-            windowRegistry: { [weak self] in self?.windowRegistry },
-            settings: { [weak self] in self?.sumiSettings },
-            activePageTab: { [weak self] windowState in
-                self?.activePageTab(for: windowState)
-            },
-            hasValidCurrentSelection: { [weak self] windowState in
-                self?.hasValidCurrentSelection(in: windowState) ?? false
-            },
-            cancelEmptySplitPlaceholder: { [weak self] windowState in
-                self?.splitManager.cancelEmptySplitPlaceholder(in: windowState)
-            },
-            commitEmptySplitPlaceholder: { [weak self] tabId, windowState in
-                self?.splitManager.commitEmptySplitPlaceholder(tabId: tabId, in: windowState)
-            },
-            replaceEmptySplitPlaceholder: { [weak self] tab, windowState in
-                self?.splitManager.replaceEmptySplitPlaceholder(with: tab, in: windowState) ?? false
-            },
-            selectTab: { [weak self] tab, windowState in
-                self?.selectTab(tab, in: windowState)
-            },
-            dismissWorkspaceThemePickerIfNeededDiscarding: { [weak self] in
-                self?.dismissWorkspaceThemePickerIfNeededDiscarding()
-            },
-            persistWindowSession: { [weak self] windowState in
-                self?.persistWindowSession(for: windowState)
-            },
-            schedulePersistWindowSession: { [weak self] windowState, delayNanoseconds in
-                self?.schedulePersistWindowSession(
-                    for: windowState,
-                    delayNanoseconds: delayNanoseconds
-                )
-            }
-        )
+        dependencies: .live(browserManager: self)
+    )
+    lazy var floatingBarBrowserContextOwner = BrowserFloatingBarBrowserContextOwner(
+        dependencies: .live(browserManager: self)
     )
     private lazy var browserActionOwner = BrowserActionOwner(
         dependencies: BrowserActionOwner.Dependencies(

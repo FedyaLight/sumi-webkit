@@ -289,8 +289,6 @@ final class TabExtensionRuntimeState {
 final class TabWebViewRuntime {
     var webView: WKWebView?
     var existingWebView: WKWebView?
-    var webViewConfigurationOverride: WKWebViewConfiguration?
-    var webExtensionContextOverride: WKWebExtensionContext?
     var primaryWindowId: UUID?
     var profileAwaitCancellable: AnyCancellable?
     let reloadPolicyStateOwner = TabReloadPolicyStateOwner()
