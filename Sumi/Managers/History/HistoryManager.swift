@@ -7,7 +7,39 @@ import Foundation
 import SwiftData
 
 @MainActor
+protocol HistoryFaviconCleaning: AnyObject {
+    func burnAfterHistoryClear(savedLogins: Set<String>) async
+    func burnDomains(
+        _ domains: Set<String>,
+        remainingHistoryHosts: Set<String>,
+        savedLogins: Set<String>
+    ) async
+}
+
+extension SumiFaviconSystem: HistoryFaviconCleaning {}
+
+@MainActor
+protocol HistoryVisitedLinkStoring: AnyObject {
+    func preloadVisitedLinks(_ urls: [URL], for profileId: UUID)
+    func replaceVisitedLinks(_ urls: [URL], for profileId: UUID)
+}
+
+extension SharedVisitedLinkStoreProvider: HistoryVisitedLinkStoring {}
+
+@MainActor
 final class HistoryManager: ObservableObject {
+    struct Dependencies {
+        let faviconCleaner: any HistoryFaviconCleaning
+        let visitedLinkStore: any HistoryVisitedLinkStoring
+
+        static var production: Self {
+            Dependencies(
+                faviconCleaner: SumiFaviconSystem.shared,
+                visitedLinkStore: SharedVisitedLinkStoreProvider.shared
+            )
+        }
+    }
+
     @Published private(set) var revision: UInt = 0
     @Published private(set) var canClearHistory = false
 
@@ -25,6 +57,8 @@ final class HistoryManager: ObservableObject {
         }
     )
 
+    private let faviconCleaner: any HistoryFaviconCleaning
+    private let visitedLinkStore: any HistoryVisitedLinkStoring
     private let maxHistoryDays = 100
     private var cleanupTask: Task<Void, Never>?
     private var changeTask: Task<Void, Never>?
@@ -35,9 +69,23 @@ final class HistoryManager: ObservableObject {
 
     var currentProfileId: UUID?
 
-    init(context: ModelContext, profileId: UUID? = nil) {
+    convenience init(context: ModelContext, profileId: UUID? = nil) {
+        self.init(
+            context: context,
+            profileId: profileId,
+            dependencies: .production
+        )
+    }
+
+    init(
+        context: ModelContext,
+        profileId: UUID? = nil,
+        dependencies: Dependencies
+    ) {
         self.store = HistoryStore(container: context.container)
         self.currentProfileId = profileId
+        self.faviconCleaner = dependencies.faviconCleaner
+        self.visitedLinkStore = dependencies.visitedLinkStore
         scheduleDeferredHistoryCleanupIfNeeded()
         preloadVisitedLinksForCurrentProfile()
         Task { [weak self] in
@@ -190,7 +238,7 @@ final class HistoryManager: ObservableObject {
         reloadVisitedLinksForCurrentProfile()
         if !faviconDomains.isEmpty {
             let remainingHosts = await dataProvider.remainingHistoryHosts(forSiteDomains: faviconDomains)
-            await SumiFaviconSystem.shared.burnDomains(
+            await faviconCleaner.burnDomains(
                 faviconDomains,
                 remainingHistoryHosts: remainingHosts,
                 savedLogins: BasicAuthCredentialStore().allCredentialHosts()
@@ -208,7 +256,7 @@ final class HistoryManager: ObservableObject {
         reloadVisitedLinksForCurrentProfile()
         if !domains.isEmpty {
             let remainingHosts = await dataProvider.remainingHistoryHosts(forSiteDomains: domains)
-            await SumiFaviconSystem.shared.burnDomains(
+            await faviconCleaner.burnDomains(
                 domains,
                 remainingHistoryHosts: remainingHosts,
                 savedLogins: BasicAuthCredentialStore().allCredentialHosts()
@@ -221,7 +269,7 @@ final class HistoryManager: ObservableObject {
     func clearAll() async {
         await dataProvider.clearAll()
         reloadVisitedLinksForCurrentProfile()
-        await SumiFaviconSystem.shared.burnAfterHistoryClear(
+        await faviconCleaner.burnAfterHistoryClear(
             savedLogins: BasicAuthCredentialStore().allCredentialHosts()
         )
         await refreshSummary(incrementRevision: false)
@@ -290,19 +338,13 @@ final class HistoryManager: ObservableObject {
     private func preloadVisitedLinksForCurrentProfile() {
         guard let profileId = currentProfileId else { return }
         visitedLinkPreloadTask?.cancel()
-        visitedLinkPreloadTask = Task { [store] in
+        visitedLinkPreloadTask = Task { @MainActor [weak self, store] in
             do {
                 let urls = try await store.fetchVisitedURLs(profileId: profileId)
-                await MainActor.run {
-                    SharedVisitedLinkStoreProvider.shared.preloadVisitedLinks(
-                        urls,
-                        for: profileId
-                    )
-                }
+                guard !Task.isCancelled else { return }
+                self?.visitedLinkStore.preloadVisitedLinks(urls, for: profileId)
             } catch {
-                await MainActor.run {
-                    RuntimeDiagnostics.emit("Error preloading visited links: \(error)")
-                }
+                RuntimeDiagnostics.emit("Error preloading visited links: \(error)")
             }
         }
     }
@@ -310,19 +352,13 @@ final class HistoryManager: ObservableObject {
     private func reloadVisitedLinksForCurrentProfile() {
         guard let profileId = currentProfileId else { return }
         visitedLinkPreloadTask?.cancel()
-        visitedLinkPreloadTask = Task { [store] in
+        visitedLinkPreloadTask = Task { @MainActor [weak self, store] in
             do {
                 let urls = try await store.fetchVisitedURLs(profileId: profileId)
-                await MainActor.run {
-                    SharedVisitedLinkStoreProvider.shared.replaceVisitedLinks(
-                        urls,
-                        for: profileId
-                    )
-                }
+                guard !Task.isCancelled else { return }
+                self?.visitedLinkStore.replaceVisitedLinks(urls, for: profileId)
             } catch {
-                await MainActor.run {
-                    RuntimeDiagnostics.emit("Error reloading visited links: \(error)")
-                }
+                RuntimeDiagnostics.emit("Error reloading visited links: \(error)")
             }
         }
     }
