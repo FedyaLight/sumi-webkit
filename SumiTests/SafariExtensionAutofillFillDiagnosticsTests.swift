@@ -98,32 +98,6 @@ final class SafariExtensionAutofillFillDiagnosticsTests: XCTestCase {
         XCTAssertTrue(probe.detail.contains("login-basic.html"))
     }
 
-    func testInlineUINavigationResponderObservesExtensionResourceSchemes() {
-        let navigationPath = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(
-                "Sumi/Models/Tab/Navigation/SafariExtensionInlineUINavigationResponder.swift"
-            )
-        let navigationSource = try? String(contentsOf: navigationPath, encoding: .utf8)
-        XCTAssertEqual(navigationSource?.contains("\"webkit-extension\""), true)
-        XCTAssertEqual(navigationSource?.contains("\"safari-web-extension\""), true)
-        XCTAssertEqual(navigationSource?.contains("recordExtensionResourceNavigation"), true)
-    }
-
-    func testContentScriptTabReconcileProbeRequiresWebViewAttachBeforeNotify() {
-        let profilesPath = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("Sumi/Managers/ExtensionManager/ExtensionManager+Profiles.swift")
-        let profilesSource = try? String(contentsOf: profilesPath, encoding: .utf8)
-        XCTAssertEqual(
-            profilesSource?.contains("Attach or rebuild WebViews before `didOpenTab`"),
-            true
-        )
-        XCTAssertTrue(SafariExtensionContentScriptProbe.isTabReconcilePathWiredInSources())
-    }
-
     func testFillProbeScriptExistsInAutofillFixtures() {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

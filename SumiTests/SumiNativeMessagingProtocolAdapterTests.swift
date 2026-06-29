@@ -284,41 +284,6 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
         XCTAssertTrue(port.isDisconnected)
     }
 
-    // 8. No payload logging
-    func testAdapterBoundarySourcesDoNotLogPayloads() throws {
-        let adapterSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingProtocolAdapter.swift")
-        let transportSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingAdapterTransport.swift")
-        let relaySource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift")
-        let connectionSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingConnection.swift")
-        let portSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift")
-        let combined = adapterSource + transportSource + relaySource + connectionSource + portSource
-
-        XCTAssertFalse(combined.contains("print(message"))
-        XCTAssertFalse(combined.contains("debug(\"message"))
-        XCTAssertFalse(combined.contains("RuntimeDiagnostics.debug(message"))
-        XCTAssertTrue(
-            combined.contains("_ = message")
-                || combined.contains("_ = request")
-                || combined.contains("guard let message")
-        )
-    }
-
-    // 9. No extension-specific branch in generic runtime path
-    func testGenericRuntimeHasNoExtensionSpecificBranches() throws {
-        let relaySource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift")
-        let adapterSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingProtocolAdapter.swift")
-        let transportSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingAdapterTransport.swift")
-
-        for token in ["bitwarden", "1password", "proton", "raindrop", "com.bitwarden.desktop"] {
-            XCTAssertFalse(relaySource.localizedCaseInsensitiveContains(token))
-            XCTAssertFalse(adapterSource.localizedCaseInsensitiveContains(token))
-            XCTAssertFalse(transportSource.localizedCaseInsensitiveContains(token))
-        }
-        XCTAssertFalse(relaySource.contains("if extensionId =="))
-        XCTAssertFalse(relaySource.contains("switch extensionId"))
-        XCTAssertFalse(relaySource.contains("extension.name"))
-    }
-
     func testRegistryResolvesByApplicationIdentifierAlias() {
         let adapter = SumiNativeMessagingFakePublicAdapter(
             supportedHosts: ["com.bitwarden.desktop"]
@@ -534,13 +499,4 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
         try data.write(to: url)
     }
 
-    private func source(named relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: root.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }

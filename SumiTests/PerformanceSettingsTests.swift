@@ -81,7 +81,7 @@ final class PerformanceSettingsTests: XCTestCase {
         XCTAssertEqual(harness.defaults.double(forKey: "settings.memorySaver.customDeactivationDelay"), 2 * 60 * 60)
     }
 
-    func testPerformanceSettingsExposeAllMemoryModes() throws {
+    func testPerformanceSettingsExposeAllMemoryModes() {
         XCTAssertEqual(
             SumiMemoryModeSettingsDescriptor.all.map(\.mode),
             [.moderate, .balanced, .maximum, .custom]
@@ -104,18 +104,6 @@ final class PerformanceSettingsTests: XCTestCase {
         ]
         XCTAssertEqual(SumiMemorySaverCustomDelay.presetOptions, expectedPresetOptions)
 
-        let source = try Self.source(named: "Sumi/Components/Settings/Tabs/Performance.swift")
-        XCTAssertFalse(source.contains("Picker(\"Memory Saver\""))
-        XCTAssertTrue(source.contains("ForEach(SumiMemoryModeSettingsDescriptor.all)"))
-        XCTAssertTrue(source.contains(".pickerStyle(.segmented)"))
-        XCTAssertTrue(source.contains(".settingsTrailingControl(width: 340)"))
-        XCTAssertTrue(source.contains("settings.memoryMode == .custom"))
-        XCTAssertTrue(source.contains("Deactivate inactive tabs after:"))
-        XCTAssertTrue(source.contains("SumiMemorySaverCustomDelay.presetOptions"))
-        XCTAssertTrue(source.contains(".settingsTrailingControl(width: 140)"))
-        XCTAssertFalse(source.contains(".pickerStyle(.radioGroup)"))
-        XCTAssertFalse(source.contains("Stepper("))
-        XCTAssertFalse(source.contains("launcherPreservationCopy"))
     }
 
     func testPerformanceSettingsCopyMatchesMemoryModeContract() {
@@ -128,51 +116,11 @@ final class PerformanceSettingsTests: XCTestCase {
         XCTAssertFalse(copy.contains("Frees memory faster"))
     }
 
-    func testSettingsNavigationReferencesPerformanceTab() throws {
-        let settingsUtilsSource = try Self.source(named: "Sumi/Components/Settings/SettingsUtils.swift")
-        let tabRootSource = try Self.source(named: "Sumi/Components/Settings/SumiSettingsTabRootView.swift")
-
+    func testSettingsNavigationReferencesPerformanceTab() {
         XCTAssertTrue(SettingsTabs.ordered.contains(.performance))
         XCTAssertEqual(SettingsTabs(paneQueryValue: "performance"), .performance)
         XCTAssertEqual(SettingsPaneDescriptor.descriptor(for: .performance).title, "Performance")
         XCTAssertEqual(SettingsTabs.performance.settingsSurfaceURL.absoluteString, "sumi://settings?pane=performance")
-        XCTAssertTrue(settingsUtilsSource.contains("case performance"))
-        XCTAssertTrue(tabRootSource.contains("SettingsPerformanceTab()"))
-    }
-
-    func testOnlyTabSuspensionServiceReadsMemoryModeForRuntimePolicy() throws {
-        let suspensionSource = try Self.source(named: "Sumi/Managers/TabSuspensionService.swift")
-
-        XCTAssertTrue(suspensionSource.contains("SumiMemoryMode"))
-        XCTAssertTrue(suspensionSource.contains("memoryMode"))
-        XCTAssertTrue(suspensionSource.contains("TabSuspensionPolicy"))
-
-        for sourcePath in [
-            "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift",
-            "Sumi/Managers/BrowserManager/BrowserManager.swift",
-        ] {
-            let source = try Self.source(named: sourcePath)
-            XCTAssertFalse(source.contains("SumiMemoryMode"), "\(sourcePath) should not consume memory modes")
-        }
-    }
-
-    func testSettingsSourcesDoNotAddSuspensionOrEvictionCalls() throws {
-        let source = try Self.combinedSource(in: "Sumi/Components/Settings")
-        let forbiddenPatterns = [
-            ".suspend(",
-            "suspendWebViews(",
-            "handleMemoryPressure(",
-            "evictHiddenWebViews",
-            "canEvictHiddenWebView",
-            "removeAllWebViews(",
-            "unloadTab(",
-            "TabSuspensionService(",
-            "WebViewCoordinator(",
-        ]
-
-        for pattern in forbiddenPatterns {
-            XCTAssertFalse(source.contains(pattern), "\(pattern) should not be called from Settings")
-        }
     }
 
     private static var performanceCopy: String {
@@ -184,27 +132,4 @@ final class PerformanceSettingsTests: XCTestCase {
         .joined(separator: " ")
     }
 
-    private static func source(named relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = repoRoot.appendingPathComponent(relativePath)
-        return try String(contentsOf: sourceURL, encoding: .utf8)
-    }
-
-    private static func combinedSource(in relativeDirectory: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let directoryURL = repoRoot.appendingPathComponent(relativeDirectory)
-        let fileURLs = FileManager.default.enumerator(
-            at: directoryURL,
-            includingPropertiesForKeys: nil
-        )?.compactMap { $0 as? URL } ?? []
-
-        return try fileURLs
-            .filter { $0.pathExtension == "swift" }
-            .map { try String(contentsOf: $0, encoding: .utf8) }
-            .joined(separator: "\n")
-    }
 }

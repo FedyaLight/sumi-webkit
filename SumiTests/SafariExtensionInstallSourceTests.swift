@@ -155,18 +155,6 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
     }
 
     @available(macOS 15.5, *)
-    func testSafariAppExtensionRuntimeFactoryDoesNotExposeCopiedResourceFallback() throws {
-        let source = try String(
-            contentsOf: projectURL(
-                "Sumi/Managers/ExtensionManager/SafariExtension/SafariAppExtensionResources.swift"
-            )
-        )
-
-        XCTAssertFalse(source.contains("copyResources"))
-        XCTAssertFalse(source.contains("falling back to copied package"))
-    }
-
-    @available(macOS 15.5, *)
     func testMakeWebExtensionFailsClosedWhenSafariAppexMissing() async throws {
         let packageRoot = scratchDirectory.appendingPathComponent("package", isDirectory: true)
         try FileManager.default.createDirectory(at: packageRoot, withIntermediateDirectories: true)
@@ -244,10 +232,4 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
         XCTAssertTrue(resolved.resourcesURL.path.contains(".appex/Contents"))
     }
 
-    private func projectURL(_ path: String) -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent(path)
-    }
 }

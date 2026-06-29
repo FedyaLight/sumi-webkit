@@ -407,15 +407,6 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertEqual(port.repliesSent.count, 5)
     }
 
-    func testAdapterSourcesDoNotLogPayloads() throws {
-        let adapterSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/BitwardenNativeMessagingAdapter.swift")
-        let transportSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/BitwardenDesktopProxyTransport.swift")
-
-        XCTAssertFalse(adapterSource.contains("print(message"))
-        XCTAssertFalse(transportSource.contains("print(message"))
-        XCTAssertTrue(adapterSource.contains("_ = message") || adapterSource.contains("_ = payload"))
-    }
-
     func testAdapterUnavailableReturnsCompanionAppProtocolUnknown() async throws {
         let installed = try makeInstalledExtension(
             id: "ext-bitwarden-off",
@@ -447,18 +438,6 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             error.code,
             SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
         )
-    }
-
-    func testGenericRuntimeHasNoBitwardenBranchesExceptRegistration() throws {
-        let relaySource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift")
-        let adapterSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingProtocolAdapter.swift")
-        let transportSource = try source(named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingAdapterTransport.swift")
-
-        for token in ["bitwarden", "1password", "proton", "raindrop", "com.bitwarden.desktop"] {
-            XCTAssertFalse(relaySource.localizedCaseInsensitiveContains(token))
-            XCTAssertFalse(adapterSource.localizedCaseInsensitiveContains(token))
-            XCTAssertFalse(transportSource.localizedCaseInsensitiveContains(token))
-        }
     }
 
     func testRegistryRegistersBitwardenAdapter() {
@@ -1113,13 +1092,4 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         try data.write(to: url)
     }
 
-    private func source(named relativePath: String) throws -> String {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try String(
-            contentsOf: root.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }

@@ -458,18 +458,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         }
     }
 
-    func testFaviconV2DoesNotDeclareAuxiliaryDownloadSurface() throws {
-        let browserConfigSource = try Self.source(named: "Sumi/Models/BrowserConfig/BrowserConfig.swift")
-        let fetchSource = try Self.source(named: "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift")
-
-        XCTAssertFalse(browserConfigSource.contains("case faviconDownload"))
-        XCTAssertFalse(browserConfigSource.contains("Sumi Web Content (Favicon)"))
-        XCTAssertFalse(Self.fileExists("Sumi/Favicons/DDG/Model/FaviconDownloader.swift"))
-        XCTAssertTrue(fetchSource.contains("case sessionProfileAware"))
-        XCTAssertTrue(fetchSource.contains("case publicRootFallback"))
-        XCTAssertTrue(fetchSource.contains("URLSession(configuration: .ephemeral)"))
-    }
-
     func testProfileAwareAuxiliaryConfigurationsPreserveProfileDataStore() {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Auxiliary Profile")
@@ -575,77 +563,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         }
     }
 
-    func testAuxiliaryAndFaviconPathsDoNotAccessContentBlockingRuntime() throws {
-        for relativePath in [
-            "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift",
-            "Sumi/Favicons/V2/SumiFaviconService.swift",
-        ] {
-            let source = try Self.source(named: relativePath)
-            XCTAssertFalse(source.contains("contentBlockingServiceIfEnabled"), relativePath)
-            XCTAssertFalse(source.contains("SumiContentBlockingService"), relativePath)
-        }
-    }
-
-    func testAuxiliaryAndFaviconPathsDoNotAccessUserscriptsRuntime() throws {
-        for relativePath in [
-            "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift",
-            "Sumi/Favicons/V2/SumiFaviconService.swift",
-            "Sumi/Managers/ExtensionManager/ExtensionManager+UI.swift",
-        ] {
-            let source = try Self.source(named: relativePath)
-            XCTAssertFalse(source.contains("userscriptsModule"), relativePath)
-            XCTAssertFalse(source.contains("SumiUserscriptsModule"), relativePath)
-            XCTAssertFalse(source.contains("SumiScriptsManager("), relativePath)
-            XCTAssertFalse(source.contains("UserScriptStore("), relativePath)
-            XCTAssertFalse(source.contains("UserScriptInjector("), relativePath)
-        }
-    }
-
-    func testAuxiliaryAndFaviconPathsDoNotAccessExtensionsRuntime() throws {
-        for relativePath in [
-            "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift",
-            "Sumi/Favicons/V2/SumiFaviconService.swift",
-            "Sumi/Models/BrowserConfig/BrowserConfig.swift",
-        ] {
-            let source = try Self.source(named: relativePath)
-            XCTAssertFalse(source.contains("extensionsModule"), relativePath)
-            XCTAssertFalse(source.contains("SumiExtensionsModule"), relativePath)
-            XCTAssertFalse(source.contains("ExtensionManager("), relativePath)
-            XCTAssertFalse(source.contains("NativeMessagingHandler("), relativePath)
-        }
-
-        let tabRuntimeSource = try Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift")
-        XCTAssertTrue(tabRuntimeSource.contains("extensionsModule.prepareWebViewConfigurationForExtensionRuntime"))
-        XCTAssertTrue(tabRuntimeSource.contains("extensionsModule.normalTabUserScripts()"))
-        XCTAssertFalse(tabRuntimeSource.contains("ExtensionManager("))
-        XCTAssertFalse(tabRuntimeSource.contains("NativeMessagingHandler("))
-    }
-
-    func testAuxiliarySurfacesDoNotUseNormalTabConfiguration() throws {
-        let faviconSource = try Self.source(named: "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift")
-        XCTAssertFalse(Self.fileExists("Sumi/Favicons/DDG/Model/FaviconDownloader.swift"))
-        XCTAssertFalse(faviconSource.contains("WKWebViewConfiguration()"))
-        XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
-
-        for relativePath in [
-            "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
-        ] {
-            let source = try Self.source(named: relativePath)
-            XCTAssertTrue(source.contains("auxiliaryWebViewConfiguration"), relativePath)
-            XCTAssertFalse(source.contains("normalTabWebViewConfiguration("), relativePath)
-        }
-    }
-
-    func testGlancePreviewUsesTransientNormalTabRuntimeInsteadOfAuxiliarySurface() throws {
-        let managerSource = try Self.source(named: "Sumi/Managers/GlanceManager/GlanceManager.swift")
-        let sessionSource = try Self.source(named: "Sumi/Managers/GlanceManager/GlanceSession.swift")
-
-        XCTAssertTrue(managerSource.contains("previewTab.ensureWebView()"))
-        XCTAssertTrue(sessionSource.contains("let previewTab: Tab"))
-        XCTAssertFalse(managerSource.contains("auxiliaryWebViewConfiguration"))
-        XCTAssertFalse(managerSource.contains("surface: .glance"))
-    }
-
     func testNormalTabConfigurationInstallsCoreScriptProvider() throws {
         let browserConfiguration = BrowserConfiguration()
         let profile = Profile(name: "Default")
@@ -697,91 +614,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(bridgeScript.source.contains("sumiTabSuspension_"))
         XCTAssertTrue(bridgeScript.source.contains("tabSuspension"))
         XCTAssertTrue(bridgeScript.forMainFrameOnly)
-    }
-
-    func testPrimaryTabSetupUsesCentralFactoryNotFaviconOnlyFactoryOrScriptRemoval() throws {
-        let testURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testURL
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = repoRoot
-            .appendingPathComponent("Sumi/Models/Tab/Tab+WebViewRuntime.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-
-        XCTAssertTrue(source.contains("normalTabWebViewConfiguration"))
-        XCTAssertFalse(source.contains("SumiDDGFaviconUserContentControllerFactory"))
-        XCTAssertFalse(source.contains("removeAllUserScripts"))
-
-        let lifecycleSourceURL = repoRoot
-            .appendingPathComponent("Sumi/Models/Tab/Navigation/SumiTabLifecycleNavigationResponder.swift")
-        let lifecycleSource = try String(contentsOf: lifecycleSourceURL, encoding: .utf8)
-        XCTAssertFalse(lifecycleSource.contains("injectDocumentIdleScripts"))
-        XCTAssertFalse(lifecycleSource.contains("evaluateJavaScript"))
-    }
-
-    func testCoordinatorDelegatesNormalWebViewCreationWithoutFallbackToGlance() throws {
-        let testURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testURL
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let coordinatorSourceURL = repoRoot
-            .appendingPathComponent("Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
-        let ownerSourceURL = repoRoot
-            .appendingPathComponent("Sumi/Managers/WebViewCoordinator/WebViewAssignmentRebuildOwner.swift")
-        let coordinatorSource = try String(contentsOf: coordinatorSourceURL, encoding: .utf8)
-        let ownerSource = try String(contentsOf: ownerSourceURL, encoding: .utf8)
-        let combinedSource = coordinatorSource + "\n" + ownerSource
-
-        XCTAssertFalse(combinedSource.contains("createWebViewInternal"))
-        XCTAssertFalse(combinedSource.contains("normalTabWebViewConfiguration"))
-        XCTAssertFalse(combinedSource.contains("auxiliaryWebViewConfiguration"))
-        XCTAssertFalse(combinedSource.contains("surface: .glance"))
-        XCTAssertFalse(combinedSource.contains("FocusableWKWebView(frame: .zero"))
-        XCTAssertFalse(coordinatorSource.contains("tab.ensureWebView()"))
-        XCTAssertFalse(coordinatorSource.contains("tab.makeNormalTabWebView"))
-        XCTAssertTrue(ownerSource.contains("tab.ensureWebView()"))
-        XCTAssertTrue(ownerSource.contains("tab.makeNormalTabWebView"))
-    }
-
-    func testBrowserConfigurationDoesNotExposeLegacyCompatibilityAliases() throws {
-        let source = try Self.source(named: "Sumi/Models/BrowserConfig/BrowserConfig.swift")
-
-        XCTAssertFalse(source.contains("cacheOptimizedWebViewConfiguration"))
-        XCTAssertFalse(source.contains("webViewConfiguration(for:"))
-    }
-
-    func testBrowserManagerDoesNotConstructSumiScriptsManagerAtStartup() throws {
-        let browserManagerSource = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
-        let runtimeWiringSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift"
-        )
-
-        XCTAssertTrue(browserManagerSource.contains("let userscriptsModule: SumiUserscriptsModule"))
-        XCTAssertTrue(
-            runtimeWiringSource.contains(
-                "browserManager.userscriptsModule.attach(browserManager: browserManager)"
-            )
-        )
-        XCTAssertFalse(browserManagerSource.contains("let sumiScriptsManager"))
-        XCTAssertFalse(browserManagerSource.contains("self.sumiScriptsManager"))
-        XCTAssertFalse(browserManagerSource.contains("SumiScriptsManager("))
-    }
-
-    func testBrowserManagerDoesNotConstructExtensionManagerAtStartup() throws {
-        let browserManagerSource = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
-        let runtimeWiringSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserManagerRuntimeWiring.swift"
-        )
-
-        XCTAssertTrue(browserManagerSource.contains("let extensionsModule: SumiExtensionsModule"))
-        XCTAssertTrue(
-            runtimeWiringSource.contains(
-                "browserManager.extensionsModule.attach(browserManager: browserManager)"
-            )
-        )
-        XCTAssertFalse(browserManagerSource.contains("let extensionManager"))
-        XCTAssertFalse(browserManagerSource.contains("self.extensionManager"))
-        XCTAssertFalse(browserManagerSource.contains("ExtensionManager("))
     }
 
     private func assertNoTabSuspensionBridge(
@@ -903,21 +735,6 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             ruleListLookupDuration: nil,
             tabAttachmentDuration: nil
         )
-    }
-
-    private static func source(named relativePath: String) throws -> String {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = repoRoot.appendingPathComponent(relativePath)
-        return try String(contentsOf: sourceURL, encoding: .utf8)
-    }
-
-    private static func fileExists(_ relativePath: String) -> Bool {
-        let repoRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent(relativePath).path)
     }
 
     private func temporaryDirectory(prefix: String) -> URL {

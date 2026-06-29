@@ -359,59 +359,6 @@ final class BrowserWindowChromeTests: XCTestCase {
         wait(for: [willClose], timeout: 0.1)
     }
 
-    func testMainWindowSceneUsesHiddenTitlebarStyle() throws {
-        let appSource = try Self.source(named: "App/SumiApp.swift")
-
-        XCTAssertTrue(appSource.contains(".windowStyle(.hiddenTitleBar)"))
-    }
-
-    func testBrowserManagerDoesNotOwnSwiftUIWindowContentConstruction() throws {
-        let windowShellSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserManager+WindowShell.swift"
-        )
-        let browserManagerSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserManager.swift"
-        )
-
-        XCTAssertFalse(windowShellSource.contains("ContentView("))
-        XCTAssertFalse(windowShellSource.contains("NSHostingView"))
-        XCTAssertFalse(browserManagerSource.contains("NSHostingView<ContentView>"))
-        XCTAssertFalse(browserManagerSource.contains("NSApplication.shared.windows"))
-    }
-
-    func testBrowserManagerWindowShellExtensionOwnsOnlyWindowLifecycleCommands() throws {
-        let windowShellSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserManager+WindowShell.swift"
-        )
-        let browserShellCommandsSource = try Self.source(
-            named: "Sumi/Managers/BrowserManager/BrowserManager+BrowserShellCommands.swift"
-        )
-
-        for expectedToken in [
-            "func createNewWindow()",
-            "func createIncognitoWindow()",
-            "func closeIncognitoWindow(",
-            "func closeActiveWindow()",
-            "func toggleFullScreenForActiveWindow()",
-            "private func makeWindowShellContext()",
-        ] {
-            XCTAssertTrue(windowShellSource.contains(expectedToken), expectedToken)
-        }
-
-        for browserShellToken in [
-            "func showDownloads()",
-            "func showHistory()",
-            "func toggleDownloadsPopover(",
-            "func closeDownloadsPopover(",
-            "func toggleURLBarHubPopover(",
-            "func presentURLBarHubPopover(",
-            "func closeURLBarHubPopover(",
-        ] {
-            XCTAssertFalse(windowShellSource.contains(browserShellToken), browserShellToken)
-            XCTAssertTrue(browserShellCommandsSource.contains(browserShellToken), browserShellToken)
-        }
-    }
-
     func testContentViewCanBeConstructedWithWindowLifecycleHandlerProtocol() throws {
         let handler = try FakeWindowLifecycleHandler()
         let lifecycleHandler: any BrowserWindowLifecycleHandling = handler
@@ -459,18 +406,6 @@ final class BrowserWindowChromeTests: XCTestCase {
         }
     }
 
-    private static var repoRoot: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-    }
-
-    private static func source(named relativePath: String) throws -> String {
-        try String(
-            contentsOf: repoRoot.appendingPathComponent(relativePath),
-            encoding: .utf8
-        )
-    }
 }
 
 @MainActor

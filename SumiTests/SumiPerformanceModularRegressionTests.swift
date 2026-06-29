@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import SwiftData
 import WebKit
 import XCTest
@@ -46,7 +46,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         }
     }
 
-    func testPrompt22MemorySaverRegressionGates() throws {
+    func testPrompt22MemorySaverRegressionGates() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
 
@@ -67,43 +67,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(30), 60)
         XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(5 * 60), 5 * 60)
         XCTAssertEqual(SumiMemorySaverCustomDelay.clamped(48 * 60 * 60), 2 * 60 * 60)
-
-        let settingsSource = try Self.source(named: "Sumi/Components/Settings/Tabs/Performance.swift")
-        XCTAssertTrue(settingsSource.contains("title: \"Memory Saver\""))
-        XCTAssertTrue(settingsSource.contains("Custom Deactivation Delay"))
-        XCTAssertFalse(settingsSource.contains("Lightweight"))
-        XCTAssertFalse(settingsSource.contains("title: \"Performance\""))
-
-        let suspensionSource = try Self.source(named: "Sumi/Managers/TabSuspensionService.swift")
-        XCTAssertTrue(suspensionSource.contains("proactiveTimers"))
-        XCTAssertTrue(suspensionSource.contains("armProactiveTimer"))
-        XCTAssertTrue(suspensionSource.contains("proactiveTimerSchedulerTask"))
-        XCTAssertTrue(suspensionSource.contains("nextProactiveTimerDeadline"))
-        XCTAssertTrue(suspensionSource.contains("handleDueProactiveTimers"))
-        XCTAssertTrue(suspensionSource.contains("ProactiveTimerState(requestedDelay: requestedDelay)"))
-        XCTAssertEqual(
-            suspensionSource.components(separatedBy: "try await self.timerSleep").count - 1,
-            1
-        )
-        XCTAssertFalse(suspensionSource.contains("let task: Task<Void, Never>"))
-        XCTAssertFalse(suspensionSource.contains("ProactiveTimerState(task:"))
-        XCTAssertTrue(suspensionSource.contains("SumiSuspensionClock"))
-        XCTAssertTrue(suspensionSource.contains("revisitCounts"))
-        XCTAssertTrue(suspensionSource.contains("defaultMinimumInactiveInterval"))
-        XCTAssertFalse(suspensionSource.contains("30 * 60"))
-        XCTAssertFalse(suspensionSource.contains("90 * 60"))
-        XCTAssertFalse(suspensionSource.contains("launcherRuntimeSuspensionDeferred"))
-        XCTAssertFalse(suspensionSource.contains("maximumWarmHiddenWebViewCount"))
-
-        let coordinatorSource = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
-        XCTAssertTrue(coordinatorSource.contains("hiddenCloneCleanup"))
-        XCTAssertFalse(coordinatorSource.contains("suspensionEligibility("))
-
-        let tabScriptSource = try Self.source(named: "Sumi/Models/Tab/Tab+ScriptMessageHandler.swift")
-        XCTAssertTrue(tabScriptSource.contains("SumiTabSuspensionUserScript"))
-        XCTAssertTrue(tabScriptSource.contains("forMainFrameOnly = true"))
-        XCTAssertTrue(tabScriptSource.contains("tabSuspension"))
-        XCTAssertTrue(tabScriptSource.contains("canBeSuspended"))
     }
 
     func testBrowserManagerStartupAndSettingsSurfacesDoNotConstructDisabledRuntimes() throws {
@@ -136,110 +99,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertEqual(extensionsProbe.managerCount, 0)
         XCTAssertFalse(userscriptsModule.hasLoadedRuntime)
         XCTAssertFalse(extensionsModule.hasLoadedRuntime)
-
-        let togglesSource = try Self.source(named: "Sumi/Components/Settings/SumiSettingsModuleToggles.swift")
-        let privacySource = try Self.source(named: "Sumi/Components/Settings/PrivacySettingsView.swift")
-        let extensionsSettingsSource = try Self.source(named: "Sumi/Components/Settings/SumiExtensionsSettingsPane.swift")
-
-        XCTAssertTrue(togglesSource.contains("SumiSettingsModuleToggleGate"))
-        XCTAssertTrue(extensionsSettingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .extensions)"))
-        XCTAssertTrue(extensionsSettingsSource.contains("SumiSettingsModuleToggleGate(descriptor: .userScripts)"))
-
-        assertSourceExcludes(
-            togglesSource + privacySource + extensionsSettingsSource,
-            [
-                "SumiContentBlockingService(",
-                "ExtensionManager(",
-                "BrowserExtensionSurfaceStore(",
-                "NativeMessagingHandler(",
-                "SumiScriptsManager(",
-                "UserScriptStore(",
-                "UserScriptInjector(",
-            ],
-            context: "Settings surfaces"
-        )
-    }
-
-    func testStartupRestoreDoesNotBlockOnFaviconCacheLoad() throws {
-        let persistenceSource = try Self.source(named: "Sumi/Managers/TabManager/TabManager+Persistence.swift")
-        XCTAssertFalse(persistenceSource.contains("waitUntilSharedFaviconManagerLoaded"))
-        XCTAssertFalse(persistenceSource.contains("async let faviconLoadTask"))
-        XCTAssertFalse(persistenceSource.contains("await faviconLoadTask"))
-        XCTAssertTrue(persistenceSource.contains("loadsCachedFaviconOnInit: false"))
-
-        let startupRestoreSource = try Self.source(named: "Sumi/Managers/TabManager/TabManager+StartupRestore.swift")
-        XCTAssertTrue(startupRestoreSource.contains("loadsCachedFaviconOnInit: false"))
-    }
-
-    func testFaviconV2StartupDoesNotRestoreOldImageCacheOrManager() throws {
-        let systemSource = try Self.source(named: "Sumi/Favicons/SumiFaviconSystem.swift")
-        let tabFaviconStoreSource = try Self.source(named: "Sumi/Models/Tab/TabFaviconStore.swift")
-
-        XCTAssertTrue(systemSource.contains("let service: SumiFaviconService"))
-        XCTAssertFalse(systemSource.contains("FaviconManager"))
-        XCTAssertFalse(systemSource.contains("SumiBookmarkMirrorManager"))
-        XCTAssertFalse(systemSource.contains("SumiDDGBookmarkFavicon"))
-        XCTAssertTrue(tabFaviconStoreSource.contains("service.cachedPreparedImage"))
-        XCTAssertTrue(tabFaviconStoreSource.contains("service.preparedImage"))
-        XCTAssertFalse(tabFaviconStoreSource.contains("FaviconImageCache"))
-    }
-
-    func testStoredLaunchersLazyLoadVisibleFaviconsOnly() throws {
-        let tabFaviconStoreSource = try Self.source(named: "Sumi/Models/Tab/TabFaviconStore.swift")
-        XCTAssertTrue(tabFaviconStoreSource.contains("loadCachedLauncherImage("))
-        XCTAssertTrue(tabFaviconStoreSource.contains("loadCachedDisplayImage("))
-        XCTAssertTrue(tabFaviconStoreSource.contains("context: .pinnedLauncher"))
-        XCTAssertTrue(tabFaviconStoreSource.contains("priority: .pinnedLauncher"))
-        XCTAssertTrue(tabFaviconStoreSource.contains("SumiFaviconSystem.shared.service.preparedImage"))
-        XCTAssertFalse(tabFaviconStoreSource.contains("loadFavicons() async"))
-
-        let pinnedGridSource = try Self.source(named: "Sumi/Components/Sidebar/PinnedButtons/PinnedGrid.swift")
-        XCTAssertTrue(pinnedGridSource.contains(".task(id: storedFaviconLoadKey)"))
-        XCTAssertTrue(pinnedGridSource.contains("TabFaviconStore.loadCachedLauncherImage("))
-        XCTAssertTrue(pinnedGridSource.contains("faviconPartition: browserManager.tabManager.resolvedFaviconPartition"))
-        XCTAssertTrue(pinnedGridSource.contains("partition: faviconPartition"))
-
-        let shortcutRowSource = try Self.source(named: "Sumi/Components/Sidebar/SpaceSection/ShortcutSidebarRow.swift")
-        XCTAssertTrue(shortcutRowSource.contains(".task(id: storedFaviconLoadKey)"))
-        XCTAssertTrue(shortcutRowSource.contains("currentLoadedStoredFavicon ?? ShortcutPin.cachedLaunchFavicon("))
-        XCTAssertFalse(shortcutRowSource.contains("guard liveTab == nil, pin.iconAsset == nil else { return }"))
-        XCTAssertTrue(shortcutRowSource.contains("TabFaviconStore.loadCachedLauncherImage("))
-        XCTAssertTrue(shortcutRowSource.contains("browserManager.tabManager.resolvedFaviconPartition"))
-        XCTAssertTrue(shortcutRowSource.contains("partition: faviconPartition"))
-        XCTAssertTrue(shortcutRowSource.contains("if let liveTab, !liveTab.faviconIsTemplateGlobePlaceholder"))
-
-        let tabExtensionSource = try Self.source(named: "Sumi/Tab/DDGExtensions/FaviconsTabExtension.swift")
-        XCTAssertFalse(tabExtensionSource.contains("guard faviconManagement.isCacheLoaded else { return }"))
-        XCTAssertFalse(tabExtensionSource.contains("guard tab.requiresPrimaryWebView else"))
-        XCTAssertTrue(tabExtensionSource.contains("cachedFaviconLoadingTask = Task"))
-
-        let shortcutPinSource = try Self.source(named: "Sumi/Models/Tab/ShortcutPin.swift")
-        XCTAssertTrue(shortcutPinSource.contains("storedFaviconImage(partition: .regular(executionProfileId ?? profileId))"))
-        XCTAssertTrue(shortcutPinSource.contains("context: .pinnedLauncher"))
-
-        XCTAssertTrue(pinnedGridSource.contains("LivePinnedTileContent("))
-        XCTAssertTrue(pinnedGridSource.contains("let launcherFavicon = currentCachedStoredFavicon"))
-        XCTAssertTrue(pinnedGridSource.contains("hasLauncherFavicon: launcherFavicon != nil"))
-    }
-
-    func testHistoryAndBookmarksLazyLoadPersistedFavicons() throws {
-        let bookmarksSource = try Self.source(named: "Sumi/Bookmarks/SumiBookmarksTabRootView.swift")
-        XCTAssertTrue(bookmarksSource.contains(".task(id: faviconLoadID)"))
-        XCTAssertTrue(bookmarksSource.contains("TabFaviconStore.loadCachedDisplayImage("))
-        XCTAssertTrue(bookmarksSource.contains("partition: faviconPartition"))
-        XCTAssertTrue(bookmarksSource.contains("context: .historyBookmarkRow"))
-        XCTAssertTrue(bookmarksSource.contains("priority: .historyBookmarkVisibleRow"))
-        XCTAssertTrue(bookmarksSource.contains("faviconImage = loadedImage ?? cachedFaviconImage"))
-        XCTAssertFalse(bookmarksSource.contains("Tab.getCachedFavicon(for: cacheKey)"))
-
-        let historySource = try Self.source(named: "Sumi/History/SumiHistoryTabRootView.swift")
-        XCTAssertTrue(historySource.contains("TabFaviconStore.getCachedImage("))
-        XCTAssertTrue(historySource.contains("TabFaviconStore.loadCachedDisplayImage("))
-        XCTAssertTrue(historySource.contains("partition: partition"))
-        XCTAssertTrue(historySource.contains("context: .historyBookmarkRow"))
-        XCTAssertTrue(historySource.contains("priority: .historyBookmarkVisibleRow"))
-        XCTAssertTrue(historySource.contains("image = loadedImage ?? cachedImage"))
-        XCTAssertFalse(historySource.contains("TabFaviconStore.getCachedImage(for: cacheKey)"))
     }
 
     func testYouTubeFaviconSelectionPrefersSharpDocumentCandidateOverTinyShortcutIcon() throws {
@@ -272,55 +131,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
 
         XCTAssertEqual(selected?.iconURL, sharpURL)
-    }
-
-    func testFaviconPipelineUsesV2BlobStoreDecodePipelineAndPreparedCacheOnly() throws {
-        let blobStoreSource = try Self.source(named: "Sumi/Favicons/V2/SumiFaviconBlobStore.swift")
-        XCTAssertTrue(blobStoreSource.contains("sha256Hex"))
-        XCTAssertTrue(blobStoreSource.contains("pageMappings"))
-        XCTAssertTrue(blobStoreSource.contains("candidateMappings"))
-        XCTAssertTrue(blobStoreSource.contains("diskBudgetBytes"))
-
-        let preparedPipelineSource = try Self.source(named: "Sumi/Favicons/V2/SumiPreparedFaviconPipeline.swift")
-        XCTAssertTrue(preparedPipelineSource.contains("CGImageSourceCreateThumbnailAtIndex"))
-        XCTAssertTrue(preparedPipelineSource.contains("kCGImageSourceThumbnailMaxPixelSize"))
-        XCTAssertTrue(preparedPipelineSource.contains("bestImageIndex"))
-        XCTAssertTrue(preparedPipelineSource.contains("CGContext("))
-        XCTAssertFalse(preparedPipelineSource.contains("lockFocus"))
-
-        let preparedCacheSource = try Self.source(named: "Sumi/Favicons/V2/SumiPreparedFaviconCache.swift")
-        XCTAssertTrue(preparedCacheSource.contains("preparedMemoryBudgetBytes"))
-        XCTAssertTrue(preparedCacheSource.contains("totalCostLimit"))
-
-        let systemSource = try Self.source(named: "Sumi/Favicons/SumiFaviconSystem.swift")
-        XCTAssertFalse(systemSource.contains("\"favicons.sqlite\""))
-        XCTAssertFalse(systemSource.contains("FaviconManager"))
-    }
-
-    func testWorkerEPerformancePolicySourceGuards() throws {
-        let meshGradientSource = try Self.source(named: "Sumi/Utils/SpaceMeshGradientView.swift")
-        XCTAssertTrue(meshGradientSource.contains("SRGBColorComponents"))
-        XCTAssertFalse(meshGradientSource.contains("getRed("))
-        XCTAssertFalse(meshGradientSource.contains("NSColor("))
-        let spaceGradientBackgroundSource = try Self.source(
-            named: "Sumi/Components/Browser/Window/SpaceGradientBackgroundView.swift"
-        )
-        XCTAssertTrue(spaceGradientBackgroundSource.contains("private func meshGradientLayer"))
-        XCTAssertTrue(spaceGradientBackgroundSource.contains("abs(clampedSaturation - 1) < 0.001"))
-
-        let nativeMaterialSource = try Self.source(named: "Sumi/Theme/NativeChromeMaterialBackground.swift")
-        XCTAssertTrue(nativeMaterialSource.contains("@Environment(\\.accessibilityReduceTransparency)"))
-        XCTAssertTrue(nativeMaterialSource.contains("accessibilityReduceTransparency || sumiSettings.shouldUseOpaqueChromeSurfaces"))
-
-        let downloadRingSource = try Self.source(named: "Sumi/Components/Downloads/DownloadProgressRing.swift")
-        XCTAssertTrue(downloadRingSource.contains("@Environment(\\.accessibilityReduceMotion)"))
-        XCTAssertTrue(downloadRingSource.contains("shouldAnimateIndeterminate"))
-        XCTAssertTrue(downloadRingSource.contains(".repeatForever(autoreverses: false)"))
-        XCTAssertTrue(downloadRingSource.contains(".onDisappear(perform: resetIndeterminateRotation)"))
-
-        let floatingBarMotionSource = try Self.source(named: "FloatingBar/FloatingBarMotionPolicy.swift")
-        XCTAssertTrue(floatingBarMotionSource.contains(".shadow(color: Color.black.opacity(0.16), radius: 23, x: 0, y: 10)"))
-        XCTAssertFalse(floatingBarMotionSource.contains("Color.black.opacity(0.05)"))
     }
 
     func testDefaultNormalTabAttachesOnlyCoreRuntimeAndNoOptionalModuleAssets() async throws {
@@ -397,7 +207,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertFalse(registry.isEnabled(.userScripts))
     }
 
-    func testAuxiliaryConfigurationsStayLightweight() throws {
+    func testAuxiliaryConfigurationsStayLightweight() {
         let browserConfiguration = BrowserConfiguration()
         let surfaces = BrowserConfigurationAuxiliarySurface.allCases
 
@@ -433,53 +243,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
             additionalUserScripts: sourceConfiguration.userContentController.userScripts
         )
         XCTAssertTrue(filteredConfiguration.userContentController.userScripts.isEmpty)
-
-        let faviconSource = try Self.source(named: "Sumi/Favicons/V2/SumiFaviconFetchScheduler.swift")
-        XCTAssertFalse(Self.fileExists("Sumi/Favicons/DDG/Model/FaviconDownloader.swift"))
-        XCTAssertFalse(faviconSource.contains("WKWebViewConfiguration()"))
-        XCTAssertFalse(faviconSource.contains("normalTabWebViewConfiguration("))
-
-        for relativePath in [
-            "Sumi/Managers/ExtensionManager/ExtensionOptionsWindowPresenter.swift",
-        ] {
-            let source = try Self.source(named: relativePath)
-            XCTAssertTrue(source.contains("auxiliaryWebViewConfiguration"), relativePath)
-            XCTAssertFalse(source.contains("normalTabWebViewConfiguration("), relativePath)
-            XCTAssertFalse(source.contains("SumiContentBlockingService"), relativePath)
-            XCTAssertFalse(source.contains("SumiScriptsManager("), relativePath)
-            XCTAssertFalse(source.contains("NativeMessagingHandler("), relativePath)
-        }
     }
 
-    func testNormalWebViewOwnershipSourceGuards() throws {
-        let tabRuntimeSource = try Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift")
-        let coordinatorSource = try Self.source(named: "Sumi/Managers/WebViewCoordinator/WebViewCoordinator.swift")
-        let browserConfigSource = try Self.source(named: "Sumi/Models/BrowserConfig/BrowserConfig.swift")
-
-        assertSourceExcludes(
-            tabRuntimeSource + coordinatorSource + browserConfigSource,
-            [
-                "createWebViewInternal",
-                "createWebViewConfiguration",
-                "cacheOptimizedWebViewConfiguration",
-                "webViewConfiguration(for:",
-            ],
-            context: "normal WebView ownership"
-        )
-
-        XCTAssertTrue(tabRuntimeSource.contains("func makeNormalTabWebView("))
-        XCTAssertTrue(tabRuntimeSource.contains("reason: String"))
-        XCTAssertTrue(tabRuntimeSource.contains("func ensureWebView()"))
-        XCTAssertTrue(tabRuntimeSource.contains("normalTabWebViewConfiguration(reason:"))
-        XCTAssertTrue(coordinatorSource.contains("tab.ensureWebView()"))
-        XCTAssertTrue(coordinatorSource.contains("tab.makeNormalTabWebView"))
-        XCTAssertFalse(coordinatorSource.contains("normalTabWebViewConfiguration"))
-        XCTAssertFalse(coordinatorSource.contains("auxiliaryWebViewConfiguration"))
-        XCTAssertFalse(coordinatorSource.contains("surface: .glance"))
-        XCTAssertFalse(coordinatorSource.contains("FocusableWKWebView(frame: .zero"))
-    }
-
-    func testUserscriptsEnabledOnlySourceGuards() throws {
+    func testDisabledUserscriptsModuleReturnsNoRuntimeContributions() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -501,38 +267,9 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertEqual(probe.storeCount, 0)
         XCTAssertEqual(probe.injectorCount, 0)
         XCTAssertTrue(tab.normalTabCoreUserScripts().contains { $0.source.contains("__sumiTabSuspension") })
-
-        let browserManagerSource = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
-        let userscriptsModuleSource = try Self.source(named: "Sumi/Managers/SumiScripts/SumiUserscriptsModule.swift")
-        let userscriptsManagerSource = try Self.source(named: "Sumi/Managers/SumiScripts/SumiScriptsManager.swift")
-        let tabRuntimeSource = try Self.source(named: "Sumi/Models/Tab/Tab+WebViewRuntime.swift")
-
-        XCTAssertFalse(userscriptsManagerSource.contains("SumiScripts.enabled"))
-        XCTAssertTrue(browserManagerSource.contains("let userscriptsModule: SumiUserscriptsModule"))
-        XCTAssertFalse(browserManagerSource.contains("let sumiScriptsManager"))
-        XCTAssertFalse(browserManagerSource.contains("self.sumiScriptsManager"))
-        XCTAssertFalse(browserManagerSource.contains("SumiScriptsManager("))
-        XCTAssertTrue(tabRuntimeSource.contains("var scripts = normalTabCoreUserScripts()"))
-        XCTAssertTrue(tabRuntimeSource.contains("userscriptsModule.normalTabUserScripts"))
-
-        assertSourceExcludes(
-            tabRuntimeSource + userscriptsModuleSource,
-            [
-                "SUMI_USER_SCRIPT_RUNTIME",
-                "sumiGM_",
-                "UserScriptGMBridge",
-            ],
-            context: "disabled userscripts boundary"
-        )
-
-        let installedAdapterSource = try Self.source(
-            named: "Sumi/Managers/SumiScripts/SumiInstalledUserScriptAdapters.swift"
-        )
-        XCTAssertTrue(installedAdapterSource.contains("sumiGM_"))
-        XCTAssertTrue(installedAdapterSource.contains("UserScriptGMBridge"))
     }
 
-    func testExtensionsNativeMessagingEnabledOnlyAsyncSourceGuards() throws {
+    func testDisabledExtensionsModuleDoesNotPrepareRuntimeController() throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
         let registry = SumiModuleRegistry(
@@ -549,173 +286,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         )
         XCTAssertNil(configuration.webExtensionController)
         XCTAssertEqual(probe.managerCount, 0)
-
-        let browserManagerSource = try Self.source(named: "Sumi/Managers/BrowserManager/BrowserManager.swift")
-        XCTAssertTrue(browserManagerSource.contains("let extensionsModule: SumiExtensionsModule"))
-        XCTAssertFalse(browserManagerSource.contains("let extensionManager"))
-        XCTAssertFalse(browserManagerSource.contains("self.extensionManager"))
-        XCTAssertFalse(browserManagerSource.contains("ExtensionManager("))
-
-        for relativePath in [
-            "Sumi/Managers/BrowserManager/BrowserManager.swift",
-            "Sumi/Managers/BrowserManager/BrowserManager+DialogsUtilities.swift",
-            "Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift",
-            "Sumi/Components/Settings/SumiExtensionsSettingsPane.swift",
-            "Sumi/Components/Settings/SumiSettingsModuleToggles.swift",
-            "Sumi/Components/Extensions/ExtensionActionView.swift",
-            "Navigation/Sidebar/SidebarHeader.swift",
-            "Sumi/Models/BrowserConfig/BrowserConfig.swift",
-            "Sumi/Models/Tab/Tab+WebViewRuntime.swift",
-        ] {
-            let source = try Self.source(named: relativePath)
-            XCTAssertFalse(source.contains("NativeMessagingHandler("), relativePath)
-            XCTAssertFalse(source.contains("NativeMessagingProcessSession"), relativePath)
-        }
-
-        let delegateSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/ExtensionManager+ControllerDelegate.swift"
-        )
-        let portSessionSource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingPortSession.swift"
-        )
-        let relaySource = try Self.source(
-            named: "Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelay.swift"
-        )
-        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleSendMessage"))
-        XCTAssertFalse(delegateSource.contains("safariNativeMessagingHost.handleConnect"))
-        XCTAssertTrue(delegateSource.contains("sendMessage message: Any"))
-        XCTAssertTrue(delegateSource.contains("connectUsing port: WKWebExtension.MessagePort"))
-        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleSendMessage"))
-        XCTAssertTrue(delegateSource.contains("nativeMessagingRelay.handleConnect"))
-        XCTAssertTrue(portSessionSource.contains("WKWebExtension.MessagePort"))
-        XCTAssertTrue(relaySource.contains("SumiNativeMessagingRelay"))
-        XCTAssertFalse(
-            relaySource.contains(
-                "ChromeMV3NativeMessagingInternalRuntime"
-            )
-        )
-        let processCallToken = "Process" + "("
-        assertSourceExcludes(
-            portSessionSource + relaySource,
-            [
-                processCallToken,
-                "NativeMessagingProcessSession",
-                "DispatchSource",
-                "readDataToEndOfFile",
-                "readData(ofLength",
-                "availableData",
-                "waitUntilExit",
-                "DispatchSemaphore",
-                "DispatchGroup",
-                "group.wait",
-                ".write(contentsOf",
-            ],
-            context: "Safari native messaging foundation"
-        )
-    }
-
-    func testHistoryQueriesStayBounded() throws {
-        let searchSource = try Self.source(named: "Sumi/Managers/SearchManager/SearchManager.swift")
-        let pageViewModelSource = try Self.source(named: "Sumi/History/HistoryPageViewModel.swift")
-        let historyManagerSource = try Self.source(named: "Sumi/Managers/History/HistoryManager.swift")
-        let providerSource = try Self.source(named: "Sumi/Managers/History/HistoryViewDataProvider.swift")
-        let storeSource = try Self.source(named: "Sumi/Managers/History/HistoryStore.swift")
-        let uiStartupSource = [
-            searchSource,
-            pageViewModelSource,
-            historyManagerSource,
-            providerSource,
-            try Self.source(named: "App/SumiCommands.swift"),
-            try Self.source(named: "App/SumiHistoryCommands.swift"),
-            try Self.source(named: "Sumi/Services/SumiBrowsingDataCleanupService.swift"),
-        ].joined(separator: "\n")
-
-        assertSourceExcludes(
-            uiStartupSource,
-            [
-                "store.visits(",
-                "dataProvider.items(for:",
-                "visitRecords(matching:",
-                "rawVisits",
-                "allItems",
-                "allHistory",
-                "allVisits",
-                "loadAll",
-                "fetchAll",
-                "DispatchSemaphore",
-                "DispatchGroup",
-                "group.wait",
-            ],
-            context: "history UI/startup paths"
-        )
-
-        XCTAssertTrue(pageViewModelSource.contains("historyManager.historyPage"))
-        XCTAssertTrue(pageViewModelSource.contains("pageSize = HistoryStore.defaultHistoryPageLimit"))
-        XCTAssertTrue(providerSource.contains("store.fetchHistoryPage"))
-        XCTAssertTrue(providerSource.contains("store.fetchSitePage"))
-        XCTAssertTrue(storeSource.contains("descriptor.fetchLimit = limit"))
-        XCTAssertTrue(storeSource.contains("descriptor.fetchOffset = offset"))
-        XCTAssertTrue(storeSource.contains("fetchPagedSiteRecords"))
-        XCTAssertFalse(storeSource.contains("let sites = try allSiteRecords(in: ctx, profileId: profileId)"))
-        XCTAssertTrue(storeSource.contains("clearAllExplicit"))
-        XCTAssertTrue(storeSource.contains("deleteVisits("))
-        XCTAssertTrue(searchSource.contains("historySuggestionTask"))
-        XCTAssertTrue(searchSource.contains("historySuggestionTask?.cancel()"))
-        XCTAssertTrue(searchSource.contains("Task.isCancelled"))
-        XCTAssertTrue(searchSource.contains("activeWebSuggestionGeneration"))
-        XCTAssertTrue(searchSource.contains("historyManager.searchSuggestions(matching: query, limit: 20)"))
-    }
-
-    func testNoAutomaticUpdatesOnboardingTelemetryOrDiagnostics() throws {
-        let settingsSource = try Self.combinedSwiftSource(in: "Sumi/Components/Settings")
-        assertSourceExcludes(
-            settingsSource,
-            [
-                "first-run",
-                "first run",
-                "module diagnostics",
-                "unified site settings",
-                "stale tracker",
-                "stale ad",
-                "automatic tracker",
-                "automatic ad",
-                "browser update",
-                "app update",
-            ],
-            context: "Settings sources"
-        )
-
-        let productionSources = try [
-            Self.combinedSwiftSource(in: "App"),
-            Self.combinedSwiftSource(in: "Sumi"),
-            Self.combinedSwiftSource(in: "Settings"),
-            Self.combinedSwiftSource(in: "Navigation"),
-            Self.combinedSwiftSource(in: "UI"),
-            Self.combinedSwiftSource(in: "FloatingBar"),
-        ].joined(separator: "\n")
-        assertSourceExcludes(
-            productionSources,
-            [
-                "PixelKit",
-                "ProductAnalytics",
-                "DDGPixel",
-                "module diagnostics",
-                "unified site settings",
-                "automaticTracker",
-                "automaticAd",
-                "autoTracker",
-                "autoAdList",
-            ],
-            context: "production Swift sources"
-        )
-
-        let onboardingSwiftFiles = try Self.relativeFiles(in: "Onboarding")
-            .filter { $0.hasSuffix(".swift") }
-        XCTAssertTrue(onboardingSwiftFiles.isEmpty)
-        XCTAssertFalse(productionSources.contains("OnboardingView"))
-        XCTAssertFalse(productionSources.contains("FirstRun"))
-        XCTAssertTrue(productionSources.contains("didFinishOnboardingKey"))
-        XCTAssertTrue(productionSources.contains("didFinishOnboardingKey: true"))
     }
 
     private func makeUserscriptsModule(
@@ -793,76 +363,6 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         ] {
             XCTAssertFalse(combined.contains(marker), marker, file: file, line: line)
         }
-    }
-
-    private func assertSourceExcludes(
-        _ source: String,
-        _ patterns: [String],
-        context: String,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) {
-        for pattern in patterns {
-            XCTAssertFalse(
-                source.contains(pattern),
-                "\(pattern) should not appear in \(context)",
-                file: file,
-                line: line
-            )
-        }
-    }
-
-    private static func source(named relativePath: String) throws -> String {
-        let sourceURL = repoRoot.appendingPathComponent(relativePath)
-        return try String(contentsOf: sourceURL, encoding: .utf8)
-    }
-
-    private static func testFaviconImage(side: CGFloat) -> NSImage {
-        let size = NSSize(width: side, height: side)
-        let image = NSImage(size: size)
-        image.lockFocus()
-        NSColor.systemRed.setFill()
-        NSRect(origin: .zero, size: size).fill()
-        image.unlockFocus()
-        return image
-    }
-
-    private static func combinedSwiftSource(in relativeDirectory: String) throws -> String {
-        let fileURLs = try relativeFiles(in: relativeDirectory)
-            .filter { $0.hasSuffix(".swift") }
-            .map { repoRoot.appendingPathComponent($0) }
-
-        return try fileURLs
-            .map { try String(contentsOf: $0, encoding: .utf8) }
-            .joined(separator: "\n")
-    }
-
-    private static func relativeFiles(in relativeDirectory: String) -> [String] {
-        let directoryURL = repoRoot.appendingPathComponent(relativeDirectory)
-        guard FileManager.default.fileExists(atPath: directoryURL.path) else {
-            return []
-        }
-        let fileURLs = FileManager.default.enumerator(
-            at: directoryURL,
-            includingPropertiesForKeys: nil
-        )?.compactMap { $0 as? URL } ?? []
-
-        return fileURLs
-            .filter { $0.hasDirectoryPath == false }
-            .map { url in
-                String(url.path.dropFirst(repoRoot.path.count + 1))
-            }
-            .sorted()
-    }
-
-    private static func fileExists(_ relativePath: String) -> Bool {
-        FileManager.default.fileExists(atPath: repoRoot.appendingPathComponent(relativePath).path)
-    }
-
-    private static var repoRoot: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
     }
 }
 

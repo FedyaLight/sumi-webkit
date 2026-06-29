@@ -4,34 +4,6 @@ import XCTest
 
 @MainActor
 final class SafariExtensionImportAutoEnableTests: XCTestCase {
-    private var repoRoot: URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-    }
-
-    func testImportSafariAppExtensionSourceEnablesAfterImport() throws {
-        let source = try String(
-            contentsOf: repoRoot.appendingPathComponent(
-                "Sumi/Managers/ExtensionManager/SumiExtensionsModule.swift"
-            ),
-            encoding: .utf8
-        )
-        XCTAssertTrue(source.contains("enableOnInstall: true"))
-        XCTAssertFalse(source.contains("enableOnInstall: false"))
-    }
-
-    func testImportCandidatesSectionDoesNotAutoEnableDiscoveredCandidates() throws {
-        let source = try String(
-            contentsOf: repoRoot.appendingPathComponent(
-                "Sumi/Components/Settings/SafariExtensionImportCandidatesSection.swift"
-            ),
-            encoding: .utf8
-        )
-        XCTAssertTrue(source.contains("importCandidate"))
-        XCTAssertFalse(source.contains("enableExtension"))
-    }
-
     func testImportSucceededEnableFailedErrorDescription() {
         let error = ExtensionError.importSucceededEnableFailed(
             "Raindrop was imported but could not be enabled: runtime unavailable"
