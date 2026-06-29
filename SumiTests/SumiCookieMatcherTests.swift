@@ -2,31 +2,57 @@
 import XCTest
 
 final class SumiCookieMatcherTests: XCTestCase {
-    func testCookieMatchingAppliesDomainPathAndSecureRules() throws {
-        let requestURL = try XCTUnwrap(URL(string: "https://sub.example.com/account/settings"))
+    func testHostMatchingAllowsExactAndParentDomainSuffixesOnly() throws {
+        let requestURL = try XCTUnwrap(URL(string: "https://static.example.com/favicon.ico"))
         let cookies = [
-            Self.cookie(name: "root", domain: ".example.com", path: "/"),
-            Self.cookie(name: "subpath", domain: "sub.example.com", path: "/account"),
-            Self.cookie(name: "path-boundary", domain: ".example.com", path: "/accounts"),
-            Self.cookie(name: "other-domain", domain: ".example.org", path: "/"),
-            Self.cookie(name: "secure", domain: ".example.com", path: "/", isSecure: true),
+            Self.cookie(name: "parent", domain: ".example.com", path: "/"),
+            Self.cookie(name: "exact", domain: "static.example.com", path: "/"),
+            Self.cookie(name: "sibling", domain: "www.example.com", path: "/"),
+            Self.cookie(name: "partial-suffix", domain: "ample.com", path: "/"),
         ]
 
-        let matchedNames = Set(SumiCookieMatcher.cookies(cookies, matching: requestURL).map { $0.name })
+        XCTAssertEqual(Self.matchedNames(cookies, matching: requestURL), ["parent", "exact"])
 
-        XCTAssertEqual(matchedNames, ["root", "subpath", "secure"])
+        let partialHostURL = try XCTUnwrap(URL(string: "https://badexample.com/favicon.ico"))
+        XCTAssertTrue(SumiCookieMatcher.cookies([cookies[0]], matching: partialHostURL).isEmpty)
     }
 
-    func testSecureCookiesDoNotMatchPlainHTTPRequests() throws {
-        let requestURL = try XCTUnwrap(URL(string: "http://example.com/"))
+    func testPathMatchingUsesBrowserCookiePathBoundaries() throws {
+        let requestURL = try XCTUnwrap(URL(string: "https://example.com/account/settings"))
+        let cookies = [
+            Self.cookie(name: "root", domain: "example.com", path: "/"),
+            Self.cookie(name: "directory", domain: "example.com", path: "/account"),
+            Self.cookie(name: "directory-slash", domain: "example.com", path: "/account/"),
+            Self.cookie(name: "sibling", domain: "example.com", path: "/accounts"),
+            Self.cookie(name: "partial-prefix", domain: "example.com", path: "/accounting"),
+        ]
+
+        XCTAssertEqual(
+            Self.matchedNames(cookies, matching: requestURL),
+            ["root", "directory", "directory-slash"]
+        )
+    }
+
+    func testSecureCookiesOnlyMatchHTTPSRequests() throws {
+        let httpsURL = try XCTUnwrap(URL(string: "https://example.com/"))
+        let httpURL = try XCTUnwrap(URL(string: "http://example.com/"))
         let cookies = [
             Self.cookie(name: "plain", domain: "example.com", path: "/"),
             Self.cookie(name: "secure", domain: "example.com", path: "/", isSecure: true),
         ]
 
-        let matchedNames = SumiCookieMatcher.cookies(cookies, matching: requestURL).map { $0.name }
+        XCTAssertEqual(Self.matchedNames(cookies, matching: httpsURL), ["plain", "secure"])
+        XCTAssertEqual(Self.matchedNames(cookies, matching: httpURL), ["plain"])
+    }
 
-        XCTAssertEqual(matchedNames, ["plain"])
+    func testCookieMatchingNormalizesHostAndDomainEdges() throws {
+        let requestURL = try XCTUnwrap(URL(string: "https://Example.COM./favicon.ico"))
+        let cookies = [
+            Self.cookie(name: "normalized", domain: ".example.com.", path: "/"),
+        ]
+
+        XCTAssertEqual(Self.matchedNames(cookies, matching: requestURL), ["normalized"])
+        XCTAssertTrue(SumiCookieMatcher.cookies(cookies, matching: URL(fileURLWithPath: "/tmp/icon.png")).isEmpty)
     }
 
     func testSessionCookieAttachmentIsSchemefulSiteScoped() throws {
@@ -69,5 +95,9 @@ final class SumiCookieMatcherTests: XCTestCase {
             properties[.secure] = "TRUE"
         }
         return HTTPCookie(properties: properties)!
+    }
+
+    private static func matchedNames(_ cookies: [HTTPCookie], matching url: URL) -> [String] {
+        SumiCookieMatcher.cookies(cookies, matching: url).map { $0.name }
     }
 }
