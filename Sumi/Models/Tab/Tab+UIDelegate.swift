@@ -147,28 +147,12 @@ extension Tab: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
-        guard let browserManager,
-              let tabContext = filePickerPermissionTabContext(for: webView)
-        else {
-            RuntimeDiagnostics.emit("📁 [Tab] Denying file picker because browser/profile context is unavailable.")
-            completionHandler(nil)
-            return
-        }
-
-        let activationState = popupUserActivationTracker.activationState(webKitUserInitiated: nil)
-        let request = SumiFilePickerPermissionRequest(
+        webKitPermissionUIDelegateOwner.runOpenPanel(
+            webView,
             parameters: parameters,
-            frame: frame,
-            userActivation: activationState
-        )
-        browserManager.filePickerPermissionBridge.handleOpenPanel(
-            request,
-            tabContext: tabContext,
-            webView: webView,
-            currentPageId: { [weak self] in self?.currentPermissionPageId() },
+            initiatedByFrame: frame,
             completionHandler: completionHandler
         )
-        popupUserActivationTracker.consumeIfUserActivated(activationState)
     }
 
     /// WebKit private save-data hook used by "Save Page As..." style paths when available.
@@ -196,29 +180,11 @@ extension Tab: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
-        RuntimeDiagnostics.emit(
-            "🔐 [Tab] Media capture authorization requested for type: \(type.rawValue) from origin: \(origin)"
-        )
-        guard let browserManager,
-              let tabContext = mediaCaptureTabContext(for: webView)
-        else {
-            RuntimeDiagnostics.emit(
-                "🔐 [Tab] Denying media capture because browser/profile context is unavailable."
-            )
-            decisionHandler(.deny)
-            return
-        }
-
-        let mediaRequest = SumiWebKitMediaCaptureRequest(
-            mediaType: type,
+        webKitPermissionUIDelegateOwner.requestMediaCaptureAuthorization(
+            webView,
+            type: type,
             origin: origin,
-            frame: frame
-        )
-
-        browserManager.webKitPermissionBridge.handleMediaCaptureAuthorization(
-            mediaRequest,
-            tabContext: tabContext,
-            webView: webView,
+            initiatedByFrame: frame,
             decisionHandler: decisionHandler
         )
     }
@@ -231,28 +197,10 @@ extension Tab: WKUIDelegate {
         withSystemAudio _: Bool,
         decisionHandler: @escaping (Int) -> Void
     ) {
-        RuntimeDiagnostics.emit(
-            "🔐 [Tab] Display capture authorization requested from origin: \(origin)"
-        )
-        guard let browserManager,
-              let tabContext = mediaCaptureTabContext(for: webView)
-        else {
-            RuntimeDiagnostics.emit(
-                "🔐 [Tab] Denying display capture because browser/profile context is unavailable."
-            )
-            decisionHandler(SumiWebKitDisplayCapturePermissionDecision.deny.rawValue)
-            return
-        }
-
-        let displayRequest = SumiWebKitDisplayCaptureRequest(
+        webKitPermissionUIDelegateOwner.requestDisplayCapturePermission(
+            webView,
             origin: origin,
-            frame: frame
-        )
-
-        browserManager.webKitPermissionBridge.handleDisplayCaptureAuthorization(
-            displayRequest,
-            tabContext: tabContext,
-            webView: webView,
+            initiatedByFrame: frame,
             decisionHandler: decisionHandler
         )
     }
@@ -265,48 +213,11 @@ extension Tab: WKUIDelegate {
         mainFrameURL: URL,
         decisionHandler: @escaping (Bool) -> Void
     ) {
-        let devices = SumiWebKitLegacyCaptureDevices(rawValue: devicesRawValue)
-        let permissionTypes = SumiWebKitDisplayCaptureDecisionMapper.permissionTypes(
-            forLegacyCaptureDevices: devices
-        )
-        guard !permissionTypes.isEmpty,
-              let browserManager,
-              let tabContext = mediaCaptureTabContext(for: webView, fallbackMainFrameURL: mainFrameURL)
-        else {
-            RuntimeDiagnostics.emit(
-                "🔐 [Tab] Denying legacy media capture because browser/profile context is unavailable or devices are unsupported."
-            )
-            decisionHandler(false)
-            return
-        }
-
-        let requestingOrigin = SumiPermissionOrigin(url: requestURL)
-        let isMainFrame = requestURL.absoluteString == mainFrameURL.absoluteString
-        if devices.contains(.display) {
-            let displayRequest = SumiWebKitDisplayCaptureRequest(
-                permissionTypes: permissionTypes,
-                requestingOrigin: requestingOrigin,
-                isMainFrame: isMainFrame
-            )
-            browserManager.webKitPermissionBridge.handleDisplayCaptureAuthorization(
-                displayRequest,
-                tabContext: tabContext,
-                webView: webView
-            ) { decision in
-                decisionHandler(decision != SumiWebKitDisplayCapturePermissionDecision.deny.rawValue)
-            }
-            return
-        }
-
-        let mediaRequest = SumiWebKitMediaCaptureRequest(
-            permissionTypes: permissionTypes,
-            requestingOrigin: requestingOrigin,
-            isMainFrame: isMainFrame
-        )
-        browserManager.webKitPermissionBridge.handleLegacyMediaCaptureAuthorization(
-            mediaRequest,
-            tabContext: tabContext,
-            webView: webView,
+        webKitPermissionUIDelegateOwner.requestUserMediaAuthorization(
+            webView,
+            devicesRawValue: devicesRawValue,
+            requestURL: requestURL,
+            mainFrameURL: mainFrameURL,
             decisionHandler: decisionHandler
         )
     }
@@ -319,21 +230,10 @@ extension Tab: WKUIDelegate {
         underCurrentDomain currentDomain: String,
         completionHandler: @escaping (Bool) -> Void
     ) {
-        guard let browserManager,
-              let tabContext = storageAccessTabContext(for: webView)
-        else {
-            RuntimeDiagnostics.emit("🍪 [Tab] Denying storage access because browser/profile context is unavailable.")
-            completionHandler(false)
-            return
-        }
-
-        browserManager.storageAccessPermissionBridge.handleStorageAccessRequest(
-            SumiStorageAccessRequest(
-                requestingDomain: requestingDomain,
-                currentDomain: currentDomain
-            ),
-            tabContext: tabContext,
-            webView: webView,
+        webKitPermissionUIDelegateOwner.requestStorageAccessPanel(
+            webView,
+            requestingDomain: requestingDomain,
+            currentDomain: currentDomain,
             completionHandler: completionHandler
         )
     }
@@ -347,22 +247,11 @@ extension Tab: WKUIDelegate {
         forQuirkDomains quirkDomains: [String: [String]],
         completionHandler: @escaping (Bool) -> Void
     ) {
-        guard let browserManager,
-              let tabContext = storageAccessTabContext(for: webView)
-        else {
-            RuntimeDiagnostics.emit("🍪 [Tab] Denying quirk-domain storage access because browser/profile context is unavailable.")
-            completionHandler(false)
-            return
-        }
-
-        browserManager.storageAccessPermissionBridge.handleStorageAccessRequest(
-            SumiStorageAccessRequest(
-                requestingDomain: requestingDomain,
-                currentDomain: currentDomain,
-                quirkDomains: Array(quirkDomains.keys).sorted()
-            ),
-            tabContext: tabContext,
-            webView: webView,
+        webKitPermissionUIDelegateOwner.requestStorageAccessPanel(
+            webView,
+            requestingDomain: requestingDomain,
+            currentDomain: currentDomain,
+            quirkDomains: quirkDomains,
             completionHandler: completionHandler
         )
     }
@@ -373,23 +262,9 @@ extension Tab: WKUIDelegate {
         requestGeolocationPermissionFor frame: WKFrameInfo,
         decisionHandler: @escaping (Bool) -> Void
     ) {
-        RuntimeDiagnostics.emit(
-            "🔐 [Tab] Legacy geolocation authorization requested from frame: \(String(describing: frame.sumiWebKitRequestURL))"
-        )
-        guard let browserManager,
-              let tabContext = geolocationTabContext(for: webView)
-        else {
-            RuntimeDiagnostics.emit(
-                "🔐 [Tab] Denying geolocation because browser/profile context is unavailable."
-            )
-            decisionHandler(false)
-            return
-        }
-
-        browserManager.webKitGeolocationBridge.handleLegacyGeolocationAuthorization(
-            SumiWebKitGeolocationRequest(frame: frame),
-            tabContext: tabContext,
-            webView: webView,
+        webKitPermissionUIDelegateOwner.requestLegacyGeolocationPermission(
+            webView,
+            frame: frame,
             decisionHandler: decisionHandler
         )
     }
@@ -401,52 +276,11 @@ extension Tab: WKUIDelegate {
         initiatedByFrame frame: WKFrameInfo,
         decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
     ) {
-        RuntimeDiagnostics.emit(
-            "🔐 [Tab] Geolocation authorization requested from origin: \(origin)"
-        )
-        guard let browserManager,
-              let tabContext = geolocationTabContext(for: webView)
-        else {
-            RuntimeDiagnostics.emit(
-                "🔐 [Tab] Denying geolocation because browser/profile context is unavailable."
-            )
-            decisionHandler(.deny)
-            return
-        }
-
-        browserManager.webKitGeolocationBridge.handleGeolocationAuthorization(
-            SumiWebKitGeolocationRequest(origin: origin, frame: frame),
-            tabContext: tabContext,
-            webView: webView,
+        webKitPermissionUIDelegateOwner.requestGeolocationPermission(
+            webView,
+            origin: origin,
+            initiatedByFrame: frame,
             decisionHandler: decisionHandler
         )
-    }
-
-    private func geolocationTabContext(
-        for webView: WKWebView
-    ) -> SumiWebKitGeolocationTabContext? {
-        permissionSurfaceOwner.geolocationContext(for: webView)
-    }
-
-    private func mediaCaptureTabContext(
-        for webView: WKWebView,
-        fallbackMainFrameURL: URL? = nil
-    ) -> SumiWebKitMediaCaptureTabContext? {
-        permissionSurfaceOwner.mediaCaptureContext(
-            for: webView,
-            fallbackMainFrameURL: fallbackMainFrameURL
-        )
-    }
-
-    func filePickerPermissionTabContext(
-        for webView: WKWebView
-    ) -> SumiFilePickerPermissionTabContext? {
-        permissionSurfaceOwner.filePickerContext(for: webView)
-    }
-
-    private func storageAccessTabContext(
-        for webView: WKWebView
-    ) -> SumiStorageAccessTabContext? {
-        permissionSurfaceOwner.storageAccessContext(for: webView)
     }
 }

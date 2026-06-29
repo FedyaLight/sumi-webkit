@@ -26,6 +26,10 @@ extension Tab {
         permissionSurfaceOwner.externalSchemeContext(for: webView)
     }
 
+    func filePickerPermissionTabContext(for webView: WKWebView) -> SumiFilePickerPermissionTabContext? {
+        permissionSurfaceOwner.filePickerContext(for: webView)
+    }
+
     func handleNormalTabPermissionNavigation(to targetURL: URL?) {
         permissionSurfaceOwner.handleNormalTabPermissionNavigation(to: targetURL)
     }
