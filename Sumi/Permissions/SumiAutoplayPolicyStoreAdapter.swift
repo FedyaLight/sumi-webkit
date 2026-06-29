@@ -3,10 +3,6 @@ import SwiftData
 
 @MainActor
 final class SumiAutoplayPolicyStoreAdapter {
-    static let shared = SumiAutoplayPolicyStoreAdapter(
-        modelContainer: SumiStartupPersistence.shared.container
-    )
-
     private let modelContainer: ModelContainer
     private let persistentStore: any SumiPermissionStore
     private var ephemeralPoliciesByIdentity: [String: SumiAutoplayPolicy] = [:]

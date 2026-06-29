@@ -29,7 +29,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
         }
 
         private static func normalizedDisplayDomain(_ value: String) -> String {
-            SumiPermissionDomainCache.shared.trimmedDisplayDomain(value)
+            SumiPermissionDisplayDomainFormatter.trimmedDisplayDomain(value)
         }
     }
 

@@ -1,4 +1,5 @@
 import AppKit
+import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -6,7 +7,7 @@ import XCTest
 @MainActor
 final class BrowserWindowShellServiceTests: XCTestCase {
     func testCreateIncognitoWindowShowsFloatingBarEmptyStateWithoutCreatingEmptyTab() throws {
-        let harness = makeHarness()
+        let harness = try makeHarness()
         let service = BrowserWindowShellService()
         var emptyStateWindowIds: [UUID] = []
 
@@ -47,8 +48,8 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertFalse(harness.profileManager.profiles.contains { $0.id == ephemeralProfile.id })
     }
 
-    func testCreateNewWindowWithoutContentFactoryDoesNotRegisterWindow() {
-        let harness = makeHarness()
+    func testCreateNewWindowWithoutContentFactoryDoesNotRegisterWindow() throws {
+        let harness = try makeHarness()
         let service = BrowserWindowShellService()
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
@@ -66,7 +67,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     }
 
     func testCreateNewWindowUsesContentFactoryAndRegistersWindowWithAssociatedNSWindow() throws {
-        let harness = makeHarness()
+        let harness = try makeHarness()
         let service = BrowserWindowShellService()
         var factoryWindowStates: [BrowserWindowState] = []
         var registeredWindowHadNSWindow: Bool?
@@ -109,7 +110,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     }
 
     func testEphemeralTabsUseMonotonicIndexesAndIncognitoCleanupIsIdempotent() async throws {
-        let harness = makeHarness()
+        let harness = try makeHarness()
         let service = BrowserWindowShellService()
         let context = makeContext(harness: harness) { windowState in
             windowState.currentTabId = nil
@@ -154,21 +155,31 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     }
 
     private struct Harness {
+        let startupContainer: ModelContainer
         let windowRegistry: WindowRegistry
         let webViewCoordinator: WebViewCoordinator
         let profileManager: ProfileManager
         let tabManager: TabManager
     }
 
-    private func makeHarness() -> Harness {
-        let context = SumiStartupPersistence.shared.container.mainContext
+    private func makeHarness() throws -> Harness {
+        let startupContainer = try makeInMemoryStartupContainer()
+        let context = startupContainer.mainContext
         let profileManager = ProfileManager(context: context)
         let tabManager = TabManager(browserManager: nil, context: context)
         return Harness(
+            startupContainer: startupContainer,
             windowRegistry: WindowRegistry(),
             webViewCoordinator: WebViewCoordinator(),
             profileManager: profileManager,
             tabManager: tabManager
+        )
+    }
+
+    private func makeInMemoryStartupContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
     }
 

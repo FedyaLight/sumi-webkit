@@ -16,7 +16,7 @@ struct SumiPermissionStoreRecord: Codable, Equatable, Hashable, Sendable {
     }
 
     static func normalizedDisplayDomain(_ value: String) -> String {
-        SumiPermissionDomainCache.shared.lowercasedDisplayDomain(value)
+        SumiPermissionDisplayDomainFormatter.lowercasedDisplayDomain(value)
     }
 }
 

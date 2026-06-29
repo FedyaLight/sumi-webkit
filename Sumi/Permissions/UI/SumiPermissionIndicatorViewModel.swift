@@ -653,6 +653,6 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
     }
 
     nonisolated private static func normalizedDisplayDomain(_ value: String) -> String {
-        SumiPermissionDomainCache.shared.trimmedDisplayDomain(value)
+        SumiPermissionDisplayDomainFormatter.trimmedDisplayDomain(value)
     }
 }

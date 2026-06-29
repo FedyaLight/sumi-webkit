@@ -1,4 +1,5 @@
 @testable import Sumi
+import SwiftData
 import XCTest
 
 @MainActor
@@ -15,10 +16,10 @@ final class SumiProfileRouterTests: XCTestCase {
         )
     }
 
-    func testAdoptProfileIfNeededRepairsUnknownWindowProfileId() {
+    func testAdoptProfileIfNeededRepairsUnknownWindowProfileId() throws {
         let router = SumiProfileRouter()
         let currentProfile = Profile(name: "Current")
-        let support = FakeSumiProfileRoutingSupport(
+        let support = try FakeSumiProfileRoutingSupport(
             currentProfile: currentProfile,
             profiles: [currentProfile]
         )
@@ -36,11 +37,11 @@ final class SumiProfileRouterTests: XCTestCase {
         XCTAssertNil(support.switchedProfileId)
     }
 
-    func testAdoptProfileIfNeededSwitchesToWindowProfile() async {
+    func testAdoptProfileIfNeededSwitchesToWindowProfile() async throws {
         let router = SumiProfileRouter()
         let currentProfile = Profile(name: "Current")
         let targetProfile = Profile(name: "Target")
-        let support = FakeSumiProfileRoutingSupport(
+        let support = try FakeSumiProfileRoutingSupport(
             currentProfile: currentProfile,
             profiles: [currentProfile, targetProfile]
         )
@@ -63,14 +64,19 @@ final class SumiProfileRouterTests: XCTestCase {
 private final class FakeSumiProfileRoutingSupport: SumiProfileRoutingSupport {
     let currentProfile: Profile?
     let isSwitchingProfile = false
+    let startupContainer: ModelContainer
     let profileManager: ProfileManager
     let windowRegistry: WindowRegistry? = WindowRegistry()
 
     private(set) var switchedProfileId: UUID?
 
-    init(currentProfile: Profile?, profiles: [Profile]) {
+    init(currentProfile: Profile?, profiles: [Profile]) throws {
         self.currentProfile = currentProfile
-        self.profileManager = ProfileManager(context: SumiStartupPersistence.shared.container.mainContext)
+        startupContainer = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        self.profileManager = ProfileManager(context: startupContainer.mainContext)
         self.profileManager.profiles = profiles
     }
 

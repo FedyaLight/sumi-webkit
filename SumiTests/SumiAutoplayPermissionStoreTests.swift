@@ -83,6 +83,18 @@ final class SumiAutoplayPermissionStoreTests: XCTestCase {
         XCTAssertEqual(harness.adapter.effectivePolicy(for: url, profile: profileB), .default)
     }
 
+    func testInjectedContainerIsUsedForPersistentAutoplayFetches() async throws {
+        let firstHarness = try makeHarness()
+        let secondHarness = try makeHarness()
+        let profile = makeProfile("99999999-9999-9999-9999-999999999999")
+        let url = URL(string: "https://example.com/video")!
+
+        try await firstHarness.adapter.setPolicy(.blockAll, for: url, profile: profile)
+
+        XCTAssertEqual(firstHarness.adapter.effectivePolicy(for: url, profile: profile), .blockAll)
+        XCTAssertEqual(secondHarness.adapter.effectivePolicy(for: url, profile: profile), .default)
+    }
+
     func testPersistentIdentityIncludesTopOrigin() {
         let requesting = SumiPermissionOrigin(string: "https://cdn.example")
         let firstTop = SumiPermissionOrigin(string: "https://first.example")

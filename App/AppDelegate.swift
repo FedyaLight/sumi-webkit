@@ -31,6 +31,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     weak var appLifecycleHandler: (any BrowserAppLifecycleHandling)?
     weak var settingsHandler: SumiSettingsService?
     var shortcutManager: KeyboardShortcutManager?
+    var fallbackPersistenceSave: (@MainActor () throws -> Void)?
 
     // Window registry for accessing active window state
     weak var windowRegistry: WindowRegistry?
@@ -316,6 +317,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     ) {
         let persistenceHandlerSnapshot = self.persistenceHandler
         let updateHandlerSnapshot = self.updateHandler
+        let fallbackPersistenceSaveSnapshot = self.fallbackPersistenceSave
 
         DispatchQueue.main.async {
             Task { @MainActor in
@@ -325,9 +327,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                 }
 
                 guard let persistenceHandler = persistenceHandlerSnapshot else {
+                    guard let fallbackPersistenceSave = fallbackPersistenceSaveSnapshot else {
+                        AppDelegate.log.info("Termination: fallback skipped (no persistenceHandler or fallback save)")
+                        return
+                    }
                     do {
-                        let ctx = SumiStartupPersistence.shared.container.mainContext
-                        try ctx.save()
+                        try fallbackPersistenceSave()
                         AppDelegate.log.info("Fallback save without BrowserManager succeeded")
                     } catch {
                         AppDelegate.log.error(

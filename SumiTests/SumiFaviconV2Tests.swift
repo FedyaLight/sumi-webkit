@@ -1834,7 +1834,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
     }
 }
 
-final class SumiFaviconV2SourceGuardTests: XCTestCase {
+final class SumiFaviconV2URLNormalizationRegressionTests: XCTestCase {
     func testLiveDiscoveryAcceptsEquivalentDocumentURLNormalizations() throws {
         let documentURL = try XCTUnwrap(URL(string: "https://browserbench.org:443/Speedometer3.1/#run"))
         let currentURL = try XCTUnwrap(URL(string: "https://BROWSERBENCH.org/Speedometer3.1/"))

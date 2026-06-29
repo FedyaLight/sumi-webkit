@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SidebarSpaceBodySourceGuardTests: XCTestCase {
+final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
     func testSidebarColumnHostedRootCarriesInjectedDragState() throws {
         let nowPlayingController = SumiNativeNowPlayingController()
         let browserManager = BrowserManager(nowPlayingController: nowPlayingController)

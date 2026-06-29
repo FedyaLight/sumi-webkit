@@ -29,7 +29,13 @@ struct SumiApp: App {
         let nowPlayingController = SumiNativeNowPlayingController.shared
         _nowPlayingController = StateObject(wrappedValue: nowPlayingController)
         _settingsManager = State(initialValue: SumiSettingsService(nowPlayingController: nowPlayingController))
-        _browserManager = StateObject(wrappedValue: BrowserManager(nowPlayingController: nowPlayingController))
+        _browserManager = StateObject(
+            wrappedValue: BrowserManager(
+                startupPersistence: SumiStartupPersistenceComposition.browserManagerStartupPersistence,
+                browserConfiguration: BrowserConfiguration.shared,
+                nowPlayingController: nowPlayingController
+            )
+        )
     }
 
     var body: some Scene {
@@ -92,6 +98,7 @@ struct SumiApp: App {
         appDelegate.appLifecycleHandler = browserManager
         appDelegate.settingsHandler = settingsManager
         appDelegate.shortcutManager = keyboardShortcutManager
+        appDelegate.fallbackPersistenceSave = SumiStartupPersistenceComposition.saveMainContext
 
         // Required: routing and cleanup call `requireWebViewCoordinator()` after this point.
         browserManager.webViewCoordinator = webViewCoordinator

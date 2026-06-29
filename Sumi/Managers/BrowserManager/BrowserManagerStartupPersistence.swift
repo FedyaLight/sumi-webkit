@@ -8,10 +8,6 @@ struct BrowserManagerStartupPersistence {
         self.container = container
     }
 
-    static var production: BrowserManagerStartupPersistence {
-        BrowserManagerStartupPersistence(container: SumiStartupPersistence.shared.container)
-    }
-
     var mainContext: ModelContext {
         container.mainContext
     }

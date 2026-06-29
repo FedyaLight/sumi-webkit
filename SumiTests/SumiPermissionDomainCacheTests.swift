@@ -3,13 +3,72 @@ import XCTest
 @testable import Sumi
 
 final class SumiPermissionDomainCacheTests: XCTestCase {
-    func testDisplayDomainNormalizationPreservesExistingBehavior() {
+    func testDisplayDomainFormatterPreservesExistingBehavior() {
         let cache = SumiPermissionDomainCache(limit: 4)
 
+        XCTAssertEqual(
+            SumiPermissionDisplayDomainFormatter.lowercasedDisplayDomain(" Example.COM "),
+            "example.com"
+        )
+        XCTAssertEqual(
+            SumiPermissionDisplayDomainFormatter.lowercasedDisplayDomain("   "),
+            "Unknown Origin"
+        )
+        XCTAssertEqual(
+            SumiPermissionDisplayDomainFormatter.trimmedDisplayDomain(" Example.COM "),
+            "Example.COM"
+        )
+        XCTAssertEqual(
+            SumiPermissionDisplayDomainFormatter.trimmedDisplayDomain("   "),
+            "Current site"
+        )
         XCTAssertEqual(cache.lowercasedDisplayDomain(" Example.COM "), "example.com")
         XCTAssertEqual(cache.lowercasedDisplayDomain("   "), "Unknown Origin")
         XCTAssertEqual(cache.trimmedDisplayDomain(" Example.COM "), "Example.COM")
         XCTAssertEqual(cache.trimmedDisplayDomain("   "), "Current site")
+    }
+
+    func testDisplayDomainLeafModelsUseFormatterSemantics() {
+        let origin = SumiPermissionOrigin(string: "https://example.com")
+        let request = SumiPermissionRequest(
+            requestingOrigin: origin,
+            topOrigin: origin,
+            displayDomain: " Example.COM ",
+            permissionTypes: [.geolocation],
+            profilePartitionId: "Profile-A"
+        )
+        let key = SumiPermissionKey(
+            requestingOrigin: origin,
+            topOrigin: origin,
+            permissionType: .geolocation,
+            profilePartitionId: "Profile-A"
+        )
+        let record = SumiPermissionStoreRecord(
+            key: key,
+            decision: SumiPermissionDecision(
+                state: .allow,
+                persistence: .persistent,
+                source: .user
+            ),
+            displayDomain: " Example.COM "
+        )
+        let indicatorEvent = SumiPermissionIndicatorEventRecord(
+            tabId: "Tab-A",
+            pageId: "Page-A",
+            displayDomain: " Example.COM ",
+            permissionTypes: [.geolocation],
+            category: .pendingRequest,
+            visualStyle: .attention,
+            priority: .pendingSensitiveRequest
+        )
+
+        XCTAssertEqual(request.displayDomain, "Example.COM")
+        XCTAssertEqual(record.displayDomain, "example.com")
+        XCTAssertEqual(indicatorEvent.displayDomain, "Example.COM")
+        XCTAssertEqual(
+            SumiPermissionPromptStrings.normalizedDisplayDomain(" Example.COM "),
+            "Example.COM"
+        )
     }
 
     func testRegistrableDomainCacheReusesResolverResults() {

@@ -1,14 +1,6 @@
 import Foundation
 
 final class SumiPermissionDomainCache: @unchecked Sendable {
-    static let shared = SumiPermissionDomainCache()
-
-    private struct DisplayDomainKey: Hashable {
-        let value: String
-        let fallback: String
-        let lowercased: Bool
-    }
-
     private enum RegistrableDomainValue: Hashable {
         case value(String)
         case none
@@ -34,7 +26,6 @@ final class SumiPermissionDomainCache: @unchecked Sendable {
     private let lock = NSLock()
     private let limit: Int
     private let registrableDomainResolver: any SumiRegistrableDomainResolving
-    private var displayDomains: [DisplayDomainKey: String] = [:]
     private var registrableDomains: [String: RegistrableDomainValue] = [:]
 
     init(
@@ -47,7 +38,6 @@ final class SumiPermissionDomainCache: @unchecked Sendable {
 
     func clear() {
         withLock {
-            displayDomains.removeAll(keepingCapacity: true)
             registrableDomains.removeAll(keepingCapacity: true)
         }
     }
@@ -56,14 +46,14 @@ final class SumiPermissionDomainCache: @unchecked Sendable {
         _ value: String,
         fallback: String = "Unknown Origin"
     ) -> String {
-        normalizedDisplayDomain(value, fallback: fallback, lowercased: true)
+        SumiPermissionDisplayDomainFormatter.lowercasedDisplayDomain(value, fallback: fallback)
     }
 
     func trimmedDisplayDomain(
         _ value: String,
         fallback: String = "Current site"
     ) -> String {
-        normalizedDisplayDomain(value, fallback: fallback, lowercased: false)
+        SumiPermissionDisplayDomainFormatter.trimmedDisplayDomain(value, fallback: fallback)
     }
 
     func registrableDomain(forHost host: String?) -> String? {
@@ -79,46 +69,10 @@ final class SumiPermissionDomainCache: @unchecked Sendable {
         }
     }
 
-    private func normalizedDisplayDomain(
-        _ value: String,
-        fallback: String,
-        lowercased: Bool
-    ) -> String {
-        let key = DisplayDomainKey(value: value, fallback: fallback, lowercased: lowercased)
-        return withLock {
-            if let cached = displayDomains[key] {
-                return cached
-            }
-
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalized: String
-            if trimmed.isEmpty {
-                normalized = fallback
-            } else if lowercased {
-                normalized = trimmed.lowercased()
-            } else {
-                normalized = trimmed
-            }
-            insert(normalized, for: key, into: &displayDomains)
-            return normalized
-        }
-    }
-
     private func withLock<R>(_ body: () -> R) -> R {
         lock.lock()
         defer { lock.unlock() }
         return body()
-    }
-
-    private func insert<Key: Hashable, Value>(
-        _ value: Value,
-        for key: Key,
-        into cache: inout [Key: Value]
-    ) {
-        if cache.count >= limit {
-            cache.removeAll(keepingCapacity: true)
-        }
-        cache[key] = value
     }
 
     private func insert(

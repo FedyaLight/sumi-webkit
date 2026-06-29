@@ -2,9 +2,9 @@
 
 Last updated: 2026-06-11 (native WebKit cleanup; stale externally-connectable bridge removed)
 
-Use with Extensions module enabled. Automated guards live in
-`SumiNativeMessagingAdapterRegressionGuardTests` and
-`SafariExtensionCleanImportSourceGuardTests`. DEBUG JSON:
+Use with Extensions module enabled. Automated regression coverage lives in
+`SumiNativeMessagingAdapterRegressionGuardTests`; clean-import audits run through
+`scripts/check_safari_extension_clean_import.sh`. DEBUG JSON:
 **Extensions → Run Safari Extension Native Messaging Probe** or
 **Run Safari Extension Dev Diagnostics Report** (`adapterCompatibility` section).
 
@@ -17,7 +17,7 @@ and DuckDuckGo [`apple-browsers`](https://github.com/duckduckgo/apple-browsers).
 ## Preconditions
 
 - macOS 15.7+ with target containing apps installed under `/Applications` when testing PMs.
-- No compat JS shims or manifest patching (verified by source guards).
+- No compat JS shims or manifest patching (verified by clean-import audits).
 - No `SafariExtensionRuntimeConnectCompatibility` wrapper or externally-connectable page bridge.
   `runtime.connect` / `runtime.onConnect` must be native WebKit behavior, verified by
   `SafariExtensionInlineOverlayRuntimeTests`.

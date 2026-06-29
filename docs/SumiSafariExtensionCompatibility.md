@@ -63,7 +63,7 @@ Evidence base:
   navigation responder tests. After the fallback patch, the changed popup
   routing, reload-stability, clean-popup, and installed Proton site-access
   tests pass individually.
-- Source guards passed:
+- Clean-import audits passed:
   `scripts/check_safari_extension_clean_import.sh`,
   `scripts/check_userscript_hot_paths.sh`,
   `scripts/check_prepared_bundle_runtime_boundary.sh`, and `git diff --check`.
@@ -180,7 +180,7 @@ Evidence base:
   runtime loading, action popups/Raindrop gates, autofill infrastructure/runtime,
   extension runtime data-store alignment, popup native-messaging lifecycle,
   native-messaging performance guards, and Bitwarden adapter guardrails.
-- Source guards passed:
+- Clean-import audits passed:
   `scripts/check_safari_extension_clean_import.sh`,
   `scripts/check_userscript_hot_paths.sh`, and
   `scripts/check_prepared_bundle_runtime_boundary.sh`.
@@ -271,8 +271,8 @@ Evidence base:
 
 ### Tests Corrected
 
-- `SafariExtensionCleanImportSourceGuardTests` now guards absence of the deleted
-  runtime-connect wrapper and externally-connectable bridge artifacts.
+- `scripts/check_safari_extension_clean_import.sh` now audits absence of the
+  deleted runtime-connect wrapper and externally-connectable bridge artifacts.
 - `SafariExtensionInlineOverlayRuntimeTests` now proves native WebKit
   `runtime.connect` / `runtime.onConnect` behavior instead of checking for a Sumi
   wrapper marker.
@@ -343,7 +343,7 @@ No production `ChromeMV3NativeMessagingInternalRuntime` or CRX installer found.
 | Native messaging | Swift `SumiNativeMessagingRelay` + `WKWebExtensionControllerDelegate` — not JS-shimmed |
 | Unsupported APIs | Documented as blocked in compatibility report — **not faked via JS** |
 
-Source guards: `SafariExtensionCleanImportSourceGuardTests`, `scripts/check_safari_extension_clean_import.sh`.
+Clean-import audits: `scripts/check_safari_extension_clean_import.sh`.
 
 ### Reusable UI surfaces
 
@@ -481,7 +481,7 @@ Source guards: `SafariExtensionCleanImportSourceGuardTests`, `scripts/check_safa
 | Permission delegate | macOS 15.4+ | Yes | Partial | — | All |
 | `runtime.sendMessage` / `connect` | WebKit extension runtime | Yes | Unverified on targets | — | Bitwarden, 1Password, Proton |
 | Native app messaging (Safari / WebKit delegate) | `sendMessage` / `connectUsing` | macOS 15.4+ | **Implemented — Sumi relay resolves host, wakes via `NSWorkspace`, returns `companionAppProtocolUnknown` until companion IPC is documented** | `SumiNativeMessagingRelayTests`, `SafariExtensionNativeMessagingHostTests` | Bitwarden, 1Password, Proton |
-| Externally-connectable page bridge NM | Custom JS shim | N/A | **Removed (Cycle 11)** | `SafariExtensionCleanImportSourceGuardTests` | N/A |
+| Externally-connectable page bridge NM | Custom JS shim | N/A | **Removed (Cycle 11)** | `scripts/check_safari_extension_clean_import.sh` | N/A |
 | Content scripts / autofill | WebKit | Yes | **Enable path tab reconcile (Cycle 5)** | `SafariExtensionCompatibilityReportTests` | All PMs |
 | `storage.local` / `storage.sync` | WebKit | Yes | Assumed via WebKit stores | Store lifecycle traces | PMs |
 | System Safari extension discovery | N/A (filesystem) | N/A | **Scanner added (Cycle 1)** | `SafariExtensionScannerTests` | All |
@@ -836,8 +836,8 @@ cookie domain counts only, popup lifecycle phase).
   confirms `https://account.proton.me/*` and `https://pass.proton.me/*` are
   declared site-access patterns and are granted by Sumi policy without
   Proton-specific runtime branches.
-- **Tests/guards:** targeted site-access, lifecycle, and clean-import source
-  guard tests pass; `check_safari_extension_clean_import.sh`,
+- **Tests/guards:** targeted site-access and lifecycle tests plus the clean-import
+  audit pass; `check_safari_extension_clean_import.sh`,
   `check_userscript_hot_paths.sh`, `check_prepared_bundle_runtime_boundary.sh`,
   and `git diff --check` pass.
 
@@ -860,7 +860,7 @@ cookie domain counts only, popup lifecycle phase).
 - **Rule precedence:** specific configured sites override broad all-host rules
   in both Sumi policy evaluation and WebKit permission restoration.
 - **Tests:** `SafariExtensionSiteAccessPolicyTests` including an installed
-  Proton Pass `.appex` WebKit access check when present, clean-import guards,
+  Proton Pass `.appex` WebKit access check when present, clean-import audits,
   compatibility regression slices, native-messaging guards, and repository guard
   scripts pass.
 
@@ -871,7 +871,7 @@ cookie domain counts only, popup lifecycle phase).
 - **`SafariExtensionNativeMessagingSuppressionProbe`:** documents repeated-call suppression, coalesced logging, `sessionState` buckets.
 - **Acceptance probes:** popup anchor wiring, NM suppression report, PM `login-form.html` fixture.
 - **DEBUG menu:** Extensions → Run Safari Extension Dev Diagnostics Report (combined JSON).
-- **Guards:** lazy-runtime + popup-anchor + coalescer source guards (no extension-specific branches).
+- **Guards:** lazy-runtime, popup-anchor, and coalescer regression checks (no extension-specific branches).
 - **Tests:** `SafariExtensionRuntimeDiagnosticsTests` + extended clean-import guards.
 
 ### Cycle 11 (2026-06-10)
@@ -880,7 +880,7 @@ cookie domain counts only, popup lifecycle phase).
   `patchManifestForWebKit` or `setupExternallyConnectableBridge`.
 - **Deleted:** all `ExtensionRuntimeResources/*.js`, `ExtensionRuntimeBundledScript.swift`,
   `ExtensionManager+ExternallyConnectableScripts.swift`, `SumiExternallyConnectableUserScript.swift`.
-- **Guards:** `SafariExtensionCleanImportSourceGuardTests` + `scripts/check_safari_extension_clean_import.sh`.
+- **Guards:** `scripts/check_safari_extension_clean_import.sh` plus runtime regression tests.
 - **Preserved:** Raindrop import/login/save path, per-profile isolation, delete+rescan, private-tab popup block,
   Swift native-messaging relay (`SumiNativeMessagingRelay`).
 - **Unsupported APIs:** remain blocked in compatibility diagnostics — not polyfilled.
