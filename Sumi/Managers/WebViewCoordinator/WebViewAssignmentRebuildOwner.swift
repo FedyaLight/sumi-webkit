@@ -228,36 +228,14 @@ final class WebViewAssignmentRebuildOwner {
     }
 
     private func loadInitialURLIfNeeded(for webView: WKWebView, tab: Tab) {
-        if let url = URL(string: tab.url.absoluteString) {
-            let performLoad = { [weak tab, weak webView] in
-                guard let tab, let webView else { return }
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView
-                ) { resolvedWebView in
-                    guard !resolvedWebView.isLoading, resolvedWebView.url == nil else { return }
-                    resolvedWebView.load(URLRequest(url: url))
-                }
-            }
-
-            let profileId = tab.resolveProfile()?.id ?? tab.profileId
-            Task { @MainActor [weak tab] in
-                if let controller = webView.configuration.userContentController
-                    .sumiNormalTabUserContentController,
-                    controller.hasInstalledInitialUserContent == false {
-                    await controller.waitForInitialUserContentInstallation()
-                }
-                if let profileId,
-                   let extensionsModule = tab?.browserManager?.extensionsModule {
-                    await extensionsModule.ensureInitialDocumentExtensionContextsLoadedIfNeeded(
-                        profileId: profileId
-                    )
-                }
-                tab?.registerNormalTabWithExtensionRuntimeIfNeeded(
-                    reason: "WebViewCoordinator.loadInitialURLIfNeeded"
-                )
-                performLoad()
-            }
-        }
+        guard let url = URL(string: tab.url.absoluteString) else { return }
+        NormalTabInitialDocumentRuntimeHandoff.scheduleCloneInitialLoad(
+            tab: tab,
+            webView: webView,
+            targetURL: url,
+            profileId: tab.resolveProfile()?.id ?? tab.profileId,
+            registrationReason: "WebViewCoordinator.loadInitialURLIfNeeded"
+        )
     }
 
     private func adoptExistingPrimaryWebView(

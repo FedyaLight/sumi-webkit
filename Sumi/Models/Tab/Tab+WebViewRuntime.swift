@@ -296,49 +296,20 @@ extension Tab {
         }
 
         if shouldDelayInitialNormalTabRuntimeRegistration {
-            if let controller = _webView?.configuration.userContentController.sumiNormalTabUserContentController {
-                let initialWebView = _webView
-                let targetURL = url
-                let profileId = resolveProfile()?.id ?? profileId
-                Task { @MainActor [weak self, weak initialWebView] in
-                    if controller.hasInstalledInitialUserContent == false {
-                        await controller.waitForInitialUserContentInstallation()
-                    }
-                    if let profileId,
-                       let extensionsModule = self?.browserManager?.extensionsModule {
-                        await extensionsModule.ensureInitialDocumentExtensionContextsLoadedIfNeeded(
-                            profileId: profileId
-                        )
-                    }
-                    guard let self,
-                          let initialWebView,
-                          self._existingWebView == nil,
-                          self._webView === initialWebView
-                    else {
-                        return
-                    }
-                    self.registerNormalTabWithExtensionRuntimeIfNeeded(
-                        reason: "Tab.setupWebView.beforeInitialLoad"
-                    )
-                    self.loadURL(targetURL)
-                }
-            } else {
-                let targetURL = url
-                let profileId = resolveProfile()?.id ?? profileId
-                Task { @MainActor [weak self] in
-                    if let profileId,
-                       let extensionsModule = self?.browserManager?.extensionsModule {
-                        await extensionsModule.ensureInitialDocumentExtensionContextsLoadedIfNeeded(
-                            profileId: profileId
-                        )
-                    }
-                    guard let self, self._existingWebView == nil else { return }
-                    self.registerNormalTabWithExtensionRuntimeIfNeeded(
-                        reason: "Tab.setupWebView.beforeInitialLoad"
-                    )
-                    self.loadURL(targetURL)
-                }
-            }
+            let initialWebView = _webView
+            let hasInitialUserContentController = initialWebView?.configuration
+                .userContentController
+                .sumiNormalTabUserContentController != nil
+            NormalTabInitialDocumentRuntimeHandoff.scheduleTabSetupInitialLoad(
+                tab: self,
+                webView: initialWebView,
+                targetURL: url,
+                profileId: resolveProfile()?.id ?? profileId,
+                registrationReason: "Tab.setupWebView.beforeInitialLoad",
+                registrationGuard: hasInitialUserContentController
+                    ? .currentWebViewIdentity
+                    : .noExistingWebView
+            )
         }
 
         finishSuspendedRestoreIfNeeded()
