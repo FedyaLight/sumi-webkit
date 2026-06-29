@@ -22,7 +22,6 @@ extension URLBarView {
         .popover(isPresented: $permissionPromptPresenter.isPresented, arrowEdge: .bottom) {
             if let viewModel = permissionPromptPresenter.viewModel {
                 SumiPermissionPromptView(viewModel: viewModel)
-                    .environmentObject(browserManager)
                     .environment(windowState)
             } else {
                 EmptyView()
@@ -39,7 +38,6 @@ extension URLBarView {
                     openPermissionIndicatorSiteSettings(focusing: currentTab)
                 }
             )
-            .environmentObject(browserManager)
             .environment(windowState)
         }
     }

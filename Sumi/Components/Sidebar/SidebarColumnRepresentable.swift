@@ -7,7 +7,10 @@ struct SidebarColumnHostedRootView: View {
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     var body: some View {
-        SpacesSideBarView(nowPlayingController: environmentContext.nowPlayingController)
+        SpacesSideBarView(
+            browserManager: environmentContext.browserManager,
+            nowPlayingController: environmentContext.nowPlayingController
+        )
             .frame(width: presentationContext.sidebarWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: presentationContext.shellEdge.resizeHandleAlignment) {

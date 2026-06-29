@@ -25,7 +25,6 @@ private struct SidebarPageInputGraphIdentity: Hashable {
 }
 
 struct SpacesSideBarView: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(WindowRegistry.self) private var windowRegistry
@@ -41,8 +40,13 @@ struct SpacesSideBarView: View {
     @ObservedObject private var nowPlayingController: SumiNativeNowPlayingController
     @ObservedObject private var updaterService = SumiUpdaterService.shared
     @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
+    let browserManager: BrowserManager
 
-    init(nowPlayingController: SumiNativeNowPlayingController) {
+    init(
+        browserManager: BrowserManager,
+        nowPlayingController: SumiNativeNowPlayingController
+    ) {
+        self.browserManager = browserManager
         self.nowPlayingController = nowPlayingController
     }
 
