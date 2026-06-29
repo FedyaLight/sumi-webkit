@@ -151,7 +151,7 @@ class BrowserManager: ObservableObject {
     lazy var floatingBarBrowserContextOwner = BrowserFloatingBarBrowserContextOwner(
         dependencies: .live(browserManager: self)
     )
-    private lazy var browserActionOwner = BrowserActionOwner(
+    private lazy var sidebarActionOwner = BrowserSidebarActionOwner(
         dependencies: .live(browserManager: self)
     )
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
@@ -458,7 +458,7 @@ class BrowserManager: ObservableObject {
     }
 
     func prepareBackgroundTabAfterStartupProtectionRestore(_ tab: Tab) {
-        browserActionOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
+        tabOpeningOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
     }
 
     enum ProfileSwitchContext {
@@ -503,11 +503,48 @@ class BrowserManager: ObservableObject {
     }
 
     func toggleSidebar() {
-        browserActionOwner.toggleSidebar()
+        if let windowState = sidebarToggleTargetWindowState() {
+            toggleSidebar(for: windowState)
+        } else {
+            toggleSavedSidebarVisibility()
+        }
     }
 
     func toggleSidebar(for windowState: BrowserWindowState) {
-        browserActionOwner.toggleSidebar(for: windowState)
+        windowState.isSidebarVisible.toggle()
+        updateSavedSidebarVisibility(windowState.isSidebarVisible)
+        updateSavedSidebarWidth(windowState.savedSidebarWidth)
+        schedulePersistWindowSession(for: windowState, delayNanoseconds: 150_000_000)
+    }
+
+    private func sidebarToggleTargetWindowState() -> BrowserWindowState? {
+        if let activeWindow = windowRegistry?.activeWindow {
+            return activeWindow
+        }
+
+        guard let windowRegistry else {
+            return nil
+        }
+
+        if let keyWindow = NSApp.keyWindow,
+           let keyWindowState = windowRegistry.allWindows.first(where: { windowState in
+               guard let browserWindow = windowState.window else { return false }
+               if browserWindow === keyWindow {
+                   return true
+               }
+               return browserWindow.childWindows?.contains(where: { $0 === keyWindow }) == true
+           }) {
+            windowRegistry.setActive(keyWindowState)
+            return keyWindowState
+        }
+
+        if windowRegistry.allWindows.count == 1,
+           let onlyWindow = windowRegistry.allWindows.first {
+            windowRegistry.setActive(onlyWindow)
+            return onlyWindow
+        }
+
+        return nil
     }
 
     // MARK: - Sidebar width access for overlays
@@ -571,23 +608,23 @@ class BrowserManager: ObservableObject {
     }
 
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
-        browserActionOwner.spaceForSidebarActions(in: windowState)
+        sidebarActionOwner.spaceForSidebarActions(in: windowState)
     }
 
     func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        browserActionOwner.createFolderInCurrentSpace(in: windowState)
+        sidebarActionOwner.createFolderInCurrentSpace(in: windowState)
     }
 
     func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        browserActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
+        sidebarActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
     }
 
     func createGitHubPullRequestsLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        browserActionOwner.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
+        sidebarActionOwner.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
     }
 
     func createGitHubIssuesLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        browserActionOwner.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
+        sidebarActionOwner.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
     }
 
     func updateFloatingBarDraft(
@@ -705,12 +742,12 @@ class BrowserManager: ObservableObject {
 
     // MARK: - Tab Management (delegates to TabManager)
     func createNewTab() {
-        browserActionOwner.createNewTab()
+        tabOpeningOwner.createNewTab()
     }
 
     /// Create a new tab and set it as active in the specified window
     func createNewTab(in windowState: BrowserWindowState, url: String = SumiSurface.emptyTabURL.absoluteString) {
-        browserActionOwner.createNewTab(in: windowState, url: url)
+        tabOpeningOwner.createNewTab(in: windowState, url: url)
     }
 
     @discardableResult
@@ -718,7 +755,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         url: String = SumiSurface.emptyTabURL.absoluteString
     ) -> Tab {
-        browserActionOwner.createNewTabAfterSidebarInsertion(in: windowState, url: url)
+        tabOpeningOwner.createNewTabAfterSidebarInsertion(in: windowState, url: url)
     }
 
     @discardableResult
@@ -726,11 +763,11 @@ class BrowserManager: ObservableObject {
         url: String = SumiSurface.emptyTabURL.absoluteString,
         context: TabOpenContext
     ) -> Tab {
-        browserActionOwner.openNewTab(url: url, context: context)
+        tabOpeningOwner.openNewTab(url: url, context: context)
     }
 
     func resolvedTabOpenSpace(for context: TabOpenContext) -> Space? {
-        browserActionOwner.resolvedTabOpenSpace(for: context)
+        tabOpeningOwner.resolvedTabOpenSpace(for: context)
     }
 
     @discardableResult
@@ -739,7 +776,7 @@ class BrowserManager: ObservableObject {
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         activate: Bool = true
     ) -> Tab? {
-        browserActionOwner.createPopupTab(
+        tabOpeningOwner.createPopupTab(
             from: sourceTab,
             webViewConfigurationOverride: webViewConfigurationOverride,
             activate: activate
@@ -779,7 +816,7 @@ class BrowserManager: ObservableObject {
     }
 
     func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        browserActionOwner.duplicateTab(tab, in: windowState)
+        tabOpeningOwner.duplicateTab(tab, in: windowState)
     }
 
     func closeCurrentTab() {

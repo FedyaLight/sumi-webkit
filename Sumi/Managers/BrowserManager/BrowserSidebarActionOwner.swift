@@ -69,3 +69,16 @@ final class BrowserSidebarActionOwner {
         return value
     }
 }
+
+extension BrowserSidebarActionOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let liveFolderManager = browserManager.liveFolderManager
+        return Self(
+            tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
+                browserManager?.tabManager ?? tabManager
+            },
+            liveFolderManager: { liveFolderManager }
+        )
+    }
+}

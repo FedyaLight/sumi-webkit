@@ -3,7 +3,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class BrowserActionOwnerTests: XCTestCase {
+final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
     func testSidebarFolderActionUsesWindowSpaceBeforeGlobalCurrentSpace() {
         removePersistedWindowSession()
         defer { removePersistedWindowSession() }
@@ -72,7 +72,6 @@ final class BrowserActionOwnerTests: XCTestCase {
     private func removePersistedWindowSession() {
         UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
     }
-
 }
 
 @MainActor
