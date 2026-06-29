@@ -101,7 +101,7 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             canCreateFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.spaceForSidebarActions(in: windowState) != nil
+                browserManager?.sidebarFolderCommandOwner.canCreateFolderInCurrentSpace(in: windowState) ?? false
             },
             showGradientEditor: { [weak browserManager] source in
                 browserManager?.showGradientEditor(source: source)
@@ -162,16 +162,20 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
                 browserManager?.toggleDownloadsPopover(in: windowState)
             },
             createFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarFolderCommandOwner.createFolderInCurrentSpace(in: windowState)
             },
             createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createRSSLiveFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarFolderCommandOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
             },
             createGitHubPullRequestsLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarFolderCommandOwner.createGitHubPullRequestsLiveFolderInCurrentSpace(
+                    in: windowState
+                )
             },
             createGitHubIssuesLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarFolderCommandOwner.createGitHubIssuesLiveFolderInCurrentSpace(
+                    in: windowState
+                )
             }
         )
     }
