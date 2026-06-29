@@ -13,14 +13,10 @@ extension Tab {
             return
         }
 
-        let rebuiltForConfigurationPolicy = rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
+        let rebuiltForConfigurationPolicy = rebuildNormalWebViewForConfigurationPolicyIfNeeded(
             targetURL: newURL,
-            reason: "Tab.loadURL.contentBlockingPolicy"
+            reason: "Tab.loadURL"
         )
-            || rebuildNormalWebViewForAutoplayIfNeeded(
-                targetURL: newURL,
-                reason: "Tab.loadURL.autoplayPolicy"
-            )
         resetPlaybackActivity()
         // The muted part of audioState is preserved to maintain the user's mute preference.
 

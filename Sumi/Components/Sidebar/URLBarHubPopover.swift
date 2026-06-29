@@ -789,9 +789,6 @@ struct URLBarHubPopover: View {
             override,
             currentTab.url
         )
-        currentTab.markSafariContentBlockerReloadRequiredIfNeeded(
-            afterChangingPolicyFor: currentTab.url
-        )
         scheduleCoalescedRefresh()
     }
 

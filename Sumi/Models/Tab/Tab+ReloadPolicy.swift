@@ -161,6 +161,18 @@ extension Tab {
         )
     }
 
+    func safariContentBlockerAttachmentRequiresNormalWebViewRebuild(
+        for targetURL: URL?
+    ) -> Bool {
+        reloadPolicyStateOwner.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(
+            for: targetURL,
+            existingWebView: existingWebView,
+            webViewConfigurationOverride: webViewConfigurationOverride,
+            isPopupHost: isPopupHost,
+            browserManager: browserManager
+        )
+    }
+
     func autoplayPolicyRequiresNormalWebViewRebuild(for targetURL: URL?) -> Bool {
         reloadPolicyStateOwner.autoplayPolicyRequiresNormalWebViewRebuild(
             for: targetURL,
@@ -169,6 +181,12 @@ extension Tab {
             isPopupHost: isPopupHost,
             profile: resolveProfile()
         )
+    }
+
+    func configurationPolicyRequiresNormalWebViewRebuild(for targetURL: URL?) -> Bool {
+        protectionAttachmentRequiresNormalWebViewRebuild(for: targetURL)
+            || safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: targetURL)
+            || autoplayPolicyRequiresNormalWebViewRebuild(for: targetURL)
     }
 
     @discardableResult
@@ -193,6 +211,21 @@ extension Tab {
             reason: reason,
             context: reloadPolicyWebViewRebuildContext()
         )
+    }
+
+    @discardableResult
+    func rebuildNormalWebViewForConfigurationPolicyIfNeeded(
+        targetURL: URL?,
+        reason: String
+    ) -> Bool {
+        rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
+            targetURL: targetURL,
+            reason: "\(reason).contentBlockingPolicy"
+        )
+            || rebuildNormalWebViewForAutoplayIfNeeded(
+                targetURL: targetURL,
+                reason: "\(reason).autoplayPolicy"
+            )
     }
 
     private func reloadPolicyWebViewRebuildContext() -> TabReloadPolicyWebViewRebuildContext {

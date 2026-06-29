@@ -84,11 +84,15 @@ final class SumiExtensionsModule {
     }
 
     func setEnabled(_ isEnabled: Bool) {
+        let wasEnabled = self.isEnabled
         moduleRegistry.setEnabled(isEnabled, for: .extensions)
         if isEnabled == false {
             tearDownLoadedRuntime(reason: "SumiExtensionsModule.setEnabled(false)")
             safariContentBlockerRuntimeOwner.clearRuntime()
             pendingActionAnchors.removeAll()
+        }
+        if wasEnabled != isEnabled {
+            markSafariContentBlockerReloadRequiredForLiveTabs()
         }
     }
 
@@ -356,17 +360,21 @@ final class SumiExtensionsModule {
     func enableSafariContentBlocker(
         from candidate: DiscoveredSafariExtensionCandidate
     ) async throws -> InstalledSafariContentBlockerRecord {
-        try await safariContentBlockerRuntimeOwner.enableContentBlocker(from: candidate)
+        let record = try await safariContentBlockerRuntimeOwner.enableContentBlocker(from: candidate)
+        markSafariContentBlockerReloadRequiredForLiveTabs()
+        return record
     }
 
     func setSafariContentBlockerEnabled(
         _ enabled: Bool,
         bundleIdentifier: String
     ) async throws -> InstalledSafariContentBlockerRecord? {
-        try await safariContentBlockerRuntimeOwner.setContentBlockerEnabled(
+        let record = try await safariContentBlockerRuntimeOwner.setContentBlockerEnabled(
             enabled,
             bundleIdentifier: bundleIdentifier
         )
+        markSafariContentBlockerReloadRequiredForLiveTabs()
+        return record
     }
 
     func enabledSafariContentBlockingServices(
@@ -395,11 +403,28 @@ final class SumiExtensionsModule {
         safariContentBlockerRuntimeOwner.attachedRuleListIdentifiers()
     }
 
+    private func markSafariContentBlockerReloadRequiredForLiveTabs() {
+        browserManager?.tabManager.allTabs().forEach {
+            $0.updateSafariContentBlockerReloadRequirementForCurrentSite()
+        }
+    }
+
+    private func markSafariContentBlockerReloadRequiredForLiveTabs(
+        afterChangingPolicyFor url: URL?
+    ) {
+        browserManager?.tabManager.allTabs().forEach {
+            $0.markSafariContentBlockerReloadRequiredIfNeeded(
+                afterChangingPolicyFor: url
+            )
+        }
+    }
+
     func setSafariContentBlockerSiteOverride(
         _ override: SumiSafariContentBlockerSiteOverride,
         for url: URL?
     ) {
         safariContentBlockerRuntimeOwner.setSiteOverride(override, for: url)
+        markSafariContentBlockerReloadRequiredForLiveTabs(afterChangingPolicyFor: url)
     }
 
     func orderedPinnedToolbarSlots(

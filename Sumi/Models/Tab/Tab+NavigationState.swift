@@ -30,13 +30,9 @@ extension Tab {
         beginLoadingPresentationIfNeeded()
         let targetURL = _webView?.url ?? url
         let protectionReloadWasRequired = isProtectionReloadRequired
-        let rebuiltForConfigurationPolicy = rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
+        let rebuiltForConfigurationPolicy = rebuildNormalWebViewForConfigurationPolicyIfNeeded(
                 targetURL: targetURL,
-                reason: "Tab.refresh.contentBlockingPolicy"
-            )
-            || rebuildNormalWebViewForAutoplayIfNeeded(
-                targetURL: targetURL,
-                reason: "Tab.refresh.autoplayPolicy"
+                reason: "Tab.refresh"
             )
         if protectionReloadWasRequired {
             noteProtectionManualReloadResult(

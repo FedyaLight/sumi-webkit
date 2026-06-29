@@ -135,10 +135,19 @@ final class TabReloadPolicyStateOwner {
             for: currentURL,
             browserManager: browserManager
         )
-        guard desiredState.siteHost != nil,
-              let appliedState = safariContentBlockerAppliedAttachmentState,
-              appliedState != desiredState
+        guard desiredState.siteHost != nil
         else {
+            return clearSafariContentBlockerReloadRequirement()
+        }
+
+        if safariContentBlockerAttachmentIsApplied(desiredState) {
+            let updatedAppliedState = noteSafariContentBlockerAttachmentAppliedIfEquivalent(
+                to: desiredState
+            )
+            return clearSafariContentBlockerReloadRequirement() || updatedAppliedState
+        }
+
+        guard safariContentBlockerAppliedAttachmentState != nil || desiredState.isEnabled else {
             return clearSafariContentBlockerReloadRequirement()
         }
 
@@ -162,7 +171,8 @@ final class TabReloadPolicyStateOwner {
             browserManager: browserManager
         )
         if committedState.siteHost != requirement.siteHost
-            || safariContentBlockerAppliedAttachmentState == committedState {
+            || safariContentBlockerAttachmentIsApplied(committedState) {
+            _ = noteSafariContentBlockerAttachmentAppliedIfEquivalent(to: committedState)
             return clearSafariContentBlockerReloadRequirement()
         }
 
@@ -265,6 +275,28 @@ final class TabReloadPolicyStateOwner {
         return appliedState != desiredState
     }
 
+    func safariContentBlockerAttachmentRequiresNormalWebViewRebuild(
+        for targetURL: URL?,
+        existingWebView: WKWebView?,
+        webViewConfigurationOverride: WKWebViewConfiguration?,
+        isPopupHost: Bool,
+        browserManager: BrowserManager?
+    ) -> Bool {
+        guard existingWebView != nil,
+              webViewConfigurationOverride == nil,
+              !isPopupHost
+        else { return false }
+
+        let desiredState = safariContentBlockerDesiredAttachmentState(
+            for: targetURL,
+            browserManager: browserManager
+        )
+        guard let appliedState = safariContentBlockerAppliedAttachmentState else {
+            return desiredState.isEnabled
+        }
+        return !appliedState.hasSameEffectiveWebViewAttachment(as: desiredState)
+    }
+
     func noteProtectionManualReloadResult(
         rebuiltForConfigurationPolicy: Bool,
         targetURL: URL?,
@@ -284,24 +316,35 @@ final class TabReloadPolicyStateOwner {
         reason: String,
         context: TabReloadPolicyWebViewRebuildContext
     ) -> Bool {
-        guard protectionAttachmentRequiresNormalWebViewRebuild(
+        let requiresProtectionRebuild = protectionAttachmentRequiresNormalWebViewRebuild(
             for: targetURL,
             existingWebView: context.existingWebView(),
             webViewConfigurationOverride: context.webViewConfigurationOverride,
             isPopupHost: context.isPopupHost,
             browserManager: context.browserManager
-        ), context.existingWebView() != nil
+        )
+        let requiresSafariContentBlockerRebuild = safariContentBlockerAttachmentRequiresNormalWebViewRebuild(
+            for: targetURL,
+            existingWebView: context.existingWebView(),
+            webViewConfigurationOverride: context.webViewConfigurationOverride,
+            isPopupHost: context.isPopupHost,
+            browserManager: context.browserManager
+        )
+        guard (requiresProtectionRebuild || requiresSafariContentBlockerRebuild),
+              context.existingWebView() != nil
         else { return false }
 
         let rebuildStart = Date()
         let previousProtectionState = protectionAppliedAttachmentState
+        let previousSafariContentBlockerState = safariContentBlockerAppliedAttachmentState
 
         guard rebuildNormalWebViewForConfigurationPolicy(
             reason: reason,
             context: context,
             onTrackedWebViewRemovalFailure: {
-                noteProtectionWebViewRebuildFailed(
-                    restoringAppliedState: previousProtectionState
+                noteContentBlockingWebViewRebuildFailed(
+                    restoringProtectionState: previousProtectionState,
+                    restoringSafariContentBlockerState: previousSafariContentBlockerState
                 )
             }
         ) else { return false }
@@ -320,7 +363,9 @@ final class TabReloadPolicyStateOwner {
                 browserManager: context.browserManager
             )
         )
-        noteProtectionWebViewRebuildSucceeded(startedAt: rebuildStart)
+        if requiresProtectionRebuild {
+            noteProtectionWebViewRebuildSucceeded(startedAt: rebuildStart)
+        }
         context.publishNavigationStateChangeIfNeeded(
             updateAutoplayReloadRequirementForCurrentSite(
                 currentURL: context.currentURL,
@@ -449,10 +494,12 @@ final class TabReloadPolicyStateOwner {
         return currentState != desiredPolicy.runtimeState
     }
 
-    func noteProtectionWebViewRebuildFailed(
-        restoringAppliedState previousState: SumiProtectionAttachmentState?
+    func noteContentBlockingWebViewRebuildFailed(
+        restoringProtectionState previousProtectionState: SumiProtectionAttachmentState?,
+        restoringSafariContentBlockerState previousSafariContentBlockerState: SumiSafariContentBlockerAttachmentState?
     ) {
-        protectionAppliedAttachmentState = previousState
+        protectionAppliedAttachmentState = previousProtectionState
+        safariContentBlockerAppliedAttachmentState = previousSafariContentBlockerState
     }
 
     func noteProtectionWebViewRebuildSucceeded(startedAt rebuildStart: Date) {
@@ -520,6 +567,26 @@ final class TabReloadPolicyStateOwner {
     private func clearSafariContentBlockerReloadRequirement() -> Bool {
         guard safariContentBlockerReloadRequirement != nil else { return false }
         safariContentBlockerReloadRequirement = nil
+        return true
+    }
+
+    private func safariContentBlockerAttachmentIsApplied(
+        _ desiredState: SumiSafariContentBlockerAttachmentState
+    ) -> Bool {
+        if let appliedState = safariContentBlockerAppliedAttachmentState {
+            return appliedState.hasSameEffectiveWebViewAttachment(as: desiredState)
+        }
+        return !desiredState.isEnabled
+    }
+
+    private func noteSafariContentBlockerAttachmentAppliedIfEquivalent(
+        to desiredState: SumiSafariContentBlockerAttachmentState
+    ) -> Bool {
+        guard safariContentBlockerAttachmentIsApplied(desiredState),
+              safariContentBlockerAppliedAttachmentState != desiredState
+        else { return false }
+
+        safariContentBlockerAppliedAttachmentState = desiredState
         return true
     }
 

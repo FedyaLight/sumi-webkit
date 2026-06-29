@@ -170,6 +170,27 @@ final class TabWebViewConfigurationOwner {
             return false
         }
 
+        let desiredSafariContentBlockerState = reloadPolicyStateOwner
+            .safariContentBlockerDesiredAttachmentState(
+                for: webView.url ?? fallbackURL,
+                browserManager: browserManager
+            )
+        if let appliedSafariContentBlockerState =
+            reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState {
+            guard appliedSafariContentBlockerState
+                .hasSameEffectiveWebViewAttachment(as: desiredSafariContentBlockerState)
+            else {
+                return false
+            }
+            if appliedSafariContentBlockerState != desiredSafariContentBlockerState {
+                reloadPolicyStateOwner.noteSafariContentBlockerAttachmentApplied(
+                    desiredSafariContentBlockerState
+                )
+            }
+        } else if desiredSafariContentBlockerState.isEnabled {
+            return false
+        }
+
         guard let profile,
               webView.configuration.websiteDataStore === profile.dataStore
         else {

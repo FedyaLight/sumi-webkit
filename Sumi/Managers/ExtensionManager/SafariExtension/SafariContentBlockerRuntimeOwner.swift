@@ -222,7 +222,10 @@ final class SafariContentBlockerRuntimeOwner {
         return SumiSafariContentBlockerAttachmentState(
             siteHost: siteHost,
             isEnabledForSite: siteOverride != .disabled,
-            enabledContentBlockerIds: enabledRecords.map(\.id).sorted()
+            enabledContentBlockerIds: enabledRecords.map(\.id).sorted(),
+            enabledContentBlockerRuleIdentities: enabledRecords
+                .map { "\($0.id):\($0.resourceFingerprint)" }
+                .sorted()
         )
     }
 

@@ -93,6 +93,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             protectionCoordinator: protectionCoordinator
         )
         await waitForStartupProtectionRestore(on: browserManager)
+        await waitForInitialTabManagerDataLoad(on: browserManager)
 
         settings.setLevel(.protection)
         settings.setAppliedLevel(.protection)
@@ -177,6 +178,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             extensionsModule: extensionsModule
         )
         await waitForStartupProtectionRestore(on: browserManager)
+        await waitForInitialTabManagerDataLoad(on: browserManager)
 
         settings.setLevel(.protection)
         settings.setAppliedLevel(.protection)
@@ -216,6 +218,412 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             tab.safariContentBlockerAppliedAttachmentState?.enabledContentBlockerIds,
             [installedSafariContentBlocker.id]
         )
+    }
+
+    func testSafariContentBlockerSiteOverrideRebuildsNormalWebViewOnReload() async throws {
+        let harness = try await makeSafariContentBlockerBrowserHarness(
+            blockedHost: "safari-content-blocked.example"
+        )
+        defer { harness.defaults.reset() }
+        let tab = makeAttachedNormalTab(
+            in: harness,
+            url: "https://example.com/safari-content-blocker-toggle",
+            activate: false
+        )
+        let originalWebView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerInitial"
+        )
+        let originalController = try XCTUnwrap(
+            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await originalController.waitForContentBlockingAssetsInstalled()
+        XCTAssertTrue(
+            harness.ruleListIdentifiers.isSubset(
+                of: Set(originalController.contentBlockingAssetSummary.globalRuleListIdentifiers)
+            )
+        )
+
+        harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
+
+        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: tab.url))
+
+        XCTAssertTrue(
+            tab.rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
+                targetURL: tab.url,
+                reason: "BrowserConfigurationNormalTabTests.safariContentBlockerOverride"
+            )
+        )
+        let replacementWebView = try XCTUnwrap(tab.existingWebView)
+        XCTAssertNotIdentical(replacementWebView, originalWebView)
+        let replacementController = try XCTUnwrap(
+            replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await replacementController.waitForContentBlockingAssetsInstalled()
+        let replacementSummary = replacementController.contentBlockingAssetSummary
+
+        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabledForSite, false)
+        XCTAssertEqual(
+            tab.safariContentBlockerAppliedAttachmentState?.enabledContentBlockerIds,
+            [harness.installedContentBlocker.id]
+        )
+        XCTAssertTrue(
+            harness.ruleListIdentifiers.isDisjoint(
+                with: Set(replacementSummary.globalRuleListIdentifiers)
+            )
+        )
+    }
+
+    func testReusableExistingNormalWebViewRejectsStaleSafariContentBlockerAttachment() async throws {
+        let harness = try await makeSafariContentBlockerBrowserHarness(
+            blockedHost: "safari-content-blocked.example"
+        )
+        defer { harness.defaults.reset() }
+        let tab = makeAttachedNormalTab(
+            in: harness,
+            url: "https://example.com/reuse-safari-content-blocker",
+            activate: false
+        )
+        let originalWebView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerReuseInitial"
+        )
+        let originalController = try XCTUnwrap(
+            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await originalController.waitForContentBlockingAssetsInstalled()
+        XCTAssertTrue(
+            harness.ruleListIdentifiers.isSubset(
+                of: Set(originalController.contentBlockingAssetSummary.globalRuleListIdentifiers)
+            )
+        )
+
+        harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
+        tab._webView = nil
+        tab._existingWebView = originalWebView
+        tab.setupWebView()
+
+        let replacementWebView = try XCTUnwrap(tab.existingWebView)
+        XCTAssertNotIdentical(replacementWebView, originalWebView)
+        let replacementController = try XCTUnwrap(
+            replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await replacementController.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabledForSite, false)
+        XCTAssertTrue(
+            harness.ruleListIdentifiers.isDisjoint(
+                with: Set(replacementController.contentBlockingAssetSummary.globalRuleListIdentifiers)
+            )
+        )
+    }
+
+    func testWebViewCoordinatorReloadRebuildsForSafariContentBlockerPolicyDrift() async throws {
+        let harness = try await makeSafariContentBlockerBrowserHarness(
+            blockedHost: "safari-content-blocked.example"
+        )
+        defer { harness.defaults.reset() }
+        let tab = makeAttachedNormalTab(
+            in: harness,
+            url: "https://example.com/coordinator-safari-content-blocker",
+            activate: false
+        )
+        let originalWebView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerCoordinatorInitial"
+        )
+        let originalController = try XCTUnwrap(
+            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await originalController.waitForContentBlockingAssetsInstalled()
+
+        harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
+        try XCTUnwrap(harness.browserManager.webViewCoordinator).reloadTab(tab)
+
+        let replacementWebView = try XCTUnwrap(tab.existingWebView)
+        XCTAssertNotIdentical(replacementWebView, originalWebView)
+        let replacementController = try XCTUnwrap(
+            replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await replacementController.waitForContentBlockingAssetsInstalled()
+
+        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(
+            harness.ruleListIdentifiers.isDisjoint(
+                with: Set(replacementController.contentBlockingAssetSummary.globalRuleListIdentifiers)
+            )
+        )
+    }
+
+    func testPrivacyHardReloadRebuildsForSafariContentBlockerPolicyDrift() async throws {
+        let harness = try await makeSafariContentBlockerBrowserHarness(
+            blockedHost: "safari-content-blocked.example"
+        )
+        defer { harness.defaults.reset() }
+        let tab = makeAttachedNormalTab(
+            in: harness,
+            url: "https://example.com/privacy-hard-reload-safari-content-blocker",
+            activate: false
+        )
+        let originalWebView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerPrivacyInitial"
+        )
+        let originalController = try XCTUnwrap(
+            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await originalController.waitForContentBlockingAssetsInstalled()
+
+        harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
+        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+
+        let cleanupService = BrowserConfigurationFakeWebsiteDataCleanupService()
+        let privacyService = BrowserPrivacyService(
+            cleanupService: cleanupService,
+            faviconInvalidator: { _, _ in }
+        )
+        let activeWindowId = UUID()
+        privacyService.hardReloadCurrentPage(
+            using: BrowserPrivacyService.Context(
+                currentDataStore: {
+                    harness.browserManager.currentProfile?.dataStore ?? WKWebsiteDataStore.default()
+                },
+                currentTab: { tab },
+                activeWindowId: { activeWindowId },
+                webViewLookup: { tabId, windowId in
+                    tabId == tab.id && windowId == activeWindowId ? originalWebView : nil
+                }
+            )
+        )
+
+        let replacementWebView = try XCTUnwrap(tab.existingWebView)
+        XCTAssertNotIdentical(replacementWebView, originalWebView)
+        let replacementController = try XCTUnwrap(
+            replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await replacementController.waitForContentBlockingAssetsInstalled()
+        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(
+            harness.ruleListIdentifiers.isDisjoint(
+                with: Set(replacementController.contentBlockingAssetSummary.globalRuleListIdentifiers)
+            )
+        )
+    }
+
+    func testSafariContentBlockerGlobalDisableMarksLiveTabsReloadRequired() async throws {
+        let harness = try await makeSafariContentBlockerBrowserHarness(
+            blockedHost: "safari-content-blocked.example"
+        )
+        defer { harness.defaults.reset() }
+        let tab = makeAttachedNormalTab(
+            in: harness,
+            url: "https://example.com/global-disable-safari-content-blocker",
+            activate: false
+        )
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerGlobalDisableInitial"
+        )
+        let controller = try XCTUnwrap(
+            webView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await controller.waitForContentBlockingAssetsInstalled()
+        XCTAssertTrue(
+            harness.browserManager.tabManager.allTabs().contains { $0.id == tab.id }
+        )
+        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
+        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+
+        let disabledRecord = try await harness.extensionsModule.setSafariContentBlockerEnabled(
+            false,
+            bundleIdentifier: harness.installedContentBlocker.extensionBundleIdentifier
+        )
+        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+
+        XCTAssertEqual(disabledRecord?.isEnabled, false)
+        XCTAssertFalse(desiredState.isEnabled)
+        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+    }
+
+    func testSafariContentBlockerRuleUpdateMarksLiveTabsReloadRequired() async throws {
+        let harness = try await makeSafariContentBlockerBrowserHarness(
+            blockedHost: "safari-content-blocked.example"
+        )
+        defer { harness.defaults.reset() }
+        let tab = makeAttachedNormalTab(
+            in: harness,
+            url: "https://example.com/updated-safari-content-blocker",
+            activate: false
+        )
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerRuleUpdateInitial"
+        )
+        let controller = try XCTUnwrap(
+            webView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await controller.waitForContentBlockingAssetsInstalled()
+        let initialAppliedState = try XCTUnwrap(tab.safariContentBlockerAppliedAttachmentState)
+        XCTAssertTrue(initialAppliedState.isEnabled)
+        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+
+        let updatedContentBlocker = try makeSafariContentBlockerCandidate(
+            blockedHost: "updated-safari-content-blocked.example"
+        )
+        XCTAssertNotEqual(
+            updatedContentBlocker.locatedRules.resourceFingerprint,
+            harness.installedContentBlocker.resourceFingerprint
+        )
+
+        let updatedRecord = try await harness.extensionsModule.enableSafariContentBlocker(
+            from: updatedContentBlocker.candidate
+        )
+        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+
+        XCTAssertEqual(
+            updatedRecord.resourceFingerprint,
+            updatedContentBlocker.locatedRules.resourceFingerprint
+        )
+        XCTAssertFalse(initialAppliedState.hasSameEffectiveWebViewAttachment(as: desiredState))
+        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: tab.url))
+    }
+
+    func testExtensionsModuleDisableMarksSafariContentBlockerTabsReloadRequired() async throws {
+        let harness = try await makeSafariContentBlockerBrowserHarness(
+            blockedHost: "safari-content-blocked.example"
+        )
+        defer { harness.defaults.reset() }
+        let tab = makeAttachedNormalTab(
+            in: harness,
+            url: "https://example.com/module-disable-safari-content-blocker",
+            activate: false
+        )
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerModuleDisableInitial"
+        )
+        let controller = try XCTUnwrap(
+            webView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await controller.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
+        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+
+        harness.extensionsModule.setEnabled(false)
+        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+
+        XCTAssertFalse(harness.extensionsModule.isEnabled)
+        XCTAssertFalse(desiredState.isEnabled)
+        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+    }
+
+    func testExtensionsModuleEnableMarksSafariContentBlockerTabsReloadRequired() async throws {
+        let harness = try await makeSafariContentBlockerBrowserHarness(
+            blockedHost: "safari-content-blocked.example"
+        )
+        defer { harness.defaults.reset() }
+        harness.extensionsModule.setEnabled(false)
+        let tab = makeAttachedNormalTab(
+            in: harness,
+            url: "https://example.com/module-enable-safari-content-blocker",
+            activate: false
+        )
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerModuleEnableInitial"
+        )
+        let controller = try XCTUnwrap(
+            webView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await controller.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, false)
+        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+
+        harness.extensionsModule.setEnabled(true)
+        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+
+        XCTAssertTrue(harness.extensionsModule.isEnabled)
+        XCTAssertTrue(desiredState.isEnabled)
+        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: tab.url))
+    }
+
+    func testSafariContentBlockerSiteOverrideInheritMarksReloadAfterDisabledRebuild() async throws {
+        let harness = try await makeSafariContentBlockerBrowserHarness(
+            blockedHost: "safari-content-blocked.example"
+        )
+        defer { harness.defaults.reset() }
+        let tab = makeAttachedNormalTab(
+            in: harness,
+            url: "https://example.com/inherit-safari-content-blocker",
+            activate: false
+        )
+        let originalWebView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.safariContentBlockerInheritInitial"
+        )
+        let originalController = try XCTUnwrap(
+            originalWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await originalController.waitForContentBlockingAssetsInstalled()
+
+        harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
+        XCTAssertTrue(
+            tab.rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
+                targetURL: tab.url,
+                reason: "BrowserConfigurationNormalTabTests.safariContentBlockerInheritDisabled"
+            )
+        )
+        let disabledWebView = try XCTUnwrap(tab.existingWebView)
+        XCTAssertNotIdentical(disabledWebView, originalWebView)
+        let disabledController = try XCTUnwrap(
+            disabledWebView.configuration.userContentController.sumiNormalTabUserContentController
+        )
+        await disabledController.waitForContentBlockingAssetsInstalled()
+        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, false)
+        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+
+        harness.extensionsModule.setSafariContentBlockerSiteOverride(.inherit, for: tab.url)
+        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+
+        XCTAssertTrue(desiredState.isEnabled)
+        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: tab.url))
+    }
+
+    func testSafariContentBlockerEffectiveAttachmentIgnoresHostWhenRuleListsMatch() throws {
+        let firstHost = SumiSafariContentBlockerAttachmentState(
+            siteHost: "first.example",
+            isEnabledForSite: true,
+            enabledContentBlockerIds: ["blocker-b", "blocker-a"],
+            enabledContentBlockerRuleIdentities: ["blocker-b:fingerprint-b", "blocker-a:fingerprint-a"]
+        )
+        let secondHost = SumiSafariContentBlockerAttachmentState(
+            siteHost: "second.example",
+            isEnabledForSite: true,
+            enabledContentBlockerIds: ["blocker-a", "blocker-b"],
+            enabledContentBlockerRuleIdentities: ["blocker-a:fingerprint-a", "blocker-b:fingerprint-b"]
+        )
+        let disabledHost = SumiSafariContentBlockerAttachmentState(
+            siteHost: "second.example",
+            isEnabledForSite: false,
+            enabledContentBlockerIds: ["blocker-a", "blocker-b"],
+            enabledContentBlockerRuleIdentities: ["blocker-a:fingerprint-a", "blocker-b:fingerprint-b"]
+        )
+        let updatedRules = SumiSafariContentBlockerAttachmentState(
+            siteHost: "first.example",
+            isEnabledForSite: true,
+            enabledContentBlockerIds: ["blocker-b", "blocker-a"],
+            enabledContentBlockerRuleIdentities: ["blocker-b:fingerprint-b", "blocker-a:fingerprint-c"]
+        )
+
+        XCTAssertTrue(firstHost.hasSameEffectiveWebViewAttachment(as: secondHost))
+        XCTAssertFalse(firstHost.hasSameEffectiveWebViewAttachment(as: disabledHost))
+        XCTAssertFalse(firstHost.hasSameEffectiveWebViewAttachment(as: updatedRules))
+        XCTAssertTrue(disabledHost.effectiveWebViewContentBlockerRuleIdentities.isEmpty)
     }
 
     func testBrowserManagerStartupWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() {
@@ -284,6 +692,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             moduleRegistry: registry,
             userscriptsModule: module
         )
+        await waitForInitialTabManagerDataLoad(on: browserManager)
         let tab = browserManager.tabManager.createNewTab(
             url: "https://example.com/userscripts-disabled",
             in: browserManager.tabManager.currentSpace,
@@ -325,6 +734,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: module
         )
+        await waitForInitialTabManagerDataLoad(on: browserManager)
         let tab = browserManager.tabManager.createNewTab(
             url: "https://example.com/extensions-disabled",
             in: browserManager.tabManager.currentSpace,
@@ -876,6 +1286,68 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
     }
 
+    private struct SafariContentBlockerBrowserHarness {
+        let defaults: TestDefaultsHarness
+        let extensionsModule: SumiExtensionsModule
+        let browserManager: BrowserManager
+        let installedContentBlocker: InstalledSafariContentBlockerRecord
+        let ruleListIdentifiers: Set<String>
+    }
+
+    private func makeSafariContentBlockerBrowserHarness(
+        blockedHost: String
+    ) async throws -> SafariContentBlockerBrowserHarness {
+        let safariContentBlocker = try makeSafariContentBlockerCandidate(
+            blockedHost: blockedHost
+        )
+        let ruleListIdentifiers = Set(
+            safariContentBlocker.locatedRules.definitions.map(\.webKitStoreIdentifier)
+        )
+        let defaults = TestDefaultsHarness()
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: defaults.defaults)
+        )
+        registry.setEnabled(true, for: .extensions)
+        let startupContainer = try Self.makeInMemoryStartupContainer()
+        let extensionsModule = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: startupContainer.mainContext
+        )
+        let installedContentBlocker = try await extensionsModule.enableSafariContentBlocker(
+            from: safariContentBlocker.candidate
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            startupPersistence: BrowserManagerStartupPersistence(container: startupContainer),
+            extensionsModule: extensionsModule
+        )
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        await waitForStartupProtectionRestore(on: browserManager)
+        await waitForInitialTabManagerDataLoad(on: browserManager)
+        return SafariContentBlockerBrowserHarness(
+            defaults: defaults,
+            extensionsModule: extensionsModule,
+            browserManager: browserManager,
+            installedContentBlocker: installedContentBlocker,
+            ruleListIdentifiers: ruleListIdentifiers
+        )
+    }
+
+    private func makeAttachedNormalTab(
+        in harness: SafariContentBlockerBrowserHarness,
+        url: String,
+        activate: Bool
+    ) -> Tab {
+        let tabManager = harness.browserManager.tabManager
+        let tab = tabManager.createNewTab(
+            url: url,
+            in: tabManager.currentSpace,
+            activate: activate
+        )
+        XCTAssertTrue(tabManager.allTabs().contains { $0.id == tab.id })
+        return tab
+    }
+
     private func makeSafariContentBlockerCandidate(
         blockedHost: String
     ) throws -> (
@@ -990,6 +1462,15 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTFail("Timed out waiting for initial startup protection restore")
     }
 
+    private func waitForInitialTabManagerDataLoad(on browserManager: BrowserManager) async {
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if browserManager.tabManager.hasLoadedInitialData { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Timed out waiting for initial tab manager data load")
+    }
+
     private static func makeInMemoryExtensionContainer() throws -> ModelContainer {
         try ModelContainer(
             for: Schema([ExtensionEntity.self]),
@@ -1049,6 +1530,70 @@ private final class NormalTabUserscriptsRuntimeProbe {
 
 private final class NormalTabExtensionsRuntimeProbe {
     var managerCount = 0
+}
+
+private final class BrowserConfigurationFakeWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
+    func fetchCookies(in dataStore: WKWebsiteDataStore) async -> [HTTPCookie] {
+        []
+    }
+
+    func fetchWebsiteDataRecords(
+        ofTypes dataTypes: Set<String>,
+        in dataStore: WKWebsiteDataStore
+    ) async -> [WKWebsiteDataRecord] {
+        []
+    }
+
+    func fetchSiteDataEntries(
+        forDomain domain: String,
+        ofTypes dataTypes: Set<String>,
+        in dataStore: WKWebsiteDataStore
+    ) async -> [SumiSiteDataEntry] {
+        []
+    }
+
+    func removeCookies(
+        _ selection: SumiCookieRemovalSelection,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func removeWebsiteData(
+        ofTypes dataTypes: Set<String>,
+        modifiedSince date: Date,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func removeWebsiteDataForDomain(
+        _ domain: String,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func removeWebsiteDataForExactHost(
+        _ host: String,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func removeWebsiteDataForDomains(
+        _ domains: Set<String>,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async {}
+
+    @discardableResult
+    func removePersistentDataStore(forIdentifier identifier: UUID) async -> Bool {
+        false
+    }
+
+    @discardableResult
+    func prunePersistentDataStores(keeping identifiersToKeep: Set<UUID>) async -> [UUID] {
+        []
+    }
 }
 
 private final class TestNormalTabUserScript: NSObject, SumiUserScript {
