@@ -69,66 +69,6 @@ class BrowserManager: ObservableObject {
     let dataServices: BrowserManagerDataServices
     let browsingDataCleanupService: SumiBrowsingDataCleanupService
     let permissionRuntime: BrowserManagerPermissionRuntime
-    var permissionBridges: BrowserPermissionBridgeRegistry {
-        permissionRuntime.permissionBridges
-    }
-    var systemPermissionService: any SumiSystemPermissionService {
-        permissionRuntime.systemPermissionService
-    }
-    var permissionCoordinator: any SumiPermissionCoordinating {
-        permissionRuntime.permissionCoordinator
-    }
-    var runtimePermissionController: any SumiRuntimePermissionControlling {
-        permissionRuntime.runtimePermissionController
-    }
-    var webKitPermissionBridge: SumiWebKitPermissionBridge {
-        permissionRuntime.webKitPermissionBridge
-    }
-    var webKitGeolocationBridge: SumiWebKitGeolocationBridge {
-        permissionRuntime.webKitGeolocationBridge
-    }
-    var notificationPermissionBridge: SumiNotificationPermissionBridge {
-        permissionRuntime.notificationPermissionBridge
-    }
-    var filePickerPermissionBridge: SumiFilePickerPermissionBridge {
-        permissionRuntime.filePickerPermissionBridge
-    }
-    var storageAccessPermissionBridge: SumiStorageAccessPermissionBridge {
-        permissionRuntime.storageAccessPermissionBridge
-    }
-    var permissionIndicatorEventStore: SumiPermissionIndicatorEventStore {
-        permissionRuntime.permissionIndicatorEventStore
-    }
-    var permissionRecentActivityStore: SumiPermissionRecentActivityStore {
-        permissionRuntime.permissionRecentActivityStore
-    }
-    var permissionSiteActivityStore: SumiPermissionSiteActivityStore {
-        permissionRuntime.permissionSiteActivityStore
-    }
-    var permissionCleanupService: SumiPermissionCleanupService {
-        permissionRuntime.permissionCleanupService
-    }
-    var blockedPopupStore: SumiBlockedPopupStore {
-        permissionRuntime.blockedPopupStore
-    }
-    var popupPermissionBridge: SumiPopupPermissionBridge {
-        permissionRuntime.popupPermissionBridge
-    }
-    var externalAppResolver: any SumiExternalAppResolving {
-        permissionRuntime.externalAppResolver
-    }
-    var externalSchemeSessionStore: SumiExternalSchemeSessionStore {
-        permissionRuntime.externalSchemeSessionStore
-    }
-    var externalSchemePermissionBridge: SumiExternalSchemePermissionBridge {
-        permissionRuntime.externalSchemePermissionBridge
-    }
-    var permissionLifecycleController: SumiPermissionGrantLifecycleController {
-        permissionRuntime.permissionLifecycleController
-    }
-    var permissionSidebarPinningController: SumiPermissionSidebarPinningController {
-        permissionRuntime.permissionSidebarPinningController
-    }
     /// App-shell owned factory for AppKit-created browser windows.
     typealias WindowShellContentViewFactory = @MainActor (
         BrowserManager,
@@ -693,22 +633,6 @@ class BrowserManager: ObservableObject {
         beginProtectionRestoreForStartupIfNeeded()
     }
 
-    func showBrowserExtensionsUnavailableAlert(
-        extensionName: String? = nil,
-        informativeText: String? = nil
-    ) {
-        let alert = NSAlert()
-        alert.messageText = extensionName.map {
-            "\($0) is currently unavailable"
-        } ?? "Browser extensions are currently unavailable"
-        alert.informativeText =
-            informativeText
-            ?? "Sumi could not open the requested extension action. Check Settings > Extensions to confirm the extension is installed, enabled, and supported on this macOS build."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-
     /// Called when TabManager finishes loading initial data from persistence
     private func handleTabManagerDataLoaded() {
         windowSessionService.handleTabManagerDataLoaded(delegate: self)
@@ -760,34 +684,6 @@ class BrowserManager: ObservableObject {
             profile,
             context: context,
             in: windowState
-        )
-    }
-
-    @discardableResult
-    func runAutomaticPermissionCleanupIfNeeded(
-        for profile: Profile?
-    ) async -> SumiPermissionCleanupResult? {
-        guard let profile else { return nil }
-        let repository = SumiPermissionSettingsRepository(browserManager: self)
-        return await repository.runAutomaticCleanupIfNeeded(
-            profile: SumiPermissionSettingsProfileContext(profile: profile)
-        )
-    }
-
-    func scheduleAutomaticBrowsingDataCleanup(
-        reason: String,
-        force: Bool = false,
-        delayNanoseconds: UInt64? = nil
-    ) {
-        guard let sumiSettings else { return }
-        dataServices.automaticBrowsingDataCleanupService.scheduleIfNeeded(
-            retentionPeriod: sumiSettings.browsingDataRetentionPeriod,
-            historyManager: historyManager,
-            profiles: profileManager.profiles,
-            currentProfileId: currentProfile?.id,
-            force: force,
-            reason: reason,
-            delayNanoseconds: delayNanoseconds
         )
     }
 
