@@ -6,6 +6,11 @@
 //
 
 import Foundation
+import OSLog
+
+private enum UserScriptBackupDiagnostics {
+    static let log = Logger.sumi(category: "SumiScripts")
+}
 
 // MARK: - Backup (zip export / import)
 
@@ -66,10 +71,16 @@ extension UserScriptStore {
 
         var imported = 0
 
-        if let backupURL = Self.findBackupJSONFile(named: "sumi-backup.json", under: temp),
-           let data = try? Data(contentsOf: backupURL),
-           let env = try? JSONDecoder().decode(SumiUserscriptsBackupEnvelope.self, from: data) {
-            mergeImportedSumiEnvelope(env)
+        if let backupURL = Self.findBackupJSONFile(named: "sumi-backup.json", under: temp) {
+            do {
+                let data = try Data(contentsOf: backupURL)
+                let env = try JSONDecoder().decode(SumiUserscriptsBackupEnvelope.self, from: data)
+                mergeImportedSumiEnvelope(env)
+            } catch {
+                UserScriptBackupDiagnostics.log.error(
+                    "Failed to import userscript backup metadata at \(backupURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
 
         imported += try importViolentmonkeyIfPresent(root: temp)
@@ -132,13 +143,34 @@ extension UserScriptStore {
     }
 
     private func importViolentmonkeyIfPresent(root: URL) throws -> Int {
-        guard let vmURL = Self.findViolentmonkeyJSON(under: root),
-              let data = try? Data(contentsOf: vmURL),
-              let rootObj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let scripts = rootObj["scripts"] as? [[String: Any]]
-        else {
+        guard let vmURL = Self.findViolentmonkeyJSON(under: root) else {
             return 0
         }
+
+        let rootObj: [String: Any]
+        do {
+            let data = try Data(contentsOf: vmURL)
+            guard let decoded = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                UserScriptBackupDiagnostics.log.error(
+                    "Violentmonkey userscript backup at \(vmURL.path, privacy: .public) is not a JSON object"
+                )
+                return 0
+            }
+            rootObj = decoded
+        } catch {
+            UserScriptBackupDiagnostics.log.error(
+                "Failed to read Violentmonkey userscript backup at \(vmURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return 0
+        }
+
+        guard let scripts = rootObj["scripts"] as? [[String: Any]] else {
+            UserScriptBackupDiagnostics.log.error(
+                "Violentmonkey userscript backup at \(vmURL.path, privacy: .public) has no scripts array"
+            )
+            return 0
+        }
+
         var count = 0
         for (idx, obj) in scripts.enumerated() {
             guard let code = obj["code"] as? String ?? obj["source"] as? String,

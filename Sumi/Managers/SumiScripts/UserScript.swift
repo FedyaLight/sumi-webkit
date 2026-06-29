@@ -7,9 +7,12 @@
 //
 
 import Foundation
+import OSLog
 import WebKit
 
 final class SumiInstalledUserScript: Identifiable {
+    private static let log = Logger.sumi(category: "SumiScripts")
+
     let id: UUID
     let filename: String
     /// When `lazyScriptBody` is enabled, code may be empty until first `assembledCode` / `code` access; then loaded from `sourceFileURL`.
@@ -136,9 +139,20 @@ final class SumiInstalledUserScript: Identifiable {
 
     private func resolveDeferredBodyIfNeeded() {
         guard let fileURL = sourceFileURL, metadata.code.isEmpty else { return }
-        guard let content = try? String(contentsOf: fileURL, encoding: .utf8),
-              let reparsed = UserScriptMetadataParser.parse(content)
-        else {
+        let content: String
+        do {
+            content = try String(contentsOf: fileURL, encoding: .utf8)
+        } catch {
+            Self.log.error(
+                "Failed to read lazy userscript source at \(fileURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+
+        guard let reparsed = UserScriptMetadataParser.parse(content) else {
+            Self.log.error(
+                "Failed to parse lazy userscript source at \(fileURL.path, privacy: .public)"
+            )
             return
         }
         metadata = reparsed

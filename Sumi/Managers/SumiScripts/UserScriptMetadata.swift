@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import OSLog
 
 // MARK: - Enums
 
@@ -124,35 +125,65 @@ struct UserScriptMetadata {
 // MARK: - Parser
 
 enum UserScriptMetadataParser {
+    private static let log = Logger.sumi(category: "SumiScripts")
+
     // RE for full metablock extraction
     // Group 1/2/3: SumiInstalledUserScript format (metablock, metas, code)
     // Group 4/5/6: UserStyle format (metablock, metas, code)
-    private static let metablockRE = try! NSRegularExpression(
+    private static let metablockRE = compileRegex(
+        label: "metablock",
         pattern: #"(?:(\/\/ ==UserScript==[ \t]*?\r?\n([\S\s]*?)\r?\n\/\/ ==\/UserScript==)([\S\s]*)|(\/\* ==UserStyle==[ \t]*?\r?\n([\S\s]*?)\r?\n==\/UserStyle== \*\/)([\S\s]*))"#,
         options: []
     )
 
     // RE for key-value meta lines: // @key value
-    private static let metaLineRE = try! NSRegularExpression(
+    private static let metaLineRE = compileRegex(
+        label: "meta-line",
         pattern: #"^(?:[ \t]*(?:\/\/)?[ \t]*@)([\w:-]+)[ \t]+([^\s]+[^\r\nt\v\f]*)"#,
         options: []
     )
 
     // RE for valueless meta keys (e.g. @noframes)
-    private static let metaKeyOnlyRE = try! NSRegularExpression(
+    private static let metaKeyOnlyRE = compileRegex(
+        label: "meta-key-only",
         pattern: #"^(?:[ \t]*(?:\/\/)?[ \t]*@)(noframes|unwrap|top-level-await)[ \t]*$"#,
         options: []
     )
 
     // RE for @resource: // @resource name url
-    private static let resourceRE = try! NSRegularExpression(
+    private static let resourceRE = compileRegex(
+        label: "resource",
         pattern: #"^(?:[ \t]*(?:\/\/)?[ \t]*@)resource[ \t]+([^\s]+)[ \t]+([^\s]+)"#,
         options: []
     )
 
+    private static func compileRegex(
+        label: String,
+        pattern: String,
+        options: NSRegularExpression.Options
+    ) -> NSRegularExpression? {
+        do {
+            return try NSRegularExpression(pattern: pattern, options: options)
+        } catch {
+            assertionFailure("Invalid userscript metadata regex '\(label)': \(error)")
+            log.error(
+                "Invalid userscript metadata regex '\(label, privacy: .public)': \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+    }
+
     /// Parse a userscript/userstyle file content into structured metadata.
     /// Returns nil if metablock is missing or @name is absent.
     static func parse(_ content: String) -> UserScriptMetadata? {
+        guard let metablockRE = Self.metablockRE,
+              let metaLineRE = Self.metaLineRE,
+              let metaKeyOnlyRE = Self.metaKeyOnlyRE,
+              let resourceRE = Self.resourceRE
+        else {
+            return nil
+        }
+
         let nsContent = content as NSString
         let fullRange = NSRange(location: 0, length: nsContent.length)
 

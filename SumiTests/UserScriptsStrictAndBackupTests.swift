@@ -122,4 +122,19 @@ final class UserScriptsStrictAndBackupTests: XCTestCase {
         let store2 = UserScriptStore(directory: dir, context: nil)
         XCTAssertEqual(store2.autoUpdateInterval, "daily")
     }
+
+    func testCorruptManifestFallsBackWithoutOverwritingFileOnLoad() throws {
+        let dir = try tempScriptsDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        try writeScript(named: "corrupt-manifest.user.js", in: dir)
+        let manifestURL = dir.appendingPathComponent("manifest.json")
+        let corruptManifest = "{ not valid json"
+        try corruptManifest.write(to: manifestURL, atomically: true, encoding: .utf8)
+
+        let store = UserScriptStore(directory: dir, context: nil)
+
+        XCTAssertEqual(store.scripts.count, 1)
+        XCTAssertEqual(try String(contentsOf: manifestURL, encoding: .utf8), corruptManifest)
+    }
 }

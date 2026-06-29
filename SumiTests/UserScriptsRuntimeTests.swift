@@ -52,6 +52,27 @@ final class UserScriptsRuntimeTests: XCTestCase {
         XCTAssertTrue(metadata.topLevelAwait)
     }
 
+    func testMetadataParserRejectsMissingNameWithoutCrashing() {
+        let source = """
+        // ==UserScript==
+        // @match https://example.test/*
+        // ==/UserScript==
+        console.log('missing-name');
+        """
+
+        XCTAssertNil(UserScriptMetadataParser.parse(source))
+    }
+
+    func testMetadataParserRejectsMalformedMetablockWithoutCrashing() {
+        let source = """
+        // ==UserScript==
+        // @name Missing End Marker
+        console.log('malformed');
+        """
+
+        XCTAssertNil(UserScriptMetadataParser.parse(source))
+    }
+
     func testMatchEngineHonorsMatchIncludeAndExcludeRules() throws {
         let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
         // ==UserScript==

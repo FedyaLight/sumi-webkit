@@ -8,7 +8,12 @@
 //
 
 import Foundation
+import OSLog
 import SwiftData
+
+private enum UserScriptSwiftDataDiagnostics {
+    static let log = Logger.sumi(category: "SumiScripts")
+}
 
 extension UserScriptStore {
     func persist(
@@ -17,7 +22,7 @@ extension UserScriptStore {
     ) {
         guard let context else { return }
         let metadataJSON = Self.metadataSnapshotJSON(script.metadata)
-        let hash = Self.sha256Hex((try? Data(contentsOf: sourceURL)) ?? Data(script.code.utf8))
+        let hash = Self.sha256Hex(sourceDataForHash(sourceURL: sourceURL, fallbackCode: script.code))
         if let entity = existingEntity(namespace: script.metadata.namespace ?? "", name: script.metadata.name) {
             entity.version = script.metadata.version
             entity.scriptDescription = script.metadata.description
@@ -54,7 +59,7 @@ extension UserScriptStore {
                 )
             )
         }
-        try? context.save()
+        saveUserScriptContext(context, operation: "saving userscript metadata mirror for \(script.filename)")
     }
 
     func persistResource(
@@ -78,32 +83,75 @@ extension UserScriptStore {
                 contentHash: Self.sha256Hex(data)
             )
         )
-        try? context.save()
+        saveUserScriptContext(context, operation: "saving userscript resource mirror for \(name)")
     }
 
     func clearPersistedResources(for scriptId: UUID) {
         guard let context else { return }
         let descriptor = FetchDescriptor<UserScriptResourceEntity>()
-        let existing = (try? context.fetch(descriptor)) ?? []
+        let existing: [UserScriptResourceEntity]
+        do {
+            existing = try context.fetch(descriptor)
+        } catch {
+            UserScriptSwiftDataDiagnostics.log.error(
+                "Failed to fetch userscript resources before clearing \(scriptId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
         for resource in existing where resource.scriptId == scriptId {
             context.delete(resource)
         }
-        try? context.save()
+        saveUserScriptContext(context, operation: "clearing userscript resources for \(scriptId.uuidString)")
     }
 
     func existingEntity(namespace: String, name: String) -> UserScriptEntity? {
         guard let context else { return nil }
         let descriptor = FetchDescriptor<UserScriptEntity>()
-        return try? context.fetch(descriptor).first {
-            $0.namespace == namespace && $0.name == name
+        do {
+            return try context.fetch(descriptor).first {
+                $0.namespace == namespace && $0.name == name
+            }
+        } catch {
+            UserScriptSwiftDataDiagnostics.log.error(
+                "Failed to fetch userscript entity for \(namespace, privacy: .public)/\(name, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
         }
     }
 
     func contextEntity(filename: String) -> UserScriptEntity? {
         guard let context else { return nil }
         let descriptor = FetchDescriptor<UserScriptEntity>()
-        return try? context.fetch(descriptor).first {
-            URL(fileURLWithPath: $0.sourcePath).lastPathComponent == filename
+        do {
+            return try context.fetch(descriptor).first {
+                URL(fileURLWithPath: $0.sourcePath).lastPathComponent == filename
+            }
+        } catch {
+            UserScriptSwiftDataDiagnostics.log.error(
+                "Failed to fetch userscript entity for \(filename, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+    }
+
+    private func sourceDataForHash(sourceURL: URL, fallbackCode: String) -> Data {
+        do {
+            return try Data(contentsOf: sourceURL)
+        } catch {
+            UserScriptSwiftDataDiagnostics.log.error(
+                "Failed to read userscript source for SwiftData hash at \(sourceURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return Data(fallbackCode.utf8)
+        }
+    }
+
+    private func saveUserScriptContext(_ context: ModelContext, operation: String) {
+        do {
+            try context.save()
+        } catch {
+            UserScriptSwiftDataDiagnostics.log.error(
+                "Failed \(operation, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 }

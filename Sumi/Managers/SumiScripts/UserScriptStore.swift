@@ -10,10 +10,13 @@
 
 import CryptoKit
 import Foundation
+import OSLog
 import SwiftData
 
 @MainActor
 final class UserScriptStore {
+    private static let log = Logger.sumi(category: "SumiScripts")
+
     // MARK: - Manifest
 
     struct Manifest: Codable {
@@ -226,13 +229,29 @@ final class UserScriptStore {
 
     func delete(filename: String) {
         let url = scriptsDirectory.appendingPathComponent(filename)
-        try? fileManager.removeItem(at: url)
+        if fileManager.fileExists(atPath: url.path) {
+            do {
+                try fileManager.removeItem(at: url)
+            } catch {
+                Self.log.error(
+                    "Failed to delete userscript source at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
         manifest.disabled.removeAll { $0 == filename }
         removeOriginRules(for: filename)
         saveManifest()
         if let entity = contextEntity(filename: filename) {
             context?.delete(entity)
-            try? context?.save()
+            if let context {
+                do {
+                    try context.save()
+                } catch {
+                    Self.log.error(
+                        "Failed to save userscript deletion mirror for \(filename, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
         }
         reload()
         onScriptsChanged?()
@@ -243,11 +262,17 @@ final class UserScriptStore {
     private func loadAllScripts() -> [SumiInstalledUserScript] {
         ensureDirectoryExists(scriptsDirectory)
 
-        guard let urls = try? fileManager.contentsOfDirectory(
-            at: scriptsDirectory,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
-        ) else {
+        let urls: [URL]
+        do {
+            urls = try fileManager.contentsOfDirectory(
+                at: scriptsDirectory,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants]
+            )
+        } catch {
+            Self.log.error(
+                "Failed to list userscripts directory at \(self.scriptsDirectory.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
             return []
         }
 
@@ -261,9 +286,17 @@ final class UserScriptStore {
                 continue
             }
 
-            guard let content = try? String(contentsOf: url, encoding: .utf8),
-                  let parsedMeta = UserScriptMetadataParser.parse(content)
-            else {
+            let content: String
+            do {
+                content = try String(contentsOf: url, encoding: .utf8)
+            } catch {
+                Self.log.error(
+                    "Failed to read userscript source at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+                continue
+            }
+
+            guard let parsedMeta = UserScriptMetadataParser.parse(content) else {
                 continue
             }
 
@@ -319,7 +352,7 @@ final class UserScriptStore {
             let localFile = scriptRequireDir.appendingPathComponent(sanitizedName)
 
             if fileManager.fileExists(atPath: localFile.path),
-               let content = try? String(contentsOf: localFile, encoding: .utf8) {
+               let content = readCachedTextFile(localFile, description: "userscript @require cache") {
                 results.append(content)
             }
         }
@@ -342,7 +375,7 @@ final class UserScriptStore {
             let localFile = scriptResourceDir.appendingPathComponent(sanitizedName)
 
             if fileManager.fileExists(atPath: localFile.path),
-               let content = try? String(contentsOf: localFile, encoding: .utf8) {
+               let content = readCachedTextFile(localFile, description: "userscript @resource cache") {
                 result[name] = content
             }
         }
@@ -444,15 +477,33 @@ final class UserScriptStore {
     // MARK: - Manifest
 
     private func loadManifest() {
-        guard fileManager.fileExists(atPath: manifestURL.path),
-              let data = try? Data(contentsOf: manifestURL),
-              let decoded = try? JSONDecoder().decode(Manifest.self, from: data)
-        else {
+        guard fileManager.fileExists(atPath: manifestURL.path) else {
             manifest = .default
             saveManifest()
             return
         }
-        manifest = decoded
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: manifestURL)
+        } catch {
+            Self.log.error(
+                "Failed to read userscript manifest at \(self.manifestURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            manifest = .default
+            return
+        }
+
+        do {
+            manifest = try JSONDecoder().decode(Manifest.self, from: data)
+        } catch {
+            Self.log.error(
+                "Failed to decode userscript manifest at \(self.manifestURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            manifest = .default
+            return
+        }
+
         mergeLegacyManifestDefaults()
     }
 
@@ -467,8 +518,14 @@ final class UserScriptStore {
     func saveManifest() {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(manifest) else { return }
-        try? data.write(to: manifestURL, options: .atomic)
+        do {
+            let data = try encoder.encode(manifest)
+            try data.write(to: manifestURL, options: .atomic)
+        } catch {
+            Self.log.error(
+                "Failed to write userscript manifest at \(self.manifestURL.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     // MARK: - FSEvents Watcher
@@ -505,7 +562,24 @@ final class UserScriptStore {
 
     private func ensureDirectoryExists(_ url: URL) {
         if !fileManager.fileExists(atPath: url.path) {
-            try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+            do {
+                try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
+            } catch {
+                Self.log.error(
+                    "Failed to create userscript directory at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
+    }
+
+    private func readCachedTextFile(_ url: URL, description: String) -> String? {
+        do {
+            return try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            Self.log.error(
+                "Failed to read \(description, privacy: .public) at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
         }
     }
 
