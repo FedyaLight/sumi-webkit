@@ -50,8 +50,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let mediaRuntime = TabMediaRuntime()
     let popupUserActivationTracker = SumiPopupUserActivationTracker()
     let faviconRuntime = TabFaviconRuntime()
+    let profileResolutionOwner = TabProfileResolutionOwner()
     private let webViewRuntime = TabWebViewRuntime()
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
+    let webViewProvisioningOwner = TabWebViewProvisioningOwner()
     lazy var ownedWebViewPreparationOwner = TabOwnedWebViewPreparationOwner(
         dependencies: .live(tab: self)
     )
