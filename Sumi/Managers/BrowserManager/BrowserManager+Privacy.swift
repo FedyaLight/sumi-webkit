@@ -4,12 +4,12 @@ import WebKit
 extension BrowserManager {
     func clearCurrentPageCookies() {
         guard let tab = activePageTabForActiveWindow(), !tab.representsSumiNativeSurface else { return }
-        privacyService.clearCurrentPageCookies(using: makePrivacyContext())
+        dataServices.privacyService.clearCurrentPageCookies(using: makePrivacyContext())
     }
 
     func hardReloadCurrentPage() {
         guard let tab = activePageTabForActiveWindow(), !tab.representsSumiNativeSurface else { return }
-        privacyService.hardReloadCurrentPage(using: makePrivacyContext())
+        dataServices.privacyService.hardReloadCurrentPage(using: makePrivacyContext())
     }
 
     private func makePrivacyContext() -> BrowserPrivacyService.Context {

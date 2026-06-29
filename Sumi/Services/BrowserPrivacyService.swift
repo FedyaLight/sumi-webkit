@@ -10,9 +10,16 @@ final class BrowserPrivacyService {
     }
 
     private let cleanupService: any SumiWebsiteDataCleanupServicing
+    private let invalidateFaviconSite: @MainActor (String, Profile?) -> Void
 
-    init(cleanupService: (any SumiWebsiteDataCleanupServicing)? = nil) {
+    init(
+        cleanupService: (any SumiWebsiteDataCleanupServicing)? = nil,
+        faviconInvalidator: (@MainActor (String, Profile?) -> Void)? = nil
+    ) {
         self.cleanupService = cleanupService ?? SumiWebsiteDataCleanupService.shared
+        self.invalidateFaviconSite = faviconInvalidator ?? { domain, profile in
+            SumiFaviconSystem.shared.invalidateSite(domain: domain, profile: profile)
+        }
     }
 
     func clearCurrentPageCookies(using context: Context) {
@@ -42,10 +49,7 @@ final class BrowserPrivacyService {
                 includingCookies: false,
                 in: dataStore
             )
-            SumiFaviconSystem.shared.invalidateSite(
-                domain: host,
-                profile: currentTab.resolveProfile()
-            )
+            invalidateFaviconSite(host, currentTab.resolveProfile())
         }
     }
 

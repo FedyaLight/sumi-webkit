@@ -2,7 +2,7 @@ import Foundation
 
 extension BrowserManager {
     func enforceSiteDataPolicyAfterNavigation(for tab: Tab) {
-        SumiSiteDataPolicyEnforcementService.shared
+        dataServices.siteDataPolicyEnforcementService
             .enforceBlockStorageIfNeeded(
                 for: tab.url,
                 profile: tab.resolveProfile()
@@ -10,7 +10,7 @@ extension BrowserManager {
     }
 
     func performSiteDataPolicyAllWindowsClosedCleanup() async {
-        await SumiSiteDataPolicyEnforcementService.shared
+        await dataServices.siteDataPolicyEnforcementService
             .performAllWindowsClosedCleanup(profiles: profileManager.profiles)
     }
 }

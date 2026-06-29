@@ -196,6 +196,7 @@ class BrowserManager: ObservableObject {
     var splitManager: SplitViewManager
     var workspaceThemeCoordinator: WorkspaceThemeCoordinator
     var findManager: FindManager
+    let dataServices: BrowserManagerDataServices
     let browsingDataCleanupService: SumiBrowsingDataCleanupService
     let permissionRuntime: BrowserManagerPermissionRuntime
     var permissionBridges: BrowserPermissionBridgeRegistry {
@@ -281,7 +282,6 @@ class BrowserManager: ObservableObject {
     let profileMaintenanceService = SumiProfileMaintenanceService()
     let windowShellService = BrowserWindowShellService()
     let workspaceAppearanceService = WorkspaceAppearanceService()
-    let privacyService = BrowserPrivacyService()
     let liveFolderManager = SumiLiveFolderManager()
     private let permissionSiteSettingsRoutingOwner = BrowserPermissionSiteSettingsRoutingOwner()
     private let tabSelectionOwner = BrowserTabSelectionOwner()
@@ -497,6 +497,7 @@ class BrowserManager: ObservableObject {
             auxiliaryWindowManager: auxiliaryWindowManager,
             bookmarkManager: bookmarkManager,
             extensionsModule: extensionsModule,
+            faviconService: dataServices.faviconService,
             historyManager: historyManager,
             tabManager: tabManager
         )
@@ -610,7 +611,8 @@ class BrowserManager: ObservableObject {
         extensionsModule: SumiExtensionsModule? = nil,
         userscriptsModule: SumiUserscriptsModule? = nil,
         boostsModule: SumiBoostsModule? = nil,
-        browsingDataCleanupService: SumiBrowsingDataCleanupService = .shared,
+        browsingDataCleanupService: SumiBrowsingDataCleanupService? = nil,
+        dataServices: BrowserManagerDataServices = .production,
         systemPermissionService: (any SumiSystemPermissionService)? = nil,
         permissionCoordinator: (any SumiPermissionCoordinating)? = nil,
         geolocationProvider: (any SumiGeolocationProviding)? = nil,
@@ -630,6 +632,9 @@ class BrowserManager: ObservableObject {
         defer {
             StartupPerformanceTrace.browserManagerInitFinished(startupTrace)
         }
+        let resolvedDataServices = browsingDataCleanupService.map {
+            dataServices.replacing(browsingDataCleanupService: $0)
+        } ?? dataServices
 
         // Phase 1: initialize all stored properties
         let startupModelContext = startupPersistence.mainContext
@@ -680,7 +685,7 @@ class BrowserManager: ObservableObject {
         self.bookmarkManager = SumiBookmarkManager()
         if let initialProfile {
             self.bookmarkManager.setFaviconPrefetchPartition(
-                SumiFaviconSystem.shared.partition(profile: initialProfile)
+                resolvedDataServices.faviconService.partition(profile: initialProfile)
             )
         }
         self.recentlyClosedManager = RecentlyClosedManager()
@@ -694,7 +699,8 @@ class BrowserManager: ObservableObject {
         self.splitManager = SplitViewManager()
         self.workspaceThemeCoordinator = WorkspaceThemeCoordinator()
         self.findManager = FindManager()
-        self.browsingDataCleanupService = browsingDataCleanupService
+        self.dataServices = resolvedDataServices
+        self.browsingDataCleanupService = resolvedDataServices.browsingDataCleanupService
         self.permissionRuntime = BrowserManagerPermissionRuntime(
             dependencies: BrowserManagerPermissionRuntime.Dependencies(
                 startupPersistence: startupPersistence,
@@ -811,7 +817,7 @@ class BrowserManager: ObservableObject {
 
         func drainBrowserRuntimeTasksForTests(cancel: Bool = false) async {
             await drainProtectionRuntimeTasksForTests(cancel: cancel)
-            await SumiFaviconSystem.shared.drainRuntimeTasksForTests(cancel: cancel)
+            await dataServices.faviconService.drainRuntimeTasksForTests(cancel: cancel)
         }
     #endif
 
@@ -862,7 +868,7 @@ class BrowserManager: ObservableObject {
         delayNanoseconds: UInt64? = nil
     ) {
         guard let sumiSettings else { return }
-        SumiAutomaticBrowsingDataCleanupService.shared.scheduleIfNeeded(
+        dataServices.automaticBrowsingDataCleanupService.scheduleIfNeeded(
             retentionPeriod: sumiSettings.browsingDataRetentionPeriod,
             historyManager: historyManager,
             profiles: profileManager.profiles,

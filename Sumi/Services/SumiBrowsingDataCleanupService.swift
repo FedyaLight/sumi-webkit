@@ -155,6 +155,13 @@ protocol SumiDestructiveBrowsingDataCleanupPreparing: AnyObject {
 }
 
 @MainActor
+protocol SumiVisitedLinkStoreReplacing: AnyObject {
+    func replaceVisitedLinks(_ urls: [URL], for profileId: UUID)
+}
+
+extension SharedVisitedLinkStoreProvider: SumiVisitedLinkStoreReplacing {}
+
+@MainActor
 final class SumiBrowsingDataAppResidueCleaner: SumiBrowsingDataAppResidueCleaning {
     static let shared = SumiBrowsingDataAppResidueCleaner()
 
@@ -187,6 +194,7 @@ final class SumiBrowsingDataCleanupService {
     private let faviconCacheCleaner: any SumiBrowsingDataFaviconCleaning
     private let appResidueCleaner: any SumiBrowsingDataAppResidueCleaning
     private let basicAuthCredentialStore: any SumiBasicAuthCredentialCleaning
+    private let visitedLinkStore: any SumiVisitedLinkStoreReplacing
     private let sharedWebsiteDataStoreProvider: @MainActor () -> WKWebsiteDataStore
     private let referenceDateProvider: @MainActor () -> Date
     weak var destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)?
@@ -196,6 +204,7 @@ final class SumiBrowsingDataCleanupService {
         faviconCacheCleaner: (any SumiBrowsingDataFaviconCleaning)? = nil,
         appResidueCleaner: (any SumiBrowsingDataAppResidueCleaning)? = nil,
         basicAuthCredentialStore: (any SumiBasicAuthCredentialCleaning)? = nil,
+        visitedLinkStore: (any SumiVisitedLinkStoreReplacing)? = nil,
         destructiveCleanupPreparer: (any SumiDestructiveBrowsingDataCleanupPreparing)? = nil,
         sharedWebsiteDataStoreProvider: @escaping @MainActor () -> WKWebsiteDataStore = {
             .default()
@@ -207,6 +216,7 @@ final class SumiBrowsingDataCleanupService {
         self.faviconCacheCleaner = faviconCacheCleaner ?? SumiFaviconSystem.shared
         self.appResidueCleaner = appResidueCleaner ?? SumiBrowsingDataAppResidueCleaner.shared
         self.basicAuthCredentialStore = basicAuthCredentialStore ?? BasicAuthCredentialStore()
+        self.visitedLinkStore = visitedLinkStore ?? SharedVisitedLinkStoreProvider.shared
         self.destructiveCleanupPreparer = destructiveCleanupPreparer
         self.sharedWebsiteDataStoreProvider = sharedWebsiteDataStoreProvider
         self.referenceDateProvider = referenceDateProvider
@@ -532,7 +542,7 @@ final class SumiBrowsingDataCleanupService {
         historyManager: HistoryManager
     ) async throws {
         let urls = try await historyManager.store.fetchVisitedURLs(profileId: profileId)
-        SharedVisitedLinkStoreProvider.shared.replaceVisitedLinks(urls, for: profileId)
+        visitedLinkStore.replaceVisitedLinks(urls, for: profileId)
     }
 
     private func clearWebsiteData(

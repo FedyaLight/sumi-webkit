@@ -25,6 +25,7 @@ final class BrowserProfileSwitchTransitionOwner {
         let auxiliaryWindowManager: AuxiliaryWindowManager
         let bookmarkManager: SumiBookmarkManager
         let extensionsModule: SumiExtensionsModule
+        let faviconService: any BrowserFaviconServicing
         let historyManager: HistoryManager
         let tabManager: TabManager
     }
@@ -121,7 +122,7 @@ final class BrowserProfileSwitchTransitionOwner {
         host.currentProfile = profile
         host.windowRegistry?.activeWindow?.currentProfileId = profile.id
         dependencies.bookmarkManager.setFaviconPrefetchPartition(
-            SumiFaviconSystem.shared.partition(profile: profile)
+            dependencies.faviconService.partition(profile: profile)
         )
         dependencies.extensionsModule.switchProfileIfLoaded(profile)
         dependencies.historyManager.switchProfile(profile.id)
