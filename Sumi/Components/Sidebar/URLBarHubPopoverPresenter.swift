@@ -104,7 +104,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
         anchors[windowState.id] = registration
 
         if let session = activeSessions[windowState.id] {
-            update(session, using: registration)
+            update(session, using: registration, browserContext: browserContext)
         }
     }
 
@@ -130,7 +130,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
     func present(in windowState: BrowserWindowState, browserContext: URLBarHubBrowserContext) {
         if let session = activeSessions[windowState.id],
            let registration = anchors[windowState.id] {
-            update(session, using: registration)
+            update(session, using: registration, browserContext: browserContext)
             return
         }
 
@@ -205,6 +205,7 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
         let hostingController = makeHostingController(
             registration: registration,
+            browserContext: browserContext,
             windowID: windowState.id
         )
         let initialSize = measuredContentSize(
@@ -289,11 +290,13 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func update(
         _ session: ActiveSession,
-        using registration: AnchorRegistration
+        using registration: AnchorRegistration,
+        browserContext: URLBarHubBrowserContext
     ) {
         session.popover.appearance = popoverAppearance(for: registration)
         session.hostingController.rootView = rootView(
             registration: registration,
+            browserContext: browserContext,
             windowID: registration.windowState?.id
         )
         session.hostingController.view.frame.size = session.contentSize
@@ -301,11 +304,13 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func makeHostingController(
         registration: AnchorRegistration,
+        browserContext: URLBarHubBrowserContext,
         windowID: UUID
     ) -> NSHostingController<URLBarHubPopoverRootView> {
         NSHostingController(
             rootView: rootView(
                 registration: registration,
+                browserContext: browserContext,
                 windowID: windowID
             )
         )
@@ -313,11 +318,12 @@ final class URLBarHubPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func rootView(
         registration: AnchorRegistration,
+        browserContext: URLBarHubBrowserContext,
         windowID: UUID?
     ) -> URLBarHubPopoverRootView {
         let colorScheme = popoverColorScheme(for: registration)
         return URLBarHubPopoverRootView(
-            browserContext: registration.browserContext,
+            browserContext: browserContext,
             windowState: registration.windowState,
             settings: registration.settings ?? SumiSettingsService(),
             themeContext: popoverThemeContext(for: registration, colorScheme: colorScheme),
