@@ -32,6 +32,7 @@ final class HistoryManager: ObservableObject {
         let faviconCleaner: any HistoryFaviconCleaning
         let visitedLinkStore: any HistoryVisitedLinkStoring
 
+        @MainActor
         static var production: Self {
             Dependencies(
                 faviconCleaner: SumiFaviconSystem.shared,

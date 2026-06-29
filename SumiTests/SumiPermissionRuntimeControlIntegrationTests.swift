@@ -6,7 +6,11 @@ import XCTest
 final class SumiPermissionRuntimeControlIntegrationTests: XCTestCase {
     func testActiveCameraRuntimeControlExposesOnlyRuntimeActions() throws {
         let controls = SumiPermissionRuntimeControlsViewModel.makeControls(
-            runtimeState: SumiRuntimePermissionState(camera: .active, microphone: .none),
+            runtimeState: SumiRuntimePermissionState(
+                camera: .active,
+                microphone: .none,
+                geolocation: .none
+            ),
             reloadRequired: false,
             displayDomain: "example.com"
         )
@@ -23,7 +27,8 @@ final class SumiPermissionRuntimeControlIntegrationTests: XCTestCase {
             runtimeState: SumiRuntimePermissionState(
                 camera: .none,
                 microphone: .none,
-                screenCapture: .active
+                screenCapture: .active,
+                geolocation: .none
             ),
             reloadRequired: false,
             displayDomain: "screen.example"
