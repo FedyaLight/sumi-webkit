@@ -88,8 +88,48 @@ private struct SumiBackgroundMediaOptimizationCommand: Equatable {
 }
 
 @MainActor
+struct SumiBackgroundMediaOptimizationRuntime {
+    typealias JavaScriptCommandExecutor = @MainActor (
+        _ webView: WKWebView,
+        _ source: String,
+        _ arguments: [String: Any]
+    ) -> Void
+
+    let webViewCoordinator: () -> WebViewCoordinator?
+    let energySaverActive: () -> Bool
+    let allKnownTabs: () -> [Tab]
+    let visibleTabIDsByWindow: () -> [UUID: Set<UUID>]
+    let executeJavaScriptCommand: JavaScriptCommandExecutor
+
+    init(
+        webViewCoordinator: @escaping @MainActor () -> WebViewCoordinator?,
+        energySaverActive: @escaping @MainActor () -> Bool,
+        allKnownTabs: @escaping @MainActor () -> [Tab],
+        visibleTabIDsByWindow: @escaping @MainActor () -> [UUID: Set<UUID>],
+        executeJavaScriptCommand: @escaping JavaScriptCommandExecutor =
+            SumiBackgroundMediaOptimizationRuntime.defaultJavaScriptCommandExecutor
+    ) {
+        self.webViewCoordinator = webViewCoordinator
+        self.energySaverActive = energySaverActive
+        self.allKnownTabs = allKnownTabs
+        self.visibleTabIDsByWindow = visibleTabIDsByWindow
+        self.executeJavaScriptCommand = executeJavaScriptCommand
+    }
+
+    static let defaultJavaScriptCommandExecutor: JavaScriptCommandExecutor = { webView, source, arguments in
+        webView.callAsyncJavaScript(
+            source,
+            arguments: arguments,
+            in: nil,
+            in: .defaultClient,
+            completionHandler: nil
+        )
+    }
+}
+
+@MainActor
 final class SumiBackgroundMediaOptimizationService {
-    private weak var browserManager: BrowserManager?
+    private var runtime: SumiBackgroundMediaOptimizationRuntime?
     private var energySaverPolicyObserver: NSObjectProtocol?
     private var scheduledReconcileTask: Task<Void, Never>?
     private var pendingReasons: [String] = []
@@ -117,8 +157,8 @@ final class SumiBackgroundMediaOptimizationService {
         }
     }
 
-    func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    func attach(runtime: SumiBackgroundMediaOptimizationRuntime) {
+        self.runtime = runtime
     }
 
     func scheduleReconcile(reason: String) {
@@ -144,8 +184,8 @@ final class SumiBackgroundMediaOptimizationService {
     }
 
     func reconcileNow(reason: String) {
-        guard let browserManager,
-              let coordinator = browserManager.webViewCoordinator
+        guard let runtime,
+              let coordinator = runtime.webViewCoordinator()
         else { return }
 
         if shouldResetAppliedCommands(for: reason) {
@@ -153,12 +193,12 @@ final class SumiBackgroundMediaOptimizationService {
         }
 
         let policy = SumiBackgroundMediaOptimizationPolicy.make(
-            energySaverActive: browserManager.sumiSettings?.energySaverActivation.isActive ?? false
+            energySaverActive: runtime.energySaverActive()
         )
-        let visibleTabIDsByWindow = effectiveVisibleTabIDsByWindow(browserManager: browserManager)
+        let visibleTabIDsByWindow = runtime.visibleTabIDsByWindow()
         var liveWebViewIDs = Set<ObjectIdentifier>()
 
-        for tab in allKnownTabs(browserManager: browserManager) {
+        for tab in runtime.allKnownTabs() {
             let entries = liveWebViewEntries(for: tab, coordinator: coordinator)
             guard !entries.isEmpty else { continue }
 
@@ -174,7 +214,8 @@ final class SumiBackgroundMediaOptimizationService {
                     mode: mode,
                     graceMilliseconds: policy.hiddenGraceMilliseconds,
                     to: entry.webView,
-                    reason: reason
+                    reason: reason,
+                    runtime: runtime
                 )
             }
         }
@@ -186,7 +227,8 @@ final class SumiBackgroundMediaOptimizationService {
         mode: SumiBackgroundMediaOptimizationMode,
         graceMilliseconds: Int,
         to webView: WKWebView,
-        reason: String
+        reason: String,
+        runtime: SumiBackgroundMediaOptimizationRuntime
     ) {
         let command = SumiBackgroundMediaOptimizationCommand(
             mode: mode,
@@ -207,27 +249,11 @@ final class SumiBackgroundMediaOptimizationService {
             "reason": reason,
         ]
 
-        webView.callAsyncJavaScript(
+        runtime.executeJavaScriptCommand(
+            webView,
             source,
-            arguments: arguments,
-            in: nil,
-            in: .defaultClient,
-            completionHandler: nil
+            arguments
         )
-    }
-
-    private func effectiveVisibleTabIDsByWindow(browserManager: BrowserManager) -> [UUID: Set<UUID>] {
-        guard let windowRegistry = browserManager.windowRegistry else { return [:] }
-
-        var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
-        for windowState in windowRegistry.windows.values where windowState.windowVisibilityState.isEffectivelyVisible {
-            let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
-                currentTabId: browserManager.currentTab(for: windowState)?.id,
-                splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
-            )
-            visibleTabIDsByWindow[windowState.id] = Set(tabIDs)
-        }
-        return visibleTabIDsByWindow
     }
 
     private func isVisible(
@@ -253,22 +279,6 @@ final class SumiBackgroundMediaOptimizationService {
     private func isOptimizableContentURL(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased() else { return false }
         return scheme == "http" || scheme == "https"
-    }
-
-    private func allKnownTabs(browserManager: BrowserManager) -> [Tab] {
-        var seen = Set<UUID>()
-        var tabs: [Tab] = []
-
-        func append(_ tab: Tab) {
-            guard seen.insert(tab.id).inserted else { return }
-            tabs.append(tab)
-        }
-
-        browserManager.tabManager.allTabs().forEach(append)
-        (browserManager.windowRegistry?.windows.values.map { $0 } ?? [])
-            .flatMap(\.ephemeralTabs)
-            .forEach(append)
-        return tabs
     }
 
     private func liveWebViewEntries(

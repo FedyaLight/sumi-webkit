@@ -6,7 +6,9 @@ enum BrowserManagerRuntimeWiring {
     static func attach(to browserManager: BrowserManager) -> AnyCancellable {
         browserManager.compositorManager.browserManager = browserManager
         browserManager.tabSuspensionService.attach(browserManager: browserManager)
-        browserManager.backgroundMediaOptimizationService.attach(browserManager: browserManager)
+        browserManager.backgroundMediaOptimizationService.attach(
+            runtime: backgroundMediaOptimizationRuntime(for: browserManager)
+        )
         browserManager.splitManager.browserManager = browserManager
         browserManager.splitManager.windowRegistry = browserManager.windowRegistry
         browserManager.tabManager.browserManager = browserManager
@@ -99,5 +101,60 @@ enum BrowserManagerRuntimeWiring {
     ) {
         browserManager.tabSuspensionService.scheduleProactiveTimerReconcile(reason: reason)
         browserManager.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
+    }
+
+    private static func backgroundMediaOptimizationRuntime(
+        for browserManager: BrowserManager
+    ) -> SumiBackgroundMediaOptimizationRuntime {
+        SumiBackgroundMediaOptimizationRuntime(
+            webViewCoordinator: { [weak browserManager] in
+                browserManager?.webViewCoordinator
+            },
+            energySaverActive: { [weak browserManager] in
+                browserManager?.sumiSettings?.energySaverActivation.isActive ?? false
+            },
+            allKnownTabs: { [weak browserManager] in
+                guard let browserManager else { return [] }
+                return allBackgroundMediaOptimizationTabs(for: browserManager)
+            },
+            visibleTabIDsByWindow: { [weak browserManager] in
+                guard let browserManager else { return [:] }
+                return backgroundMediaVisibleTabIDsByWindow(for: browserManager)
+            }
+        )
+    }
+
+    private static func backgroundMediaVisibleTabIDsByWindow(
+        for browserManager: BrowserManager
+    ) -> [UUID: Set<UUID>] {
+        guard let windowRegistry = browserManager.windowRegistry else { return [:] }
+
+        var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
+        for windowState in windowRegistry.windows.values where windowState.windowVisibilityState.isEffectivelyVisible {
+            let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
+                currentTabId: browserManager.currentTab(for: windowState)?.id,
+                splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
+            )
+            visibleTabIDsByWindow[windowState.id] = Set(tabIDs)
+        }
+        return visibleTabIDsByWindow
+    }
+
+    private static func allBackgroundMediaOptimizationTabs(
+        for browserManager: BrowserManager
+    ) -> [Tab] {
+        var seen = Set<UUID>()
+        var tabs: [Tab] = []
+
+        func append(_ tab: Tab) {
+            guard seen.insert(tab.id).inserted else { return }
+            tabs.append(tab)
+        }
+
+        browserManager.tabManager.allTabs().forEach(append)
+        (browserManager.windowRegistry?.windows.values.map { $0 } ?? [])
+            .flatMap(\.ephemeralTabs)
+            .forEach(append)
+        return tabs
     }
 }
