@@ -221,6 +221,9 @@ class BrowserManager: ObservableObject {
     lazy var windowHistorySessionOwner = BrowserWindowHistorySessionOwner(
         dependencies: .live(browserManager: self)
     )
+    lazy var recentlyClosedRestoreOwner = BrowserRecentlyClosedRestoreOwner(
+        dependencies: .live(browserManager: self)
+    )
     private lazy var windowSessionActivationOwner = BrowserWindowSessionActivationOwner(
         dependencies: .live(browserManager: self)
     )
