@@ -294,8 +294,6 @@ final class TabWebViewRuntime {
     var primaryWindowId: UUID?
     var profileAwaitCancellable: AnyCancellable?
     let reloadPolicyStateOwner = TabReloadPolicyStateOwner()
-    var lastWebViewInteractionEvent: NSEvent?
-    var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] = [:]
     let extensionRuntimeState = TabExtensionRuntimeState()
     let findInPage = FindInPageTabExtension()
 }

@@ -10,11 +10,6 @@ import Foundation
 import SwiftUI
 import WebKit
 
-struct SumiGlanceOriginSnapshot {
-    let rectInWindow: CGRect
-    let timestamp: TimeInterval
-}
-
 @MainActor
 public class Tab: NSObject, Identifiable, ObservableObject {
     public let id: UUID
@@ -47,6 +42,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let faviconRuntime = TabFaviconRuntime()
     private let webViewRuntime = TabWebViewRuntime()
     private let suspensionStateOwner = TabSuspensionStateOwner()
+    private let webViewInteractionStateOwner = TabWebViewInteractionStateOwner()
 
     // MARK: - Pin State
     var isPinned: Bool {
@@ -385,12 +381,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set { suspensionStateOwner.isRestoreInProgress = newValue }
     }
     var lastWebViewInteractionEvent: NSEvent? {
-        get { webViewRuntime.lastWebViewInteractionEvent }
-        set { webViewRuntime.lastWebViewInteractionEvent = newValue }
+        get { webViewInteractionStateOwner.lastWebViewInteractionEvent }
+        set { webViewInteractionStateOwner.lastWebViewInteractionEvent = newValue }
     }
     var webViewInteractionCancellables: [ObjectIdentifier: AnyCancellable] {
-        get { webViewRuntime.webViewInteractionCancellables }
-        set { webViewRuntime.webViewInteractionCancellables = newValue }
+        get { webViewInteractionStateOwner.webViewInteractionCancellables }
+        set { webViewInteractionStateOwner.webViewInteractionCancellables = newValue }
     }
 
     weak var browserManager: BrowserManager?
@@ -412,10 +408,22 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     // MARK: - Link Hover Callback
-    var onLinkHover: ((String?) -> Void)?
-    var lastHoveredLinkURL: URL?
-    var lastWebPageContextMenuTarget: SumiWebPageContextMenuTargetSnapshot?
-    var lastGlanceMouseDownOrigin: SumiGlanceOriginSnapshot?
+    var onLinkHover: ((String?) -> Void)? {
+        get { webViewInteractionStateOwner.onLinkHover }
+        set { webViewInteractionStateOwner.onLinkHover = newValue }
+    }
+    var lastHoveredLinkURL: URL? {
+        get { webViewInteractionStateOwner.lastHoveredLinkURL }
+        set { webViewInteractionStateOwner.lastHoveredLinkURL = newValue }
+    }
+    var lastWebPageContextMenuTarget: SumiWebPageContextMenuTargetSnapshot? {
+        get { webViewInteractionStateOwner.lastWebPageContextMenuTarget }
+        set { webViewInteractionStateOwner.lastWebPageContextMenuTarget = newValue }
+    }
+    var lastGlanceMouseDownOrigin: SumiGlanceOriginSnapshot? {
+        get { webViewInteractionStateOwner.lastGlanceMouseDownOrigin }
+        set { webViewInteractionStateOwner.lastGlanceMouseDownOrigin = newValue }
+    }
 
     private var navigationStateController: TabNavigationStateController {
         navigationRuntime.navigationStateController
@@ -470,43 +478,27 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func recordWebViewInteraction(_ event: NSEvent) {
-        lastWebViewInteractionEvent = event
-        recordGlanceMouseDownOriginIfNeeded(event)
+        webViewInteractionStateOwner.recordInteraction(event)
     }
 
     func clearWebViewInteractionEvent() {
-        lastWebViewInteractionEvent = nil
+        webViewInteractionStateOwner.clearInteractionEvent()
     }
 
     func recentWebViewInteractionModifierFlags(maxAge: TimeInterval = 1.0) -> NSEvent.ModifierFlags? {
-        guard let event = lastWebViewInteractionEvent else { return nil }
-        let age = ProcessInfo.processInfo.systemUptime - event.timestamp
-        guard age >= 0, age <= maxAge else { return nil }
-        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        return flags.isEmpty ? nil : flags
+        webViewInteractionStateOwner.recentInteractionModifierFlags(maxAge: maxAge)
     }
 
     func recentWebViewMouseDownModifierFlags(maxAge: TimeInterval = 1.0) -> NSEvent.ModifierFlags? {
-        guard let event = lastWebViewInteractionEvent,
-              event.type == .leftMouseDown || event.type == .otherMouseDown
-        else { return nil }
-        return recentWebViewInteractionModifierFlags(maxAge: maxAge)
+        webViewInteractionStateOwner.recentMouseDownModifierFlags(maxAge: maxAge)
     }
 
     func recordGlanceMouseDownOriginIfNeeded(_ event: NSEvent) {
-        guard event.type == .leftMouseDown else { return }
-        let point = event.window?.mouseLocationOutsideOfEventStream ?? event.locationInWindow
-        lastGlanceMouseDownOrigin = SumiGlanceOriginSnapshot(
-            rectInWindow: CGRect(x: point.x - 22, y: point.y - 22, width: 44, height: 44),
-            timestamp: ProcessInfo.processInfo.systemUptime
-        )
+        webViewInteractionStateOwner.recordGlanceMouseDownOriginIfNeeded(event)
     }
 
     func recentGlanceMouseDownOriginRect(maxAge: TimeInterval = 1.5) -> CGRect? {
-        guard let origin = lastGlanceMouseDownOrigin else { return nil }
-        let age = ProcessInfo.processInfo.systemUptime - origin.timestamp
-        guard age >= 0, age <= maxAge else { return nil }
-        return origin.rectInWindow
+        webViewInteractionStateOwner.recentGlanceMouseDownOriginRect(maxAge: maxAge)
     }
 
     var isCurrentTab: Bool {
