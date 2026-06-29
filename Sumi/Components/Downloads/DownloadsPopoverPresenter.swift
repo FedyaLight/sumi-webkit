@@ -18,20 +18,20 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
     private final class AnchorRegistration {
         weak var view: NSView?
         weak var windowState: BrowserWindowState?
-        weak var browserManager: BrowserManager?
+        weak var downloadManager: DownloadManager?
         weak var settings: SumiSettingsService?
         var themeContext: ResolvedThemeContext
 
         init(
             view: NSView,
             windowState: BrowserWindowState,
-            browserManager: BrowserManager,
+            downloadManager: DownloadManager,
             settings: SumiSettingsService,
             themeContext: ResolvedThemeContext
         ) {
             self.view = view
             self.windowState = windowState
-            self.browserManager = browserManager
+            self.downloadManager = downloadManager
             self.settings = settings
             self.themeContext = themeContext
         }
@@ -78,25 +78,25 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
     func registerAnchor(
         _ view: NSView,
         windowState: BrowserWindowState,
-        browserManager: BrowserManager,
+        downloadManager: DownloadManager,
         settings: SumiSettingsService,
         themeContext: ResolvedThemeContext
     ) {
         let registration = AnchorRegistration(
             view: view,
             windowState: windowState,
-            browserManager: browserManager,
+            downloadManager: downloadManager,
             settings: settings,
             themeContext: themeContext
         )
         anchors[windowState.id] = registration
 
         if let session = activeSessions[windowState.id] {
-            let size = contentSize(for: browserManager.downloadManager)
+            let size = contentSize(for: downloadManager)
             update(
                 session,
                 using: registration,
-                downloadManager: browserManager.downloadManager,
+                downloadManager: downloadManager,
                 contentSize: size
             )
         }
@@ -108,13 +108,13 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
         anchors[windowID] = nil
     }
 
-    func toggle(in windowState: BrowserWindowState, browserManager: BrowserManager) {
+    func toggle(in windowState: BrowserWindowState, downloadManager: DownloadManager) {
         if activeSessions[windowState.id]?.popover.isShown == true {
             close(in: windowState)
             return
         }
 
-        presentOrRetry(in: windowState, browserManager: browserManager, allowRetry: true)
+        presentOrRetry(in: windowState, downloadManager: downloadManager, allowRetry: true)
     }
 
     func close(in windowState: BrowserWindowState) {
@@ -131,7 +131,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
 
     private func presentOrRetry(
         in windowState: BrowserWindowState,
-        browserManager: BrowserManager,
+        downloadManager: DownloadManager,
         allowRetry: Bool
     ) {
         guard let registration = anchors[windowState.id],
@@ -144,13 +144,13 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
             if allowRetry {
                 beginPendingTransientSessionIfNeeded(in: windowState)
                 windowState.isDownloadsPopoverPresented = true
-                Task { @MainActor [weak self, weak windowState, weak browserManager] in
+                Task { @MainActor [weak self, weak windowState, weak downloadManager] in
                     await Task.yield()
                     await Task.yield()
-                    guard let self, let windowState, let browserManager else { return }
+                    guard let self, let windowState, let downloadManager else { return }
                     self.presentOrRetry(
                         in: windowState,
-                        browserManager: browserManager,
+                        downloadManager: downloadManager,
                         allowRetry: false
                     )
                 }
@@ -163,14 +163,14 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
 
         let hostingController = makeHostingController(
             registration: registration,
-            downloadManager: browserManager.downloadManager
+            downloadManager: downloadManager
         )
         let popover = NSPopover()
         popover.behavior = .semitransient
         popover.animates = true
         popover.delegate = self
         popover.contentViewController = hostingController
-        popover.contentSize = contentSize(for: browserManager.downloadManager)
+        popover.contentSize = contentSize(for: downloadManager)
         popover.appearance = popoverAppearance(for: registration)
         let transientSessionToken = takeTransientSession(
             in: windowState,
@@ -185,7 +185,7 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
             transientSessionToken: transientSessionToken
         )
         session.cancellables.insert(
-            browserManager.downloadManager.$items.sink { [weak self] _ in
+            downloadManager.$items.sink { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.refreshContentSize(for: windowState.id)
                 }
@@ -240,14 +240,14 @@ final class DownloadsPopoverPresenter: NSObject, NSPopoverDelegate {
     private func refreshContentSize(for windowID: UUID) {
         guard let session = activeSessions[windowID],
               let registration = anchors[windowID],
-              let browserManager = registration.browserManager
+              let downloadManager = registration.downloadManager
         else { return }
 
-        let targetSize = contentSize(for: browserManager.downloadManager)
+        let targetSize = contentSize(for: downloadManager)
         update(
             session,
             using: registration,
-            downloadManager: browserManager.downloadManager,
+            downloadManager: downloadManager,
             contentSize: targetSize
         )
         animateContentSizeIfNeeded(session, to: targetSize)

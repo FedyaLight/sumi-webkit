@@ -441,6 +441,14 @@ extension SpaceView {
             ShortcutSidebarRow(
                 pin: pin,
                 liveTab: activeTab,
+                faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
+                    for: pin,
+                    currentSpaceId: windowState.currentSpaceId
+                ),
+                runtimeAffordance: browserManager.tabManager.shortcutRuntimeAffordanceState(
+                    for: pin,
+                    in: windowState
+                ),
                 accessibilityID: "space-pinned-shortcut-\(pin.id.uuidString)",
                 contextMenuEntries: {
                     pinnedShortcutContextMenuEntries(pin)

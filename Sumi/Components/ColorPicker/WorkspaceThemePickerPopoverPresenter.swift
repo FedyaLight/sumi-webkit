@@ -233,8 +233,9 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         browserManager: BrowserManager
     ) -> AnyView {
         AnyView(
-            WorkspaceThemePickerPopoverContent(session: session)
-                .environmentObject(browserManager)
+            WorkspaceThemePickerPopoverContent(session: session) {
+                browserManager.previewWorkspaceThemePickerDraft(sessionID: session.id)
+            }
                 .environment(windowState)
                 .environment(\.sumiSettings, browserManager.sumiSettings ?? SumiSettingsService())
                 .frame(
@@ -486,10 +487,10 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
 }
 
 private struct WorkspaceThemePickerPopoverContent: View {
-    @EnvironmentObject private var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
     @ObservedObject var session: WorkspaceThemePickerSession
+    let onPreviewDraft: () -> Void
 
     var body: some View {
         GradientEditorView(
@@ -498,7 +499,7 @@ private struct WorkspaceThemePickerPopoverContent: View {
                 set: { session.draftTheme = $0 }
             ),
             onThemeChange: { _ in
-                browserManager.previewWorkspaceThemePickerDraft(sessionID: session.id)
+                onPreviewDraft()
             }
         )
         .environment(\.resolvedThemeContext, resolvedThemeContext)

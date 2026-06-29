@@ -58,8 +58,8 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         manager.actionAnchors["alpha"] = [
             WeakAnchor(view: anchorView, window: nil)
         ]
-        manager.nativeMessagePortExtensionIDs[nativePortKey] = "alpha"
-        manager.nativeMessagePortProfileIDs[nativePortKey] = profile.id
+        manager.nativeMessagingPortRegistry.nativeMessagePortExtensionIDs[nativePortKey] = "alpha"
+        manager.nativeMessagingPortRegistry.nativeMessagePortProfileIDs[nativePortKey] = profile.id
 
         let generationBeforeTeardown = manager.extensionLoadGeneration
 
@@ -86,8 +86,8 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         XCTAssertTrue(manager.lastLoggedExtensionErrorFingerprints.isEmpty)
         XCTAssertTrue(manager.extensionPageUserContentControllersByProfile.isEmpty)
         XCTAssertTrue(manager.actionAnchors.isEmpty)
-        XCTAssertTrue(manager.nativeMessagePortExtensionIDs.isEmpty)
-        XCTAssertTrue(manager.nativeMessagePortProfileIDs.isEmpty)
+        XCTAssertTrue(manager.nativeMessagingPortRegistry.nativeMessagePortExtensionIDs.isEmpty)
+        XCTAssertTrue(manager.nativeMessagingPortRegistry.nativeMessagePortProfileIDs.isEmpty)
         XCTAssertFalse(manager.hasLoadedUserExtensionRuntime)
     }
 

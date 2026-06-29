@@ -70,9 +70,9 @@ struct SidebarHoverOverlayView: View {
     let resolvedThemeContext: ResolvedThemeContext
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     let windowChromeSize: CGSize
+    let browserManager: BrowserManager
     @ObservedObject private var dragState: SidebarDragState
 
-    @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject var hoverManager: HoverSidebarManager
     @EnvironmentObject private var nowPlayingController: SumiNativeNowPlayingController
     @Environment(BrowserWindowState.self) private var windowState
@@ -83,11 +83,13 @@ struct SidebarHoverOverlayView: View {
         resolvedThemeContext: ResolvedThemeContext,
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
         windowChromeSize: CGSize,
+        browserManager: BrowserManager,
         sidebarDragState: SidebarDragState
     ) {
         self.resolvedThemeContext = resolvedThemeContext
         self.chromeBackgroundResolvedThemeContext = chromeBackgroundResolvedThemeContext
         self.windowChromeSize = windowChromeSize
+        self.browserManager = browserManager
         self._dragState = ObservedObject(wrappedValue: sidebarDragState)
     }
 

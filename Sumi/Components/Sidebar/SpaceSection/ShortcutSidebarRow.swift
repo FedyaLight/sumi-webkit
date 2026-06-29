@@ -8,6 +8,8 @@ import SwiftUI
 struct ShortcutSidebarRow: View {
     @ObservedObject var pin: ShortcutPin
     var liveTab: Tab?
+    let faviconPartition: SumiFaviconPartition
+    let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     var accessibilityID: String?
     var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     let action: () -> Void
@@ -24,6 +26,8 @@ struct ShortcutSidebarRow: View {
                 ShortcutSidebarLiveRowContent(
                     pin: pin,
                     liveTab: liveTab,
+                    faviconPartition: faviconPartition,
+                    runtimeAffordance: runtimeAffordance,
                     accessibilityID: accessibilityID,
                     contextMenuEntries: contextMenuEntries,
                     action: action,
@@ -37,6 +41,8 @@ struct ShortcutSidebarRow: View {
             } else {
                 ShortcutSidebarStoredRowContent(
                     pin: pin,
+                    faviconPartition: faviconPartition,
+                    runtimeAffordance: runtimeAffordance,
                     accessibilityID: accessibilityID,
                     contextMenuEntries: contextMenuEntries,
                     action: action,
@@ -55,6 +61,8 @@ struct ShortcutSidebarRow: View {
 private struct ShortcutSidebarLiveRowContent: View {
     @ObservedObject var pin: ShortcutPin
     @ObservedObject var liveTab: Tab
+    let faviconPartition: SumiFaviconPartition
+    let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     var accessibilityID: String?
     var contextMenuEntries: () -> [SidebarContextMenuEntry]
     let action: () -> Void
@@ -65,22 +73,13 @@ private struct ShortcutSidebarLiveRowContent: View {
     let onUnload: () -> Void
     let onRemove: () -> Void
 
-    @EnvironmentObject private var browserManager: BrowserManager
-    @Environment(BrowserWindowState.self) private var windowState
-
     var body: some View {
         ShortcutSidebarRowChrome(
             pin: pin,
             liveTab: liveTab,
-            faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
-                for: pin,
-                currentSpaceId: windowState.currentSpaceId
-            ),
+            faviconPartition: faviconPartition,
             resolvedTitle: pin.resolvedDisplayTitle(liveTab: liveTab),
-            runtimeAffordance: browserManager.tabManager.shortcutRuntimeAffordanceState(
-                for: pin,
-                in: windowState
-            ),
+            runtimeAffordance: runtimeAffordance,
             accessibilityID: accessibilityID,
             contextMenuEntries: contextMenuEntries,
             action: action,
@@ -96,6 +95,8 @@ private struct ShortcutSidebarLiveRowContent: View {
 
 private struct ShortcutSidebarStoredRowContent: View {
     @ObservedObject var pin: ShortcutPin
+    let faviconPartition: SumiFaviconPartition
+    let runtimeAffordance: SumiLauncherRuntimeAffordanceState
     var accessibilityID: String?
     var contextMenuEntries: () -> [SidebarContextMenuEntry]
     let action: () -> Void
@@ -106,22 +107,13 @@ private struct ShortcutSidebarStoredRowContent: View {
     let onUnload: () -> Void
     let onRemove: () -> Void
 
-    @EnvironmentObject private var browserManager: BrowserManager
-    @Environment(BrowserWindowState.self) private var windowState
-
     var body: some View {
         ShortcutSidebarRowChrome(
             pin: pin,
             liveTab: nil,
-            faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
-                for: pin,
-                currentSpaceId: windowState.currentSpaceId
-            ),
+            faviconPartition: faviconPartition,
             resolvedTitle: pin.preferredDisplayTitle,
-            runtimeAffordance: browserManager.tabManager.shortcutRuntimeAffordanceState(
-                for: pin,
-                in: windowState
-            ),
+            runtimeAffordance: runtimeAffordance,
             accessibilityID: accessibilityID,
             contextMenuEntries: contextMenuEntries,
             action: action,

@@ -77,7 +77,16 @@ struct SpacesSideBarView: View {
         mainSidebarContent
             .overlay {
                 ZStack {
-                    SidebarGlobalDragOverlay()
+                    SidebarGlobalDragOverlay(
+                        dropActions: SidebarDropActionContext(performDrop: { pasteboard, resolution, windowState in
+                            SidebarDropCoordinator.performDrop(
+                                pasteboard: pasteboard,
+                                resolution: resolution,
+                                browserManager: browserManager,
+                                windowState: windowState
+                            )
+                        })
+                    )
                         .allowsHitTesting(allowsSidebarInteractiveWork)
                 }
             }
@@ -96,10 +105,13 @@ struct SpacesSideBarView: View {
             if let creationSession = windowState.activeSpaceCreationSession {
                 SidebarSpaceCreationView(
                     session: creationSession,
+                    profileContext: SpaceCreationProfileContext(
+                        profiles: browserManager.profileManager.profiles,
+                        currentProfileID: browserManager.currentProfile?.id
+                    ),
                     onCreate: { commitSpaceCreationSession(creationSession) },
                     onCancel: { cancelSpaceCreationSession(creationSession) }
                 )
-                .environmentObject(browserManager)
                 .environment(windowState)
                 .transition(spaceCreationTransition)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -113,8 +125,9 @@ struct SpacesSideBarView: View {
                     }
 
                     if shouldMountMiniPlayer {
-                        MediaControlsView(nowPlayingController: nowPlayingController)
-                            .environmentObject(browserManager)
+                        MediaControlsView(nowPlayingController: nowPlayingController) { mediaStore, windowState in
+                            mediaStore.configure(browserManager: browserManager, windowState: windowState)
+                        }
                             .environment(windowState)
                     }
 

@@ -2,28 +2,28 @@ import AppKit
 import SwiftUI
 
 struct DownloadsToolbarButton: View {
-    @EnvironmentObject private var browserManager: BrowserManager
+    @ObservedObject var downloadManager: DownloadManager
+    let popoverPresenter: DownloadsPopoverPresenter
+    let action: () -> Void
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var settings
     @Environment(\.resolvedThemeContext) private var themeContext
 
     var body: some View {
         DownloadsToolbarButtonContent(
-            downloadManager: browserManager.downloadManager,
-            browserManager: browserManager,
+            downloadManager: downloadManager,
+            popoverPresenter: popoverPresenter,
             windowState: windowState,
             settings: settings,
             themeContext: themeContext,
-            action: {
-                browserManager.toggleDownloadsPopover(in: windowState)
-            }
+            action: action
         )
     }
 }
 
 private struct DownloadsToolbarButtonContent: View {
     @ObservedObject var downloadManager: DownloadManager
-    let browserManager: BrowserManager
+    let popoverPresenter: DownloadsPopoverPresenter
     let windowState: BrowserWindowState
     let settings: SumiSettingsService
     let themeContext: ResolvedThemeContext
@@ -55,7 +55,8 @@ private struct DownloadsToolbarButtonContent: View {
         .accessibilityIdentifier("downloads-button")
         .background(
             DownloadsPopoverAnchorView(
-                browserManager: browserManager,
+                popoverPresenter: popoverPresenter,
+                downloadManager: downloadManager,
                 windowState: windowState,
                 settings: settings,
                 themeContext: themeContext
@@ -97,13 +98,14 @@ private struct DownloadsToolbarButtonContent: View {
 }
 
 private struct DownloadsPopoverAnchorView: NSViewRepresentable {
-    let browserManager: BrowserManager
+    let popoverPresenter: DownloadsPopoverPresenter
+    let downloadManager: DownloadManager
     let windowState: BrowserWindowState
     let settings: SumiSettingsService
     let themeContext: ResolvedThemeContext
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(browserManager: browserManager, windowID: windowState.id)
+        Coordinator(popoverPresenter: popoverPresenter, windowID: windowState.id)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -113,36 +115,36 @@ private struct DownloadsPopoverAnchorView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.browserManager = browserManager
+        context.coordinator.popoverPresenter = popoverPresenter
         context.coordinator.windowID = windowState.id
         register(nsView, coordinator: context.coordinator)
     }
 
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.browserManager?.downloadsPopoverPresenter.unregisterAnchor(
+        coordinator.popoverPresenter?.unregisterAnchor(
             nsView,
             windowID: coordinator.windowID
         )
     }
 
     private func register(_ view: NSView, coordinator: Coordinator) {
-        coordinator.browserManager = browserManager
+        coordinator.popoverPresenter = popoverPresenter
         coordinator.windowID = windowState.id
-        browserManager.downloadsPopoverPresenter.registerAnchor(
+        popoverPresenter.registerAnchor(
             view,
             windowState: windowState,
-            browserManager: browserManager,
+            downloadManager: downloadManager,
             settings: settings,
             themeContext: themeContext
         )
     }
 
     final class Coordinator {
-        weak var browserManager: BrowserManager?
+        weak var popoverPresenter: DownloadsPopoverPresenter?
         var windowID: UUID
 
-        init(browserManager: BrowserManager, windowID: UUID) {
-            self.browserManager = browserManager
+        init(popoverPresenter: DownloadsPopoverPresenter, windowID: UUID) {
+            self.popoverPresenter = popoverPresenter
             self.windowID = windowID
         }
     }

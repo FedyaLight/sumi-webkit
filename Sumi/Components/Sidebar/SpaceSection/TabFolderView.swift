@@ -645,6 +645,14 @@ struct TabFolderView: View {
             ShortcutSidebarRow(
                 pin: pin,
                 liveTab: projection.liveTab(for: pin.id),
+                faviconPartition: browserManager.tabManager.resolvedFaviconPartition(
+                    for: pin,
+                    currentSpaceId: windowState.currentSpaceId
+                ),
+                runtimeAffordance: browserManager.tabManager.shortcutRuntimeAffordanceState(
+                    for: pin,
+                    in: windowState
+                ),
                 accessibilityID: "folder-shortcut-\(pin.id.uuidString)",
                 contextMenuEntries: {
                     contextMenuActionOwner.folderShortcutContextMenuEntries(pin)

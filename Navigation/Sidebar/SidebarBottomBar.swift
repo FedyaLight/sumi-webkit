@@ -17,8 +17,13 @@ struct SidebarBottomBar: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            DownloadsToolbarButton()
-                .environmentObject(browserManager)
+            DownloadsToolbarButton(
+                downloadManager: browserManager.downloadManager,
+                popoverPresenter: browserManager.downloadsPopoverPresenter,
+                action: {
+                    browserManager.toggleDownloadsPopover(in: windowState)
+                }
+            )
                 .environment(windowState)
 
             // Hide spaces list in incognito windows (only one ephemeral space)

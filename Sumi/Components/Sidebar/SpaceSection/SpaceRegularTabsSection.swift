@@ -97,10 +97,12 @@ extension SpaceView {
                 regularDropGap
             }
 
-            SpaceSeparator(space: space, isHovering: $isSidebarHovered) {
+            SpaceSeparator(
+                hasTabs: !browserManager.tabManager.tabs(in: space).isEmpty,
+                isHovering: $isSidebarHovered
+            ) {
                 browserManager.tabManager.clearRegularTabs(for: space.id)
             }
-            .environmentObject(browserManager)
             .padding(.horizontal, 8)
 
             VStack(spacing: 2) {
@@ -215,6 +217,7 @@ extension SpaceView {
                             group: group,
                             items: groupItems,
                             spaceId: space.id,
+                            currentTabId: windowState.currentTabId,
                             isAppKitInteractionEnabled: isInteractive,
                             segmentAction: { item in
                                 splitSegmentAction(for: item, in: group)
@@ -656,7 +659,8 @@ extension SpaceView {
             action: { handleUserTabActivation(tab) },
             onClose: { closeRegularTab(tab) },
             onMute: { onMuteTab(tab) },
-            contextMenuEntries: { regularTabContextMenuEntries(tab) }
+            contextMenuEntries: { regularTabContextMenuEntries(tab) },
+            isCurrentTab: windowState.currentTabId == tab.id
         )
         .opacity(
             dragState.isDragging && dragState.activeDragItemId == tab.id

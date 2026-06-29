@@ -75,6 +75,7 @@ struct WindowView: View {
                             resolvedThemeContext: resolvedThemeContext,
                             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
                             windowChromeSize: windowChromeSize,
+                            browserManager: browserManager,
                             sidebarDragState: sidebarDragState
                         )
                             .environmentObject(hoverSidebarManager)
@@ -127,8 +128,17 @@ struct WindowView: View {
                 }
 
                 chromeThemeScope {
-                    SidebarFloatingDragPreview(sidebarDragState: sidebarDragState)
-                        .environmentObject(browserManager)
+                    SidebarFloatingDragPreview(
+                        sidebarDragState: sidebarDragState,
+                        browserContext: SidebarFloatingDragPreviewContext(
+                            currentProfileID: {
+                                browserManager.currentProfile?.id
+                            },
+                            essentialPins: { profileId in
+                                browserManager.tabManager.essentialPins(for: profileId)
+                            }
+                        )
+                    )
                         .environment(windowState)
                         .environment(\.sumiSettings, sumiSettings)
                         .zIndex(WindowTransientChromeZIndex.sidebarDragPreview)
@@ -386,7 +396,13 @@ struct WindowView: View {
             if let currentTab = browserManager.currentTab(for: windowState) {
                 HStack {
                     Spacer()
-                    SumiWindowProgressBar(tab: currentTab)
+                    SumiWindowProgressBar(tab: currentTab) { tab in
+                        if let spaceId = tab.spaceId,
+                           let space = browserManager.space(for: spaceId) {
+                            return space.workspaceTheme
+                        }
+                        return windowState.workspaceTheme
+                    }
                     .frame(width: 200, height: 12)
                     .offset(y: -BrowserChromeGeometry.elementSeparation / 2 - 6)
                     Spacer()

@@ -55,15 +55,24 @@ enum SidebarFloatingDragPreviewPolicy {
     }
 }
 
+struct SidebarFloatingDragPreviewContext {
+    let currentProfileID: () -> UUID?
+    let essentialPins: (UUID) -> [ShortcutPin]
+}
+
 struct SidebarFloatingDragPreview: View {
     @ObservedObject private var dragState: SidebarDragState
     @ObservedObject private var locationTracker: SidebarDragLocationTracker
-    @EnvironmentObject private var browserManager: BrowserManager
+    private let browserContext: SidebarFloatingDragPreviewContext
     @Environment(BrowserWindowState.self) private var windowState
 
-    init(sidebarDragState: SidebarDragState) {
+    init(
+        sidebarDragState: SidebarDragState,
+        browserContext: SidebarFloatingDragPreviewContext
+    ) {
         self._dragState = ObservedObject(wrappedValue: sidebarDragState)
         self._locationTracker = ObservedObject(wrappedValue: sidebarDragState.locationTracker)
+        self.browserContext = browserContext
     }
 
     var body: some View {
@@ -184,14 +193,14 @@ struct SidebarFloatingDragPreview: View {
         let profileId = hoveredPage.profileId
             ?? metrics.profileId
             ?? windowState.currentProfileId
-            ?? browserManager.currentProfile?.id
+            ?? browserContext.currentProfileID()
         if let slotFrame = metrics.dropSlotFrames.first(where: { $0.slot == slot }),
            slotFrame.frame.width > 0,
            slotFrame.frame.height > 0 {
             return slotFrame.frame.size
         }
 
-        let pins = profileId.map { browserManager.tabManager.essentialPins(for: $0) } ?? []
+        let pins = profileId.map { browserContext.essentialPins($0) } ?? []
         let projection = SidebarEssentialsProjectionPolicy.make(
             items: pins,
             width: metrics.frame.width,

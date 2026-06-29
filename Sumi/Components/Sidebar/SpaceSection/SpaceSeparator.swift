@@ -6,16 +6,14 @@
 import SwiftUI
 
 struct SpaceSeparator: View {
-    let space: Space
+    let hasTabs: Bool
     @Binding var isHovering: Bool
     let onClear: () -> Void
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var isClearHovered: Bool = false
 
     var body: some View {
-        let hasTabs = !browserManager.tabManager.tabs(in: space).isEmpty
         HStack(spacing: 0) {
             RoundedRectangle(cornerRadius: 100)
                 .fill(isHovering ? tokens.separator.opacity(1.0) : tokens.separator.opacity(0.82))

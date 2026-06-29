@@ -9,7 +9,7 @@ extension BrowserManager {
     func showDownloads() {
         guard let windowState = windowRegistry?.activeWindow else { return }
 
-        downloadsPopoverPresenter.toggle(in: windowState, browserManager: self)
+        downloadsPopoverPresenter.toggle(in: windowState, downloadManager: downloadManager)
     }
 
     func showHistory() {
@@ -17,7 +17,7 @@ extension BrowserManager {
     }
 
     func toggleDownloadsPopover(in windowState: BrowserWindowState) {
-        downloadsPopoverPresenter.toggle(in: windowState, browserManager: self)
+        downloadsPopoverPresenter.toggle(in: windowState, downloadManager: downloadManager)
     }
 
     func closeDownloadsPopover(in windowState: BrowserWindowState) {

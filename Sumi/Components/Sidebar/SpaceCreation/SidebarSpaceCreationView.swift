@@ -12,12 +12,37 @@ enum SidebarSpaceCreationMetrics {
     static let iconWellSize: CGFloat = 28
 }
 
+@MainActor
+struct SpaceCreationProfileContext {
+    let profiles: [Profile]
+    let currentProfileID: UUID?
+
+    var fallbackProfile: Profile? {
+        profiles.first
+    }
+
+    func resolvedProfile(for session: SpaceCreationSession) -> Profile? {
+        guard let profileID = session.profileID ?? currentProfileID ?? profiles.first?.id else {
+            return nil
+        }
+        return profiles.first { $0.id == profileID }
+    }
+
+    func isNewProfileNameAvailable(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return false }
+        return !profiles.contains {
+            $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+        }
+    }
+}
+
 struct SidebarSpaceCreationView: View {
     @ObservedObject var session: SpaceCreationSession
+    let profileContext: SpaceCreationProfileContext
     let onCreate: () -> Void
     let onCancel: () -> Void
 
-    @EnvironmentObject private var browserManager: BrowserManager
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -147,7 +172,7 @@ struct SidebarSpaceCreationView: View {
             Spacer(minLength: 0)
 
             Menu {
-                ForEach(browserManager.profileManager.profiles, id: \.id) { profile in
+                ForEach(profileContext.profiles, id: \.id) { profile in
                     Button {
                         selectExistingProfile(profile.id)
                     } label: {
@@ -247,14 +272,14 @@ struct SidebarSpaceCreationView: View {
             return "New profile"
         }
         guard let profile = currentProfile else {
-            return browserManager.profileManager.profiles.first?.name ?? "Default"
+            return profileContext.fallbackProfile?.name ?? "Default"
         }
         return profile.name
     }
 
     private var currentProfileIcon: String {
         guard let profile = currentProfile else {
-            return browserManager.profileManager.profiles.first?.icon
+            return profileContext.fallbackProfile?.icon
                 ?? SumiProfileIcon.defaultIcon
         }
         return profile.icon
@@ -265,11 +290,7 @@ struct SidebarSpaceCreationView: View {
     }
 
     private var currentProfile: Profile? {
-        guard let profileID = session.profileID
-                ?? browserManager.currentProfile?.id
-                ?? browserManager.profileManager.profiles.first?.id
-        else { return nil }
-        return browserManager.profileManager.profiles.first { $0.id == profileID }
+        profileContext.resolvedProfile(for: session)
     }
 
     private var tokens: ChromeThemeTokens {
@@ -290,10 +311,7 @@ struct SidebarSpaceCreationView: View {
 
     private var isNewProfileNameAvailable: Bool {
         let trimmed = session.trimmedNewProfileName
-        guard trimmed.isEmpty == false else { return false }
-        return !browserManager.profileManager.profiles.contains {
-            $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
-        }
+        return profileContext.isNewProfileNameAvailable(trimmed)
     }
 
     private var profileExpansionAnimation: Animation? {

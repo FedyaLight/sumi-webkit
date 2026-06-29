@@ -136,10 +136,10 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             extensionOwnedSourceURL: extensionURL
         )
         XCTAssertNotNil(popupWebView)
-        XCTAssertFalse(extensionManager.miniWindowAdapters.isEmpty)
+        XCTAssertFalse(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
 
         browserManager.auxiliaryWindowManager.closeAll(forExtensionId: "adapter-owner")
-        XCTAssertTrue(extensionManager.miniWindowAdapters.isEmpty)
+        XCTAssertTrue(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
         XCTAssertFalse(browserManager.auxiliaryWindowManager.contains(webView: popupWebView!))
     }
 
@@ -276,7 +276,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
 
         XCTAssertNil(adapter)
         XCTAssertTrue(harness.browserManager.tabManager.auxiliaryMiniWindowTabsByID.isEmpty)
-        XCTAssertTrue(harness.extensionManager.miniWindowAdapters.isEmpty)
+        XCTAssertTrue(harness.extensionManager.adapterStore.miniWindowAdapters.isEmpty)
         XCTAssertNil(
             harness.extensionManager.extensionController,
             "Private extension popups must not create the normal profile-backed extension controller"
@@ -413,7 +413,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
                 extensionOwnedSourceURL: extensionURL
             )
         )
-        XCTAssertFalse(extensionManager.miniWindowAdapters.isEmpty)
+        XCTAssertFalse(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
 
         browserManager.auxiliaryWindowManager.teardown(
             for: popupWebView,
@@ -421,7 +421,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
 
         XCTAssertFalse(browserManager.auxiliaryWindowManager.contains(webView: popupWebView))
-        XCTAssertTrue(extensionManager.miniWindowAdapters.isEmpty)
+        XCTAssertTrue(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
     }
 
     func testRemoveTabAuxiliaryRoutesThroughFullTeardown() throws {
@@ -473,7 +473,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
                 extensionOwnedSourceURL: extensionURL
             )
         )
-        XCTAssertFalse(extensionManager.miniWindowAdapters.isEmpty)
+        XCTAssertFalse(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
         let auxiliaryTab = try XCTUnwrap(
             browserManager.tabManager.auxiliaryMiniWindowTabsByID.values.first
         )
@@ -481,7 +481,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         browserManager.tabManager.removeTab(auxiliaryTab.id)
 
         XCTAssertFalse(browserManager.auxiliaryWindowManager.contains(webView: popupWebView))
-        XCTAssertTrue(extensionManager.miniWindowAdapters.isEmpty)
+        XCTAssertTrue(extensionManager.adapterStore.miniWindowAdapters.isEmpty)
         XCTAssertNil(browserManager.tabManager.auxiliaryMiniWindowTabsByID[auxiliaryTab.id])
     }
 
@@ -610,7 +610,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             "adapter-owner"
         )
         XCTAssertFalse(
-            harness.extensionManager.miniWindowAdapters.isEmpty,
+            harness.extensionManager.adapterStore.miniWindowAdapters.isEmpty,
             "Expected extension-owned mini-window presentation to register a mini-window adapter"
         )
 

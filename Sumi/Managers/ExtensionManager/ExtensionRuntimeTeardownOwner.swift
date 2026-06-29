@@ -42,7 +42,7 @@ final class ExtensionRuntimeTeardownOwner {
         let loadedIDs = manager.allLoadedExtensionIDs()
             .union(manager.loadedExtensionManifests.keys)
             .union(manager.optionsWindows.keys)
-            .union(manager.nativeMessagePortExtensionIDs.values)
+            .union(manager.nativeMessagingPortRegistry.extensionIDs)
             .union(manager.extensionErrorObserverTokens.keys)
             .union(uiStateIDs)
 
@@ -82,8 +82,7 @@ final class ExtensionRuntimeTeardownOwner {
         manager.requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
         manager.clearPermissionsOriginsCompatibilityInstallations()
         manager.extensionPageUserContentControllersByProfile.removeAll()
-        manager.tabAdapters.removeAll()
-        manager.windowAdapters.removeAll()
+        manager.adapterStore.removeTabAndWindowAdapters()
 
         if releaseController {
             manager.browserConfiguration.webViewConfiguration.webExtensionController = nil

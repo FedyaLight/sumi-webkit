@@ -93,6 +93,7 @@ final class TabNavigationRuntime {
     var isFreezingNavigationStateDuringBackForwardGesture = false
     let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()
+    let titleUpdateOwner = TabTitleUpdateOwner()
     let navigationDelegateBundles = NSMapTable<WKWebView, SumiTabNavigationDelegateBundle>.weakToStrongObjects()
 }
 

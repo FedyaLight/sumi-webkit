@@ -2,6 +2,27 @@ import Foundation
 import WebKit
 
 @MainActor
+struct TabReloadPolicyWebViewRebuildContext {
+    let tabId: UUID
+    let currentURL: URL
+    let existingWebView: () -> WKWebView?
+    let webViewConfigurationOverride: WKWebViewConfiguration?
+    let isPopupHost: Bool
+    let profile: Profile?
+    let browserManager: BrowserManager?
+    let primaryWindowId: UUID?
+    let makeNormalTabWebView: (String) -> WKWebView?
+    let invalidateCurrentPermissionPageForWebViewReplacement: (String) -> Void
+    let removeTrackedWebViews: () -> Bool
+    let cleanupCloneWebView: (WKWebView) -> Void
+    let clearOwnedWebView: () -> Void
+    let clearPrimaryWindowId: () -> Void
+    let assignOwnedWebView: (WKWebView) -> Void
+    let assignWebViewToWindow: (WKWebView, UUID) -> Void
+    let publishNavigationStateChangeIfNeeded: (Bool) -> Void
+}
+
+@MainActor
 final class TabReloadPolicyStateOwner {
     var safariContentBlockerAppliedAttachmentState: SumiSafariContentBlockerAttachmentState?
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState?
@@ -258,6 +279,91 @@ final class TabReloadPolicyStateOwner {
     }
 
     @discardableResult
+    func rebuildNormalWebViewForContentBlockingPolicyIfNeeded(
+        targetURL: URL?,
+        reason: String,
+        context: TabReloadPolicyWebViewRebuildContext
+    ) -> Bool {
+        guard protectionAttachmentRequiresNormalWebViewRebuild(
+            for: targetURL,
+            existingWebView: context.existingWebView(),
+            webViewConfigurationOverride: context.webViewConfigurationOverride,
+            isPopupHost: context.isPopupHost,
+            browserManager: context.browserManager
+        ), context.existingWebView() != nil
+        else { return false }
+
+        let rebuildStart = Date()
+        let previousProtectionState = protectionAppliedAttachmentState
+
+        guard rebuildNormalWebViewForConfigurationPolicy(
+            reason: reason,
+            context: context,
+            onTrackedWebViewRemovalFailure: {
+                noteProtectionWebViewRebuildFailed(
+                    restoringAppliedState: previousProtectionState
+                )
+            }
+        ) else { return false }
+
+        context.publishNavigationStateChangeIfNeeded(
+            updateSafariContentBlockerReloadRequirementForCurrentSite(
+                currentURL: context.currentURL,
+                existingWebView: context.existingWebView(),
+                browserManager: context.browserManager
+            )
+        )
+        context.publishNavigationStateChangeIfNeeded(
+            updateProtectionReloadRequirementForCurrentSite(
+                currentURL: context.currentURL,
+                existingWebView: context.existingWebView(),
+                browserManager: context.browserManager
+            )
+        )
+        noteProtectionWebViewRebuildSucceeded(startedAt: rebuildStart)
+        context.publishNavigationStateChangeIfNeeded(
+            updateAutoplayReloadRequirementForCurrentSite(
+                currentURL: context.currentURL,
+                existingWebView: context.existingWebView(),
+                profile: context.profile,
+                browserManager: context.browserManager
+            )
+        )
+        return true
+    }
+
+    @discardableResult
+    func rebuildNormalWebViewForAutoplayIfNeeded(
+        targetURL: URL?,
+        reason: String,
+        context: TabReloadPolicyWebViewRebuildContext
+    ) -> Bool {
+        guard autoplayPolicyRequiresNormalWebViewRebuild(
+            for: targetURL,
+            existingWebView: context.existingWebView(),
+            webViewConfigurationOverride: context.webViewConfigurationOverride,
+            isPopupHost: context.isPopupHost,
+            profile: context.profile
+        ), context.existingWebView() != nil
+        else { return false }
+
+        guard rebuildNormalWebViewForConfigurationPolicy(
+            reason: reason,
+            context: context
+        ) else { return false }
+
+        context.publishNavigationStateChangeIfNeeded(
+            updateAutoplayReloadRequirementForCurrentSite(
+                currentURL: context.currentURL,
+                existingWebView: context.existingWebView(),
+                profile: context.profile,
+                browserManager: context.browserManager
+            )
+        )
+        return true
+    }
+
+    @discardableResult
     func markAutoplayReloadRequiredIfNeeded(
         afterChangingPolicyFor changedURL: URL?,
         currentURL: URL,
@@ -351,6 +457,49 @@ final class TabReloadPolicyStateOwner {
 
     func noteProtectionWebViewRebuildSucceeded(startedAt rebuildStart: Date) {
         lastProtectionWebViewRebuildDuration = Date().timeIntervalSince(rebuildStart)
+    }
+
+    @discardableResult
+    private func rebuildNormalWebViewForConfigurationPolicy(
+        reason: String,
+        context: TabReloadPolicyWebViewRebuildContext,
+        onTrackedWebViewRemovalFailure: () -> Void = {}
+    ) -> Bool {
+        guard let previousWebView = context.existingWebView() else { return false }
+
+        let coordinator = context.browserManager?.webViewCoordinator
+        let previousWindowId = context.primaryWindowId
+            ?? coordinator?.windowID(containing: previousWebView)
+        let hadTrackedWebViews = coordinator?.windowIDs(for: context.tabId).isEmpty == false
+
+        guard let replacementWebView = context.makeNormalTabWebView(reason) else {
+            return false
+        }
+        context.invalidateCurrentPermissionPageForWebViewReplacement(reason)
+
+        let removedTrackedWebViews = context.removeTrackedWebViews()
+        if hadTrackedWebViews && !removedTrackedWebViews {
+            onTrackedWebViewRemovalFailure()
+            return false
+        }
+
+        if !removedTrackedWebViews {
+            context.cleanupCloneWebView(previousWebView)
+            context.clearOwnedWebView()
+            context.clearPrimaryWindowId()
+        }
+
+        if let previousWindowId {
+            coordinator?.setWebView(replacementWebView, for: context.tabId, in: previousWindowId)
+            context.assignWebViewToWindow(replacementWebView, previousWindowId)
+            if let windowState = context.browserManager?.windowRegistry?.windows[previousWindowId] {
+                context.browserManager?.refreshCompositor(for: windowState)
+            }
+        } else {
+            context.assignOwnedWebView(replacementWebView)
+        }
+
+        return true
     }
 
     private func desiredAutoplayPolicy(for targetURL: URL?, profile: Profile?) -> SumiAutoplayPolicy {

@@ -8,7 +8,8 @@ import SwiftUI
 
 struct SidebarResizeView: View {
     let sidebarPosition: SidebarPosition
-    @EnvironmentObject var browserManager: BrowserManager
+    let onResize: (_ width: CGFloat, _ windowState: BrowserWindowState, _ persist: Bool) -> Void
+    let onEndResize: (_ windowState: BrowserWindowState) -> Void
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
@@ -20,8 +21,14 @@ struct SidebarResizeView: View {
     private let minWidth: CGFloat = BrowserWindowState.sidebarMinimumWidth
     private let maxWidth: CGFloat = BrowserWindowState.sidebarMaximumWidth
 
-    init(sidebarPosition: SidebarPosition = .left) {
+    init(
+        sidebarPosition: SidebarPosition = .left,
+        onResize: @escaping (_ width: CGFloat, _ windowState: BrowserWindowState, _ persist: Bool) -> Void,
+        onEndResize: @escaping (_ windowState: BrowserWindowState) -> Void
+    ) {
         self.sidebarPosition = sidebarPosition
+        self.onResize = onResize
+        self.onEndResize = onEndResize
     }
 
     private var shellEdge: SidebarShellEdge {
@@ -80,17 +87,13 @@ struct SidebarResizeView: View {
                             var transaction = Transaction()
                             transaction.disablesAnimations = true
                             withTransaction(transaction) {
-                                browserManager.updateSidebarWidth(
-                                    clampedWidth,
-                                    for: windowState,
-                                    persist: false
-                                )
+                                onResize(clampedWidth, windowState, false)
                             }
                         }
                         .onEnded { _ in
                             isResizing = false
                             lastAppliedWidth = 0
-                            browserManager.persistWindowSession(for: windowState)
+                            onEndResize(windowState)
                         }
                 )
         }

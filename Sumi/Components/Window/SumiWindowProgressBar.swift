@@ -9,10 +9,10 @@ import SwiftUI
 
 struct SumiWindowProgressBar: View {
     let tab: Tab
+    let resolveWorkspaceTheme: (Tab) -> WorkspaceTheme
 
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var sumiSettings
-    @EnvironmentObject private var browserManager: BrowserManager
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -39,11 +39,7 @@ struct SumiWindowProgressBar: View {
     }
 
     private var activeWorkspaceTheme: WorkspaceTheme {
-        if let spaceId = tab.spaceId,
-           let space = browserManager.space(for: spaceId) {
-            return space.workspaceTheme
-        }
-        return windowState.workspaceTheme
+        resolveWorkspaceTheme(tab)
     }
 
     private var resolvedAccentColor: Color {

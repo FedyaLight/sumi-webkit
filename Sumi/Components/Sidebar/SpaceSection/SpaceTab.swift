@@ -16,13 +16,13 @@ struct SpaceTab: View {
     var onMute: () -> Void
     var contextMenuEntries: () -> [SidebarContextMenuEntry] = { [] }
     var fetchesVisiblePresentation: Bool = true
+    let isCurrentTab: Bool
     @FocusState private var isTextFieldFocused: Bool
     @State private var isRowHovered = false
     @State private var isCloseHovered = false
     @State private var isGlanceCloseHovered = false
     @State private var isSpeakerHovered = false
     @State private var suppressRegularCloseUntilHoverExit = false
-    @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject private var glanceManager: GlanceManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) private var settings
@@ -183,10 +183,6 @@ struct SpaceTab: View {
 
     private var rowSourceID: String {
         "tab-row-\(tab.id.uuidString)"
-    }
-
-    private var isCurrentTab: Bool {
-        browserManager.currentTab(for: windowState)?.id == tab.id
     }
 
     private var rowCornerRadius: CGFloat {

@@ -8,16 +8,20 @@ import Foundation
 import SwiftUI
 
 struct MediaControlsView: View {
-    @EnvironmentObject private var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.scenePhase) private var scenePhase
 
     @StateObject private var mediaStore: SumiBackgroundMediaCardStore
+    private let configureMediaStore: (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
 
-    init(nowPlayingController: any SumiNativeNowPlayingRuntimeControlling) {
+    init(
+        nowPlayingController: any SumiNativeNowPlayingRuntimeControlling,
+        configureMediaStore: @escaping (SumiBackgroundMediaCardStore, BrowserWindowState) -> Void
+    ) {
         _mediaStore = StateObject(
             wrappedValue: SumiBackgroundMediaCardStore(controller: nowPlayingController)
         )
+        self.configureMediaStore = configureMediaStore
     }
 
     var body: some View {
@@ -45,7 +49,7 @@ struct MediaControlsView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: mediaStore.cardState != nil)
         .onAppear {
-            mediaStore.configure(browserManager: browserManager, windowState: windowState)
+            configureMediaStore(mediaStore, windowState)
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {

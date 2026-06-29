@@ -220,7 +220,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
     ) -> [ExtensionMiniWindowAdapter] {
         guard let browserContext = browserBridgeContext else { return [] }
 
-        var adapters = miniWindowAdapters.values.compactMap { adapter -> ExtensionMiniWindowAdapter? in
+        var adapters = adapterStore.miniWindowAdapters.values.compactMap { adapter -> ExtensionMiniWindowAdapter? in
             guard let session = browserContext.auxiliaryWindowSession(for: adapter.sessionId),
                   session.ownerExtensionID == ownerExtensionID,
                   session.window.isVisible,
@@ -976,23 +976,19 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             installedExtensions: installedExtensions,
             registerHandler: { [weak self] handler in
                 guard let self else { return }
-                self.nativeMessagePortHandlers[portKey] = handler
-                if let extensionId {
-                    self.nativeMessagePortExtensionIDs[portKey] = extensionId
-                }
-                if let profileId {
-                    self.nativeMessagePortProfileIDs[portKey] = profileId
-                }
+                self.nativeMessagingPortRegistry.register(
+                    handler: handler,
+                    portKey: portKey,
+                    extensionId: extensionId,
+                    profileId: profileId
+                )
             },
             unregisterHandler: { [weak self] handler in
                 guard let self else { return }
-                if let current = self.nativeMessagePortHandlers[portKey],
-                   current !== handler {
-                    return
-                }
-                self.nativeMessagePortHandlers.removeValue(forKey: portKey)
-                self.nativeMessagePortExtensionIDs.removeValue(forKey: portKey)
-                self.nativeMessagePortProfileIDs.removeValue(forKey: portKey)
+                self.nativeMessagingPortRegistry.unregister(
+                    handler: handler,
+                    portKey: portKey
+                )
             },
             completionHandler: SumiWebExtensionCallbackRelay.wrapCompletionHandler(
                 api: .connectNativePort,

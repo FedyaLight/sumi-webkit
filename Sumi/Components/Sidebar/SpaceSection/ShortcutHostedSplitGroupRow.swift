@@ -18,6 +18,7 @@ struct ShortcutHostedSplitGroupRow: View {
             group: group,
             items: items,
             spaceId: spaceId,
+            currentTabId: windowState.currentTabId,
             isAppKitInteractionEnabled: isAppKitInteractionEnabled,
             segmentAction: { item in
                 SplitGroupSidebarModel.segmentAction(for: item, in: group)

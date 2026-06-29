@@ -2,20 +2,28 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct SidebarDropActionContext {
+    let performDrop: (
+        _ pasteboard: NSPasteboard,
+        _ resolution: SidebarDropResolution,
+        _ windowState: BrowserWindowState?
+    ) -> Bool
+}
+
 struct SidebarGlobalDragOverlay: NSViewRepresentable {
-    @EnvironmentObject var browserManager: BrowserManager
+    let dropActions: SidebarDropActionContext
     @EnvironmentObject private var dragState: SidebarDragState
     @Environment(BrowserWindowState.self) var windowState
 
     func makeNSView(context: Context) -> SidebarDragNSView {
         let view = SidebarDragNSView(dragState: dragState)
-        view.browserManager = browserManager
+        view.dropActions = dropActions
         view.windowState = windowState
         return view
     }
 
     func updateNSView(_ nsView: SidebarDragNSView, context: Context) {
-        nsView.browserManager = browserManager
+        nsView.dropActions = dropActions
         nsView.dragState = dragState
         nsView.windowState = windowState
     }
@@ -37,7 +45,7 @@ class SidebarDragNSView: NSView {
         }
     }
 
-    weak var browserManager: BrowserManager?
+    var dropActions: SidebarDropActionContext?
     var windowState: BrowserWindowState?
     var dragState: SidebarDragState
     private var cachedDragContext: DragContext?
@@ -129,15 +137,10 @@ class SidebarDragNSView: NSView {
 
         guard let resolution,
               resolution.slot != .empty,
-              let browserManager = browserManager else { return false }
+              let dropActions else { return false }
         dragState.beginDropCommit()
         return runWithoutDropAnimations {
-            SidebarDropCoordinator.performDrop(
-                pasteboard: sender.draggingPasteboard,
-                resolution: resolution,
-                browserManager: browserManager,
-                windowState: windowState
-            )
+            dropActions.performDrop(sender.draggingPasteboard, resolution, windowState)
         }
     }
 

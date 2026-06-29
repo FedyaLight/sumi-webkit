@@ -35,7 +35,7 @@ extension ExtensionManager {
     }
 
     func notifyWindowClosed(_ windowId: UUID) {
-        windowAdapters.removeValue(forKey: windowId)
+        adapterStore.removeWindowAdapter(for: windowId)
     }
 
     func notifyAuxiliaryWindowOpened(_ session: AuxiliaryWindowSession) {
@@ -75,7 +75,7 @@ extension ExtensionManager {
         guard let adapter = session.miniWindowAdapter,
               let extensionContext = auxiliaryOwnerExtensionContext(for: session)
         else {
-            miniWindowAdapters.removeValue(forKey: session.id)
+            adapterStore.removeMiniWindowAdapter(for: session.id)
             return
         }
 
@@ -89,7 +89,7 @@ extension ExtensionManager {
             extensionContext.didFocusWindow(nil)
         }
 
-        miniWindowAdapters.removeValue(forKey: session.id)
+        adapterStore.removeMiniWindowAdapter(for: session.id)
     }
 
     private func auxiliaryOwnerExtensionContext(
@@ -190,7 +190,7 @@ extension ExtensionManager {
         guard let controller = extensionController(for: tab),
               let adapter = stableAdapter(for: tab) else { return }
         controller.didCloseTab(adapter, windowIsClosing: false)
-        tabAdapters.removeValue(forKey: tab.id)
+        adapterStore.removeTabAdapter(for: tab.id)
     }
 
     /// Call immediately after `tabOpenNotificationGeneration` is incremented so WebKit never
@@ -575,7 +575,7 @@ extension ExtensionManager {
         let loadedIDs = allLoadedExtensionIDs()
             .union(loadedExtensionManifests.keys)
             .union(optionsWindows.keys)
-            .union(nativeMessagePortExtensionIDs.values)
+            .union(nativeMessagingPortRegistry.extensionIDs)
 
         for extensionId in loadedIDs {
             tearDownExtensionRuntimeState(for: extensionId, removeUIState: false)
@@ -605,7 +605,7 @@ extension ExtensionManager {
             .union(loadedExtensionManifests.keys)
             .union(cachedWebExtensionsByID.keys)
             .union(optionsWindows.keys)
-            .union(nativeMessagePortExtensionIDs.values)
+            .union(nativeMessagingPortRegistry.extensionIDs)
             .union(extensionErrorObserverTokens.keys)
 
         if loadedIDs.isEmpty == false {
@@ -695,14 +695,9 @@ extension ExtensionManager {
 
     func cancelNativeMessagingSessions(reason: String) {
         extensionRuntimeTrace(
-            "nativeMessagingCancelSessions reason=\(reason) count=\(nativeMessagePortHandlers.count)"
+            "nativeMessagingCancelSessions reason=\(reason) count=\(nativeMessagingPortRegistry.count)"
         )
-        if nativeMessagePortHandlers.isEmpty == false {
-            nativeMessagePortHandlers.values.forEach { $0.disconnect() }
-            nativeMessagePortHandlers.removeAll()
-            nativeMessagePortExtensionIDs.removeAll()
-            nativeMessagePortProfileIDs.removeAll()
-        }
+        nativeMessagingPortRegistry.disconnectAll()
         loadedNativeMessagingRelay?.clearAllLoopGuardState()
     }
 
@@ -714,15 +709,12 @@ extension ExtensionManager {
                     .flatMap(\.ephemeralTabs)
                     .map(\.id)
             )
-            tabAdapters = tabAdapters.filter { liveTabIDs.contains($0.key) }
-
             let liveWindowIDs = Set(
                 browserManager.windowRegistry?.windows.keys.map { $0 } ?? []
             )
-            windowAdapters = windowAdapters.filter { liveWindowIDs.contains($0.key) }
+            adapterStore.prune(liveTabIDs: liveTabIDs, liveWindowIDs: liveWindowIDs)
         } else {
-            tabAdapters.removeAll()
-            windowAdapters.removeAll()
+            adapterStore.removeTabAndWindowAdapters()
         }
     }
 
@@ -961,33 +953,11 @@ extension ExtensionManager {
         forExtensionId extensionId: String,
         profileId: UUID? = nil
     ) {
-        let handlerIDs = nativeMessagePortExtensionIDs.compactMap { entry -> ObjectIdentifier? in
-            guard entry.value == extensionId else { return nil }
-            if let profileId, nativeMessagePortProfileIDs[entry.key] != profileId {
-                return nil
-            }
-            return entry.key
-        }
-
-        for handlerID in handlerIDs {
-            nativeMessagePortHandlers[handlerID]?.disconnect()
-            nativeMessagePortHandlers.removeValue(forKey: handlerID)
-            nativeMessagePortExtensionIDs.removeValue(forKey: handlerID)
-            nativeMessagePortProfileIDs.removeValue(forKey: handlerID)
-        }
+        nativeMessagingPortRegistry.disconnect(extensionId: extensionId, profileId: profileId)
     }
 
     private func tearDownNativeMessageHandlers(for extensionId: String) {
-        let handlerIDs = nativeMessagePortExtensionIDs.compactMap { entry in
-            entry.value == extensionId ? entry.key : nil
-        }
-
-        for handlerID in handlerIDs {
-            nativeMessagePortHandlers[handlerID]?.disconnect()
-            nativeMessagePortHandlers.removeValue(forKey: handlerID)
-            nativeMessagePortExtensionIDs.removeValue(forKey: handlerID)
-            nativeMessagePortProfileIDs.removeValue(forKey: handlerID)
-        }
+        nativeMessagingPortRegistry.disconnect(extensionId: extensionId)
     }
 
     private func unloadExtensionContextIfNeeded(for extensionId: String) {

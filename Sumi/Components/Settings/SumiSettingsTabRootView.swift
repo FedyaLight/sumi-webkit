@@ -320,13 +320,40 @@ struct SumiSettingsTabRootView: View {
         case .privacy:
             PrivacySettingsView(browserManager: browserManager, windowState: windowState)
         case .profiles:
-            SumiProfilesSettingsPane()
+            SumiProfilesSettingsPane(
+                profileManager: browserManager.profileManager,
+                tabManager: browserManager.tabManager,
+                deleteProfile: { profile in
+                    browserManager.deleteProfile(profile)
+                }
+            )
         case .shortcuts:
             ShortcutsSettingsView(shortcutManager: keyboardShortcutManager)
         case .extensions, .userScripts:
             SumiExtensionsSettingsPane()
         case .advanced:
-            SumiDataRecoverySettingsPane()
+            SumiDataRecoverySettingsPane(
+                actions: SumiDataRecoveryActions(
+                    importBookmarksFromMenu: {
+                        browserManager.importBookmarksFromMenu()
+                    },
+                    exportBrowser2ZenDocument: {
+                        try SumiTransferExportService()
+                            .exportBrowser2ZenDocument(from: browserManager)
+                    },
+                    writeBackup: { url in
+                        try SumiBackupService().writeBackup(from: browserManager, to: url)
+                    },
+                    applyImport: { data, categories, mode in
+                        try await SumiImportApplier().apply(
+                            data,
+                            to: browserManager,
+                            categories: categories,
+                            mode: mode
+                        )
+                    }
+                )
+            )
         case .about:
             SettingsAboutTab()
         }

@@ -36,7 +36,6 @@ struct PinnedTabView: View {
     var accentSourceURL: URL?
     var accentSourcePartition: SumiFaviconPartition?
 
-    @EnvironmentObject var browserManager: BrowserManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.sumiSettings) var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext

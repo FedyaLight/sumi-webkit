@@ -234,7 +234,6 @@ struct PinnedGrid: View {
                     ? 0.001
                     : 1
             )
-            .environmentObject(browserManager)
             .transition(
                 reduceMotion
                     ? .identity

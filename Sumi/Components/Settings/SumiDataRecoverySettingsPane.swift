@@ -7,8 +7,19 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+struct SumiDataRecoveryActions {
+    let importBookmarksFromMenu: () -> Void
+    let exportBrowser2ZenDocument: () throws -> Data
+    let writeBackup: (URL) throws -> Void
+    let applyImport: (
+        _ data: SumiPortableData,
+        _ categories: Set<SumiImportCategory>,
+        _ mode: SumiImportApplyMode
+    ) async throws -> SumiImportApplyResult
+}
+
 struct SumiDataRecoverySettingsPane: View {
-    @EnvironmentObject private var browserManager: BrowserManager
+    let actions: SumiDataRecoveryActions
     @State private var importPreview: SumiImportPreview?
     @State private var selectedCategories: Set<SumiImportCategory> = []
     @State private var applyMode: SumiImportApplyMode = .merge
@@ -16,9 +27,6 @@ struct SumiDataRecoverySettingsPane: View {
     @State private var isWorking = false
 
     private let importService = SumiBrowserImportService()
-    private let backupService = SumiBackupService()
-    private let transferService = SumiTransferExportService()
-    private let applier = SumiImportApplier()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -53,7 +61,7 @@ struct SumiDataRecoverySettingsPane: View {
                         systemImage: "book",
                         buttonTitle: "Import"
                     ) {
-                        browserManager.importBookmarksFromMenu()
+                        actions.importBookmarksFromMenu()
                     }
                     .disabled(isWorking)
 
@@ -199,7 +207,7 @@ struct SumiDataRecoverySettingsPane: View {
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let payload = try transferService.exportBrowser2ZenDocument(from: browserManager)
+            let payload = try actions.exportBrowser2ZenDocument()
             try withSecurityScoped(url) {
                 try payload.write(to: url, options: .atomic)
             }
@@ -217,7 +225,7 @@ struct SumiDataRecoverySettingsPane: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try withSecurityScoped(url) {
-                try backupService.writeBackup(from: browserManager, to: url)
+                try actions.writeBackup(url)
             }
             statusMessage = "Backed up \(url.lastPathComponent)."
         } catch {
@@ -232,11 +240,10 @@ struct SumiDataRecoverySettingsPane: View {
         Task { @MainActor in
             defer { isWorking = false }
             do {
-                let result = try await applier.apply(
+                let result = try await actions.applyImport(
                     importPreview.data,
-                    to: browserManager,
-                    categories: selectedCategories,
-                    mode: applyMode
+                    selectedCategories,
+                    applyMode
                 )
                 var messages = result.warnings
                 if let preRestoreBackupURL = result.preRestoreBackupURL {

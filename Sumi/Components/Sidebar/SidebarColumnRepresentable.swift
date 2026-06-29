@@ -12,7 +12,19 @@ struct SidebarColumnHostedRootView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: presentationContext.shellEdge.resizeHandleAlignment) {
                 if presentationContext.showsResizeHandle {
-                    SidebarResizeView(sidebarPosition: presentationContext.sidebarPosition)
+                    SidebarResizeView(
+                        sidebarPosition: presentationContext.sidebarPosition,
+                        onResize: { width, windowState, persist in
+                            environmentContext.browserManager.updateSidebarWidth(
+                                width,
+                                for: windowState,
+                                persist: persist
+                            )
+                        },
+                        onEndResize: { windowState in
+                            environmentContext.browserManager.persistWindowSession(for: windowState)
+                        }
+                    )
                         .frame(maxHeight: .infinity)
                         .zIndex(2000)
                 }

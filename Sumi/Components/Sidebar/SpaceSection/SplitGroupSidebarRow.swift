@@ -144,6 +144,7 @@ struct SplitGroupSidebarRow: View {
     let group: SplitGroup
     let items: [SplitGroupSidebarItem]
     let spaceId: UUID
+    let currentTabId: UUID?
     let isAppKitInteractionEnabled: Bool
     let segmentAction: (SplitGroupSidebarItem) -> SplitGroupSidebarSegmentAction?
     var dragSource: (SplitGroupSidebarItem) -> SidebarDragSourceConfiguration? = { _ in nil }
@@ -153,7 +154,6 @@ struct SplitGroupSidebarRow: View {
     var onSegmentActionAnimationStart: (SplitGroupSidebarItem) -> Void = { _ in }
     let onSegmentAction: (SplitGroupSidebarItem) -> Void
 
-    @EnvironmentObject private var browserManager: BrowserManager
     @EnvironmentObject private var splitManager: SplitViewManager
     @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -271,10 +271,6 @@ struct SplitGroupSidebarRow: View {
     private var isFocusedGroup: Bool {
         guard let currentTabId else { return false }
         return group.contains(currentTabId)
-    }
-
-    private var currentTabId: UUID? {
-        browserManager.currentTab(for: windowState)?.id
     }
 
     private func isActive(_ item: SplitGroupSidebarItem) -> Bool {

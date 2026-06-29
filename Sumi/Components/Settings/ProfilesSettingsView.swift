@@ -8,9 +8,17 @@ import SwiftUI
 
 /// Profile management (also used in the in-tab settings surface).
 struct SumiProfilesSettingsPane: View {
+    @ObservedObject var profileManager: ProfileManager
+    @ObservedObject var tabManager: TabManager
+    let deleteProfile: (Profile) -> Void
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ProfilesSettingsView()
+            ProfilesSettingsView(
+                profileManager: profileManager,
+                tabManager: tabManager,
+                deleteProfile: deleteProfile
+            )
         }
     }
 }
@@ -30,7 +38,9 @@ struct ProfilesSettingsView: View {
         }
     }
 
-    @EnvironmentObject var browserManager: BrowserManager
+    @ObservedObject var profileManager: ProfileManager
+    @ObservedObject var tabManager: TabManager
+    let deleteProfile: (Profile) -> Void
     @Environment(\.resolvedThemeContext) private var themeContext
     @State private var profileEditorPresentation: ProfileEditorPresentation?
 
@@ -40,7 +50,7 @@ struct ProfilesSettingsView: View {
             subtitle: "Each profile keeps website data, history, and extension state separate."
         ) {
             VStack(alignment: .leading, spacing: 12) {
-                if browserManager.profileManager.profiles.isEmpty {
+                if profileManager.profiles.isEmpty {
                     SettingsEmptyState(
                         systemImage: "person.2",
                         title: "No Profiles",
@@ -78,7 +88,7 @@ struct ProfilesSettingsView: View {
 
     private var profileRows: some View {
         VStack(spacing: 0) {
-            ForEach(browserManager.profileManager.profiles, id: \.id) { profile in
+            ForEach(profileManager.profiles, id: \.id) { profile in
                 ProfileRowView(
                     profile: profile,
                     spacesCount: spacesCount(for: profile),
@@ -88,7 +98,7 @@ struct ProfilesSettingsView: View {
                     onDelete: { startDelete(profile) }
                 )
 
-                if profile.id != browserManager.profileManager.profiles.last?.id {
+                if profile.id != profileManager.profiles.last?.id {
                     SettingsDivider()
                         .padding(.leading, 58)
                 }
@@ -107,22 +117,22 @@ struct ProfilesSettingsView: View {
     }
 
     private func canDelete(_ profile: Profile) -> Bool {
-        browserManager.profileManager.profiles.count > 1
-            && browserManager.profileManager.profiles.contains { $0.id == profile.id }
+        profileManager.profiles.count > 1
+            && profileManager.profiles.contains { $0.id == profile.id }
     }
 
     private func spacesCount(for profile: Profile) -> Int {
-        browserManager.tabManager.spaces.filter { $0.profileId == profile.id }
+        tabManager.spaces.filter { $0.profileId == profile.id }
             .count
     }
 
     private func tabsCount(for profile: Profile) -> Int {
         let spaceIds = Set(
-            browserManager.tabManager.spaces.filter {
+            tabManager.spaces.filter {
                 $0.profileId == profile.id
             }.map { $0.id }
         )
-        return browserManager.tabManager.allTabs().filter { tab in
+        return tabManager.allTabs().filter { tab in
             if let sid = tab.spaceId { return spaceIds.contains(sid) }
             return false
         }.count
@@ -146,7 +156,7 @@ struct ProfilesSettingsView: View {
                 }
             )
         case .edit(let profileID):
-            if let profile = browserManager.profileManager.profiles.first(where: { $0.id == profileID }) {
+            if let profile = profileManager.profiles.first(where: { $0.id == profileID }) {
                 ProfileEditorSheet(
                     mode: .edit,
                     initialName: profile.name,
@@ -200,7 +210,7 @@ struct ProfilesSettingsView: View {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, isProfileNameAvailable(trimmed) else { return }
 
-        _ = browserManager.profileManager.createProfile(
+        _ = profileManager.createProfile(
             name: trimmed,
             icon: SumiProfileIcon.storedValue(icon)
         )
@@ -215,13 +225,13 @@ struct ProfilesSettingsView: View {
 
         profile.name = trimmed
         profile.icon = SumiProfileIcon.storedValue(icon)
-        browserManager.profileManager.persistProfiles()
+        profileManager.persistProfiles()
         profileEditorPresentation = nil
     }
 
     private func confirmDelete(_ profile: Profile) {
         guard canDelete(profile) else { return }
-        browserManager.deleteProfile(profile)
+        deleteProfile(profile)
     }
 
     private func isProfileNameAvailable(
@@ -230,7 +240,7 @@ struct ProfilesSettingsView: View {
     ) -> Bool {
         let trimmed = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
-        return !browserManager.profileManager.profiles.contains {
+        return !profileManager.profiles.contains {
             $0.id != excludedProfileID
                 && $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
         }
