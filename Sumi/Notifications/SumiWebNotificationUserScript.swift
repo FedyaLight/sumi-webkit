@@ -302,11 +302,7 @@ final class SumiWebNotificationUserScript: NSObject, SumiUserScript, @MainActor 
             }
 
         case .error(let error):
-            throw NSError(
-                domain: "UserScriptMessaging",
-                code: 0,
-                userInfo: [NSLocalizedDescriptionKey: error.localizedDescription]
-            )
+            throw error.asNSError
         }
     }
 

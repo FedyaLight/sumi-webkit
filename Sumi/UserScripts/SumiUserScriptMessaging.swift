@@ -116,6 +116,28 @@ extension SumiUserScriptBrokerError: LocalizedError {
     }
 }
 
+extension SumiUserScriptBrokerError {
+    static let nsErrorDomain = "UserScriptMessaging"
+
+    var nsErrorCode: Int {
+        switch self {
+        case .invalidParams,
+             .notFoundFeature,
+             .notFoundHandler,
+             .policyRestriction:
+            return 0
+        }
+    }
+
+    var asNSError: NSError {
+        NSError(
+            domain: Self.nsErrorDomain,
+            code: nsErrorCode,
+            userInfo: [NSLocalizedDescriptionKey: localizedDescription]
+        )
+    }
+}
+
 enum SumiUserScriptHostnameMatchingRule {
     case exact(hostname: String)
     case exactOrSubdomain(hostname: String)
