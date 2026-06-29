@@ -110,7 +110,7 @@ enum ExtensionActionPopupPresentationOwner {
             ?? manager.activePopupExtensionID
 
         guard resolvedOwnerExtensionID != nil
-            || Tab.isExtensionOriginatedPopupNavigation(
+            || SumiPopupNavigationOrigin.isExtensionOriginatedPopupNavigation(
                 sourceURL: sourceURL,
                 requestURL: requestURL
             )

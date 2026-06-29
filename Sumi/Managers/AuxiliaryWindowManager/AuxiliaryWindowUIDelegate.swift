@@ -47,7 +47,7 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
             let parentSession = manager.session(for: webView)
             let ownerExtensionID = parentSession?.ownerExtensionID
             let isExtensionOriginated = ownerExtensionID != nil
-                || Tab.isExtensionOriginatedExternalPopupNavigation(
+                || SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(
                     sourceURL: navigationAction.sumiWebKitSourceURL ?? sourceTab.url,
                     requestURL: navigationAction.request.url
                 )

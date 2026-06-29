@@ -14,7 +14,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         let webView = WKWebView()
         var decisions: [Bool] = []
 
-        tab.webView(
+        tab.webKitUIDelegateOwner.webView(
             webView,
             requestUserMediaAuthorizationForDevices: SumiWebKitLegacyCaptureDevices.camera.rawValue,
             url: URL(string: "https://camera.example/request")!,

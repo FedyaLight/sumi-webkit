@@ -2,33 +2,22 @@ import AppKit
 import Foundation
 import WebKit
 
-// MARK: - WKUIDelegate
-extension Tab: WKUIDelegate {
-    nonisolated static func isExtensionOriginatedPopupNavigation(
-        sourceURL: URL?,
-        requestURL: URL?
-    ) -> Bool {
-        ExtensionUtils.isExtensionOwnedURL(sourceURL)
-            || ExtensionUtils.isExtensionOwnedURL(requestURL)
+@MainActor
+final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
+    private weak var tab: Tab?
+
+    init(tab: Tab) {
+        self.tab = tab
+        super.init()
     }
 
-    nonisolated static func isExtensionOriginatedExternalPopupNavigation(
-        sourceURL: URL?,
-        requestURL: URL?
-    ) -> Bool {
-        let requestScheme = requestURL?.scheme?.lowercased()
-
-        return ExtensionUtils.isExtensionOwnedURL(sourceURL)
-            && (requestScheme == "http" || requestScheme == "https")
-    }
-
-    public func webView(
+    func webView(
         _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        navigationDelegateBundle(for: webView)?.popupHandling.createWebView(
+        tab?.navigationDelegateBundle(for: webView)?.popupHandling.createWebView(
             from: webView,
             with: configuration,
             for: navigationAction,
@@ -36,7 +25,6 @@ extension Tab: WKUIDelegate {
         )
     }
 
-    @MainActor
     @objc(_webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:completionHandler:)
     func webView(
         _ webView: WKWebView,
@@ -45,13 +33,18 @@ extension Tab: WKUIDelegate {
         windowFeatures: WKWindowFeatures,
         completionHandler: @escaping (WKWebView?) -> Void
     ) {
-        dispatchCreateWebView(from: webView) { [weak self, weak webView] in
-            guard let self, let webView else {
+        guard let tab else {
+            completionHandler(nil)
+            return
+        }
+
+        tab.dispatchCreateWebView(from: webView) { [weak tab, weak webView] in
+            guard let tab, let webView else {
                 completionHandler(nil)
                 return
             }
             Task { @MainActor in
-                let popupWebView = await self.navigationDelegateBundle(for: webView)?.popupHandling.createWebViewAsync(
+                let popupWebView = await tab.navigationDelegateBundle(for: webView)?.popupHandling.createWebViewAsync(
                     from: webView,
                     with: configuration,
                     for: navigationAction,
@@ -62,20 +55,21 @@ extension Tab: WKUIDelegate {
         }
     }
 
-    public func webViewDidClose(_ webView: WKWebView) {
+    func webViewDidClose(_ webView: WKWebView) {
+        guard let tab else { return }
         RuntimeDiagnostics.debug(category: "Tab") {
-            "WebKit requested WebView close for tab=\(id.uuidString.prefix(8))."
+            "WebKit requested WebView close for tab=\(tab.id.uuidString.prefix(8))."
         }
 
-        if browserManager?.handleWebViewDidClose(webView) == true {
+        if tab.browserManager?.handleWebViewDidClose(webView) == true {
             return
         }
 
-        cleanupCloneWebView(webView)
-        clearCurrentWebViewOwnershipIfIdentical(to: webView)
+        tab.cleanupCloneWebView(webView)
+        tab.clearCurrentWebViewOwnershipIfIdentical(to: webView)
     }
 
-    public func webView(
+    func webView(
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
@@ -94,7 +88,7 @@ extension Tab: WKUIDelegate {
         }
     }
 
-    public func webView(
+    func webView(
         _ webView: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
         initiatedByFrame frame: WKFrameInfo,
@@ -114,7 +108,7 @@ extension Tab: WKUIDelegate {
         }
     }
 
-    public func webView(
+    func webView(
         _ webView: WKWebView,
         runJavaScriptTextInputPanelWithPrompt prompt: String,
         defaultText: String?,
@@ -141,13 +135,17 @@ extension Tab: WKUIDelegate {
         }
     }
 
-    public func webView(
+    func webView(
         _ webView: WKWebView,
         runOpenPanelWith parameters: WKOpenPanelParameters,
         initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
-        webKitPermissionUIDelegateOwner.runOpenPanel(
+        guard let tab else {
+            completionHandler(nil)
+            return
+        }
+        tab.webKitPermissionUIDelegateOwner.runOpenPanel(
             webView,
             parameters: parameters,
             initiatedByFrame: frame,
@@ -164,7 +162,7 @@ extension Tab: WKUIDelegate {
         mimeType: String?,
         originatingURL: URL
     ) {
-        browserManager?.downloadManager.saveDownloadedData(
+        tab?.browserManager?.downloadManager.saveDownloadedData(
             data,
             suggestedFilename: suggestedFilename.isEmpty ? (webView.url?.lastPathComponent ?? "download") : suggestedFilename,
             mimeType: mimeType,
@@ -173,14 +171,18 @@ extension Tab: WKUIDelegate {
     }
 
     @available(macOS 13.0, *)
-    public func webView(
+    func webView(
         _ webView: WKWebView,
         requestMediaCaptureAuthorization type: WKMediaCaptureType,
         for origin: WKSecurityOrigin,
         initiatedByFrame frame: WKFrameInfo,
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
-        webKitPermissionUIDelegateOwner.requestMediaCaptureAuthorization(
+        guard let tab else {
+            decisionHandler(.deny)
+            return
+        }
+        tab.webKitPermissionUIDelegateOwner.requestMediaCaptureAuthorization(
             webView,
             type: type,
             origin: origin,
@@ -197,7 +199,11 @@ extension Tab: WKUIDelegate {
         withSystemAudio _: Bool,
         decisionHandler: @escaping (Int) -> Void
     ) {
-        webKitPermissionUIDelegateOwner.requestDisplayCapturePermission(
+        guard let tab else {
+            decisionHandler(SumiWebKitDisplayCapturePermissionDecision.deny.rawValue)
+            return
+        }
+        tab.webKitPermissionUIDelegateOwner.requestDisplayCapturePermission(
             webView,
             origin: origin,
             initiatedByFrame: frame,
@@ -213,7 +219,11 @@ extension Tab: WKUIDelegate {
         mainFrameURL: URL,
         decisionHandler: @escaping (Bool) -> Void
     ) {
-        webKitPermissionUIDelegateOwner.requestUserMediaAuthorization(
+        guard let tab else {
+            decisionHandler(false)
+            return
+        }
+        tab.webKitPermissionUIDelegateOwner.requestUserMediaAuthorization(
             webView,
             devicesRawValue: devicesRawValue,
             requestURL: requestURL,
@@ -230,7 +240,11 @@ extension Tab: WKUIDelegate {
         underCurrentDomain currentDomain: String,
         completionHandler: @escaping (Bool) -> Void
     ) {
-        webKitPermissionUIDelegateOwner.requestStorageAccessPanel(
+        guard let tab else {
+            completionHandler(false)
+            return
+        }
+        tab.webKitPermissionUIDelegateOwner.requestStorageAccessPanel(
             webView,
             requestingDomain: requestingDomain,
             currentDomain: currentDomain,
@@ -247,7 +261,11 @@ extension Tab: WKUIDelegate {
         forQuirkDomains quirkDomains: [String: [String]],
         completionHandler: @escaping (Bool) -> Void
     ) {
-        webKitPermissionUIDelegateOwner.requestStorageAccessPanel(
+        guard let tab else {
+            completionHandler(false)
+            return
+        }
+        tab.webKitPermissionUIDelegateOwner.requestStorageAccessPanel(
             webView,
             requestingDomain: requestingDomain,
             currentDomain: currentDomain,
@@ -262,7 +280,11 @@ extension Tab: WKUIDelegate {
         requestGeolocationPermissionFor frame: WKFrameInfo,
         decisionHandler: @escaping (Bool) -> Void
     ) {
-        webKitPermissionUIDelegateOwner.requestLegacyGeolocationPermission(
+        guard let tab else {
+            decisionHandler(false)
+            return
+        }
+        tab.webKitPermissionUIDelegateOwner.requestLegacyGeolocationPermission(
             webView,
             frame: frame,
             decisionHandler: decisionHandler
@@ -270,13 +292,17 @@ extension Tab: WKUIDelegate {
     }
 
     @available(macOS 27.0, *)
-    public func webView(
+    func webView(
         _ webView: WKWebView,
         requestGeolocationPermissionFor origin: WKSecurityOrigin,
         initiatedByFrame frame: WKFrameInfo,
         decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
     ) {
-        webKitPermissionUIDelegateOwner.requestGeolocationPermission(
+        guard let tab else {
+            decisionHandler(.deny)
+            return
+        }
+        tab.webKitPermissionUIDelegateOwner.requestGeolocationPermission(
             webView,
             origin: origin,
             initiatedByFrame: frame,

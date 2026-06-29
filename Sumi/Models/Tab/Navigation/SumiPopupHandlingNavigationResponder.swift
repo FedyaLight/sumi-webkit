@@ -81,13 +81,13 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
         let requestURL = navigationAction.request.url
-        let isExtensionOriginated = Tab.isExtensionOriginatedPopupNavigation(
+        let isExtensionOriginated = SumiPopupNavigationOrigin.isExtensionOriginatedPopupNavigation(
             sourceURL: sourceURL,
             requestURL: requestURL
         )
 
         if let requestURL,
-           Tab.isExtensionOriginatedExternalPopupNavigation(sourceURL: sourceURL, requestURL: requestURL),
+           SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(sourceURL: sourceURL, requestURL: requestURL),
            browserManager.extensionsModule.consumeRecentlyOpenedExtensionTabRequestIfLoaded(for: requestURL) {
             return nil
         }
@@ -183,13 +183,13 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
         let requestURL = navigationAction.request.url
-        let isExtensionOriginated = Tab.isExtensionOriginatedPopupNavigation(
+        let isExtensionOriginated = SumiPopupNavigationOrigin.isExtensionOriginatedPopupNavigation(
             sourceURL: sourceURL,
             requestURL: requestURL
         )
 
         if let requestURL,
-           Tab.isExtensionOriginatedExternalPopupNavigation(sourceURL: sourceURL, requestURL: requestURL),
+           SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(sourceURL: sourceURL, requestURL: requestURL),
            browserManager.extensionsModule.consumeRecentlyOpenedExtensionTabRequestIfLoaded(for: requestURL) {
             return nil
         }
@@ -315,7 +315,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         guard let targetFrame = navigationAction.targetFrame else { return .next }
 
-        let isExtensionOriginated = Tab.isExtensionOriginatedPopupNavigation(
+        let isExtensionOriginated = SumiPopupNavigationOrigin.isExtensionOriginatedPopupNavigation(
             sourceURL: navigationAction.sourceURL,
             requestURL: url
         )
@@ -498,7 +498,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
         if let requestURL = navigationAction.request.url,
-           Tab.isExtensionOriginatedExternalPopupNavigation(
+           SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(
                sourceURL: sourceURL,
                requestURL: requestURL
            ) {

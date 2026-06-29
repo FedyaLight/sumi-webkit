@@ -582,7 +582,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
         let expectation = XCTestExpectation(description: "legacy media delegate decision")
         var decisions: [Bool] = []
 
-        tab.webView(
+        tab.webKitUIDelegateOwner.webView(
             webView,
             requestUserMediaAuthorizationForDevices: SumiWebKitLegacyCaptureDevices.camera.rawValue,
             url: URL(string: "https://camera.example/request")!,

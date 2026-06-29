@@ -6,6 +6,7 @@ final class TabOwnedWebViewPreparationOwner {
     struct Dependencies {
         let tab: @MainActor () -> Tab?
         let browserManager: @MainActor () -> BrowserManager?
+        let uiDelegate: @MainActor () -> WKUIDelegate?
         let visitedLinkStore: @MainActor () -> (any BrowserVisitedLinkStoreManaging)?
         let installNavigationDelegate: @MainActor (WKWebView) -> Void
         let setupNavigationStateObservers: @MainActor (WKWebView) -> Void
@@ -79,7 +80,7 @@ final class TabOwnedWebViewPreparationOwner {
 
     private func applyOwnedTabWebViewNavigationSetup(to webView: WKWebView) {
         dependencies.installNavigationDelegate(webView)
-        webView.uiDelegate = dependencies.tab()
+        webView.uiDelegate = dependencies.uiDelegate()
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
     }
@@ -122,6 +123,7 @@ extension TabOwnedWebViewPreparationOwner.Dependencies {
         Self(
             tab: { [weak tab] in tab },
             browserManager: { [weak tab] in tab?.browserManager },
+            uiDelegate: { [weak tab] in tab?.webKitUIDelegateOwner },
             visitedLinkStore: { [weak tab] in tab?.visitedLinkStore },
             installNavigationDelegate: { [weak tab] webView in
                 tab?.installNavigationDelegate(on: webView)
