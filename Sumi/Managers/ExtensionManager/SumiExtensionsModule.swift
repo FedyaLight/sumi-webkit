@@ -11,6 +11,7 @@ final class SumiExtensionsModule {
     private let context: ModelContext?
     private let browserConfiguration: BrowserConfiguration
     private let initialProfileProvider: @MainActor () -> Profile?
+    private let safariExtensionImportStore: any SafariExtensionImportStoring
     private let managerFactory: @MainActor (
         ModelContext,
         Profile?,
@@ -30,6 +31,7 @@ final class SumiExtensionsModule {
         context: ModelContext? = nil,
         browserConfiguration: BrowserConfiguration? = nil,
         initialProfileProvider: @escaping @MainActor () -> Profile? = { nil },
+        safariExtensionImportStore: any SafariExtensionImportStoring = SafariExtensionImportStore.shared,
         managerFactory: @escaping @MainActor (
             ModelContext,
             Profile?,
@@ -49,6 +51,7 @@ final class SumiExtensionsModule {
         self.context = context
         self.browserConfiguration = browserConfiguration ?? .shared
         self.initialProfileProvider = initialProfileProvider
+        self.safariExtensionImportStore = safariExtensionImportStore
         self.managerFactory = managerFactory
         self.surfaceStore = surfaceStore ?? BrowserExtensionSurfaceStore(
             extensionManager: nil
@@ -297,7 +300,7 @@ final class SumiExtensionsModule {
 
     func uninstallExtension(_ extensionId: String) async throws {
         guard let manager = managerIfEnabled() else { return }
-        SafariExtensionImportStore.shared.removeImportedRecord(
+        safariExtensionImportStore.removeImportedRecord(
             forInstalledExtensionId: extensionId
         )
         try await manager.uninstallExtension(extensionId)
@@ -319,11 +322,19 @@ final class SumiExtensionsModule {
             from: candidate.appexURL,
             enableOnInstall: true
         )
-        SafariExtensionImportStore.shared.markImported(
+        safariExtensionImportStore.markImported(
             candidate: candidate,
             installedExtensionId: installed.id
         )
         return installed
+    }
+
+    func refreshDiscoveredSafariWebExtensionCandidates(
+        _ candidates: [DiscoveredSafariExtensionCandidate]
+    ) {
+        safariExtensionImportStore.refreshDiscoveredCandidates(
+            candidates.filter { $0.bundleKind == .webExtension }
+        )
     }
 
     func installedSafariContentBlockers() -> [InstalledSafariContentBlockerRecord] {

@@ -8,6 +8,15 @@
 
 import Foundation
 
+protocol SafariExtensionImportStoring: AnyObject {
+    func refreshDiscoveredCandidates(_ candidates: [DiscoveredSafariExtensionCandidate])
+    func removeImportedRecord(forInstalledExtensionId installedExtensionId: String)
+    func markImported(
+        candidate: DiscoveredSafariExtensionCandidate,
+        installedExtensionId: String
+    )
+}
+
 struct SafariExtensionImportCandidateRecord: Codable, Equatable, Identifiable, Sendable {
     var id: String { extensionBundleIdentifier }
 
@@ -154,3 +163,5 @@ final class SafariExtensionImportStore: @unchecked Sendable {
         defaults.set(data, forKey: key)
     }
 }
+
+extension SafariExtensionImportStore: SafariExtensionImportStoring {}

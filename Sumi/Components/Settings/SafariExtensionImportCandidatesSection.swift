@@ -162,9 +162,7 @@ struct SafariExtensionImportCandidatesSection: View {
 
             var issues: [SafariExtensionScannerIssue] = []
             let discovered = SafariExtensionScanner().scanInstalledExtensions(issues: &issues)
-            SafariExtensionImportStore.shared.refreshDiscoveredCandidates(
-                discovered.filter { $0.bundleKind == .webExtension }
-            )
+            browserManager.extensionsModule.refreshDiscoveredSafariWebExtensionCandidates(discovered)
             candidates = discovered
             contentBlockerRecords = browserManager.extensionsModule.installedSafariContentBlockers()
         }
