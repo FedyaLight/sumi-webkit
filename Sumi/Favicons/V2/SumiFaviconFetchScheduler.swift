@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import WebKit
 
 // The wrapped WKWebView is weak and can only be read from the main actor.
@@ -373,6 +374,8 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
 private final class SumiFaviconWebKitDownloader: NSObject, WKDownloadDelegate {
     static let shared = SumiFaviconWebKitDownloader()
 
+    private static let log = Logger.sumi(category: "FaviconFetchScheduler")
+
     private struct PendingDownload {
         let url: URL
         let continuation: CheckedContinuation<SumiFaviconFetchResult, Never>
@@ -443,9 +446,21 @@ private final class SumiFaviconWebKitDownloader: NSObject, WKDownloadDelegate {
         defer {
             pending.destinationURL.flatMap { try? FileManager.default.removeItem(at: $0) }
         }
-        guard let destinationURL = pending.destinationURL,
-              let data = try? Data(contentsOf: destinationURL)
-        else {
+        guard let destinationURL = pending.destinationURL else {
+            pending.continuation.resume(returning: .failure(.transport))
+            return
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: destinationURL)
+        } catch {
+            // A successful download followed by a local disk-read failure used
+            // to be reported as a generic transport error, masking the cause.
+            // Log the real reason; the failure is still surfaced as .transport
+            // (infrastructure-level) to avoid changing downstream handling.
+            Self.log.error(
+                "Favicon download succeeded but the payload could not be read from disk: \(error.localizedDescription, privacy: .public)"
+            )
             pending.continuation.resume(returning: .failure(.transport))
             return
         }

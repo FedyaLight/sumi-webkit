@@ -95,6 +95,23 @@ final class SumiBoostStoreTests: XCTestCase {
         )
     }
 
+    func testCorruptBoostsJSONIsPreservedAndNotOverwrittenByReadOnlyLoad() throws {
+        let directory = temporaryDirectory()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let jsonURL = directory.appendingPathComponent("boosts.json")
+        let unreadableURL = jsonURL.appendingPathExtension("unreadable")
+        let corruptPayload = Data("{ not valid boosts json".utf8)
+        try corruptPayload.write(to: jsonURL, options: [.atomic])
+
+        let store = SumiBoostStore(rootDirectory: directory)
+        XCTAssertTrue(
+            store.boosts(for: URL(string: "https://example.test/")!, profileId: UUID()).isEmpty
+        )
+
+        XCTAssertEqual(try Data(contentsOf: jsonURL), corruptPayload)
+        XCTAssertEqual(try Data(contentsOf: unreadableURL), corruptPayload)
+    }
+
     func testExportImportKeepsBoostDataAndActivatesImportedBoost() throws {
         let sourceStore = SumiBoostStore(rootDirectory: temporaryDirectory())
         let targetStore = SumiBoostStore(rootDirectory: temporaryDirectory())

@@ -1,6 +1,9 @@
 import Foundation
+import OSLog
 
 struct SumiGitHubLiveFolderProvider: Sendable {
+    private static let log = Logger.sumi(category: "LiveFolders")
+
     private let networkClient: SumiLiveFolderNetworkClient
 
     init(networkClient: SumiLiveFolderNetworkClient) {
@@ -132,7 +135,7 @@ struct SumiGitHubLiveFolderProvider: Sendable {
         return ["\(base.joined(separator: " ")) (\(filters.joined(separator: " OR ")))"]
     }
 
-    private func parseGitHubResponse(
+    func parseGitHubResponse(
         data: Data,
         source: SumiLiveFolderSource,
         baseURL: URL
@@ -151,9 +154,37 @@ struct SumiGitHubLiveFolderProvider: Sendable {
         data: Data,
         source: SumiLiveFolderSource
     ) -> [SumiLiveFolderItem]? {
-        guard source.kind == .githubPullRequests,
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let payload = root["payload"] as? [String: Any],
+        guard source.kind == .githubPullRequests else { return nil }
+        let firstPayloadByte = data.first { byte in
+            switch byte {
+            case 0x09, 0x0A, 0x0D, 0x20:
+                return false
+            default:
+                return true
+            }
+        }
+        guard let firstPayloadByte else { return nil }
+        guard firstPayloadByte == 0x7B || firstPayloadByte == 0x5B else { return nil }
+
+        // Distinguish malformed JSON (unexpected, worth surfacing) from a valid
+        // response that simply lacks the expected shape (can be an empty result).
+        let root: [String: Any]
+        do {
+            let jsonObject = try JSONSerialization.jsonObject(with: data)
+            guard let object = jsonObject as? [String: Any] else {
+                Self.log.error(
+                    "GitHub PR dashboard payload is valid JSON but not an object; Live Folder will render empty."
+                )
+                return nil
+            }
+            root = object
+        } catch {
+            Self.log.error(
+                "Failed to parse GitHub PR dashboard payload as JSON: \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+        guard let payload = root["payload"] as? [String: Any],
               let route = payload["pullsDashboardSurfaceContentRoute"] as? [String: Any],
               let results = route["results"] as? [[String: Any]] else {
             return nil

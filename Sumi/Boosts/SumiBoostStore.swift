@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OSLog
 
 enum SumiBoostStoreError: LocalizedError {
     case unboostableURL
@@ -24,6 +25,8 @@ enum SumiBoostStoreError: LocalizedError {
 @MainActor
 final class SumiBoostStore: ObservableObject {
     static let shared = SumiBoostStore()
+
+    private static let log = Logger.sumi(category: "BoostStore")
 
     private struct DiskState: Codable {
         var domains: [DiskDomainEntry]
@@ -252,6 +255,12 @@ final class SumiBoostStore: ObservableObject {
         } else if let boost = try? jsonDecoder.decode(SumiBoost.self, from: data) {
             importedData = boost.data
         } else {
+            // Surface why the import failed: record which shapes were attempted so
+            // the user-facing "invalid import" error is diagnosable. Payload bytes
+            // are not logged; only the attempted type names and sizes.
+            Self.log.error(
+                "Boost import rejected: none of SumiBoostExportPackage, SumiBoostData, or SumiBoost decoded (bytes=\(data.count, privacy: .public))."
+            )
             throw SumiBoostStoreError.invalidImport
         }
 
@@ -282,41 +291,76 @@ final class SumiBoostStore: ObservableObject {
     private func loadIfNeeded() {
         guard !didLoad else { return }
         didLoad = true
-        guard let data = try? Data(contentsOf: jsonURL),
-              let diskState = try? jsonDecoder.decode(DiskState.self, from: data)
-        else {
-            return
-        }
-
-        entries = Dictionary(
-            uniqueKeysWithValues: diskState.domains.map { diskEntry in
-                let key = SumiBoostDomainKey(
-                    profileId: diskEntry.profileId,
-                    host: normalizedHost(diskEntry.host)
+        do {
+            let data = try Data(contentsOf: jsonURL)
+            let diskState: DiskState
+            do {
+                diskState = try jsonDecoder.decode(DiskState.self, from: data)
+            } catch {
+                // A corrupt/truncated boosts.json used to be silently treated as
+                // empty, losing every Boost with no signal. Preserve the bytes
+                // for recovery and log the failure (description only, no payload).
+                preserveUnreadableBoostsPayload(data)
+                Self.log.error(
+                    "Failed to decode boosts store: \(error.localizedDescription, privacy: .public)"
                 )
-                let boosts = diskEntry.boosts.map(loadBoost)
-                return (
-                    key,
-                    SumiBoostDomainEntry(
+                return
+            }
+
+            entries = Dictionary(
+                uniqueKeysWithValues: diskState.domains.map { diskEntry in
+                    let key = SumiBoostDomainKey(
                         profileId: diskEntry.profileId,
-                        host: key.host,
-                        activeBoostId: diskEntry.activeBoostId,
-                        boosts: boosts,
-                        isEphemeral: false
+                        host: normalizedHost(diskEntry.host)
                     )
+                    let boosts = diskEntry.boosts.map(loadBoost)
+                    return (
+                        key,
+                        SumiBoostDomainEntry(
+                            profileId: diskEntry.profileId,
+                            host: key.host,
+                            activeBoostId: diskEntry.activeBoostId,
+                            boosts: boosts,
+                            isEphemeral: false
+                        )
+                    )
+                }
+            )
+        } catch {
+            // A missing file on first launch is expected; only log non-missing
+            // read failures (description only, no payload contents).
+            if (error as NSError).code != NSFileReadNoSuchFileError {
+                Self.log.error(
+                    "Failed to read boosts store: \(error.localizedDescription, privacy: .public)"
                 )
             }
-        )
+        }
+    }
+
+    /// Preserves the unreadable bytes of a corrupt boosts.json alongside the
+    /// store so they can be recovered manually. Diagnostic only — contents are
+    /// not logged or otherwise surfaced.
+    private func preserveUnreadableBoostsPayload(_ data: Data) {
+        let backupURL = jsonURL.appendingPathExtension("unreadable")
+        guard !FileManager.default.fileExists(atPath: backupURL.path) else { return }
+        try? data.write(to: backupURL, options: [.atomic])
     }
 
     private func loadBoost(_ diskBoost: DiskBoost) -> SumiBoost {
         var data = diskBoost.data
-        if let customCSSFileName = diskBoost.customCSSFileName,
-           let css = try? String(
-                contentsOf: cssDirectory.appendingPathComponent(customCSSFileName),
-                encoding: .utf8
-           ) {
-            data.customCSS = css
+        if let customCSSFileName = diskBoost.customCSSFileName {
+            do {
+                data.customCSS = try String(
+                    contentsOf: cssDirectory.appendingPathComponent(customCSSFileName),
+                    encoding: .utf8
+                )
+            } catch {
+                // A per-boost custom CSS file that fails to read used to silently
+                // drop the CSS. Log the failure (filename + description only).
+                Self.log.error(
+                    "Failed to read custom CSS '\(customCSSFileName, privacy: .public)' for boost: \(error.localizedDescription, privacy: .public)"
+                )
+            }
         }
 
         return SumiBoost(

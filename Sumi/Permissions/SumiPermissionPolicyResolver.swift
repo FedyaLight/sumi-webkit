@@ -450,7 +450,7 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
             reason: reason,
             createdAt: context.now,
             updatedAt: context.now,
-            systemAuthorizationSnapshot: encodedSnapshot(systemAuthorizationSnapshot)
+            systemAuthorizationSnapshot: SumiSystemPermissionSnapshot.encodedJSONString(for: systemAuthorizationSnapshot)
         )
     }
 
@@ -474,27 +474,6 @@ struct DefaultSumiPermissionPolicyResolver: SumiPermissionPolicyResolver {
             return [.oneTime, .session]
         }
         return [.oneTime, .session, .persistent]
-    }
-
-    private func encodedSnapshot(_ snapshot: SumiSystemPermissionSnapshot?) -> String? {
-        guard let snapshot else {
-            return nil
-        }
-        do {
-            let data = try JSONEncoder().encode(snapshot)
-            guard let encoded = String(data: data, encoding: .utf8) else {
-                RuntimeDiagnostics.emit(
-                    "[Permissions] Failed to UTF-8 encode system permission snapshot."
-                )
-                return nil
-            }
-            return encoded
-        } catch {
-            RuntimeDiagnostics.emit(
-                "[Permissions] Failed to encode system permission snapshot: \(error.localizedDescription)"
-            )
-            return nil
-        }
     }
 
     private func requiresKeyableWebOrigin(_ permissionType: SumiPermissionType) -> Bool {

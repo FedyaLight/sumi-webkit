@@ -36,4 +36,13 @@ final class SumiFaviconAccentCache {
         }
         return domain
     }
+
+    #if DEBUG
+    /// Clears the shared cache. Test-only hook to keep tests isolated from each
+    /// other; the cache has no bulk-reset API on the production surface.
+    @MainActor
+    func resetForTesting() {
+        colorsByKey.removeAll()
+    }
+    #endif
 }

@@ -526,7 +526,7 @@ actor SumiPermissionCoordinator {
             reason: decision.reason,
             createdAt: now,
             updatedAt: now,
-            systemAuthorizationSnapshot: encodedSnapshot(decision.systemAuthorizationSnapshot)
+            systemAuthorizationSnapshot: SumiSystemPermissionSnapshot.encodedJSONString(for: decision.systemAuthorizationSnapshot)
         )
 
         switch persistence {
@@ -976,27 +976,6 @@ actor SumiPermissionCoordinator {
 
     private func removeEventContinuation(_ id: UUID) {
         eventContinuations.removeValue(forKey: id)
-    }
-
-    private func encodedSnapshot(_ snapshot: SumiSystemPermissionSnapshot?) -> String? {
-        guard let snapshot else {
-            return nil
-        }
-        do {
-            let data = try JSONEncoder().encode(snapshot)
-            guard let encoded = String(data: data, encoding: .utf8) else {
-                RuntimeDiagnostics.emit(
-                    "[Permissions] Failed to UTF-8 encode system permission snapshot."
-                )
-                return nil
-            }
-            return encoded
-        } catch {
-            RuntimeDiagnostics.emit(
-                "[Permissions] Failed to encode system permission snapshot: \(error.localizedDescription)"
-            )
-            return nil
-        }
     }
 
     private static func normalizedPageId(_ value: String) -> String {

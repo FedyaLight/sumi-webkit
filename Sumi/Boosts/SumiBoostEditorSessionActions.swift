@@ -128,19 +128,24 @@ final class SumiBoostEditorSessionActions {
         openPanel.allowsMultipleSelection = false
         openPanel.canChooseDirectories = false
         openPanel.begin { [weak self] response in
-            guard response == .OK,
-                  let url = openPanel.url,
-                  let data = try? Data(contentsOf: url)
-            else {
+            guard response == .OK, let url = openPanel.url else {
                 return
             }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    let imported = try module.importBoost(from: data, tab: tab, profile: self.profile)
-                    onImported(imported)
-                } catch {
-                    onError(error.localizedDescription)
+            do {
+                let data = try Data(contentsOf: url)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    do {
+                        let imported = try module.importBoost(from: data, tab: tab, profile: self.profile)
+                        onImported(imported)
+                    } catch {
+                        onError(error.localizedDescription)
+                    }
+                }
+            } catch {
+                let message = error.localizedDescription
+                Task { @MainActor in
+                    onError(message)
                 }
             }
         }

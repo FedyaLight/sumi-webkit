@@ -19,6 +19,30 @@ struct SumiSystemPermissionSnapshot: Codable, Equatable, Hashable, Sendable {
         self.reason = reason ?? Self.defaultReason(kind: kind, state: state)
     }
 
+    /// Encodes an optional snapshot to a UTF-8 JSON string for persistence.
+    /// Returns `nil` for a `nil` snapshot or when encoding fails; failures are
+    /// surfaced via `RuntimeDiagnostics` (no throw, no payload contents logged).
+    static func encodedJSONString(for snapshot: SumiSystemPermissionSnapshot?) -> String? {
+        guard let snapshot else {
+            return nil
+        }
+        do {
+            let data = try JSONEncoder().encode(snapshot)
+            guard let encoded = String(data: data, encoding: .utf8) else {
+                RuntimeDiagnostics.emit(
+                    "[Permissions] Failed to UTF-8 encode system permission snapshot."
+                )
+                return nil
+            }
+            return encoded
+        } catch {
+            RuntimeDiagnostics.emit(
+                "[Permissions] Failed to encode system permission snapshot: \(error.localizedDescription)"
+            )
+            return nil
+        }
+    }
+
     private static func defaultReason(
         kind: SumiSystemPermissionKind,
         state: SumiSystemPermissionAuthorizationState

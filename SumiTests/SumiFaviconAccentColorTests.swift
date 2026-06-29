@@ -6,6 +6,13 @@ import XCTest
 
 @MainActor
 final class SumiFaviconAccentColorTests: XCTestCase {
+    override func tearDown() {
+        // The accent cache is a shared singleton; clear it between tests so one
+        // test's stored colors cannot leak into another.
+        SumiFaviconAccentCache.shared.resetForTesting()
+        super.tearDown()
+    }
+
     func testExtractsDominantRedFromSolidImage() {
         let image = makeSolidImage(color: NSColor(calibratedRed: 1, green: 0, blue: 0, alpha: 1))
         let color = SumiFaviconAccentColor.extract(from: image)

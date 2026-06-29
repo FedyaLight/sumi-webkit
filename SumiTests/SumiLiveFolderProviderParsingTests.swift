@@ -101,4 +101,38 @@ final class SumiLiveFolderProviderParsingTests: XCTestCase {
         XCTAssertEqual(parsed.items.map(\.subtitle), ["UserA", "UserB"])
         XCTAssertEqual(parsed.items.map(\.urlString), ["https://github.com/issues/101", "https://github.com/pull/102"])
     }
+
+    func testGitHubPullRequestsHTMLFallbackParsesNonJSONResponse() throws {
+        let source = SumiLiveFolderSource(
+            folderId: UUID(),
+            spaceId: UUID(),
+            profileId: nil,
+            kind: .githubPullRequests
+        )
+        let html = """
+
+        <!doctype html>
+        <html>
+          <body>
+            <div class="Box-row">
+              <span>apple/swift</span>
+              <a id="issue_123_link" href="/apple/swift/pull/123">Fix parser fallback</a>
+              <span class="opened-by">opened by reviewer</span>
+            </div>
+          </body>
+        </html>
+        """
+
+        let parsed = SumiGitHubLiveFolderProvider(networkClient: SumiLiveFolderNetworkClient())
+            .parseGitHubResponse(
+                data: Data(html.utf8),
+                source: source,
+                baseURL: try XCTUnwrap(URL(string: "https://github.com/pulls"))
+            )
+
+        XCTAssertEqual(parsed.activeRepositories, ["apple/swift"])
+        XCTAssertEqual(parsed.items.map(\.id), ["apple/swift#123"])
+        XCTAssertEqual(parsed.items.map(\.title), ["Fix parser fallback"])
+        XCTAssertEqual(parsed.items.map(\.urlString), ["https://github.com/apple/swift/pull/123"])
+    }
 }

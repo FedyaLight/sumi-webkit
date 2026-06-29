@@ -35,7 +35,9 @@ default.profraw
 # SwiftPM
 .build/
 .swiftpm/
-Vendor/DDG/URLPredictor/Binary/
+# Ignore the unpacked URLPredictor binary artifacts (materialized by
+# scripts/bootstrap_vendor_binaries.sh), but keep CHECKSUMS.sha256 tracked.
+Vendor/DDG/URLPredictor/Binary/URLPredictorRust.xcframework/
 
 # App-specific
 .home/

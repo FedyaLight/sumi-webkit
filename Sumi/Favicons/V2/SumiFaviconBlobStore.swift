@@ -537,17 +537,47 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         }
 
         let url = metadataURL(for: partition)
-        guard let data = try? Data(contentsOf: url),
-              let metadata = try? JSONDecoder.sumiFavicon.decode(Metadata.self, from: data),
-              metadata.schemaVersion == 2
-        else {
+        let loadedData: Data
+        do {
+            loadedData = try Data(contentsOf: url)
+        } catch {
+            // Missing metadata file is expected on first run / empty partition;
+            // treat it as a fresh store. Non-missing read errors are logged.
+            if (error as NSError).code != NSFileReadNoSuchFileError {
+                Self.log.error(
+                    "Failed to read favicon metadata for partition \(partition.storageComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+            }
             let metadata = Metadata()
             metadataByPartition[partition] = metadata
             return metadata
         }
 
-        metadataByPartition[partition] = metadata
-        return metadata
+        do {
+            let metadata = try JSONDecoder.sumiFavicon.decode(Metadata.self, from: loadedData)
+            guard metadata.schemaVersion == 2 else {
+                // Stale schema: preserve the bytes for inspection and start fresh.
+                preserveUnreadableMetadata(loadedData, at: url)
+                Self.log.error(
+                    "Favicon metadata for partition \(partition.storageComponent, privacy: .public) has unexpected schemaVersion; starting fresh."
+                )
+                let fresh = Metadata()
+                metadataByPartition[partition] = fresh
+                return fresh
+            }
+            metadataByPartition[partition] = metadata
+            return metadata
+        } catch {
+            // Corrupt metadata used to silently reset the whole partition's cache,
+            // orphaning blobs on disk. Preserve the bytes for recovery and log.
+            preserveUnreadableMetadata(loadedData, at: url)
+            Self.log.error(
+                "Failed to decode favicon metadata for partition \(partition.storageComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            let metadata = Metadata()
+            metadataByPartition[partition] = metadata
+            return metadata
+        }
     }
 
     private func persist(metadata: Metadata, partition: SumiFaviconPartition) throws {
@@ -570,6 +600,15 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
                 "Failed to persist favicon metadata after \(operation, privacy: .public) for \(partition.storageComponent, privacy: .public): \(String(describing: error), privacy: .public)"
             )
         }
+    }
+
+    /// Preserves the unreadable bytes of a corrupt metadata file alongside the
+    /// original so they can be recovered manually. Diagnostic only — contents
+    /// are not logged or otherwise surfaced.
+    private func preserveUnreadableMetadata(_ data: Data, at url: URL) {
+        let backupURL = url.appendingPathExtension("unreadable")
+        guard !fileManager.fileExists(atPath: backupURL.path) else { return }
+        try? data.write(to: backupURL, options: [.atomic])
     }
 
     private func cleanupDiskBudgetIfNeeded(metadata: inout Metadata, partition: SumiFaviconPartition) {
