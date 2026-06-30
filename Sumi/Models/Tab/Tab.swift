@@ -57,6 +57,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     let normalWebViewSetupOwner = TabNormalWebViewSetupOwner()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
+    private let closeLifecycleOwner = TabCloseLifecycleOwner()
     let configurationPolicyWebViewReplacementContextOwner =
         TabConfigurationPolicyWebViewReplacementContextOwner()
     let navigationCommandOwner = TabNavigationCommandOwner()
@@ -640,39 +641,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     // MARK: - Tab Actions
     func closeTab() {
-        RuntimeDiagnostics.emit("Closing tab: \(self.name)")
-
-        cleanupNormalTabPermissionRuntime(reason: "normal-tab-close")
-
-        // MEMORY LEAK FIX: Use comprehensive cleanup instead of scattered cleanup
-        performComprehensiveWebViewCleanup()
-
-        // 11. RESET ALL STATE
-        resetPlaybackActivity()
-        applyAudioState(.unmuted(isPlayingAudio: false))
-        loadingState = .idle
-
-        // 13. CLEANUP ZOOM DATA
-        browserManager?.cleanupZoomForTab(self.id)
-
-        // 14. FORCE COMPOSITOR UPDATE
-        // Note: This is called during tab loading, so we use the global current tab
-        // The compositor will handle window-specific visibility in its update methods
-        browserManager?.compositorManager.updateTabVisibility()
-
-        if let webView = _webView {
-            removeNavigationStateObservers(from: webView)
-        }
-
-        // 15. REMOVE FROM TAB MANAGER
-        browserManager?.tabManager.removeTab(self.id)
-
-        // Cancel any pending observations
-        profileAwaitCancellable?.cancel()
-        profileAwaitCancellable = nil
-        cancelPendingMainFrameNavigation()
-
-        RuntimeDiagnostics.debug("Tab close completed.", category: "Tab")
+        closeLifecycleOwner.close(context: .live(tab: self))
     }
 
     deinit {
