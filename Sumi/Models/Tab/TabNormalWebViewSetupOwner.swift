@@ -3,107 +3,117 @@ import WebKit
 
 @MainActor
 final class TabNormalWebViewSetupOwner {
-    func setupWebView(for tab: Tab) {
-        tab.beginSuspendedRestoreIfNeeded()
-        let reusableExistingWebView = tab.parkedWebView
+    func setupWebView(
+        context: TabNormalWebViewRuntimeContext,
+        provisioningOwner: TabWebViewProvisioningOwner
+    ) {
+        context.beginSuspendedRestoreIfNeeded()
+        let reusableExistingWebView = context.parkedWebView()
         var didReuseExistingWebView = false
         var didCreateAuxiliaryOverrideWebView = false
 
-        guard let profile = tab.resolveProfile() else {
-            tab.profileWebViewCreationGate.deferCreationUntilProfileAvailable()
+        guard let profile = context.resolveProfile() else {
+            context.deferWebViewCreationUntilProfileAvailable()
             return
         }
 
-        let configurationContext = TabWebViewConfigurationContext.live(browserManager: tab.browserManager)
-        let auxiliaryOverrideConfiguration = tab.webViewConfigurationOwner.auxiliaryOverrideConfiguration(
+        let configurationContext = context.configurationContext()
+        let auxiliaryOverrideConfiguration = context.webViewConfigurationOwner.auxiliaryOverrideConfiguration(
             for: profile,
             context: configurationContext
         )
 
         if let existingWebView = reusableExistingWebView {
-            if canReuseAsNormalTabWebView(existingWebView, tab: tab) {
-                tab.adoptParkedWebViewAsCurrent(existingWebView)
+            if canReuseAsNormalTabWebView(existingWebView, context: context) {
+                context.adoptParkedWebViewAsCurrent(existingWebView)
                 didReuseExistingWebView = true
-                Task { @MainActor [weak tab, weak existingWebView] in
-                    guard let tab, let existingWebView else { return }
-                    await tab.replaceNormalTabUserScripts(
-                        on: existingWebView.configuration.userContentController,
-                        for: tab.url
+                let replaceNormalTabUserScripts = context.replaceNormalTabUserScripts
+                let currentURL = context.currentURL
+                Task { @MainActor [weak existingWebView] in
+                    guard let existingWebView else { return }
+                    await replaceNormalTabUserScripts(
+                        existingWebView.configuration.userContentController,
+                        currentURL()
                     )
                 }
             } else {
-                tab.cleanupCloneWebView(existingWebView)
-                tab.clearParkedExistingWebView()
+                context.cleanupCloneWebView(existingWebView)
+                context.clearParkedExistingWebView()
             }
         }
 
-        if !tab.hasCurrentWebView {
+        if !context.hasCurrentWebView {
             if let auxiliaryOverrideConfiguration {
                 configurationContext.prepareWebViewConfigurationForExtensionRuntime(
                     auxiliaryOverrideConfiguration,
                     profile.id,
                     "Tab.setupWebView.configuration"
                 )
-                tab.webViewProvisioningOwner.createAuxiliaryOverrideWebView(
+                provisioningOwner.createAuxiliaryOverrideWebView(
                     auxiliaryOverrideConfiguration,
-                    tab: tab,
-                    currentURL: tab.url,
+                    context: context,
+                    currentURL: context.currentURL(),
                     reason: "Tab.setupWebView"
                 )
                 didCreateAuxiliaryOverrideWebView = true
-            } else if let normalWebView = tab.makeNormalTabWebView(reason: "Tab.setupWebView") {
-                tab.replaceUntrackedWebView(normalWebView)
+            } else if let normalWebView = provisioningOwner.makeNormalTabWebView(
+                context: context,
+                reason: "Tab.setupWebView"
+            ) {
+                context.replaceUntrackedWebView(normalWebView)
             }
         }
 
-        if let webView = tab.currentWebView {
+        if let webView = context.currentWebView() {
             if didReuseExistingWebView || !(webView is FocusableWKWebView) {
-                tab.ownedWebViewPreparationOwner.prepareReusedOrExternallyCreatedWebView(webView)
+                context.ownedWebViewPreparationOwner.prepareReusedOrExternallyCreatedWebView(webView)
             }
         }
 
-        if let webView = tab.currentWebView {
-            tab.ownedWebViewPreparationOwner.applyOwnedTabWebViewNavigationPreferences(to: webView)
+        if let webView = context.currentWebView() {
+            context.ownedWebViewPreparationOwner.applyOwnedTabWebViewNavigationPreferences(to: webView)
         }
 
         let shouldDelayInitialNormalTabRuntimeRegistration =
             shouldDelayInitialNormalTabRuntimeRegistration(
-                isPopupHost: tab.isPopupHost,
-                hasExistingWebView: tab.hasParkedWebView,
+                isPopupHost: context.isPopupHost(),
+                hasExistingWebView: context.hasParkedWebView,
                 didCreateAuxiliaryOverrideWebView: didCreateAuxiliaryOverrideWebView,
-                url: tab.url
+                url: context.currentURL()
             )
 
         if shouldDelayInitialNormalTabRuntimeRegistration == false {
-            tab.registerNormalTabWithExtensionRuntimeIfNeeded(reason: "Tab.setupWebView")
+            provisioningOwner.registerNormalTabWithExtensionRuntimeIfNeeded(
+                context: context,
+                reason: "Tab.setupWebView"
+            )
         }
 
         if didCreateAuxiliaryOverrideWebView,
-           ExtensionUtils.isExtensionOwnedURL(tab.url),
-           let webView = tab.currentWebView {
-            loadExtensionOwnedInitialURL(tab.url, on: webView, tab: tab)
-            tab.finishSuspendedRestoreIfNeeded()
+           ExtensionUtils.isExtensionOwnedURL(context.currentURL()),
+           let webView = context.currentWebView() {
+            loadExtensionOwnedInitialURL(context.currentURL(), on: webView, context: context)
+            context.finishSuspendedRestoreIfNeeded()
             return
         }
 
         if shouldDelayInitialNormalTabRuntimeRegistration {
-            let initialWebView = tab.currentWebView
+            let initialWebView = context.currentWebView()
             let hasInitialUserContentController = initialWebView?.configuration
                 .userContentController
                 .sumiNormalTabUserContentController != nil
-            NormalTabInitialDocumentRuntimeHandoff.scheduleTabSetupInitialLoad(
-                tab: tab,
-                webView: initialWebView,
-                targetURL: tab.url,
-                profileId: profile.id,
-                registrationReason: "Tab.setupWebView.beforeInitialLoad",
-                registrationGuard: hasInitialUserContentController
+            context.scheduleInitialDocumentRuntimeHandoff(
+                initialWebView,
+                context.currentURL(),
+                profile.id,
+                "Tab.setupWebView.beforeInitialLoad",
+                hasInitialUserContentController
                     ? .currentWebViewIdentity
                     : .noExistingWebView
             )
         }
 
-        tab.finishSuspendedRestoreIfNeeded()
+        context.finishSuspendedRestoreIfNeeded()
     }
 
     func shouldDelayInitialNormalTabRuntimeRegistration(
@@ -123,24 +133,29 @@ final class TabNormalWebViewSetupOwner {
         return scheme == "http" || scheme == "https"
     }
 
-    private func loadExtensionOwnedInitialURL(_ targetURL: URL, on webView: WKWebView, tab: Tab) {
+    private func loadExtensionOwnedInitialURL(
+        _ targetURL: URL,
+        on webView: WKWebView,
+        context: TabNormalWebViewRuntimeContext
+    ) {
         var request = URLRequest(url: targetURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30.0
-        tab.performMainFrameNavigation(on: webView) { resolvedWebView in
-            resolvedWebView.load(request)
-        }
-        tab.applyCachedFaviconOrPlaceholder(for: targetURL)
+        context.loadMainFrameRequest(webView, request)
+        context.applyCachedFaviconOrPlaceholder(targetURL)
     }
 
-    private func canReuseAsNormalTabWebView(_ webView: WKWebView, tab: Tab) -> Bool {
-        tab.webViewConfigurationOwner.canReuseAsNormalTabWebView(
+    private func canReuseAsNormalTabWebView(
+        _ webView: WKWebView,
+        context: TabNormalWebViewRuntimeContext
+    ) -> Bool {
+        context.webViewConfigurationOwner.canReuseAsNormalTabWebView(
             webView,
-            fallbackURL: tab.url,
-            tabId: tab.id,
-            profile: tab.resolveProfile(),
-            context: TabWebViewConfigurationContext.live(browserManager: tab.browserManager),
-            reloadPolicyStateOwner: tab.reloadPolicyStateOwner
+            fallbackURL: context.currentURL(),
+            tabId: context.tabId,
+            profile: context.resolveProfile(),
+            context: context.configurationContext(),
+            reloadPolicyStateOwner: context.reloadPolicyStateOwner
         )
     }
 }

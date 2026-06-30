@@ -4,25 +4,25 @@ import WebKit
 @MainActor
 final class TabWebViewProvisioningOwner {
     @discardableResult
-    func ensureWebView(for tab: Tab) -> WKWebView? {
-        if !tab.hasCurrentWebView {
-            tab.setupWebView()
+    func ensureWebView(context: TabNormalWebViewRuntimeContext) -> WKWebView? {
+        if !context.hasCurrentWebView {
+            context.setupWebView()
         }
-        return tab.currentWebView
+        return context.currentWebView()
     }
 
     @discardableResult
     func createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
         _ configuration: WKWebViewConfiguration,
-        tab: Tab,
+        context: TabNormalWebViewRuntimeContext,
         currentURL: URL?,
         isExtensionOriginated: Bool,
         reason: String
     ) -> WKWebView {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
-        tab.replaceUntrackedWebView(webView)
+        context.replaceUntrackedWebView(webView)
 
-        tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+        context.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
             webView,
             currentURL: currentURL,
             reason: reason,
@@ -36,15 +36,15 @@ final class TabWebViewProvisioningOwner {
     @discardableResult
     func createPopupWebViewFromWebKitConfiguration(
         _ configuration: WKWebViewConfiguration,
-        tab: Tab,
+        context: TabNormalWebViewRuntimeContext,
         currentURL: URL?,
         isExtensionOriginated: Bool,
         reason: String
     ) -> WKWebView {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        tab.replaceUntrackedWebView(webView)
+        context.replaceUntrackedWebView(webView)
 
-        tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+        context.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
             webView,
             currentURL: currentURL,
             reason: reason,
@@ -58,14 +58,14 @@ final class TabWebViewProvisioningOwner {
     @discardableResult
     func createAuxiliaryOverrideWebView(
         _ configuration: WKWebViewConfiguration,
-        tab: Tab,
+        context: TabNormalWebViewRuntimeContext,
         currentURL: URL?,
         reason: String
     ) -> WKWebView {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
-        tab.replaceUntrackedWebView(webView)
+        context.replaceUntrackedWebView(webView)
 
-        tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+        context.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
             webView,
             currentURL: currentURL,
             reason: reason,
@@ -76,14 +76,18 @@ final class TabWebViewProvisioningOwner {
         return webView
     }
 
-    func assignWebViewToWindow(_ webView: WKWebView, tab: Tab, windowId: UUID) {
-        tab.assignPrimaryWebView(webView, windowId: windowId)
-        tab.ownedWebViewPreparationOwner.prepareAssignedWebView(webView)
+    func assignWebViewToWindow(
+        _ webView: WKWebView,
+        context: TabNormalWebViewRuntimeContext,
+        windowId: UUID
+    ) {
+        context.assignPrimaryWebView(webView, windowId)
+        context.ownedWebViewPreparationOwner.prepareAssignedWebView(webView)
     }
 
     @discardableResult
     func makeNormalTabWebView(
-        for tab: Tab,
+        context: TabNormalWebViewRuntimeContext,
         reason: String,
         prepareConfiguration: ((WKWebViewConfiguration) -> Void)? = nil
     ) -> WKWebView? {
@@ -92,23 +96,23 @@ final class TabWebViewProvisioningOwner {
             StartupPerformanceTrace.firstWebViewCreationFinished(startupTrace)
         }
 
-        guard let profile = tab.resolveProfile() else {
+        guard let profile = context.resolveProfile() else {
             RuntimeDiagnostics.emit(
                 "[Tab] Unable to create normal WebView during \(reason); profile is unresolved."
             )
-            tab.profileWebViewCreationGate.deferCreationUntilProfileAvailable()
+            context.deferWebViewCreationUntilProfileAvailable()
             return nil
         }
 
         guard let configuration = normalTabWebViewConfiguration(
-            for: tab,
+            context: context,
             profile: profile,
             reason: reason
         ) else {
             return nil
         }
 
-        let configurationContext = TabWebViewConfigurationContext.live(browserManager: tab.browserManager)
+        let configurationContext = context.configurationContext()
         configurationContext.prepareWebViewConfigurationForExtensionRuntime(
             configuration,
             profile.id,
@@ -117,61 +121,52 @@ final class TabWebViewProvisioningOwner {
         prepareConfiguration?(configuration)
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        configureNormalTabWebView(webView, tab: tab, reason: reason)
+        configureNormalTabWebView(webView, context: context, reason: reason)
         return webView
     }
 
-    func registerNormalTabWithExtensionRuntimeIfNeeded(for tab: Tab, reason: String) {
-        tab.browserManager?.extensionsModule.registerTabWithExtensionRuntimeIfLoaded(
-            tab,
-            reason: reason
-        )
-
-        if let browserManager = tab.browserManager,
-           let windowId = tab.primaryWindowId,
-           let windowState = browserManager.windowRegistry?.windows[windowId],
-           browserManager.currentTab(for: windowState)?.id == tab.id {
-            browserManager.extensionsModule.notifyTabActivatedIfLoaded(
-                newTab: tab,
-                previous: nil
-            )
-        }
+    func registerNormalTabWithExtensionRuntimeIfNeeded(
+        context: TabNormalWebViewRuntimeContext,
+        reason: String
+    ) {
+        context.registerNormalTabWithExtensionRuntimeIfNeeded(reason)
     }
 
     func applyWebViewConfigurationOverride(
         _ configuration: WKWebViewConfiguration,
-        for tab: Tab
+        context: TabNormalWebViewRuntimeContext
     ) {
-        tab.webViewConfigurationOwner.applyWebViewConfigurationOverride(
+        context.webViewConfigurationOwner.applyWebViewConfigurationOverride(
             configuration,
-            profileId: tab.resolveProfile()?.id ?? tab.profileId,
-            context: TabWebViewConfigurationContext.live(browserManager: tab.browserManager)
+            profileId: context.resolveProfile()?.id ?? context.profileId(),
+            context: context.configurationContext()
         )
     }
 
     private func configureNormalTabWebView(
         _ webView: FocusableWKWebView,
-        tab: Tab,
+        context: TabNormalWebViewRuntimeContext,
         reason: String
     ) {
-        tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+        context.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
             webView,
-            currentURL: tab.url,
+            currentURL: context.currentURL(),
             reason: reason
         )
     }
 
     private func normalTabWebViewConfiguration(
-        for tab: Tab,
+        context: TabNormalWebViewRuntimeContext,
         profile: Profile,
         reason: String
     ) -> WKWebViewConfiguration? {
-        return tab.webViewConfigurationOwner.normalTabWebViewConfiguration(
-            for: tab.url,
+        let currentURL = context.currentURL()
+        return context.webViewConfigurationOwner.normalTabWebViewConfiguration(
+            for: currentURL,
             profile: profile,
-            userScriptsProvider: tab.normalTabUserScriptsProvider(for: tab.url),
-            context: TabWebViewConfigurationContext.live(browserManager: tab.browserManager),
-            reloadPolicyStateOwner: tab.reloadPolicyStateOwner
+            userScriptsProvider: context.normalTabUserScriptsProvider(currentURL),
+            context: context.configurationContext(),
+            reloadPolicyStateOwner: context.reloadPolicyStateOwner
         )
     }
 
