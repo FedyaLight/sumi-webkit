@@ -64,7 +64,7 @@ struct SumiApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             SumiCommands(
-                browserManager: browserManager,
+                browserContext: makeCommandsBrowserContext(),
                 windowRegistry: windowRegistry,
                 shortcutManager: keyboardShortcutManager
             )
@@ -119,6 +119,12 @@ struct SumiApp: App {
                 windowState: windowState
             )
         }
+    }
+
+    private func makeCommandsBrowserContext() -> SumiCommandsBrowserContext {
+        SumiCommandsBrowserContext(
+            runtime: .live(browserManager: browserManager)
+        )
     }
 
     private static func makeWindowShellContentView(

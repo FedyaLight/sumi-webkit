@@ -1,24 +1,147 @@
 import Foundation
 
 @MainActor
+protocol SumiCommandPageStateProviding: AnyObject {
+    var currentProfile: Profile? { get }
+    func activePageTabForActiveWindow() -> Tab?
+    func activePageURLForActiveWindow() -> URL?
+    func currentTabIsMuted() -> Bool
+    func currentTabHasAudioContent() -> Bool
+    func hasCustomizableSpaceForCommands() -> Bool
+}
+
+@MainActor
+protocol SumiCommandBrowserActionRouting: AnyObject {
+    func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState?)
+    func setAsDefaultBrowser()
+    func clearCurrentPageCookies()
+    func showGradientEditor()
+    func showQuitDialog()
+    func closeCurrentTab()
+    func closeActiveWindow()
+    func undoCloseTab()
+    func openNewTabSurfaceInActiveWindow()
+    func createNewWindow()
+    func createIncognitoWindow()
+    func focusFloatingBarForActiveWindow(
+        prefill: String,
+        navigateCurrentTab: Bool,
+        presentationReason: FloatingBarPresentationReason
+    )
+    func copyCurrentURL()
+    func toggleSidebar()
+    func showFindBar()
+    func refreshCurrentTabInActiveWindow()
+    func zoomInCurrentTab()
+    func zoomOutCurrentTab()
+    func resetZoomCurrentTab()
+    func hardReloadCurrentPage()
+    func openWebInspector()
+    func toggleMuteCurrentTabInActiveWindow()
+}
+
+@MainActor
+protocol SumiCommandHistoryRouting: AnyObject {
+    var canGoBackInActiveWindow: Bool { get }
+    var canGoForwardInActiveWindow: Bool { get }
+    var canRestoreAnyLastSession: Bool { get }
+    func goBackInActiveWindow()
+    func goForwardInActiveWindow()
+    func reopenMostRecentClosedItem()
+    func reopenRecentlyClosedItem(_ item: RecentlyClosedItem)
+    func reopenAllWindowsFromLastSession()
+    func openHistoryURLFromMenuItem(_ url: URL)
+    func showHistory()
+    func clearAllHistoryFromMenu()
+}
+
+@MainActor
+protocol SumiCommandBookmarkRouting: AnyObject {
+    func canBookmarkAllTabsInActiveWindow() -> Bool
+    func requestBookmarkEditorForActiveWindowFromMenu()
+    func bookmarkAllTabsFromMenu()
+    func manageBookmarksFromMenu()
+    func importBookmarksFromMenu()
+    func exportBookmarksFromMenu()
+    func openBookmarkURLFromMenuItem(_ url: URL)
+}
+
+#if DEBUG
+@MainActor
+protocol SumiCommandExtensionDiagnosticsRouting: AnyObject {
+    var extensionDiagnosticsAreEnabledForCommands: Bool { get }
+    func printSafariExtensionAcceptanceCheckToConsole()
+    func printSafariExtensionNativeMessagingProbeToConsole()
+    func printSafariExtensionDevDiagnosticsReportToConsole()
+}
+#endif
+
+@MainActor
+struct SumiCommandsBrowserRuntime {
+    let pageState: any SumiCommandPageStateProviding
+    let browserActions: any SumiCommandBrowserActionRouting
+    let historyRouting: any SumiCommandHistoryRouting
+    let bookmarkRouting: any SumiCommandBookmarkRouting
+    let recentlyClosedManager: RecentlyClosedManager
+    let historyManager: HistoryManager
+    let bookmarkManager: SumiBookmarkManager
+    let faviconService: any BrowserFaviconServicing
+#if DEBUG
+    var extensionDiagnostics: (any SumiCommandExtensionDiagnosticsRouting)?
+#endif
+}
+
+@MainActor
 final class SumiCommandsBrowserContext {
-    private weak var browserManager: BrowserManager?
+    private let pageState: any SumiCommandPageStateProviding
+    private let browserActions: any SumiCommandBrowserActionRouting
+    private let historyRouting: any SumiCommandHistoryRouting
+    private let bookmarkRouting: any SumiCommandBookmarkRouting
+#if DEBUG
+    private var extensionDiagnostics: (any SumiCommandExtensionDiagnosticsRouting)?
+#endif
 
     let recentlyClosedManager: RecentlyClosedManager
     let historyManager: HistoryManager
     let bookmarkManager: SumiBookmarkManager
     let faviconService: any BrowserFaviconServicing
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
-        self.recentlyClosedManager = browserManager.recentlyClosedManager
-        self.historyManager = browserManager.historyManager
-        self.bookmarkManager = browserManager.bookmarkManager
-        self.faviconService = browserManager.dataServices.faviconService
+    init(runtime: SumiCommandsBrowserRuntime) {
+        self.pageState = runtime.pageState
+        self.browserActions = runtime.browserActions
+        self.historyRouting = runtime.historyRouting
+        self.bookmarkRouting = runtime.bookmarkRouting
+        self.recentlyClosedManager = runtime.recentlyClosedManager
+        self.historyManager = runtime.historyManager
+        self.bookmarkManager = runtime.bookmarkManager
+        self.faviconService = runtime.faviconService
+#if DEBUG
+        self.extensionDiagnostics = runtime.extensionDiagnostics
+#endif
+    }
+
+    init(
+        pageState: any SumiCommandPageStateProviding,
+        browserActions: any SumiCommandBrowserActionRouting,
+        historyRouting: any SumiCommandHistoryRouting,
+        bookmarkRouting: any SumiCommandBookmarkRouting,
+        recentlyClosedManager: RecentlyClosedManager,
+        historyManager: HistoryManager,
+        bookmarkManager: SumiBookmarkManager,
+        faviconService: any BrowserFaviconServicing
+    ) {
+        self.pageState = pageState
+        self.browserActions = browserActions
+        self.historyRouting = historyRouting
+        self.bookmarkRouting = bookmarkRouting
+        self.recentlyClosedManager = recentlyClosedManager
+        self.historyManager = historyManager
+        self.bookmarkManager = bookmarkManager
+        self.faviconService = faviconService
     }
 
     var currentProfile: Profile? {
-        browserManager?.currentProfile
+        pageState.currentProfile
     }
 
     var faviconPartition: SumiFaviconPartition {
@@ -26,11 +149,11 @@ final class SumiCommandsBrowserContext {
     }
 
     var activePageTab: Tab? {
-        browserManager?.activePageTabForActiveWindow()
+        pageState.activePageTabForActiveWindow()
     }
 
     var activePageURL: URL? {
-        browserManager?.activePageURLForActiveWindow()
+        pageState.activePageURLForActiveWindow()
     }
 
     var activePageHost: String? {
@@ -47,19 +170,19 @@ final class SumiCommandsBrowserContext {
     }
 
     var canCustomizeSpaceGradient: Bool {
-        browserManager?.tabManager.currentSpace != nil
+        pageState.hasCustomizableSpaceForCommands()
     }
 
     var canGoBackInActiveWindow: Bool {
-        browserManager?.canGoBackInActiveWindow ?? false
+        historyRouting.canGoBackInActiveWindow
     }
 
     var canGoForwardInActiveWindow: Bool {
-        browserManager?.canGoForwardInActiveWindow ?? false
+        historyRouting.canGoForwardInActiveWindow
     }
 
     var canRestoreAnyLastSession: Bool {
-        browserManager?.canRestoreAnyLastSession ?? false
+        historyRouting.canRestoreAnyLastSession
     }
 
     var canBookmarkActivePage: Bool {
@@ -67,75 +190,76 @@ final class SumiCommandsBrowserContext {
     }
 
     var canBookmarkAllTabsInActiveWindow: Bool {
-        browserManager?.canBookmarkAllTabsInActiveWindow() ?? false
+        bookmarkRouting.canBookmarkAllTabsInActiveWindow()
     }
 
     var currentTabIsMuted: Bool {
-        browserManager?.currentTabIsMuted() ?? false
+        pageState.currentTabIsMuted()
     }
 
     var currentTabHasAudioContent: Bool {
-        browserManager?.currentTabHasAudioContent() ?? false
+        pageState.currentTabHasAudioContent()
     }
 
 #if DEBUG
     var extensionsDiagnosticsAreEnabled: Bool {
-        browserManager?.extensionsModule.isEnabled == true
+        extensionDiagnostics?.extensionDiagnosticsAreEnabledForCommands == true
     }
 #endif
 
     func openSettingsTab(selecting pane: SettingsTabs) {
-        browserManager?.openSettingsTab(selecting: pane)
+        browserActions.openSettingsTab(selecting: pane, in: nil)
     }
 
     func setAsDefaultBrowser() {
-        browserManager?.setAsDefaultBrowser()
+        browserActions.setAsDefaultBrowser()
     }
 
     func clearCurrentPageCookies() {
-        browserManager?.clearCurrentPageCookies()
+        browserActions.clearCurrentPageCookies()
     }
 
     func clearAllHistoryFromMenu() {
-        browserManager?.clearAllHistoryFromMenu()
+        historyRouting.clearAllHistoryFromMenu()
     }
 
     func showGradientEditor() {
-        browserManager?.showGradientEditor()
+        browserActions.showGradientEditor()
     }
 
     func showQuitDialog() {
-        browserManager?.showQuitDialog()
+        browserActions.showQuitDialog()
     }
 
     func closeCurrentTab() {
-        browserManager?.closeCurrentTab()
+        browserActions.closeCurrentTab()
     }
 
     func closeActiveWindow() {
-        browserManager?.closeActiveWindow()
+        browserActions.closeActiveWindow()
     }
 
     func undoCloseTab() {
-        browserManager?.undoCloseTab()
+        browserActions.undoCloseTab()
     }
 
     func openNewTabSurfaceInActiveWindow() {
-        browserManager?.openNewTabSurfaceInActiveWindow()
+        browserActions.openNewTabSurfaceInActiveWindow()
     }
 
     func createNewWindow() {
-        browserManager?.createNewWindow()
+        browserActions.createNewWindow()
     }
 
     func createIncognitoWindow() {
-        browserManager?.createIncognitoWindow()
+        browserActions.createIncognitoWindow()
     }
 
     func focusFloatingBarForActiveWindow(prefill: String, navigateCurrentTab: Bool) {
-        browserManager?.focusFloatingBarForActiveWindow(
+        browserActions.focusFloatingBarForActiveWindow(
             prefill: prefill,
-            navigateCurrentTab: navigateCurrentTab
+            navigateCurrentTab: navigateCurrentTab,
+            presentationReason: .keyboard
         )
     }
 
@@ -147,108 +271,108 @@ final class SumiCommandsBrowserContext {
     }
 
     func copyCurrentURL() {
-        browserManager?.copyCurrentURL()
+        browserActions.copyCurrentURL()
     }
 
     func toggleSidebar() {
-        browserManager?.toggleSidebar()
+        browserActions.toggleSidebar()
     }
 
     func showFindBar() {
-        browserManager?.showFindBar()
+        browserActions.showFindBar()
     }
 
     func refreshCurrentTabInActiveWindow() {
-        browserManager?.refreshCurrentTabInActiveWindow()
+        browserActions.refreshCurrentTabInActiveWindow()
     }
 
     func zoomInCurrentTab() {
-        browserManager?.zoomInCurrentTab()
+        browserActions.zoomInCurrentTab()
     }
 
     func zoomOutCurrentTab() {
-        browserManager?.zoomOutCurrentTab()
+        browserActions.zoomOutCurrentTab()
     }
 
     func resetZoomCurrentTab() {
-        browserManager?.resetZoomCurrentTab()
+        browserActions.resetZoomCurrentTab()
     }
 
     func hardReloadCurrentPage() {
-        browserManager?.hardReloadCurrentPage()
+        browserActions.hardReloadCurrentPage()
     }
 
     func openWebInspector() {
-        browserManager?.openWebInspector()
+        browserActions.openWebInspector()
     }
 
     func toggleMuteCurrentTabInActiveWindow() {
-        browserManager?.toggleMuteCurrentTabInActiveWindow()
+        browserActions.toggleMuteCurrentTabInActiveWindow()
     }
 
     func goBackInActiveWindow() {
-        browserManager?.goBackInActiveWindow()
+        historyRouting.goBackInActiveWindow()
     }
 
     func goForwardInActiveWindow() {
-        browserManager?.goForwardInActiveWindow()
+        historyRouting.goForwardInActiveWindow()
     }
 
     func reopenMostRecentClosedItem() {
-        browserManager?.reopenMostRecentClosedItem()
+        historyRouting.reopenMostRecentClosedItem()
     }
 
     func reopenRecentlyClosedItem(_ item: RecentlyClosedItem) {
-        browserManager?.reopenRecentlyClosedItem(item)
+        historyRouting.reopenRecentlyClosedItem(item)
     }
 
     func reopenAllWindowsFromLastSession() {
-        browserManager?.reopenAllWindowsFromLastSession()
+        historyRouting.reopenAllWindowsFromLastSession()
     }
 
     func openHistoryURLFromMenuItem(_ url: URL) {
-        browserManager?.openHistoryURLFromMenuItem(url)
+        historyRouting.openHistoryURLFromMenuItem(url)
     }
 
     func showHistory() {
-        browserManager?.showHistory()
+        historyRouting.showHistory()
     }
 
     func requestBookmarkEditorForActiveWindowFromMenu() {
-        browserManager?.requestBookmarkEditorForActiveWindowFromMenu()
+        bookmarkRouting.requestBookmarkEditorForActiveWindowFromMenu()
     }
 
     func bookmarkAllTabsFromMenu() {
-        browserManager?.bookmarkAllTabsFromMenu()
+        bookmarkRouting.bookmarkAllTabsFromMenu()
     }
 
     func manageBookmarksFromMenu() {
-        browserManager?.manageBookmarksFromMenu()
+        bookmarkRouting.manageBookmarksFromMenu()
     }
 
     func importBookmarksFromMenu() {
-        browserManager?.importBookmarksFromMenu()
+        bookmarkRouting.importBookmarksFromMenu()
     }
 
     func exportBookmarksFromMenu() {
-        browserManager?.exportBookmarksFromMenu()
+        bookmarkRouting.exportBookmarksFromMenu()
     }
 
     func openBookmarkURLFromMenuItem(_ url: URL) {
-        browserManager?.openBookmarkURLFromMenuItem(url)
+        bookmarkRouting.openBookmarkURLFromMenuItem(url)
     }
 
 #if DEBUG
     func printSafariExtensionAcceptanceCheckToConsole() {
-        browserManager?.extensionsModule.printSafariExtensionAcceptanceCheckToConsole()
+        extensionDiagnostics?.printSafariExtensionAcceptanceCheckToConsole()
     }
 
     func printSafariExtensionNativeMessagingProbeToConsole() {
-        browserManager?.extensionsModule.printSafariExtensionNativeMessagingProbeToConsole()
+        extensionDiagnostics?.printSafariExtensionNativeMessagingProbeToConsole()
     }
 
     func printSafariExtensionDevDiagnosticsReportToConsole() {
-        browserManager?.extensionsModule.printSafariExtensionDevDiagnosticsReportToConsole()
+        extensionDiagnostics?.printSafariExtensionDevDiagnosticsReportToConsole()
     }
 #endif
 }

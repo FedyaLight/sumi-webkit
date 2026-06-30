@@ -15,8 +15,11 @@ struct SumiCommands: Commands {
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @Environment(\.sumiSettings) var sumiSettings
 
-    init(browserManager: BrowserManager, windowRegistry: WindowRegistry, shortcutManager: KeyboardShortcutManager) {
-        let browserContext = SumiCommandsBrowserContext(browserManager: browserManager)
+    init(
+        browserContext: SumiCommandsBrowserContext,
+        windowRegistry: WindowRegistry,
+        shortcutManager: KeyboardShortcutManager
+    ) {
         self.browserContext = browserContext
         self.windowRegistry = windowRegistry
         self.shortcutManager = shortcutManager
