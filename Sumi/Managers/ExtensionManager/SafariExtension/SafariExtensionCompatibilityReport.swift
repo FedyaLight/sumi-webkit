@@ -75,6 +75,34 @@ protocol SafariExtensionImportRecordProviding: AnyObject {
 
 extension SafariExtensionImportStore: SafariExtensionImportRecordProviding {}
 
+@available(macOS 15.5, *)
+@MainActor
+struct SafariExtensionCompatibilityReportRuntime {
+    typealias CurrentTabProvider = @MainActor () -> Tab?
+    typealias StableAdapterProvider = @MainActor (_ tab: Tab) -> ExtensionTabAdapter?
+
+    let currentTab: CurrentTabProvider
+    let stableAdapter: StableAdapterProvider
+
+    static let inactive = SafariExtensionCompatibilityReportRuntime(
+        currentTab: { nil },
+        stableAdapter: { _ in nil }
+    )
+
+    static func live(extensionManager: ExtensionManager?) -> Self {
+        guard let extensionManager else { return .inactive }
+        return Self(
+            currentTab: { [weak extensionManager] in
+                extensionManager?.browserBridgeContext?
+                    .currentExtensionTabForActiveWindow()
+            },
+            stableAdapter: { [weak extensionManager] tab in
+                extensionManager?.stableAdapter(for: tab)
+            }
+        )
+    }
+}
+
 /// PM target extensions for manual acceptance and dev-machine bundle probes.
 enum SafariExtensionCompatibilityTargets {
     struct Target: Equatable, Sendable {
@@ -146,8 +174,10 @@ enum SafariExtensionCompatibilityReportBuilder {
         importStore: any SafariExtensionImportRecordProviding,
         installedExtensions: [InstalledExtension] = [],
         extensionManager: ExtensionManager? = nil,
-        extensionsModuleEnabled: Bool = true
+        extensionsModuleEnabled: Bool = true,
+        runtime: SafariExtensionCompatibilityReportRuntime? = nil
     ) -> SafariExtensionCompatibilityReport {
+        let runtime = runtime ?? .live(extensionManager: extensionManager)
         let discoveredByAppexID = Dictionary(
             uniqueKeysWithValues: discovered.map { ($0.extensionBundleIdentifier, $0) }
         )
@@ -185,9 +215,12 @@ enum SafariExtensionCompatibilityReportBuilder {
                 if extensionManager?.actionStatesByExtensionID[extensionId] != nil {
                     return true
                 }
-                let tab = extensionManager?.browserManager?.currentTabForActiveWindow()
-                let adapter = tab.flatMap { extensionManager?.stableAdapter(for: $0) }
-                return context.action(for: adapter) != nil
+                return ExtensionActionSurfaceStatePresenter.actionForLoadedContext(
+                    context,
+                    preferredTab: nil,
+                    currentTab: runtime.currentTab,
+                    stableAdapter: runtime.stableAdapter
+                ) != nil
             }()
 
             let lastErrorBucket = resolveErrorBucket(
@@ -391,7 +424,8 @@ extension SumiExtensionsModule {
             importStore: safariExtensionImportRecordsForDiagnostics(),
             installedExtensions: installed,
             extensionManager: manager,
-            extensionsModuleEnabled: isEnabled
+            extensionsModuleEnabled: isEnabled,
+            runtime: .live(extensionManager: manager)
         )
         SafariExtensionCompatibilityReportBuilder.logIfDiagnosticsEnabled(report)
         return report

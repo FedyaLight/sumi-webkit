@@ -32,8 +32,8 @@ enum ExtensionActionSurfaceStatePresenter {
     static func actionForLoadedContext(
         _ extensionContext: WKWebExtensionContext,
         preferredTab: Tab?,
-        currentTab: () -> Tab?,
-        stableAdapter: (Tab) -> ExtensionTabAdapter?
+        currentTab: @MainActor () -> Tab?,
+        stableAdapter: @MainActor (Tab) -> ExtensionTabAdapter?
     ) -> WKWebExtension.Action? {
         let tab = preferredTab ?? currentTab()
         let adapter = tab.flatMap { stableAdapter($0) }
