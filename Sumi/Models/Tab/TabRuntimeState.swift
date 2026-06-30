@@ -138,6 +138,23 @@ struct TabCloseLifecycleRuntime {
 }
 
 @MainActor
+struct TabConfigurationPolicyWebViewReplacementRuntime {
+    var trackedWindowIdContainingWebView: (WKWebView) -> UUID?
+    var hasTrackedWebViews: (UUID) -> Bool
+    var setTrackedWebView: (WKWebView, UUID, UUID) -> Void
+    var removeTrackedWebViews: (Tab) -> Bool
+    var refreshWindowAfterWebViewReplacement: (UUID) -> Void
+
+    static let inactive = Self(
+        trackedWindowIdContainingWebView: { _ in nil },
+        hasTrackedWebViews: { _ in false },
+        setTrackedWebView: { _, _, _ in },
+        removeTrackedWebViews: { _ in false },
+        refreshWindowAfterWebViewReplacement: { _ in }
+    )
+}
+
+@MainActor
 struct TabProfileResolutionRuntime {
     var ephemeralProfileForTab: (_ tabId: UUID, _ profileId: UUID) -> Profile?
     var profile: (UUID) -> Profile?
@@ -241,6 +258,8 @@ final class TabNavigationRuntime {
     var findInPageRuntime = TabFindInPageRuntime.inactive
     var extensionPropertiesRuntime = TabExtensionPropertiesRuntime.inactive
     var closeLifecycleRuntime = TabCloseLifecycleRuntime.inactive
+    var configurationPolicyWebViewReplacementRuntime =
+        TabConfigurationPolicyWebViewReplacementRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
     var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
     var reloadPolicyRuntime = TabReloadPolicyRuntime.empty

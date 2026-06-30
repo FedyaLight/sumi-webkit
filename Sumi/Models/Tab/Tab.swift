@@ -202,6 +202,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.closeLifecycleRuntime }
         set { navigationRuntime.closeLifecycleRuntime = newValue }
     }
+    var configurationPolicyWebViewReplacementRuntime: TabConfigurationPolicyWebViewReplacementRuntime {
+        get { navigationRuntime.configurationPolicyWebViewReplacementRuntime }
+        set { navigationRuntime.configurationPolicyWebViewReplacementRuntime = newValue }
+    }
     var navigationCommandRuntime: TabNavigationCommandRuntime {
         get { navigationRuntime.navigationCommandRuntime }
         set { navigationRuntime.navigationCommandRuntime = newValue }
@@ -404,6 +408,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.tabManager.removeTab(tabId)
                     }
                 )
+                configurationPolicyWebViewReplacementRuntime = .live(
+                    webViewCoordinator: { [weak browserManager] in
+                        browserManager?.webViewCoordinator
+                    },
+                    windowState: { [weak browserManager] windowId in
+                        browserManager?.windowRegistry?.windows[windowId]
+                    },
+                    refreshCompositor: { [weak browserManager] windowState in
+                        browserManager?.refreshCompositor(for: windowState)
+                    }
+                )
             } else {
                 webViewRoutingRuntime = .inactive
                 persistenceRuntimeCallbacks = .inactive
@@ -413,6 +428,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 findInPageRuntime = .inactive
                 extensionPropertiesRuntime = .inactive
                 closeLifecycleRuntime = .inactive
+                configurationPolicyWebViewReplacementRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive
                 reloadPolicyRuntime = .empty

@@ -90,6 +90,34 @@ extension TabHistorySwipeRuntime {
 }
 
 @MainActor
+extension TabConfigurationPolicyWebViewReplacementRuntime {
+    static func live(
+        webViewCoordinator: @escaping () -> WebViewCoordinator?,
+        windowState: @escaping (UUID) -> BrowserWindowState?,
+        refreshCompositor: @escaping (BrowserWindowState) -> Void
+    ) -> Self {
+        Self(
+            trackedWindowIdContainingWebView: { webView in
+                webViewCoordinator()?.windowID(containing: webView)
+            },
+            hasTrackedWebViews: { tabId in
+                webViewCoordinator()?.windowIDs(for: tabId).isEmpty == false
+            },
+            setTrackedWebView: { webView, tabId, windowId in
+                webViewCoordinator()?.setWebView(webView, for: tabId, in: windowId)
+            },
+            removeTrackedWebViews: { tab in
+                webViewCoordinator()?.removeAllWebViews(for: tab) ?? false
+            },
+            refreshWindowAfterWebViewReplacement: { windowId in
+                guard let windowState = windowState(windowId) else { return }
+                refreshCompositor(windowState)
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabCloseLifecycleRuntime {
     static func live(
         cleanupZoomForTab: @escaping (UUID) -> Void,

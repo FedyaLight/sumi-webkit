@@ -29,16 +29,17 @@ final class TabConfigurationPolicyWebViewReplacementContextOwner {
             },
             primaryWindowId: tab.primaryWindowId,
             trackedWindowIdContainingWebView: { webView in
-                tab.browserManager?.webViewCoordinator?.windowID(containing: webView)
+                tab.configurationPolicyWebViewReplacementRuntime
+                    .trackedWindowIdContainingWebView(webView)
             },
             hasTrackedWebViews: { tabId in
-                tab.browserManager?.webViewCoordinator?.windowIDs(for: tabId).isEmpty == false
+                tab.configurationPolicyWebViewReplacementRuntime.hasTrackedWebViews(tabId)
             },
             setTrackedWebView: { webView, tabId, windowId in
-                tab.browserManager?.webViewCoordinator?.setWebView(
+                tab.configurationPolicyWebViewReplacementRuntime.setTrackedWebView(
                     webView,
-                    for: tabId,
-                    in: windowId
+                    tabId,
+                    windowId
                 )
             },
             makeNormalTabWebView: { reason in
@@ -48,7 +49,7 @@ final class TabConfigurationPolicyWebViewReplacementContextOwner {
                 tab.invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
             },
             removeTrackedWebViews: {
-                tab.browserManager?.webViewCoordinator?.removeAllWebViews(for: tab) ?? false
+                tab.configurationPolicyWebViewReplacementRuntime.removeTrackedWebViews(tab)
             },
             cleanupCloneWebView: { webView in
                 tab.cleanupCloneWebView(webView)
@@ -63,10 +64,8 @@ final class TabConfigurationPolicyWebViewReplacementContextOwner {
                 tab.assignWebViewToWindow(webView, windowId: windowId)
             },
             refreshWindowAfterWebViewReplacement: { windowId in
-                guard let browserManager = tab.browserManager,
-                      let windowState = browserManager.windowRegistry?.windows[windowId]
-                else { return }
-                browserManager.refreshCompositor(for: windowState)
+                tab.configurationPolicyWebViewReplacementRuntime
+                    .refreshWindowAfterWebViewReplacement(windowId)
             }
         )
     }
