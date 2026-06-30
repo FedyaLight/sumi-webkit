@@ -4,11 +4,36 @@ import Foundation
 import WebKit
 
 @MainActor
+struct SumiLiveFolderRuntime {
+    struct SpaceContext {
+        var profileId: UUID?
+    }
+
+    var spaceContext: (UUID) -> SpaceContext?
+    var createFolder: (UUID, String) -> UUID?
+    var updateFolderIcon: (UUID, String) -> Void
+    var renameFolder: (UUID, String) -> Void
+    var openNewTab: (String, BrowserWindowState, UUID?) -> Void
+    var profile: (UUID?, UUID) -> Profile?
+    var folderIds: () -> Set<UUID>?
+
+    static let inactive = Self(
+        spaceContext: { _ in nil },
+        createFolder: { _, _ in nil },
+        updateFolderIcon: { _, _ in },
+        renameFolder: { _, _ in },
+        openNewTab: { _, _, _ in },
+        profile: { _, _ in nil },
+        folderIds: { nil }
+    )
+}
+
+@MainActor
 final class SumiLiveFolderManager: ObservableObject {
     @Published private(set) var sourcesByFolderId: [UUID: SumiLiveFolderSource] = [:]
     @Published private(set) var itemsBySourceId: [UUID: [SumiLiveFolderItem]] = [:]
 
-    private weak var browserManager: BrowserManager?
+    private var runtime = SumiLiveFolderRuntime.inactive
     private let store: SumiLiveFolderStore
     private let networkClient: SumiLiveFolderNetworkClient
     private var dismissedItemIdsBySourceId: [UUID: Set<String>] = [:]
@@ -36,8 +61,8 @@ final class SumiLiveFolderManager: ObservableObject {
         }
     }
 
-    func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    func attach(runtime: SumiLiveFolderRuntime) {
+        self.runtime = runtime
     }
 
     func startAfterTabRestore() {
@@ -94,14 +119,13 @@ final class SumiLiveFolderManager: ObservableObject {
     }
 
     func createRSSFolder(in spaceId: UUID, feedURLString: String) {
-        guard let browserManager,
-              let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId }) else {
+        guard let space = runtime.spaceContext(spaceId),
+              let folderId = runtime.createFolder(spaceId, SumiLiveFolderKind.rss.defaultFolderName) else {
             return
         }
-        let folder = browserManager.tabManager.createFolder(for: spaceId, name: SumiLiveFolderKind.rss.defaultFolderName)
-        browserManager.tabManager.updateFolderIcon(folder.id, icon: "dot.radiowaves.left.and.right")
+        runtime.updateFolderIcon(folderId, "dot.radiowaves.left.and.right")
         var source = SumiLiveFolderSource(
-            folderId: folder.id,
+            folderId: folderId,
             spaceId: spaceId,
             profileId: space.profileId,
             kind: .rss,
@@ -109,25 +133,24 @@ final class SumiLiveFolderManager: ObservableObject {
         )
         source.markAttempt()
         insert(source)
-        refresh(folderId: folder.id)
+        refresh(folderId: folderId)
     }
 
     func createGitHubFolder(in spaceId: UUID, kind: SumiLiveFolderKind) {
         guard kind == .githubPullRequests || kind == .githubIssues,
-              let browserManager,
-              let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId }) else {
+              let space = runtime.spaceContext(spaceId),
+              let folderId = runtime.createFolder(spaceId, kind.defaultFolderName) else {
             return
         }
-        let folder = browserManager.tabManager.createFolder(for: spaceId, name: kind.defaultFolderName)
-        browserManager.tabManager.updateFolderIcon(folder.id, icon: "chevron.left.forwardslash.chevron.right")
+        runtime.updateFolderIcon(folderId, "chevron.left.forwardslash.chevron.right")
         let source = SumiLiveFolderSource(
-            folderId: folder.id,
+            folderId: folderId,
             spaceId: spaceId,
             profileId: space.profileId,
             kind: kind
         )
         insert(source)
-        refresh(folderId: folder.id)
+        refresh(folderId: folderId)
     }
 
     func refreshIfStale(folderId: UUID) {
@@ -185,12 +208,10 @@ final class SumiLiveFolderManager: ObservableObject {
     }
 
     func open(item: SumiLiveFolderItem, in windowState: BrowserWindowState) {
-        browserManager?.openNewTab(
-            url: item.urlString,
-            context: .foreground(
-                windowState: windowState,
-                preferredSpaceId: sourcesByFolderId.values.first(where: { $0.id == item.sourceId })?.spaceId
-            )
+        runtime.openNewTab(
+            item.urlString,
+            windowState,
+            sourcesByFolderId.values.first(where: { $0.id == item.sourceId })?.spaceId
         )
     }
 
@@ -258,7 +279,7 @@ final class SumiLiveFolderManager: ObservableObject {
             latestSource.activeRepositories = activeRepositories
             if let title, !title.isEmpty, latestSource.kind == .rss {
                 latestSource.title = title
-                browserManager?.tabManager.renameFolder(latestSource.folderId, newName: title)
+                runtime.renameFolder(latestSource.folderId, title)
             }
             latestSource.markSuccess(
                 at: now,
@@ -301,15 +322,7 @@ final class SumiLiveFolderManager: ObservableObject {
     }
 
     private func profile(for source: SumiLiveFolderSource) -> Profile? {
-        if let profileId = source.profileId,
-           let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
-            return profile
-        }
-        if let space = browserManager?.tabManager.spaces.first(where: { $0.id == source.spaceId }),
-           let profileId = space.profileId {
-            return browserManager?.profileManager.profiles.first(where: { $0.id == profileId })
-        }
-        return browserManager?.currentProfile
+        runtime.profile(source.profileId, source.spaceId)
     }
 
     private func apply(_ diskState: SumiLiveFolderDiskState) {
@@ -325,10 +338,7 @@ final class SumiLiveFolderManager: ObservableObject {
     }
 
     private func reconcileOrphanedSources() {
-        guard let tabManager = browserManager?.tabManager else { return }
-        let liveFolderIds = Set(tabManager.foldersBySpace.values.flatMap { folders in
-            folders.map(\.id)
-        })
+        guard let liveFolderIds = runtime.folderIds() else { return }
         let orphanedFolderIds = Set(sourcesByFolderId.keys).subtracting(liveFolderIds)
         deleteState(forFolderIds: orphanedFolderIds)
     }
