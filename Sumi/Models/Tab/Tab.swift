@@ -596,7 +596,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             }
             dependencyStateOwner.attachDataServicesProvider { [weak self] in
                 guard let dataServices = self?.browserManagerStorage?.dataServices else { return nil }
-                return TabDependencyDataServices(browserManagerDataServices: dataServices)
+                return TabDependencyDataServices(
+                    faviconService: dataServices.faviconService,
+                    faviconImageService: dataServices.faviconImageService,
+                    visitedLinkStore: dataServices.visitedLinkStore
+                )
             }
         }
     }

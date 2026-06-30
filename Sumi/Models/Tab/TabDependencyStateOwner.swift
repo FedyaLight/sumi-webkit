@@ -14,15 +14,6 @@ struct TabDependencyDataServices {
         self.faviconImageService = faviconImageService
         self.visitedLinkStore = visitedLinkStore
     }
-
-    @MainActor
-    init(browserManagerDataServices dataServices: BrowserManagerDataServices) {
-        self.init(
-            faviconService: dataServices.faviconService,
-            faviconImageService: dataServices.faviconImageService,
-            visitedLinkStore: dataServices.visitedLinkStore
-        )
-    }
 }
 
 @MainActor
