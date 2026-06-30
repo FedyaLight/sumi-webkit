@@ -8,6 +8,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(WindowRegistry.self) private var windowRegistry
+    @EnvironmentObject private var browserManager: BrowserManager
 
     private let windowLifecycleHandler: any BrowserWindowLifecycleHandling
     private let providedWindowState: BrowserWindowState?
@@ -35,7 +36,10 @@ struct ContentView: View {
     }
 
     var body: some View {
-        WindowView(sidebarDragState: sidebarDragState)
+        WindowView(
+            browserContext: WindowViewBrowserContext(browserManager: browserManager),
+            sidebarDragState: sidebarDragState
+        )
             .environment(windowState)
             .background(BrowserWindowBridge(windowState: windowState, windowRegistry: windowRegistry))
             .frame(

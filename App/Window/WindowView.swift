@@ -22,7 +22,6 @@ private enum WindowTransientChromeZIndex {
 
 /// Main window view that orchestrates the browser UI layout
 struct WindowView: View {
-    @EnvironmentObject var browserManager: BrowserManager
     @EnvironmentObject private var glanceManager: GlanceManager
     @EnvironmentObject private var nowPlayingController: SumiNativeNowPlayingController
     @Environment(BrowserWindowState.self) private var windowState
@@ -32,9 +31,14 @@ struct WindowView: View {
     @State private var dockedSidebarLayout = DockedSidebarLayoutState()
     /// Bumps when system/window effective appearance changes so `globalColorScheme` refreshes while in auto mode.
     @State private var effectiveAppearanceRevision: UInt = 0
+    private let browserContext: WindowViewBrowserContext
     private let sidebarDragState: SidebarDragState
 
-    init(sidebarDragState: SidebarDragState) {
+    init(
+        browserContext: WindowViewBrowserContext,
+        sidebarDragState: SidebarDragState
+    ) {
+        self.browserContext = browserContext
         self.sidebarDragState = sidebarDragState
     }
 
@@ -52,10 +56,10 @@ struct WindowView: View {
                             SidebarContextMenuAction(
                                 title: "Customize Space Gradient...",
                                 systemImage: "paintpalette",
-                                isEnabled: browserManager.tabManager.currentSpace != nil,
+                                isEnabled: browserContext.hasCurrentSpace,
                                 classification: .presentationOnly,
                                 action: {
-                                    browserManager.showGradientEditor(
+                                    browserContext.showGradientEditor(
                                         source: windowState.resolveSidebarPresentationSource()
                                     )
                                 }
@@ -73,7 +77,7 @@ struct WindowView: View {
                             resolvedThemeContext: resolvedThemeContext,
                             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
                             windowChromeSize: windowChromeSize,
-                            browserManager: browserManager,
+                            browserManager: browserContext.browserManagerForUnmigratedChildren,
                             sidebarDragState: sidebarDragState
                         )
                             .environmentObject(hoverSidebarManager)
@@ -86,7 +90,7 @@ struct WindowView: View {
                 // docked and collapsed sidebar layouts.
                 chromeThemeScope {
                     FloatingBarChromeHost(
-                        browserManager: browserManager,
+                        browserManager: browserContext.browserManagerForUnmigratedChildren,
                         windowState: windowState,
                         sumiSettings: sumiSettings,
                         resolvedThemeContext: resolvedThemeContext,
@@ -111,8 +115,8 @@ struct WindowView: View {
                    let contentFrame = glanceFindInPageSession.contentFrameInWindowSpace {
                     chromeThemeScope {
                         FindInPageChromeHost(
-                            browserManager: browserManager,
-                            findManager: browserManager.findManager,
+                            browserManager: browserContext.browserManagerForUnmigratedChildren,
+                            findManager: browserContext.findManager,
                             windowRegistry: windowRegistry,
                             windowState: windowState,
                             sumiSettings: sumiSettings,
@@ -130,10 +134,10 @@ struct WindowView: View {
                         sidebarDragState: sidebarDragState,
                         browserContext: SidebarFloatingDragPreviewContext(
                             currentProfileID: {
-                                browserManager.currentProfile?.id
+                                browserContext.currentProfileID()
                             },
                             essentialPins: { profileId in
-                                browserManager.tabManager.essentialPins(for: profileId)
+                                browserContext.essentialPins(profileId: profileId)
                             }
                         )
                     )
@@ -155,7 +159,7 @@ struct WindowView: View {
         .onAppear {
             syncDockedSidebarLayout(isVisible: windowState.isSidebarVisible, animated: false)
             hoverSidebarManager.sidebarPosition = sumiSettings.sidebarPosition
-            hoverSidebarManager.attach(browserManager: browserManager, windowState: windowState)
+            browserContext.attachHoverSidebarManager(hoverSidebarManager, windowState: windowState)
             hoverSidebarManager.windowRegistry = windowRegistry
             hoverSidebarManager.start()
             revealCollapsedSidebarForPinnedTransientIfNeeded()
@@ -187,9 +191,9 @@ struct WindowView: View {
         .onDisappear {
             hoverSidebarManager.stop()
         }
-        .environmentObject(browserManager)
+        .environmentObject(browserContext.browserManagerForUnmigratedChildren)
         .environmentObject(glanceManager)
-        .environmentObject(browserManager.splitManager)
+        .environmentObject(browserContext.splitManager)
         .environmentObject(hoverSidebarManager)
         .environment(\.resolvedThemeContext, resolvedThemeContext)
         .coordinateSpace(name: "WindowSpace")
@@ -323,7 +327,7 @@ struct WindowView: View {
         let layoutWidth = presentationContext.sidebarWidth * layoutProgress
 
         SidebarColumnRepresentable(
-            browserManager: browserManager,
+            browserManager: browserContext.browserManagerForUnmigratedChildren,
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
@@ -380,23 +384,19 @@ struct WindowView: View {
     private func webContent() -> some View {
         ZStack(alignment: .top) {
             WebsiteView(
-                browserContext: browserManager.websiteViewBrowserContext(
+                browserContext: browserContext.websiteViewBrowserContext(
                     sidebarDragState: sidebarDragState
                 ),
-                nativeSurfaceRootBuilders: browserManager.websiteNativeSurfaceRootBuilders,
+                nativeSurfaceRootBuilders: browserContext.websiteNativeSurfaceRootBuilders,
                 sidebarDragState: sidebarDragState
             )
                 .zIndex(2000)
 
-            if let currentTab = browserManager.currentTab(for: windowState) {
+            if let currentTab = browserContext.currentTab(for: windowState) {
                 HStack {
                     Spacer()
                     SumiWindowProgressBar(tab: currentTab) { tab in
-                        if let spaceId = tab.spaceId,
-                           let space = browserManager.space(for: spaceId) {
-                            return space.workspaceTheme
-                        }
-                        return windowState.workspaceTheme
+                        browserContext.workspaceTheme(for: tab.spaceId) ?? windowState.workspaceTheme
                     }
                     .frame(width: 200, height: 12)
                     .offset(y: -BrowserChromeGeometry.elementSeparation / 2 - 6)
@@ -407,8 +407,8 @@ struct WindowView: View {
 
             // Find-in-page stays in the browser window's responder chain so window controls keep active appearance.
             FindInPageChromeHost(
-                browserManager: browserManager,
-                findManager: browserManager.findManager,
+                browserManager: browserContext.browserManagerForUnmigratedChildren,
+                findManager: browserContext.findManager,
                 windowRegistry: windowRegistry,
                 windowState: windowState,
                 sumiSettings: sumiSettings,
@@ -425,13 +425,13 @@ struct WindowView: View {
     }
 
     private var transientChromeModalSuppressed: Bool {
-        browserManager.isNativeModalPresented(in: windowState.id)
+        browserContext.isNativeModalPresented(in: windowState.id)
     }
 
     private var nativeModalPresentationBinding: Binding<BrowserNativeModalPresentation?> {
         Binding(
             get: {
-                guard let presentation = browserManager.nativeModalPresentation,
+                guard let presentation = browserContext.nativeModalPresentation,
                       presentation.windowID == windowState.id
                 else {
                     return nil
@@ -440,7 +440,7 @@ struct WindowView: View {
             },
             set: { newValue in
                 if newValue == nil {
-                    browserManager.nativeModalPresentationBindingDismissed(
+                    browserContext.nativeModalPresentationBindingDismissed(
                         for: windowState.id
                     )
                 }
@@ -454,7 +454,7 @@ struct WindowView: View {
     ) -> some View {
         switch presentation.kind {
         case .browsingData:
-            SumiBrowsingDataDialog(browserManager: browserManager)
+            SumiBrowsingDataDialog(browserManager: browserContext.browserManagerForUnmigratedChildren)
         case .basicAuth(let session):
             BasicAuthDialog(
                 model: session.model,
@@ -471,7 +471,7 @@ struct WindowView: View {
             )
         case .notice(let notice):
             BrowserNoticeSheet(notice: notice) {
-                browserManager.dismissNativeModalPresentation()
+                browserContext.dismissNativeModalPresentation()
             }
         }
     }
@@ -557,7 +557,7 @@ struct WindowView: View {
 
     private var findChromeBelongsToGlance: Bool {
         guard let activeGlanceSession else { return false }
-        return browserManager.findManager.currentTab?.id == activeGlanceSession.previewTab.id
+        return browserContext.findCurrentTabId() == activeGlanceSession.previewTab.id
     }
 
     private var glanceFindInPageSession: GlanceSession? {
