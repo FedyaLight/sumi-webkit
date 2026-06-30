@@ -21,6 +21,23 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
         XCTAssertEqual(windowState.compositorVersion, 1)
     }
 
+    func testRefreshCompositorDefersDuringFrozenBackForwardNavigationUntilFlush() async {
+        let windowState = BrowserWindowState()
+        let tab = Tab()
+        tab.isFreezingNavigationStateDuringBackForwardGesture = true
+        let owner = makeOwner(currentTab: { tab })
+
+        owner.refreshCompositor(for: windowState)
+        await drainMainQueue()
+
+        XCTAssertEqual(windowState.compositorVersion, 0)
+
+        owner.flushWindowMutationsAfterHistorySwipe(in: windowState.id)
+        await drainMainQueue()
+
+        XCTAssertEqual(windowState.compositorVersion, 1)
+    }
+
     func testSchedulePrepareVisibleWebViewsDefersDuringActiveHistorySwipeAndFlushesBeforeRefresh() async {
         let windowState = BrowserWindowState()
         var hasActiveHistorySwipe = true

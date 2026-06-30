@@ -148,20 +148,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         webViewRuntime.findInPage
     }
 
-    var mainFrameNavigationOwner: TabMainFrameNavigationOwner {
-        navigationRuntime.mainFrameNavigationOwner
+    var navigationTransactionOwner: TabNavigationTransactionOwner {
+        navigationRuntime.navigationTransactionOwner
     }
     var pendingMainFrameNavigationKind: TabMainFrameNavigationKind? {
-        get { navigationRuntime.pendingMainFrameNavigationKind }
-        set { navigationRuntime.pendingMainFrameNavigationKind = newValue }
-    }
-    var pendingBackForwardNavigationContext: TabBackForwardNavigationContext? {
-        get { navigationRuntime.pendingBackForwardNavigationContext }
-        set { navigationRuntime.pendingBackForwardNavigationContext = newValue }
-    }
-    var pendingBackForwardSettleTask: Task<Void, Never>? {
-        get { navigationRuntime.pendingBackForwardSettleTask }
-        set { navigationRuntime.pendingBackForwardSettleTask = newValue }
+        get { navigationTransactionOwner.pendingMainFrameNavigationKind }
+        set { navigationTransactionOwner.pendingMainFrameNavigationKind = newValue }
     }
     var historyRecorder: HistoryTabRecorder {
         navigationRuntime.historyRecorder
@@ -173,8 +165,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         navigationRuntime.navigationDelegateBundles
     }
     var isFreezingNavigationStateDuringBackForwardGesture: Bool {
-        get { navigationRuntime.isFreezingNavigationStateDuringBackForwardGesture }
-        set { navigationRuntime.isFreezingNavigationStateDuringBackForwardGesture = newValue }
+        get { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture }
+        set { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture = newValue }
     }
     var lastMediaActivityAt: Date {
         get { mediaRuntime.lastMediaActivityAt }

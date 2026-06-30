@@ -126,11 +126,8 @@ extension Tab {
             return
         }
 
-        mainFrameNavigationOwner.performAfterPreparation(
+        navigationTransactionOwner.performAfterPreparation(
             on: webView,
-            clearRelatedNavigationState: {
-                self.clearPendingMainFrameNavigationState()
-            },
             prepare: {
                 await controller.waitForContentBlockingAssetsInstalled()
             },
@@ -139,135 +136,82 @@ extension Tab {
     }
 
     func markRegularMainFrameNavigation(on webView: WKWebView? = nil) {
-        let wasFreezingNavigationState = isFreezingNavigationStateDuringBackForwardGesture
-        let protectedWebView = webView ?? _webView
-        let settledWindowId = protectedWebView.flatMap {
-            browserManager?.webViewCoordinator?.windowID(containing: $0)
-        }
-        pendingBackForwardSettleTask?.cancel()
-        pendingBackForwardSettleTask = nil
-        pendingMainFrameNavigationKind = .load
-        pendingBackForwardNavigationContext = nil
-        isFreezingNavigationStateDuringBackForwardGesture = false
-
-        if wasFreezingNavigationState {
-            let wasCancelled = browserManager?.webViewCoordinator?.finishHistorySwipeProtection(
-                tabId: id,
-                webView: protectedWebView,
-                currentURL: protectedWebView?.url,
-                currentHistoryItem: protectedWebView?.backForwardList.currentItem
-            ) ?? false
-
-            if let settledWindowId {
-                if wasCancelled {
-                    browserManager?.cancelWindowMutationsAfterHistorySwipe(in: settledWindowId)
-                } else {
-                    browserManager?.flushWindowMutationsAfterHistorySwipe(in: settledWindowId)
-                }
-            }
-        }
-
-        if wasFreezingNavigationState, _webView != nil {
-            updateNavigationState()
-        }
+        navigationTransactionOwner.markRegularMainFrameNavigation(
+            on: webView,
+            environment: navigationTransactionEnvironment()
+        )
     }
 
     func beginBackForwardNavigationTracking(on webView: WKWebView) {
-        pendingBackForwardSettleTask?.cancel()
-        pendingMainFrameNavigationKind = .backForward
-        let originURL = webView.url ?? url
-        let originHistoryItem = webView.backForwardList.currentItem
-        pendingBackForwardNavigationContext = TabBackForwardNavigationContext(
-            originURL: originURL,
-            originHistoryURL: originHistoryItem?.url,
-            originHistoryItem: originHistoryItem
+        navigationTransactionOwner.beginBackForwardNavigationTracking(
+            on: webView,
+            environment: navigationTransactionEnvironment()
         )
-        isFreezingNavigationStateDuringBackForwardGesture = true
-        browserManager?.webViewCoordinator?.beginHistorySwipeProtection(
-            tabId: id,
-            webView: webView,
-            originURL: originURL,
-            originHistoryItem: originHistoryItem
-        )
-        pendingBackForwardSettleTask = Task { @MainActor [weak self, weak webView] in
-            guard let self else { return }
-
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            guard !Task.isCancelled else { return }
-            guard self.pendingMainFrameNavigationKind == .backForward else { return }
-
-            self.finishBackForwardNavigationTracking(using: webView)
-        }
     }
 
     func finishBackForwardNavigationTracking(using webView: WKWebView?) {
-        let wasFreezingNavigationState = isFreezingNavigationStateDuringBackForwardGesture
-        let resolvedWebView = webView ?? _webView
-        let settledWindowId = resolvedWebView.flatMap {
-            browserManager?.webViewCoordinator?.windowID(containing: $0)
-        }
-        pendingBackForwardSettleTask?.cancel()
-        pendingBackForwardSettleTask = nil
-        pendingMainFrameNavigationKind = nil
-        pendingBackForwardNavigationContext = nil
-        isFreezingNavigationStateDuringBackForwardGesture = false
-
-        let wasCancelled = browserManager?.webViewCoordinator?.finishHistorySwipeProtection(
-            tabId: id,
-            webView: resolvedWebView,
-            currentURL: resolvedWebView?.url,
-            currentHistoryItem: resolvedWebView?.backForwardList.currentItem
-        ) ?? false
-
-        if let settledWindowId {
-            if wasCancelled {
-                browserManager?.cancelWindowMutationsAfterHistorySwipe(in: settledWindowId)
-            } else {
-                browserManager?.flushWindowMutationsAfterHistorySwipe(in: settledWindowId)
-            }
-        }
-
-        if wasFreezingNavigationState, _webView != nil {
-            updateNavigationState()
-        }
+        navigationTransactionOwner.finishBackForwardNavigationTracking(
+            using: webView,
+            environment: navigationTransactionEnvironment()
+        )
     }
 
     func scheduleBackForwardSameDocumentSettle(using webView: WKWebView) {
-        guard pendingMainFrameNavigationKind == .backForward,
-              let context = pendingBackForwardNavigationContext
-        else {
-            return
-        }
+        navigationTransactionOwner.scheduleBackForwardSameDocumentSettle(
+            using: webView,
+            environment: navigationTransactionEnvironment()
+        )
+    }
 
-        pendingBackForwardSettleTask?.cancel()
-        pendingBackForwardSettleTask = Task { @MainActor [weak self, weak webView] in
-            guard let self else { return }
-
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            guard !Task.isCancelled else { return }
-
-            guard let webView else {
-                self.finishBackForwardNavigationTracking(using: nil)
-                return
-            }
-
-            if BackForwardNavigationSettleDecision.shouldApplyDeferredActions(
-                originURL: context.originURL,
-                originHistoryURL: context.originHistoryURL,
-                originHistoryItem: context.originHistoryItem,
-                currentURL: webView.url,
-                currentHistoryURL: webView.backForwardList.currentItem?.url,
-                currentHistoryItem: webView.backForwardList.currentItem
-            ) {
-                self.finishBackForwardNavigationTracking(using: webView)
-                browserManager?.tabManager.scheduleRuntimeStatePersistence(for: self)
-                browserManager?.syncTabAcrossWindows(
+    private func navigationTransactionEnvironment() -> TabNavigationTransactionOwner.HistorySwipeEnvironment {
+        TabNavigationTransactionOwner.HistorySwipeEnvironment(
+            tabId: id,
+            currentWebView: { [weak self] in
+                self?._webView
+            },
+            currentURL: { [weak self] in
+                self?.url
+            },
+            windowIDContaining: { [weak self] webView in
+                self?.browserManager?.webViewCoordinator?.windowID(containing: webView)
+            },
+            beginHistorySwipeProtection: { [weak self] tabId, webView, originURL, originHistoryItem in
+                self?.browserManager?.webViewCoordinator?.beginHistorySwipeProtection(
+                    tabId: tabId,
+                    webView: webView,
+                    originURL: originURL,
+                    originHistoryItem: originHistoryItem
+                )
+            },
+            finishHistorySwipeProtection: { [weak self] tabId, webView, currentURL, currentHistoryItem in
+                self?.browserManager?.webViewCoordinator?.finishHistorySwipeProtection(
+                    tabId: tabId,
+                    webView: webView,
+                    currentURL: currentURL,
+                    currentHistoryItem: currentHistoryItem
+                ) ?? false
+            },
+            cancelWindowMutationsAfterHistorySwipe: { [weak self] windowId in
+                self?.browserManager?.cancelWindowMutationsAfterHistorySwipe(in: windowId)
+            },
+            flushWindowMutationsAfterHistorySwipe: { [weak self] windowId in
+                self?.browserManager?.flushWindowMutationsAfterHistorySwipe(in: windowId)
+            },
+            updateNavigationStateIfCurrentWebViewExists: { [weak self] in
+                guard let self, self._webView != nil else { return }
+                self.updateNavigationState()
+            },
+            scheduleRuntimeStatePersistence: { [weak self] in
+                guard let self else { return }
+                self.browserManager?.tabManager.scheduleRuntimeStatePersistence(for: self)
+            },
+            syncAcrossWindows: { [weak self] webView in
+                guard let self else { return }
+                self.browserManager?.syncTabAcrossWindows(
                     self.id,
                     originatingWebView: webView
                 )
-            } else {
-                self.finishBackForwardNavigationTracking(using: webView)
             }
-        }
+        )
     }
 }

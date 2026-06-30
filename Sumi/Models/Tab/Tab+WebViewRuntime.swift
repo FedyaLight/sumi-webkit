@@ -131,17 +131,11 @@ extension Tab {
     }
 
     func cancelPendingMainFrameNavigation() {
-        mainFrameNavigationOwner.cancel {
-            clearPendingMainFrameNavigationState()
-        }
+        navigationTransactionOwner.cancelPendingMainFrameNavigation()
     }
 
     func clearPendingMainFrameNavigationState() {
-        pendingBackForwardSettleTask?.cancel()
-        pendingBackForwardSettleTask = nil
-        pendingMainFrameNavigationKind = nil
-        pendingBackForwardNavigationContext = nil
-        isFreezingNavigationStateDuringBackForwardGesture = false
+        navigationTransactionOwner.clearRelatedNavigationState()
     }
 
     @available(macOS 15.5, *)
@@ -159,11 +153,8 @@ extension Tab {
         on webView: WKWebView,
         performLoad: @escaping @MainActor (WKWebView) -> Void
     ) {
-        mainFrameNavigationOwner.perform(
+        navigationTransactionOwner.perform(
             on: webView,
-            clearRelatedNavigationState: {
-                self.clearPendingMainFrameNavigationState()
-            },
             performLoad: performLoad
         )
     }
