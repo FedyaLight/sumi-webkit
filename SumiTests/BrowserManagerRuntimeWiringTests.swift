@@ -18,7 +18,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(browserManager.compositorManager.browserManager, browserManager)
         XCTAssertIdentical(browserManager.tabManager.browserManager, browserManager)
         XCTAssertTrue(browserManager.tabManager.runtimeContext is BrowserManagerTabRuntimeContext)
-        XCTAssertIdentical(browserManager.splitManager.browserManager, browserManager)
+        XCTAssertTrue(splitManagerCanUseAttachedRuntime(browserManager))
         XCTAssertIdentical(browserManager.downloadManager.browserManager, browserManager)
         XCTAssertIdentical(browserManager.extensionsModule.browserManager, browserManager)
         XCTAssertIdentical(browserManager.userscriptsModule.browserManager, browserManager)
@@ -27,6 +27,28 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(browserManager.glanceManager.browserManager, browserManager)
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
+    }
+
+    private func splitManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Runtime Wiring")
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com",
+            in: space,
+            activate: true
+        )
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        browserManager.splitManager.createEmptySplit(in: windowState)
+        return browserManager.splitManager.splitGroup(for: windowState.id) != nil
     }
 
     func testBrowserManagerInitializationRetainsInjectedPermissionRuntimeDependencies() throws {

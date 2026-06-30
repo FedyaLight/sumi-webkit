@@ -2692,6 +2692,58 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertNil(harness.tabManager.splitGroup(containing: current.id))
     }
 
+    func testSplitViewManagerCreatesEmptySplitThroughRuntimePort() throws {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let tabManager = TabManager(
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState()
+        windowState.tabManager = tabManager
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        let space = tabManager.createSpace(name: "Runtime")
+        let current = tabManager.createNewTab(url: "https://current.example", in: space)
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = current.id
+
+        var selectedTabIds: [UUID] = []
+        var refreshCount = 0
+        var persistCount = 0
+        var focusedReasons: [FloatingBarPresentationReason] = []
+        let splitManager = SplitViewManager(
+            runtime: SplitViewRuntime(
+                tabManager: { tabManager },
+                currentTab: { windowState in
+                    windowState.currentTabId.flatMap { tabManager.tab(for: $0) }
+                },
+                selectTab: { tab, windowState in
+                    selectedTabIds.append(tab.id)
+                    windowState.currentTabId = tab.id
+                },
+                refreshCompositor: { _ in refreshCount += 1 },
+                schedulePersistWindowSession: { _ in persistCount += 1 },
+                focusFloatingBar: { _, reason in focusedReasons.append(reason) }
+            )
+        )
+        splitManager.windowRegistry = windowRegistry
+
+        splitManager.createEmptySplit(in: windowState)
+
+        let group = try XCTUnwrap(tabManager.splitGroup(containing: current.id))
+        let placeholderId = try XCTUnwrap(group.tabIds.first { $0 != current.id })
+        XCTAssertNotNil(tabManager.tab(for: placeholderId))
+        XCTAssertEqual(selectedTabIds.last, placeholderId)
+        XCTAssertGreaterThanOrEqual(refreshCount, 1)
+        XCTAssertGreaterThanOrEqual(persistCount, 1)
+        XCTAssertEqual(focusedReasons, [.keyboard])
+    }
+
     func testEmptySplitExistingTabCommitReplacesPlaceholderPane() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")

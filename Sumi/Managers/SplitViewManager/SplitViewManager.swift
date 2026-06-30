@@ -3,6 +3,48 @@ import Foundation
 import SwiftUI
 
 @MainActor
+struct SplitViewRuntime {
+    let tabManager: @MainActor () -> TabManager?
+    let currentTab: @MainActor (BrowserWindowState) -> Tab?
+    let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
+    let refreshCompositor: @MainActor (BrowserWindowState) -> Void
+    let schedulePersistWindowSession: @MainActor (BrowserWindowState) -> Void
+    let focusFloatingBar: @MainActor (BrowserWindowState, FloatingBarPresentationReason) -> Void
+}
+
+extension SplitViewRuntime {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let fallbackTabManager = browserManager.tabManager
+        return Self(
+            tabManager: { [weak browserManager] in
+                browserManager?.tabManager ?? fallbackTabManager
+            },
+            currentTab: { [weak browserManager] windowState in
+                browserManager?.currentTab(for: windowState)
+            },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            refreshCompositor: { [weak browserManager] windowState in
+                browserManager?.refreshCompositor(for: windowState)
+            },
+            schedulePersistWindowSession: { [weak browserManager] windowState in
+                browserManager?.schedulePersistWindowSession(for: windowState)
+            },
+            focusFloatingBar: { [weak browserManager] windowState, reason in
+                browserManager?.focusFloatingBar(
+                    in: windowState,
+                    prefill: "",
+                    navigateCurrentTab: true,
+                    presentationReason: reason
+                )
+            }
+        )
+    }
+}
+
+@MainActor
 final class SplitViewManager: ObservableObject {
     struct WindowSplitPreviewState: Equatable {
         var isActive: Bool = false
@@ -23,16 +65,24 @@ final class SplitViewManager: ObservableObject {
 
     private var activeWindowPreviewState = WindowSplitPreviewState()
 
-    weak var browserManager: BrowserManager?
     weak var windowRegistry: WindowRegistry?
+    private var runtime: SplitViewRuntime?
 
     private var transientWindowSplitStates: [UUID: TransientWindowSplitState] = [:]
     private var pendingLegacySnapshotsByWindow: [UUID: LegacySplitSessionSnapshot] = [:]
     private var emptySplitPlaceholderTabIdsByWindow: [UUID: UUID] = [:]
     private var splitDropTargetResolver = SplitDropTargetResolver()
 
-    init(browserManager: BrowserManager? = nil) {
-        self.browserManager = browserManager
+    init(runtime: SplitViewRuntime? = nil) {
+        self.runtime = runtime
+    }
+
+    func attach(runtime: SplitViewRuntime) {
+        self.runtime = runtime
+    }
+
+    private var tabManager: TabManager? {
+        runtime?.tabManager()
     }
 
     func previewState(for windowId: UUID) -> WindowSplitPreviewState {
@@ -48,7 +98,7 @@ final class SplitViewManager: ObservableObject {
         applyPendingLegacySnapshotIfPossible(for: windowId)
         guard let windowState = windowRegistry?.windows[windowId] else { return nil }
         guard let currentTabId = windowState.currentTabId else { return nil }
-        return browserManager?.tabManager.splitGroup(containing: currentTabId)
+        return tabManager?.splitGroup(containing: currentTabId)
     }
 
     func visibleTabIds(for windowId: UUID) -> [UUID] {
@@ -77,11 +127,13 @@ final class SplitViewManager: ObservableObject {
     }
 
     func updateLayoutSizes(groupId: UUID, path: [Int], sizes: [Double], for windowId: UUID) {
-        guard let group = browserManager?.tabManager.splitGroup(with: groupId) else { return }
+        guard let tabManager,
+              let group = tabManager.splitGroup(with: groupId)
+        else { return }
         let updatedTree = group.layoutTree
             .updatingChildSizes(at: path, sizes: sizes)
             .canonicalizedForTiles() ?? group.layoutTree
-        browserManager?.tabManager.upsertSplitGroup(
+        tabManager.upsertSplitGroup(
             SplitGroup(
                 id: group.id,
                 layoutKind: group.layoutKind,
@@ -107,17 +159,19 @@ final class SplitViewManager: ObservableObject {
 
     func handleTabClosure(_ tabId: UUID) {
         splitDropTargetResolver.removeAllCachedCandidates(keepingCapacity: true)
-        browserManager?.tabManager.removeSplitGroups(containing: tabId)
+        tabManager?.removeSplitGroups(containing: tabId)
         guard let windows = windowRegistry?.windows else { return }
         for windowState in windows.values {
-            browserManager?.refreshCompositor(for: windowState)
+            runtime?.refreshCompositor(windowState)
         }
         objectWillChange.send()
     }
 
     func updateActiveSide(for tabId: UUID, in windowId: UUID) {
-        guard let group = browserManager?.tabManager.splitGroup(containing: tabId) else { return }
-        browserManager?.tabManager.upsertSplitGroup(group.settingActiveTab(tabId), schedulePersistence: false)
+        guard let tabManager,
+              let group = tabManager.splitGroup(containing: tabId)
+        else { return }
+        tabManager.upsertSplitGroup(group.settingActiveTab(tabId), schedulePersistence: false)
         notifyChanged(for: windowId)
     }
 
@@ -125,9 +179,9 @@ final class SplitViewManager: ObservableObject {
         guard let group = splitGroup(for: windowId) else { return }
         let windowState = windowRegistry?.windows[windowId]
         let focusTab = windowState.flatMap { preferredFocusTabAfterUnsplit(group, in: $0) }
-        browserManager?.tabManager.removeSplitGroup(id: group.id)
+        tabManager?.removeSplitGroup(id: group.id)
         if let focusTab, let windowState {
-            browserManager?.selectTab(focusTab, in: windowState)
+            runtime?.selectTab(focusTab, windowState)
         }
         notifyChanged(for: windowId)
     }
@@ -138,7 +192,7 @@ final class SplitViewManager: ObservableObject {
 
     func setLayoutKind(_ layoutKind: SplitLayoutKind, for windowId: UUID) {
         guard let group = splitGroup(for: windowId) else { return }
-        browserManager?.tabManager.upsertSplitGroup(group.settingLayoutKind(layoutKind))
+        tabManager?.upsertSplitGroup(group.settingLayoutKind(layoutKind))
         notifyChanged(for: windowId)
     }
 
@@ -147,43 +201,38 @@ final class SplitViewManager: ObservableObject {
         in windowState: BrowserWindowState,
         floatingBarPresentationReason: FloatingBarPresentationReason = .keyboard
     ) {
-        guard let bm = browserManager,
-              let current = bm.currentTab(for: windowState),
+        guard let tabManager,
+              let current = runtime?.currentTab(windowState),
               current.representsSumiNativeSurface == false
         else { return }
         let targetSpace =
-            windowState.currentSpaceId.flatMap { id in bm.tabManager.spaces.first(where: { $0.id == id }) }
-            ?? bm.tabManager.currentSpace
-        let tab = bm.tabManager.createNewTab(
+            windowState.currentSpaceId.flatMap { id in tabManager.spaces.first(where: { $0.id == id }) }
+            ?? tabManager.currentSpace
+        let tab = tabManager.createNewTab(
             url: SumiSurface.emptyTabURL.absoluteString,
             in: targetSpace,
             activate: false
         )
         enterSplit(with: tab, placeOn: side, in: windowState)
-        if bm.tabManager.splitGroup(containing: tab.id) != nil {
+        if tabManager.splitGroup(containing: tab.id) != nil {
             emptySplitPlaceholderTabIdsByWindow[windowState.id] = tab.id
         }
-        bm.focusFloatingBar(
-            in: windowState,
-            prefill: "",
-            navigateCurrentTab: true,
-            presentationReason: floatingBarPresentationReason
-        )
+        runtime?.focusFloatingBar(windowState, floatingBarPresentationReason)
     }
 
     func expandSplitPane(tabId: UUID, in windowState: BrowserWindowState) {
-        guard let bm = browserManager,
-              let tab = bm.tabManager.tab(for: tabId),
-              let group = bm.tabManager.splitGroup(containing: tabId)
+        guard let tabManager,
+              let tab = tabManager.tab(for: tabId),
+              let group = tabManager.splitGroup(containing: tabId)
         else { return }
 
         if let remainingGroup = group.removing(tabId: tabId) {
-            bm.tabManager.upsertSplitGroup(remainingGroup)
+            tabManager.upsertSplitGroup(remainingGroup)
         } else {
-            bm.tabManager.removeSplitGroup(id: group.id)
+            tabManager.removeSplitGroup(id: group.id)
         }
-        bm.selectTab(tab, in: windowState)
-        bm.refreshCompositor(for: windowState)
+        runtime?.selectTab(tab, windowState)
+        runtime?.refreshCompositor(windowState)
         notifyChanged(for: windowState.id)
     }
 
@@ -195,7 +244,8 @@ final class SplitViewManager: ObservableObject {
     @discardableResult
     func replaceEmptySplitPlaceholder(with tab: Tab, in windowState: BrowserWindowState) -> Bool {
         guard let placeholderTabId = emptySplitPlaceholderTabIdsByWindow[windowState.id],
-              let group = browserManager?.tabManager.splitGroup(containing: placeholderTabId),
+              let tabManager,
+              let group = tabManager.splitGroup(containing: placeholderTabId),
               group.contains(placeholderTabId)
         else { return false }
 
@@ -217,11 +267,11 @@ final class SplitViewManager: ObservableObject {
             members: group.removingMember(tabId: placeholderTabId).members + [resolved.member]
         )
 
-        browserManager?.tabManager.upsertSplitGroup(updated)
+        tabManager.upsertSplitGroup(updated)
         if placeholderTabId != resolved.tab.id {
-            browserManager?.tabManager.removeTab(placeholderTabId)
+            tabManager.removeTab(placeholderTabId)
         }
-        browserManager?.selectTab(resolved.tab, in: windowState)
+        runtime?.selectTab(resolved.tab, windowState)
         notifyChanged(for: windowState.id)
         return true
     }
@@ -229,10 +279,10 @@ final class SplitViewManager: ObservableObject {
     @discardableResult
     func cancelEmptySplitPlaceholder(in windowState: BrowserWindowState) -> Bool {
         guard let placeholderTabId = emptySplitPlaceholderTabIdsByWindow.removeValue(forKey: windowState.id),
-              browserManager?.tabManager.tab(for: placeholderTabId) != nil
+              tabManager?.tab(for: placeholderTabId) != nil
         else { return false }
 
-        browserManager?.tabManager.removeTab(placeholderTabId)
+        tabManager?.removeTab(placeholderTabId)
         notifyChanged(for: windowState.id)
         return true
     }
@@ -242,13 +292,12 @@ final class SplitViewManager: ObservableObject {
         placeOn side: SplitDropSide = .right,
         in windowState: BrowserWindowState
     ) {
-        guard let bm = browserManager else { return }
-        let tm = bm.tabManager
+        guard let tabManager else { return }
         guard tab.representsSumiNativeSurface == false else { return }
-        guard let current = bm.currentTab(for: windowState), current.representsSumiNativeSurface == false else { return }
+        guard let current = runtime?.currentTab(windowState), current.representsSumiNativeSurface == false else { return }
 
-        let anchorGroup = tm.splitGroup(containing: current.id)
-        let anchorTab = anchorGroup?.activeTabId.flatMap { tm.tab(for: $0) } ?? current
+        let anchorGroup = tabManager.splitGroup(containing: current.id)
+        let anchorTab = anchorGroup?.activeTabId.flatMap { tabManager.tab(for: $0) } ?? current
         dropTab(tab, placeOn: side, relativeTo: anchorTab.id, in: windowState)
     }
 
@@ -259,9 +308,8 @@ final class SplitViewManager: ObservableObject {
         relativeTo targetTabId: UUID?,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let bm = browserManager else { return false }
-        let tm = bm.tabManager
-        guard let targetTab = targetTabId.flatMap({ tm.tab(for: $0) }) ?? bm.currentTab(for: windowState),
+        guard let tabManager else { return false }
+        guard let targetTab = targetTabId.flatMap({ tabManager.tab(for: $0) }) ?? runtime?.currentTab(windowState),
               targetTab.representsSumiNativeSurface == false else { return false }
         return dropTab(
             tab,
@@ -276,15 +324,14 @@ final class SplitViewManager: ObservableObject {
         on target: SplitDropTarget,
         in windowState: BrowserWindowState
     ) -> Bool {
-        guard let bm = browserManager else { return false }
-        let tm = bm.tabManager
+        guard let tabManager else { return false }
         let side = target.side
         guard tab.representsSumiNativeSurface == false else { return false }
-        guard let targetTab = tm.tab(for: target.tabId) ?? bm.currentTab(for: windowState),
+        guard let targetTab = tabManager.tab(for: target.tabId) ?? runtime?.currentTab(windowState),
               targetTab.representsSumiNativeSurface == false
         else { return false }
 
-        let targetGroup = tm.splitGroup(containing: targetTab.id)
+        let targetGroup = tabManager.splitGroup(containing: targetTab.id)
         if let targetGroup, targetGroup.contains(tab.id) {
             let updated: SplitGroup?
             if let resolved = targetGroup.resolvingDrop(
@@ -306,9 +353,9 @@ final class SplitViewManager: ObservableObject {
                 updated = targetGroup.movingTab(tab.id, relativeTo: targetTab.id, side: side)
             }
             guard let updated else { return false }
-            tm.upsertSplitGroup(updated)
-            bm.selectTab(tab, in: windowState)
-            bm.refreshCompositor(for: windowState)
+            tabManager.upsertSplitGroup(updated)
+            runtime?.selectTab(tab, windowState)
+            runtime?.refreshCompositor(windowState)
             notifyChanged(for: windowState.id)
             return true
         }
@@ -365,9 +412,9 @@ final class SplitViewManager: ObservableObject {
                 movedTabId: sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
                 excludingGroupId: group.id
             )
-            tm.upsertSplitGroup(group)
-            bm.selectTab(resolvedIncoming.tab, in: windowState)
-            bm.refreshCompositor(for: windowState)
+            tabManager.upsertSplitGroup(group)
+            runtime?.selectTab(resolvedIncoming.tab, windowState)
+            runtime?.refreshCompositor(windowState)
             notifyChanged(for: windowState.id)
             return true
         }
@@ -382,7 +429,7 @@ final class SplitViewManager: ObservableObject {
         let resolvedAnchor = resolvedSplitTab(
             targetTab,
             host: host,
-            sourceGroup: tm.splitGroup(containing: targetTab.id),
+            sourceGroup: tabManager.splitGroup(containing: targetTab.id),
             in: windowState
         ) else {
             return false
@@ -408,9 +455,9 @@ final class SplitViewManager: ObservableObject {
             movedTabId: sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
             excludingGroupId: group.id
         )
-        tm.upsertSplitGroup(group)
-        bm.selectTab(resolvedIncoming.tab, in: windowState)
-        bm.refreshCompositor(for: windowState)
+        tabManager.upsertSplitGroup(group)
+        runtime?.selectTab(resolvedIncoming.tab, windowState)
+        runtime?.refreshCompositor(windowState)
         notifyChanged(for: windowState.id)
         return true
     }
@@ -422,9 +469,9 @@ final class SplitViewManager: ObservableObject {
     ) {
         guard let sourceGroup, sourceGroup.id != excludingGroupId else { return }
         if let remaining = sourceGroup.removing(tabId: movedTabId) {
-            browserManager?.tabManager.upsertSplitGroup(remaining)
+            tabManager?.upsertSplitGroup(remaining)
         } else {
-            browserManager?.tabManager.removeSplitGroup(id: sourceGroup.id)
+            tabManager?.removeSplitGroup(id: sourceGroup.id)
         }
     }
 
@@ -450,7 +497,7 @@ final class SplitViewManager: ObservableObject {
     ) -> SplitDropTarget? {
         guard bounds.width > 0, bounds.height > 0, bounds.contains(location) else { return nil }
         guard let windowState = windowRegistry?.windows[windowId],
-              let tabManager = browserManager?.tabManager else {
+              let tabManager else {
             return nil
         }
 
@@ -465,7 +512,7 @@ final class SplitViewManager: ObservableObject {
         }
 
         guard let currentTab = windowState.currentTabId.flatMap({ tabManager.tab(for: $0) })
-                ?? browserManager?.currentTab(for: windowState),
+                ?? runtime?.currentTab(windowState),
               currentTab.representsSumiNativeSurface == false else {
             return nil
         }
@@ -531,10 +578,10 @@ final class SplitViewManager: ObservableObject {
         sourceGroup: SplitGroup?,
         in windowState: BrowserWindowState
     ) -> ResolvedSplitTab? {
-        guard let tm = browserManager?.tabManager else { return nil }
+        guard let tabManager else { return nil }
 
         let sourceMember = sourceMember(for: candidate, sourceGroup: sourceGroup)
-        let sourcePin = sourceMember?.pinId.flatMap { tm.shortcutPin(by: $0) }
+        let sourcePin = sourceMember?.pinId.flatMap { tabManager.shortcutPin(by: $0) }
         if let pin = shortcutPin(for: candidate) ?? sourcePin {
             let liveTab = resolvedLiveShortcutTab(for: pin, candidate: candidate, in: windowState)
             return ResolvedSplitTab(
@@ -551,8 +598,8 @@ final class SplitViewManager: ObservableObject {
             guard let spaceId = host.spaceId ?? candidate.spaceId ?? windowState.currentSpaceId else {
                 return nil
             }
-            let insertionIndex = tm.spacePinnedPins(for: spaceId).count
-            guard let pin = tm.convertTabToShortcutPin(
+            let insertionIndex = tabManager.spacePinnedPins(for: spaceId).count
+            guard let pin = tabManager.convertTabToShortcutPin(
                 candidate,
                 role: .spacePinned,
                 profileId: nil,
@@ -561,7 +608,7 @@ final class SplitViewManager: ObservableObject {
                 at: insertionIndex,
                 openTargetFolder: false
             ),
-            let liveTab = tm.shortcutLiveTab(for: pin.id, in: windowState.id)
+            let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
             else {
                 return nil
             }
@@ -639,28 +686,28 @@ final class SplitViewManager: ObservableObject {
     }
 
     private func shortcutPin(for tab: Tab) -> ShortcutPin? {
-        guard let tm = browserManager?.tabManager else { return nil }
+        guard let tabManager else { return nil }
         if let shortcutPinId = tab.shortcutPinId,
-           let pin = tm.shortcutPin(by: shortcutPinId) {
+           let pin = tabManager.shortcutPin(by: shortcutPinId) {
             return pin
         }
-        if let pin = tm.shortcutPin(by: tab.id) {
+        if let pin = tabManager.shortcutPin(by: tab.id) {
             return pin
         }
         return nil
     }
 
     private func sourceSplitGroup(for tab: Tab) -> SplitGroup? {
-        guard let tm = browserManager?.tabManager else { return nil }
-        if let group = tm.splitGroup(containing: tab.id) {
+        guard let tabManager else { return nil }
+        if let group = tabManager.splitGroup(containing: tab.id) {
             return group
         }
         if let pinId = tab.shortcutPinId,
-           let group = tm.splitGroup(containingPinId: pinId) {
+           let group = tabManager.splitGroup(containingPinId: pinId) {
             return group
         }
-        if let pin = tm.shortcutPin(by: tab.id),
-           let group = tm.splitGroup(containingPinId: pin.id) {
+        if let pin = tabManager.shortcutPin(by: tab.id),
+           let group = tabManager.splitGroup(containingPinId: pin.id) {
             return group
         }
         return nil
@@ -670,12 +717,12 @@ final class SplitViewManager: ObservableObject {
         for tab: Tab,
         sourceGroup: SplitGroup?
     ) -> SplitGroupMember? {
-        guard let tm = browserManager?.tabManager else { return nil }
-        let pinId = tab.shortcutPinId ?? tm.shortcutPin(by: tab.id)?.id
+        guard let tabManager else { return nil }
+        let pinId = tab.shortcutPinId ?? tabManager.shortcutPin(by: tab.id)?.id
         let candidateGroups: [SplitGroup?] = [
             sourceGroup,
-            tm.splitGroup(containing: tab.id),
-            pinId.flatMap { tm.splitGroup(containingPinId: $0) },
+            tabManager.splitGroup(containing: tab.id),
+            pinId.flatMap { tabManager.splitGroup(containingPinId: $0) },
         ]
         var seenGroupIds = Set<UUID>()
         for group in candidateGroups.compactMap({ $0 }) where seenGroupIds.insert(group.id).inserted {
@@ -695,7 +742,7 @@ final class SplitViewManager: ObservableObject {
             return tab.id
         }
 
-        if let pinId = tab.shortcutPinId ?? browserManager?.tabManager.shortcutPin(by: tab.id)?.id,
+        if let pinId = tab.shortcutPinId ?? tabManager?.shortcutPin(by: tab.id)?.id,
            let member = sourceGroup.member(forPinId: pinId) {
             if sourceGroup.tabIds.contains(member.tabId) {
                 return member.tabId
@@ -722,16 +769,16 @@ final class SplitViewManager: ObservableObject {
         candidate: Tab,
         in windowState: BrowserWindowState
     ) -> Tab {
-        guard let tm = browserManager?.tabManager else { return candidate }
+        guard let tabManager else { return candidate }
         if candidate.isShortcutLiveInstance,
            candidate.shortcutPinId == pin.id,
-           tm.tab(for: candidate.id) != nil {
+           tabManager.tab(for: candidate.id) != nil {
             return candidate
         }
-        if let liveTab = tm.shortcutLiveTab(for: pin.id, in: windowState.id) {
+        if let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) {
             return liveTab
         }
-        return tm.activateShortcutPin(
+        return tabManager.activateShortcutPin(
             pin,
             in: windowState.id,
             currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
@@ -744,7 +791,7 @@ final class SplitViewManager: ObservableObject {
             return .essential(profileId: pin.profileId, index: pin.index)
         case .spacePinned:
             return .spacePinned(
-                spaceId: pin.spaceId ?? browserManager?.windowRegistry?.activeWindow?.currentSpaceId ?? UUID(),
+                spaceId: pin.spaceId ?? windowRegistry?.activeWindow?.currentSpaceId ?? UUID(),
                 folderId: pin.folderId,
                 index: pin.index
             )
@@ -770,14 +817,14 @@ final class SplitViewManager: ObservableObject {
 
         for candidateId in candidateIds {
             guard let candidateId else { continue }
-            if let tab = browserManager?.tabManager.tab(for: candidateId) {
+            if let tab = tabManager?.tab(for: candidateId) {
                 return tab
             }
             if let pinId = group.member(for: candidateId)?.pinId,
-               let tab = browserManager?.tabManager.shortcutLiveTab(for: pinId, in: windowState.id) {
+               let tab = tabManager?.shortcutLiveTab(for: pinId, in: windowState.id) {
                 return tab
             }
-            if let tab = browserManager?.tabManager.shortcutLiveTab(for: candidateId, in: windowState.id) {
+            if let tab = tabManager?.shortcutLiveTab(for: candidateId, in: windowState.id) {
                 return tab
             }
         }
@@ -790,7 +837,7 @@ final class SplitViewManager: ObservableObject {
 
     private func applyPendingLegacySnapshotIfPossible(for windowId: UUID) {
         guard let snapshot = pendingLegacySnapshotsByWindow[windowId],
-              let tabManager = browserManager?.tabManager,
+              let tabManager,
               let group = LegacySplitSessionMigrator.makeSplitGroup(from: snapshot, tabManager: tabManager)
         else {
             return
@@ -833,8 +880,8 @@ final class SplitViewManager: ObservableObject {
 
     private func refreshWindow(_ windowId: UUID) {
         if let windowState = windowRegistry?.windows[windowId] {
-            browserManager?.refreshCompositor(for: windowState)
-            browserManager?.schedulePersistWindowSession(for: windowState)
+            runtime?.refreshCompositor(windowState)
+            runtime?.schedulePersistWindowSession(windowState)
         }
     }
 }

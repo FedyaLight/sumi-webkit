@@ -9,7 +9,7 @@ enum BrowserManagerRuntimeWiring {
         browserManager.backgroundMediaOptimizationService.attach(
             runtime: backgroundMediaOptimizationRuntime(for: browserManager)
         )
-        browserManager.splitManager.browserManager = browserManager
+        browserManager.splitManager.attach(runtime: .live(browserManager: browserManager))
         browserManager.splitManager.windowRegistry = browserManager.windowRegistry
         browserManager.tabManager.browserManager = browserManager
         browserManager.tabManager.attachRuntimeContext(
