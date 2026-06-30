@@ -2,6 +2,23 @@ import AppKit
 import SwiftUI
 
 @MainActor
+struct WorkspaceThemePickerPopoverRuntime {
+    typealias SettingsProvider = @MainActor () -> SumiSettingsService
+    typealias PreviewDraftHandler = @MainActor (_ sessionID: UUID) -> Void
+    typealias FinalizeDismissHandler = @MainActor (_ session: WorkspaceThemePickerSession) -> Void
+
+    let settings: SettingsProvider
+    let previewDraft: PreviewDraftHandler
+    let finalizeDismiss: FinalizeDismissHandler
+
+    static let inactive = WorkspaceThemePickerPopoverRuntime(
+        settings: { SumiSettingsService() },
+        previewDraft: { _ in },
+        finalizeDismiss: { _ in }
+    )
+}
+
+@MainActor
 final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
     enum Metrics {
         @MainActor
@@ -19,7 +36,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         let session: WorkspaceThemePickerSession
         let popover: NSPopover
         weak var windowState: BrowserWindowState?
-        weak var browserManager: BrowserManager?
+        let runtime: WorkspaceThemePickerPopoverRuntime
         weak var transientCoordinator: SidebarTransientSessionCoordinator?
         let transientSessionToken: SidebarTransientSessionToken?
         var closeDisposition: CloseDisposition = .commit
@@ -30,14 +47,14 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             session: WorkspaceThemePickerSession,
             popover: NSPopover,
             windowState: BrowserWindowState,
-            browserManager: BrowserManager,
+            runtime: WorkspaceThemePickerPopoverRuntime,
             transientCoordinator: SidebarTransientSessionCoordinator?,
             transientSessionToken: SidebarTransientSessionToken?
         ) {
             self.session = session
             self.popover = popover
             self.windowState = windowState
-            self.browserManager = browserManager
+            self.runtime = runtime
             self.transientCoordinator = transientCoordinator
             self.transientSessionToken = transientSessionToken
         }
@@ -58,7 +75,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
     func present(
         _ session: WorkspaceThemePickerSession,
         in windowState: BrowserWindowState,
-        browserManager: BrowserManager
+        runtime: WorkspaceThemePickerPopoverRuntime
     ) {
         if activeSession != nil {
             closeActive(committing: true)
@@ -66,16 +83,17 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         }
 
         session.commitsOnDismiss = true
+        let settings = runtime.settings()
 
         guard let resolvedAnchor = resolvedPresentationAnchor(
             for: session,
             in: windowState,
-            sidebarPosition: browserManager.sumiSettings?.sidebarPosition ?? .left
+            sidebarPosition: settings.sidebarPosition
         ) else {
             finishWithoutPopover(
                 session,
                 windowState: windowState,
-                browserManager: browserManager,
+                runtime: runtime,
                 reason: "WorkspaceThemePickerPopoverPresenter.anchorUnavailable"
             )
             return
@@ -85,7 +103,8 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             rootView: rootView(
                 session: session,
                 windowState: windowState,
-                browserManager: browserManager
+                settings: settings,
+                previewDraft: runtime.previewDraft
             ),
             contentSize: Self.Metrics.contentSize
         )
@@ -99,7 +118,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         popover.appearance = PopoverPresenterChromeSupport.appearance(
             for: nativeSurfaceColorScheme(
                 in: windowState,
-                settings: browserManager.sumiSettings ?? SumiSettingsService()
+                settings: settings
             ),
             fallback: resolvedAnchor.view.window?.effectiveAppearance ?? windowState.window?.effectiveAppearance
         )
@@ -108,7 +127,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             session: session,
             popover: popover,
             windowState: windowState,
-            browserManager: browserManager,
+            runtime: runtime,
             transientCoordinator: session.presentationSource?.coordinator,
             transientSessionToken: session.transientSessionToken
         )
@@ -230,14 +249,15 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
     private func rootView(
         session: WorkspaceThemePickerSession,
         windowState: BrowserWindowState,
-        browserManager: BrowserManager
+        settings: SumiSettingsService,
+        previewDraft: @escaping WorkspaceThemePickerPopoverRuntime.PreviewDraftHandler
     ) -> AnyView {
         AnyView(
             WorkspaceThemePickerPopoverContent(session: session) {
-                browserManager.previewWorkspaceThemePickerDraft(sessionID: session.id)
+                previewDraft(session.id)
             }
                 .environment(windowState)
-                .environment(\.sumiSettings, browserManager.sumiSettings ?? SumiSettingsService())
+                .environment(\.sumiSettings, settings)
                 .frame(
                     width: Self.Metrics.contentSize.width,
                     height: Self.Metrics.contentSize.height
@@ -320,9 +340,8 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         closedSession.closeFallbackTask?.cancel()
         closedSession.session.commitsOnDismiss = closedSession.closeDisposition == .commit
 
-        let finalize: () -> Void = { [weak browserManager = closedSession.browserManager] in
-            guard let browserManager else { return }
-            browserManager.finalizeWorkspaceThemePickerDismiss(closedSession.session)
+        let finalize: () -> Void = { [runtime = closedSession.runtime] in
+            runtime.finalizeDismiss(closedSession.session)
         }
 
         if let coordinator = closedSession.transientCoordinator,
@@ -346,14 +365,13 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
     private func finishWithoutPopover(
         _ session: WorkspaceThemePickerSession,
         windowState: BrowserWindowState,
-        browserManager: BrowserManager,
+        runtime: WorkspaceThemePickerPopoverRuntime,
         reason: String
     ) {
         session.commitsOnDismiss = false
 
-        let finalize: () -> Void = { [weak browserManager] in
-            guard let browserManager else { return }
-            browserManager.finalizeWorkspaceThemePickerDismiss(session)
+        let finalize: () -> Void = {
+            runtime.finalizeDismiss(session)
         }
 
         if let coordinator = session.presentationSource?.coordinator,
@@ -450,7 +468,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
             isSidebarVisible: windowState.isSidebarVisible,
             sidebarWidth: windowState.sidebarWidth,
             savedSidebarWidth: windowState.savedSidebarWidth,
-            sidebarPosition: activeSession.browserManager?.sumiSettings?.sidebarPosition ?? .left
+            sidebarPosition: activeSession.runtime.settings().sidebarPosition
         )
 
         guard sidebarRect.contains(pointInContentView) else { return }

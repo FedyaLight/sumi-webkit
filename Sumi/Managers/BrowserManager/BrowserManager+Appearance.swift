@@ -83,7 +83,21 @@ extension BrowserManager {
         workspaceThemePickerPopoverPresenter.present(
             session,
             in: windowState,
-            browserManager: self
+            runtime: makeWorkspaceThemePickerPopoverRuntime()
+        )
+    }
+
+    private func makeWorkspaceThemePickerPopoverRuntime() -> WorkspaceThemePickerPopoverRuntime {
+        WorkspaceThemePickerPopoverRuntime(
+            settings: { [weak self] in
+                self?.sumiSettings ?? SumiSettingsService()
+            },
+            previewDraft: { [weak self] sessionID in
+                self?.previewWorkspaceThemePickerDraft(sessionID: sessionID)
+            },
+            finalizeDismiss: { [weak self] session in
+                self?.finalizeWorkspaceThemePickerDismiss(session)
+            }
         )
     }
 
