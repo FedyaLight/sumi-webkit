@@ -93,16 +93,40 @@ final class BrowserURLBarContextOwner {
 extension BrowserURLBarContextOwner.Dependencies {
     @MainActor
     static func live(browserManager: BrowserManager) -> Self {
+        let dataServices = browserManager.dataServices
         let extensionsModule = browserManager.extensionsModule
         let userscriptsModule = browserManager.userscriptsModule
         let protectionCoordinator = browserManager.protectionCoordinator
         let urlBarHubPopoverPresenter = browserManager.urlBarHubPopoverPresenter
+        let webViewRoutingService = browserManager.webViewRoutingService
         let zoomManager = browserManager.zoomManager
         let permissionContextOwner = BrowserURLBarPermissionContextOwner(
             dependencies: .live(browserManager: browserManager)
         )
         let navigationToolbarContextOwner = BrowserNavigationToolbarContextOwner(
-            dependencies: .live(browserManager: browserManager)
+            dependencies: BrowserNavigationToolbarContextOwner.Dependencies(
+                currentTab: { [weak browserManager] windowState in
+                    browserManager?.currentTab(for: windowState)
+                },
+                webView: { tab, windowState in
+                    webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
+                },
+                faviconService: {
+                    dataServices.faviconService
+                },
+                faviconImageService: {
+                    dataServices.faviconImageService
+                },
+                activeWindow: { [weak browserManager] in
+                    browserManager?.windowRegistry?.activeWindow
+                },
+                openNewTab: { [weak browserManager] urlString, context in
+                    browserManager?.openNewTab(url: urlString, context: context)
+                },
+                openHistoryURLsInNewWindow: { [weak browserManager] urls in
+                    browserManager?.openHistoryURLsInNewWindow(urls)
+                }
+            )
         )
         let extensionActionContext: @MainActor () -> URLBarExtensionActionContext = { [weak browserManager] in
             BrowserURLBarContextOwner.makeExtensionActionContext(

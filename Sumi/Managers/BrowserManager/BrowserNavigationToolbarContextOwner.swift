@@ -78,34 +78,3 @@ final class BrowserNavigationToolbarContextOwner {
         dependencies.openNewTab(url.absoluteString, context)
     }
 }
-
-extension BrowserNavigationToolbarContextOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        let dataServices = browserManager.dataServices
-        let webViewRoutingService = browserManager.webViewRoutingService
-        return Self(
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
-            },
-            webView: { tab, windowState in
-                webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
-            },
-            faviconService: {
-                dataServices.faviconService
-            },
-            faviconImageService: {
-                dataServices.faviconImageService
-            },
-            activeWindow: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
-            openNewTab: { [weak browserManager] urlString, context in
-                browserManager?.openNewTab(url: urlString, context: context)
-            },
-            openHistoryURLsInNewWindow: { [weak browserManager] urls in
-                browserManager?.openHistoryURLsInNewWindow(urls)
-            }
-        )
-    }
-}
