@@ -218,6 +218,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.webKitUIRuntime }
         set { navigationRuntime.webKitUIRuntime = newValue }
     }
+    var installNavigationRuntime: TabInstallNavigationRuntime {
+        get { navigationRuntime.installNavigationRuntime }
+        set { navigationRuntime.installNavigationRuntime = newValue }
+    }
     var configurationPolicyWebViewReplacementRuntime: TabConfigurationPolicyWebViewReplacementRuntime {
         get { navigationRuntime.configurationPolicyWebViewReplacementRuntime }
         set { navigationRuntime.configurationPolicyWebViewReplacementRuntime = newValue }
@@ -468,6 +472,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                     }
                 )
                 popupHandlingRuntime = .live(browserManager: browserManager)
+                installNavigationRuntime = .live(userscriptsModule: { [weak browserManager] in
+                    browserManager?.userscriptsModule
+                })
                 webKitUIRuntime = .live(
                     handleWebViewDidClose: { [weak browserManager] webView in
                         browserManager?.handleWebViewDidClose(webView) == true
@@ -505,6 +512,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 permissionRuntime = .inactive
                 popupHandlingRuntime = .inactive
                 webKitUIRuntime = .inactive
+                installNavigationRuntime = .inactive
                 configurationPolicyWebViewReplacementRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive

@@ -367,6 +367,17 @@ extension TabWebKitUIRuntime {
 }
 
 @MainActor
+extension TabInstallNavigationRuntime {
+    static func live(userscriptsModule: @escaping () -> SumiUserscriptsModule?) -> Self {
+        Self(
+            interceptInstallNavigation: { url in
+                userscriptsModule()?.interceptInstallNavigationIfNeeded(url) == true
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabExtensionPropertiesRuntime {
     static func live(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
         Self(

@@ -236,6 +236,15 @@ struct TabWebKitUIRuntime {
 }
 
 @MainActor
+struct TabInstallNavigationRuntime {
+    var interceptInstallNavigation: (URL) -> Bool
+
+    static let inactive = Self(
+        interceptInstallNavigation: { _ in false }
+    )
+}
+
+@MainActor
 struct TabConfigurationPolicyWebViewReplacementRuntime {
     var trackedWindowIdContainingWebView: (WKWebView) -> UUID?
     var hasTrackedWebViews: (UUID) -> Bool
@@ -360,6 +369,7 @@ final class TabNavigationRuntime {
     var permissionRuntime = TabPermissionRuntime.inactive
     var popupHandlingRuntime = TabPopupHandlingRuntime.inactive
     var webKitUIRuntime = TabWebKitUIRuntime.inactive
+    var installNavigationRuntime = TabInstallNavigationRuntime.inactive
     var configurationPolicyWebViewReplacementRuntime =
         TabConfigurationPolicyWebViewReplacementRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive

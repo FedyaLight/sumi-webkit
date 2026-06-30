@@ -21,7 +21,7 @@ final class SumiInstallNavigationResponder: SumiNavigationActionResponding, Sumi
             PerformanceTrace.endInterval("NavigationPolicy.installResponder", signpostState)
         }
 
-        return tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(url) == true
+        return tab?.installNavigationRuntime.interceptInstallNavigation(url) == true
             ? .cancel
             : .next
     }
@@ -34,7 +34,7 @@ final class SumiInstallNavigationResponder: SumiNavigationActionResponding, Sumi
             PerformanceTrace.endInterval("NavigationPolicy.installResponseResponder", signpostState)
         }
 
-        return tab?.browserManager?.userscriptsModule.interceptInstallNavigationIfNeeded(navigationResponse.url) == true
+        return tab?.installNavigationRuntime.interceptInstallNavigation(navigationResponse.url) == true
             ? .cancel
             : .next
     }

@@ -787,6 +787,47 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNil(value.mainFrameNavigation)
     }
 
+    func testInstallNavigationResponderUsesInjectedRuntimeWithoutBrowserManager() async {
+        let installURL = URL(string: "https://userscripts.example/install.user.js")!
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        var interceptedURLs: [URL] = []
+        tab.installNavigationRuntime = TabInstallNavigationRuntime(
+            interceptInstallNavigation: { url in
+                interceptedURLs.append(url)
+                return url == installURL
+            }
+        )
+        let responder = SumiInstallNavigationResponder(tab: tab)
+        var preferences = sumiNavigationPreferences()
+
+        let actionPolicy = await responder.decidePolicy(
+            for: SumiNavigationAction(
+                navigationAction(
+                    url: installURL,
+                    navigationType: .linkActivated(isMiddleClick: false),
+                    isMainFrame: true
+                )
+            ),
+            preferences: &preferences
+        )
+        let responsePolicy = await responder.decidePolicy(
+            for: SumiNavigationResponse(
+                url: installURL,
+                isForMainFrame: true,
+                canShowMIMEType: true,
+                shouldDownload: false,
+                httpResponse: nil,
+                mimeType: "application/javascript",
+                mainFrameNavigation: nil
+            )
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(actionPolicy, .cancel)
+        XCTAssertEqual(responsePolicy, .cancel)
+        XCTAssertEqual(interceptedURLs, [installURL, installURL])
+    }
+
     func testTabLifecycleResponsePolicyUpdatesPDFDisplayStateOnlyForMainFrameResponses() async {
         let tab = Tab(url: URL(string: "https://example.com/start")!)
         let responder = SumiTabLifecycleNavigationResponder(tab: tab)
