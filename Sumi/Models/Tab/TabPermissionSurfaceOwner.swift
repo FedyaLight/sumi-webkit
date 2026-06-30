@@ -10,7 +10,7 @@ final class TabPermissionSurfaceOwner {
     }
 
     func currentPageId() -> String {
-        tab.currentExtensionPageIdentity().pageId
+        pageIdentity().pageId
     }
 
     func surfaceState(for webView: WKWebView?) -> (isActive: Bool, isVisible: Bool) {
@@ -33,7 +33,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
+        let committedURL = committedExtensionRuntimeMainDocumentURL()
         return SumiPopupPermissionTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
@@ -52,7 +52,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
+        let committedURL = committedExtensionRuntimeMainDocumentURL()
         return SumiExternalSchemePermissionTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
@@ -75,7 +75,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
+        let committedURL = committedExtensionRuntimeMainDocumentURL()
         let surfaceState = surfaceState(for: webView)
         return SumiWebKitGeolocationTabContext(
             tabId: identity.tabId,
@@ -102,7 +102,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
+        let committedURL = committedExtensionRuntimeMainDocumentURL()
         let surfaceState = surfaceState(for: webView)
         return SumiWebKitMediaCaptureTabContext(
             tabId: identity.tabId,
@@ -126,7 +126,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
+        let committedURL = committedExtensionRuntimeMainDocumentURL()
         let surfaceState = surfaceState(for: webView)
         return SumiFilePickerPermissionTabContext(
             tabId: identity.tabId,
@@ -146,7 +146,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
+        let committedURL = committedExtensionRuntimeMainDocumentURL()
         let surfaceState = surfaceState(for: webView)
         return SumiStorageAccessTabContext(
             tabId: identity.tabId,
@@ -204,7 +204,7 @@ final class TabPermissionSurfaceOwner {
                 reason: reason
             )
         )
-        tab.invalidateCurrentExtensionPageForWebViewReplacement()
+        tab.extensionPageRuntimeOwner.invalidateCurrentPageForWebViewReplacement()
     }
 
     private func isActiveGlancePreviewSurface(for webView: WKWebView) -> Bool {
@@ -221,8 +221,12 @@ final class TabPermissionSurfaceOwner {
     }
 
     private func pageIdentity() -> (tabId: String, pageGeneration: String, pageId: String) {
-        let identity = tab.currentExtensionPageIdentity()
+        let identity = tab.extensionPageRuntimeOwner.pageIdentity(tabId: tab.id)
         return (identity.tabId, identity.pageGeneration, identity.pageId)
+    }
+
+    private func committedExtensionRuntimeMainDocumentURL() -> URL? {
+        tab.extensionPageRuntimeOwner.committedMainDocumentURLForCurrentPage()
     }
 
     private func isCurrentPageClosure(
@@ -232,7 +236,8 @@ final class TabPermissionSurfaceOwner {
         let tab = self.tab
         return { [weak tab] in
             guard let tab else { return false }
-            return tab.isCurrentExtensionPage(
+            return tab.extensionPageRuntimeOwner.isCurrentPage(
+                tabId: tab.id,
                 pageId: pageId,
                 pageGeneration: pageGeneration
             )

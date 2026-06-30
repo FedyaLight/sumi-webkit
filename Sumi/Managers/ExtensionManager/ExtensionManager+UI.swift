@@ -651,7 +651,7 @@ extension ExtensionManager {
                 )
             )
             coordinator.rebuildLiveWebViews(for: owningTab)
-            owningTab.resetExtensionOpenNotificationGeneration()
+            owningTab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
             registerTabWithExtensionRuntime(
                 owningTab,
                 reason: "prepareWebViewForExtensionRuntime.rebuild"

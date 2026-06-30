@@ -228,7 +228,7 @@ final class ExtensionRequestedTabLifecycleOwner {
                 dataStoreMatched: nil,
                 controllerMatched: nil,
                 tabAdapterCreated: manager.stableAdapter(for: newTab) != nil,
-                didOpenTabTiming: newTab.hasAnyDidOpenTabNotificationForExtensionRuntime()
+                didOpenTabTiming: newTab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification()
                     ? .beforeNavigation : .deferred,
                 firstNavigationHost: SafariExtensionPermissionLifecycleDiagnostics.host(
                     from: resolvedExtensionLoad.url
@@ -274,10 +274,10 @@ final class ExtensionRequestedTabLifecycleOwner {
         manager: ExtensionManager
     ) {
         let generation = manager.tabOpenNotificationGeneration
-        tab.prepareExtensionRuntimeGeneration(generation)
-        tab.markExtensionRuntimeEligible(for: generation)
+        tab.extensionPageRuntimeOwner.prepareGeneration(generation)
+        tab.extensionPageRuntimeOwner.markEligible(for: generation)
 
-        guard tab.hasDidOpenTabNotificationForExtensionRuntime(generation: generation) == false else {
+        guard tab.extensionPageRuntimeOwner.hasDidOpenTabNotification(for: generation) == false else {
             manager.extensionRuntimeTrace(
                 "registerExtensionCreatedTab skip reason=\(reason) because=alreadyNotified generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
             )
@@ -292,17 +292,17 @@ final class ExtensionRequestedTabLifecycleOwner {
         }
 
         if let profileId = manager.resolvedProfileId(for: tab) {
-            tab.noteExtensionRuntimeOpenNotification(
+            tab.extensionPageRuntimeOwner.noteOpenNotification(
                 extensionContextBindingGeneration: manager.extensionContextBindingGeneration(for: profileId),
                 loadedContexts: manager.profileHasLoadedContentScriptContexts(profileId: profileId)
             )
         } else {
-            tab.noteExtensionRuntimeOpenNotification(
+            tab.extensionPageRuntimeOwner.noteOpenNotification(
                 extensionContextBindingGeneration: nil,
                 loadedContexts: nil
             )
         }
-        tab.markDidOpenTabToExtensions(generation: generation)
+        tab.extensionPageRuntimeOwner.markDidOpenTab(generation: generation)
         manager.extensionRuntimeTrace(
             "registerExtensionCreatedTab marked reason=\(reason) generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
         )

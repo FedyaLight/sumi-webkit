@@ -51,7 +51,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let popupUserActivationTracker = SumiPopupUserActivationTracker()
     let faviconRuntime = TabFaviconRuntime()
     let profileResolutionOwner = TabProfileResolutionOwner()
-    private let extensionPageRuntimeOwner = TabExtensionPageRuntimeOwner()
+    let extensionPageRuntimeOwner = TabExtensionPageRuntimeOwner()
     private let webViewOwnershipOwner = TabWebViewOwnershipOwner()
     private let webViewRuntime = TabWebViewRuntime()
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
@@ -257,57 +257,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var isAutoplayReloadRequired: Bool {
         reloadPolicyStateOwner.isAutoplayReloadRequired
     }
-    var didNotifyOpenToExtensions: Bool {
-        get { extensionPageRuntimeOwner.didNotifyOpenToExtensions }
-        set { extensionPageRuntimeOwner.didNotifyOpenToExtensions = newValue }
-    }
-    var lastExtensionOpenNotificationGeneration: UInt64 {
-        get { extensionPageRuntimeOwner.lastOpenNotificationGeneration }
-        set { extensionPageRuntimeOwner.lastOpenNotificationGeneration = newValue }
-    }
-    var extensionRuntimeControllerGeneration: UInt64 {
-        get { extensionPageRuntimeOwner.controllerGeneration }
-        set { extensionPageRuntimeOwner.controllerGeneration = newValue }
-    }
-    var extensionRuntimeDocumentSequence: UInt64 {
-        get { extensionPageRuntimeOwner.documentSequence }
-        set { extensionPageRuntimeOwner.documentSequence = newValue }
-    }
-    var extensionRuntimeCommittedMainDocumentURL: URL? {
-        get { extensionPageRuntimeOwner.committedMainDocumentURL }
-        set { extensionPageRuntimeOwner.committedMainDocumentURL = newValue }
-    }
-    var extensionRuntimeOpenNotifiedDocumentSequence: UInt64? {
-        get { extensionPageRuntimeOwner.openNotifiedDocumentSequence }
-        set { extensionPageRuntimeOwner.openNotifiedDocumentSequence = newValue }
-    }
-    var extensionRuntimeOpenNotifiedExtensionContextBindingGeneration: UInt64? {
-        get { extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration }
-        set {
-            extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = newValue
-        }
-    }
-    var extensionRuntimeOpenNotifiedWithLoadedContexts: Bool? {
-        get { extensionPageRuntimeOwner.openNotifiedWithLoadedContexts }
-        set { extensionPageRuntimeOwner.openNotifiedWithLoadedContexts = newValue }
-    }
-    var extensionRuntimeLastReportedURL: URL? {
-        get { extensionPageRuntimeOwner.lastReportedURL }
-        set { extensionPageRuntimeOwner.lastReportedURL = newValue }
-    }
-    var extensionRuntimeLastReportedLoadingComplete: Bool? {
-        get { extensionPageRuntimeOwner.lastReportedLoadingComplete }
-        set { extensionPageRuntimeOwner.lastReportedLoadingComplete = newValue }
-    }
-    var extensionRuntimeLastReportedTitle: String? {
-        get { extensionPageRuntimeOwner.lastReportedTitle }
-        set { extensionPageRuntimeOwner.lastReportedTitle = newValue }
-    }
-    var extensionRuntimeEligibleGeneration: UInt64 {
-        get { extensionPageRuntimeOwner.eligibleGeneration }
-        set { extensionPageRuntimeOwner.eligibleGeneration = newValue }
-    }
-
     // MARK: - WebView Ownership Tracking (Memory Optimization)
     /// The window ID that currently "owns" the primary WebView for this tab
     /// If nil, no window is displaying this tab yet
@@ -394,121 +343,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     private var navigationStateController: TabNavigationStateController {
         navigationRuntime.navigationStateController
-    }
-
-    func prepareExtensionRuntimeGeneration(_ generation: UInt64) {
-        extensionPageRuntimeOwner.prepareGeneration(generation)
-    }
-
-    func markExtensionRuntimeEligible(for generation: UInt64) {
-        extensionPageRuntimeOwner.markEligible(for: generation)
-    }
-
-    func noteExtensionRuntimeOpenNotification(
-        extensionContextBindingGeneration: UInt64?,
-        loadedContexts: Bool?
-    ) {
-        extensionPageRuntimeOwner.noteOpenNotification(
-            extensionContextBindingGeneration: extensionContextBindingGeneration,
-            loadedContexts: loadedContexts
-        )
-    }
-
-    func markDidOpenTabToExtensions(generation: UInt64) {
-        extensionPageRuntimeOwner.markDidOpenTab(generation: generation)
-    }
-
-    func hasDidOpenTabNotificationForExtensionRuntime(generation: UInt64) -> Bool {
-        extensionPageRuntimeOwner.hasDidOpenTabNotification(for: generation)
-    }
-
-    func hasAnyDidOpenTabNotificationForExtensionRuntime() -> Bool {
-        extensionPageRuntimeOwner.hasAnyDidOpenTabNotification()
-    }
-
-    func currentExtensionOpenNotificationGeneration() -> UInt64 {
-        extensionPageRuntimeOwner.currentOpenNotificationGeneration()
-    }
-
-    func currentExtensionRuntimeEligibleGeneration() -> UInt64 {
-        extensionPageRuntimeOwner.currentEligibleGeneration()
-    }
-
-    func resetExtensionOpenNotificationGeneration() {
-        extensionPageRuntimeOwner.clearOpenNotificationGeneration()
-    }
-
-    func hasExtensionOpenNotificationForCurrentDocumentWithLoadedContexts(
-        generation: UInt64
-    ) -> Bool {
-        extensionPageRuntimeOwner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
-            generation: generation
-        )
-    }
-
-    func isEligibleForExtensionRuntime(generation: UInt64) -> Bool {
-        extensionPageRuntimeOwner.isEligible(for: generation)
-    }
-
-    func noteCommittedMainDocumentNavigation(to url: URL) {
-        extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: url)
-    }
-
-    func extensionRuntimeDocumentBindingSnapshot() -> TabExtensionDocumentBindingSnapshot {
-        extensionPageRuntimeOwner.documentBindingSnapshot()
-    }
-
-    func committedExtensionRuntimeMainDocumentURL() -> URL? {
-        extensionPageRuntimeOwner.committedMainDocumentURLForCurrentPage()
-    }
-
-    func hasCommittedExtensionRuntimeDocumentBinding() -> Bool {
-        extensionPageRuntimeOwner.hasCommittedDocumentBinding()
-    }
-
-    func hasExtensionRuntimeDocumentBindingForLifecycleRebind() -> Bool {
-        extensionPageRuntimeOwner.hasDocumentBindingForLifecycleRebind()
-    }
-
-    func shouldSkipExtensionRuntimePreCommitRebindForInitialDocument() -> Bool {
-        extensionPageRuntimeOwner.shouldSkipPreCommitRebindForInitialDocument()
-    }
-
-    func recordExtensionRuntimeReportedURLIfChanged(_ resolvedURL: URL?) -> Bool {
-        extensionPageRuntimeOwner.recordReportedURLIfChanged(resolvedURL)
-    }
-
-    func recordExtensionRuntimeReportedLoadingCompleteIfChanged(_ isLoadingComplete: Bool) -> Bool {
-        extensionPageRuntimeOwner.recordReportedLoadingCompleteIfChanged(isLoadingComplete)
-    }
-
-    func recordExtensionRuntimeReportedTitleIfChanged(_ title: String?) -> Bool {
-        extensionPageRuntimeOwner.recordReportedTitleIfChanged(title)
-    }
-
-    func currentExtensionPageIdentity() -> TabExtensionPageIdentity {
-        extensionPageRuntimeOwner.pageIdentity(tabId: id)
-    }
-
-    func isCurrentExtensionPage(
-        pageId: String,
-        pageGeneration: String
-    ) -> Bool {
-        extensionPageRuntimeOwner.isCurrentPage(
-            tabId: id,
-            pageId: pageId,
-            pageGeneration: pageGeneration
-        )
-    }
-
-    /// Clears committed-document binding so a WebView rebuild can reload with extension
-    /// content scripts injected from a fresh `didOpenTab` before navigation.
-    func resetExtensionRuntimeDocumentBindingForContentScriptRebind() {
-        extensionPageRuntimeOwner.resetDocumentBindingForContentScriptRebind()
-    }
-
-    func invalidateCurrentExtensionPageForWebViewReplacement() {
-        extensionPageRuntimeOwner.invalidateCurrentPageForWebViewReplacement()
     }
 
     func recordPopupUserActivation(_ event: NSEvent, kind: String) {

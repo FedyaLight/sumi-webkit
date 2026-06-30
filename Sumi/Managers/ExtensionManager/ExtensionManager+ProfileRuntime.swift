@@ -465,19 +465,19 @@ extension ExtensionManager {
         reason: String = #function
     ) {
         guard tab.isEphemeral == false else { return }
-        if tab.hasExtensionOpenNotificationForCurrentDocumentWithLoadedContexts(
+        if tab.extensionPageRuntimeOwner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
             generation: tabOpenNotificationGeneration
         ) {
             return
         }
 
-        if tab.hasCommittedExtensionRuntimeDocumentBinding(),
+        if tab.extensionPageRuntimeOwner.hasCommittedDocumentBinding(),
            tabNeedsExtensionContentScriptRebind(tab) {
             ensureExtensionControllerAttachedForTab(tab, reason: reason)
             return
         }
 
-        tab.resetExtensionOpenNotificationGeneration()
+        tab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
         registerTabWithExtensionRuntime(tab, reason: reason)
     }
 
@@ -657,11 +657,11 @@ extension ExtensionManager {
                     action: .destructiveRebuild
                 )
             )
-            tab.resetExtensionRuntimeDocumentBindingForContentScriptRebind()
+            tab.extensionPageRuntimeOwner.resetDocumentBindingForContentScriptRebind()
             coordinator.rebuildLiveWebViews(for: tab)
             // WebKit only injects manifest content scripts when the controller is on the
             // configuration before navigation; allow `notifyTabOpenedIfNeeded` to run again.
-            tab.resetExtensionOpenNotificationGeneration()
+            tab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
         }
     }
 

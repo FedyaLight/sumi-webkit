@@ -317,8 +317,8 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
     static func context(tab: Tab?, profile: Profile?) -> Context? {
         guard let tab, let profile else { return nil }
 
-        let identity = tab.currentExtensionPageIdentity()
-        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
+        let identity = tab.extensionPageRuntimeOwner.pageIdentity(tabId: tab.id)
+        let committedURL = tab.extensionPageRuntimeOwner.committedMainDocumentURLForCurrentPage()
         let visibleURL = tab.existingWebView?.url ?? tab.url
         let mainFrameURL = committedURL ?? visibleURL
         let origin = SumiPermissionOrigin(url: mainFrameURL)

@@ -123,7 +123,7 @@ final class SumiTabLifecycleNavigationResponder:
             if tab.pendingMainFrameNavigationKind == .backForward {
                 tab.handleNormalTabPermissionNavigation(to: newURL)
             }
-            tab.noteCommittedMainDocumentNavigation(to: newURL)
+            tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: newURL)
             tab.clearSafariContentBlockerReloadRequirementIfResolved(for: newURL)
             tab.clearProtectionReloadRequirementIfResolved(for: newURL)
             tab.clearAutoplayReloadRequirementIfResolved(for: newURL)

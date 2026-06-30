@@ -121,7 +121,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
 
         let adapter = try XCTUnwrap(manager.stableAdapter(for: tab))
         manager.extensionsLoaded = true
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
         XCTAssertNil(adapter.webView(for: extensionContext))
     }
 
@@ -179,7 +179,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             profileId: profile.id,
             url: URL(string: "https://example.com")!
         )
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         let extensionContext = try await makeLoadedExtensionContext(
             manager: manager,

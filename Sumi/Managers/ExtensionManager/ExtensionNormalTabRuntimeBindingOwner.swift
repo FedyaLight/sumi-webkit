@@ -82,7 +82,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         manager.extensionRuntimeTrace(
             "didOpenTab start generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) controller=\(manager.extensionRuntimeControllerDescription(controller)) \(manager.extensionRuntimeTabDescription(tab)) adapter=\(manager.extensionRuntimeObjectDescription(adapter))"
         )
-        tab.noteExtensionRuntimeOpenNotification(
+        tab.extensionPageRuntimeOwner.noteOpenNotification(
             extensionContextBindingGeneration: manager.extensionContextBindingGeneration(for: profileId),
             loadedContexts: true
         )
@@ -105,23 +105,23 @@ final class ExtensionNormalTabRuntimeBindingOwner {
     func notifyTabOpenedIfNeeded(_ tab: Tab, reason: String = #function) {
         guard let manager else { return }
         let generation = manager.tabOpenNotificationGeneration
-        tab.prepareExtensionRuntimeGeneration(generation)
+        tab.extensionPageRuntimeOwner.prepareGeneration(generation)
 
         guard manager.extensionsLoaded else {
             manager.extensionRuntimeTrace(
-                "notifyTabOpenedIfNeeded skip reason=\(reason) because=extensionsNotLoaded generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) lastNotified=\(tab.currentExtensionOpenNotificationGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
+                "notifyTabOpenedIfNeeded skip reason=\(reason) because=extensionsNotLoaded generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) lastNotified=\(tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
             )
             return
         }
 
         guard isTabEligibleForExtensionRuntime(tab, generation: generation) else {
             manager.extensionRuntimeTrace(
-                "notifyTabOpenedIfNeeded skip reason=\(reason) because=tabNotEligible generation=\(generation) eligibleGeneration=\(tab.currentExtensionRuntimeEligibleGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
+                "notifyTabOpenedIfNeeded skip reason=\(reason) because=tabNotEligible generation=\(generation) eligibleGeneration=\(tab.extensionPageRuntimeOwner.currentEligibleGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
             )
             return
         }
 
-        guard tab.hasDidOpenTabNotificationForExtensionRuntime(generation: generation) == false else {
+        guard tab.extensionPageRuntimeOwner.hasDidOpenTabNotification(for: generation) == false else {
             manager.extensionRuntimeTrace(
                 "notifyTabOpenedIfNeeded skip reason=\(reason) because=alreadyNotified generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
             )
@@ -129,7 +129,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         }
 
         manager.extensionRuntimeTrace(
-            "notifyTabOpenedIfNeeded proceed reason=\(reason) generation=\(generation) lastNotified=\(tab.currentExtensionOpenNotificationGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
+            "notifyTabOpenedIfNeeded proceed reason=\(reason) generation=\(generation) lastNotified=\(tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
         )
         guard notifyTabOpened(tab) else {
             SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
@@ -144,7 +144,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             return
         }
 
-        tab.markDidOpenTabToExtensions(generation: generation)
+        tab.extensionPageRuntimeOwner.markDidOpenTab(generation: generation)
         manager.extensionRuntimeTrace(
             "notifyTabOpenedIfNeeded marked reason=\(reason) generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
         )
@@ -156,11 +156,11 @@ final class ExtensionNormalTabRuntimeBindingOwner {
     ) {
         guard let manager else { return }
         let generation = manager.tabOpenNotificationGeneration
-        tab.prepareExtensionRuntimeGeneration(generation)
+        tab.extensionPageRuntimeOwner.prepareGeneration(generation)
 
         guard isTabEligibleForExtensionRuntime(tab, generation: generation) else {
             manager.extensionRuntimeTrace(
-                "notifyTabPropertiesChanged skip because=tabNotEligible requested=\(properties.rawValue) generation=\(generation) eligibleGeneration=\(tab.currentExtensionRuntimeEligibleGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
+                "notifyTabPropertiesChanged skip because=tabNotEligible requested=\(properties.rawValue) generation=\(generation) eligibleGeneration=\(tab.extensionPageRuntimeOwner.currentEligibleGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
             )
             return
         }
@@ -188,7 +188,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
     /// precedes the committed document. A controller on the configuration alone is not enough.
     func tabNeedsExtensionContentScriptRebind(_ tab: Tab) -> Bool {
         guard let manager else { return false }
-        let documentBinding = tab.extensionRuntimeDocumentBindingSnapshot()
+        let documentBinding = tab.extensionPageRuntimeOwner.documentBindingSnapshot()
         let documentSequence = documentBinding.documentSequence
         guard documentSequence > 0 else { return false }
         guard let committedURL = documentBinding.committedMainDocumentURL,
@@ -253,12 +253,12 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         }
         guard tab.isEphemeral == false else { return }
         guard isExtensionInjectableCommittedURL(destinationURL) else { return }
-        if tab.shouldSkipExtensionRuntimePreCommitRebindForInitialDocument() {
+        if tab.extensionPageRuntimeOwner.shouldSkipPreCommitRebindForInitialDocument() {
             return
         }
 
-        tab.resetExtensionOpenNotificationGeneration()
-        let documentSequence = tab.extensionRuntimeDocumentBindingSnapshot().documentSequence
+        tab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
+        let documentSequence = tab.extensionPageRuntimeOwner.documentBindingSnapshot().documentSequence
         manager.extensionRuntimeTrace(
             "prepareExtensionRuntimeBeforeCommittedMainFrameNavigation proceed reason=\(reason) destination=\(destinationURL.absoluteString) documentSequence=\(documentSequence) \(manager.extensionRuntimeTabDescription(tab))"
         )
@@ -290,7 +290,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         }
 
         let shouldCycleTabLifecycle =
-            tab.hasExtensionRuntimeDocumentBindingForLifecycleRebind()
+            tab.extensionPageRuntimeOwner.hasDocumentBindingForLifecycleRebind()
             || tabNeedsExtensionContentScriptRebind(tab)
 
         if shouldCycleTabLifecycle,
@@ -303,7 +303,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             #if DEBUG
                 manager.testHooks.didCloseTab?(tab.id)
             #endif
-            tab.resetExtensionOpenNotificationGeneration()
+            tab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
         }
 
         registerTabWithExtensionRuntime(
@@ -319,7 +319,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
     ) {
         guard let manager else { return }
         let generation = manager.tabOpenNotificationGeneration
-        tab.prepareExtensionRuntimeGeneration(generation)
+        tab.extensionPageRuntimeOwner.prepareGeneration(generation)
 
         guard manager.extensionsLoaded || allowWhenExtensionsNotLoaded else {
             manager.extensionRuntimeTrace(
@@ -328,7 +328,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             return
         }
 
-        tab.markExtensionRuntimeEligible(for: generation)
+        tab.extensionPageRuntimeOwner.markEligible(for: generation)
         manager.ensureExtensionControllerAttachedForTab(
             tab,
             reason: reason,
@@ -343,7 +343,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
     ) {
         guard let manager else { return }
         let generation = manager.tabOpenNotificationGeneration
-        tab.prepareExtensionRuntimeGeneration(generation)
+        tab.extensionPageRuntimeOwner.prepareGeneration(generation)
 
         guard manager.extensionsLoaded else {
             manager.extensionRuntimeTrace(
@@ -352,7 +352,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             return
         }
 
-        tab.markExtensionRuntimeEligible(for: generation)
+        tab.extensionPageRuntimeOwner.markEligible(for: generation)
         manager.ensureExtensionControllerAttachedForTab(tab, reason: reason)
         notifyTabOpenedIfNeeded(tab, reason: reason)
     }
@@ -408,21 +408,21 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         if requestedProperties.contains(.URL) {
             let resolvedURL = resolvedLiveURL(for: tab)
-            if tab.recordExtensionRuntimeReportedURLIfChanged(resolvedURL) {
+            if tab.extensionPageRuntimeOwner.recordReportedURLIfChanged(resolvedURL) {
                 changedProperties.insert(.URL)
             }
         }
 
         if requestedProperties.contains(.loading) {
             let isLoadingComplete = !tab.isLoading
-            if tab.recordExtensionRuntimeReportedLoadingCompleteIfChanged(isLoadingComplete) {
+            if tab.extensionPageRuntimeOwner.recordReportedLoadingCompleteIfChanged(isLoadingComplete) {
                 changedProperties.insert(.loading)
             }
         }
 
         if requestedProperties.contains(.title) {
             let title = tab.name.isEmpty ? nil : tab.name
-            if tab.recordExtensionRuntimeReportedTitleIfChanged(title) {
+            if tab.extensionPageRuntimeOwner.recordReportedTitleIfChanged(title) {
                 changedProperties.insert(.title)
             }
         }
@@ -445,7 +445,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         _ tab: Tab,
         generation: UInt64
     ) -> Bool {
-        tab.isEligibleForExtensionRuntime(generation: generation)
+        tab.extensionPageRuntimeOwner.isEligible(for: generation)
     }
 
     private func isExtensionInjectableCommittedURL(_ url: URL) -> Bool {

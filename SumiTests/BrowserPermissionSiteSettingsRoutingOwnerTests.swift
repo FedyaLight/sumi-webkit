@@ -43,7 +43,7 @@ final class BrowserPermissionSiteSettingsRoutingOwnerTests: XCTestCase {
             name: "Stored",
             loadsCachedFaviconOnInit: false
         )
-        tab.extensionRuntimeCommittedMainDocumentURL = URL(string: "https://committed.example/page")!
+        tab.extensionPageRuntimeOwner.committedMainDocumentURL = URL(string: "https://committed.example/page")!
 
         let filter = owner.privacySiteSettingsFilter(focusing: tab)
 

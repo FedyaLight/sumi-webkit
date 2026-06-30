@@ -262,7 +262,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             url: URL(string: "https://example.com")!
         )
         tab.browserManager = browserManager
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         XCTAssertTrue(ephemeralProfile.isEphemeral)
         XCTAssertTrue(tab.isEphemeral)
@@ -292,7 +292,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             url: URL(string: "https://example.com")!
         )
         tab.browserManager = browserManager
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         var activatedTabIDs: [UUID] = []
         manager.testHooks.didActivateTab = { activatedTabIDs.append($0) }
@@ -329,7 +329,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             activate: false
         )
         tab.profileId = profile.id
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -471,8 +471,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         await fulfillment(of: [didOpenExpectation], timeout: 3.0)
         XCTAssertEqual(didOpenCount, 1)
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
-        XCTAssertTrue(tab.didNotifyOpenToExtensions)
-        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+        XCTAssertTrue(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
+        XCTAssertEqual(tab.extensionPageRuntimeOwner.openNotifiedWithLoadedContexts, true)
 
         await manager.drainExtensionRuntimeTasksForTests()
         webView.stopLoading()
@@ -1186,7 +1186,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         XCTAssertEqual(didOpenCount, 1)
 
-        tab.noteCommittedMainDocumentNavigation(to: extensionURL)
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: extensionURL)
         manager.markTabEligibleAfterCommittedNavigation(
             tab,
             reason: "SafariExtensionWebViewControllerWiringTests.didCommit"
@@ -1199,12 +1199,12 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             "Commit and activation callbacks must not duplicate the extension-created internal tab"
         )
         XCTAssertEqual(
-            tab.lastExtensionOpenNotificationGeneration,
+            tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration,
             manager.tabOpenNotificationGeneration
         )
         XCTAssertEqual(
-            tab.extensionRuntimeOpenNotifiedDocumentSequence,
-            tab.extensionRuntimeDocumentSequence - 1,
+            tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence,
+            tab.extensionPageRuntimeOwner.documentSequence - 1,
             "The delegate-created tab stays open-notified for the original extension page instance"
         )
     }
@@ -1256,10 +1256,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         wait(for: [didOpenExpectation], timeout: 2)
         XCTAssertEqual(
-            tab.lastExtensionOpenNotificationGeneration,
+            tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration,
             manager.tabOpenNotificationGeneration
         )
-        XCTAssertTrue(tab.didNotifyOpenToExtensions)
+        XCTAssertTrue(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
     }
 
     func testMarkTabEligibleAfterCommittedNavigationDoesNotNotifyTwice() throws {
@@ -1392,10 +1392,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = 0
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
-        tab.extensionRuntimeOpenNotifiedWithLoadedContexts = false
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
+        tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 0
+        tab.extensionPageRuntimeOwner.openNotifiedWithLoadedContexts = false
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
         XCTAssertTrue(manager.tabNeedsExtensionContentScriptRebind(tab))
     }
@@ -1433,7 +1433,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             url: URL(string: "http://127.0.0.1:8765/login-basic.html")!
         )
         tab.browserManager = browserManager
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertFalse(manager.notifyTabOpened(tab))
@@ -1448,7 +1448,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertTrue(manager.notifyTabOpened(tab))
-        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+        XCTAssertEqual(tab.extensionPageRuntimeOwner.openNotifiedWithLoadedContexts, true)
     }
 
     func testNotifyTabOpenedDefersUntilInitialDocumentNativeMessagingWarmup() async throws {
@@ -1507,7 +1507,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             url: URL(string: "https://example.com/login")!
         )
         tab.browserManager = browserManager
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
         attachUsableExtensionWebView(
             to: tab,
             manager: manager,
@@ -1517,7 +1517,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertTrue(manager.profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profile.id))
         XCTAssertFalse(manager.notifyTabOpened(tab))
-        XCTAssertFalse(tab.didNotifyOpenToExtensions)
+        XCTAssertFalse(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
 
         await fulfillment(of: [backgroundWakeExpectation], timeout: 3.0)
         if let deferredTask = manager.deferredTabNotificationTask(for: tab.id) {
@@ -1567,11 +1567,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             url: URL(string: "https://example.com/login")!
         )
         tab.browserManager = browserManager
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
         XCTAssertFalse(manager.notifyTabOpened(tab))
-        XCTAssertFalse(tab.didNotifyOpenToExtensions)
+        XCTAssertFalse(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
 
         attachUsableExtensionWebView(
             to: tab,
@@ -1580,7 +1580,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
 
         XCTAssertTrue(manager.notifyTabOpened(tab))
-        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedWithLoadedContexts, true)
+        XCTAssertEqual(tab.extensionPageRuntimeOwner.openNotifiedWithLoadedContexts, true)
     }
 
     func testUserGestureReconcileDoesNotRebuildLivePageForMissedContentScriptBinding()
@@ -1633,14 +1633,14 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             activate: false
         )
         tab.profileId = profile.id
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
         let webView = attachUsableExtensionWebView(
             to: tab,
             manager: manager,
             profile: profile
         )
         tab.assignWebViewToWindow(webView, windowId: windowState.id)
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
         XCTAssertTrue(manager.tabNeedsExtensionContentScriptRebind(tab))
         let webViewBeforeGesture = try XCTUnwrap(tab.existingWebView)
@@ -1737,11 +1737,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             "deferredOpenReasons=\(deferredOpenReasons)"
         )
         XCTAssertEqual(
-            tab.extensionRuntimeOpenNotifiedWithLoadedContexts,
+            tab.extensionPageRuntimeOwner.openNotifiedWithLoadedContexts,
             true,
             "deferredOpenReasons=\(deferredOpenReasons)"
         )
-        XCTAssertTrue(tab.didNotifyOpenToExtensions)
+        XCTAssertTrue(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
     }
 
     func testExtensionRequestedNormalTabDoesNotWakeNativeMessagingBackgrounds() async throws {
@@ -1937,11 +1937,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             "deferredOpenReasons=\(deferredOpenReasons)"
         )
         XCTAssertEqual(
-            tab.extensionRuntimeOpenNotifiedWithLoadedContexts,
+            tab.extensionPageRuntimeOwner.openNotifiedWithLoadedContexts,
             true,
             "deferredOpenReasons=\(deferredOpenReasons)"
         )
-        XCTAssertTrue(tab.didNotifyOpenToExtensions)
+        XCTAssertTrue(tab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
     }
 
     func testLazyContentScriptContextLoadDoesNotWakeBackgroundForOrdinaryNavigation() async throws {
@@ -1981,10 +1981,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         manager.tabOpenNotificationGeneration = 17
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = 0
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
+        tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 0
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
         manager.prepareExtensionRuntimeBeforeCommittedMainFrameNavigation(
             tab,
@@ -2317,9 +2317,9 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profile: profile
         )
         tab.webViewConfigurationOverride = webView.configuration
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = 1
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 1
-        tab.extensionRuntimeOpenNotifiedWithLoadedContexts = true
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 1
+        tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 1
+        tab.extensionPageRuntimeOwner.openNotifiedWithLoadedContexts = true
 
         XCTAssertNotNil(webView.configuration.webExtensionController)
         XCTAssertNotNil(tab.webViewConfigurationOverride)
@@ -2330,9 +2330,9 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
 
         XCTAssertNil(tab.webViewConfigurationOverride)
-        XCTAssertNil(tab.extensionRuntimeOpenNotifiedDocumentSequence)
-        XCTAssertNil(tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration)
-        XCTAssertNil(tab.extensionRuntimeOpenNotifiedWithLoadedContexts)
+        XCTAssertNil(tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence)
+        XCTAssertNil(tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration)
+        XCTAssertNil(tab.extensionPageRuntimeOwner.openNotifiedWithLoadedContexts)
     }
 
     func testTabNeedsExtensionContentScriptRebindWhenOpenNotifiedAfterCommit() throws {
@@ -2347,8 +2347,8 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profileId: profile.id,
             url: URL(string: "http://127.0.0.1:8765/login-basic.html")!
         )
-        tab.noteCommittedMainDocumentNavigation(to: tab.url)
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = tab.extensionRuntimeDocumentSequence
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: tab.url)
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = tab.extensionPageRuntimeOwner.documentSequence
 
         XCTAssertTrue(manager.tabNeedsExtensionContentScriptRebind(tab))
     }
@@ -2365,9 +2365,9 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profileId: profile.id,
             url: URL(string: "http://127.0.0.1:8765/login-basic.html")!
         )
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = 0
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
-        tab.noteCommittedMainDocumentNavigation(to: tab.url)
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
+        tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 0
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: tab.url)
 
         XCTAssertFalse(manager.tabNeedsExtensionContentScriptRebind(tab))
     }
@@ -2382,13 +2382,13 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = 0
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
+        tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 0
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
         XCTAssertFalse(manager.tabNeedsExtensionContentScriptRebind(tab))
 
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
         XCTAssertTrue(manager.tabNeedsExtensionContentScriptRebind(tab))
     }
@@ -2427,11 +2427,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         webView.owningTab = tab
         tab._webView = webView
 
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = 0
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
-        tab.lastExtensionOpenNotificationGeneration = manager.tabOpenNotificationGeneration
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
+        tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 0
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.lastOpenNotificationGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         XCTAssertFalse(manager.tabNeedsExtensionContentScriptRebind(tab))
 
@@ -2455,13 +2455,13 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
 
         wait(for: [didCloseExpectation, didOpenExpectation], timeout: 2)
-        XCTAssertEqual(tab.extensionRuntimeOpenNotifiedDocumentSequence, tab.extensionRuntimeDocumentSequence)
+        XCTAssertEqual(tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence, tab.extensionPageRuntimeOwner.documentSequence)
         XCTAssertEqual(
-            tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration,
+            tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration,
             manager.extensionContextBindingGeneration(for: profile.id)
         )
 
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
         XCTAssertFalse(manager.tabNeedsExtensionContentScriptRebind(tab))
     }
 
@@ -2486,10 +2486,10 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
         tab.browserManager = browserManager
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = 0
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
+        tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 0
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
         attachUsableExtensionWebView(
             to: tab,
             manager: manager,
@@ -2528,9 +2528,9 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = 0
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
+        tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 0
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
         XCTAssertFalse(manager.tabNeedsExtensionContentScriptRebind(tab))
 
@@ -2561,9 +2561,9 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profileA.id, url: pageURL)
-        tab.extensionRuntimeOpenNotifiedDocumentSequence = 0
-        tab.extensionRuntimeOpenNotifiedExtensionContextBindingGeneration = 0
-        tab.noteCommittedMainDocumentNavigation(to: pageURL)
+        tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
+        tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 0
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)
 
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions

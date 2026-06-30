@@ -140,7 +140,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         tab.profileId = profile.id
         tab.browserManager = browserManager
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
         _ = manager.stableAdapter(for: tab)
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
@@ -202,7 +202,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         tab.profileId = profile.id
         tab.browserManager = browserManager
-        tab.extensionRuntimeEligibleGeneration = manager.tabOpenNotificationGeneration
+        tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab

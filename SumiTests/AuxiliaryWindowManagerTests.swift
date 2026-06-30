@@ -784,7 +784,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             harness.extensionManager.ensureExtensionController(for: harness.profile.id)
         )
         XCTAssertNotNil(harness.extensionManager.stableAdapter(for: authTab))
-        XCTAssertTrue(authTab.didNotifyOpenToExtensions)
+        XCTAssertTrue(authTab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
     }
 
     func testExtensionExternalWindowCreateUsesNormalBrowserTab() async throws {

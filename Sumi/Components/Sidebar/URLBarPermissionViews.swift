@@ -146,7 +146,8 @@ extension URLBarView {
                       let navigationOrPageGeneration
                 else { return false }
                 return tab.id.uuidString.lowercased() == tabId
-                    && tab.isCurrentExtensionPage(
+                    && tab.extensionPageRuntimeOwner.isCurrentPage(
+                        tabId: tab.id,
                         pageId: pageId,
                         pageGeneration: navigationOrPageGeneration
                     )

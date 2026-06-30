@@ -2160,7 +2160,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         let sourceWebView = WKWebView(frame: .zero)
         sourceTab.assignWebViewToWindow(sourceWebView, windowId: windowState.id)
-        sourceTab.noteCommittedMainDocumentNavigation(to: sourceTab.url)
+        sourceTab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: sourceTab.url)
 
         return PopupFocusHarness(
             browserManager: browserManager,
