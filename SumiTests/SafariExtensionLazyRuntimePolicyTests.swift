@@ -92,7 +92,9 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         _ = try XCTUnwrap(module.managerIfEnabled())
 
         XCTAssertIdentical(initialProfileUsedByFactory, runtimeProfile)
-        XCTAssertIdentical(createdManager?.browserManager, browserManager)
+        let attachedManager = try XCTUnwrap(createdManager)
+        XCTAssertTrue(attachedManager.runtime.browserRuntimeAvailable())
+        XCTAssertIdentical(attachedManager.runtime.currentProfile(), runtimeProfile)
     }
 
     func testDisabledInstallDoesNotCreateRuntimeControllerOrContext() async throws {

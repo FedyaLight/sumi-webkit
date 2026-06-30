@@ -6,7 +6,6 @@ import WebKit
 @MainActor
 extension ExtensionManager {
     func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
         browserBridgeContext = browserManager
         runtime = .live(browserManager: browserManager)
 

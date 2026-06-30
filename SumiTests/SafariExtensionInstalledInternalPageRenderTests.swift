@@ -172,6 +172,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
 
         let welcome = try await renderMetricsThroughSumiTab(
             manager: manager,
+            browserManager: browserManager,
             controller: controller,
             extensionContext: extensionContext,
             pagePath: "app/app.html#/page/welcome?language=ru"
@@ -183,6 +184,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
 
         let migration = try await renderMetricsThroughSumiTab(
             manager: manager,
+            browserManager: browserManager,
             controller: controller,
             extensionContext: extensionContext,
             pagePath: "app/app.html#/page/migration"
@@ -330,6 +332,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
 
     private func renderMetricsThroughSumiTab(
         manager: ExtensionManager,
+        browserManager: BrowserManager,
         controller: WKWebExtensionController,
         extensionContext: WKWebExtensionContext,
         pagePath: String
@@ -348,7 +351,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
         XCTAssertIdentical(tab.webExtensionContextOverride, extensionContext)
         defer {
             tab.performComprehensiveWebViewCleanup()
-            manager.browserManager?.tabManager.removeTab(tab.id)
+            browserManager.tabManager.removeTab(tab.id)
         }
         XCTAssertFalse(
             tab.isUnloaded,

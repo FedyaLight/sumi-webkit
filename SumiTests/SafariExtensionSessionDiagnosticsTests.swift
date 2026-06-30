@@ -64,7 +64,7 @@ final class SafariExtensionSessionDiagnosticsTests: XCTestCase {
             runtime: runtime
         )
 
-        XCTAssertNil(manager.browserManager)
+        XCTAssertFalse(manager.runtime.browserRuntimeAvailable())
         XCTAssertFalse(diagnostic.extensionContextLoaded)
         XCTAssertNil(diagnostic.activeTabStore)
         XCTAssertNil(diagnostic.extensionControllerDefaultStore)
