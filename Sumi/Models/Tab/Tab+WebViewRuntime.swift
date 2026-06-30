@@ -22,7 +22,7 @@ extension Tab {
     }
 
     /// Returns the current WebView without triggering lazy initialization.
-    /// Use this inside runtime owners instead of the legacy `_webView` bridge.
+    /// Use this inside runtime owners instead of touching the raw storage bridge.
     var currentWebView: WKWebView? {
         _webView
     }

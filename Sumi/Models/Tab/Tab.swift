@@ -288,11 +288,11 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     var _webView: WKWebView? {
         get { webViewOwnershipOwner.webView }
-        set { webViewOwnershipOwner.setCurrentWebViewForLegacyBridge(newValue) }
+        set { webViewOwnershipOwner.setCurrentWebView(newValue) }
     }
     var _existingWebView: WKWebView? {
         get { webViewOwnershipOwner.existingWebView }
-        set { webViewOwnershipOwner.setExistingWebViewForLegacyBridge(newValue) }
+        set { webViewOwnershipOwner.setExistingWebView(newValue) }
     }
     var webViewConfigurationOverride: WKWebViewConfiguration? {
         get { webViewConfigurationOwner.webViewConfigurationOverride }
@@ -356,7 +356,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     /// If nil, no window is displaying this tab yet
     var primaryWindowId: UUID? {
         get { webViewOwnershipOwner.primaryWindowId }
-        set { webViewOwnershipOwner.setPrimaryWindowIdForLegacyBridge(newValue) }
+        set { webViewOwnershipOwner.setPrimaryWindowId(newValue) }
     }
     var isSuspended: Bool {
         get { suspensionStateOwner.isSuspended }

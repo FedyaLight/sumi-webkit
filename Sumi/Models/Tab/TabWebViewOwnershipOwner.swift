@@ -16,15 +16,15 @@ final class TabWebViewOwnershipOwner {
         webView == nil
     }
 
-    func setCurrentWebViewForLegacyBridge(_ webView: WKWebView?) {
+    func setCurrentWebView(_ webView: WKWebView?) {
         self.webView = webView
     }
 
-    func setExistingWebViewForLegacyBridge(_ webView: WKWebView?) {
+    func setExistingWebView(_ webView: WKWebView?) {
         existingWebView = webView
     }
 
-    func setPrimaryWindowIdForLegacyBridge(_ primaryWindowId: UUID?) {
+    func setPrimaryWindowId(_ primaryWindowId: UUID?) {
         self.primaryWindowId = primaryWindowId
     }
 
