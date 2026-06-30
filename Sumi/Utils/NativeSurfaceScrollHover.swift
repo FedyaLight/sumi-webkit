@@ -7,24 +7,23 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
 
     private static let hoverRestoreDelayNanoseconds: UInt64 = 250_000_000
 
-    private var activeScrollRegions: Set<String> = []
+    private var phaseScrollingRegions: Set<String> = []
+    private var activityRegions: Set<String> = []
     private var restoreTask: Task<Void, Never>?
 
     func setScrolling(_ isScrolling: Bool, region: String) {
         if isScrolling {
-            activeScrollRegions.insert(region)
-            restoreTask?.cancel()
-            restoreTask = nil
+            phaseScrollingRegions.insert(region)
             setHoverUpdatesEnabled(false)
             return
         }
 
-        activeScrollRegions.remove(region)
+        phaseScrollingRegions.remove(region)
         scheduleHoverRestoreIfIdle()
     }
 
     func notifyScrollActivity(region: String) {
-        activeScrollRegions.insert(region)
+        activityRegions.insert(region)
         setHoverUpdatesEnabled(false)
         scheduleHoverRestoreIfIdle()
     }
@@ -32,7 +31,8 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
     func reset() {
         restoreTask?.cancel()
         restoreTask = nil
-        activeScrollRegions.removeAll()
+        phaseScrollingRegions.removeAll()
+        activityRegions.removeAll()
         setHoverUpdatesEnabled(true)
     }
 
@@ -47,10 +47,18 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
         restoreTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: delay)
             guard !Task.isCancelled else { return }
-            self?.activeScrollRegions.removeAll()
-            self?.setHoverUpdatesEnabled(true)
+            self?.activityRegions.removeAll()
+            self?.restoreHoverIfIdle()
             self?.restoreTask = nil
         }
+    }
+
+    private func restoreHoverIfIdle() {
+        guard phaseScrollingRegions.isEmpty,
+              activityRegions.isEmpty
+        else { return }
+
+        setHoverUpdatesEnabled(true)
     }
 }
 
