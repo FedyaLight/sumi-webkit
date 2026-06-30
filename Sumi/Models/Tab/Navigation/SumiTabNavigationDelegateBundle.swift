@@ -41,10 +41,13 @@ final class SumiTabNavigationDelegateBundle {
         self.popupHandlingAdapter = SumiNavigationResponderAdapter(target: popupHandling)
         self.externalScheme = SumiExternalSchemeNavigationResponder(
             tab: tab,
-            permissionBridge: tab.browserManager?.externalSchemePermissionBridge
+            permissionBridge: tab.navigationDelegateRuntime.externalSchemePermissionBridge()
         )
         self.externalSchemeAdapter = SumiNavigationResponderAdapter(target: externalScheme)
-        self.downloads = SumiDownloadsNavigationResponder(tab: tab, downloadManager: tab.browserManager?.downloadManager)
+        self.downloads = SumiDownloadsNavigationResponder(
+            tab: tab,
+            downloadManager: tab.navigationDelegateRuntime.downloadManager()
+        )
         self.downloadsAdapter = SumiNavigationResponderAdapter(target: downloads)
         self.scriptAttachment = SumiTabScriptAttachmentNavigationResponder(tab: tab)
         self.scriptAttachmentAdapter = SumiNavigationResponderAdapter(target: scriptAttachment)

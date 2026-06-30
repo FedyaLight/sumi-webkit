@@ -205,6 +205,17 @@ struct TabNormalWebViewExtensionRuntime {
 }
 
 @MainActor
+struct TabNavigationDelegateRuntime {
+    var externalSchemePermissionBridge: () -> SumiExternalSchemePermissionBridge?
+    var downloadManager: () -> DownloadManager?
+
+    static let inactive = Self(
+        externalSchemePermissionBridge: { nil },
+        downloadManager: { nil }
+    )
+}
+
+@MainActor
 struct TabPopupHandlingRuntime {
     var hasBrowserRuntime: () -> Bool
     var consumeRecentlyOpenedExtensionTabRequest: (URL) -> Bool
@@ -393,6 +404,7 @@ final class TabNavigationRuntime {
     var permissionRuntime = TabPermissionRuntime.inactive
     var webViewCleanupRuntime = TabWebViewCleanupRuntime.inactive
     var normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime.inactive
+    var navigationDelegateRuntime = TabNavigationDelegateRuntime.inactive
     var popupHandlingRuntime = TabPopupHandlingRuntime.inactive
     var webKitUIRuntime = TabWebKitUIRuntime.inactive
     var installNavigationRuntime = TabInstallNavigationRuntime.inactive

@@ -302,6 +302,19 @@ extension TabNormalWebViewExtensionRuntime {
 }
 
 @MainActor
+extension TabNavigationDelegateRuntime {
+    static func live(
+        externalSchemePermissionBridge: @escaping () -> SumiExternalSchemePermissionBridge?,
+        downloadManager: @escaping () -> DownloadManager?
+    ) -> Self {
+        Self(
+            externalSchemePermissionBridge: externalSchemePermissionBridge,
+            downloadManager: downloadManager
+        )
+    }
+}
+
+@MainActor
 extension TabPopupHandlingRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(

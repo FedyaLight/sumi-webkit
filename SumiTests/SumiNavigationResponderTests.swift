@@ -106,6 +106,45 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(resolver.openedURLs, [mailURL])
     }
 
+    func testExternalSchemeResponderUsesInjectedRuntimeWithoutBrowserManager() async {
+        let tab = Tab(url: URL(string: "https://example.com")!)
+        let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: NavigationExternalSchemeFakeCoordinator(
+                decision: navigationExternalCoordinatorDecision(.granted, reason: "stored-allow")
+            ),
+            appResolver: resolver,
+            now: { Date(timeIntervalSince1970: 1_800_000_000) }
+        )
+        tab.navigationDelegateRuntime = TabNavigationDelegateRuntime(
+            externalSchemePermissionBridge: { bridge },
+            downloadManager: { nil }
+        )
+        let responder = SumiExternalSchemeNavigationResponder(
+            tab: tab,
+            tabContextProvider: { _ in navigationExternalTabContext() }
+        )
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let mailURL = URL(string: "mailto:test@example.com")!
+        let webView = WKWebView(frame: .zero)
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: mailURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: webView,
+                sourceURL: URL(string: "https://request.example/page")!,
+                sourceSecurityOrigin: SumiSecurityOrigin(protocol: "https", host: "request.example", port: 0)
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(policy?.isCancel, true)
+        XCTAssertEqual(resolver.openedURLs, [mailURL])
+    }
+
     func testExternalSchemeResponderCancelsUnknownExternalSchemeWithoutOpening() async {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let resolver = NavigationExternalSchemeFakeResolver(handlerSchemes: [])
