@@ -1,13 +1,13 @@
 import SwiftUI
 
 struct FindInPageChromeHost: View {
-    @ObservedObject var browserManager: BrowserManager
     @ObservedObject var findManager: FindManager
     var windowRegistry: WindowRegistry
     var windowState: BrowserWindowState
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
     var colorScheme: ColorScheme
+    var isModalSuppressed: Bool
     var isSuppressed: Bool = false
 
     private var shouldPresent: Bool {
@@ -15,10 +15,6 @@ struct FindInPageChromeHost: View {
             && findManager.isFindBarVisible
             && !isModalSuppressed
             && !isSuppressed
-    }
-
-    private var isModalSuppressed: Bool {
-        browserManager.isNativeModalPresented(in: windowState.id)
     }
 
     var body: some View {

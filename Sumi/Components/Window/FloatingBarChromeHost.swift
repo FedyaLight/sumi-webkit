@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct FloatingBarChromeHost: View {
-    @ObservedObject var browserManager: BrowserManager
+    var browserContext: FloatingBarBrowserContext
     var windowState: BrowserWindowState
     var sumiSettings: SumiSettingsService
     var resolvedThemeContext: ResolvedThemeContext
@@ -11,7 +11,7 @@ struct FloatingBarChromeHost: View {
     var body: some View {
         Group {
             if isPresented {
-                FloatingBarView(browserContext: browserManager.floatingBarBrowserContext)
+                FloatingBarView(browserContext: browserContext)
                     .environment(windowState)
                     .environment(\.sumiSettings, sumiSettings)
                     .environment(\.resolvedThemeContext, resolvedThemeContext)

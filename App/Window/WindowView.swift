@@ -90,7 +90,7 @@ struct WindowView: View {
                 // docked and collapsed sidebar layouts.
                 chromeThemeScope {
                     FloatingBarChromeHost(
-                        browserManager: browserContext.browserManagerForUnmigratedChildren,
+                        browserContext: browserContext.floatingBarBrowserContext,
                         windowState: windowState,
                         sumiSettings: sumiSettings,
                         resolvedThemeContext: resolvedThemeContext,
@@ -115,13 +115,13 @@ struct WindowView: View {
                    let contentFrame = glanceFindInPageSession.contentFrameInWindowSpace {
                     chromeThemeScope {
                         FindInPageChromeHost(
-                            browserManager: browserContext.browserManagerForUnmigratedChildren,
                             findManager: browserContext.findManager,
                             windowRegistry: windowRegistry,
                             windowState: windowState,
                             sumiSettings: sumiSettings,
                             resolvedThemeContext: resolvedThemeContext,
-                            colorScheme: nativeSurfaceColorScheme
+                            colorScheme: nativeSurfaceColorScheme,
+                            isModalSuppressed: transientChromeModalSuppressed
                         )
                         .frame(width: max(contentFrame.width, 0), height: max(contentFrame.height, 0))
                         .position(x: contentFrame.midX, y: contentFrame.midY)
@@ -407,13 +407,13 @@ struct WindowView: View {
 
             // Find-in-page stays in the browser window's responder chain so window controls keep active appearance.
             FindInPageChromeHost(
-                browserManager: browserContext.browserManagerForUnmigratedChildren,
                 findManager: browserContext.findManager,
                 windowRegistry: windowRegistry,
                 windowState: windowState,
                 sumiSettings: sumiSettings,
                 resolvedThemeContext: resolvedThemeContext,
                 colorScheme: nativeSurfaceColorScheme,
+                isModalSuppressed: transientChromeModalSuppressed,
                 isSuppressed: findChromeBelongsToGlance
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)

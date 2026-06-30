@@ -20,6 +20,10 @@ final class WindowViewBrowserContext {
         browserManager.findManager
     }
 
+    var floatingBarBrowserContext: FloatingBarBrowserContext {
+        browserManager.floatingBarBrowserContext
+    }
+
     var nativeModalPresentation: BrowserNativeModalPresentation? {
         browserManager.nativeModalPresentation
     }
