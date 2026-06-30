@@ -134,7 +134,7 @@ struct SumiApp: App {
         nowPlayingController: SumiNativeNowPlayingController,
         windowRegistry: WindowRegistry,
         webViewCoordinator: WebViewCoordinator,
-        windowState: BrowserWindowState?
+        windowState: BrowserWindowState
     ) -> NSView {
         let contentView = ContentView(
             windowLifecycleHandler: browserManager,

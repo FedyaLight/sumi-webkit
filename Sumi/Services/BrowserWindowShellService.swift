@@ -2,57 +2,41 @@ import AppKit
 
 @MainActor
 final class BrowserWindowShellService {
-    typealias ContentViewFactory = @MainActor (WindowRegistry, WebViewCoordinator, BrowserWindowState?) -> NSView
+    typealias ContentViewFactory = @MainActor (WindowRegistry, WebViewCoordinator, BrowserWindowState) -> NSView
     typealias EmptyStatePresenter = @MainActor (BrowserWindowState) -> Void
 
     struct Context {
-        let windowRegistry: WindowRegistry?
-        let webViewCoordinator: WebViewCoordinator?
+        let windowRegistry: WindowRegistry
+        let webViewCoordinator: WebViewCoordinator
         let permissionLifecycleController: SumiPermissionGrantLifecycleController?
         let profileManager: ProfileManager
         let tabManager: TabManager
-        let makeContentView: ContentViewFactory?
+        let makeContentView: ContentViewFactory
         let showEmptyState: EmptyStatePresenter
     }
 
     private var incognitoWindowIds: Set<UUID> = []
 
     func createNewWindow(using context: Context) {
-        guard let windowRegistry = context.windowRegistry,
-              let webViewCoordinator = context.webViewCoordinator,
-              let makeContentView = context.makeContentView
-        else {
-            RuntimeDiagnostics.emit(
-                "⚠️ [WindowShellService] Cannot create window - missing WindowRegistry, WebViewCoordinator, or content view factory"
-            )
-            return
-        }
-
         let windowState = BrowserWindowState()
         windowState.tabManager = context.tabManager
 
         let newWindow = makeWindow(
             title: "Sumi",
-            contentView: makeContentView(windowRegistry, webViewCoordinator, windowState)
+            contentView: context.makeContentView(
+                context.windowRegistry,
+                context.webViewCoordinator,
+                windowState
+            )
         )
         windowState.window = newWindow
 
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
+        context.windowRegistry.register(windowState)
+        context.windowRegistry.setActive(windowState)
         newWindow.makeKeyAndOrderFront(nil)
     }
 
     func createIncognitoWindow(using context: Context) {
-        guard let windowRegistry = context.windowRegistry,
-              let webViewCoordinator = context.webViewCoordinator,
-              let makeContentView = context.makeContentView
-        else {
-            RuntimeDiagnostics.emit(
-                "⚠️ [WindowShellService] Cannot create incognito window - missing WindowRegistry, WebViewCoordinator, or content view factory"
-            )
-            return
-        }
-
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
 
@@ -75,12 +59,16 @@ final class BrowserWindowShellService {
 
         let newWindow = makeWindow(
             title: "Incognito - Sumi",
-            contentView: makeContentView(windowRegistry, webViewCoordinator, windowState)
+            contentView: context.makeContentView(
+                context.windowRegistry,
+                context.webViewCoordinator,
+                windowState
+            )
         )
         windowState.window = newWindow
 
-        windowRegistry.register(windowState)
-        windowRegistry.setActive(windowState)
+        context.windowRegistry.register(windowState)
+        context.windowRegistry.setActive(windowState)
         context.showEmptyState(windowState)
 
         newWindow.makeKeyAndOrderFront(nil)
@@ -107,10 +95,8 @@ final class BrowserWindowShellService {
             "🔒 [WindowShellService] Closing incognito window: \(windowState.id)"
         )
 
-        if let coordinator = context.webViewCoordinator {
-            for tab in windowState.ephemeralTabs {
-                coordinator.removeAllWebViews(for: tab, closeActiveFullscreenMedia: true)
-            }
+        for tab in windowState.ephemeralTabs {
+            context.webViewCoordinator.removeAllWebViews(for: tab, closeActiveFullscreenMedia: true)
         }
 
         for tab in windowState.ephemeralTabs {
@@ -150,12 +136,12 @@ final class BrowserWindowShellService {
         )
     }
 
-    func closeActiveWindow(in windowRegistry: WindowRegistry?) {
-        windowRegistry?.activeWindow?.window?.performCloseFromBrowserChrome(nil)
+    func closeActiveWindow(in windowRegistry: WindowRegistry) {
+        windowRegistry.activeWindow?.window?.performCloseFromBrowserChrome(nil)
     }
 
-    func toggleFullScreenForActiveWindow(in windowRegistry: WindowRegistry?) {
-        windowRegistry?.activeWindow?.window?.toggleFullScreen(nil)
+    func toggleFullScreenForActiveWindow(in windowRegistry: WindowRegistry) {
+        windowRegistry.activeWindow?.window?.toggleFullScreen(nil)
     }
 
     private func makeWindow(title: String, contentView: NSView) -> NSWindow {

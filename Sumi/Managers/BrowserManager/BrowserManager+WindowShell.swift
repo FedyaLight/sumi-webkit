@@ -16,21 +16,21 @@ extension BrowserManager {
     }
 
     func closeActiveWindow() {
-        windowShellService.closeActiveWindow(in: windowRegistry)
+        windowShellService.closeActiveWindow(in: requireWindowRegistry())
     }
 
     func toggleFullScreenForActiveWindow() {
-        windowShellService.toggleFullScreenForActiveWindow(in: windowRegistry)
+        windowShellService.toggleFullScreenForActiveWindow(in: requireWindowRegistry())
     }
 
     private func makeWindowShellContext() -> BrowserWindowShellService.Context {
         return BrowserWindowShellService.Context(
-            windowRegistry: windowRegistry,
-            webViewCoordinator: webViewCoordinator,
+            windowRegistry: requireWindowRegistry(),
+            webViewCoordinator: requireWebViewCoordinator(),
             permissionLifecycleController: permissionLifecycleController,
             profileManager: profileManager,
             tabManager: tabManager,
-            makeContentView: windowShellContentViewFactory,
+            makeContentView: requireWindowShellContentViewFactory(),
             showEmptyState: { [weak self] windowState in
                 self?.showEmptyState(in: windowState)
             }

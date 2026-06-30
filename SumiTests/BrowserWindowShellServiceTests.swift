@@ -48,24 +48,6 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertFalse(harness.profileManager.profiles.contains { $0.id == ephemeralProfile.id })
     }
 
-    func testCreateNewWindowWithoutContentFactoryDoesNotRegisterWindow() throws {
-        let harness = try makeHarness()
-        let service = BrowserWindowShellService()
-        let context = BrowserWindowShellService.Context(
-            windowRegistry: harness.windowRegistry,
-            webViewCoordinator: harness.webViewCoordinator,
-            permissionLifecycleController: nil,
-            profileManager: harness.profileManager,
-            tabManager: harness.tabManager,
-            makeContentView: nil,
-            showEmptyState: { _ in /* no-op */ }
-        )
-
-        service.createNewWindow(using: context)
-
-        XCTAssertTrue(harness.windowRegistry.allWindows.isEmpty)
-    }
-
     func testCreateNewWindowUsesContentFactoryAndRegistersWindowWithAssociatedNSWindow() throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
@@ -84,10 +66,6 @@ final class BrowserWindowShellServiceTests: XCTestCase {
             makeContentView: { windowRegistry, webViewCoordinator, windowState in
                 XCTAssertIdentical(windowRegistry, harness.windowRegistry)
                 XCTAssertIdentical(webViewCoordinator, harness.webViewCoordinator)
-                guard let windowState else {
-                    XCTFail("Expected window shell service to pass the new window state.")
-                    return NSView()
-                }
                 factoryWindowStates.append(windowState)
                 return NSView()
             },

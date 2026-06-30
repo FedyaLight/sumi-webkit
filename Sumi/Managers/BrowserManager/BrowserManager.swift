@@ -266,10 +266,28 @@ class BrowserManager: ObservableObject {
         set { shellRuntime.bindWindowRegistry(newValue) }
     }
 
+    func requireWindowRegistry() -> WindowRegistry {
+        guard let windowRegistry else {
+            preconditionFailure(
+                "BrowserManager.windowRegistry is nil. Assign it from SumiApp.setupApplicationLifecycle (or in unit tests) before window operations."
+            )
+        }
+        return windowRegistry
+    }
+
     /// App-shell owned factory for AppKit-created browser windows.
     var windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory? {
         get { shellRuntime.windowShellContentViewFactory }
         set { shellRuntime.windowShellContentViewFactory = newValue }
+    }
+
+    func requireWindowShellContentViewFactory() -> BrowserWindowShellService.ContentViewFactory {
+        guard let windowShellContentViewFactory else {
+            preconditionFailure(
+                "BrowserManager.windowShellContentViewFactory is nil. Assign it from SumiApp.setupApplicationLifecycle before creating browser windows."
+            )
+        }
+        return windowShellContentViewFactory
     }
 
     private lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
