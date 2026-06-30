@@ -21,8 +21,8 @@ final class GlanceManager: ObservableObject {
     @Published var phase: GlancePresentationPhase = .idle
     @Published var currentSession: GlanceSession?
 
-    weak var browserManager: BrowserManager?
     weak var windowRegistry: WindowRegistry?
+    var runtime: Runtime?
     private var pendingSessionSnapshotsByWindow: [UUID: GlanceSessionSnapshot] = [:]
     private let promotionCompletionOwner = GlancePromotionCompletionOwner()
 
@@ -30,8 +30,8 @@ final class GlanceManager: ObservableObject {
         phase != .idle
     }
 
-    func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    func attach(runtime: Runtime) {
+        self.runtime = runtime
     }
 
     func presentExternalURL(
@@ -39,13 +39,13 @@ final class GlanceManager: ObservableObject {
         from tab: Tab?,
         originRectInWindow: CGRect? = nil
     ) {
-        guard let browserManager else { return }
+        guard let runtime else { return }
 
         if currentSession?.currentURL == url {
             return
         }
 
-        let windowState = tab.flatMap { browserManager.windowState(containing: $0) } ?? windowRegistry?.activeWindow
+        let windowState = tab.flatMap { runtime.windowStateContainingTab($0) } ?? windowRegistry?.activeWindow
         let windowId = windowState?.id ?? UUID()
         beginSession(
             url,
@@ -94,14 +94,14 @@ final class GlanceManager: ObservableObject {
 
     func restorePendingSessionIfPossible(in windowState: BrowserWindowState) {
         guard let snapshot = pendingSessionSnapshotsByWindow[windowState.id],
-              let browserManager else {
+              let runtime else {
             return
         }
 
-        let sourceTab = restoredSourceTab(for: snapshot, in: windowState, browserManager: browserManager)
+        let sourceTab = restoredSourceTab(for: snapshot, in: windowState, runtime: runtime)
         if snapshot.sourceTabId != nil || snapshot.sourceShortcutPinId != nil,
            sourceTab == nil {
-            if !browserManager.tabManager.hasLoadedInitialData {
+            if !runtime.hasLoadedInitialTabData() {
                 return
             }
             pendingSessionSnapshotsByWindow.removeValue(forKey: windowState.id)
@@ -110,16 +110,8 @@ final class GlanceManager: ObservableObject {
 
         pendingSessionSnapshotsByWindow.removeValue(forKey: windowState.id)
         if let sourceTab,
-           browserManager.currentTab(for: windowState)?.id != sourceTab.id {
-            browserManager.applyTabSelection(
-                sourceTab,
-                in: windowState,
-                updateSpaceFromTab: true,
-                updateTheme: false,
-                rememberSelection: false,
-                persistSelection: false,
-                loadPolicy: .deferred
-            )
+           runtime.currentTab(windowState)?.id != sourceTab.id {
+            runtime.restoreSourceSelection(sourceTab, windowState)
         }
         beginSession(
             snapshot.currentURL ?? snapshot.targetURL,
@@ -135,32 +127,57 @@ final class GlanceManager: ObservableObject {
     private func restoredSourceTab(
         for snapshot: GlanceSessionSnapshot,
         in windowState: BrowserWindowState,
-        browserManager: BrowserManager
+        runtime: Runtime
     ) -> Tab? {
         if let sourceTabId = snapshot.sourceTabId,
-           let sourceTab = browserManager.tabManager.tab(for: sourceTabId) {
+           let sourceTab = runtime.tab(sourceTabId) {
             return sourceTab
         }
 
         guard let pinId = snapshot.sourceShortcutPinId,
-              let pin = browserManager.tabManager.shortcutPin(by: pinId)
+              let pin = runtime.shortcutPin(pinId)
         else {
             return nil
         }
 
-        return browserManager.tabManager.shortcutLiveTab(for: pinId, in: windowState.id)
-            ?? browserManager.tabManager.activateShortcutPin(
+        return runtime.shortcutLiveTab(pinId, windowState.id)
+            ?? runtime.activateShortcutPin(
                 pin,
-                in: windowState.id,
-                currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
+                windowState.id,
+                pin.spaceId ?? windowState.currentSpaceId
             )
     }
 
     var canEnterSplitView: Bool {
-        guard let browserManager,
+        guard let runtime,
               let windowId = currentSession?.windowId else { return false }
 
-        return browserManager.splitManager.visibleTabIds(for: windowId).count < SplitGroup.maximumTabs
+        return runtime.visibleSplitTabCount(windowId) < SplitGroup.maximumTabs
+    }
+
+    func dismissFloatingBarIfVisible(in windowId: UUID) -> Bool {
+        runtime?.dismissFloatingBarIfVisible(windowId) ?? false
+    }
+
+    var isFindBarVisible: Bool {
+        runtime?.isFindBarVisible() ?? false
+    }
+
+    func hideFindBar() {
+        runtime?.hideFindBar()
+    }
+
+    func registerPromotedHost(
+        _ host: SumiWebViewContainerView,
+        for session: GlanceSession,
+        attachmentCompletion: @escaping @MainActor () -> Void
+    ) -> Bool {
+        runtime?.registerPromotedHost(
+            host,
+            session.previewTab.id,
+            session.windowId,
+            attachmentCompletion
+        ) ?? false
     }
 
     func markOpened(sessionID: UUID) {
@@ -249,7 +266,7 @@ final class GlanceManager: ObservableObject {
         in windowState: BrowserWindowState
     ) -> Bool {
         guard let sourceTab = session.sourceTab else { return true }
-        return browserManager?.currentTab(for: windowState)?.id == sourceTab.id
+        return runtime?.currentTab(windowState)?.id == sourceTab.id
     }
 
     func updateContentFrameInWindowSpace(_ frame: CGRect?, sessionID: UUID) {
@@ -288,7 +305,7 @@ final class GlanceManager: ObservableObject {
             session.previewTab.clearCurrentWebViewOwnership()
         }
 
-        let shouldResetFindManager = browserManager?.findManager.currentTab?.id == session.previewTab.id
+        let shouldResetFindManager = runtime?.findCurrentTabId() == session.previewTab.id
 
         currentSession = nil
         transition(to: .idle)
@@ -296,8 +313,8 @@ final class GlanceManager: ObservableObject {
             persistWindowSession(for: session.windowId)
         }
         if shouldResetFindManager {
-            browserManager?.findManager.hideFindBar()
-            browserManager?.updateFindManagerCurrentTab()
+            runtime?.hideFindBar()
+            runtime?.updateFindManagerCurrentTab()
         }
     }
 
@@ -309,12 +326,13 @@ final class GlanceManager: ObservableObject {
         initialTitle: String? = nil,
         persistsWindowSession: Bool
     ) {
+        guard let runtime else { return }
         promotionCompletionOwner.cancel()
         if currentSession != nil {
             finishCurrentSession(preservesPreviewWebView: false, persistsWindowSession: false)
         }
 
-        let previewTab = makePreviewTab(for: url, sourceTab: tab)
+        let previewTab = runtime.makePreviewTab(url, tab)
         let session = GlanceSession(
             targetURL: url,
             windowId: windowId,
@@ -347,26 +365,7 @@ final class GlanceManager: ObservableObject {
 
     private func persistWindowSession(for windowId: UUID) {
         guard let windowState = windowRegistry?.windows[windowId] else { return }
-        browserManager?.persistWindowSession(for: windowState)
-    }
-
-    private func makePreviewTab(for url: URL, sourceTab: Tab?) -> Tab {
-        let sourceProfile = sourceTab?.resolveProfile()
-        let targetSpace = sourceTab?.spaceId.flatMap { spaceId in
-            browserManager?.tabManager.spaces.first(where: { $0.id == spaceId })
-        } ?? browserManager?.tabManager.currentSpace
-
-        let tab = Tab(
-            url: url,
-            name: url.host ?? "Glance",
-            favicon: "globe",
-            spaceId: targetSpace?.id,
-            index: 0,
-            browserManager: browserManager
-        )
-        tab.sumiSettings = browserManager?.sumiSettings
-        tab.profileId = sourceProfile?.id ?? targetSpace?.profileId ?? browserManager?.currentProfile?.id
-        return tab
+        runtime?.persistWindowSession(windowState)
     }
 
     private static func fallbackOriginRect(in window: NSWindow?) -> CGRect {

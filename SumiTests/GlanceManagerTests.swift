@@ -441,6 +441,62 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, selectedTab.id)
     }
 
+    func testGlanceSessionRestoreUsesInjectedRuntimeWithoutBrowserManager() throws {
+        let manager = GlanceManager()
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState()
+        let sourceTab = Tab(
+            url: URL(string: "https://source.example/page")!,
+            name: "Source"
+        )
+        let targetURL = URL(string: "https://destination.example/page")!
+        var restoredSelectionIds: [UUID] = []
+        var persistedWindowIds: [UUID] = []
+
+        windowRegistry.register(windowState)
+        manager.windowRegistry = windowRegistry
+        manager.attach(
+            runtime: makeRuntime(
+                tab: { tabId in
+                    tabId == sourceTab.id ? sourceTab : nil
+                },
+                currentTab: { _ in nil },
+                restoreSourceSelection: { tab, windowState in
+                    restoredSelectionIds.append(tab.id)
+                    windowState.currentTabId = tab.id
+                },
+                persistWindowSession: { windowState in
+                    persistedWindowIds.append(windowState.id)
+                },
+                makePreviewTab: { url, _ in
+                    Tab(url: url, name: url.host ?? "Glance")
+                }
+            )
+        )
+
+        manager.restoreSession(
+            GlanceSessionSnapshot(
+                targetURL: targetURL,
+                currentURL: targetURL,
+                title: "Destination",
+                sourceTabId: sourceTab.id,
+                originRectInWindow: nil
+            ),
+            in: windowState
+        )
+
+        let session = try XCTUnwrap(manager.currentSession)
+        XCTAssertEqual(session.windowId, windowState.id)
+        XCTAssertIdentical(session.sourceTab, sourceTab)
+        XCTAssertEqual(restoredSelectionIds, [sourceTab.id])
+        XCTAssertEqual(windowState.currentTabId, sourceTab.id)
+        XCTAssertTrue(persistedWindowIds.isEmpty)
+
+        manager.dismissGlance()
+
+        XCTAssertEqual(persistedWindowIds, [windowState.id])
+    }
+
     @discardableResult
     private func makeRegisteredWindow(
         in browserManager: BrowserManager,
@@ -483,4 +539,39 @@ final class GlanceManagerTests: XCTestCase {
         return try XCTUnwrap(session.previewTab.existingWebView, file: file, line: line)
     }
 
+    private func makeRuntime(
+        tab: @escaping @MainActor (UUID) -> Tab? = { _ in nil },
+        currentTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
+        restoreSourceSelection: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in },
+        persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
+        makePreviewTab: @escaping @MainActor (URL, Tab?) -> Tab = { url, _ in
+            Tab(url: url, name: url.host ?? "Glance")
+        }
+    ) -> GlanceManager.Runtime {
+        GlanceManager.Runtime(
+            windowStateContainingTab: { _ in nil },
+            hasLoadedInitialTabData: { true },
+            tab: tab,
+            shortcutPin: { _ in nil },
+            shortcutLiveTab: { _, _ in nil },
+            activateShortcutPin: { pin, _, _ in
+                Tab(url: pin.launchURL, name: pin.title)
+            },
+            currentTab: currentTab,
+            restoreSourceSelection: restoreSourceSelection,
+            visibleSplitTabCount: { _ in 0 },
+            dismissFloatingBarIfVisible: { _ in false },
+            isFindBarVisible: { false },
+            findCurrentTabId: { nil },
+            hideFindBar: {},
+            updateFindManagerCurrentTab: {},
+            persistWindowSession: persistWindowSession,
+            makePreviewTab: makePreviewTab,
+            adoptPreviewTab: { previewTab, _, _ in previewTab },
+            selectPromotedTab: { _, _ in },
+            selectPromotedTabInActiveWindow: { _ in },
+            createSplitPlaceholder: { _ in },
+            registerPromotedHost: { _, _, _, _ in false }
+        )
+    }
 }

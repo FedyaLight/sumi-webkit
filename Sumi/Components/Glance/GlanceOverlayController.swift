@@ -539,12 +539,12 @@ final class GlanceOverlayController: NSObject {
                   event.keyCode == 53
             else { return event }
 
-            if self.manager?.browserManager?.dismissFloatingBarIfVisible(in: session.windowId) == true {
+            if self.manager?.dismissFloatingBarIfVisible(in: session.windowId) == true {
                 return nil
             }
 
-            if self.manager?.browserManager?.findManager.isFindBarVisible == true {
-                self.manager?.browserManager?.findManager.hideFindBar()
+            if self.manager?.isFindBarVisible == true {
+                self.manager?.hideFindBar()
                 return nil
             }
 
@@ -1106,15 +1106,13 @@ private final class GlancePromotionHandoffOwner {
     ) -> Bool {
         guard canRegisterPreviewHost(previewHostView, for: session),
               let previewHostView,
-              let webViewCoordinator = manager?.browserManager?.webViewCoordinator
+              manager?.registerPromotedHost(
+                previewHostView,
+                for: session,
+                attachmentCompletion: attachmentCompletion
+              ) == true
         else { return false }
 
-        webViewCoordinator.registerPromotedHost(
-            previewHostView,
-            for: session.previewTab.id,
-            in: session.windowId,
-            attachmentCompletion: attachmentCompletion
-        )
         previewHostView.prepareForSuperviewTransferPreservingDisplayedContent()
         return true
     }

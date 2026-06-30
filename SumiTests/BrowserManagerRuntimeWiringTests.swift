@@ -24,7 +24,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(browserManager.userscriptsModule.browserManager, browserManager)
         XCTAssertTrue(boostsModuleCanUseAttachedRuntime(browserManager))
         XCTAssertIdentical(browserManager.auxiliaryWindowManager.browserManager, browserManager)
-        XCTAssertIdentical(browserManager.glanceManager.browserManager, browserManager)
+        XCTAssertTrue(glanceRuntimeCanPreparePreviewTabs(browserManager))
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
     }
@@ -158,6 +158,30 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
         browserManager.boostsModule.stopZapSelection()
         return started
+    }
+
+    private func glanceRuntimeCanPreparePreviewTabs(_ browserManager: BrowserManager) -> Bool {
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Glance Runtime Wiring")
+        let sourceTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/glance-source",
+            in: space,
+            activate: true
+        )
+
+        browserManager.glanceManager.presentExternalURL(
+            URL(string: "https://example.com/glance-preview")!,
+            from: sourceTab
+        )
+        defer {
+            browserManager.glanceManager.dismissGlance(persistsWindowSession: false)
+        }
+
+        guard let previewTab = browserManager.glanceManager.currentSession?.previewTab else {
+            return false
+        }
+        return previewTab.browserManager === browserManager
+            && previewTab.sumiSettings === browserManager.sumiSettings
     }
 
     func testBrowserManagerInitializationRetainsInjectedPermissionRuntimeDependencies() throws {
