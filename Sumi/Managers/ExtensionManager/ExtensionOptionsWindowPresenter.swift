@@ -84,11 +84,7 @@ enum ExtensionOptionsWindowPresenter {
             firstWebView(in: $0)
         }
         if let resolvedWebView {
-            SumiAuxiliaryWebViewShutdown.perform(
-                on: resolvedWebView,
-                browserManager: manager.browserManager,
-                reason: "Extension options window cleanup"
-            )
+            SumiAuxiliaryWebViewShutdown.perform(on: resolvedWebView)
         }
 
         if shouldOrderOut {

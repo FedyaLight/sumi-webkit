@@ -2,25 +2,56 @@ import Foundation
 import WebKit
 
 enum SumiWebViewShutdown {
-    enum Scope {
+    private enum Scope {
         case normal(tabId: UUID)
-        case auxiliary(reason: String)
+        case auxiliary
+    }
+
+    struct NormalTabRuntime {
+        let cleanupUserScripts: (WKUserContentController, UUID) -> Void
+        let removeWebViewFromContainers: (WKWebView) -> Void
     }
 
     @MainActor
     static func perform(
         on webView: WKWebView,
+        tabId: UUID,
+        runtime: NormalTabRuntime,
+        additionalTabCleanup: (() -> Void)? = nil
+    ) {
+        performLifecycle(
+            on: webView,
+            scope: .normal(tabId: tabId),
+            normalTabRuntime: runtime,
+            additionalTabCleanup: additionalTabCleanup
+        )
+    }
+
+    @MainActor
+    fileprivate static func performAuxiliary(
+        on webView: WKWebView
+    ) {
+        performLifecycle(
+            on: webView,
+            scope: .auxiliary,
+            normalTabRuntime: nil
+        )
+    }
+
+    @MainActor
+    private static func performLifecycle(
+        on webView: WKWebView,
         scope: Scope,
-        browserManager: BrowserManager?,
+        normalTabRuntime: NormalTabRuntime?,
         additionalTabCleanup: (() -> Void)? = nil
     ) {
         webView.stopLoading()
         stopNativeMedia(on: webView)
 
         if case .normal(let tabId) = scope {
-            browserManager?.userscriptsModule.cleanupWebViewIfLoaded(
-                controller: webView.configuration.userContentController,
-                webViewId: tabId
+            normalTabRuntime?.cleanupUserScripts(
+                webView.configuration.userContentController,
+                tabId
             )
         }
 
@@ -36,23 +67,8 @@ enum SumiWebViewShutdown {
         webView.removeFromSuperview()
 
         if case .normal = scope {
-            browserManager?.webViewCoordinator?.removeWebViewFromContainers(webView)
+            normalTabRuntime?.removeWebViewFromContainers(webView)
         }
-    }
-
-    @MainActor
-    static func perform(
-        on webView: WKWebView,
-        tabId: UUID,
-        browserManager: BrowserManager?,
-        additionalTabCleanup: (() -> Void)? = nil
-    ) {
-        perform(
-            on: webView,
-            scope: .normal(tabId: tabId),
-            browserManager: browserManager,
-            additionalTabCleanup: additionalTabCleanup
-        )
     }
 
     @MainActor
@@ -77,24 +93,23 @@ enum SumiWebViewShutdown {
 
 enum SumiAuxiliaryWebViewShutdown {
     @MainActor
-    static func perform(
-        on webView: WKWebView,
-        browserManager: BrowserManager?,
-        reason: String
-    ) {
-        SumiWebViewShutdown.perform(
-            on: webView,
-            scope: .auxiliary(reason: reason),
-            browserManager: browserManager
+    static func perform(on webView: WKWebView) {
+        SumiWebViewShutdown.performAuxiliary(
+            on: webView
         )
     }
 }
 
 enum TabWebViewCleanupOwner {
+    typealias PermissionLifecycleEventHandler = (SumiPermissionLifecycleEvent) -> Void
+    typealias ProtectedWebViewCleanupDeferrer = (WKWebView, UUID, String) -> Bool
+
     struct Context {
         let tabId: UUID
         let tabName: () -> String
-        let browserManager: BrowserManager?
+        let handlePermissionLifecycleEvent: PermissionLifecycleEventHandler
+        let deferProtectedWebViewCleanup: ProtectedWebViewCleanupDeferrer
+        let shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime
         let nowPlayingController: (any SumiNativeNowPlayingRuntimeControlling)?
         let currentWebView: () -> WKWebView?
         let clearCurrentWebView: () -> Void
@@ -113,7 +128,7 @@ enum TabWebViewCleanupOwner {
     static func cleanupWebView(_ webView: WKWebView, context: Context) {
         let pageId = context.currentPermissionPageId()
         let tabId = context.tabId.uuidString.lowercased()
-        context.browserManager?.permissionLifecycleController.handle(
+        context.handlePermissionLifecycleEvent(
             .webViewDeallocated(
                 pageId: pageId,
                 tabId: tabId,
@@ -122,18 +137,18 @@ enum TabWebViewCleanupOwner {
             )
         )
 
-        if context.browserManager?.webViewCoordinator?.deferProtectedWebViewCleanup(
+        if context.deferProtectedWebViewCleanup(
             webView,
-            tabID: context.tabId,
-            reason: "Tab.cleanupCloneWebView"
-        ) == true {
+            context.tabId,
+            "Tab.cleanupCloneWebView"
+        ) {
             return
         }
 
         SumiWebViewShutdown.perform(
             on: webView,
             tabId: context.tabId,
-            browserManager: context.browserManager
+            runtime: context.shutdownRuntime
         ) {
             context.unbindAudioState(webView)
             context.removeNavigationStateObservers(webView)

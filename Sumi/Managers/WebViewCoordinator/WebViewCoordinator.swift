@@ -376,11 +376,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return true
         }
 
-        SumiAuxiliaryWebViewShutdown.perform(
-            on: webView,
-            browserManager: browserManager,
-            reason: "WebKit webViewDidClose fallback"
-        )
+        SumiAuxiliaryWebViewShutdown.perform(on: webView)
         return true
     }
 
@@ -1217,12 +1213,28 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         SumiWebViewShutdown.perform(
             on: webView,
             tabId: tabId,
-            browserManager: browserManager
+            runtime: webViewShutdownRuntime(browserManager: browserManager)
         )
 
         RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
             "Fallback WebView cleanup completed for tab=\(tabId.uuidString.prefix(8))."
         }
+    }
+
+    private func webViewShutdownRuntime(
+        browserManager: BrowserManager?
+    ) -> SumiWebViewShutdown.NormalTabRuntime {
+        SumiWebViewShutdown.NormalTabRuntime(
+            cleanupUserScripts: { controller, webViewId in
+                browserManager?.userscriptsModule.cleanupWebViewIfLoaded(
+                    controller: controller,
+                    webViewId: webViewId
+                )
+            },
+            removeWebViewFromContainers: { webView in
+                browserManager?.webViewCoordinator?.removeWebViewFromContainers(webView)
+            }
+        )
     }
 
     // MARK: - Cross-Window Sync
