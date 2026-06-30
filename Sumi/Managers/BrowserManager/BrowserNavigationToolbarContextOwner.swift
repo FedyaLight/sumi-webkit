@@ -83,12 +83,13 @@ extension BrowserNavigationToolbarContextOwner.Dependencies {
     @MainActor
     static func live(browserManager: BrowserManager) -> Self {
         let dataServices = browserManager.dataServices
+        let webViewRoutingService = browserManager.webViewRoutingService
         return Self(
             currentTab: { [weak browserManager] windowState in
                 browserManager?.currentTab(for: windowState)
             },
-            webView: { [weak browserManager] tab, windowState in
-                browserManager?.getWebView(for: tab.id, in: windowState.id)
+            webView: { tab, windowState in
+                webViewRoutingService.webView(for: tab.id, in: windowState.id)
             },
             faviconService: {
                 dataServices.faviconService

@@ -1,5 +1,4 @@
 import SwiftUI
-import WebKit
 
 @MainActor
 final class BrowserURLBarContextOwner {
@@ -14,7 +13,6 @@ final class BrowserURLBarContextOwner {
         let tabForID: @MainActor (UUID) -> Tab?
         let profiles: @MainActor () -> [Profile]
         let currentProfile: @MainActor () -> Profile?
-        let webView: @MainActor (Tab, BrowserWindowState) -> WKWebView?
         let siteControlsSnapshot: @MainActor (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
         let focusFloatingBar: @MainActor (BrowserWindowState, String, Bool) -> Void
         let closeURLBarHubPopover: @MainActor (BrowserWindowState) -> Void
@@ -163,9 +161,6 @@ extension BrowserURLBarContextOwner.Dependencies {
             },
             currentProfile: { [weak browserManager] in
                 browserManager?.currentProfile
-            },
-            webView: { [weak browserManager] tab, windowState in
-                browserManager?.getWebView(for: tab.id, in: windowState.id)
             },
             siteControlsSnapshot: siteControlsSnapshot,
             focusFloatingBar: { [weak browserManager] windowState, prefill, navigateCurrentTab in

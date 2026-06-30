@@ -98,6 +98,7 @@ extension BrowserURLBarHubContextOwner.Dependencies {
         let extensionsModule = browserManager.extensionsModule
         let extensionSurfaceStore = browserManager.extensionSurfaceStore
         let protectionCoordinator = browserManager.protectionCoordinator
+        let webViewRoutingService = browserManager.webViewRoutingService
         return Self(
             bookmarkManager: { [weak browserManager, bookmarkManager = browserManager.bookmarkManager] in
                 browserManager?.bookmarkManager ?? bookmarkManager
@@ -157,8 +158,8 @@ extension BrowserURLBarHubContextOwner.Dependencies {
             currentProfile: { [weak browserManager] in
                 browserManager?.currentProfile
             },
-            webView: { [weak browserManager] tab, windowState in
-                browserManager?.getWebView(for: tab.id, in: windowState.id)
+            webView: { tab, windowState in
+                webViewRoutingService.webView(for: tab.id, in: windowState.id)
             },
             siteControlsSnapshot: siteControlsSnapshot,
             openExtensionSettings: { [weak browserManager] windowState in
