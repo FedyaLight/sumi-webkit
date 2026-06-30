@@ -4,6 +4,38 @@ import XCTest
 
 @MainActor
 final class TabProfileResolutionOwnerTests: XCTestCase {
+    func testResolveProfileUsesInjectedRuntimeWithoutBrowserManager() {
+        let explicitProfile = Profile(name: "Explicit")
+        let spaceProfile = Profile(name: "Space")
+        let currentProfile = Profile(name: "Current")
+        let firstProfile = Profile(name: "First")
+        let spaceId = UUID()
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        tab.profileId = explicitProfile.id
+        tab.spaceId = spaceId
+
+        tab.profileResolutionRuntime = TabProfileResolutionRuntime(
+            ephemeralProfileForTab: { _, _ in nil },
+            profile: { profileId in
+                profileId == explicitProfile.id ? explicitProfile : nil
+            },
+            spaceProfile: { requestedSpaceId in
+                requestedSpaceId == spaceId ? spaceProfile : nil
+            },
+            currentProfile: { currentProfile },
+            firstProfile: { firstProfile }
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertIdentical(tab.resolveProfile(), explicitProfile)
+
+        tab.profileId = nil
+        XCTAssertIdentical(tab.resolveProfile(), spaceProfile)
+
+        tab.spaceId = nil
+        XCTAssertIdentical(tab.resolveProfile(), currentProfile)
+    }
+
     func testResolveProfilePrefersMatchingEphemeralWindowProfile() {
         let harness = makeHarness()
         let ephemeralProfile = Profile(name: "Private")

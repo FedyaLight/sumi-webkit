@@ -67,6 +67,23 @@ struct TabHistorySwipeRuntime {
     )
 }
 
+@MainActor
+struct TabProfileResolutionRuntime {
+    var ephemeralProfileForTab: (_ tabId: UUID, _ profileId: UUID) -> Profile?
+    var profile: (UUID) -> Profile?
+    var spaceProfile: (UUID) -> Profile?
+    var currentProfile: () -> Profile?
+    var firstProfile: () -> Profile?
+
+    static let inactive = Self(
+        ephemeralProfileForTab: { _, _ in nil },
+        profile: { _ in nil },
+        spaceProfile: { _ in nil },
+        currentProfile: { nil },
+        firstProfile: { nil }
+    )
+}
+
 enum TabMainFrameNavigationKind {
     case load
     case backForward
@@ -150,6 +167,7 @@ final class TabNavigationRuntime {
     var webViewRouting = TabWebViewRoutingRuntime.inactive
     var persistenceCallbacks = TabRuntimePersistenceCallbacks.inactive
     var historySwipeRuntime = TabHistorySwipeRuntime.inactive
+    var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
     let navigationTransactionOwner = TabNavigationTransactionOwner()
     let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()

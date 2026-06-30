@@ -4,29 +4,23 @@ import Foundation
 final class TabProfileResolutionOwner {
     func resolveProfile(for tab: Tab) -> Profile? {
         if let profileId = tab.profileId {
-            if let windowState = tab.browserManager?.windowRegistry?.windows.values.first(where: { window in
-                window.ephemeralTabs.contains(where: { $0.id == tab.id })
-            }),
-               let ephemeralProfile = windowState.ephemeralProfile,
-               ephemeralProfile.id == profileId {
+            if let ephemeralProfile = tab.profileResolutionRuntime.ephemeralProfileForTab(tab.id, profileId) {
                 return ephemeralProfile
             }
 
-            if let profile = tab.browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
+            if let profile = tab.profileResolutionRuntime.profile(profileId) {
                 return profile
             }
         }
 
         if let spaceId = tab.spaceId,
-           let space = tab.browserManager?.tabManager.spaces.first(where: { $0.id == spaceId }),
-           let profileId = space.profileId,
-           let profile = tab.browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
+           let profile = tab.profileResolutionRuntime.spaceProfile(spaceId) {
             return profile
         }
 
-        if let currentProfile = tab.browserManager?.currentProfile {
+        if let currentProfile = tab.profileResolutionRuntime.currentProfile() {
             return currentProfile
         }
-        return tab.browserManager?.profileManager.profiles.first
+        return tab.profileResolutionRuntime.firstProfile()
     }
 }
