@@ -8,7 +8,7 @@ import XCTest
 final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
     func testSidebarStructuralInvalidationTracksProfileRuntimeState() {
         let browserManager = BrowserManager()
-        let context = WindowViewBrowserContext(browserManager: browserManager)
+        let context = WindowViewBrowserContext.live(browserManager: browserManager)
         var invalidationCount = 0
         let cancellable = context.sidebarStructuralInvalidation.sink {
             invalidationCount += 1

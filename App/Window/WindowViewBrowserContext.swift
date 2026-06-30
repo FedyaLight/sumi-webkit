@@ -2,136 +2,122 @@ import Combine
 import Foundation
 
 @MainActor
-final class WindowViewBrowserContext {
-    private let browserManager: BrowserManager
+struct WindowViewBrowserRuntime {
+    let splitManager: SplitViewManager
+    let findManager: FindManager
+    let floatingBarBrowserContext: FloatingBarBrowserContext
+    let sidebarBrowserContext: SidebarBrowserContext
+    let sidebarHostActions: SidebarHostActions
+    let sidebarStructuralInvalidation: AnyPublisher<Void, Never>
+    let nativeModalPresentation: () -> BrowserNativeModalPresentation?
+    let browsingDataDialogContext: () -> SumiBrowsingDataDialogContext
+    let hasCurrentSpace: () -> Bool
+    let showGradientEditor: (SidebarTransientPresentationSource) -> Void
+    let currentProfileID: () -> UUID?
+    let essentialPins: (UUID?) -> [ShortcutPin]
+    let attachHoverSidebarManager: (HoverSidebarManager, BrowserWindowState) -> Void
+    let websiteViewBrowserContext: (SidebarDragState) -> WebsiteViewBrowserContext
+    let websiteNativeSurfaceRootBuilders: () -> WebsiteNativeSurfaceRootBuilders
+    let currentTab: (BrowserWindowState) -> Tab?
+    let workspaceTheme: (UUID?) -> WorkspaceTheme?
+    let isNativeModalPresented: (UUID) -> Bool
+    let nativeModalPresentationBindingDismissed: (UUID) -> Void
+    let dismissNativeModalPresentation: () -> Void
+    let findCurrentTabId: () -> UUID?
+}
 
-    init(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+@MainActor
+final class WindowViewBrowserContext {
+    private let runtime: WindowViewBrowserRuntime
+
+    init(runtime: WindowViewBrowserRuntime) {
+        self.runtime = runtime
     }
 
     var splitManager: SplitViewManager {
-        browserManager.splitManager
+        runtime.splitManager
     }
 
     var findManager: FindManager {
-        browserManager.findManager
+        runtime.findManager
     }
 
     var floatingBarBrowserContext: FloatingBarBrowserContext {
-        browserManager.floatingBarBrowserContext
+        runtime.floatingBarBrowserContext
     }
 
     var sidebarBrowserContext: SidebarBrowserContext {
-        SidebarBrowserContext.live(browserManager: browserManager)
+        runtime.sidebarBrowserContext
     }
 
     var sidebarHostActions: SidebarHostActions {
-        SidebarHostActions(
-            updateSidebarWidth: { [weak browserManager] width, windowState, persist in
-                browserManager?.updateSidebarWidth(width, for: windowState, persist: persist)
-            },
-            persistWindowSession: { [weak browserManager] windowState in
-                browserManager?.persistWindowSession(for: windowState)
-            },
-            dismissWorkspaceThemePickerIfNeededCommitting: { [weak browserManager] in
-                browserManager?.dismissWorkspaceThemePickerIfNeededCommitting()
-            }
-        )
+        runtime.sidebarHostActions
     }
 
     var sidebarStructuralInvalidation: AnyPublisher<Void, Never> {
-        Publishers.MergeMany(
-            browserManager.$tabStructuralRevision.map { _ in () }.eraseToAnyPublisher(),
-            browserManager.$currentProfile.map { _ in () }.eraseToAnyPublisher(),
-            browserManager.$isTransitioningProfile.map { _ in () }.eraseToAnyPublisher()
-        )
-        .eraseToAnyPublisher()
+        runtime.sidebarStructuralInvalidation
     }
 
     var nativeModalPresentation: BrowserNativeModalPresentation? {
-        browserManager.nativeModalPresentation
+        runtime.nativeModalPresentation()
     }
 
     var browsingDataDialogContext: SumiBrowsingDataDialogContext {
-        SumiBrowsingDataDialogContext(
-            cleanupService: browserManager.browsingDataCleanupService,
-            profileSnapshot: { [weak browserManager] in
-                browserManager?.profileManager.profiles ?? []
-            },
-            activeCleanupDependencies: { [weak browserManager] in
-                guard let browserManager,
-                      browserManager.currentProfile != nil
-                else {
-                    return nil
-                }
-                return SumiBrowsingDataDialogCleanupDependencies(
-                    historyManager: browserManager.historyManager,
-                    profiles: browserManager.profileManager.profiles,
-                    websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService
-                )
-            },
-            dismissNativeModalPresentation: { [weak browserManager] in
-                browserManager?.dismissNativeModalPresentation()
-            }
-        )
+        runtime.browsingDataDialogContext()
     }
 
     var hasCurrentSpace: Bool {
-        browserManager.tabManager.currentSpace != nil
+        runtime.hasCurrentSpace()
     }
 
     func showGradientEditor(source: SidebarTransientPresentationSource) {
-        browserManager.showGradientEditor(source: source)
+        runtime.showGradientEditor(source)
     }
 
     func currentProfileID() -> UUID? {
-        browserManager.currentProfile?.id
+        runtime.currentProfileID()
     }
 
     func essentialPins(profileId: UUID?) -> [ShortcutPin] {
-        browserManager.tabManager.essentialPins(for: profileId)
+        runtime.essentialPins(profileId)
     }
 
     func attachHoverSidebarManager(
         _ hoverSidebarManager: HoverSidebarManager,
         windowState: BrowserWindowState
     ) {
-        hoverSidebarManager.attach(
-            runtime: .live(browserManager: browserManager),
-            windowState: windowState
-        )
+        runtime.attachHoverSidebarManager(hoverSidebarManager, windowState)
     }
 
     func websiteViewBrowserContext(sidebarDragState: SidebarDragState) -> WebsiteViewBrowserContext {
-        browserManager.websiteViewBrowserContext(sidebarDragState: sidebarDragState)
+        runtime.websiteViewBrowserContext(sidebarDragState)
     }
 
     var websiteNativeSurfaceRootBuilders: WebsiteNativeSurfaceRootBuilders {
-        browserManager.websiteNativeSurfaceRootBuilders
+        runtime.websiteNativeSurfaceRootBuilders()
     }
 
     func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        browserManager.currentTab(for: windowState)
+        runtime.currentTab(windowState)
     }
 
     func workspaceTheme(for spaceId: UUID?) -> WorkspaceTheme? {
-        guard let spaceId else { return nil }
-        return browserManager.space(for: spaceId)?.workspaceTheme
+        runtime.workspaceTheme(spaceId)
     }
 
     func isNativeModalPresented(in windowId: UUID) -> Bool {
-        browserManager.isNativeModalPresented(in: windowId)
+        runtime.isNativeModalPresented(windowId)
     }
 
     func nativeModalPresentationBindingDismissed(for windowId: UUID) {
-        browserManager.nativeModalPresentationBindingDismissed(for: windowId)
+        runtime.nativeModalPresentationBindingDismissed(windowId)
     }
 
     func dismissNativeModalPresentation() {
-        browserManager.dismissNativeModalPresentation()
+        runtime.dismissNativeModalPresentation()
     }
 
     func findCurrentTabId() -> UUID? {
-        browserManager.findManager.currentTab?.id
+        runtime.findCurrentTabId()
     }
 }

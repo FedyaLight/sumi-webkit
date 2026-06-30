@@ -42,7 +42,7 @@ struct SumiApp: App {
         WindowGroup {
             ContentView(
                 windowLifecycleHandler: browserManager,
-                browserContext: WindowViewBrowserContext(browserManager: browserManager),
+                browserContext: .live(browserManager: browserManager),
                 initialWorkspaceTheme: browserManager.startupWorkspaceTheme
             )
                 .ignoresSafeArea(.all)
@@ -138,7 +138,7 @@ struct SumiApp: App {
     ) -> NSView {
         let contentView = ContentView(
             windowLifecycleHandler: browserManager,
-            browserContext: WindowViewBrowserContext(browserManager: browserManager),
+            browserContext: .live(browserManager: browserManager),
             windowState: windowState,
             initialWorkspaceTheme: browserManager.tabManager.currentSpace?.workspaceTheme
         )
