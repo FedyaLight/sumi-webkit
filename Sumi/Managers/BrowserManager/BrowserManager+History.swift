@@ -1,9 +1,4 @@
-//
-//  BrowserManager+History.swift
-//  Sumi
-//
-
-import AppKit
+import Foundation
 
 @MainActor
 extension BrowserManager {
@@ -85,18 +80,7 @@ extension BrowserManager {
     }
 
     func clearAllHistoryFromMenu() {
-        let alert = NSAlert()
-        alert.messageText = "Clear All History"
-        alert.informativeText = "This will permanently remove all browsing history for the current profile."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Clear History")
-        alert.addButton(withTitle: "Cancel")
-        requestCollapsedSidebarOverlayDismissal()
-        if alert.runModal() == .alertFirstButtonReturn {
-            Task {
-                await historyManager.clearAll()
-            }
-        }
+        historyMenuOwner.clearAllHistoryFromMenu()
     }
 
     func handleWindowWillClose(_ windowId: UUID) {
@@ -108,21 +92,7 @@ extension BrowserManager {
     }
 
     func reopenWindow(from snapshot: WindowSessionSnapshot) async {
-        let existingWindowIDs = Set(windowRegistry?.windows.keys.map { $0 } ?? [])
-        createNewWindow()
-        guard let targetWindow = await windowRegistry?.awaitNextRegisteredWindow(
-            excluding: existingWindowIDs
-        ) else {
-            return
-        }
-
-        windowSessionService.applyWindowSessionSnapshot(
-            snapshot,
-            to: targetWindow,
-            delegate: self
-        )
-        targetWindow.window?.makeKeyAndOrderFront(nil as Any?)
-        NSApp.activate(ignoringOtherApps: true)
+        await historyMenuOwner.reopenWindow(from: snapshot)
     }
 
     func currentRegularWindowSnapshots(

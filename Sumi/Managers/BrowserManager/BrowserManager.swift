@@ -178,6 +178,12 @@ class BrowserManager: ObservableObject {
     lazy var nativeDialogPresentationOwner = BrowserNativeDialogPresentationOwner(
         dependencies: .live(browserManager: self)
     )
+    lazy var historyMenuOwner = BrowserHistoryMenuOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var shutdownCleanupOwner = BrowserShutdownCleanupOwner(
+        dependencies: .live(browserManager: self)
+    )
     private lazy var floatingBarRoutingOwner = BrowserFloatingBarRoutingOwner(
         dependencies: .live(browserManager: self)
     )
