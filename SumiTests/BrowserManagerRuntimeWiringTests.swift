@@ -22,7 +22,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(downloadRetryRuntimeCanResolveWindowOwnedWebView(browserManager))
         XCTAssertIdentical(browserManager.extensionsModule.browserManager, browserManager)
         XCTAssertTrue(boostsModuleCanUseAttachedRuntime(browserManager))
-        XCTAssertIdentical(browserManager.auxiliaryWindowManager.browserManager, browserManager)
+        XCTAssertTrue(auxiliaryWindowManagerCanUseAttachedRuntime(browserManager))
         XCTAssertTrue(glanceRuntimeCanPreparePreviewTabs(browserManager))
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
@@ -156,6 +156,45 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
         browserManager.boostsModule.stopZapSelection()
         return started
+    }
+
+    private func auxiliaryWindowManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Auxiliary Runtime Wiring")
+        let sourceTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/source",
+            in: space,
+            activate: true
+        )
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = sourceTab.id
+        windowState.window = NSWindow(
+            contentRect: NSRect(x: 120, y: 120, width: 900, height: 700),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        guard let webView = browserManager.auxiliaryWindowManager.presentWebPopup(
+            configuration: WKWebViewConfiguration(),
+            request: URLRequest(url: URL(string: "https://example.com/popup")!),
+            windowFeatures: WKWindowFeatures(),
+            openerTab: sourceTab,
+            shouldActivateApp: false
+        ) else {
+            return false
+        }
+        let session = browserManager.auxiliaryWindowManager.session(for: webView)
+        browserManager.auxiliaryWindowManager.teardown(for: webView, reason: .managerCloseAll)
+        return session?.openerTab === sourceTab
+            && session?.tab.isAuxiliaryMiniWindow == true
     }
 
     private func glanceRuntimeCanPreparePreviewTabs(_ browserManager: BrowserManager) -> Bool {

@@ -34,8 +34,7 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
 
         if isSizedPopup {
             guard let manager,
-                  let sourceTab = manager.session(for: webView)?.tab ?? openerTab,
-                  let browserManager = manager.browserManager
+                  let sourceTab = manager.session(for: webView)?.tab ?? openerTab
             else { return nil }
             guard nestedDepth < manager.maxNestedDepth else {
                 RuntimeDiagnostics.emit(
@@ -63,11 +62,12 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
                 activationState: activationState,
                 isExtensionOriginated: isExtensionOriginated
             )
-            let permissionResult = browserManager.popupPermissionBridge
-                .evaluateSynchronouslyForWebKitFallback(
-                    request,
-                    tabContext: tabContext
-                )
+            guard let permissionResult = manager.evaluatePopupPermission(
+                request,
+                tabContext: tabContext
+            ) else {
+                return nil
+            }
             guard permissionResult.isAllowed else { return nil }
             sourceTab.popupUserActivationTracker.consumeIfUserActivated(request.userActivation)
 
@@ -96,7 +96,6 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
         guard let manager,
-              let browserManager = manager.browserManager,
               let tab = manager.session(for: webView)?.tab,
               let tabContext = tab.filePickerPermissionTabContext(for: webView)
         else {
@@ -111,13 +110,18 @@ final class AuxiliaryWindowUIDelegate: NSObject, WKUIDelegate {
             frame: frame,
             userActivation: activationState
         )
-        browserManager.filePickerPermissionBridge.handleOpenPanel(
+        let didHandleOpenPanel = manager.handleFilePickerOpenPanel(
             request,
             tabContext: tabContext,
             webView: webView,
             currentPageId: { [weak tab] in tab?.currentPermissionPageId() },
             completionHandler: completionHandler
         )
+        guard didHandleOpenPanel else {
+            RuntimeDiagnostics.emit("📁 [AuxiliaryWindowUIDelegate] Denying file picker because permission runtime is unavailable.")
+            completionHandler(nil)
+            return
+        }
         tab.popupUserActivationTracker.consumeIfUserActivated(activationState)
     }
 

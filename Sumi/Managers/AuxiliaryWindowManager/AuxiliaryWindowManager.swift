@@ -85,16 +85,92 @@ final class AuxiliaryWindowSessionDelegate: NSObject, NSWindowDelegate {
 }
 
 @MainActor
+struct AuxiliaryWindowRuntime {
+    typealias ExtensionManagerProvider = @MainActor () -> ExtensionManager?
+    typealias ActiveWindowProvider = @MainActor () -> BrowserWindowState?
+    typealias CurrentTabProvider = @MainActor (_ windowState: BrowserWindowState) -> Tab?
+    typealias CurrentProfileIDProvider = @MainActor () -> UUID?
+    typealias CurrentSpaceProvider = @MainActor () -> Space?
+    typealias WindowContainingTabProvider = @MainActor (_ tab: Tab) -> BrowserWindowState?
+    typealias MiniWindowTabFactory = @MainActor (
+        _ openerTab: Tab?,
+        _ profileId: UUID?,
+        _ urlString: String?,
+        _ webExtensionContextOverride: WKWebExtensionContext?
+    ) -> Tab?
+    typealias TabHandler = @MainActor (_ tab: Tab) -> Void
+    typealias ExtensionCreatedTabRegistrar = @MainActor (_ tab: Tab, _ reason: String) -> Void
+    typealias PopupPermissionBridgeProvider = @MainActor () -> SumiPopupPermissionBridge?
+    typealias FilePickerPermissionBridgeProvider = @MainActor () -> SumiFilePickerPermissionBridge?
+
+    let loadedEnabledExtensionManager: ExtensionManagerProvider
+    let activeWindow: ActiveWindowProvider
+    let currentTab: CurrentTabProvider
+    let currentProfileID: CurrentProfileIDProvider
+    let currentSpace: CurrentSpaceProvider
+    let windowContainingTab: WindowContainingTabProvider
+    let createMiniWindowTab: MiniWindowTabFactory
+    let removeMiniWindowTab: TabHandler
+    let notifyTabClosedIfLoaded: TabHandler
+    let registerExtensionCreatedTabIfLoaded: ExtensionCreatedTabRegistrar
+    let popupPermissionBridge: PopupPermissionBridgeProvider
+    let filePickerPermissionBridge: FilePickerPermissionBridgeProvider
+
+    init(
+        loadedEnabledExtensionManager: @escaping ExtensionManagerProvider,
+        activeWindow: @escaping ActiveWindowProvider,
+        currentTab: @escaping CurrentTabProvider,
+        currentProfileID: @escaping CurrentProfileIDProvider,
+        currentSpace: @escaping CurrentSpaceProvider,
+        windowContainingTab: @escaping WindowContainingTabProvider,
+        createMiniWindowTab: @escaping MiniWindowTabFactory,
+        removeMiniWindowTab: @escaping TabHandler,
+        notifyTabClosedIfLoaded: @escaping TabHandler,
+        registerExtensionCreatedTabIfLoaded: @escaping ExtensionCreatedTabRegistrar,
+        popupPermissionBridge: @escaping PopupPermissionBridgeProvider,
+        filePickerPermissionBridge: @escaping FilePickerPermissionBridgeProvider
+    ) {
+        self.loadedEnabledExtensionManager = loadedEnabledExtensionManager
+        self.activeWindow = activeWindow
+        self.currentTab = currentTab
+        self.currentProfileID = currentProfileID
+        self.currentSpace = currentSpace
+        self.windowContainingTab = windowContainingTab
+        self.createMiniWindowTab = createMiniWindowTab
+        self.removeMiniWindowTab = removeMiniWindowTab
+        self.notifyTabClosedIfLoaded = notifyTabClosedIfLoaded
+        self.registerExtensionCreatedTabIfLoaded = registerExtensionCreatedTabIfLoaded
+        self.popupPermissionBridge = popupPermissionBridge
+        self.filePickerPermissionBridge = filePickerPermissionBridge
+    }
+
+    static let inactive = AuxiliaryWindowRuntime(
+        loadedEnabledExtensionManager: { nil },
+        activeWindow: { nil },
+        currentTab: { _ in nil },
+        currentProfileID: { nil },
+        currentSpace: { nil },
+        windowContainingTab: { _ in nil },
+        createMiniWindowTab: { _, _, _, _ in nil },
+        removeMiniWindowTab: { _ in },
+        notifyTabClosedIfLoaded: { _ in },
+        registerExtensionCreatedTabIfLoaded: { _, _ in },
+        popupPermissionBridge: { nil },
+        filePickerPermissionBridge: { nil }
+    )
+}
+
+@MainActor
 final class AuxiliaryWindowManager {
     let maxNestedDepth = 3
 
-    private(set) weak var browserManager: BrowserManager?
+    private var runtime: AuxiliaryWindowRuntime = .inactive
     private var sessionsByID: [UUID: AuxiliaryWindowSession] = [:]
     private var sessionIDsByWebViewObjectID: [ObjectIdentifier: UUID] = [:]
     private var recentAuxiliarySessionIDByOwnerExtensionID: [String: UUID] = [:]
 
-    func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    func attach(runtime: AuxiliaryWindowRuntime) {
+        self.runtime = runtime
     }
 
     func session(for id: UUID) -> AuxiliaryWindowSession? {
@@ -138,8 +214,7 @@ final class AuxiliaryWindowManager {
         guard let session = sessionsByID[sessionID] else { return }
 
         recordAuxiliarySessionFocus(sessionID)
-        browserManager?.extensionsModule.managerIfLoadedAndEnabled()?
-            .notifyAuxiliaryWindowFocused(session)
+        runtime.loadedEnabledExtensionManager()?.notifyAuxiliaryWindowFocused(session)
     }
 
     func focusedMiniWindowAdapter(forOwnerExtensionID ownerExtensionID: String) -> ExtensionMiniWindowAdapter? {
@@ -179,22 +254,22 @@ final class AuxiliaryWindowManager {
             )
         }
 
-        guard nestedDepth < maxNestedDepth,
-              let browserManager
-        else {
+        guard nestedDepth < maxNestedDepth else {
             return nil
         }
 
-        let parentWindow = parentWindow(for: openerTab, browserManager: browserManager)
+        let parentWindow = parentWindow(for: openerTab)
         let geometry = AuxiliaryWindowGeometryResolver.resolve(
             windowFeatures: windowFeatures,
             parentWindow: parentWindow
         )
 
-        let miniTab = browserManager.tabManager.createAuxiliaryMiniWindowTab(
-            openerTab: openerTab,
-            urlString: request?.url?.absoluteString
-        )
+        guard let miniTab = runtime.createMiniWindowTab(
+            openerTab,
+            nil,
+            request?.url?.absoluteString,
+            nil
+        ) else { return nil }
         let webView = miniTab.createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
             configuration,
             currentURL: request?.url,
@@ -231,13 +306,11 @@ final class AuxiliaryWindowManager {
         extensionOwnedSourceURL: URL? = nil,
         ownerExtensionID: String? = nil
     ) -> WKWebView? {
-        guard nestedDepth < maxNestedDepth,
-              let browserManager
-        else {
+        guard nestedDepth < maxNestedDepth else {
             return nil
         }
 
-        let extensionManager = browserManager.extensionsModule.managerIfLoadedAndEnabled()
+        let extensionManager = runtime.loadedEnabledExtensionManager()
         let resolvedOwnerExtensionID = resolveOwnerExtensionID(
             extensionManager: extensionManager,
             extensionContext: nil,
@@ -246,7 +319,7 @@ final class AuxiliaryWindowManager {
             explicitOwnerExtensionID: ownerExtensionID
         )
 
-        let parentWindow = parentWindow(for: openerTab, browserManager: browserManager)
+        let parentWindow = parentWindow(for: openerTab)
         let geometry: AuxiliaryWindowGeometry
         if windowFeatures.width != nil {
             geometry = AuxiliaryWindowGeometryResolver.resolve(
@@ -257,10 +330,12 @@ final class AuxiliaryWindowManager {
             geometry = AuxiliaryWindowGeometryResolver.resolveDefault(parentWindow: parentWindow)
         }
 
-        let miniTab = browserManager.tabManager.createAuxiliaryMiniWindowTab(
-            openerTab: openerTab,
-            urlString: request?.url?.absoluteString
-        )
+        guard let miniTab = runtime.createMiniWindowTab(
+            openerTab,
+            nil,
+            request?.url?.absoluteString,
+            nil
+        ) else { return nil }
         let webView = miniTab.createAuxiliaryMiniWindowWebViewFromWebKitConfiguration(
             configuration,
             currentURL: request?.url,
@@ -286,9 +361,9 @@ final class AuxiliaryWindowManager {
             return nil
         }
 
-        browserManager.extensionsModule.registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
+        runtime.registerExtensionCreatedTabIfLoaded(
             miniTab,
-            reason: "AuxiliaryWindowManager.presentExtensionExternalWebPopup"
+            "AuxiliaryWindowManager.presentExtensionExternalWebPopup"
         )
         if let session = session(for: webView) {
             extensionManager?.notifyAuxiliaryWindowOpened(session)
@@ -329,10 +404,8 @@ final class AuxiliaryWindowManager {
         extensionManager: ExtensionManager,
         parentWindow: NSWindow?
     ) async -> ExtensionMiniWindowAdapter? {
-        guard let browserManager else { return nil }
-
         let isPrivate = configuration.shouldBePrivate
-            || browserManager.windowRegistry?.activeWindow?.isIncognito == true
+            || runtime.activeWindow()?.isIncognito == true
         guard isPrivate == false else {
             return nil
         }
@@ -342,12 +415,13 @@ final class AuxiliaryWindowManager {
             parentWindow: parentWindow
         )
 
-        let openerTab = browserManager.windowRegistry?.activeWindow.flatMap {
-            browserManager.currentTab(for: $0)
+        let activeWindow = runtime.activeWindow()
+        let openerTab = activeWindow.flatMap {
+            runtime.currentTab($0)
         }
         let profileId = extensionManager.profileId(for: extensionContext)
             ?? openerTab?.profileId
-            ?? browserManager.currentProfile?.id
+            ?? runtime.currentProfileID()
 
         if let profileId {
             await extensionManager.ensureInitialDocumentExtensionContextsLoaded(
@@ -369,8 +443,8 @@ final class AuxiliaryWindowManager {
             await extensionManager.prepareContentScriptContextsForExtensionRequestedInitialLoad(
                 loadURL: loadURL,
                 webExtensionContextOverride: tabWebExtensionContextOverride,
-                targetWindow: browserManager.windowRegistry?.activeWindow,
-                targetSpace: browserManager.tabManager.currentSpace,
+                targetWindow: activeWindow,
+                targetSpace: runtime.currentSpace(),
                 controller: controller
             )
             extensionManager.recordRecentlyOpenedExtensionTabRequest(for: loadURL)
@@ -379,12 +453,12 @@ final class AuxiliaryWindowManager {
         let loadURLString = loadURL?.absoluteString
             ?? SumiSurface.emptyTabURL.absoluteString
 
-        let miniTab = browserManager.tabManager.createAuxiliaryMiniWindowTab(
-            openerTab: openerTab,
-            profileId: profileId,
-            urlString: loadURLString,
-            webExtensionContextOverride: tabWebExtensionContextOverride
-        )
+        guard let miniTab = runtime.createMiniWindowTab(
+            openerTab,
+            profileId,
+            loadURLString,
+            tabWebExtensionContextOverride
+        ) else { return nil }
 
         let webViewConfiguration = (tabWebExtensionContextOverride ?? extensionContext).webViewConfiguration
             ?? WKWebViewConfiguration()
@@ -456,17 +530,16 @@ final class AuxiliaryWindowManager {
         webView.navigationDelegate = nil
         webView.removeFromSuperview()
 
-        browserManager?.extensionsModule.managerIfLoadedAndEnabled()?
-            .notifyAuxiliaryWindowClosed(session)
+        runtime.loadedEnabledExtensionManager()?.notifyAuxiliaryWindowClosed(session)
 
         if let ownerExtensionID = session.ownerExtensionID,
            recentAuxiliarySessionIDByOwnerExtensionID[ownerExtensionID] == sessionID {
             recentAuxiliarySessionIDByOwnerExtensionID.removeValue(forKey: ownerExtensionID)
         }
 
-        browserManager?.extensionsModule.notifyTabClosedIfLoaded(session.tab)
+        runtime.notifyTabClosedIfLoaded(session.tab)
         session.tab.performComprehensiveWebViewCleanup()
-        browserManager?.tabManager.removeAuxiliaryMiniWindowTab(session.tab)
+        runtime.removeMiniWindowTab(session.tab)
 
         if reason != .nativeClose, session.window.isVisible {
             session.window.close()
@@ -501,11 +574,45 @@ final class AuxiliaryWindowManager {
         }
     }
 
+    func evaluatePopupPermission(
+        _ request: SumiPopupPermissionRequest,
+        tabContext: SumiPopupPermissionTabContext
+    ) -> SumiPopupPermissionResult? {
+        runtime.popupPermissionBridge()?.evaluateSynchronouslyForWebKitFallback(
+            request,
+            tabContext: tabContext
+        )
+    }
+
+    func handleFilePickerOpenPanel(
+        _ request: SumiFilePickerPermissionRequest,
+        tabContext: SumiFilePickerPermissionTabContext,
+        webView: WKWebView?,
+        currentPageId: @escaping @MainActor () -> String?,
+        completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
+    ) -> Bool {
+        guard let bridge = runtime.filePickerPermissionBridge() else {
+            return false
+        }
+        bridge.handleOpenPanel(
+            request,
+            tabContext: tabContext,
+            webView: webView,
+            currentPageId: currentPageId,
+            completionHandler: { urls in
+                Task { @MainActor in
+                    completionHandler(urls)
+                }
+            }
+        )
+        return true
+    }
+
     // MARK: - Private
 
-    private func parentWindow(for tab: Tab, browserManager: BrowserManager) -> NSWindow? {
-        browserManager.windowState(containing: tab)?.window
-            ?? browserManager.windowRegistry?.activeWindow?.window
+    private func parentWindow(for tab: Tab) -> NSWindow? {
+        runtime.windowContainingTab(tab)?.window
+            ?? runtime.activeWindow()?.window
     }
 
     private func resolveOwnerExtensionID(
@@ -557,11 +664,9 @@ final class AuxiliaryWindowManager {
         registerExtensionMiniWindowAdapter: Bool = false,
         ownerExtensionID: String? = nil
     ) -> UUID? {
-        guard let browserManager else { return nil }
-
         let sessionID = UUID()
         let openerWindow = openerTab.flatMap {
-            parentWindow(for: $0, browserManager: browserManager)
+            parentWindow(for: $0)
         } ?? explicitOpenerWindow
         let window = AuxiliaryCompactWindow(contentRect: geometry.contentRect)
         window.title = Self.windowTitle(
