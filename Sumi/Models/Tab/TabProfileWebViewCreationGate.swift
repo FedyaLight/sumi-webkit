@@ -51,11 +51,12 @@ final class TabProfileWebViewCreationGate {
 
 extension TabProfileWebViewCreationGate.Dependencies {
     @MainActor
-    static func live(tab: Tab) -> Self {
+    static func live(
+        tab: Tab,
+        currentProfileUpdates: @MainActor @escaping () -> AnyPublisher<Profile?, Never>?
+    ) -> Self {
         Self(
-            currentProfileUpdates: { [weak tab] in
-                tab?.browserManager?.$currentProfile.eraseToAnyPublisher()
-            },
+            currentProfileUpdates: currentProfileUpdates,
             currentProfileAwaitCancellable: { [weak tab] in
                 tab?.profileAwaitCancellable
             },

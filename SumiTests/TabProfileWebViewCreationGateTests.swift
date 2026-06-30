@@ -50,6 +50,27 @@ final class TabProfileWebViewCreationGateTests: XCTestCase {
         XCTAssertEqual(harness.setupWebViewCallCount, 0)
         XCTAssertNotNil(harness.cancellable)
     }
+
+    func testLiveDependenciesUseInjectedCurrentProfileUpdatesWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let subject = PassthroughSubject<Profile?, Never>()
+        var currentProfileUpdatesCallCount = 0
+        let owner = TabProfileWebViewCreationGate(
+            dependencies: .live(
+                tab: tab,
+                currentProfileUpdates: {
+                    currentProfileUpdatesCallCount += 1
+                    return subject.eraseToAnyPublisher()
+                }
+            )
+        )
+
+        owner.deferCreationUntilProfileAvailable()
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(currentProfileUpdatesCallCount, 1)
+        XCTAssertNotNil(tab.profileAwaitCancellable)
+    }
 }
 
 @MainActor
