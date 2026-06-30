@@ -63,7 +63,7 @@ extension TabProfileWebViewCreationGate.Dependencies {
                 tab?.profileAwaitCancellable = cancellable
             },
             hasCurrentWebView: { [weak tab] in
-                tab?._webView != nil
+                tab?.hasCurrentWebView ?? false
             },
             setupWebView: { [weak tab] in
                 tab?.setupWebView()

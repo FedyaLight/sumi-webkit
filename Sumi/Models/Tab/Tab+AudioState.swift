@@ -59,7 +59,7 @@ extension Tab {
     }
 
     func setMuted(_ muted: Bool) {
-        if let webView = _webView {
+        if let webView = currentWebView {
             _ = webView.sumiSetAudioMuted(muted)
         } else {
             RuntimeDiagnostics.emit("🔇 [Tab] Mute state queued at \(muted); base webView not loaded yet")

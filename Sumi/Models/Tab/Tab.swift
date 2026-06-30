@@ -670,7 +670,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func loadWebViewIfNeeded() {
-        if _webView == nil {
+        if !hasCurrentWebView {
             beginSuspendedRestoreIfNeeded()
             setupWebView()
             finishSuspendedRestoreIfNeeded()
@@ -699,7 +699,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func finishSuspendedRestoreIfNeeded() {
-        suspensionStateOwner.finishRestoreIfNeeded(tab: self, hasWebView: _webView != nil)
+        suspensionStateOwner.finishRestoreIfNeeded(tab: self, hasWebView: hasCurrentWebView)
     }
 
     // MARK: - Navigation State Observation

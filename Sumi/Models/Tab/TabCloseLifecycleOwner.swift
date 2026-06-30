@@ -73,7 +73,7 @@ extension TabCloseLifecycleOwner.Context {
                 tab.browserManager?.compositorManager.updateTabVisibility()
             },
             currentWebView: {
-                tab._webView
+                tab.currentWebView
             },
             removeNavigationStateObservers: { webView in
                 tab.removeNavigationStateObservers(from: webView)

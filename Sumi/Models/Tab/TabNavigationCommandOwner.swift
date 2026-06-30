@@ -7,7 +7,7 @@ final class TabNavigationCommandOwner {
         tab.url = newURL
         tab.beginLoadingPresentationIfNeeded()
 
-        guard tab._webView != nil else {
+        guard tab.hasCurrentWebView else {
             tab.setupWebView()
             return
         }
@@ -60,7 +60,7 @@ final class TabNavigationCommandOwner {
         guard !tab.representsSumiNativeSurface else { return }
 
         tab.beginLoadingPresentationIfNeeded()
-        let targetURL = tab._webView?.url ?? tab.url
+        let targetURL = tab.currentWebView?.url ?? tab.url
         let protectionReloadWasRequired = tab.isProtectionReloadRequired
         let rebuiltForConfigurationPolicy = tab.rebuildNormalWebViewForConfigurationPolicyIfNeeded(
             targetURL: targetURL,
@@ -74,7 +74,7 @@ final class TabNavigationCommandOwner {
             )
         }
 
-        if let webView = tab._webView {
+        if let webView = tab.currentWebView {
             if rebuiltForConfigurationPolicy {
                 performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
                     on: webView,
@@ -150,7 +150,7 @@ final class TabNavigationCommandOwner {
         waitForContentBlockingAssets: Bool
     ) {
         let directoryURL = url.deletingLastPathComponent()
-        if let webView = tab._webView {
+        if let webView = tab.currentWebView {
             performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
                 on: webView,
                 tab: tab,
@@ -170,7 +170,7 @@ final class TabNavigationCommandOwner {
         waitForContentBlockingAssets: Bool
     ) {
         let request = Self.navigationCommandURLRequest(for: url)
-        if let webView = tab._webView {
+        if let webView = tab.currentWebView {
             performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
                 on: webView,
                 tab: tab,

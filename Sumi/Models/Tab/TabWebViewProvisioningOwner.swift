@@ -5,10 +5,10 @@ import WebKit
 final class TabWebViewProvisioningOwner {
     @discardableResult
     func ensureWebView(for tab: Tab) -> WKWebView? {
-        if tab._webView == nil {
+        if !tab.hasCurrentWebView {
             tab.setupWebView()
         }
-        return tab._webView
+        return tab.currentWebView
     }
 
     @discardableResult

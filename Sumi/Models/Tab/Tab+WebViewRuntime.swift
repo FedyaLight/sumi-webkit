@@ -18,7 +18,29 @@ extension Tab {
 
     /// Returns the current WebView without triggering lazy initialization.
     var existingWebView: WKWebView? {
+        currentWebView
+    }
+
+    /// Returns the current WebView without triggering lazy initialization.
+    /// Use this inside runtime owners instead of the legacy `_webView` bridge.
+    var currentWebView: WKWebView? {
         _webView
+    }
+
+    var hasCurrentWebView: Bool {
+        currentWebView != nil
+    }
+
+    var parkedWebView: WKWebView? {
+        _existingWebView
+    }
+
+    var hasParkedWebView: Bool {
+        parkedWebView != nil
+    }
+
+    func currentWebViewIsIdentical(to webView: WKWebView) -> Bool {
+        currentWebView === webView
     }
 
     @discardableResult

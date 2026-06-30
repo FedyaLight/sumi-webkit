@@ -5,7 +5,7 @@ import WebKit
 final class TabNormalWebViewSetupOwner {
     func setupWebView(for tab: Tab) {
         tab.beginSuspendedRestoreIfNeeded()
-        let reusableExistingWebView = tab._existingWebView
+        let reusableExistingWebView = tab.parkedWebView
         var didReuseExistingWebView = false
         var didCreateAuxiliaryOverrideWebView = false
 
@@ -37,7 +37,7 @@ final class TabNormalWebViewSetupOwner {
             }
         }
 
-        if tab._webView == nil {
+        if !tab.hasCurrentWebView {
             if let auxiliaryOverrideConfiguration {
                 configurationContext.prepareWebViewConfigurationForExtensionRuntime(
                     auxiliaryOverrideConfiguration,
@@ -56,20 +56,20 @@ final class TabNormalWebViewSetupOwner {
             }
         }
 
-        if let webView = tab._webView {
+        if let webView = tab.currentWebView {
             if didReuseExistingWebView || !(webView is FocusableWKWebView) {
                 tab.ownedWebViewPreparationOwner.prepareReusedOrExternallyCreatedWebView(webView)
             }
         }
 
-        if let webView = tab._webView {
+        if let webView = tab.currentWebView {
             tab.ownedWebViewPreparationOwner.applyOwnedTabWebViewNavigationPreferences(to: webView)
         }
 
         let shouldDelayInitialNormalTabRuntimeRegistration =
             shouldDelayInitialNormalTabRuntimeRegistration(
                 isPopupHost: tab.isPopupHost,
-                hasExistingWebView: tab._existingWebView != nil,
+                hasExistingWebView: tab.hasParkedWebView,
                 didCreateAuxiliaryOverrideWebView: didCreateAuxiliaryOverrideWebView,
                 url: tab.url
             )
@@ -80,14 +80,14 @@ final class TabNormalWebViewSetupOwner {
 
         if didCreateAuxiliaryOverrideWebView,
            ExtensionUtils.isExtensionOwnedURL(tab.url),
-           let webView = tab._webView {
+           let webView = tab.currentWebView {
             loadExtensionOwnedInitialURL(tab.url, on: webView, tab: tab)
             tab.finishSuspendedRestoreIfNeeded()
             return
         }
 
         if shouldDelayInitialNormalTabRuntimeRegistration {
-            let initialWebView = tab._webView
+            let initialWebView = tab.currentWebView
             let hasInitialUserContentController = initialWebView?.configuration
                 .userContentController
                 .sumiNormalTabUserContentController != nil

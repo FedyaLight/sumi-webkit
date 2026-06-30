@@ -74,4 +74,20 @@ final class TabWebViewOwnershipOwnerTests: XCTestCase {
         XCTAssertNil(owner.webView)
         XCTAssertNil(owner.primaryWindowId)
     }
+
+    func testTabRuntimeQueriesExposeCurrentAndParkedWebViews() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let current = WKWebView()
+        let parked = WKWebView()
+
+        tab.replaceUntrackedWebView(current)
+        tab.parkExistingWebView(parked)
+
+        XCTAssertIdentical(tab.currentWebView, current)
+        XCTAssertTrue(tab.hasCurrentWebView)
+        XCTAssertIdentical(tab.parkedWebView, parked)
+        XCTAssertTrue(tab.hasParkedWebView)
+        XCTAssertTrue(tab.currentWebViewIsIdentical(to: current))
+        XCTAssertFalse(tab.currentWebViewIsIdentical(to: parked))
+    }
 }

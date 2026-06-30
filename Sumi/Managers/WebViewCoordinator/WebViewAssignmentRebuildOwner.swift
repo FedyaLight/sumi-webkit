@@ -74,7 +74,8 @@ final class WebViewAssignmentRebuildOwner {
             return
         }
 
-        if tab._webView !== replacement.webView || tab.primaryWindowId != replacement.owner.windowID {
+        if !tab.currentWebViewIsIdentical(to: replacement.webView)
+            || tab.primaryWindowId != replacement.owner.windowID {
             tab.assignWebViewToWindow(replacement.webView, windowId: replacement.owner.windowID)
         }
     }

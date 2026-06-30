@@ -45,11 +45,11 @@ enum NormalTabInitialDocumentRuntimeHandoff {
                 guard let tab else { return false }
                 switch registrationGuard {
                 case .noExistingWebView:
-                    return tab._existingWebView == nil
+                    return !tab.hasParkedWebView
                 case .currentWebViewIdentity:
                     guard let webView else { return false }
-                    return tab._existingWebView == nil
-                        && tab._webView === webView
+                    return !tab.hasParkedWebView
+                        && tab.currentWebViewIsIdentical(to: webView)
                 }
             } register: {
                 tab?.registerNormalTabWithExtensionRuntimeIfNeeded(

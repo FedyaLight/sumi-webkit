@@ -6,18 +6,18 @@ extension Tab {
 
     func goBack() {
         guard canGoBack else { return }
-        guard let webView = _webView else { return }
+        guard let webView = currentWebView else { return }
         SumiWebViewNavigator.goBack(on: webView)
     }
 
     func goForward() {
         guard canGoForward else { return }
-        guard let webView = _webView else { return }
+        guard let webView = currentWebView else { return }
         SumiWebViewNavigator.goForward(on: webView)
     }
 
     func stopLoading(on webView: WKWebView? = nil) {
-        let resolvedWebView = webView ?? _webView
+        let resolvedWebView = webView ?? currentWebView
         resolvedWebView?.stopLoading()
 
         if loadingState.isLoading {
@@ -31,7 +31,7 @@ extension Tab {
 
     func updateNavigationState() {
         guard !isFreezingNavigationStateDuringBackForwardGesture else { return }
-        guard let webView = _webView else { return }
+        guard let webView = currentWebView else { return }
 
         let newCanGoBack = webView.canGoBack
         let newCanGoForward = webView.canGoForward
@@ -117,7 +117,7 @@ extension Tab {
         TabNavigationTransactionOwner.HistorySwipeEnvironment(
             tabId: id,
             currentWebView: { [weak self] in
-                self?._webView
+                self?.currentWebView
             },
             currentURL: { [weak self] in
                 self?.url
@@ -148,7 +148,7 @@ extension Tab {
                 self?.browserManager?.flushWindowMutationsAfterHistorySwipe(in: windowId)
             },
             updateNavigationStateIfCurrentWebViewExists: { [weak self] in
-                guard let self, self._webView != nil else { return }
+                guard let self, self.hasCurrentWebView else { return }
                 self.updateNavigationState()
             },
             scheduleRuntimeStatePersistence: { [weak self] in

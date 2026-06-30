@@ -124,7 +124,7 @@ extension Tab: TabNavigationStateControllerDelegate {
         didObserveProgressChange progress: Double,
         for webView: WKWebView
     ) {
-        guard webView === _webView else { return }
+        guard currentWebViewIsIdentical(to: webView) else { return }
         self.estimatedProgress = progress
     }
 }
