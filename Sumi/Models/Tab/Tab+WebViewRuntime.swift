@@ -160,7 +160,7 @@ extension Tab {
     }
 
     func setupWebView() {
-        webViewProvisioningOwner.setupWebView(for: self)
+        normalWebViewSetupOwner.setupWebView(for: self)
     }
 
     func resolveProfile() -> Profile? {

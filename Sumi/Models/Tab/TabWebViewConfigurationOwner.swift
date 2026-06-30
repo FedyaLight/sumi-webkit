@@ -274,23 +274,6 @@ final class TabWebViewConfigurationOwner {
         }
     }
 
-    func shouldDelayInitialNormalTabRuntimeRegistration(
-        isPopupHost: Bool,
-        hasExistingWebView: Bool,
-        didCreateAuxiliaryOverrideWebView: Bool,
-        url: URL
-    ) -> Bool {
-        !isPopupHost
-            && !hasExistingWebView
-            && !didCreateAuxiliaryOverrideWebView
-            && Self.isInitialDocumentExtensionWarmupURL(url)
-    }
-
-    static func isInitialDocumentExtensionWarmupURL(_ url: URL) -> Bool {
-        let scheme = url.scheme?.lowercased()
-        return scheme == "http" || scheme == "https"
-    }
-
     private func webExtensionContextWebViewConfiguration(
         profile: Profile,
         context: TabWebViewConfigurationContext

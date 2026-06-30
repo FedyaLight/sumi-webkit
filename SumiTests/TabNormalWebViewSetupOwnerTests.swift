@@ -1,12 +1,35 @@
 import Foundation
+import WebKit
 import XCTest
 
 @testable import Sumi
 
 @MainActor
-final class TabWebViewConfigurationOwnerTests: XCTestCase {
+final class TabNormalWebViewSetupOwnerTests: XCTestCase {
+    func testSetupWebViewReusesCompatibleParkedNormalWebView() async throws {
+        let browserManager = BrowserManager()
+        await waitForInitialTabManagerDataLoad(on: browserManager)
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/reuse-compatible-normal-webview",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+        let parkedWebView = try XCTUnwrap(
+            tab.makeNormalTabWebView(
+                reason: "TabNormalWebViewSetupOwnerTests.compatibleParkedWebView"
+            )
+        )
+
+        tab._webView = nil
+        tab._existingWebView = parkedWebView
+
+        tab.setupWebView()
+
+        XCTAssertIdentical(try XCTUnwrap(tab.existingWebView), parkedWebView)
+    }
+
     func testInitialNormalTabRuntimeRegistrationDelaysForInitialHTTPDocuments() throws {
-        let owner = TabWebViewConfigurationOwner()
+        let owner = TabNormalWebViewSetupOwner()
 
         XCTAssertTrue(
             owner.shouldDelayInitialNormalTabRuntimeRegistration(
@@ -28,7 +51,7 @@ final class TabWebViewConfigurationOwnerTests: XCTestCase {
     }
 
     func testInitialNormalTabRuntimeRegistrationDoesNotDelayForNonInitialNormalDocuments() throws {
-        let owner = TabWebViewConfigurationOwner()
+        let owner = TabNormalWebViewSetupOwner()
         let url = try XCTUnwrap(URL(string: "https://example.com/start"))
 
         XCTAssertFalse(
@@ -58,7 +81,7 @@ final class TabWebViewConfigurationOwnerTests: XCTestCase {
     }
 
     func testInitialNormalTabRuntimeRegistrationDoesNotDelayForNonWebURLs() throws {
-        let owner = TabWebViewConfigurationOwner()
+        let owner = TabNormalWebViewSetupOwner()
 
         XCTAssertFalse(
             owner.shouldDelayInitialNormalTabRuntimeRegistration(
@@ -76,5 +99,14 @@ final class TabWebViewConfigurationOwnerTests: XCTestCase {
                 url: try XCTUnwrap(URL(string: "webkit-extension://extension-id/options.html"))
             )
         )
+    }
+
+    private func waitForInitialTabManagerDataLoad(on browserManager: BrowserManager) async {
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if browserManager.tabManager.hasLoadedInitialData { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Timed out waiting for initial tab manager data load")
     }
 }
