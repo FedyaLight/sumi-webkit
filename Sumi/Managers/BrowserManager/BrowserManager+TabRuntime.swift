@@ -315,6 +315,22 @@ extension TabNavigationDelegateRuntime {
 }
 
 @MainActor
+extension TabFaviconExtensionRuntime {
+    static func live(
+        extensionsModule: @escaping () -> SumiExtensionsModule?,
+        extensionSurfaceStore: @escaping () -> BrowserExtensionSurfaceStore?
+    ) -> Self {
+        Self(
+            installedExtensions: {
+                extensionsModule()?.managerIfLoadedAndEnabled()?.installedExtensions
+                    ?? extensionSurfaceStore()?.installedExtensions
+                    ?? []
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabPopupHandlingRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(

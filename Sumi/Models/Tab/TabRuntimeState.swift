@@ -216,6 +216,15 @@ struct TabNavigationDelegateRuntime {
 }
 
 @MainActor
+struct TabFaviconExtensionRuntime {
+    var installedExtensions: () -> [InstalledExtension]
+
+    static let inactive = Self(
+        installedExtensions: { [] }
+    )
+}
+
+@MainActor
 struct TabPopupHandlingRuntime {
     var hasBrowserRuntime: () -> Bool
     var consumeRecentlyOpenedExtensionTabRequest: (URL) -> Bool
@@ -405,6 +414,7 @@ final class TabNavigationRuntime {
     var webViewCleanupRuntime = TabWebViewCleanupRuntime.inactive
     var normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime.inactive
     var navigationDelegateRuntime = TabNavigationDelegateRuntime.inactive
+    var faviconExtensionRuntime = TabFaviconExtensionRuntime.inactive
     var popupHandlingRuntime = TabPopupHandlingRuntime.inactive
     var webKitUIRuntime = TabWebKitUIRuntime.inactive
     var installNavigationRuntime = TabInstallNavigationRuntime.inactive

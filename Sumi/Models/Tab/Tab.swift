@@ -222,6 +222,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.navigationDelegateRuntime }
         set { navigationRuntime.navigationDelegateRuntime = newValue }
     }
+    var faviconExtensionRuntime: TabFaviconExtensionRuntime {
+        get { navigationRuntime.faviconExtensionRuntime }
+        set { navigationRuntime.faviconExtensionRuntime = newValue }
+    }
     var popupHandlingRuntime: TabPopupHandlingRuntime {
         get { navigationRuntime.popupHandlingRuntime }
         set { navigationRuntime.popupHandlingRuntime = newValue }
@@ -520,6 +524,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.downloadManager
                     }
                 )
+                faviconExtensionRuntime = .live(
+                    extensionsModule: { [weak browserManager] in
+                        browserManager?.extensionsModule
+                    },
+                    extensionSurfaceStore: { [weak browserManager] in
+                        browserManager?.extensionSurfaceStore
+                    }
+                )
                 popupHandlingRuntime = .live(browserManager: browserManager)
                 installNavigationRuntime = .live(userscriptsModule: { [weak browserManager] in
                     browserManager?.userscriptsModule
@@ -562,6 +574,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 webViewCleanupRuntime = .inactive
                 normalWebViewExtensionRuntime = .inactive
                 navigationDelegateRuntime = .inactive
+                faviconExtensionRuntime = .inactive
                 popupHandlingRuntime = .inactive
                 webKitUIRuntime = .inactive
                 installNavigationRuntime = .inactive

@@ -115,6 +115,27 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(registrationReasons, ["test.registration"])
     }
 
+    func testExtensionPageFaviconUsesInjectedRuntimeWithoutBrowserManager() async throws {
+        let extensionId = "ext-\(UUID().uuidString)"
+        let pageURL = try XCTUnwrap(URL(string: "safari-web-extension://\(extensionId)/popup.html"))
+        let tab = Tab(
+            url: pageURL,
+            loadsCachedFaviconOnInit: false
+        )
+        var installedExtensionsLookupCount = 0
+        tab.faviconExtensionRuntime = TabFaviconExtensionRuntime(
+            installedExtensions: {
+                installedExtensionsLookupCount += 1
+                return []
+            }
+        )
+
+        await tab.fetchFaviconForVisiblePresentation()
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(installedExtensionsLookupCount, 1)
+    }
+
     func testCloseTabUsesInjectedLifecycleRuntimeWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let lifecycle = RecordingTabCloseLifecycleRuntime()
