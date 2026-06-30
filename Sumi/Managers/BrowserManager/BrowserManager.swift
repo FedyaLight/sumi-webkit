@@ -151,6 +151,9 @@ class BrowserManager: ObservableObject {
     lazy var floatingBarBrowserContextOwner = BrowserFloatingBarBrowserContextOwner(
         dependencies: .live(browserManager: self)
     )
+    lazy var urlBarContextOwner = BrowserURLBarContextOwner(
+        dependencies: .live(browserManager: self)
+    )
     private lazy var sidebarActionOwner = BrowserSidebarActionOwner(
         dependencies: .live(browserManager: self)
     )
