@@ -50,6 +50,19 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(callbacks.unloadedTabIds, [tab.id])
     }
 
+    func testCloseTabUsesInjectedLifecycleRuntimeWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let lifecycle = RecordingTabCloseLifecycleRuntime()
+        tab.closeLifecycleRuntime = lifecycle.runtime
+
+        tab.closeTab()
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(lifecycle.cleanedZoomTabIds, [tab.id])
+        XCTAssertEqual(lifecycle.visibilityUpdateCount, 1)
+        XCTAssertEqual(lifecycle.removedTabIds, [tab.id])
+    }
+
     func testTitleUpdateUsesInjectedPersistenceWithoutBrowserManager() {
         let tab = Tab(
             url: URL(string: "https://example.com")!,
@@ -203,6 +216,27 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(
             tab.url.absoluteString,
             "https://search.example/?q=sumi%20browser"
+        )
+    }
+}
+
+@MainActor
+private final class RecordingTabCloseLifecycleRuntime {
+    private(set) var cleanedZoomTabIds: [UUID] = []
+    private(set) var visibilityUpdateCount = 0
+    private(set) var removedTabIds: [UUID] = []
+
+    var runtime: TabCloseLifecycleRuntime {
+        TabCloseLifecycleRuntime(
+            cleanupZoomForTab: { [weak self] tabId in
+                self?.cleanedZoomTabIds.append(tabId)
+            },
+            updateTabVisibility: { [weak self] in
+                self?.visibilityUpdateCount += 1
+            },
+            removeTab: { [weak self] tabId in
+                self?.removedTabIds.append(tabId)
+            }
         )
     }
 }

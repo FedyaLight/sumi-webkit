@@ -90,6 +90,21 @@ extension TabHistorySwipeRuntime {
 }
 
 @MainActor
+extension TabCloseLifecycleRuntime {
+    static func live(
+        cleanupZoomForTab: @escaping (UUID) -> Void,
+        updateTabVisibility: @escaping () -> Void,
+        removeTab: @escaping (UUID) -> Void
+    ) -> Self {
+        Self(
+            cleanupZoomForTab: cleanupZoomForTab,
+            updateTabVisibility: updateTabVisibility,
+            removeTab: removeTab
+        )
+    }
+}
+
+@MainActor
 extension TabExtensionPropertiesRuntime {
     static func live(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
         Self(

@@ -125,6 +125,19 @@ struct TabExtensionPropertiesRuntime {
 }
 
 @MainActor
+struct TabCloseLifecycleRuntime {
+    var cleanupZoomForTab: (UUID) -> Void
+    var updateTabVisibility: () -> Void
+    var removeTab: (UUID) -> Void
+
+    static let inactive = Self(
+        cleanupZoomForTab: { _ in },
+        updateTabVisibility: {},
+        removeTab: { _ in }
+    )
+}
+
+@MainActor
 struct TabProfileResolutionRuntime {
     var ephemeralProfileForTab: (_ tabId: UUID, _ profileId: UUID) -> Profile?
     var profile: (UUID) -> Profile?
@@ -227,6 +240,7 @@ final class TabNavigationRuntime {
     var historyRecordingRuntime = TabHistoryRecordingRuntime.inactive
     var findInPageRuntime = TabFindInPageRuntime.inactive
     var extensionPropertiesRuntime = TabExtensionPropertiesRuntime.inactive
+    var closeLifecycleRuntime = TabCloseLifecycleRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
     var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
     var reloadPolicyRuntime = TabReloadPolicyRuntime.empty

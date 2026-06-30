@@ -198,6 +198,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.extensionPropertiesRuntime }
         set { navigationRuntime.extensionPropertiesRuntime = newValue }
     }
+    var closeLifecycleRuntime: TabCloseLifecycleRuntime {
+        get { navigationRuntime.closeLifecycleRuntime }
+        set { navigationRuntime.closeLifecycleRuntime = newValue }
+    }
     var navigationCommandRuntime: TabNavigationCommandRuntime {
         get { navigationRuntime.navigationCommandRuntime }
         set { navigationRuntime.navigationCommandRuntime = newValue }
@@ -389,6 +393,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 extensionPropertiesRuntime = .live(extensionsModule: { [weak browserManager] in
                     browserManager?.extensionsModule
                 })
+                closeLifecycleRuntime = .live(
+                    cleanupZoomForTab: { [weak browserManager] tabId in
+                        browserManager?.cleanupZoomForTab(tabId)
+                    },
+                    updateTabVisibility: { [weak browserManager] in
+                        browserManager?.compositorManager.updateTabVisibility()
+                    },
+                    removeTab: { [weak browserManager] tabId in
+                        browserManager?.tabManager.removeTab(tabId)
+                    }
+                )
             } else {
                 webViewRoutingRuntime = .inactive
                 persistenceRuntimeCallbacks = .inactive
@@ -397,6 +412,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 historyRecordingRuntime = .inactive
                 findInPageRuntime = .inactive
                 extensionPropertiesRuntime = .inactive
+                closeLifecycleRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive
                 reloadPolicyRuntime = .empty
