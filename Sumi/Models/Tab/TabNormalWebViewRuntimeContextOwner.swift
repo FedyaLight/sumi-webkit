@@ -11,8 +11,12 @@ final class TabNormalWebViewRuntimeContextOwner {
 
     func makeContext() -> TabNormalWebViewRuntimeContext {
         let tab = tab
+        let tabId = tab.id
+        let webViewConfigurationOwner = tab.webViewConfigurationOwner
+        let reloadPolicyStateOwner = tab.reloadPolicyStateOwner
+        let ownedWebViewPreparationOwner = tab.ownedWebViewPreparationOwner
         return TabNormalWebViewRuntimeContext(
-            tabId: tab.id,
+            tabId: tabId,
             currentURL: { [weak tab, initialURL = tab.url] in
                 tab?.url ?? initialURL
             },
@@ -61,9 +65,62 @@ final class TabNormalWebViewRuntimeContextOwner {
             configurationContext: { [weak tab] in
                 TabWebViewConfigurationContext.live(browserManager: tab?.browserManager)
             },
-            webViewConfigurationOwner: tab.webViewConfigurationOwner,
-            ownedWebViewPreparationOwner: tab.ownedWebViewPreparationOwner,
-            reloadPolicyStateOwner: tab.reloadPolicyStateOwner,
+            configurationRuntime: TabNormalWebViewConfigurationRuntime(
+                normalTabWebViewConfiguration: { url, profile, userScriptsProvider, context in
+                    webViewConfigurationOwner.normalTabWebViewConfiguration(
+                        for: url,
+                        profile: profile,
+                        userScriptsProvider: userScriptsProvider,
+                        context: context,
+                        reloadPolicyStateOwner: reloadPolicyStateOwner
+                    )
+                },
+                auxiliaryOverrideConfiguration: { profile, context in
+                    webViewConfigurationOwner.auxiliaryOverrideConfiguration(
+                        for: profile,
+                        context: context
+                    )
+                },
+                applyWebViewConfigurationOverride: { configuration, profileId, context in
+                    webViewConfigurationOwner.applyWebViewConfigurationOverride(
+                        configuration,
+                        profileId: profileId,
+                        context: context
+                    )
+                },
+                canReuseAsNormalTabWebView: { webView, fallbackURL, profile, context in
+                    webViewConfigurationOwner.canReuseAsNormalTabWebView(
+                        webView,
+                        fallbackURL: fallbackURL,
+                        tabId: tabId,
+                        profile: profile,
+                        context: context,
+                        reloadPolicyStateOwner: reloadPolicyStateOwner
+                    )
+                }
+            ),
+            preparationRuntime: TabNormalWebViewPreparationRuntime(
+                prepareCreatedFocusableWebView: { webView, currentURL, reason, options in
+                    ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+                        webView,
+                        currentURL: currentURL,
+                        reason: reason,
+                        enableVisitedLinkRecording: options.enableVisitedLinkRecording,
+                        applyNavigationPreferences: options.applyNavigationPreferences,
+                        installFaviconRuntime: options.installFaviconRuntime,
+                        prepareExtensionRuntime: options.prepareExtensionRuntime
+                    )
+                },
+                prepareAssignedWebView: { webView in
+                    ownedWebViewPreparationOwner.prepareAssignedWebView(webView)
+                },
+                prepareReusedOrExternallyCreatedWebView: { webView in
+                    ownedWebViewPreparationOwner.prepareReusedOrExternallyCreatedWebView(webView)
+                },
+                applyOwnedTabWebViewNavigationPreferences: { webView in
+                    ownedWebViewPreparationOwner.applyOwnedTabWebViewNavigationPreferences(to: webView)
+                }
+            ),
             normalTabUserScriptsProvider: { [weak tab] targetURL in
                 tab?.normalTabUserScriptsProvider(for: targetURL)
                     ?? SumiNormalTabUserScripts(managedUserScripts: [])

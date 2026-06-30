@@ -18,9 +18,9 @@ final class TabNormalWebViewSetupOwner {
         }
 
         let configurationContext = context.configurationContext()
-        let auxiliaryOverrideConfiguration = context.webViewConfigurationOwner.auxiliaryOverrideConfiguration(
-            for: profile,
-            context: configurationContext
+        let auxiliaryOverrideConfiguration = context.configurationRuntime.auxiliaryOverrideConfiguration(
+            profile,
+            configurationContext
         )
 
         if let existingWebView = reusableExistingWebView {
@@ -66,12 +66,12 @@ final class TabNormalWebViewSetupOwner {
 
         if let webView = context.currentWebView() {
             if didReuseExistingWebView || !(webView is FocusableWKWebView) {
-                context.ownedWebViewPreparationOwner.prepareReusedOrExternallyCreatedWebView(webView)
+                context.preparationRuntime.prepareReusedOrExternallyCreatedWebView(webView)
             }
         }
 
         if let webView = context.currentWebView() {
-            context.ownedWebViewPreparationOwner.applyOwnedTabWebViewNavigationPreferences(to: webView)
+            context.preparationRuntime.applyOwnedTabWebViewNavigationPreferences(webView)
         }
 
         let shouldDelayInitialNormalTabRuntimeRegistration =
@@ -149,13 +149,11 @@ final class TabNormalWebViewSetupOwner {
         _ webView: WKWebView,
         context: TabNormalWebViewRuntimeContext
     ) -> Bool {
-        context.webViewConfigurationOwner.canReuseAsNormalTabWebView(
+        context.configurationRuntime.canReuseAsNormalTabWebView(
             webView,
-            fallbackURL: context.currentURL(),
-            tabId: context.tabId,
-            profile: context.resolveProfile(),
-            context: context.configurationContext(),
-            reloadPolicyStateOwner: context.reloadPolicyStateOwner
+            context.currentURL(),
+            context.resolveProfile(),
+            context.configurationContext()
         )
     }
 }

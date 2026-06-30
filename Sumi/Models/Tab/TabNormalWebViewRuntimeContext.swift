@@ -2,6 +2,75 @@ import Foundation
 import WebKit
 
 @MainActor
+struct TabCreatedFocusableWebViewPreparationOptions {
+    let enableVisitedLinkRecording: Bool
+    let applyNavigationPreferences: Bool
+    let installFaviconRuntime: Bool
+    let prepareExtensionRuntime: Bool
+
+    static let normal = Self()
+
+    static func auxiliary(prepareExtensionRuntime: Bool) -> Self {
+        Self(
+            installFaviconRuntime: false,
+            prepareExtensionRuntime: prepareExtensionRuntime
+        )
+    }
+
+    static let auxiliaryOverride = Self(
+        enableVisitedLinkRecording: false,
+        applyNavigationPreferences: false
+    )
+
+    init(
+        enableVisitedLinkRecording: Bool = true,
+        applyNavigationPreferences: Bool = true,
+        installFaviconRuntime: Bool = true,
+        prepareExtensionRuntime: Bool = true
+    ) {
+        self.enableVisitedLinkRecording = enableVisitedLinkRecording
+        self.applyNavigationPreferences = applyNavigationPreferences
+        self.installFaviconRuntime = installFaviconRuntime
+        self.prepareExtensionRuntime = prepareExtensionRuntime
+    }
+}
+
+@MainActor
+struct TabNormalWebViewConfigurationRuntime {
+    let normalTabWebViewConfiguration: (
+        URL,
+        Profile,
+        SumiNormalTabUserScripts,
+        TabWebViewConfigurationContext
+    ) -> WKWebViewConfiguration
+    let auxiliaryOverrideConfiguration: (Profile, TabWebViewConfigurationContext) -> WKWebViewConfiguration?
+    let applyWebViewConfigurationOverride: (
+        WKWebViewConfiguration,
+        UUID?,
+        TabWebViewConfigurationContext
+    ) -> Void
+    let canReuseAsNormalTabWebView: (
+        WKWebView,
+        URL,
+        Profile?,
+        TabWebViewConfigurationContext
+    ) -> Bool
+}
+
+@MainActor
+struct TabNormalWebViewPreparationRuntime {
+    let prepareCreatedFocusableWebView: (
+        FocusableWKWebView,
+        URL?,
+        String,
+        TabCreatedFocusableWebViewPreparationOptions
+    ) -> Void
+    let prepareAssignedWebView: (WKWebView) -> Void
+    let prepareReusedOrExternallyCreatedWebView: (WKWebView) -> Void
+    let applyOwnedTabWebViewNavigationPreferences: (WKWebView) -> Void
+}
+
+@MainActor
 struct TabNormalWebViewRuntimeContext {
     let tabId: UUID
     let currentURL: () -> URL
@@ -20,9 +89,8 @@ struct TabNormalWebViewRuntimeContext {
     let assignPrimaryWebView: (WKWebView, UUID) -> Void
     let cleanupCloneWebView: (WKWebView) -> Void
     let configurationContext: () -> TabWebViewConfigurationContext
-    let webViewConfigurationOwner: TabWebViewConfigurationOwner
-    let ownedWebViewPreparationOwner: TabOwnedWebViewPreparationOwner
-    let reloadPolicyStateOwner: TabReloadPolicyStateOwner
+    let configurationRuntime: TabNormalWebViewConfigurationRuntime
+    let preparationRuntime: TabNormalWebViewPreparationRuntime
     let normalTabUserScriptsProvider: (URL?) -> SumiNormalTabUserScripts
     let replaceNormalTabUserScripts: (WKUserContentController, URL?) async -> Void
     let loadMainFrameRequest: (WKWebView, URLRequest) -> Void

@@ -22,12 +22,11 @@ final class TabWebViewProvisioningOwner {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
         context.replaceUntrackedWebView(webView)
 
-        context.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+        context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
-            currentURL: currentURL,
-            reason: reason,
-            installFaviconRuntime: false,
-            prepareExtensionRuntime: isExtensionOriginated
+            currentURL,
+            reason,
+            .auxiliary(prepareExtensionRuntime: isExtensionOriginated)
         )
 
         return webView
@@ -44,12 +43,11 @@ final class TabWebViewProvisioningOwner {
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         context.replaceUntrackedWebView(webView)
 
-        context.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+        context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
-            currentURL: currentURL,
-            reason: reason,
-            installFaviconRuntime: false,
-            prepareExtensionRuntime: isExtensionOriginated
+            currentURL,
+            reason,
+            .auxiliary(prepareExtensionRuntime: isExtensionOriginated)
         )
 
         return webView
@@ -65,12 +63,11 @@ final class TabWebViewProvisioningOwner {
         let webView = AuxiliaryWebViewFactory.makeWebViewPreservingWebKitConfiguration(configuration)
         context.replaceUntrackedWebView(webView)
 
-        context.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+        context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
-            currentURL: currentURL,
-            reason: reason,
-            enableVisitedLinkRecording: false,
-            applyNavigationPreferences: false
+            currentURL,
+            reason,
+            .auxiliaryOverride
         )
 
         return webView
@@ -82,7 +79,7 @@ final class TabWebViewProvisioningOwner {
         windowId: UUID
     ) {
         context.assignPrimaryWebView(webView, windowId)
-        context.ownedWebViewPreparationOwner.prepareAssignedWebView(webView)
+        context.preparationRuntime.prepareAssignedWebView(webView)
     }
 
     @discardableResult
@@ -136,10 +133,10 @@ final class TabWebViewProvisioningOwner {
         _ configuration: WKWebViewConfiguration,
         context: TabNormalWebViewRuntimeContext
     ) {
-        context.webViewConfigurationOwner.applyWebViewConfigurationOverride(
+        context.configurationRuntime.applyWebViewConfigurationOverride(
             configuration,
-            profileId: context.resolveProfile()?.id ?? context.profileId(),
-            context: context.configurationContext()
+            context.resolveProfile()?.id ?? context.profileId(),
+            context.configurationContext()
         )
     }
 
@@ -148,10 +145,11 @@ final class TabWebViewProvisioningOwner {
         context: TabNormalWebViewRuntimeContext,
         reason: String
     ) {
-        context.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+        context.preparationRuntime.prepareCreatedFocusableWebView(
             webView,
-            currentURL: context.currentURL(),
-            reason: reason
+            context.currentURL(),
+            reason,
+            .normal
         )
     }
 
@@ -161,12 +159,11 @@ final class TabWebViewProvisioningOwner {
         reason: String
     ) -> WKWebViewConfiguration? {
         let currentURL = context.currentURL()
-        return context.webViewConfigurationOwner.normalTabWebViewConfiguration(
-            for: currentURL,
-            profile: profile,
-            userScriptsProvider: context.normalTabUserScriptsProvider(currentURL),
-            context: context.configurationContext(),
-            reloadPolicyStateOwner: context.reloadPolicyStateOwner
+        return context.configurationRuntime.normalTabWebViewConfiguration(
+            currentURL,
+            profile,
+            context.normalTabUserScriptsProvider(currentURL),
+            context.configurationContext()
         )
     }
 
