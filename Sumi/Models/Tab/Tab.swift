@@ -186,6 +186,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.historySwipeRuntime }
         set { navigationRuntime.historySwipeRuntime = newValue }
     }
+    var navigationCommandRuntime: TabNavigationCommandRuntime {
+        get { navigationRuntime.navigationCommandRuntime }
+        set { navigationRuntime.navigationCommandRuntime = newValue }
+    }
     var profileResolutionRuntime: TabProfileResolutionRuntime {
         get { navigationRuntime.profileResolutionRuntime }
         set { navigationRuntime.profileResolutionRuntime = newValue }
@@ -338,6 +342,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                     nowPlayingController: newValue.nativeNowPlayingController,
                     backgroundMediaOptimizationService: newValue.backgroundMediaOptimizationService
                 )
+                navigationCommandRuntime = .live(settings: { [weak browserManager] in
+                    browserManager?.sumiSettings
+                })
                 profileResolutionRuntime = .live(browserManager: newValue)
                 reloadPolicyRuntime = .live(browserManager: newValue)
                 historySwipeRuntime = .live(
@@ -356,6 +363,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 persistenceRuntimeCallbacks = .inactive
                 mediaRuntimeCallbacks = .inactive
                 historySwipeRuntime = .inactive
+                navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive
                 reloadPolicyRuntime = .empty
             }

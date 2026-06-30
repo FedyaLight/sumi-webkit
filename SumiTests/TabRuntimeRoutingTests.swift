@@ -135,6 +135,24 @@ final class TabRuntimeRoutingTests: XCTestCase {
             protectionState
         )
     }
+
+    func testNavigateToURLUsesInjectedSearchTemplateWithoutBrowserManager() throws {
+        let webView = WKWebView()
+        let tab = Tab(existingWebView: webView, loadsCachedFaviconOnInit: false)
+        tab.navigationCommandRuntime = TabNavigationCommandRuntime(
+            resolvedSearchEngineTemplate: {
+                "https://search.example/?q=%@"
+            }
+        )
+
+        tab.navigationCommandOwner.navigateToURL("sumi browser", for: tab)
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(
+            tab.url.absoluteString,
+            "https://search.example/?q=sumi%20browser"
+        )
+    }
 }
 
 @MainActor

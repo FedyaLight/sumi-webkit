@@ -75,8 +75,9 @@ final class TabNavigationCommandOwner {
     }
 
     func navigateToURL(_ input: String, for tab: Tab) {
-        let settings = tab.sumiSettings ?? tab.browserManager?.sumiSettings
-        let template = settings?.resolvedSearchEngineTemplate ?? SearchProvider.google.queryTemplate
+        let template = tab.sumiSettings?.resolvedSearchEngineTemplate
+            ?? tab.navigationCommandRuntime.resolvedSearchEngineTemplate()
+            ?? SearchProvider.google.queryTemplate
         let normalizedUrl = normalizeURL(input, queryTemplate: template)
 
         guard let validURL = URL(string: normalizedUrl) else {

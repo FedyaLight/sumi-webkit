@@ -90,6 +90,17 @@ extension TabHistorySwipeRuntime {
 }
 
 @MainActor
+extension TabNavigationCommandRuntime {
+    static func live(settings: @escaping () -> SumiSettingsService?) -> Self {
+        Self(
+            resolvedSearchEngineTemplate: {
+                settings()?.resolvedSearchEngineTemplate
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabProfileResolutionRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(

@@ -68,6 +68,15 @@ struct TabHistorySwipeRuntime {
 }
 
 @MainActor
+struct TabNavigationCommandRuntime {
+    var resolvedSearchEngineTemplate: () -> String?
+
+    static let inactive = Self(
+        resolvedSearchEngineTemplate: { nil }
+    )
+}
+
+@MainActor
 struct TabProfileResolutionRuntime {
     var ephemeralProfileForTab: (_ tabId: UUID, _ profileId: UUID) -> Profile?
     var profile: (UUID) -> Profile?
@@ -167,6 +176,7 @@ final class TabNavigationRuntime {
     var webViewRouting = TabWebViewRoutingRuntime.inactive
     var persistenceCallbacks = TabRuntimePersistenceCallbacks.inactive
     var historySwipeRuntime = TabHistorySwipeRuntime.inactive
+    var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
     var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
     var reloadPolicyRuntime = TabReloadPolicyRuntime.empty
     let navigationTransactionOwner = TabNavigationTransactionOwner()
