@@ -121,6 +121,9 @@ class BrowserManager: ObservableObject {
         guard let self else { return [] }
         return self.splitManager.visibleTabIds(for: windowId)
     }
+    private lazy var windowTabContextOwner = BrowserWindowTabContextOwner(
+        dependencies: .live(browserManager: self)
+    )
     private lazy var windowSpaceStateOwner = BrowserWindowSpaceStateOwner(
         dependencies: .live(browserManager: self)
     )
@@ -862,34 +865,11 @@ class BrowserManager: ObservableObject {
 
     /// Get the current tab for a specific window
     func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        guard !windowState.isAwaitingInitialSessionResolution else { return nil }
-        return shellSelectionService.currentTab(
-            for: windowState,
-            tabStore: tabManager.runtimeStore
-        )
+        windowTabContextOwner.currentTab(for: windowState)
     }
 
     func windowState(containing tab: Tab) -> BrowserWindowState? {
-        guard let windowRegistry else { return nil }
-        return windowRegistry.windows.values.first { windowState in
-            if windowState.isIncognito {
-                return windowState.ephemeralTabs.contains(where: { $0.id == tab.id })
-            }
-
-            if windowState.currentTabId == tab.id {
-                return true
-            }
-
-            if tabManager.liveShortcutTabs(in: windowState.id).contains(where: { $0.id == tab.id }) {
-                return true
-            }
-
-            if splitManager.visibleTabIds(for: windowState.id).contains(tab.id) {
-                return true
-            }
-
-            return false
-        }
+        windowTabContextOwner.windowState(containing: tab)
     }
 
     /// Select a tab in the active window (convenience method for sidebar clicks)
@@ -983,27 +963,15 @@ class BrowserManager: ObservableObject {
 
     /// Get tabs that should be displayed in a specific window
     func tabsForDisplay(in windowState: BrowserWindowState) -> [Tab] {
-        shellSelectionService.tabsForDisplay(
-            in: windowState,
-            tabStore: tabManager.runtimeStore
-        )
+        windowTabContextOwner.tabsForDisplay(in: windowState)
     }
 
     func isTabDisplayedInAnyWindow(_ tabId: UUID) -> Bool {
-        guard let windowRegistry else { return false }
-        for windowState in windowRegistry.windows.values {
-            if tabsForDisplay(in: windowState).contains(where: { $0.id == tabId }) {
-                return true
-            }
-        }
-        return false
+        windowTabContextOwner.isTabDisplayedInAnyWindow(tabId)
     }
 
     func windowScopedMediaCandidateTabs(in windowState: BrowserWindowState) -> [Tab] {
-        shellSelectionService.windowScopedMediaCandidateTabs(
-            in: windowState,
-            tabStore: tabManager.runtimeStore
-        )
+        windowTabContextOwner.windowScopedMediaCandidateTabs(in: windowState)
     }
 
     /// Refresh compositor for a specific window
