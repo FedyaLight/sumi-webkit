@@ -301,10 +301,6 @@ final class SumiBoostEditorSession: ObservableObject {
         statusMessage = nil
     }
 
-    func previewZap(_ selector: String, isHighlighted: Bool) {
-        actions.previewZap(selector, isHighlighted: isHighlighted)
-    }
-
     func exportJSON() {
         actions.exportJSON(boost: boost) { [weak self] message in
             self?.statusMessage = message

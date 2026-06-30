@@ -32,25 +32,6 @@ enum ExtensionActionPlacement: Equatable {
     }
 }
 
-enum ExtensionActionVisibility {
-    static func visibleCount(
-        totalActions: Int,
-        availableWidth: CGFloat,
-        buttonWidth: CGFloat = 28,
-        spacing: CGFloat = 4
-    ) -> Int {
-        guard totalActions > 0,
-              availableWidth >= buttonWidth,
-              buttonWidth > 0
-        else {
-            return 0
-        }
-
-        let availableSlots = Int(floor((availableWidth + spacing) / (buttonWidth + spacing)))
-        return min(totalActions, max(0, availableSlots))
-    }
-}
-
 @MainActor
 final class ExtensionIconCache {
     static let shared = ExtensionIconCache()

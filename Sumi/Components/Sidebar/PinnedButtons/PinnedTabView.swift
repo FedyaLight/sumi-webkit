@@ -7,10 +7,6 @@
 import AppKit
 import SwiftUI
 
-enum PinnedTileFaviconLayout {
-    static let cornerRadius: CGFloat = 6
-}
-
 struct PinnedTabView: View {
     private enum TileBackgroundState {
         case active
@@ -233,7 +229,6 @@ struct PinnedTileVisual: View {
 
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var loadedSelectionAccentColor: Color?
     @State private var accentCacheRefreshID = UUID()
 

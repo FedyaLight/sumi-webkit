@@ -44,7 +44,6 @@ struct SidebarScrollBoundaryState: Equatable {
 
 enum SidebarPassiveScrollIndicatorLayout {
     static let width: CGFloat = 3
-    static let trailingInset: CGFloat = 2
     static let minimumThumbHeight: CGFloat = 28
     static let visibleDuration: TimeInterval = 0.9
     static let fadeDuration: TimeInterval = 0.18
@@ -75,27 +74,6 @@ enum SidebarPassiveScrollIndicatorLayout {
         )
     }
 
-    static func frame(
-        for metrics: SidebarPassiveScrollIndicatorMetrics,
-        in viewportFrame: CGRect,
-        isFlipped: Bool
-    ) -> CGRect {
-        let width = Self.width
-        let x = max(
-            viewportFrame.minX,
-            viewportFrame.maxX - trailingInset - width
-        )
-        let y = isFlipped
-            ? viewportFrame.minY + metrics.thumbOffsetY
-            : viewportFrame.maxY - metrics.thumbOffsetY - metrics.thumbHeight
-
-        return CGRect(
-            x: x,
-            y: y,
-            width: width,
-            height: metrics.thumbHeight
-        )
-    }
 }
 
 private struct SidebarPassiveScrollIndicatorState: Equatable {

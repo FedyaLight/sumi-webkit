@@ -223,7 +223,6 @@ struct SumiPreparedContentBlockingUpdate {
 final class SumiContentBlockingService {
     let privacyConfigurationManager: SumiContentBlockingPrivacyConfigurationManager
 
-    private let compiler: SumiContentRuleListCompiling
     private let ruleListMaterializer: SumiContentRuleListMaterializer
     private let updatesSubject: CurrentValueSubject<SumiContentBlockerRulesUpdate?, Never>
     private let ruleListProvider: SumiContentRuleListSetProviding?
@@ -249,7 +248,6 @@ final class SumiContentBlockingService {
         compiledRuleListCatalog: SumiCompiledContentRuleListCataloging = SumiCompiledContentRuleListCatalog.shared
     ) {
         currentPolicy = policy
-        self.compiler = compiler
         self.ruleListMaterializer = SumiContentRuleListMaterializer(compiler: compiler)
         self.ruleListProvider = ruleListProvider
         compiledRuleListCleanupOwner = SumiCompiledContentRuleListCleanupOwner(

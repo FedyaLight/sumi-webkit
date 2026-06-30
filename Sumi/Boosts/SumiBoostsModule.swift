@@ -223,14 +223,6 @@ final class SumiBoostsModule: ObservableObject {
         activeZapSession = nil
     }
 
-    func previewZapSelector(_ selector: String, isHighlighted: Bool, tab: Tab, windowState: BrowserWindowState) {
-        guard let webView = browserManager?.getWebView(for: tab.id, in: windowState.id)
-            ?? tab.existingWebView
-        else { return }
-        let script = SumiBoostZapSession.previewJavaScript(selector: selector, isHighlighted: isHighlighted)
-        webView.evaluateJavaScript(script, completionHandler: nil)
-    }
-
     /// Cheap live update for the current document: idempotent `<style>`
     /// upsert via `evaluateJavaScript` + zoom reapply. Called on every content
     /// edit (dot drag, sliders, font, case, custom CSS, zap selectors). Does

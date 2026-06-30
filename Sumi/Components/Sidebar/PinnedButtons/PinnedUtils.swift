@@ -29,9 +29,5 @@ enum PinnedTabsConfiguration {
         2
     }
 
-    var outlineMaskBleed: CGFloat {
-        strokeWidth + 1
-    }
-
     var gridSpacing: CGFloat { 7 }
 }

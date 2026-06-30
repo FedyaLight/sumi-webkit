@@ -70,28 +70,6 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(bottomMetrics.thumbOffsetY, 72, accuracy: 0.001)
     }
 
-    func testPassiveScrollIndicatorFrameUsesViewportCoordinates() {
-        let metrics = SidebarPassiveScrollIndicatorMetrics(
-            thumbOffsetY: 10,
-            thumbHeight: 30
-        )
-        let viewport = CGRect(x: 0, y: 0, width: 120, height: 100)
-
-        let flippedFrame = SidebarPassiveScrollIndicatorLayout.frame(
-            for: metrics,
-            in: viewport,
-            isFlipped: true
-        )
-        let unflippedFrame = SidebarPassiveScrollIndicatorLayout.frame(
-            for: metrics,
-            in: viewport,
-            isFlipped: false
-        )
-
-        XCTAssertEqual(flippedFrame, CGRect(x: 115, y: 10, width: 3, height: 30))
-        XCTAssertEqual(unflippedFrame, CGRect(x: 115, y: 60, width: 3, height: 30))
-    }
-
     func testNativeScrollBoundariesTrackVisibleRect() {
         let top = SidebarScrollBoundaryState(
             visibleRect: CGRect(x: 0, y: 0, width: 100, height: 100),
@@ -421,16 +399,6 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
     func testSnapshotFolderBodyKeepsLiveFolderLayoutMetrics() {
         XCTAssertEqual(SpaceSidebarSnapshotFolderLayout.contentLeadingPadding, 14)
         XCTAssertEqual(SpaceSidebarSnapshotFolderLayout.contentVerticalPadding, 4)
-        XCTAssertEqual(
-            SpaceSidebarSnapshotFolderLayout.bodyHeight(childCount: 2),
-            SidebarRowLayout.rowHeight * 2 + 8,
-            accuracy: 0.0001
-        )
-        XCTAssertEqual(
-            SpaceSidebarSnapshotFolderLayout.bodyHeight(childCount: 0),
-            8,
-            accuracy: 0.0001
-        )
     }
 
     func testSnapshotTitleKeepsLiveSpaceTitleControlHeight() {
@@ -441,10 +409,6 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             38,
             accuracy: 0.0001
         )
-    }
-
-    func testPinnedTileFaviconCornerRadiusMatchesTransitionSnapshot() {
-        XCTAssertEqual(PinnedTileFaviconLayout.cornerRadius, 6)
     }
 
     func testSnapshotPageThemeContextUsesPageWorkspaceThemeWithoutInteractiveProgress() {

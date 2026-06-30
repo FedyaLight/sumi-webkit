@@ -311,7 +311,6 @@ final class SumiProtectionCoordinator {
         bundleLifecycle.statusStore
     }
 
-    private var cancellables = Set<AnyCancellable>()
     private(set) var lastApplySummary: String?
     private(set) var lastApplyError: String?
     private var runtimeAppliedLevel: SumiProtectionLevel

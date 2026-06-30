@@ -13,10 +13,6 @@ final class SidebarDragGeometryRepository {
     private(set) var geometryRevision: Int
     private(set) var generationState: GenerationState
 
-    var sidebarGeometryGeneration: Int {
-        generationState.sidebarGeometryGeneration
-    }
-
     var activeGeometryGeneration: Int {
         generationState.activeGeometryGeneration
     }

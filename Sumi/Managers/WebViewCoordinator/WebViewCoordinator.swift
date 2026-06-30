@@ -993,16 +993,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         return nil
     }
 
-    private func visibleTabIDs(
-        for windowState: BrowserWindowState,
-        browserManager: BrowserManager
-    ) -> [UUID] {
-        visibleWebViewRuntimeOwner.visibleTabIDs(
-            for: windowState,
-            runtime: visibleWebViewPreparationRuntime(browserManager: browserManager)
-        )
-    }
-
     private func visibleTabIDSet(
         in windowId: UUID,
         browserManager: BrowserManager?

@@ -52,11 +52,6 @@ enum SidebarMotionPolicy {
         return .easeOut(duration: split ? 0.10 : 0.20)
     }
 
-    static func rowLifecycleAnimation(for mode: Mode) -> Animation? {
-        guard mode != .reducedMotion else { return nil }
-        return .smooth(duration: 0.14)
-    }
-
     static func actionFadeAnimation(for mode: Mode) -> Animation? {
         guard mode != .reducedMotion else { return nil }
         return .easeOut(duration: 0.10)

@@ -839,12 +839,4 @@ extension ExtensionManager {
         )
     }
 
-    private func showErrorAlert(_ error: ExtensionError) {
-        let alert = NSAlert()
-        alert.messageText = "Extension Error"
-        alert.informativeText = error.localizedDescription
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
 }

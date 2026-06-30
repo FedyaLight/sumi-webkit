@@ -326,9 +326,6 @@ extension AnyTransition {
         .identity
     }
 
-    static var zenSidebarCompositeLifecycle: AnyTransition {
-        sidebarRowContentOpacity
-    }
 }
 
 extension View {

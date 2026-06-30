@@ -8,14 +8,12 @@ final class SidebarZenMotionTests: XCTestCase {
         XCTAssertEqual(SidebarMotionPolicy.currentMode(reduceMotion: true), .reducedMotion)
         XCTAssertNil(SidebarMotionPolicy.dockedLayoutAnimation(for: .reducedMotion, isShowing: true))
         XCTAssertFalse(SidebarMotionPolicy.overlayUsesTravel(for: .reducedMotion))
-        XCTAssertNil(SidebarMotionPolicy.rowLifecycleAnimation(for: .reducedMotion))
     }
 
     func testSidebarMotionPolicyKeepsStandardShellMotion() {
         XCTAssertEqual(SidebarMotionPolicy.currentMode(reduceMotion: false), .standard)
         XCTAssertNotNil(SidebarMotionPolicy.dockedLayoutAnimation(for: .standard, isShowing: true))
         XCTAssertTrue(SidebarMotionPolicy.overlayUsesTravel(for: .standard))
-        XCTAssertNotNil(SidebarMotionPolicy.rowLifecycleAnimation(for: .standard))
     }
 
     func testSidebarMotionPolicyUsesReducedMotionWhenEnergySaverRequestsIt() {

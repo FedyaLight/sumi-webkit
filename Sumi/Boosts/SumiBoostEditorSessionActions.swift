@@ -87,11 +87,6 @@ final class SumiBoostEditorSessionActions {
         module?.stopZapSelection()
     }
 
-    func previewZap(_ selector: String, isHighlighted: Bool) {
-        guard let tab, let windowState else { return }
-        module?.previewZapSelector(selector, isHighlighted: isHighlighted, tab: tab, windowState: windowState)
-    }
-
     func exportJSON(
         boost: SumiBoost,
         onError: @escaping @MainActor (String) -> Void

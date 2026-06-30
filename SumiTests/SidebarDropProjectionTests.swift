@@ -159,36 +159,10 @@ final class SidebarDropProjectionTests: XCTestCase {
         )
     }
 
-    func testModelIndexConvertsBackToProjectedIndex() {
-        for sourceIndex in 0..<4 {
-            for projectedIndex in 0...4 {
-                let modelIndex = SidebarDropProjection.modelInsertionIndex(
-                    fromProjectedIndex: projectedIndex,
-                    sourceIndex: sourceIndex
-                )
-                XCTAssertEqual(
-                    SidebarDropProjection.projectedInsertionIndex(
-                        fromModelIndex: modelIndex,
-                        sourceIndex: sourceIndex
-                    ),
-                    projectedIndex,
-                    "sourceIndex=\(sourceIndex) projectedIndex=\(projectedIndex) modelIndex=\(modelIndex)"
-                )
-            }
-        }
-    }
-
     func testExternalDropIndexMapsDirectly() {
         XCTAssertEqual(
             SidebarDropProjection.modelInsertionIndex(
                 fromProjectedIndex: 3,
-                sourceIndex: nil
-            ),
-            3
-        )
-        XCTAssertEqual(
-            SidebarDropProjection.projectedInsertionIndex(
-                fromModelIndex: 3,
                 sourceIndex: nil
             ),
             3

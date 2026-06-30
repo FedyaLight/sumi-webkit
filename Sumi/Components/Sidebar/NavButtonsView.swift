@@ -82,7 +82,6 @@ struct NavigationToolbarBrowserContext {
 struct NavButtonsView: View {
     let browserContext: NavigationToolbarBrowserContext
 
-    @Environment(BrowserWindowState.self) private var windowState
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(\.sumiSettings) private var sumiSettings
     @StateObject private var tabWrapper = ObservableTabWrapper()

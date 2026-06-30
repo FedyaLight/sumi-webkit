@@ -93,33 +93,6 @@ final class SumiBoostZapSession: NSObject, WKScriptMessageHandler {
         onFinish()
     }
 
-    static func previewJavaScript(selector: String, isHighlighted: Bool) -> String {
-        let payload = encodedJSONObject(["selector": selector])
-        return """
-        (function() {
-            const payload = \(payload);
-            const selector = payload.selector;
-            try {
-                document.querySelectorAll(selector).forEach(function(element) {
-                    if (\(isHighlighted ? "true" : "false")) {
-                        element.setAttribute('zen-zap-unhide', '');
-                        element.setAttribute('data-sumi-boost-zap-preview', '');
-                        element.style.setProperty('outline', '2px solid Highlight', 'important');
-                        element.style.setProperty('outline-offset', '2px', 'important');
-                    } else {
-                        element.removeAttribute('zen-zap-unhide');
-                        if (element.hasAttribute('data-sumi-boost-zap-preview')) {
-                            element.removeAttribute('data-sumi-boost-zap-preview');
-                            element.style.removeProperty('outline');
-                            element.style.removeProperty('outline-offset');
-                        }
-                    }
-                });
-            } catch (_) {}
-        })();
-        """
-    }
-
     private static func overlayJavaScript(messageName: String) -> String {
         """
         (function() {
@@ -239,9 +212,4 @@ final class SumiBoostZapSession: NSObject, WKScriptMessageHandler {
         """
     }
 
-    private static func encodedJSONObject(_ object: [String: String]) -> String {
-        (try? JSONEncoder().encode(object))
-            .flatMap { String(data: $0, encoding: .utf8) }
-            ?? #"{"selector":""}"#
-    }
 }

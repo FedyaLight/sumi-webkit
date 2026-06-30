@@ -6,10 +6,6 @@ enum SidebarDropCoordinator {
         SidebarDragPasteboardPayload.fromPasteboard(pasteboard)?.item
     }
 
-    static func dragOperation(for pasteboard: NSPasteboard) -> NSDragOperation {
-        draggedItem(from: pasteboard) == nil ? .copy : .move
-    }
-
     @MainActor
     static func validatedScope(
         for item: SumiDragItem,

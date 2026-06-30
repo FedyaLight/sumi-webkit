@@ -18,12 +18,6 @@ final class SafariExtensionInlineUINavigationResponder:
         "safari-web-extension",
     ]
 
-    private weak var tab: Tab?
-
-    init(tab: Tab) {
-        self.tab = tab
-    }
-
     func decidePolicy(for navigationResponse: SumiNavigationResponse) async -> SumiNavigationResponsePolicy? {
         let url = navigationResponse.url
         guard Self.extensionResourceSchemes.contains(url.scheme?.lowercased() ?? "") else {

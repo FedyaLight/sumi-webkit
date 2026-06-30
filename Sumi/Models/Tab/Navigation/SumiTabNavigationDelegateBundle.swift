@@ -52,7 +52,7 @@ final class SumiTabNavigationDelegateBundle {
         self.autoplayPolicyAdapter = SumiNavigationResponderAdapter(target: autoplayPolicy)
         self.lifecycle = SumiTabLifecycleNavigationResponder(tab: tab)
         self.lifecycleAdapter = SumiNavigationResponderAdapter(target: lifecycle)
-        self.inlineUIExtensionResources = SafariExtensionInlineUINavigationResponder(tab: tab)
+        self.inlineUIExtensionResources = SafariExtensionInlineUINavigationResponder()
         self.inlineUIExtensionResourcesAdapter = SumiNavigationResponderAdapter(
             target: inlineUIExtensionResources
         )

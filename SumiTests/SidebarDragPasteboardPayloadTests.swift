@@ -30,7 +30,6 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
         XCTAssertEqual(payload.item, item)
         XCTAssertEqual(payload.scope, scope)
         XCTAssertEqual(SidebarDropCoordinator.draggedItem(from: pasteboard), item)
-        XCTAssertEqual(SidebarDropCoordinator.dragOperation(for: pasteboard), .move)
     }
 
     func testInternalDragRequiresScopedPayload() {
@@ -45,7 +44,6 @@ final class SidebarDragPasteboardPayloadTests: XCTestCase {
 
         XCTAssertNil(SidebarDragPasteboardPayload.fromPasteboard(pasteboard))
         XCTAssertNil(SidebarDropCoordinator.draggedItem(from: pasteboard))
-        XCTAssertEqual(SidebarDropCoordinator.dragOperation(for: pasteboard), .copy)
     }
 
     func testDragContainerCodableRoundTrip() throws {

@@ -9,11 +9,6 @@ import SwiftUI
 enum SpaceSidebarSnapshotFolderLayout {
     static let contentLeadingPadding: CGFloat = 14
     static let contentVerticalPadding: CGFloat = 4
-
-    static func bodyHeight(childCount: Int) -> CGFloat {
-        CGFloat(max(childCount, 0)) * SidebarRowLayout.rowHeight
-            + contentVerticalPadding * 2
-    }
 }
 enum SpaceSidebarSnapshotTitleLayout {
     static let trailingControlSize: CGFloat = 28

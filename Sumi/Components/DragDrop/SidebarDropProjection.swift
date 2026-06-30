@@ -12,17 +12,6 @@ enum SidebarDropProjection {
         return safeProjectedIndex + 1
     }
 
-    static func projectedInsertionIndex(
-        fromModelIndex modelIndex: Int,
-        sourceIndex: Int?
-    ) -> Int {
-        let safeModelIndex = max(0, modelIndex)
-        guard let sourceIndex, sourceIndex < safeModelIndex else {
-            return safeModelIndex
-        }
-        return safeModelIndex - 1
-    }
-
     static func projectedItems<ID: Hashable>(
         itemIDs: [ID],
         sourceID: ID?,
