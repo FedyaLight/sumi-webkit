@@ -184,6 +184,9 @@ class BrowserManager: ObservableObject {
     lazy var shutdownCleanupOwner = BrowserShutdownCleanupOwner(
         dependencies: .live(browserManager: self)
     )
+    lazy var keyboardShortcutCommandOwner = BrowserKeyboardShortcutCommandOwner(
+        dependencies: .live(browserManager: self)
+    )
     private lazy var floatingBarRoutingOwner = BrowserFloatingBarRoutingOwner(
         dependencies: .live(browserManager: self)
     )

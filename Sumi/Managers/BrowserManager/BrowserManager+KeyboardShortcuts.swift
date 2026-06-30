@@ -4,108 +4,48 @@
 //
 //
 
-import Foundation
-
 @MainActor
 extension BrowserManager {
     // MARK: - Keyboard Shortcut Support Methods
 
     func openNewTabSurfaceInActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow else {
-            createNewTab()
-            return
-        }
-
-        openNewTabOrFloatingBar(in: activeWindow)
+        keyboardShortcutCommandOwner.openNewTabSurfaceInActiveWindow()
     }
 
     func selectNextTabInActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow else { return }
-        let currentTabs = tabsForDisplay(in: activeWindow)
-        guard let currentTab = currentTab(for: activeWindow),
-              let currentIndex = currentTabs.firstIndex(where: { $0.id == currentTab.id })
-        else { return }
-
-        let nextIndex = (currentIndex + 1) % currentTabs.count
-        if let nextTab = currentTabs[safe: nextIndex] {
-            selectTab(nextTab, in: activeWindow)
-        }
+        keyboardShortcutCommandOwner.selectNextTabInActiveWindow()
     }
 
     func selectPreviousTabInActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow else { return }
-        let currentTabs = tabsForDisplay(in: activeWindow)
-        guard let currentTab = currentTab(for: activeWindow),
-              let currentIndex = currentTabs.firstIndex(where: { $0.id == currentTab.id })
-        else { return }
-
-        let previousIndex = currentIndex > 0 ? currentIndex - 1 : currentTabs.count - 1
-        if let previousTab = currentTabs[safe: previousIndex] {
-            selectTab(previousTab, in: activeWindow)
-        }
+        keyboardShortcutCommandOwner.selectPreviousTabInActiveWindow()
     }
 
     func selectTabByIndexInActiveWindow(_ index: Int) {
-        guard let activeWindow = windowRegistry?.activeWindow else { return }
-        let currentTabs = tabsForDisplay(in: activeWindow)
-        guard currentTabs.indices.contains(index) else { return }
-
-        selectTab(currentTabs[index], in: activeWindow)
+        keyboardShortcutCommandOwner.selectTabByIndexInActiveWindow(index)
     }
 
     func selectLastTabInActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow,
-              let lastTab = tabsForDisplay(in: activeWindow).last
-        else { return }
-
-        selectTab(lastTab, in: activeWindow)
+        keyboardShortcutCommandOwner.selectLastTabInActiveWindow()
     }
 
     func setActiveSplitLayout(_ layoutKind: SplitLayoutKind) {
-        guard let activeWindow = windowRegistry?.activeWindow else { return }
-        if splitManager.isSplit(for: activeWindow.id) {
-            splitManager.setLayoutKind(layoutKind, for: activeWindow.id)
-            return
-        }
-        guard let current = currentTab(for: activeWindow),
-              current.representsSumiNativeSurface == false
-        else { return }
-        splitManager.enterSplit(with: current, placeOn: .right, in: activeWindow)
-        splitManager.setLayoutKind(layoutKind, for: activeWindow.id)
+        keyboardShortcutCommandOwner.setActiveSplitLayout(layoutKind)
     }
 
     func unsplitActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow else { return }
-        splitManager.unsplitActiveGroup(for: activeWindow.id)
+        keyboardShortcutCommandOwner.unsplitActiveWindow()
     }
 
     func createEmptySplitInActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow else { return }
-        splitManager.createEmptySplit(side: .right, in: activeWindow)
+        keyboardShortcutCommandOwner.createEmptySplitInActiveWindow()
     }
 
     func selectNextSpaceInActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow,
-              let currentSpaceId = activeWindow.currentSpaceId,
-              let currentSpaceIndex = tabManager.spaces.firstIndex(where: { $0.id == currentSpaceId })
-        else { return }
-
-        let nextIndex = (currentSpaceIndex + 1) % tabManager.spaces.count
-        if let nextSpace = tabManager.spaces[safe: nextIndex] {
-            setActiveSpace(nextSpace, in: activeWindow)
-        }
+        keyboardShortcutCommandOwner.selectNextSpaceInActiveWindow()
     }
 
     func selectPreviousSpaceInActiveWindow() {
-        guard let activeWindow = windowRegistry?.activeWindow,
-              let currentSpaceId = activeWindow.currentSpaceId,
-              let currentSpaceIndex = tabManager.spaces.firstIndex(where: { $0.id == currentSpaceId })
-        else { return }
-
-        let previousIndex = currentSpaceIndex > 0 ? currentSpaceIndex - 1 : tabManager.spaces.count - 1
-        if let previousSpace = tabManager.spaces[safe: previousIndex] {
-            setActiveSpace(previousSpace, in: activeWindow)
-        }
+        keyboardShortcutCommandOwner.selectPreviousSpaceInActiveWindow()
     }
 
     // MARK: - Tab Closure Undo Notification
@@ -119,24 +59,10 @@ extension BrowserManager {
     }
 
     func expandAllFoldersInSidebar() {
-        guard let windowState = windowRegistry?.activeWindow,
-              let currentSpaceId = windowState.currentSpaceId
-        else { return }
-        tabManager.setAllFolders(open: true, in: currentSpaceId)
-        persistWindowSession(for: windowState)
+        keyboardShortcutCommandOwner.expandAllFoldersInSidebar()
     }
 
     func toggleReaderModeInActiveWindow() {
-        guard let tab = activePageTabForActiveWindow(),
-              tab.representsSumiNativeSurface == false,
-              let windowState = windowRegistry?.activeWindow,
-              let webView = activePageWebViewForActiveWindow() ?? getWebView(for: tab.id, in: windowState.id)
-        else {
-            return
-        }
-
-        Task { @MainActor in
-            try? await SumiReaderModeService.toggleReaderMode(on: webView, tab: tab)
-        }
+        keyboardShortcutCommandOwner.toggleReaderModeInActiveWindow()
     }
 }
