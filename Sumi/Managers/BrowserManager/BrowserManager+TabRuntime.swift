@@ -378,6 +378,49 @@ extension TabInstallNavigationRuntime {
 }
 
 @MainActor
+extension TabReloadPolicyRuntime {
+    static func live(
+        extensionsModule: @escaping () -> SumiExtensionsModule?,
+        protectionCoordinator: @escaping () -> SumiProtectionCoordinator?,
+        runtimePermissionController: @escaping () -> (any SumiRuntimePermissionControlling)?
+    ) -> Self {
+        Self(
+            safariContentBlockerAttachmentState: { url in
+                extensionsModule()?.safariContentBlockerAttachmentState(for: url)
+                    ?? .disabled(siteHost: nil)
+            },
+            protectionAttachmentState: { url in
+                protectionCoordinator()?.desiredAttachmentState(for: url)
+                    ?? .disabled(siteHost: nil)
+            },
+            protectionSurfaceHost: { url in
+                protectionCoordinator()?.surfaceEligibility(for: url).normalizedSiteHost
+            },
+            protectionCurrentTabDiagnostics: { context in
+                protectionCoordinator()?.currentTabDiagnostics(
+                    for: context.currentURL,
+                    appliedState: context.appliedState,
+                    reloadRequired: context.reloadRequired,
+                    reloadRequiredReason: context.reloadRequiredReason,
+                    didManualReloadRebuildWebView: context.didManualReloadRebuildWebView,
+                    appliedAfterManualReload: context.appliedAfterManualReload,
+                    actualAttachedRuleListIdentifiers: context.actualAttachedRuleListIdentifiers,
+                    contentBlockingAssetSummary: context.contentBlockingAssetSummary,
+                    webViewRebuildDuration: context.webViewRebuildDuration,
+                    urlHubSummaryDuration: context.urlHubSummaryDuration
+                )
+            },
+            evaluateAutoplayPolicyChange: { requestedState, webView in
+                runtimePermissionController()?.evaluateAutoplayPolicyChange(
+                    requestedState,
+                    for: webView
+                ) ?? .noOp
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabExtensionPropertiesRuntime {
     static func live(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
         Self(

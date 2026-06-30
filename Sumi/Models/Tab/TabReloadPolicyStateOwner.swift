@@ -43,44 +43,6 @@ extension TabReloadPolicyRuntime {
         protectionCurrentTabDiagnostics: { _ in nil },
         evaluateAutoplayPolicyChange: { _, _ in .noOp }
     )
-
-    static func live(browserManager: BrowserManager?) -> Self {
-        guard let browserManager else { return .empty }
-
-        return Self(
-            safariContentBlockerAttachmentState: { [weak browserManager] url in
-                browserManager?.extensionsModule.safariContentBlockerAttachmentState(for: url)
-                    ?? .disabled(siteHost: nil)
-            },
-            protectionAttachmentState: { [weak browserManager] url in
-                browserManager?.protectionCoordinator.desiredAttachmentState(for: url)
-                    ?? .disabled(siteHost: nil)
-            },
-            protectionSurfaceHost: { [weak browserManager] url in
-                browserManager?.protectionCoordinator.surfaceEligibility(for: url).normalizedSiteHost
-            },
-            protectionCurrentTabDiagnostics: { [weak browserManager] context in
-                browserManager?.protectionCoordinator.currentTabDiagnostics(
-                    for: context.currentURL,
-                    appliedState: context.appliedState,
-                    reloadRequired: context.reloadRequired,
-                    reloadRequiredReason: context.reloadRequiredReason,
-                    didManualReloadRebuildWebView: context.didManualReloadRebuildWebView,
-                    appliedAfterManualReload: context.appliedAfterManualReload,
-                    actualAttachedRuleListIdentifiers: context.actualAttachedRuleListIdentifiers,
-                    contentBlockingAssetSummary: context.contentBlockingAssetSummary,
-                    webViewRebuildDuration: context.webViewRebuildDuration,
-                    urlHubSummaryDuration: context.urlHubSummaryDuration
-                )
-            },
-            evaluateAutoplayPolicyChange: { [weak browserManager] requestedState, webView in
-                browserManager?.runtimePermissionController.evaluateAutoplayPolicyChange(
-                    requestedState,
-                    for: webView
-                ) ?? .noOp
-            }
-        )
-    }
 }
 
 @MainActor

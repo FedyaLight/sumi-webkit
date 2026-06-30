@@ -386,7 +386,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                     browserManager?.sumiSettings
                 })
                 profileResolutionRuntime = .live(browserManager: newValue)
-                reloadPolicyRuntime = .live(browserManager: newValue)
+                reloadPolicyRuntime = .live(
+                    extensionsModule: { [weak browserManager] in
+                        browserManager?.extensionsModule
+                    },
+                    protectionCoordinator: { [weak browserManager] in
+                        browserManager?.protectionCoordinator
+                    },
+                    runtimePermissionController: { [weak browserManager] in
+                        browserManager?.runtimePermissionController
+                    }
+                )
                 historySwipeRuntime = .live(
                     webViewCoordinator: { [weak browserManager] in
                         browserManager?.webViewCoordinator
