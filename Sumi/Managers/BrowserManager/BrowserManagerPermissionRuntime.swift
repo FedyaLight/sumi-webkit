@@ -65,7 +65,6 @@ final class BrowserManagerPermissionRuntime {
     let permissionSiteActivityStore: SumiPermissionSiteActivityStore
     let permissionCleanupService: SumiPermissionCleanupService
     let permissionBridges: BrowserPermissionBridgeRegistry
-    let permissionSidebarPinningController = SumiPermissionSidebarPinningController()
 
     var webKitPermissionBridge: SumiWebKitPermissionBridge {
         permissionBridges.webKitPermissionBridge

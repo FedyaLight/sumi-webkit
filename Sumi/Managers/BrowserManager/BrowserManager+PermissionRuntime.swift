@@ -75,8 +75,4 @@ extension BrowserManager {
     var permissionLifecycleController: SumiPermissionGrantLifecycleController {
         permissionRuntime.permissionLifecycleController
     }
-
-    var permissionSidebarPinningController: SumiPermissionSidebarPinningController {
-        permissionRuntime.permissionSidebarPinningController
-    }
 }

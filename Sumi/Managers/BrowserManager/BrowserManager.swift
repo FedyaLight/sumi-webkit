@@ -139,8 +139,38 @@ class BrowserManager: ObservableObject {
     lazy var nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
         dependencies: .live(browserManager: self)
     )
+    private lazy var permissionSidebarPinningOwner = BrowserPermissionSidebarPinningOwner(
+        dependencies: BrowserPermissionSidebarPinningOwner.Dependencies(
+            permissionStateSnapshot: { [weak self] in
+                guard let self else {
+                    return SumiPermissionCoordinatorState(
+                        activeQueriesByPageId: [:],
+                        queueCountByPageId: [:],
+                        latestEvent: nil,
+                        latestSystemBlockedEvent: nil
+                    )
+                }
+                return await self.permissionCoordinator.stateSnapshot()
+            },
+            windowForPermissionPageId: { [weak self] pageId in
+                guard let self else { return nil }
+                return self.permissionSiteSettingsRoutingOwner.windowState(
+                    displayingPermissionPageId: pageId,
+                    in: self.windowRegistry,
+                    tabsForDisplay: { windowState in
+                        self.tabsForDisplay(in: windowState)
+                    }
+                )
+            }
+        ),
+        pinningController: SumiPermissionSidebarPinningController()
+    )
     lazy var historyNavigationOwner = BrowserHistoryNavigationOwner(
         dependencies: .live(browserManager: self)
+    )
+    lazy var bookmarkCommandOwner = BrowserBookmarkCommandOwner(
+        dependencies: .live(browserManager: self),
+        presenter: BrowserBookmarkCommandAppKitPresenter()
     )
     lazy var nativeDialogPresentationOwner = BrowserNativeDialogPresentationOwner(
         dependencies: .live(browserManager: self)
@@ -205,7 +235,7 @@ class BrowserManager: ObservableObject {
             glanceManager.windowRegistry = windowRegistry
             splitManager.windowRegistry = windowRegistry
             Task { @MainActor [weak self] in
-                await self?.reconcilePermissionSidebarPins(reason: "window-registry-updated")
+                await self?.permissionSidebarPinningOwner.reconcile(reason: "window-registry-updated")
             }
             backgroundMediaOptimizationService.scheduleReconcile(reason: "window-registry-updated")
             reconcileStartupSessionIfPossible()
@@ -387,7 +417,7 @@ class BrowserManager: ObservableObject {
             )
         )
         self.permissionRuntime.startPermissionEventObservation { [weak self] _ in
-            await self?.reconcilePermissionSidebarPins(reason: "permission-event")
+            await self?.permissionSidebarPinningOwner.reconcile(reason: "permission-event")
         }
         self.startupProtectionRuntime = BrowserStartupProtectionRuntime(
             dependencies: .live(browserManager: self)
@@ -870,24 +900,6 @@ class BrowserManager: ObservableObject {
         return shellSelectionService.currentTab(
             for: windowState,
             tabStore: tabManager.runtimeStore
-        )
-    }
-
-    @MainActor
-    private func reconcilePermissionSidebarPins(reason: String) async {
-        let state = await permissionCoordinator.stateSnapshot()
-        permissionSidebarPinningController.reconcile(
-            activeQueries: Array(state.activeQueriesByPageId.values),
-            windowForPageId: { [weak self] pageId in
-                self?.permissionSiteSettingsRoutingOwner.windowState(
-                    displayingPermissionPageId: pageId,
-                    in: self?.windowRegistry,
-                    tabsForDisplay: { windowState in
-                        self?.tabsForDisplay(in: windowState) ?? []
-                    }
-                )
-            },
-            reason: reason
         )
     }
 
