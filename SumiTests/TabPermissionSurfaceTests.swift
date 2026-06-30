@@ -29,6 +29,47 @@ final class TabPermissionSurfaceTests: XCTestCase {
         XCTAssertNil(tab.externalSchemePermissionTabContext(for: webView))
     }
 
+    func testLivePermissionSurfaceUsesInjectedPermissionRuntimeWithoutBrowserManager() {
+        let tab = makeTab(browserManager: nil)
+        let targetURL = URL(string: "https://target.example/page")!
+        let webView = WKWebView()
+        var lifecycleEvents: [SumiPermissionLifecycleEvent] = []
+        var glanceLookupTabIds: [UUID] = []
+        var glanceLookupWebViewIds: [ObjectIdentifier] = []
+        tab.permissionRuntime = TabPermissionRuntime(
+            permissionBridges: { nil },
+            handlePermissionLifecycleEvent: { event in
+                lifecycleEvents.append(event)
+            },
+            isActiveGlancePreviewSurface: { tabId, candidateWebView in
+                glanceLookupTabIds.append(tabId)
+                glanceLookupWebViewIds.append(ObjectIdentifier(candidateWebView))
+                return candidateWebView === webView
+            }
+        )
+
+        let surfaceState = tab.permissionRequestSurfaceState(for: webView)
+        tab.handleNormalTabPermissionNavigation(to: targetURL)
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertTrue(surfaceState.isActive)
+        XCTAssertTrue(surfaceState.isVisible)
+        XCTAssertEqual(glanceLookupTabIds, [tab.id])
+        XCTAssertEqual(glanceLookupWebViewIds, [ObjectIdentifier(webView)])
+        XCTAssertEqual(
+            lifecycleEvents,
+            [
+                .mainFrameNavigation(
+                    pageId: tab.currentPermissionPageId(),
+                    tabId: tab.id.uuidString.lowercased(),
+                    profilePartitionId: nil,
+                    targetURL: targetURL,
+                    reason: "normal-tab-main-frame-navigation"
+                ),
+            ]
+        )
+    }
+
     func testExternalSchemeCurrentPageClosureInvalidatesAfterWebViewReplacement() throws {
         let browserManager = BrowserManager()
         let tab = makeTab(browserManager: browserManager)

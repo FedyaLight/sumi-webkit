@@ -206,6 +206,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.lifecycleNavigationRuntime }
         set { navigationRuntime.lifecycleNavigationRuntime = newValue }
     }
+    var permissionRuntime: TabPermissionRuntime {
+        get { navigationRuntime.permissionRuntime }
+        set { navigationRuntime.permissionRuntime = newValue }
+    }
     var configurationPolicyWebViewReplacementRuntime: TabConfigurationPolicyWebViewReplacementRuntime {
         get { navigationRuntime.configurationPolicyWebViewReplacementRuntime }
         set { navigationRuntime.configurationPolicyWebViewReplacementRuntime = newValue }
@@ -435,6 +439,26 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.webViewCoordinator
                     }
                 )
+                permissionRuntime = .live(
+                    permissionBridges: { [weak browserManager] in
+                        browserManager?.permissionBridges
+                    },
+                    handlePermissionLifecycleEvent: { [weak browserManager] event in
+                        browserManager?.permissionLifecycleController.handle(event)
+                    },
+                    isActiveGlancePreviewSurface: { [weak browserManager] tabId, webView in
+                        guard let browserManager,
+                              let session = browserManager.glanceManager.currentSession,
+                              session.previewTab.id == tabId,
+                              session.previewTab.existingWebView === webView,
+                              let windowState = browserManager.windowRegistry?.windows[session.windowId],
+                              browserManager.glanceManager.activeSession(for: windowState)?.id == session.id
+                        else {
+                            return false
+                        }
+                        return true
+                    }
+                )
                 configurationPolicyWebViewReplacementRuntime = .live(
                     webViewCoordinator: { [weak browserManager] in
                         browserManager?.webViewCoordinator
@@ -456,6 +480,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 extensionPropertiesRuntime = .inactive
                 closeLifecycleRuntime = .inactive
                 lifecycleNavigationRuntime = .inactive
+                permissionRuntime = .inactive
                 configurationPolicyWebViewReplacementRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive

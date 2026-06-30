@@ -222,6 +222,21 @@ extension TabLifecycleNavigationRuntime {
 }
 
 @MainActor
+extension TabPermissionRuntime {
+    static func live(
+        permissionBridges: @escaping () -> BrowserPermissionBridgeRegistry?,
+        handlePermissionLifecycleEvent: @escaping (SumiPermissionLifecycleEvent) -> Void,
+        isActiveGlancePreviewSurface: @escaping (_ tabId: UUID, _ webView: WKWebView) -> Bool
+    ) -> Self {
+        Self(
+            permissionBridges: permissionBridges,
+            handlePermissionLifecycleEvent: handlePermissionLifecycleEvent,
+            isActiveGlancePreviewSurface: isActiveGlancePreviewSurface
+        )
+    }
+}
+
+@MainActor
 extension TabExtensionPropertiesRuntime {
     static func live(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
         Self(

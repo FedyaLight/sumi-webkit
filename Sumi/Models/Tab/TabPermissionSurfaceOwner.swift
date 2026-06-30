@@ -288,20 +288,10 @@ extension TabPermissionSurfaceOwner.Context {
                 tab?.extensionPageRuntimeOwner.invalidateCurrentPageForWebViewReplacement()
             },
             handlePermissionLifecycleEvent: { [weak tab] event in
-                tab?.browserManager?.permissionLifecycleController.handle(event)
+                tab?.permissionRuntime.handlePermissionLifecycleEvent(event)
             },
             isActiveGlancePreviewSurface: { [weak tab] webView in
-                guard let tab,
-                      let browserManager = tab.browserManager,
-                      let session = browserManager.glanceManager.currentSession,
-                      session.previewTab.id == tabId,
-                      session.previewTab.existingWebView === webView,
-                      let windowState = browserManager.windowRegistry?.windows[session.windowId],
-                      browserManager.glanceManager.activeSession(for: windowState)?.id == session.id
-                else {
-                    return false
-                }
-                return true
+                tab?.permissionRuntime.isActiveGlancePreviewSurface(tabId, webView) ?? false
             }
         )
     }

@@ -168,6 +168,19 @@ struct TabLifecycleNavigationRuntime {
 }
 
 @MainActor
+struct TabPermissionRuntime {
+    var permissionBridges: () -> BrowserPermissionBridgeRegistry?
+    var handlePermissionLifecycleEvent: (SumiPermissionLifecycleEvent) -> Void
+    var isActiveGlancePreviewSurface: (_ tabId: UUID, _ webView: WKWebView) -> Bool
+
+    static let inactive = Self(
+        permissionBridges: { nil },
+        handlePermissionLifecycleEvent: { _ in },
+        isActiveGlancePreviewSurface: { _, _ in false }
+    )
+}
+
+@MainActor
 struct TabConfigurationPolicyWebViewReplacementRuntime {
     var trackedWindowIdContainingWebView: (WKWebView) -> UUID?
     var hasTrackedWebViews: (UUID) -> Bool
@@ -289,6 +302,7 @@ final class TabNavigationRuntime {
     var extensionPropertiesRuntime = TabExtensionPropertiesRuntime.inactive
     var closeLifecycleRuntime = TabCloseLifecycleRuntime.inactive
     var lifecycleNavigationRuntime = TabLifecycleNavigationRuntime.inactive
+    var permissionRuntime = TabPermissionRuntime.inactive
     var configurationPolicyWebViewReplacementRuntime =
         TabConfigurationPolicyWebViewReplacementRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
