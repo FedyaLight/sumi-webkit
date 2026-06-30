@@ -196,6 +196,15 @@ struct TabWebViewCleanupRuntime {
 }
 
 @MainActor
+struct TabNormalWebViewExtensionRuntime {
+    var registerNormalTabWithExtensionRuntimeIfNeeded: (Tab, String) -> Void
+
+    static let inactive = Self(
+        registerNormalTabWithExtensionRuntimeIfNeeded: { _, _ in }
+    )
+}
+
+@MainActor
 struct TabPopupHandlingRuntime {
     var hasBrowserRuntime: () -> Bool
     var consumeRecentlyOpenedExtensionTabRequest: (URL) -> Bool
@@ -383,6 +392,7 @@ final class TabNavigationRuntime {
     var lifecycleNavigationRuntime = TabLifecycleNavigationRuntime.inactive
     var permissionRuntime = TabPermissionRuntime.inactive
     var webViewCleanupRuntime = TabWebViewCleanupRuntime.inactive
+    var normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime.inactive
     var popupHandlingRuntime = TabPopupHandlingRuntime.inactive
     var webKitUIRuntime = TabWebKitUIRuntime.inactive
     var installNavigationRuntime = TabInstallNavigationRuntime.inactive

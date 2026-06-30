@@ -142,22 +142,9 @@ final class TabNormalWebViewRuntimeContextOwner {
             },
             registerNormalTabWithExtensionRuntimeIfNeeded: { [weak tab] reason in
                 guard let tab else { return }
-                tab.browserManager?.extensionsModule.registerTabWithExtensionRuntimeIfLoaded(
+                tab.normalWebViewExtensionRuntime.registerNormalTabWithExtensionRuntimeIfNeeded(
                     tab,
-                    reason: reason
-                )
-
-                guard let browserManager = tab.browserManager,
-                      let windowId = tab.primaryWindowId,
-                      let windowState = browserManager.windowRegistry?.windows[windowId],
-                      browserManager.currentTab(for: windowState)?.id == tab.id
-                else {
-                    return
-                }
-
-                browserManager.extensionsModule.notifyTabActivatedIfLoaded(
-                    newTab: tab,
-                    previous: nil
+                    reason
                 )
             },
             scheduleInitialDocumentRuntimeHandoff: { [weak tab] webView, targetURL, profileId, registrationReason, registrationGuard in

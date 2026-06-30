@@ -270,6 +270,38 @@ extension TabWebViewCleanupRuntime {
 }
 
 @MainActor
+extension TabNormalWebViewExtensionRuntime {
+    static func live(
+        extensionsModule: @escaping () -> SumiExtensionsModule?,
+        windowState: @escaping (UUID) -> BrowserWindowState?,
+        currentTab: @escaping (BrowserWindowState) -> Tab?
+    ) -> Self {
+        Self(
+            registerNormalTabWithExtensionRuntimeIfNeeded: { tab, reason in
+                guard let extensionsModule = extensionsModule() else { return }
+
+                extensionsModule.registerTabWithExtensionRuntimeIfLoaded(
+                    tab,
+                    reason: reason
+                )
+
+                guard let windowId = tab.primaryWindowId,
+                      let windowState = windowState(windowId),
+                      currentTab(windowState)?.id == tab.id
+                else {
+                    return
+                }
+
+                extensionsModule.notifyTabActivatedIfLoaded(
+                    newTab: tab,
+                    previous: nil
+                )
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabPopupHandlingRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(

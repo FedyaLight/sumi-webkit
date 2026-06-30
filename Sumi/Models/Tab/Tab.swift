@@ -214,6 +214,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.webViewCleanupRuntime }
         set { navigationRuntime.webViewCleanupRuntime = newValue }
     }
+    var normalWebViewExtensionRuntime: TabNormalWebViewExtensionRuntime {
+        get { navigationRuntime.normalWebViewExtensionRuntime }
+        set { navigationRuntime.normalWebViewExtensionRuntime = newValue }
+    }
     var popupHandlingRuntime: TabPopupHandlingRuntime {
         get { navigationRuntime.popupHandlingRuntime }
         set { navigationRuntime.popupHandlingRuntime = newValue }
@@ -493,6 +497,17 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.webViewCoordinator
                     }
                 )
+                normalWebViewExtensionRuntime = .live(
+                    extensionsModule: { [weak browserManager] in
+                        browserManager?.extensionsModule
+                    },
+                    windowState: { [weak browserManager] windowId in
+                        browserManager?.windowRegistry?.windows[windowId]
+                    },
+                    currentTab: { [weak browserManager] windowState in
+                        browserManager?.currentTab(for: windowState)
+                    }
+                )
                 popupHandlingRuntime = .live(browserManager: browserManager)
                 installNavigationRuntime = .live(userscriptsModule: { [weak browserManager] in
                     browserManager?.userscriptsModule
@@ -533,6 +548,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 lifecycleNavigationRuntime = .inactive
                 permissionRuntime = .inactive
                 webViewCleanupRuntime = .inactive
+                normalWebViewExtensionRuntime = .inactive
                 popupHandlingRuntime = .inactive
                 webKitUIRuntime = .inactive
                 installNavigationRuntime = .inactive

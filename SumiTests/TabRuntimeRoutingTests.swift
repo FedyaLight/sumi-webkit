@@ -96,6 +96,25 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(removeAllWebViewsCallCount, 0)
     }
 
+    func testNormalWebViewExtensionRegistrationUsesInjectedRuntimeWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        var registeredTabIds: [UUID] = []
+        var registrationReasons: [String] = []
+        tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
+            registerNormalTabWithExtensionRuntimeIfNeeded: { registeredTab, reason in
+                registeredTabIds.append(registeredTab.id)
+                registrationReasons.append(reason)
+            }
+        )
+
+        tab.normalWebViewRuntimeContext()
+            .registerNormalTabWithExtensionRuntimeIfNeeded("test.registration")
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(registeredTabIds, [tab.id])
+        XCTAssertEqual(registrationReasons, ["test.registration"])
+    }
+
     func testCloseTabUsesInjectedLifecycleRuntimeWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let lifecycle = RecordingTabCloseLifecycleRuntime()
