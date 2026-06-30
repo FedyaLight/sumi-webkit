@@ -181,6 +181,21 @@ struct TabPermissionRuntime {
 }
 
 @MainActor
+struct TabWebViewCleanupRuntime {
+    var deferProtectedWebViewCleanup: (WKWebView, UUID, String) -> Bool
+    var cleanupUserScripts: (WKUserContentController, UUID) -> Void
+    var removeWebViewFromContainers: (WKWebView) -> Void
+    var removeAllWebViews: (_ tab: Tab, _ closeActiveFullscreenMedia: Bool) -> Bool
+
+    static let inactive = Self(
+        deferProtectedWebViewCleanup: { _, _, _ in false },
+        cleanupUserScripts: { _, _ in },
+        removeWebViewFromContainers: { _ in },
+        removeAllWebViews: { _, _ in false }
+    )
+}
+
+@MainActor
 struct TabPopupHandlingRuntime {
     var hasBrowserRuntime: () -> Bool
     var consumeRecentlyOpenedExtensionTabRequest: (URL) -> Bool
@@ -367,6 +382,7 @@ final class TabNavigationRuntime {
     var closeLifecycleRuntime = TabCloseLifecycleRuntime.inactive
     var lifecycleNavigationRuntime = TabLifecycleNavigationRuntime.inactive
     var permissionRuntime = TabPermissionRuntime.inactive
+    var webViewCleanupRuntime = TabWebViewCleanupRuntime.inactive
     var popupHandlingRuntime = TabPopupHandlingRuntime.inactive
     var webKitUIRuntime = TabWebKitUIRuntime.inactive
     var installNavigationRuntime = TabInstallNavigationRuntime.inactive

@@ -17,30 +17,17 @@ extension Tab {
     }
 
     private func webViewCleanupContext() -> TabWebViewCleanupOwner.Context {
-        let browserManager = self.browserManager
+        let cleanupRuntime = webViewCleanupRuntime
         return TabWebViewCleanupOwner.Context(
             tabId: id,
             tabName: { self.name },
-            handlePermissionLifecycleEvent: { event in
-                browserManager?.permissionLifecycleController.handle(event)
+            handlePermissionLifecycleEvent: { [weak self] event in
+                self?.permissionRuntime.handlePermissionLifecycleEvent(event)
             },
-            deferProtectedWebViewCleanup: { webView, tabId, reason in
-                browserManager?.webViewCoordinator?.deferProtectedWebViewCleanup(
-                    webView,
-                    tabID: tabId,
-                    reason: reason
-                ) ?? false
-            },
+            deferProtectedWebViewCleanup: cleanupRuntime.deferProtectedWebViewCleanup,
             shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime(
-                cleanupUserScripts: { controller, webViewId in
-                    browserManager?.userscriptsModule.cleanupWebViewIfLoaded(
-                        controller: controller,
-                        webViewId: webViewId
-                    )
-                },
-                removeWebViewFromContainers: { webView in
-                    browserManager?.webViewCoordinator?.removeWebViewFromContainers(webView)
-                }
+                cleanupUserScripts: cleanupRuntime.cleanupUserScripts,
+                removeWebViewFromContainers: cleanupRuntime.removeWebViewFromContainers
             ),
             notifyNowPlayingTabUnloaded: { tabId in
                 self.mediaRuntimeCallbacks.notifyNowPlayingTabUnloaded(tabId)
@@ -48,10 +35,7 @@ extension Tab {
             currentWebView: { self.currentWebView },
             clearCurrentWebView: { self.clearCurrentWebViewOwnership() },
             removeAllWebViews: { closeActiveFullscreenMedia in
-                browserManager?.webViewCoordinator?.removeAllWebViews(
-                    for: self,
-                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
-                ) ?? false
+                cleanupRuntime.removeAllWebViews(self, closeActiveFullscreenMedia)
             },
             currentPermissionPageId: { self.currentPermissionPageId() },
             profilePartitionId: { self.resolveProfile()?.id.uuidString },

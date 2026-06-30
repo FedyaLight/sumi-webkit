@@ -50,6 +50,52 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(callbacks.unloadedTabIds, [tab.id])
     }
 
+    func testCleanupCloneWebViewUsesInjectedCleanupRuntimeWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let webView = WKWebView()
+        var permissionLifecycleEventCount = 0
+        var deferredTabIds: [UUID] = []
+        var deferredReasons: [String] = []
+        var cleanedUserScriptWebViewIds: [UUID] = []
+        var removedWebViewFromContainers = false
+        var removeAllWebViewsCallCount = 0
+        tab.permissionRuntime = TabPermissionRuntime(
+            permissionBridges: { nil },
+            handlePermissionLifecycleEvent: { _ in
+                permissionLifecycleEventCount += 1
+            },
+            isActiveGlancePreviewSurface: { _, _ in false }
+        )
+        tab.webViewCleanupRuntime = TabWebViewCleanupRuntime(
+            deferProtectedWebViewCleanup: { candidateWebView, tabId, reason in
+                XCTAssertTrue(candidateWebView === webView)
+                deferredTabIds.append(tabId)
+                deferredReasons.append(reason)
+                return false
+            },
+            cleanupUserScripts: { _, webViewId in
+                cleanedUserScriptWebViewIds.append(webViewId)
+            },
+            removeWebViewFromContainers: { candidateWebView in
+                removedWebViewFromContainers = candidateWebView === webView
+            },
+            removeAllWebViews: { _, _ in
+                removeAllWebViewsCallCount += 1
+                return false
+            }
+        )
+
+        tab.cleanupCloneWebView(webView)
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(permissionLifecycleEventCount, 1)
+        XCTAssertEqual(deferredTabIds, [tab.id])
+        XCTAssertEqual(deferredReasons, ["Tab.cleanupCloneWebView"])
+        XCTAssertEqual(cleanedUserScriptWebViewIds, [tab.id])
+        XCTAssertTrue(removedWebViewFromContainers)
+        XCTAssertEqual(removeAllWebViewsCallCount, 0)
+    }
+
     func testCloseTabUsesInjectedLifecycleRuntimeWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let lifecycle = RecordingTabCloseLifecycleRuntime()

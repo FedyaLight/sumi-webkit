@@ -210,6 +210,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.permissionRuntime }
         set { navigationRuntime.permissionRuntime = newValue }
     }
+    var webViewCleanupRuntime: TabWebViewCleanupRuntime {
+        get { navigationRuntime.webViewCleanupRuntime }
+        set { navigationRuntime.webViewCleanupRuntime = newValue }
+    }
     var popupHandlingRuntime: TabPopupHandlingRuntime {
         get { navigationRuntime.popupHandlingRuntime }
         set { navigationRuntime.popupHandlingRuntime = newValue }
@@ -481,6 +485,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         return true
                     }
                 )
+                webViewCleanupRuntime = .live(
+                    userscriptsModule: { [weak browserManager] in
+                        browserManager?.userscriptsModule
+                    },
+                    webViewCoordinator: { [weak browserManager] in
+                        browserManager?.webViewCoordinator
+                    }
+                )
                 popupHandlingRuntime = .live(browserManager: browserManager)
                 installNavigationRuntime = .live(userscriptsModule: { [weak browserManager] in
                     browserManager?.userscriptsModule
@@ -520,6 +532,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 closeLifecycleRuntime = .inactive
                 lifecycleNavigationRuntime = .inactive
                 permissionRuntime = .inactive
+                webViewCleanupRuntime = .inactive
                 popupHandlingRuntime = .inactive
                 webKitUIRuntime = .inactive
                 installNavigationRuntime = .inactive

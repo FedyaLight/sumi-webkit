@@ -237,6 +237,39 @@ extension TabPermissionRuntime {
 }
 
 @MainActor
+extension TabWebViewCleanupRuntime {
+    static func live(
+        userscriptsModule: @escaping () -> SumiUserscriptsModule?,
+        webViewCoordinator: @escaping () -> WebViewCoordinator?
+    ) -> Self {
+        Self(
+            deferProtectedWebViewCleanup: { webView, tabId, reason in
+                webViewCoordinator()?.deferProtectedWebViewCleanup(
+                    webView,
+                    tabID: tabId,
+                    reason: reason
+                ) ?? false
+            },
+            cleanupUserScripts: { controller, webViewId in
+                userscriptsModule()?.cleanupWebViewIfLoaded(
+                    controller: controller,
+                    webViewId: webViewId
+                )
+            },
+            removeWebViewFromContainers: { webView in
+                webViewCoordinator()?.removeWebViewFromContainers(webView)
+            },
+            removeAllWebViews: { tab, closeActiveFullscreenMedia in
+                webViewCoordinator()?.removeAllWebViews(
+                    for: tab,
+                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
+                ) ?? false
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabPopupHandlingRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
