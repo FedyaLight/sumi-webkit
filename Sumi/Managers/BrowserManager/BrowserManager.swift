@@ -190,6 +190,9 @@ class BrowserManager: ObservableObject {
     lazy var activePageRoutingOwner = BrowserActivePageRoutingOwner(
         dependencies: .live(browserManager: self)
     )
+    private(set) lazy var zoomCommandOwner = BrowserZoomCommandOwner(
+        dependencies: .live(browserManager: self)
+    )
     private lazy var sidebarActionOwner = BrowserSidebarActionOwner(
         dependencies: .live(browserManager: self)
     )
