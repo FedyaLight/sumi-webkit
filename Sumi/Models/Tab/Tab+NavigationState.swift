@@ -26,46 +26,7 @@ extension Tab {
     }
 
     func refresh() {
-        guard !representsSumiNativeSurface else { return }
-        beginLoadingPresentationIfNeeded()
-        let targetURL = _webView?.url ?? url
-        let protectionReloadWasRequired = isProtectionReloadRequired
-        let rebuiltForConfigurationPolicy = rebuildNormalWebViewForConfigurationPolicyIfNeeded(
-                targetURL: targetURL,
-                reason: "Tab.refresh"
-            )
-        if protectionReloadWasRequired {
-            noteProtectionManualReloadResult(
-                rebuiltForConfigurationPolicy: rebuiltForConfigurationPolicy,
-                targetURL: targetURL
-            )
-        }
-        if let webView = _webView {
-            if rebuiltForConfigurationPolicy {
-                performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
-                    on: webView,
-                    waitForContentBlockingAssets: true
-                ) { resolvedWebView in
-                    if targetURL.isFileURL {
-                        resolvedWebView.loadFileURL(
-                            targetURL,
-                            allowingReadAccessTo: targetURL.deletingLastPathComponent()
-                        )
-                    } else {
-                        resolvedWebView.load(URLRequest(url: targetURL))
-                    }
-                }
-            } else {
-                performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView
-                ) { resolvedWebView in
-                    resolvedWebView.reload()
-                }
-            }
-        }
-        if !rebuiltForConfigurationPolicy {
-            browserManager?.reloadTabAcrossWindows(id)
-        }
+        navigationCommandOwner.refresh(self)
     }
 
     func updateNavigationState() {
@@ -116,21 +77,10 @@ extension Tab {
         waitForContentBlockingAssets: Bool,
         performLoad: @escaping @MainActor (WKWebView) -> Void
     ) {
-        guard waitForContentBlockingAssets,
-              let controller = webView.configuration.userContentController.sumiNormalTabUserContentController
-        else {
-            performMainFrameNavigationAfterHydrationIfNeeded(
-                on: webView,
-                performLoad: performLoad
-            )
-            return
-        }
-
-        navigationTransactionOwner.performAfterPreparation(
+        navigationCommandOwner.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
             on: webView,
-            prepare: {
-                await controller.waitForContentBlockingAssetsInstalled()
-            },
+            tab: self,
+            waitForContentBlockingAssets: waitForContentBlockingAssets,
             performLoad: performLoad
         )
     }
