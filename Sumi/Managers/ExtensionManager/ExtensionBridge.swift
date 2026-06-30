@@ -26,6 +26,7 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
     var currentExtensionSpace: Space? { get }
     func extensionTargetSpace(for windowState: BrowserWindowState?) -> Space?
     func extensionTargetSpace(for tab: Tab) -> Space?
+    func extensionTargetSpace(matchingProfile profileId: UUID) -> Space?
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState?
     func setActiveExtensionWindow(_ windowState: BrowserWindowState)
     func createExtensionWindow()
@@ -181,6 +182,10 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
 
     func extensionTargetSpace(for tab: Tab) -> Space? {
         tab.spaceId.flatMap(extensionSpace(for:)) ?? currentExtensionSpace
+    }
+
+    func extensionTargetSpace(matchingProfile profileId: UUID) -> Space? {
+        tabManager.spaces.first { $0.profileId == profileId }
     }
 
     func preferredExtensionWindowState(containing tab: Tab) -> BrowserWindowState? {

@@ -411,9 +411,7 @@ final class ExtensionRequestedTabLifecycleOwner {
             return windowSpace
         }
 
-        return manager.browserManager?.tabManager.spaces.first {
-            $0.profileId == contextProfileId
-        }
+        return browserContext.extensionTargetSpace(matchingProfile: contextProfileId)
     }
 
     private func shouldPreloadContentScriptContexts(
@@ -451,7 +449,7 @@ final class ExtensionRequestedTabLifecycleOwner {
     ) {
         let currentWebView: WKWebView?
         if let targetWindow {
-            currentWebView = manager.browserManager?.windowOwnedWebView(
+            currentWebView = manager.browserBridgeContext?.extensionWindowOwnedWebView(
                 for: tab,
                 in: targetWindow.id
             )
