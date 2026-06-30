@@ -96,103 +96,59 @@ extension BrowserManager {
     // MARK: - Window-Aware Tab Operations for Commands
 
     func currentTabForActiveWindow() -> Tab? {
-        if let activeWindow = windowRegistry?.activeWindow {
-            return currentTab(for: activeWindow)
-        }
-        return tabManager.currentTab
+        activePageRoutingOwner.currentTabForActiveWindow()
     }
 
     func activePageTab(for windowState: BrowserWindowState) -> Tab? {
-        glanceManager.activePreviewTab(for: windowState)
-            ?? currentTab(for: windowState)
+        activePageRoutingOwner.activePageTab(for: windowState)
     }
 
     func activePageTabForActiveWindow() -> Tab? {
-        if let activeWindow = windowRegistry?.activeWindow {
-            return activePageTab(for: activeWindow)
-        }
-        return tabManager.currentTab
+        activePageRoutingOwner.activePageTabForActiveWindow()
     }
 
     func activePageWebView(for windowState: BrowserWindowState) -> WKWebView? {
-        guard let tab = activePageTab(for: windowState) else { return nil }
-        return tab.existingWebView ?? getWebView(for: tab.id, in: windowState.id)
+        activePageRoutingOwner.activePageWebView(for: windowState)
     }
 
     func activePageWebViewForActiveWindow() -> WKWebView? {
-        guard let activeWindow = windowRegistry?.activeWindow else { return nil }
-        return activePageWebView(for: activeWindow)
+        activePageRoutingOwner.activePageWebViewForActiveWindow()
     }
 
     func activePageURL(for windowState: BrowserWindowState) -> URL? {
-        glanceManager.activeSession(for: windowState)?.currentURL
-            ?? activePageTab(for: windowState)?.url
+        activePageRoutingOwner.activePageURL(for: windowState)
     }
 
     func activePageURLForActiveWindow() -> URL? {
-        guard let activeWindow = windowRegistry?.activeWindow else {
-            return tabManager.currentTab?.url
-        }
-        return activePageURL(for: activeWindow)
+        activePageRoutingOwner.activePageURLForActiveWindow()
     }
 
     func refreshCurrentTabInActiveWindow() {
-        activePageTabForActiveWindow()?.refresh()
+        activePageRoutingOwner.refreshCurrentTabInActiveWindow()
     }
 
     func toggleMuteCurrentTabInActiveWindow() {
-        activePageTabForActiveWindow()?.toggleMute()
+        activePageRoutingOwner.toggleMuteCurrentTabInActiveWindow()
     }
 
     func currentTabIsMuted() -> Bool {
-        activePageTabForActiveWindow()?.audioState.isMuted ?? false
+        activePageRoutingOwner.currentTabIsMuted()
     }
 
     func currentTabHasAudioContent() -> Bool {
-        activePageTabForActiveWindow()?.audioState.isPlayingAudio ?? false
+        activePageRoutingOwner.currentTabHasAudioContent()
     }
 
     // MARK: - URL Utilities
 
     func copyCurrentURL() {
-        if let url = activePageURLForActiveWindow()?.absoluteString {
-            RuntimeDiagnostics.emit("Attempting to copy URL: \(url)")
-
-            DispatchQueue.main.async {
-                NSPasteboard.general.clearContents()
-                let success = NSPasteboard.general.setString(url, forType: .string)
-                NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .drawCompleted)
-                RuntimeDiagnostics.emit("Clipboard operation success: \(success)")
-            }
-
-            if let windowState = windowRegistry?.activeWindow {
-                presentToast(.init(kind: .copyURL), in: windowState)
-            }
-        } else {
-            RuntimeDiagnostics.emit("No URL found to copy")
-        }
+        activePageRoutingOwner.copyCurrentURL()
     }
 
     // MARK: - Web Inspector
 
     func openWebInspector() {
-        guard RuntimeDiagnostics.isDeveloperInspectionEnabled else {
-            RuntimeDiagnostics.emit("Developer inspection is disabled for this runtime.")
-            return
-        }
-
-        guard let currentTab = activePageTabForActiveWindow() else {
-            RuntimeDiagnostics.emit("No current tab to inspect")
-            return
-        }
-
-        guard let webView = currentTab.ensureWebView() else {
-            RuntimeDiagnostics.emit("No web view available to inspect")
-            return
-        }
-
-        webView.isInspectable = true
-        showWebInspectorAlert()
+        activePageRoutingOwner.openWebInspector()
     }
 
     // MARK: - Profile Switch Toast
@@ -211,8 +167,7 @@ extension BrowserManager {
     // MARK: - External URL Routing
 
     func presentExternalURL(_ url: URL) {
-        guard let windowState = windowRegistry?.activeWindow else { return }
-        createNewTab(in: windowState, url: url.absoluteString)
+        activePageRoutingOwner.presentExternalURL(url)
     }
 
     @discardableResult
@@ -221,95 +176,6 @@ extension BrowserManager {
         in windowState: BrowserWindowState,
         at slot: DropZoneSlot
     ) -> Bool {
-        guard slot != .empty else { return false }
-
-        if windowState.isIncognito {
-            _ = openNewTab(
-                url: url.absoluteString,
-                context: .foreground(windowState: windowState)
-            )
-            return true
-        }
-
-        switch slot {
-        case .spaceRegular(let spaceId, let index):
-            guard tabManager.spaces.contains(where: { $0.id == spaceId }) else { return false }
-            _ = openNewTab(
-                url: url.absoluteString,
-                context: .foreground(
-                    windowState: windowState,
-                    preferredSpaceId: spaceId,
-                    regularInsertionIndex: index
-                )
-            )
-            return true
-
-        case .spacePinned(let spaceId, let index):
-            guard tabManager.spaces.contains(where: { $0.id == spaceId }) else { return false }
-            let tab = openNewTab(
-                url: url.absoluteString,
-                context: .foreground(windowState: windowState, preferredSpaceId: spaceId)
-            )
-            return tabManager.convertTabToShortcutPin(
-                tab,
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: spaceId,
-                folderId: nil,
-                at: index
-            ) != nil
-
-        case .folder(let folderId, let index):
-            guard let spaceId = tabManager.folderSpaceId(for: folderId) else { return false }
-            let tab = openNewTab(
-                url: url.absoluteString,
-                context: .foreground(windowState: windowState, preferredSpaceId: spaceId)
-            )
-            return tabManager.convertTabToShortcutPin(
-                tab,
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: spaceId,
-                folderId: folderId,
-                at: index,
-                openTargetFolder: false
-            ) != nil
-
-        case .essentials(let index):
-            let insertion = tabManager.resolveEssentialsInsertion(
-                using: TabManager.EssentialsInsertionContext(
-                    target: TabManager.EssentialsTargetContext(windowState: windowState),
-                    targetIndex: index
-                )
-            )
-            guard let insertion else { return false }
-            let tab = openNewTab(
-                url: url.absoluteString,
-                context: .foreground(
-                    windowState: windowState,
-                    preferredSpaceId: windowState.currentSpaceId
-                )
-            )
-            return tabManager.convertTabToShortcutPin(
-                tab,
-                role: .essential,
-                profileId: insertion.profileId,
-                spaceId: nil,
-                folderId: nil,
-                at: insertion.index
-            ) != nil
-
-        case .empty:
-            return false
-        }
-    }
-
-    private func showWebInspectorAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Open Web Inspector"
-        alert.informativeText = "To open the Web Inspector:\n\n1. Right-click on the page and select 'Inspect Element'\n\nOr enable the Develop menu in Safari Settings → Advanced, then use Develop → [Your App]"
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        activePageRoutingOwner.openDroppedURL(url, in: windowState, at: slot)
     }
 }
