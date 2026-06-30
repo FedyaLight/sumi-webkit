@@ -310,6 +310,60 @@ struct TabSuspensionWebViewState: Equatable {
 }
 
 @MainActor
+struct TabSuspensionRuntime {
+    typealias WebViewCoordinatorProvider = @MainActor () -> WebViewCoordinator?
+    typealias MemoryModeProvider = @MainActor () -> SumiMemoryMode
+    typealias DeactivationDelayProvider = @MainActor () -> TimeInterval
+    typealias EnergySaverProvider = @MainActor () -> Bool
+    typealias TabsProvider = @MainActor () -> [Tab]
+    typealias TabIDsProvider = @MainActor () -> Set<UUID>
+    typealias VisibleTabIDsByWindowProvider = @MainActor () -> [UUID: Set<UUID>]
+    typealias LazyRestoreQueueRefresher = @MainActor (
+        _ context: TabSuspensionEvaluationContext
+    ) -> Void
+
+    let webViewCoordinator: WebViewCoordinatorProvider
+    let memoryMode: MemoryModeProvider
+    let customDeactivationDelay: DeactivationDelayProvider
+    let energySaverActive: EnergySaverProvider
+    let allKnownTabs: TabsProvider
+    let selectedTabIDs: TabIDsProvider
+    let visibleTabIDsByWindow: VisibleTabIDsByWindowProvider
+    let refreshLazyRestoreQueue: LazyRestoreQueueRefresher
+
+    init(
+        webViewCoordinator: @escaping WebViewCoordinatorProvider,
+        memoryMode: @escaping MemoryModeProvider,
+        customDeactivationDelay: @escaping DeactivationDelayProvider,
+        energySaverActive: @escaping EnergySaverProvider,
+        allKnownTabs: @escaping TabsProvider,
+        selectedTabIDs: @escaping TabIDsProvider,
+        visibleTabIDsByWindow: @escaping VisibleTabIDsByWindowProvider,
+        refreshLazyRestoreQueue: @escaping LazyRestoreQueueRefresher
+    ) {
+        self.webViewCoordinator = webViewCoordinator
+        self.memoryMode = memoryMode
+        self.customDeactivationDelay = customDeactivationDelay
+        self.energySaverActive = energySaverActive
+        self.allKnownTabs = allKnownTabs
+        self.selectedTabIDs = selectedTabIDs
+        self.visibleTabIDsByWindow = visibleTabIDsByWindow
+        self.refreshLazyRestoreQueue = refreshLazyRestoreQueue
+    }
+
+    static let inactive = TabSuspensionRuntime(
+        webViewCoordinator: { nil },
+        memoryMode: { .balanced },
+        customDeactivationDelay: { SumiMemorySaverCustomDelay.defaultDelay },
+        energySaverActive: { false },
+        allKnownTabs: { [] },
+        selectedTabIDs: { [] },
+        visibleTabIDsByWindow: { [:] },
+        refreshLazyRestoreQueue: { _ in }
+    )
+}
+
+@MainActor
 final class TabSuspensionService {
     private static let defaultMinimumInactiveInterval: TimeInterval = 10 * 60
     private static let maxScheduledProactiveTimerReconcileReasons = 8
@@ -322,7 +376,7 @@ final class TabSuspensionService {
         let hiddenStartedAtLiveUptime: TimeInterval
     }
 
-    private weak var browserManager: BrowserManager?
+    private var runtime: TabSuspensionRuntime = .inactive
     private let memoryMonitor: SumiMemoryPressureMonitoring?
     private let dateProvider: () -> Date
     private let suspensionClock: SumiSuspensionClock
@@ -391,8 +445,8 @@ final class TabSuspensionService {
         }
     }
 
-    func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    func attach(runtime: TabSuspensionRuntime) {
+        self.runtime = runtime
         memoryMonitor?.start()
         reconcileProactiveTimers(reason: "attach")
     }
@@ -447,9 +501,7 @@ final class TabSuspensionService {
         reason: String,
         context: TabSuspensionEvaluationContext
     ) -> Bool {
-        guard let browserManager,
-              let coordinator = browserManager.webViewCoordinator
-        else { return false }
+        guard let coordinator = runtime.webViewCoordinator() else { return false }
 
         guard tabLevelSuspensionIneligibility(for: tab, context: context) == nil else {
             return false
@@ -492,16 +544,14 @@ final class TabSuspensionService {
     }
 
     private var currentMemoryMode: SumiMemoryMode {
-        browserManager?.sumiSettings?.memoryMode ?? .balanced
+        runtime.memoryMode()
     }
 
     private var currentSuspensionPolicy: TabSuspensionPolicy {
         TabSuspensionPolicy(
             memoryMode: currentMemoryMode,
-            customDeactivationDelay: browserManager?.sumiSettings?.memorySaverCustomDeactivationDelay
-                ?? SumiMemorySaverCustomDelay.defaultDelay,
-            energySaverActive: browserManager?.sumiSettings?
-                .energySaverApplies(.deactivateInactiveTabsSooner) ?? false
+            customDeactivationDelay: runtime.customDeactivationDelay(),
+            energySaverActive: runtime.energySaverActive()
         )
     }
 
@@ -657,7 +707,7 @@ final class TabSuspensionService {
         guard tabLevelSuspensionIneligibility(for: tab, context: context) == nil else {
             return false
         }
-        guard let coordinator = browserManager?.webViewCoordinator else { return false }
+        guard let coordinator = runtime.webViewCoordinator() else { return false }
         return suspensionEligibility(
             for: tab,
             liveWebViews: coordinator.trackedLiveWebViews(for: tab),
@@ -729,7 +779,7 @@ final class TabSuspensionService {
             return
         }
 
-        guard let coordinator = browserManager?.webViewCoordinator,
+        guard let coordinator = runtime.webViewCoordinator(),
               suspensionEligibility(
                   for: tab,
                   liveWebViews: coordinator.trackedLiveWebViews(for: tab),
@@ -791,9 +841,7 @@ final class TabSuspensionService {
         webViewStatesByTabID: [UUID: [TabSuspensionWebViewState]] = [:],
         context: TabSuspensionEvaluationContext? = nil
     ) -> [Candidate] {
-        guard let browserManager,
-              let coordinator = browserManager.webViewCoordinator
-        else { return [] }
+        guard let coordinator = runtime.webViewCoordinator() else { return [] }
 
         let context = context ?? suspensionEvaluationContext()
 
@@ -850,7 +898,7 @@ final class TabSuspensionService {
             return ineligibility
         }
 
-        guard let coordinator = browserManager?.webViewCoordinator else {
+        guard let coordinator = runtime.webViewCoordinator() else {
             return .ineligible(reason: .noLiveWebView)
         }
 
@@ -924,82 +972,19 @@ final class TabSuspensionService {
     }
 
     private func allKnownTabs() -> [Tab] {
-        guard let browserManager else { return [] }
-
-        var seen = Set<UUID>()
-        var tabs: [Tab] = []
-
-        func append(_ tab: Tab) {
-            guard seen.insert(tab.id).inserted else { return }
-            tabs.append(tab)
-        }
-
-        browserManager.tabManager.allTabs().forEach(append)
-        (browserManager.windowRegistry?.windows.values.map { $0 } ?? [])
-            .flatMap(\.ephemeralTabs)
-            .forEach(append)
-        return tabs
+        runtime.allKnownTabs()
     }
 
     private func selectedTabIDs() -> Set<UUID> {
-        guard let browserManager else { return [] }
-
-        var selectedIDs = Set<UUID>()
-        for windowState in browserManager.windowRegistry?.windows.values.map({ $0 }) ?? [] {
-            if let current = browserManager.currentTab(for: windowState) {
-                selectedIDs.insert(current.id)
-            }
-        }
-        if let current = browserManager.tabManager.currentTab {
-            selectedIDs.insert(current.id)
-        }
-        return selectedIDs
+        runtime.selectedTabIDs()
     }
 
     private func visibleTabIDsByWindow() -> [UUID: Set<UUID>] {
-        guard let browserManager else { return [:] }
-
-        var visible: [UUID: Set<UUID>] = [:]
-        for windowState in browserManager.windowRegistry?.windows.values.map({ $0 }) ?? [] {
-            let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
-                currentTabId: browserManager.currentTab(for: windowState)?.id,
-                splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
-            )
-            visible[windowState.id] = Set(tabIDs)
-        }
-        return visible
+        runtime.visibleTabIDsByWindow()
     }
 
     private func refreshLazyRestoreQueue(using context: TabSuspensionEvaluationContext) {
-        guard let browserManager,
-              let windowRegistry = browserManager.windowRegistry
-        else {
-            return
-        }
-
-        let activeWindowId = windowRegistry.activeWindow?.id
-        let anchors = windowRegistry.allWindows
-            .sorted { lhs, rhs in
-                let lhsPriority = lhs.id == activeWindowId ? 0 : 1
-                let rhsPriority = rhs.id == activeWindowId ? 0 : 1
-                if lhsPriority != rhsPriority {
-                    return lhsPriority < rhsPriority
-                }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-            .compactMap { windowState in
-                let currentTab = browserManager.currentTab(for: windowState)
-                return browserManager.tabManager.opportunisticRestoreAnchor(
-                    in: windowState,
-                    currentTab: currentTab
-                )
-            }
-
-        browserManager.tabManager.lazyRestoreCoordinator.refresh(
-            anchors: anchors,
-            selectedTabIDs: context.selectedTabIDs,
-            visibleTabIDs: context.visibleTabIDs
-        )
+        runtime.refreshLazyRestoreQueue(context)
     }
 
     private static func nanoseconds(for interval: TimeInterval) -> UInt64 {

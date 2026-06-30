@@ -6,7 +6,7 @@ import WebKit
 enum BrowserManagerRuntimeWiring {
     static func attach(to browserManager: BrowserManager) -> AnyCancellable {
         browserManager.compositorManager.attach(runtime: .live(browserManager: browserManager))
-        browserManager.tabSuspensionService.attach(browserManager: browserManager)
+        browserManager.tabSuspensionService.attach(runtime: tabSuspensionRuntime(for: browserManager))
         browserManager.backgroundMediaOptimizationService.attach(
             runtime: backgroundMediaOptimizationRuntime(for: browserManager)
         )
@@ -188,11 +188,48 @@ enum BrowserManagerRuntimeWiring {
             },
             allKnownTabs: { [weak browserManager] in
                 guard let browserManager else { return [] }
-                return allBackgroundMediaOptimizationTabs(for: browserManager)
+                return allRuntimeTabs(for: browserManager)
             },
             visibleTabIDsByWindow: { [weak browserManager] in
                 guard let browserManager else { return [:] }
                 return backgroundMediaVisibleTabIDsByWindow(for: browserManager)
+            }
+        )
+    }
+
+    private static func tabSuspensionRuntime(
+        for browserManager: BrowserManager
+    ) -> TabSuspensionRuntime {
+        TabSuspensionRuntime(
+            webViewCoordinator: { [weak browserManager] in
+                browserManager?.webViewCoordinator
+            },
+            memoryMode: { [weak browserManager] in
+                browserManager?.sumiSettings?.memoryMode ?? .balanced
+            },
+            customDeactivationDelay: { [weak browserManager] in
+                browserManager?.sumiSettings?.memorySaverCustomDeactivationDelay
+                    ?? SumiMemorySaverCustomDelay.defaultDelay
+            },
+            energySaverActive: { [weak browserManager] in
+                browserManager?.sumiSettings?
+                    .energySaverApplies(.deactivateInactiveTabsSooner) ?? false
+            },
+            allKnownTabs: { [weak browserManager] in
+                guard let browserManager else { return [] }
+                return allRuntimeTabs(for: browserManager)
+            },
+            selectedTabIDs: { [weak browserManager] in
+                guard let browserManager else { return [] }
+                return tabSuspensionSelectedTabIDs(for: browserManager)
+            },
+            visibleTabIDsByWindow: { [weak browserManager] in
+                guard let browserManager else { return [:] }
+                return tabSuspensionVisibleTabIDsByWindow(for: browserManager)
+            },
+            refreshLazyRestoreQueue: { [weak browserManager] context in
+                guard let browserManager else { return }
+                refreshTabSuspensionLazyRestoreQueue(context, for: browserManager)
             }
         )
     }
@@ -471,7 +508,67 @@ enum BrowserManagerRuntimeWiring {
         return visibleTabIDsByWindow
     }
 
-    private static func allBackgroundMediaOptimizationTabs(
+    private static func tabSuspensionSelectedTabIDs(
+        for browserManager: BrowserManager
+    ) -> Set<UUID> {
+        var selectedIDs = Set<UUID>()
+        for windowState in browserManager.windowRegistry?.windows.values.map({ $0 }) ?? [] {
+            if let current = browserManager.currentTab(for: windowState) {
+                selectedIDs.insert(current.id)
+            }
+        }
+        if let current = browserManager.tabManager.currentTab {
+            selectedIDs.insert(current.id)
+        }
+        return selectedIDs
+    }
+
+    private static func tabSuspensionVisibleTabIDsByWindow(
+        for browserManager: BrowserManager
+    ) -> [UUID: Set<UUID>] {
+        var visible: [UUID: Set<UUID>] = [:]
+        for windowState in browserManager.windowRegistry?.windows.values.map({ $0 }) ?? [] {
+            let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
+                currentTabId: browserManager.currentTab(for: windowState)?.id,
+                splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
+            )
+            visible[windowState.id] = Set(tabIDs)
+        }
+        return visible
+    }
+
+    private static func refreshTabSuspensionLazyRestoreQueue(
+        _ context: TabSuspensionEvaluationContext,
+        for browserManager: BrowserManager
+    ) {
+        guard let windowRegistry = browserManager.windowRegistry else { return }
+
+        let activeWindowId = windowRegistry.activeWindow?.id
+        let anchors = windowRegistry.allWindows
+            .sorted { lhs, rhs in
+                let lhsPriority = lhs.id == activeWindowId ? 0 : 1
+                let rhsPriority = rhs.id == activeWindowId ? 0 : 1
+                if lhsPriority != rhsPriority {
+                    return lhsPriority < rhsPriority
+                }
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+            .compactMap { windowState in
+                let currentTab = browserManager.currentTab(for: windowState)
+                return browserManager.tabManager.opportunisticRestoreAnchor(
+                    in: windowState,
+                    currentTab: currentTab
+                )
+            }
+
+        browserManager.tabManager.lazyRestoreCoordinator.refresh(
+            anchors: anchors,
+            selectedTabIDs: context.selectedTabIDs,
+            visibleTabIDs: context.visibleTabIDs
+        )
+    }
+
+    private static func allRuntimeTabs(
         for browserManager: BrowserManager
     ) -> [Tab] {
         var seen = Set<UUID>()
