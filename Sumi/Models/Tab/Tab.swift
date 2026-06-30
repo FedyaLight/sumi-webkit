@@ -223,6 +223,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.normalWebViewExtensionRuntime }
         set { navigationRuntime.normalWebViewExtensionRuntime = newValue }
     }
+    var scriptMessageRuntime: TabScriptMessageRuntime {
+        get { navigationRuntime.scriptMessageRuntime }
+        set { navigationRuntime.scriptMessageRuntime = newValue }
+    }
     var navigationDelegateRuntime: TabNavigationDelegateRuntime {
         get { navigationRuntime.navigationDelegateRuntime }
         set { navigationRuntime.navigationDelegateRuntime = newValue }
@@ -521,6 +525,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.currentTab(for: windowState)
                     }
                 )
+                scriptMessageRuntime = .live(glanceManager: browserManager.glanceManager)
                 navigationDelegateRuntime = .live(
                     externalSchemePermissionBridge: { [weak browserManager] in
                         browserManager?.externalSchemePermissionBridge
@@ -578,6 +583,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 permissionRuntime = .inactive
                 webViewCleanupRuntime = .inactive
                 normalWebViewExtensionRuntime = .inactive
+                scriptMessageRuntime = .inactive
                 navigationDelegateRuntime = .inactive
                 faviconExtensionRuntime = .inactive
                 popupHandlingRuntime = .inactive

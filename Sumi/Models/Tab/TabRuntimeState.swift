@@ -41,6 +41,15 @@ struct TabMediaRuntimeCallbacks {
 }
 
 @MainActor
+struct TabScriptMessageRuntime {
+    var presentExternalURLInGlance: (URL, Tab, CGRect?) -> Void
+
+    static let inactive = Self(
+        presentExternalURLInGlance: { _, _, _ in }
+    )
+}
+
+@MainActor
 struct TabHistorySwipeRuntime {
     var windowIDContaining: (WKWebView) -> UUID?
     var beginHistorySwipeProtection: (
@@ -417,6 +426,7 @@ final class TabNavigationRuntime {
     var permissionRuntime = TabPermissionRuntime.inactive
     var webViewCleanupRuntime = TabWebViewCleanupRuntime.inactive
     var normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime.inactive
+    var scriptMessageRuntime = TabScriptMessageRuntime.inactive
     var navigationDelegateRuntime = TabNavigationDelegateRuntime.inactive
     var faviconExtensionRuntime = TabFaviconExtensionRuntime.inactive
     var popupHandlingRuntime = TabPopupHandlingRuntime.inactive

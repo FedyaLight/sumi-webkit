@@ -148,6 +148,32 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(preparedReasons, ["test.extension-runtime"])
     }
 
+    func testScriptMessageGlanceUsesInjectedRuntimeWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let targetURL = URL(string: "https://example.com/glance")!
+        let originRect = CGRect(x: 12, y: 24, width: 36, height: 48)
+        var capturedURL: URL?
+        var capturedTab: Tab?
+        var capturedOriginRect: CGRect?
+        tab.scriptMessageRuntime = TabScriptMessageRuntime(
+            presentExternalURLInGlance: { url, sourceTab, originRectInWindow in
+                capturedURL = url
+                capturedTab = sourceTab
+                capturedOriginRect = originRectInWindow
+            }
+        )
+
+        tab.scriptMessageRuntimeOwner.openURLInGlance(
+            targetURL,
+            originRectInWindow: originRect
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(capturedURL, targetURL)
+        XCTAssertIdentical(capturedTab, tab)
+        XCTAssertEqual(capturedOriginRect, originRect)
+    }
+
     func testExtensionPageFaviconUsesInjectedRuntimeWithoutBrowserManager() async throws {
         let extensionId = "ext-\(UUID().uuidString)"
         let pageURL = try XCTUnwrap(URL(string: "safari-web-extension://\(extensionId)/popup.html"))

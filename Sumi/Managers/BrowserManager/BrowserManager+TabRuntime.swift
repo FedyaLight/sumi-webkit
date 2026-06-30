@@ -57,6 +57,21 @@ extension TabMediaRuntimeCallbacks {
 }
 
 @MainActor
+extension TabScriptMessageRuntime {
+    static func live(glanceManager: GlanceManager) -> Self {
+        Self(
+            presentExternalURLInGlance: { [weak glanceManager] url, tab, originRectInWindow in
+                glanceManager?.presentExternalURL(
+                    url,
+                    from: tab,
+                    originRectInWindow: originRectInWindow
+                )
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabHistorySwipeRuntime {
     static func live(
         webViewCoordinator: @escaping () -> WebViewCoordinator?,
