@@ -14,6 +14,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
                 container: try makeInMemoryStartupContainer()
             )
         )
+        browserManager.webViewCoordinator = WebViewCoordinator()
 
         XCTAssertTrue(compositorManagerCanUseAttachedRuntime(browserManager))
         XCTAssertNotNil(browserManager.tabManager.runtimeContext)
@@ -365,6 +366,36 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         let preparer = try XCTUnwrap(cleanupService.destructiveCleanupPreparer)
         XCTAssertIdentical(preparer as AnyObject, coordinator)
+    }
+
+    func testWebViewCoordinatorWiringPreparesVisibleWebViewsThroughBrowserManager() async throws {
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        let windowRegistry = WindowRegistry()
+        let coordinator = WebViewCoordinator()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = coordinator
+        await browserManager.drainProtectionRuntimeTasksForTests()
+
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Visible WebView Runtime")
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/visible-webview",
+            in: space,
+            activate: true
+        )
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        XCTAssertTrue(browserManager.prepareVisibleWebViews(for: windowState))
+        XCTAssertNotNil(coordinator.getWebView(for: tab.id, in: windowState.id))
     }
 
     func testShellRuntimeCoordinatorBindingTransfersOwnershipAndCleanupPreparer() throws {

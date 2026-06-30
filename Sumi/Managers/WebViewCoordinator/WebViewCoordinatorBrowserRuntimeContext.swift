@@ -3,7 +3,7 @@ import WebKit
 
 @MainActor
 struct WebViewCoordinatorBrowserRuntimeContext {
-    let tabManager: () -> TabManager?
+    let tabManager: () -> TabManager
     let tab: (UUID) -> Tab?
     let regularTabs: () -> [Tab]
     let pinnedTabs: () -> [Tab]

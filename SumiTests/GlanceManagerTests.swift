@@ -99,7 +99,7 @@ final class GlanceManagerTests: XCTestCase {
         let browserManager = BrowserManager()
         browserManager.webViewCoordinator = WebViewCoordinator()
         let sourceTab = makeSourceTab(in: browserManager)
-        let (_, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
+        let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let webView = WKWebView()
 
         browserManager.webViewCoordinator?.setWebView(
@@ -115,6 +115,7 @@ final class GlanceManagerTests: XCTestCase {
             for: sourceTab.id,
             in: sourceWindow.id
         ))
+        withExtendedLifetime(windowRegistry) { /* BrowserManager keeps the registry weak. */ }
     }
 
     func testMoveToNewTabAdoptsSamePreviewTabAndWebView() async throws {

@@ -8,60 +8,80 @@ enum BrowserManagerWebViewCoordinatorRuntimeFactory {
     ) -> WebViewCoordinatorBrowserRuntimeContext {
         WebViewCoordinatorBrowserRuntimeContext(
             tabManager: { [weak browserManager] in
-                browserManager?.tabManager
+                requireBrowserManager(browserManager, operation: "resolve TabManager").tabManager
             },
             tab: { [weak browserManager] tabId in
-                browserManager?.tabManager.tab(for: tabId)
+                requireBrowserManager(browserManager, operation: "resolve tab").tabManager.tab(for: tabId)
             },
             regularTabs: { [weak browserManager] in
-                browserManager?.tabManager.allTabs() ?? []
+                requireBrowserManager(browserManager, operation: "list regular tabs").tabManager.allTabs()
             },
             pinnedTabs: { [weak browserManager] in
-                browserManager?.tabManager.allPinnedTabsAllProfiles ?? []
+                requireBrowserManager(
+                    browserManager,
+                    operation: "list pinned tabs"
+                ).tabManager.allPinnedTabsAllProfiles
             },
             allWindows: { [weak browserManager] in
-                browserManager?.windowRegistry?.allWindows ?? []
+                requireWindowRegistry(browserManager, operation: "list windows").allWindows
             },
             window: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
+                requireWindowRegistry(browserManager, operation: "resolve window").windows[windowId]
             },
             windowContaining: { [weak browserManager] tab in
-                browserManager?.windowState(containing: tab)
+                requireBrowserManager(browserManager, operation: "resolve tab window").windowState(containing: tab)
             },
             currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
+                requireBrowserManager(browserManager, operation: "resolve current tab").currentTab(for: windowState)
             },
             closeTab: { [weak browserManager] tab, windowState in
-                browserManager?.closeTab(tab, in: windowState)
+                requireBrowserManager(browserManager, operation: "close tab").closeTab(tab, in: windowState)
             },
             removeTab: { [weak browserManager] tabId in
-                browserManager?.tabManager.removeTab(tabId)
+                requireBrowserManager(browserManager, operation: "remove tab").tabManager.removeTab(tabId)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.refreshCompositor(for: windowState)
+                requireBrowserManager(
+                    browserManager,
+                    operation: "refresh compositor"
+                ).refreshCompositor(for: windowState)
             },
             notifyTabActivatedIfLoaded: { [weak browserManager] tab in
-                browserManager?.extensionsModule.notifyTabActivatedIfLoaded(
+                requireBrowserManager(
+                    browserManager,
+                    operation: "notify extension tab activation"
+                ).extensionsModule.notifyTabActivatedIfLoaded(
                     newTab: tab,
                     previous: nil
                 )
             },
             needsInitialDocumentExtensionContextLoad: { [weak browserManager] profileId in
-                browserManager?.extensionsModule
-                    .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId) == true
+                requireBrowserManager(
+                    browserManager,
+                    operation: "check initial document extension contexts"
+                ).extensionsModule.needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
             },
             ensureInitialDocumentExtensionContextsLoaded: { [weak browserManager] profileId in
-                await browserManager?.extensionsModule
+                await requireBrowserManager(
+                    browserManager,
+                    operation: "load initial document extension contexts"
+                ).extensionsModule
                     .ensureInitialDocumentExtensionContextsLoadedIfNeeded(profileId: profileId)
             },
             cleanupUserScripts: { [weak browserManager] controller, webViewId in
-                browserManager?.userscriptsModule.cleanupWebViewIfLoaded(
+                requireBrowserManager(
+                    browserManager,
+                    operation: "cleanup user scripts"
+                ).userscriptsModule.cleanupWebViewIfLoaded(
                     controller: controller,
                     webViewId: webViewId
                 )
             },
             globallyVisibleTabIDs: { [weak browserManager] in
-                browserManager?.tabSuspensionService.suspensionEvaluationContext().visibleTabIDs ?? []
+                requireBrowserManager(
+                    browserManager,
+                    operation: "resolve globally visible tabs"
+                ).tabSuspensionService.suspensionEvaluationContext().visibleTabIDs
             }
         )
     }
@@ -71,39 +91,77 @@ enum BrowserManagerWebViewCoordinatorRuntimeFactory {
     ) -> WebViewCoordinatorVisibleRuntimeContext {
         WebViewCoordinatorVisibleRuntimeContext(
             windowState: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
+                requireWindowRegistry(browserManager, operation: "resolve visible window").windows[windowId]
             },
             currentTabId: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)?.id
+                requireBrowserManager(browserManager, operation: "resolve visible current tab")
+                    .currentTab(for: windowState)?.id
             },
             splitVisibleTabIds: { [weak browserManager] windowId in
-                browserManager?.splitManager.visibleTabIds(for: windowId) ?? []
+                requireBrowserManager(browserManager, operation: "resolve split visible tabs")
+                    .splitManager.visibleTabIds(for: windowId)
             },
             resolveTab: { [weak browserManager] tabId, windowState in
                 if windowState.isIncognito,
                    let ephemeralTab = windowState.ephemeralTabs.first(where: { $0.id == tabId }) {
                     return ephemeralTab
                 }
-                return browserManager?.tabManager.tab(for: tabId)
+                return requireBrowserManager(browserManager, operation: "resolve visible tab")
+                    .tabManager.tab(for: tabId)
             },
             canMaterializeNormalTabWebViewDuringStartup: { [weak browserManager] tab in
-                browserManager?.canMaterializeNormalTabWebViewDuringStartup(tab) == true
+                requireBrowserManager(
+                    browserManager,
+                    operation: "check visible WebView startup materialization"
+                ).canMaterializeNormalTabWebViewDuringStartup(tab)
             },
             markTabAccessed: { [weak browserManager] tabId in
-                browserManager?.compositorManager.markTabAccessed(tabId)
+                requireBrowserManager(browserManager, operation: "mark visible tab accessed")
+                    .compositorManager.markTabAccessed(tabId)
             },
             globallyVisibleTabIDs: { [weak browserManager] in
-                browserManager?.tabSuspensionService.suspensionEvaluationContext().visibleTabIDs ?? []
+                requireBrowserManager(
+                    browserManager,
+                    operation: "resolve globally visible tabs"
+                ).tabSuspensionService.suspensionEvaluationContext().visibleTabIDs
             },
             scheduleTabSuspensionReconcile: { [weak browserManager] reason in
-                browserManager?.tabSuspensionService.scheduleProactiveTimerReconcile(reason: reason)
+                requireBrowserManager(browserManager, operation: "schedule tab suspension reconcile")
+                    .tabSuspensionService.scheduleProactiveTimerReconcile(reason: reason)
             },
             scheduleBackgroundMediaReconcile: { [weak browserManager] reason in
-                browserManager?.backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
+                requireBrowserManager(browserManager, operation: "schedule background media reconcile")
+                    .backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
             },
             refreshCompositor: { [weak browserManager] windowState in
-                browserManager?.refreshCompositor(for: windowState)
+                requireBrowserManager(browserManager, operation: "refresh visible compositor")
+                    .refreshCompositor(for: windowState)
             }
         )
+    }
+
+    private static func requireBrowserManager(
+        _ browserManager: BrowserManager?,
+        operation: String
+    ) -> BrowserManager {
+        guard let browserManager else {
+            preconditionFailure(
+                "WebViewCoordinator runtime cannot \(operation): BrowserManager was released."
+            )
+        }
+        return browserManager
+    }
+
+    private static func requireWindowRegistry(
+        _ browserManager: BrowserManager?,
+        operation: String
+    ) -> WindowRegistry {
+        let browserManager = requireBrowserManager(browserManager, operation: operation)
+        guard let windowRegistry = browserManager.windowRegistry else {
+            preconditionFailure(
+                "WebViewCoordinator runtime cannot \(operation): BrowserManager.windowRegistry is nil."
+            )
+        }
+        return windowRegistry
     }
 }

@@ -151,7 +151,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     func prepareForDestructiveDataCleanup(profileIDs: Set<UUID>) async {
         guard !profileIDs.isEmpty else { return }
-        guard let runtimeContext = resolvedBrowserRuntimeContext() else { return }
+        let runtimeContext = requireBrowserRuntimeContext()
 
         let preparationResult = destructiveCleanupPreparationScanOwner.prepare(
             pinnedTabs: runtimeContext.pinnedTabs(),
@@ -209,7 +209,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     func prepareVisibleWebViews(
         for windowState: BrowserWindowState
     ) -> Bool {
-        guard let runtime = visibleWebViewPreparationRuntime() else { return false }
+        let runtime = requireVisibleWebViewPreparationRuntime()
         return prepareVisibleWebViews(
             for: windowState,
             runtime: runtime
@@ -237,7 +237,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     func schedulePrepareVisibleWebViews(
         for windowState: BrowserWindowState
     ) {
-        guard let runtime = visibleWebViewPreparationRuntime() else { return }
+        let runtime = requireVisibleWebViewPreparationRuntime()
         visibleWebViewRuntimeOwner.schedulePrepareVisibleWebViews(
             for: windowState,
             runtime: runtime,
@@ -251,16 +251,20 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         )
     }
 
-    func attachVisiblePreparationRuntimeContext(
-        _ context: WebViewCoordinatorVisibleRuntimeContext?
-    ) {
+    func attachVisiblePreparationRuntimeContext(_ context: WebViewCoordinatorVisibleRuntimeContext) {
         visibleRuntimeContext = context
     }
 
-    func attachBrowserRuntimeContext(
-        _ context: WebViewCoordinatorBrowserRuntimeContext?
-    ) {
+    func detachVisiblePreparationRuntimeContext() {
+        visibleRuntimeContext = nil
+    }
+
+    func attachBrowserRuntimeContext(_ context: WebViewCoordinatorBrowserRuntimeContext) {
         browserRuntimeContext = context
+    }
+
+    func detachBrowserRuntimeContext() {
+        browserRuntimeContext = nil
     }
 
     // MARK: - Window Cleanup
@@ -399,6 +403,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
+        guard mediaProtectionOwner.hasDeferredProtectedCommands(for: webViewID) else { return }
         deferredProtectedCommandExecutionOwner.flushCommandsIfUnprotected(
             for: webViewID,
             mediaProtectionOwner: mediaProtectionOwner,
@@ -607,7 +612,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         for webView: WKWebView,
         reason: String
     ) -> Bool {
-        deferredProtectedCommandExecutionOwner.enqueue(
+        mediaProtectionOwner.note(webView)
+        guard mediaProtectionOwner.isProtected(webView) else {
+            return false
+        }
+
+        return deferredProtectedCommandExecutionOwner.enqueue(
             command,
             for: webView,
             reason: reason,
@@ -629,9 +639,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 self?.flushDeferredProtectedCommands(for: webViewID)
             },
             refreshCompositor: { [weak self] windowID in
-                guard let self,
-                      let runtimeContext = self.resolvedBrowserRuntimeContext(),
-                      let windowState = runtimeContext.window(windowID)
+                guard let self else { return }
+                let runtimeContext = requireBrowserRuntimeContext()
+                guard let windowState = runtimeContext.window(windowID)
                 else {
                     return
                 }
@@ -668,7 +678,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func resolvedTab(with tabID: UUID) -> Tab? {
-        guard let runtimeContext = resolvedBrowserRuntimeContext() else { return nil }
+        let runtimeContext = requireBrowserRuntimeContext()
         return resolvedTab(with: tabID, runtimeContext: runtimeContext)
     }
 
@@ -694,6 +704,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func pruneInvalidDeferredProtectedCommands(reason: String) {
+        finishDestructiveCleanupSuppression(
+            for: mediaProtectionOwner.pruneStaleBookkeeping(reason: "\(reason).staleBookkeeping")
+        )
+        guard mediaProtectionOwner.hasDeferredProtectedCommands else { return }
         deferredProtectedCommandExecutionOwner.pruneInvalidCommands(
             reason: reason,
             mediaProtectionOwner: mediaProtectionOwner,
@@ -702,15 +716,16 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func deferredProtectedCommandRuntime() -> WebViewDeferredProtectedCommandExecutionOwner.Runtime {
+        let runtimeContext = requireBrowserRuntimeContext()
         let validationContext = WebViewDeferredProtectedCommandExecutionOwner.ValidationContext(
             resolveWebView: { [self] webViewID in
                 resolveWebView(with: webViewID)
             },
             resolveTab: { [self] tabID in
-                resolvedTab(with: tabID)
+                resolvedTab(with: tabID, runtimeContext: runtimeContext)
             },
-            hasTabManager: { [self] in
-                resolvedBrowserRuntimeContext()?.tabManager() != nil
+            hasTabManager: {
+                true
             },
             hasCleanupWindowTarget: { [self] windowID in
                 webViewRegistry.trackedWebViews(in: windowID).isEmpty == false
@@ -719,8 +734,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             hasTrackedWebViews: { [self] in
                 webViewRegistry.isEmpty == false
             },
-            hasWindow: { [self] windowID in
-                resolvedBrowserRuntimeContext()?.window(windowID) != nil
+            hasWindow: { windowID in
+                runtimeContext.window(windowID) != nil
             }
         )
         return WebViewDeferredProtectedCommandExecutionOwner.Runtime(
@@ -827,15 +842,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             }
             handleWebViewDidClose(webView)
         case .cleanupWindow(let windowID):
-            guard let tabManager = resolvedBrowserRuntimeContext()?.tabManager() else {
-                return false
-            }
-            cleanupWindow(windowID, tabManager: tabManager)
+            cleanupWindow(windowID, tabManager: requireBrowserRuntimeContext().tabManager())
         case .cleanupAllWebViews:
-            guard let tabManager = resolvedBrowserRuntimeContext()?.tabManager() else {
-                return false
-            }
-            cleanupAllWebViews(tabManager: tabManager)
+            cleanupAllWebViews(tabManager: requireBrowserRuntimeContext().tabManager())
         case .rebuildLiveWebViews(let tabID, let preferredPrimaryWindowID):
             guard let tab = resolvedTab(with: tabID) else {
                 return false
@@ -845,8 +854,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 preferredPrimaryWindowId: preferredPrimaryWindowID
             )
         case .evictHiddenWebViews(let windowID):
-            guard let runtimeContext = resolvedBrowserRuntimeContext(),
-                  runtimeContext.window(windowID) != nil
+            let runtimeContext = requireBrowserRuntimeContext()
+            guard runtimeContext.window(windowID) != nil
             else {
                 return false
             }
@@ -937,9 +946,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         _ webView: WKWebView,
         owner: TrackedWebViewOwner
     ) -> Bool {
-        guard let runtimeContext = resolvedBrowserRuntimeContext(),
-              let tab = resolvedTab(with: owner.tabID)
-        else {
+        let runtimeContext = requireBrowserRuntimeContext()
+        guard let tab = resolvedTab(with: owner.tabID, runtimeContext: runtimeContext) else {
             cleanupTrackedWebView(webView, owner: owner)
             return true
         }
@@ -959,10 +967,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         windowState: BrowserWindowState?,
         runtimeContext: WebViewCoordinatorBrowserRuntimeContext? = nil
     ) {
-        guard let runtimeContext = runtimeContext ?? resolvedBrowserRuntimeContext() else {
-            tab.performComprehensiveWebViewCleanup()
-            return
-        }
+        let runtimeContext = runtimeContext ?? requireBrowserRuntimeContext()
 
         if let windowState {
             runtimeContext.closeTab(tab, windowState)
@@ -981,7 +986,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private func untrackedTabContext(
         for webView: WKWebView
     ) -> (tab: Tab, windowState: BrowserWindowState?)? {
-        guard let runtimeContext = resolvedBrowserRuntimeContext() else { return nil }
+        let runtimeContext = requireBrowserRuntimeContext()
 
         func matches(_ tab: Tab) -> Bool {
             tab.existingWebView === webView || tab.assignedWebView === webView
@@ -1006,7 +1011,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private func visibleTabIDSet(in windowId: UUID) -> Set<UUID> {
         visibleWebViewRuntimeOwner.visibleTabIDSet(
             in: windowId,
-            runtime: visibleWebViewPreparationRuntime()
+            runtime: requireVisibleWebViewPreparationRuntime()
         )
     }
 
@@ -1022,6 +1027,24 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             return visibleWebViewPreparationRuntime(context: visibleRuntimeContext)
         }
         return nil
+    }
+
+    private func requireBrowserRuntimeContext() -> WebViewCoordinatorBrowserRuntimeContext {
+        guard let browserRuntimeContext else {
+            preconditionFailure(
+                "WebViewCoordinator browser runtime context is nil. Attach it via BrowserManager.webViewCoordinator before runtime-dependent WebView operations."
+            )
+        }
+        return browserRuntimeContext
+    }
+
+    private func requireVisibleWebViewPreparationRuntime() -> VisibleWebViewPreparationRuntime {
+        guard let visibleRuntimeContext else {
+            preconditionFailure(
+                "WebViewCoordinator visible runtime context is nil. Attach it via BrowserManager.webViewCoordinator before preparing visible WebViews."
+            )
+        }
+        return visibleWebViewPreparationRuntime(context: visibleRuntimeContext)
     }
 
     private func visibleWebViewPreparationRuntime(
@@ -1130,13 +1153,13 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     ) -> (owner: TrackedWebViewOwner, webView: WKWebView)? {
         visibleWebViewRuntimeOwner.preferredPrimaryWebViewCandidate(
             for: tabId,
-            runtime: visibleWebViewPreparationRuntime(),
+            runtime: requireVisibleWebViewPreparationRuntime(),
             webViewRegistry: webViewRegistry
         )
     }
 
     private func assignmentRebuildRuntime() -> WebViewAssignmentRebuildOwner.Runtime {
-        let runtimeContext = resolvedBrowserRuntimeContext()
+        let runtimeContext = requireBrowserRuntimeContext()
         return WebViewAssignmentRebuildOwner.Runtime(
             webViewRegistry: webViewRegistry,
             initialDocumentWarmupRuntime: initialDocumentWarmupRuntime(
@@ -1171,33 +1194,28 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 preferredPrimaryWebViewCandidate(for: tabId)
             },
             liveWindowIDs: {
-                guard let runtimeContext else { return nil }
                 return Set(runtimeContext.allWindows().map(\.id))
             },
             refreshCompositor: { windowId in
-                guard let windowState = runtimeContext?.window(windowId) else {
+                guard let windowState = runtimeContext.window(windowId) else {
                     return
                 }
-                runtimeContext?.refreshCompositor(windowState)
+                runtimeContext.refreshCompositor(windowState)
             },
             notifyTabActivatedIfCurrent: { tab, windowId in
-                guard let windowState = runtimeContext?.window(windowId),
-                      runtimeContext?.currentTab(windowState)?.id == tab.id
+                guard let windowState = runtimeContext.window(windowId),
+                      runtimeContext.currentTab(windowState)?.id == tab.id
                 else {
                     return
                 }
-                runtimeContext?.notifyTabActivatedIfLoaded(tab)
+                runtimeContext.notifyTabActivatedIfLoaded(tab)
             }
         )
     }
 
     private func initialDocumentWarmupRuntime(
-        runtimeContext: WebViewCoordinatorBrowserRuntimeContext? = nil
-    ) -> InitialDocumentWarmupRuntime? {
-        guard let runtimeContext = runtimeContext ?? resolvedBrowserRuntimeContext() else {
-            return nil
-        }
-
+        runtimeContext: WebViewCoordinatorBrowserRuntimeContext
+    ) -> InitialDocumentWarmupRuntime {
         return InitialDocumentWarmupRuntime(
             needsInitialDocumentExtensionContextLoad: { profileId in
                 runtimeContext.needsInitialDocumentExtensionContextLoad(profileId)
@@ -1217,14 +1235,14 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         in windowId: UUID,
         visibleTabIDs: Set<UUID>
     ) {
-        let runtimeContext = resolvedBrowserRuntimeContext()
+        let runtimeContext = requireBrowserRuntimeContext()
         hiddenCloneEvictionOwner.evictHiddenWebViews(
             in: windowId,
             visibleTabIDs: visibleTabIDs,
             entries: webViewRegistry.trackedWebViews(in: windowId),
             runtime: hiddenCloneEvictionRuntime(
                 globallyVisibleTabIDs: {
-                    runtimeContext?.globallyVisibleTabIDs() ?? []
+                    runtimeContext.globallyVisibleTabIDs()
                 },
                 runtimeContext: runtimeContext
             )
@@ -1232,7 +1250,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func notifyTabActivatedIfCurrent(_ tab: Tab, in windowId: UUID) {
-        guard let runtimeContext = resolvedBrowserRuntimeContext() else { return }
+        let runtimeContext = requireBrowserRuntimeContext()
 
         if let windowState = runtimeContext.window(windowId),
            runtimeContext.currentTab(windowState)?.id == tab.id {
@@ -1271,10 +1289,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func webViewShutdownRuntime() -> SumiWebViewShutdown.NormalTabRuntime {
-        let runtimeContext = resolvedBrowserRuntimeContext()
+        let runtimeContext = requireBrowserRuntimeContext()
         return SumiWebViewShutdown.NormalTabRuntime(
             cleanupUserScripts: { controller, webViewId in
-                runtimeContext?.cleanupUserScripts(controller, webViewId)
+                runtimeContext.cleanupUserScripts(controller, webViewId)
             },
             removeWebViewFromContainers: { [weak self] webView in
                 self?.removeWebViewFromContainers(webView)

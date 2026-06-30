@@ -312,12 +312,14 @@ class BrowserManager: ObservableObject {
                 ) ?? false
             },
             prepareVisibleWebViews: { [weak self] windowState in
-                self?.webViewCoordinator?.prepareVisibleWebViews(
+                guard let self else { return false }
+                return requireWebViewCoordinator().prepareVisibleWebViews(
                     for: windowState
-                ) ?? false
+                )
             },
             schedulePrepareVisibleWebViews: { [weak self] windowState in
-                self?.webViewCoordinator?.schedulePrepareVisibleWebViews(
+                guard let self else { return }
+                requireWebViewCoordinator().schedulePrepareVisibleWebViews(
                     for: windowState
                 )
             }
@@ -556,17 +558,18 @@ class BrowserManager: ObservableObject {
         BrowserShellRuntime.Dependencies(
             releaseWebViewCoordinator: { [weak self] coordinator in
                 guard self != nil else { return }
-                coordinator?.attachVisiblePreparationRuntimeContext(nil)
-                coordinator?.attachBrowserRuntimeContext(nil)
+                coordinator?.detachVisiblePreparationRuntimeContext()
+                coordinator?.detachBrowserRuntimeContext()
             },
             adoptWebViewCoordinator: { [weak self] coordinator in
                 guard let self else { return }
-                coordinator?.attachBrowserRuntimeContext(
+                guard let coordinator else { return }
+                coordinator.attachBrowserRuntimeContext(
                     BrowserManagerWebViewCoordinatorRuntimeFactory.browserRuntimeContext(
                         for: self
                     )
                 )
-                coordinator?.attachVisiblePreparationRuntimeContext(
+                coordinator.attachVisiblePreparationRuntimeContext(
                     BrowserManagerWebViewCoordinatorRuntimeFactory.visiblePreparationContext(
                         for: self
                     )

@@ -13,7 +13,7 @@ extension BrowserManager {
             return true
         }
 
-        return webViewCoordinator?.handleWebViewDidClose(webView) ?? false
+        return requireWebViewCoordinator().handleWebViewDidClose(webView)
     }
 
     func closeAuxiliaryMiniWindow(

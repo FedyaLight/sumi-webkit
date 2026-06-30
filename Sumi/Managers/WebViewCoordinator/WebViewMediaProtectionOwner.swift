@@ -33,6 +33,14 @@ final class WebViewMediaProtectionOwner {
         protectedCommandOwner.resolveWeakWebView(with: identifier)
     }
 
+    var hasDeferredProtectedCommands: Bool {
+        protectedCommandOwner.hasDeferredCommands
+    }
+
+    func hasDeferredProtectedCommands(for sourceWebViewID: ObjectIdentifier) -> Bool {
+        protectedCommandOwner.hasDeferredCommands(for: sourceWebViewID)
+    }
+
     func beginHistorySwipeProtection(
         on webView: WKWebView,
         windowID: UUID?,

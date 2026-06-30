@@ -115,6 +115,14 @@ private struct DeferredProtectedWebViewCommandStore {
         Array(buffersBySourceWebViewID.keys)
     }
 
+    var isEmpty: Bool {
+        buffersBySourceWebViewID.isEmpty
+    }
+
+    func hasCommands(for sourceWebViewID: ObjectIdentifier) -> Bool {
+        buffersBySourceWebViewID[sourceWebViewID]?.isEmpty == false
+    }
+
     mutating func enqueue(
         _ command: DeferredWebViewCommand,
         sourceWebViewID: ObjectIdentifier
@@ -171,6 +179,14 @@ final class WebViewProtectedCommandOwner {
 
     func resolveWeakWebView(with identifier: ObjectIdentifier) -> WKWebView? {
         weakWebViewRegistry.resolve(with: identifier)
+    }
+
+    var hasDeferredCommands: Bool {
+        deferredProtectedWebViewCommands.isEmpty == false
+    }
+
+    func hasDeferredCommands(for sourceWebViewID: ObjectIdentifier) -> Bool {
+        deferredProtectedWebViewCommands.hasCommands(for: sourceWebViewID)
     }
 
     func beginHistorySwipeProtection(
