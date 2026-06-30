@@ -11,7 +11,6 @@ enum BrowserManagerRuntimeWiring {
             runtime: backgroundMediaOptimizationRuntime(for: browserManager)
         )
         browserManager.splitManager.attach(runtime: .live(browserManager: browserManager))
-        browserManager.splitManager.windowRegistry = browserManager.windowRegistry
         browserManager.tabManager.attachRuntimeContext(.live(browserManager: browserManager))
         browserManager.liveFolderManager.attach(runtime: liveFolderRuntime(for: browserManager))
         browserManager.downloadManager.retryRuntime = downloadRetryRuntime(for: browserManager)

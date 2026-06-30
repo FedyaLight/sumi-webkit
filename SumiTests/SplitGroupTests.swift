@@ -2992,6 +2992,7 @@ final class SplitGroupTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.tabManager = tabManager
         browserManager.tabManager = tabManager
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
