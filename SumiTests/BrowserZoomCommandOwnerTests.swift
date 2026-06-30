@@ -5,24 +5,6 @@ import XCTest
 
 @MainActor
 final class BrowserZoomCommandOwnerTests: XCTestCase {
-    private var defaults: UserDefaults!
-    private var suiteName: String!
-
-    override func setUp() {
-        super.setUp()
-
-        suiteName = "BrowserZoomCommandOwnerTests.\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
-        defaults = nil
-        suiteName = nil
-        super.tearDown()
-    }
-
     func testZoomInActiveTabSavesProfileScopedBaseZoomAppliesBoostAndRequestsMenuPopover() {
         let zoomManager = makeZoomManager()
         let profileId = UUID()
@@ -125,8 +107,14 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         XCTAssertEqual(revision, 1)
     }
 
-    private func makeZoomManager() -> ZoomManager {
-        ZoomManager(userDefaults: defaults)
+    private func makeZoomManager(function: String = #function) -> ZoomManager {
+        let suiteName = "BrowserZoomCommandOwnerTests.\(function).\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        return ZoomManager(userDefaults: defaults)
     }
 
     private func makeOwner(

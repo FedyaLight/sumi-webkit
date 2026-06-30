@@ -29,9 +29,7 @@ struct WindowView: View {
     @Environment(WindowRegistry.self) private var windowRegistry
     @Environment(\.sumiSettings) var sumiSettings
     @StateObject private var hoverSidebarManager = HoverSidebarManager()
-    @State private var shouldRenderDockedSidebar = false
-    @State private var dockedSidebarLayoutProgress: CGFloat = 0
-    @State private var dockedSidebarLayoutGeneration: UInt64 = 0
+    @State private var dockedSidebarLayout = DockedSidebarLayoutState()
     /// Bumps when system/window effective appearance changes so `globalColorScheme` refreshes while in auto mode.
     @State private var effectiveAppearanceRevision: UInt = 0
     private let sidebarDragState: SidebarDragState
@@ -240,7 +238,7 @@ struct WindowView: View {
     }
 
     private var shouldRenderCollapsedSidebarOverlay: Bool {
-        !windowState.isSidebarVisible && !shouldRenderDockedSidebar
+        !windowState.isSidebarVisible && !dockedSidebarLayout.shouldRender
     }
 
     // MARK: - Layout Components
@@ -275,10 +273,8 @@ struct WindowView: View {
         let horizontalInsets = chromeGeometry.contentEdgeInsets
         let sidebarPosition = sumiSettings.sidebarPosition
         let shellEdge = sidebarPosition.shellEdge
-        let rendersDockedSidebar = sidebarVisible || shouldRenderDockedSidebar
-        let layoutProgress = sidebarVisible && !shouldRenderDockedSidebar && dockedSidebarLayoutProgress == 0
-            ? 1
-            : dockedSidebarLayoutProgress
+        let rendersDockedSidebar = dockedSidebarLayout.rendersDockedSidebar(isVisible: sidebarVisible)
+        let layoutProgress = dockedSidebarLayout.layoutProgress(isVisible: sidebarVisible)
         let leftLayoutProgress = rendersDockedSidebar && shellEdge.isLeft ? layoutProgress : 0
         let rightLayoutProgress = rendersDockedSidebar && shellEdge.isRight ? layoutProgress : 0
 
@@ -347,43 +343,36 @@ struct WindowView: View {
     }
 
     private func syncDockedSidebarLayout(isVisible: Bool, animated: Bool) {
-        dockedSidebarLayoutGeneration &+= 1
-        let generation = dockedSidebarLayoutGeneration
         let animation = SidebarMotionPolicy.dockedLayoutAnimation(
             for: SidebarMotionPolicy.currentMode(reduceMotion: effectiveReduceMotion),
             isShowing: isVisible
         )
 
         if isVisible {
-            shouldRenderDockedSidebar = true
+            dockedSidebarLayout.beginShow()
             if animated, let animation {
                 withAnimation(animation) {
-                    dockedSidebarLayoutProgress = 1
+                    dockedSidebarLayout.show()
                 }
             } else {
-                dockedSidebarLayoutProgress = 1
+                dockedSidebarLayout.show()
             }
             return
         }
 
         if animated, let animation {
-            shouldRenderDockedSidebar = true
-            let startingProgress = dockedSidebarLayoutProgress
-            if startingProgress <= 0 {
-                dockedSidebarLayoutProgress = 1
-            }
+            let generation = dockedSidebarLayout.beginAnimatedHide()
 
             withAnimation(animation, completionCriteria: .logicallyComplete) {
-                dockedSidebarLayoutProgress = 0
+                dockedSidebarLayout.hide()
             } completion: {
-                guard generation == dockedSidebarLayoutGeneration,
-                      !windowState.isSidebarVisible
-                else { return }
-                shouldRenderDockedSidebar = false
+                dockedSidebarLayout.completeAnimatedHide(
+                    generation: generation,
+                    isVisible: windowState.isSidebarVisible
+                )
             }
         } else {
-            dockedSidebarLayoutProgress = 0
-            shouldRenderDockedSidebar = false
+            dockedSidebarLayout.hideImmediately()
         }
     }
 
