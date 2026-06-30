@@ -103,7 +103,11 @@ class WindowRegistry {
 
         // If this was the active window, switch to another
         if activeWindowId == id {
-            activeWindowId = windows.keys.first
+            let fallbackWindow = windows.values.first
+            activeWindowId = fallbackWindow?.id
+            if let fallbackWindow {
+                onActiveWindowChange?(fallbackWindow)
+            }
         }
 
         RuntimeDiagnostics.emit {

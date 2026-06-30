@@ -77,4 +77,22 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertNil(registry.activeWindowId)
         XCTAssertTrue(registry.windows.isEmpty)
     }
+
+    func testUnregisterActiveWindowFallsBackAndNotifiesActiveWindowChange() {
+        let registry = WindowRegistry()
+        let closingWindow = BrowserWindowState()
+        let fallbackWindow = BrowserWindowState()
+        var activatedWindowIds: [UUID] = []
+
+        registry.register(closingWindow)
+        registry.register(fallbackWindow)
+        registry.setActive(closingWindow)
+        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+
+        registry.unregister(closingWindow.id)
+
+        XCTAssertEqual(registry.activeWindowId, fallbackWindow.id)
+        XCTAssertIdentical(registry.activeWindow, fallbackWindow)
+        XCTAssertEqual(activatedWindowIds, [fallbackWindow.id])
+    }
 }
