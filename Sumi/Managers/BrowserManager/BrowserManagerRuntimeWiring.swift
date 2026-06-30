@@ -687,6 +687,30 @@ extension SumiExtensionsModuleRuntime {
     }
 }
 
+extension ExtensionManagerRuntime {
+    static func live(browserManager: BrowserManager) -> Self {
+        Self(
+            currentProfile: { [weak browserManager] in
+                browserManager?.currentProfile
+            },
+            profile: { [weak browserManager] profileId in
+                browserManager?.profileManager.profiles.first { $0.id == profileId }
+            },
+            ephemeralProfile: { [weak browserManager] profileId in
+                browserManager?.windowRegistry?.windows.values
+                    .compactMap(\.ephemeralProfile)
+                    .first { $0.id == profileId }
+            },
+            windowState: { [weak browserManager] windowId in
+                browserManager?.windowRegistry?.windows[windowId]
+            },
+            extensionsModuleEnabled: { [weak browserManager] in
+                browserManager?.extensionsModule.isEnabled
+            }
+        )
+    }
+}
+
 extension UserScriptInjectorRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(

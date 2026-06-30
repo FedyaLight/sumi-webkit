@@ -153,7 +153,7 @@ final class ExtensionProfileRuntimeOwner {
 
     func resolvedProfileId(
         for tab: Tab?,
-        browserManager: BrowserManager?
+        runtime: ExtensionManagerRuntime
     ) -> UUID? {
         guard let tab else { return currentProfileId }
         if let profileId = tab.profileId {
@@ -163,25 +163,25 @@ final class ExtensionProfileRuntimeOwner {
             return profile.id
         }
         if let windowId = tab.primaryWindowId,
-           let windowState = browserManager?.windowRegistry?.windows[windowId] {
+           let windowState = runtime.windowState(windowId) {
             return resolvedProfileId(
                 for: windowState,
-                browserManager: browserManager
+                runtime: runtime
             )
         }
-        return currentProfileId ?? browserManager?.currentProfile?.id
+        return currentProfileId ?? runtime.currentProfile()?.id
     }
 
     func resolvedProfileId(
         explicitProfileId: UUID?,
-        browserManager: BrowserManager?
+        runtime: ExtensionManagerRuntime
     ) -> UUID? {
-        explicitProfileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        explicitProfileId ?? currentProfileId ?? runtime.currentProfile()?.id
     }
 
     func resolvedProfileId(
         for windowState: BrowserWindowState,
-        browserManager: BrowserManager?
+        runtime: ExtensionManagerRuntime
     ) -> UUID? {
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             return profile.id
@@ -189,36 +189,34 @@ final class ExtensionProfileRuntimeOwner {
         if let profileId = windowState.currentProfileId {
             return profileId
         }
-        return browserManager?.currentProfile?.id
+        return runtime.currentProfile()?.id
     }
 
     func windowMatchesProfile(
         _ windowState: BrowserWindowState,
         profileId: UUID,
-        browserManager: BrowserManager?
+        runtime: ExtensionManagerRuntime
     ) -> Bool {
         resolvedProfileId(
             for: windowState,
-            browserManager: browserManager
+            runtime: runtime
         ) == profileId
     }
 
-    func currentProfile(in browserManager: BrowserManager?) -> Profile? {
-        guard let currentProfileId else { return browserManager?.currentProfile }
-        return browserManager?.profileManager.profiles.first {
-            $0.id == currentProfileId
-        } ?? browserManager?.currentProfile
+    func currentProfile(in runtime: ExtensionManagerRuntime) -> Profile? {
+        guard let currentProfileId else { return runtime.currentProfile() }
+        return runtime.profile(currentProfileId) ?? runtime.currentProfile()
     }
 
     func websiteDataStore(
         for profileId: UUID,
-        browserManager: BrowserManager?
+        runtime: ExtensionManagerRuntime
     ) -> WKWebsiteDataStore {
         websiteDataStoreCache.store(
             for: profileId,
             activeProfile: activeProfile(
                 for: profileId,
-                browserManager: browserManager
+                runtime: runtime
             ),
             currentProfileId: currentProfileId
         )
@@ -238,16 +236,12 @@ final class ExtensionProfileRuntimeOwner {
 
     private func activeProfile(
         for profileId: UUID,
-        browserManager: BrowserManager?
+        runtime: ExtensionManagerRuntime
     ) -> Profile? {
-        if let profile = browserManager?.profileManager.profiles.first(where: {
-            $0.id == profileId
-        }) {
+        if let profile = runtime.profile(profileId) {
             return profile
         }
 
-        return browserManager?.windowRegistry?.windows.values
-            .compactMap(\.ephemeralProfile)
-            .first(where: { $0.id == profileId })
+        return runtime.ephemeralProfile(profileId)
     }
 }

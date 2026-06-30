@@ -51,9 +51,8 @@ struct ExtensionProfileRuntimeStateOwner {
         for extensionId: String,
         profileId: UUID? = nil
     ) -> WKWebExtensionContext? {
-        let resolvedProfileId = manager.profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: profileId,
-            browserManager: manager.browserManager
+        let resolvedProfileId = manager.resolvedProfileId(
+            explicitProfileId: profileId
         )
         guard let resolvedProfileId else { return nil }
         return contexts(for: resolvedProfileId)[extensionId]

@@ -149,8 +149,7 @@ enum ExtensionOptionsWindowPresenter {
 
         let optionsProfileId =
             manager.profileId(for: extensionContext)
-            ?? manager.currentProfileId
-            ?? manager.browserManager?.currentProfile?.id
+            ?? manager.fallbackProfileId
         let configuration: WKWebViewConfiguration
         if let contextConfiguration = extensionContext.webViewConfiguration {
             configuration = contextConfiguration
@@ -158,7 +157,7 @@ enum ExtensionOptionsWindowPresenter {
             let baseConfiguration = manager.browserConfiguration.webViewConfiguration
             configuration = manager.browserConfiguration.auxiliaryWebViewConfiguration(
                 from: baseConfiguration,
-                for: manager.browserManager?.currentProfile,
+                for: manager.runtime.currentProfile(),
                 surface: .extensionOptions,
                 additionalUserScripts: baseConfiguration.userContentController.userScripts
             )

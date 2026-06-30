@@ -132,7 +132,7 @@ final class WebExtensionStorageCleanupOwner {
         profileId: UUID? = nil
     ) -> WebExtensionStorageCleanupStore {
         let resolvedProfileId =
-            profileId ?? manager.currentProfileId ?? manager.browserManager?.currentProfile?.id
+            manager.resolvedProfileId(explicitProfileId: profileId)
         let controllerStorageId = resolvedProfileId.map {
             manager.extensionControllerIdentifier(for: $0)
         }

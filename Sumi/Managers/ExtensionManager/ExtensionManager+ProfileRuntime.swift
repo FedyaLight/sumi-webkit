@@ -97,15 +97,26 @@ extension ExtensionManager {
     func resolvedProfileId(for tab: Tab?) -> UUID? {
         profileRuntimeOwner.resolvedProfileId(
             for: tab,
-            browserManager: browserManager
+            runtime: runtime
         )
     }
 
     func resolvedProfileId(for windowState: BrowserWindowState) -> UUID? {
         profileRuntimeOwner.resolvedProfileId(
             for: windowState,
-            browserManager: browserManager
+            runtime: runtime
         )
+    }
+
+    func resolvedProfileId(explicitProfileId: UUID?) -> UUID? {
+        profileRuntimeOwner.resolvedProfileId(
+            explicitProfileId: explicitProfileId,
+            runtime: runtime
+        )
+    }
+
+    var fallbackProfileId: UUID? {
+        resolvedProfileId(explicitProfileId: nil)
     }
 
     func rememberPrivateExtensionRuntimeProfileIfNeeded(_ profile: Profile) {
@@ -123,7 +134,7 @@ extension ExtensionManager {
         profileRuntimeOwner.windowMatchesProfile(
             windowState,
             profileId: profileId,
-            browserManager: browserManager
+            runtime: runtime
         )
     }
 
@@ -134,8 +145,7 @@ extension ExtensionManager {
     }
 
     func extensionsModuleEnabledForRuntimeBoundary() -> Bool {
-        guard let browserManager else { return true }
-        return browserManager.extensionsModule.isEnabled
+        runtime.extensionsModuleEnabled() ?? true
     }
 
     @discardableResult

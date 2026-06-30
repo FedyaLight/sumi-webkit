@@ -15,8 +15,7 @@ extension ExtensionManager {
             ?? browserBridgeContext?.extensionWindowState(for: windowId).flatMap {
                 self.resolvedProfileId(for: $0)
             }
-            ?? currentProfileId
-            ?? browserManager?.currentProfile?.id
+            ?? fallbackProfileId
 
         guard let captureProfileId else {
             let sessionToken = UUID()
@@ -59,8 +58,7 @@ extension ExtensionManager {
     )? {
         let presentationProfileId =
             profileId
-            ?? currentProfileId
-            ?? browserManager?.currentProfile?.id
+            ?? fallbackProfileId
 
         var pendingAnchor: ExtensionActionPopupAnchor? = actionPopupAnchorStore.latestAnchor(for: extensionId)
 

@@ -8,6 +8,7 @@ extension ExtensionManager {
     func attach(browserManager: BrowserManager) {
         self.browserManager = browserManager
         browserBridgeContext = browserManager
+        runtime = .live(browserManager: browserManager)
 
         if browserManager.windowRegistry?.activeWindow == nil,
            let currentProfile = browserManager.currentProfile {
@@ -118,9 +119,9 @@ extension ExtensionManager {
         if windowState.isIncognito, let profile = windowState.ephemeralProfile {
             switchProfile(profileId: profile.id)
         } else if let profileId = windowState.currentProfileId,
-                  let profile = browserManager?.profileManager.profiles.first(where: { $0.id == profileId }) {
-            switchProfile(profileId: profile.id)
-        } else if let currentProfile = browserManager?.currentProfile {
+                  runtime.profile(profileId) != nil {
+            switchProfile(profileId: profileId)
+        } else if let currentProfile = runtime.currentProfile() {
             switchProfile(profileId: currentProfile.id)
         }
 
@@ -331,10 +332,7 @@ extension ExtensionManager {
             extensionRuntimeAllowsWithoutEnabledExtensions = true
         }
 
-        let resolvedProfileId = profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: profileId,
-            browserManager: browserManager
-        )
+        let resolvedProfileId = resolvedProfileId(explicitProfileId: profileId)
         let controller: WKWebExtensionController
         if let resolvedProfileId {
             controller = ensureExtensionController(for: resolvedProfileId)
@@ -370,10 +368,7 @@ extension ExtensionManager {
         profileId: UUID? = nil,
         extensionId: String? = nil
     ) async -> Bool {
-        let resolvedProfileId = profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: profileId,
-            browserManager: browserManager
-        )
+        let resolvedProfileId = resolvedProfileId(explicitProfileId: profileId)
 
         if forceReload == false,
            let resolvedProfileId,
@@ -417,8 +412,7 @@ extension ExtensionManager {
     ) -> WKWebExtensionController {
         let profileId =
             currentProfileId
-            ?? profileRuntimeOwner.currentProfile(in: browserManager)?.id
-            ?? browserManager?.currentProfile?.id
+            ?? profileRuntimeOwner.currentProfile(in: runtime)?.id
             ?? UUID()
         let controller = ensureExtensionController(for: profileId)
         extensionRuntimeTrace(
@@ -436,10 +430,7 @@ extension ExtensionManager {
         runtimeInitializationTask?.cancel()
         runtimeInitializationTask = nil
 
-        let resolvedProfileId = profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: profileId,
-            browserManager: browserManager
-        )
+        let resolvedProfileId = resolvedProfileId(explicitProfileId: profileId)
 
         if forceReload {
             resetLoadedExtensionRuntimeStateForReload()
@@ -778,10 +769,7 @@ extension ExtensionManager {
     func resolvedExtensionRuntimeWebsiteDataStore(
         profileId: UUID? = nil
     ) -> WKWebsiteDataStore? {
-        let resolvedProfileId = profileRuntimeOwner.resolvedProfileId(
-            explicitProfileId: profileId,
-            browserManager: browserManager
-        )
+        let resolvedProfileId = resolvedProfileId(explicitProfileId: profileId)
         guard let resolvedProfileId else { return nil }
         if let store = extensionControllersByProfile[resolvedProfileId]?
             .configuration.defaultWebsiteDataStore {
@@ -828,7 +816,7 @@ extension ExtensionManager {
     ) -> WKWebsiteDataStore {
         profileRuntimeOwner.websiteDataStore(
             for: profileId,
-            browserManager: browserManager
+            runtime: runtime
         )
     }
 

@@ -15,13 +15,33 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
         tab.profileId = tabProfileId
 
         XCTAssertEqual(
-            owner.resolvedProfileId(for: tab, browserManager: nil),
+            owner.resolvedProfileId(for: tab, runtime: .inactive),
             tabProfileId
         )
         XCTAssertEqual(
-            owner.resolvedProfileId(explicitProfileId: nil, browserManager: nil),
+            owner.resolvedProfileId(explicitProfileId: nil, runtime: .inactive),
             currentProfileId
         )
+    }
+
+    func testProfileRuntimeOwnerUsesRuntimeProfileFallbacks() {
+        let runtimeProfile = Profile(name: "Runtime Profile")
+        let owner = ExtensionProfileRuntimeOwner(initialProfileId: nil)
+        let runtime = ExtensionManagerRuntime(
+            currentProfile: { runtimeProfile },
+            profile: { profileId in
+                profileId == runtimeProfile.id ? runtimeProfile : nil
+            },
+            ephemeralProfile: { _ in nil },
+            windowState: { _ in nil },
+            extensionsModuleEnabled: { true }
+        )
+
+        XCTAssertEqual(
+            owner.resolvedProfileId(explicitProfileId: nil, runtime: runtime),
+            runtimeProfile.id
+        )
+        XCTAssertIdentical(owner.currentProfile(in: runtime), runtimeProfile)
     }
 
     func testProfileRuntimeOwnerProfileActivationReportsRuntimeDemand() {

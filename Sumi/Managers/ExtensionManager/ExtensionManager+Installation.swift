@@ -70,9 +70,7 @@ extension ExtensionManager {
         }
         loadInstalledExtensionMetadata()
 
-        let enableProfileId =
-            currentProfileId
-            ?? browserManager?.currentProfile?.id
+        let enableProfileId = fallbackProfileId
         guard let enableProfileId else {
             throw ExtensionError.installationFailed(
                 "Extension runtime profile is unavailable"
@@ -207,10 +205,7 @@ extension ExtensionManager {
         }
 
         do {
-            let resolvedProfileId =
-                profileId
-                ?? currentProfileId
-                ?? browserManager?.currentProfile?.id
+            let resolvedProfileId = resolvedProfileId(explicitProfileId: profileId)
             guard let resolvedProfileId else {
                 throw ExtensionError.installationFailed(
                     "Extension runtime profile is unavailable"
@@ -275,10 +270,7 @@ extension ExtensionManager {
             try context.save()
             return refreshed
         } catch {
-            let errorProfileId =
-                profileId
-                ?? currentProfileId
-                ?? browserManager?.currentProfile?.id
+            let errorProfileId = resolvedProfileId(explicitProfileId: profileId)
             if let errorProfileId {
                 recordExtensionLoadError(
                     error,
@@ -383,8 +375,7 @@ extension ExtensionManager {
         for extensionId: String,
         profileId: UUID? = nil
     ) -> BackgroundRuntimeState {
-        let resolvedProfileId =
-            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        let resolvedProfileId = resolvedProfileId(explicitProfileId: profileId)
         guard let resolvedProfileId else { return .neverLoaded }
         let wakeKey = backgroundScopedKey(
             extensionId: extensionId,
@@ -526,9 +517,7 @@ extension ExtensionManager {
             )
 
             if enableOnInstall {
-                let installProfileId =
-                    currentProfileId
-                    ?? browserManager?.currentProfile?.id
+                let installProfileId = fallbackProfileId
                 guard let installProfileId else {
                     throw ExtensionError.installationFailed(
                         "Extension runtime profile is unavailable"
@@ -600,7 +589,7 @@ extension ExtensionManager {
                 do {
                     _ = try await loadEnabledExtension(from: existingEntitySnapshot)
                 } catch let restoreError {
-                    if let restoreProfileId = currentProfileId ?? browserManager?.currentProfile?.id {
+                    if let restoreProfileId = fallbackProfileId {
                         logExtensionLoadFailure(
                             restoreError,
                             extensionId: existingEntitySnapshot.id,
@@ -708,9 +697,7 @@ extension ExtensionManager {
             )
 
             if enableOnInstall {
-                let installProfileId =
-                    currentProfileId
-                    ?? browserManager?.currentProfile?.id
+                let installProfileId = fallbackProfileId
                 guard let installProfileId else {
                     throw ExtensionError.installationFailed(
                         "Extension runtime profile is unavailable"
@@ -760,7 +747,7 @@ extension ExtensionManager {
                 do {
                     _ = try await loadEnabledExtension(from: existingEntitySnapshot)
                 } catch let restoreError {
-                    if let restoreProfileId = currentProfileId ?? browserManager?.currentProfile?.id {
+                    if let restoreProfileId = fallbackProfileId {
                         logExtensionLoadFailure(
                             restoreError,
                             extensionId: existingEntitySnapshot.id,

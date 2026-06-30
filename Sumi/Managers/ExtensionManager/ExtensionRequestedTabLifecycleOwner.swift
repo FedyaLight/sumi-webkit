@@ -119,8 +119,7 @@ final class ExtensionRequestedTabLifecycleOwner {
             targetSpace?.profileId
                 ?? targetWindow.flatMap(manager.resolvedProfileId(for:))
                 ?? manager.profileId(for: controller)
-                ?? manager.currentProfileId
-                ?? manager.browserManager?.currentProfile?.id
+                ?? manager.fallbackProfileId
         else {
             return nil
         }
@@ -377,8 +376,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         let targetProfileId =
             manager.resolvedProfileId(for: openerTab)
                 ?? extensionContext.flatMap { manager.profileId(for: $0) }
-                ?? manager.currentProfileId
-                ?? manager.browserManager?.currentProfile?.id
+                ?? manager.fallbackProfileId
 
         let candidates = [
             browserContext.extensionWindowState(containing: openerTab),

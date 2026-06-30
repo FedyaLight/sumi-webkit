@@ -81,8 +81,7 @@ extension ExtensionManager {
         profileId: UUID? = nil,
         backgroundWakeReason: ExtensionBackgroundWakeReason? = nil
     ) async {
-        let resolvedProfileId =
-            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        let resolvedProfileId = resolvedProfileId(explicitProfileId: profileId)
         guard let resolvedProfileId,
               let extensionContext = getExtensionContext(
                   for: extensionId,
@@ -158,8 +157,7 @@ extension ExtensionManager {
 
         guard let actionProfileId =
                 currentTab.flatMap({ resolvedProfileId(for: $0) })
-                ?? currentProfileId
-                ?? browserManager?.currentProfile?.id
+                ?? fallbackProfileId
         else {
             return .blocked(
                 .noEligibleTab,
@@ -560,8 +558,7 @@ extension ExtensionManager {
         profileId: UUID? = nil,
         reason: String = #function
     ) {
-        let resolvedProfileId =
-            profileId ?? currentProfileId ?? browserManager?.currentProfile?.id
+        let resolvedProfileId = resolvedProfileId(explicitProfileId: profileId)
         guard let resolvedProfileId else { return }
 
         _ = requestExtensionRuntime(reason: .webViewConfiguration)

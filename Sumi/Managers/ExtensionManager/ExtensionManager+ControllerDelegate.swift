@@ -7,7 +7,7 @@ import WebKit
 @MainActor
 extension ExtensionManager: WKWebExtensionControllerDelegate {
     var extensionsModuleEnabledForDelegateCallbacks: Bool {
-        browserManager?.extensionsModule.isEnabled
+        runtime.extensionsModuleEnabled()
             ?? moduleRegistry.isEnabled(.extensions)
     }
 

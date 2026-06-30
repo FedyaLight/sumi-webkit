@@ -129,8 +129,7 @@ enum ExtensionActionPopupPresentationOwner {
             let profileId =
                 manager.activePopupIdentity?.profileId
                 ?? popupControllerProfileId
-                ?? manager.currentProfileId
-                ?? manager.browserManager?.currentProfile?.id
+                ?? manager.fallbackProfileId
             let controller =
                 (popupControllerProfileId == profileId ? popupController : nil)
                 ?? profileId.map { manager.ensureExtensionController(for: $0) }

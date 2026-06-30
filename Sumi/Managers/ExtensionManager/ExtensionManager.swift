@@ -136,6 +136,7 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     weak var browserManager: BrowserManager?
     weak var browserBridgeContext: (any ExtensionBrowserBridgeContext)?
+    var runtime = ExtensionManagerRuntime.inactive
     var extensionControllersByProfile: [UUID: WKWebExtensionController] {
         get { profileRuntimeOwner.controllersByProfile }
         set { profileRuntimeOwner.replaceControllers(newValue) }
