@@ -116,13 +116,31 @@ extension Tab {
 
     // MARK: - WebView Runtime
 
+    func webViewConfigurationContext() -> TabWebViewConfigurationContext {
+        guard let browserManager else { return .empty }
+        return .live(
+            extensionsModule: { [weak browserManager] in
+                browserManager?.extensionsModule
+            },
+            userscriptsModule: { [weak browserManager] in
+                browserManager?.userscriptsModule
+            },
+            boostsModule: { [weak browserManager] in
+                browserManager?.boostsModule
+            },
+            protectionCoordinator: { [weak browserManager] in
+                browserManager?.protectionCoordinator
+            }
+        )
+    }
+
     func normalTabUserScriptsProvider(for targetURL: URL?) -> SumiNormalTabUserScripts {
         webViewConfigurationOwner.normalTabUserScriptsProvider(
             for: targetURL,
             coreUserScripts: normalTabCoreUserScripts(),
             tabId: id,
             profileIdProvider: { self.resolveProfile()?.id ?? self.profileId },
-            context: TabWebViewConfigurationContext.live(browserManager: browserManager),
+            context: webViewConfigurationContext(),
             isEphemeral: isEphemeral
         )
     }
@@ -133,7 +151,7 @@ extension Tab {
             coreUserScripts: normalTabCoreUserScripts(),
             tabId: id,
             profileIdProvider: { self.resolveProfile()?.id ?? self.profileId },
-            context: TabWebViewConfigurationContext.live(browserManager: browserManager),
+            context: webViewConfigurationContext(),
             isEphemeral: isEphemeral
         )
     }

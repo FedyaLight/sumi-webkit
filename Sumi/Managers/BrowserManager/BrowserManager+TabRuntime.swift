@@ -421,6 +421,68 @@ extension TabReloadPolicyRuntime {
 }
 
 @MainActor
+extension TabWebViewConfigurationContext {
+    static func live(
+        extensionsModule: @escaping () -> SumiExtensionsModule?,
+        userscriptsModule: @escaping () -> SumiUserscriptsModule?,
+        boostsModule: @escaping () -> SumiBoostsModule?,
+        protectionCoordinator: @escaping () -> SumiProtectionCoordinator?
+    ) -> Self {
+        Self(
+            browserConfiguration: .shared,
+            extensionNormalTabUserScripts: {
+                extensionsModule()?.normalTabUserScripts() ?? []
+            },
+            userscriptsNormalTabUserScripts: { url, tabId, profileId, isEphemeral in
+                userscriptsModule()?.normalTabUserScripts(
+                    for: url,
+                    webViewId: tabId,
+                    profileId: profileId,
+                    isEphemeral: isEphemeral
+                ) ?? []
+            },
+            boostsNormalTabUserScripts: { url, profileId, isEphemeral in
+                boostsModule()?.normalTabUserScripts(
+                    for: url,
+                    profileId: profileId,
+                    isEphemeral: isEphemeral
+                ) ?? []
+            },
+            protectionDecision: { url, profileId in
+                protectionCoordinator()?.normalTabDecision(
+                    for: url,
+                    profileId: profileId
+                )
+            },
+            protectionDesiredAttachmentState: { url in
+                protectionCoordinator()?.desiredAttachmentState(for: url)
+                    ?? .disabled(siteHost: nil)
+            },
+            safariContentBlockerAttachmentState: { url in
+                extensionsModule()?.safariContentBlockerAttachmentState(for: url)
+            },
+            safariContentBlockerDesiredAttachmentState: { url in
+                extensionsModule()?.safariContentBlockerAttachmentState(for: url)
+                    ?? .disabled(siteHost: nil)
+            },
+            enabledSafariContentBlockingServices: { url, profileId in
+                extensionsModule()?.enabledSafariContentBlockingServices(
+                    for: url,
+                    profileId: profileId
+                ) ?? []
+            },
+            prepareWebViewConfigurationForExtensionRuntime: { configuration, profileId, reason in
+                extensionsModule()?.prepareWebViewConfigurationForExtensionRuntime(
+                    configuration,
+                    profileId: profileId,
+                    reason: reason
+                )
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabExtensionPropertiesRuntime {
     static func live(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
         Self(

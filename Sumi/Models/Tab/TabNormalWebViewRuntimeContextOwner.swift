@@ -63,7 +63,7 @@ final class TabNormalWebViewRuntimeContextOwner {
                 tab?.cleanupCloneWebView(webView)
             },
             configurationContext: { [weak tab] in
-                TabWebViewConfigurationContext.live(browserManager: tab?.browserManager)
+                tab?.webViewConfigurationContext() ?? .empty
             },
             configurationRuntime: TabNormalWebViewConfigurationRuntime(
                 normalTabWebViewConfiguration: { url, profile, userScriptsProvider, context in

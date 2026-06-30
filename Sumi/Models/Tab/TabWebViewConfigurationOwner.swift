@@ -26,59 +26,6 @@ struct TabWebViewConfigurationContext {
         enabledSafariContentBlockingServices: { _, _ in [] },
         prepareWebViewConfigurationForExtensionRuntime: { _, _, _ in }
     )
-
-    static func live(browserManager: BrowserManager?) -> Self {
-        guard let browserManager else { return .empty }
-        return TabWebViewConfigurationContext(
-            browserConfiguration: .shared,
-            extensionNormalTabUserScripts: {
-                browserManager.extensionsModule.normalTabUserScripts()
-            },
-            userscriptsNormalTabUserScripts: { url, tabId, profileId, isEphemeral in
-                browserManager.userscriptsModule.normalTabUserScripts(
-                    for: url,
-                    webViewId: tabId,
-                    profileId: profileId,
-                    isEphemeral: isEphemeral
-                )
-            },
-            boostsNormalTabUserScripts: { url, profileId, isEphemeral in
-                browserManager.boostsModule.normalTabUserScripts(
-                    for: url,
-                    profileId: profileId,
-                    isEphemeral: isEphemeral
-                )
-            },
-            protectionDecision: { url, profileId in
-                browserManager.protectionCoordinator.normalTabDecision(
-                    for: url,
-                    profileId: profileId
-                )
-            },
-            protectionDesiredAttachmentState: { url in
-                browserManager.protectionCoordinator.desiredAttachmentState(for: url)
-            },
-            safariContentBlockerAttachmentState: { url in
-                browserManager.extensionsModule.safariContentBlockerAttachmentState(for: url)
-            },
-            safariContentBlockerDesiredAttachmentState: { url in
-                browserManager.extensionsModule.safariContentBlockerAttachmentState(for: url)
-            },
-            enabledSafariContentBlockingServices: { url, profileId in
-                browserManager.extensionsModule.enabledSafariContentBlockingServices(
-                    for: url,
-                    profileId: profileId
-                )
-            },
-            prepareWebViewConfigurationForExtensionRuntime: { configuration, profileId, reason in
-                browserManager.extensionsModule.prepareWebViewConfigurationForExtensionRuntime(
-                    configuration,
-                    profileId: profileId,
-                    reason: reason
-                )
-            }
-        )
-    }
 }
 
 @MainActor
