@@ -4,6 +4,21 @@ import Foundation
 import SwiftUI
 
 @MainActor
+struct HistoryPageBrowserContext {
+    let historyManager: HistoryManager
+    let faviconService: any BrowserFaviconServicing
+    let currentProfile: () -> Profile?
+    let currentProfileUpdates: AnyPublisher<Profile?, Never>
+    let nativeModalPresentationUpdates: AnyPublisher<Void, Never>
+    let isNativeModalPresented: (UUID?) -> Bool
+    let currentTab: (BrowserWindowState) -> Tab?
+    let openHistoryURL: (URL, BrowserWindowState, BrowserManager.HistoryOpenMode) -> Void
+    let openHistoryURLsInNewTabs: ([URL], BrowserWindowState) -> Void
+    let presentBrowsingDataSheet: (BrowserWindowState?) -> Void
+    let scheduleRuntimeStatePersistence: (Tab) -> Void
+}
+
+@MainActor
 final class HistoryPageViewModel: ObservableObject {
     @Published var selectedRange: HistoryRange {
         didSet {
@@ -26,14 +41,15 @@ final class HistoryPageViewModel: ObservableObject {
     @Published private(set) var domainFilter: String?
     @Published private(set) var selectedItemIDs: Set<String> = []
 
-    private weak var browserManager: BrowserManager?
     private weak var windowState: BrowserWindowState?
+    private let browserContext: HistoryPageBrowserContext
     private let historyManager: HistoryManager
     private let faviconService: any BrowserFaviconServicing
     private let confirmDeletion: @MainActor (_ title: String, _ message: String) -> Bool
     private let calendar = Calendar.autoupdatingCurrent
     private let sectionDateFormatter: DateFormatter
     private var revisionCancellable: AnyCancellable?
+    private var currentProfileCancellable: AnyCancellable?
     private var snapshotTask: Task<Void, Never>?
     private var snapshotGeneration: UInt64 = 0
     private var hasAppeared = false
@@ -43,15 +59,14 @@ final class HistoryPageViewModel: ObservableObject {
     private let pageSize = HistoryStore.defaultHistoryPageLimit
 
     init(
-        browserManager: BrowserManager,
+        browserContext: HistoryPageBrowserContext,
         windowState: BrowserWindowState?,
-        faviconService: any BrowserFaviconServicing,
         confirmDeletion: @escaping @MainActor (_ title: String, _ message: String) -> Bool = HistoryPageViewModel.showDeleteConfirmation
     ) {
-        self.browserManager = browserManager
         self.windowState = windowState
-        self.historyManager = browserManager.historyManager
-        self.faviconService = faviconService
+        self.browserContext = browserContext
+        self.historyManager = browserContext.historyManager
+        self.faviconService = browserContext.faviconService
         self.confirmDeletion = confirmDeletion
         let sectionDateFormatter = DateFormatter()
         sectionDateFormatter.locale = Locale(identifier: "en_US")
@@ -66,11 +81,17 @@ final class HistoryPageViewModel: ObservableObject {
                     self?.scheduleSnapshotRebuild()
                 }
             }
+        currentProfileCancellable = browserContext.currentProfileUpdates
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
     }
 
     isolated deinit {
         snapshotTask?.cancel()
         revisionCancellable?.cancel()
+        currentProfileCancellable?.cancel()
     }
 
     var hasVisibleItems: Bool {
@@ -78,7 +99,7 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     var faviconPartition: SumiFaviconPartition {
-        faviconService.partition(profile: browserManager?.currentProfile)
+        faviconService.partition(profile: browserContext.currentProfile())
     }
 
     var selectionCount: Int {
@@ -133,10 +154,8 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     func open(_ item: HistoryListItem, mode: BrowserManager.HistoryOpenMode) {
-        guard let browserManager,
-              let windowState
-        else { return }
-        browserManager.openHistoryURL(item.url, in: windowState, preferredOpenMode: mode)
+        guard let windowState else { return }
+        browserContext.openHistoryURL(item.url, windowState, mode)
     }
 
     func openFromRow(
@@ -170,12 +189,10 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     func openSelectedItems() {
-        guard let browserManager,
-              let windowState
-        else { return }
+        guard let windowState else { return }
         let urls = selectedVisibleItems().map(\.url)
         guard !urls.isEmpty else { return }
-        browserManager.openHistoryURLsInNewTabs(urls, in: windowState)
+        browserContext.openHistoryURLsInNewTabs(urls, windowState)
     }
 
     func deleteSelectedItems() {
@@ -196,8 +213,7 @@ final class HistoryPageViewModel: ObservableObject {
     }
 
     func showBrowsingDataDialog() {
-        guard let browserManager else { return }
-        browserManager.presentBrowsingDataSheet(windowState: windowState)
+        browserContext.presentBrowsingDataSheet(windowState)
     }
 
     private var trimmedSearchText: String {
@@ -357,13 +373,12 @@ final class HistoryPageViewModel: ObservableObject {
         tab.name = "History"
         tab.favicon = .init(systemName: SumiSurface.historyTabFaviconSystemImageName)
         tab.faviconIsTemplateGlobePlaceholder = false
-        browserManager?.tabManager.scheduleRuntimeStatePersistence(for: tab)
+        browserContext.scheduleRuntimeStatePersistence(tab)
     }
 
     private func activeHistoryTab() -> Tab? {
-        guard let browserManager,
-              let windowState,
-              let tab = browserManager.currentTab(for: windowState),
+        guard let windowState,
+              let tab = browserContext.currentTab(windowState),
               tab.representsSumiHistorySurface
         else {
             return nil

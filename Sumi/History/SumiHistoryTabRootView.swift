@@ -4,9 +4,10 @@ import SwiftUI
 struct SumiHistoryTabRootView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @ObservedObject var browserManager: BrowserManager
     @StateObject private var viewModel: HistoryPageViewModel
     @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
+    @State private var nativeModalInvalidationGeneration: UInt = 0
+    private let browserContext: HistoryPageBrowserContext
     private let windowState: BrowserWindowState?
 
     private enum Layout {
@@ -18,14 +19,13 @@ struct SumiHistoryTabRootView: View {
         .easeInOut(duration: 0.18)
     }
 
-    init(browserManager: BrowserManager, windowState: BrowserWindowState?) {
-        self.browserManager = browserManager
+    init(browserContext: HistoryPageBrowserContext, windowState: BrowserWindowState?) {
+        self.browserContext = browserContext
         self.windowState = windowState
         _viewModel = StateObject(
             wrappedValue: HistoryPageViewModel(
-                browserManager: browserManager,
-                windowState: windowState,
-                faviconService: browserManager.dataServices.faviconService
+                browserContext: browserContext,
+                windowState: windowState
             )
         )
     }
@@ -45,6 +45,9 @@ struct SumiHistoryTabRootView: View {
         .onAppear {
             viewModel.appear()
         }
+        .onReceive(browserContext.nativeModalPresentationUpdates) { _ in
+            nativeModalInvalidationGeneration &+= 1
+        }
         .onDisappear {
             scrollHoverCoordinator.reset()
         }
@@ -63,8 +66,9 @@ struct SumiHistoryTabRootView: View {
     }
 
     private var nativeSurfaceHoverUpdatesEnabled: Bool {
-        scrollHoverCoordinator.hoverUpdatesEnabled
-            && !browserManager.isNativeModalPresented(in: windowState?.id)
+        _ = nativeModalInvalidationGeneration
+        return scrollHoverCoordinator.hoverUpdatesEnabled
+            && !browserContext.isNativeModalPresented(windowState?.id)
     }
 
     private var sidebar: some View {
@@ -493,9 +497,13 @@ private struct HistoryFaviconView: View {
                     .foregroundStyle(tokens.secondaryText)
             }
         }
-        .task(id: url) {
+        .task(id: faviconLoadID) {
             await loadImage()
         }
+    }
+
+    private var faviconLoadID: FaviconLoadID {
+        FaviconLoadID(url: url, partition: partition)
     }
 
     @MainActor
@@ -515,4 +523,9 @@ private struct HistoryFaviconView: View {
         guard !Task.isCancelled else { return }
         image = loadedImage ?? cachedImage
     }
+}
+
+private struct FaviconLoadID: Hashable {
+    let url: URL
+    let partition: SumiFaviconPartition
 }

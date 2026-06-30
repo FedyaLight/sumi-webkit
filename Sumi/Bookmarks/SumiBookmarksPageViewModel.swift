@@ -4,6 +4,21 @@ import Foundation
 import SwiftUI
 
 @MainActor
+struct BookmarksPageBrowserContext {
+    let bookmarkManager: SumiBookmarkManager
+    let faviconService: any BrowserFaviconServicing
+    let currentProfile: () -> Profile?
+    let currentProfileUpdates: AnyPublisher<Profile?, Never>
+    let currentTab: (BrowserWindowState) -> Tab?
+    let openHistoryURLsInNewTabs: ([URL], BrowserWindowState) -> Void
+    let openHistoryURLsInNewWindow: ([URL]) -> Void
+    let openBookmarkURL: (URL, BrowserWindowState, BrowserManager.HistoryOpenMode) -> Void
+    let importBookmarksFromMenu: () -> Void
+    let exportBookmarksFromMenu: () -> Void
+    let scheduleRuntimeStatePersistence: (Tab) -> Void
+}
+
+@MainActor
 final class SumiBookmarksPageViewModel: ObservableObject {
     @Published var selectedFolderID: String
     @Published var searchText = "" {
@@ -17,24 +32,24 @@ final class SumiBookmarksPageViewModel: ObservableObject {
     @Published private(set) var selectedEntityIDs: Set<String> = []
     @Published var statusMessage: String?
 
-    private weak var browserManager: BrowserManager?
     private weak var windowState: BrowserWindowState?
+    private let browserContext: BookmarksPageBrowserContext
     private let bookmarkManager: SumiBookmarkManager
     private let faviconService: any BrowserFaviconServicing
     private var revisionCancellable: AnyCancellable?
+    private var currentProfileCancellable: AnyCancellable?
     private(set) var draggedEntityIDs: Set<String> = []
 
     init(
-        browserManager: BrowserManager,
+        browserContext: BookmarksPageBrowserContext,
         windowState: BrowserWindowState?,
-        faviconService: any BrowserFaviconServicing
     ) {
-        self.browserManager = browserManager
         self.windowState = windowState
-        self.bookmarkManager = browserManager.bookmarkManager
-        self.faviconService = faviconService
+        self.browserContext = browserContext
+        self.bookmarkManager = browserContext.bookmarkManager
+        self.faviconService = browserContext.faviconService
         let selected = windowState
-            .flatMap { browserManager.currentTab(for: $0) }
+            .flatMap { browserContext.currentTab($0) }
             .flatMap { SumiSurface.bookmarksSelectedFolderID(from: $0.url) }
         self.selectedFolderID = selected ?? SumiBookmarkConstants.rootFolderID
 
@@ -44,11 +59,17 @@ final class SumiBookmarksPageViewModel: ObservableObject {
                     self?.rebuildVisibleEntities()
                 }
             }
+        currentProfileCancellable = browserContext.currentProfileUpdates
+            .dropFirst()
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
         rebuildVisibleEntities()
     }
 
     isolated deinit {
         revisionCancellable?.cancel()
+        currentProfileCancellable?.cancel()
     }
 
     var hasSelection: Bool {
@@ -56,7 +77,7 @@ final class SumiBookmarksPageViewModel: ObservableObject {
     }
 
     var faviconPartition: SumiFaviconPartition {
-        faviconService.partition(profile: browserManager?.currentProfile)
+        faviconService.partition(profile: browserContext.currentProfile())
     }
 
     var selectionCount: Int {
@@ -115,32 +136,28 @@ final class SumiBookmarksPageViewModel: ObservableObject {
     }
 
     func open(_ entity: SumiBookmarkEntity, mode: BrowserManager.HistoryOpenMode) {
-        guard let browserManager,
-              let windowState
-        else { return }
+        guard let windowState else { return }
 
         if entity.isFolder {
             let urls = bookmarkManager.openableURLs(for: [entity.id])
             switch mode {
             case .currentTab, .newTab:
-                browserManager.openHistoryURLsInNewTabs(urls, in: windowState)
+                browserContext.openHistoryURLsInNewTabs(urls, windowState)
             case .newWindow:
-                browserManager.openHistoryURLsInNewWindow(urls)
+                browserContext.openHistoryURLsInNewWindow(urls)
             }
             return
         }
 
         guard let url = entity.url else { return }
-        browserManager.openBookmarkURL(url, in: windowState, preferredOpenMode: mode)
+        browserContext.openBookmarkURL(url, windowState, mode)
     }
 
     func openSelected() {
-        guard let browserManager,
-              let windowState
-        else { return }
-        browserManager.openHistoryURLsInNewTabs(
+        guard let windowState else { return }
+        browserContext.openHistoryURLsInNewTabs(
             bookmarkManager.openableURLs(for: selectedEntityIDs),
-            in: windowState
+            windowState
         )
     }
 
@@ -268,12 +285,21 @@ final class SumiBookmarksPageViewModel: ObservableObject {
         return folders.filter { !excludedPrefix.contains($0.id) }
     }
 
+    func folderDraft(forFolderID folderID: String) -> SumiFolderFormDraft? {
+        bookmarkManager.entity(id: folderID).map { folderDraft(for: $0) }
+    }
+
+    func deleteFolder(id folderID: String) {
+        guard let entity = bookmarkManager.entity(id: folderID) else { return }
+        delete(entity)
+    }
+
     func importBookmarksFromMenu() {
-        browserManager?.importBookmarksFromMenu()
+        browserContext.importBookmarksFromMenu()
     }
 
     func exportBookmarksFromMenu() {
-        browserManager?.exportBookmarksFromMenu()
+        browserContext.exportBookmarksFromMenu()
     }
 
     private func delete(ids: Set<String>) {
@@ -309,16 +335,15 @@ final class SumiBookmarksPageViewModel: ObservableObject {
     }
 
     private func syncSelectedFolderToActiveTab() {
-        guard let browserManager,
-              let windowState,
-              let tab = browserManager.currentTab(for: windowState),
+        guard let windowState,
+              let tab = browserContext.currentTab(windowState),
               tab.representsSumiBookmarksSurface
         else { return }
         tab.url = SumiSurface.bookmarksSurfaceURL(selecting: selectedFolderID)
         tab.name = "Bookmarks"
         tab.favicon = Image(systemName: SumiSurface.bookmarksTabFaviconSystemImageName)
         tab.faviconIsTemplateGlobePlaceholder = false
-        browserManager.tabManager.scheduleRuntimeStatePersistence(for: tab)
+        browserContext.scheduleRuntimeStatePersistence(tab)
     }
 
     private func descendantFolderIDs(of folderID: String) -> [String] {

@@ -243,14 +243,12 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let initialProfile = try XCTUnwrap(browserManager.currentProfile)
 
         let historyViewModel = HistoryPageViewModel(
-            browserManager: browserManager,
-            windowState: nil,
-            faviconService: browserManager.dataServices.faviconService
+            browserContext: browserManager.historyPageBrowserContext,
+            windowState: nil
         )
         let bookmarksViewModel = SumiBookmarksPageViewModel(
-            browserManager: browserManager,
-            windowState: nil,
-            faviconService: browserManager.dataServices.faviconService
+            browserContext: browserManager.bookmarksPageBrowserContext,
+            windowState: nil
         )
 
         XCTAssertEqual(historyViewModel.faviconPartition, injectedPartition)

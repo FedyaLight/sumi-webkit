@@ -5,7 +5,6 @@ import UniformTypeIdentifiers
 struct SumiBookmarksTabRootView: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @Environment(\.resolvedThemeContext) private var themeContext
-    @ObservedObject var browserManager: BrowserManager
     @StateObject private var viewModel: SumiBookmarksPageViewModel
     @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
     @State private var bookmarkDraft: SumiBookmarkFormDraft?
@@ -18,13 +17,11 @@ struct SumiBookmarksTabRootView: View {
         static let rowCornerRadius: CGFloat = 8
     }
 
-    init(browserManager: BrowserManager, windowState: BrowserWindowState?) {
-        self.browserManager = browserManager
+    init(browserContext: BookmarksPageBrowserContext, windowState: BrowserWindowState?) {
         _viewModel = StateObject(
             wrappedValue: SumiBookmarksPageViewModel(
-                browserManager: browserManager,
-                windowState: windowState,
-                faviconService: browserManager.dataServices.faviconService
+                browserContext: browserContext,
+                windowState: windowState
             )
         )
     }
@@ -167,14 +164,10 @@ struct SumiBookmarksTabRootView: View {
             }
             if folder.id != SumiBookmarkConstants.rootFolderID {
                 Button("Edit Folder") {
-                    if let entity = browserManager.bookmarkManager.entity(id: folder.id) {
-                        folderDraft = viewModel.folderDraft(for: entity)
-                    }
+                    folderDraft = viewModel.folderDraft(forFolderID: folder.id)
                 }
                 Button("Delete") {
-                    if let entity = browserManager.bookmarkManager.entity(id: folder.id) {
-                        viewModel.delete(entity)
-                    }
+                    viewModel.deleteFolder(id: folder.id)
                 }
             }
         }
@@ -454,7 +447,8 @@ private struct SumiBookmarkEntityRow: View {
     }
 
     private var faviconLoadID: String {
-        entity.url?.absoluteString ?? "folder-\(entity.id)"
+        let urlString = entity.url?.absoluteString ?? "folder-\(entity.id)"
+        return "\(urlString)|\(faviconPartition.storageComponent)"
     }
 
     private var cachedFaviconImage: NSImage? {
