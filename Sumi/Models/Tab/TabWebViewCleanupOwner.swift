@@ -110,7 +110,7 @@ enum TabWebViewCleanupOwner {
         let handlePermissionLifecycleEvent: PermissionLifecycleEventHandler
         let deferProtectedWebViewCleanup: ProtectedWebViewCleanupDeferrer
         let shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime
-        let nowPlayingController: (any SumiNativeNowPlayingRuntimeControlling)?
+        let notifyNowPlayingTabUnloaded: (UUID) -> Void
         let currentWebView: () -> WKWebView?
         let clearCurrentWebView: () -> Void
         let removeAllWebViews: (_ closeActiveFullscreenMedia: Bool) -> Bool
@@ -185,7 +185,7 @@ enum TabWebViewCleanupOwner {
         let removedTrackedWebViews = context.removeAllWebViews(true)
 
         guard removedTrackedWebViews || context.currentWebView() != nil else {
-            notifyNowPlayingTabUnloaded(tabId: context.tabId, controller: context.nowPlayingController)
+            context.notifyNowPlayingTabUnloaded(context.tabId)
             return
         }
 
@@ -196,15 +196,6 @@ enum TabWebViewCleanupOwner {
 
         context.resetPlaybackActivity()
         context.setLoadingIdle()
-        notifyNowPlayingTabUnloaded(tabId: context.tabId, controller: context.nowPlayingController)
-    }
-
-    @MainActor
-    private static func notifyNowPlayingTabUnloaded(
-        tabId: UUID,
-        controller: (any SumiNativeNowPlayingRuntimeControlling)?
-    ) {
-        controller?.handleTabUnloaded(tabId)
-        controller?.scheduleRefresh(delayNanoseconds: 0)
+        context.notifyNowPlayingTabUnloaded(context.tabId)
     }
 }

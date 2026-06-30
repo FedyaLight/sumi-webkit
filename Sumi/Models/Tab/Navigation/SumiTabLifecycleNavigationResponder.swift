@@ -137,7 +137,7 @@ final class SumiTabLifecycleNavigationResponder:
                 reason: "SumiTabLifecycleNavigationResponder.didCommit"
             )
             if tab.pendingMainFrameNavigationKind != .backForward {
-                tab.browserManager?.syncTabAcrossWindows(tab.id, originatingWebView: webView)
+                tab.webViewRoutingRuntime.syncTabAcrossWindows(tab.id, webView)
             }
             tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.URL, .loading])
         }
@@ -185,10 +185,10 @@ final class SumiTabLifecycleNavigationResponder:
         if webView.url != nil {
             tab.historyRecorder.updateTitle(resolvedTitle, tab: tab)
         }
-        tab.browserManager?.tabManager.scheduleRuntimeStatePersistence(for: tab)
+        tab.persistenceRuntimeCallbacks.scheduleRuntimeStatePersistence(tab)
         if tab.pendingMainFrameNavigationKind == .backForward {
             tab.finishBackForwardNavigationTracking(using: webView)
-            tab.browserManager?.syncTabAcrossWindows(tab.id, originatingWebView: webView)
+            tab.webViewRoutingRuntime.syncTabAcrossWindows(tab.id, webView)
         } else {
             tab.pendingMainFrameNavigationKind = nil
         }
@@ -201,9 +201,7 @@ final class SumiTabLifecycleNavigationResponder:
             tab,
             properties: [.URL, .title, .loading]
         )
-        tab.browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
-            reason: "navigation-did-finish"
-        )
+        tab.mediaRuntimeCallbacks.scheduleBackgroundMediaReconcile("navigation-did-finish")
         tab.browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
         SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: nil)
     }
@@ -227,8 +225,8 @@ final class SumiTabLifecycleNavigationResponder:
         if tab.pendingMainFrameNavigationKind == .backForward {
             tab.scheduleBackForwardSameDocumentSettle(using: webView)
         } else {
-            tab.browserManager?.tabManager.scheduleRuntimeStatePersistence(for: tab)
-            tab.browserManager?.syncTabAcrossWindows(tab.id, originatingWebView: webView)
+            tab.persistenceRuntimeCallbacks.scheduleRuntimeStatePersistence(tab)
+            tab.webViewRoutingRuntime.syncTabAcrossWindows(tab.id, webView)
             tab.pendingMainFrameNavigationKind = nil
         }
 

@@ -139,7 +139,7 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             handlePermissionLifecycleEvent: handlePermissionLifecycleEvent,
             deferProtectedWebViewCleanup: deferProtectedWebViewCleanup,
             shutdownRuntime: shutdownRuntime,
-            nowPlayingController: nil,
+            notifyNowPlayingTabUnloaded: { _ in },
             currentWebView: { nil },
             clearCurrentWebView: {},
             removeAllWebViews: { _ in false },

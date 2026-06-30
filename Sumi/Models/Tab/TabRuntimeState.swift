@@ -3,6 +3,43 @@ import Foundation
 import ObjectiveC.runtime
 import WebKit
 
+@MainActor
+struct TabWebViewRoutingRuntime {
+    var syncTabAcrossWindows: (UUID, WKWebView?) -> Void
+    var reloadTabAcrossWindows: (UUID) -> Void
+    var setMuteState: (Bool, UUID) -> Void
+
+    static let inactive = Self(
+        syncTabAcrossWindows: { _, _ in },
+        reloadTabAcrossWindows: { _ in },
+        setMuteState: { _, _ in }
+    )
+}
+
+@MainActor
+struct TabRuntimePersistenceCallbacks {
+    var updateNavigationState: (Tab) -> Void
+    var scheduleRuntimeStatePersistence: (Tab) -> Void
+
+    static let inactive = Self(
+        updateNavigationState: { _ in },
+        scheduleRuntimeStatePersistence: { _ in }
+    )
+}
+
+@MainActor
+struct TabMediaRuntimeCallbacks {
+    var scheduleNowPlayingRefresh: (UInt64) -> Void
+    var scheduleBackgroundMediaReconcile: (String) -> Void
+    var notifyNowPlayingTabUnloaded: (UUID) -> Void
+
+    static let inactive = Self(
+        scheduleNowPlayingRefresh: { _ in },
+        scheduleBackgroundMediaReconcile: { _ in },
+        notifyNowPlayingTabUnloaded: { _ in }
+    )
+}
+
 enum TabMainFrameNavigationKind {
     case load
     case backForward
@@ -83,6 +120,8 @@ final class TabNavigationRuntime {
     var loadingState: Tab.LoadingState = .idle
     var restoredCanGoBack: Bool?
     var restoredCanGoForward: Bool?
+    var webViewRouting = TabWebViewRoutingRuntime.inactive
+    var persistenceCallbacks = TabRuntimePersistenceCallbacks.inactive
     let navigationTransactionOwner = TabNavigationTransactionOwner()
     let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()
@@ -94,6 +133,7 @@ final class TabNavigationRuntime {
 final class TabMediaRuntime {
     var lastMediaActivityAt: Date = .distantPast
     var audioStateCancellables: [ObjectIdentifier: AnyCancellable] = [:]
+    var callbacks = TabMediaRuntimeCallbacks.inactive
 }
 
 enum TabPageSuspensionVeto: Equatable {

@@ -40,7 +40,7 @@ extension Tab {
             canGoBack = newCanGoBack
             canGoForward = newCanGoForward
             stateChangeEmitter.postNavigationStateDidChange(for: self)
-            browserManager?.tabManager.updateTabNavigationState(self)
+            persistenceRuntimeCallbacks.updateNavigationState(self)
         }
     }
 
@@ -153,13 +153,13 @@ extension Tab {
             },
             scheduleRuntimeStatePersistence: { [weak self] in
                 guard let self else { return }
-                self.browserManager?.tabManager.scheduleRuntimeStatePersistence(for: self)
+                self.persistenceRuntimeCallbacks.scheduleRuntimeStatePersistence(self)
             },
             syncAcrossWindows: { [weak self] webView in
                 guard let self else { return }
-                self.browserManager?.syncTabAcrossWindows(
+                self.webViewRoutingRuntime.syncTabAcrossWindows(
                     self.id,
-                    originatingWebView: webView
+                    webView
                 )
             }
         )

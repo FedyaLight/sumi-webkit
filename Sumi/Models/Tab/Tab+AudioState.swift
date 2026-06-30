@@ -38,10 +38,8 @@ extension Tab {
         guard oldState != newState else { return }
 
         if oldState.isPlayingAudio != newState.isPlayingAudio {
-            browserManager?.nativeNowPlayingController.scheduleRefresh(delayNanoseconds: 0)
-            browserManager?.backgroundMediaOptimizationService.scheduleReconcile(
-                reason: "tab-audio-state-changed"
-            )
+            mediaRuntimeCallbacks.scheduleNowPlayingRefresh(0)
+            mediaRuntimeCallbacks.scheduleBackgroundMediaReconcile("tab-audio-state-changed")
         }
     }
 
@@ -56,7 +54,7 @@ extension Tab {
             RuntimeDiagnostics.emit("🔇 [Tab] Mute state queued at \(muted); base webView not loaded yet")
         }
 
-        browserManager?.setMuteState(muted, for: id)
+        webViewRoutingRuntime.setMuteState(muted, id)
 
         applyAudioState(audioState.withMuted(muted))
     }

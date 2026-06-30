@@ -131,7 +131,7 @@ final class TabNavigationCommandOwner {
         }
 
         if !rebuiltForConfigurationPolicy {
-            tab.browserManager?.reloadTabAcrossWindows(tab.id)
+            tab.webViewRoutingRuntime.reloadTabAcrossWindows(tab.id)
         }
     }
 

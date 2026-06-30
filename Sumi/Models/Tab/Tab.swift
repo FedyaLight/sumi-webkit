@@ -174,6 +174,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var navigationDelegateBundles: NSMapTable<WKWebView, SumiTabNavigationDelegateBundle> {
         navigationRuntime.navigationDelegateBundles
     }
+    var webViewRoutingRuntime: TabWebViewRoutingRuntime {
+        get { navigationRuntime.webViewRouting }
+        set { navigationRuntime.webViewRouting = newValue }
+    }
+    var persistenceRuntimeCallbacks: TabRuntimePersistenceCallbacks {
+        get { navigationRuntime.persistenceCallbacks }
+        set { navigationRuntime.persistenceCallbacks = newValue }
+    }
     var isFreezingNavigationStateDuringBackForwardGesture: Bool {
         get { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture }
         set { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture = newValue }
@@ -181,6 +189,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var lastMediaActivityAt: Date {
         get { mediaRuntime.lastMediaActivityAt }
         set { mediaRuntime.lastMediaActivityAt = newValue }
+    }
+    var mediaRuntimeCallbacks: TabMediaRuntimeCallbacks {
+        get { mediaRuntime.callbacks }
+        set { mediaRuntime.callbacks = newValue }
     }
     // MARK: - Tab State
     var isUnloaded: Bool {
@@ -306,6 +318,18 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { browserManagerStorage }
         set {
             browserManagerStorage = newValue
+            if let newValue {
+                webViewRoutingRuntime = .live(webViewRoutingService: newValue.webViewRoutingService)
+                persistenceRuntimeCallbacks = .live(tabManager: newValue.tabManager)
+                mediaRuntimeCallbacks = .live(
+                    nowPlayingController: newValue.nativeNowPlayingController,
+                    backgroundMediaOptimizationService: newValue.backgroundMediaOptimizationService
+                )
+            } else {
+                webViewRoutingRuntime = .inactive
+                persistenceRuntimeCallbacks = .inactive
+                mediaRuntimeCallbacks = .inactive
+            }
             dependencyStateOwner.attachDataServicesProvider { [weak self] in
                 guard let dataServices = self?.browserManagerStorage?.dataServices else { return nil }
                 return TabDependencyDataServices(browserManagerDataServices: dataServices)

@@ -40,7 +40,7 @@ extension Tab {
                 self.pendingMainFrameNavigationKind
             },
             scheduleRuntimeStatePersistence: {
-                self.browserManager?.tabManager.scheduleRuntimeStatePersistence(for: self)
+                self.persistenceRuntimeCallbacks.scheduleRuntimeStatePersistence(self)
             },
             notifyTitleChangedToExtensions: {
                 self.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(

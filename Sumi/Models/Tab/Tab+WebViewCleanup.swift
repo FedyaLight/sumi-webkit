@@ -42,7 +42,9 @@ extension Tab {
                     browserManager?.webViewCoordinator?.removeWebViewFromContainers(webView)
                 }
             ),
-            nowPlayingController: browserManager?.nativeNowPlayingController,
+            notifyNowPlayingTabUnloaded: { tabId in
+                self.mediaRuntimeCallbacks.notifyNowPlayingTabUnloaded(tabId)
+            },
             currentWebView: { self.currentWebView },
             clearCurrentWebView: { self.clearCurrentWebViewOwnership() },
             removeAllWebViews: { closeActiveFullscreenMedia in
