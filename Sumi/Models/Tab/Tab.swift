@@ -148,13 +148,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         webViewRuntime.findInPage
     }
 
-    var pendingMainFrameNavigationTask: Task<Void, Never>? {
-        get { navigationRuntime.pendingMainFrameNavigationTask }
-        set { navigationRuntime.pendingMainFrameNavigationTask = newValue }
-    }
-    var pendingMainFrameNavigationToken: UUID? {
-        get { navigationRuntime.pendingMainFrameNavigationToken }
-        set { navigationRuntime.pendingMainFrameNavigationToken = newValue }
+    var mainFrameNavigationOwner: TabMainFrameNavigationOwner {
+        navigationRuntime.mainFrameNavigationOwner
     }
     var pendingMainFrameNavigationKind: TabMainFrameNavigationKind? {
         get { navigationRuntime.pendingMainFrameNavigationKind }

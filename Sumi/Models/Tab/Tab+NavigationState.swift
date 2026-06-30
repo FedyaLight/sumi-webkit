@@ -126,20 +126,16 @@ extension Tab {
             return
         }
 
-        cancelPendingMainFrameNavigation()
-        let token = UUID()
-        pendingMainFrameNavigationToken = token
-        pendingMainFrameNavigationTask = Task { @MainActor [weak self, weak webView] in
-            await controller.waitForContentBlockingAssetsInstalled()
-            guard let self,
-                  let webView,
-                  self.pendingMainFrameNavigationToken == token
-            else { return }
-
-            performLoad(webView)
-            self.pendingMainFrameNavigationTask = nil
-            self.pendingMainFrameNavigationToken = nil
-        }
+        mainFrameNavigationOwner.performAfterPreparation(
+            on: webView,
+            clearRelatedNavigationState: {
+                self.clearPendingMainFrameNavigationState()
+            },
+            prepare: {
+                await controller.waitForContentBlockingAssetsInstalled()
+            },
+            performLoad: performLoad
+        )
     }
 
     func markRegularMainFrameNavigation(on webView: WKWebView? = nil) {

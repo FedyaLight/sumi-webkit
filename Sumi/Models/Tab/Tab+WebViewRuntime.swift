@@ -131,9 +131,12 @@ extension Tab {
     }
 
     func cancelPendingMainFrameNavigation() {
-        pendingMainFrameNavigationTask?.cancel()
-        pendingMainFrameNavigationTask = nil
-        pendingMainFrameNavigationToken = nil
+        mainFrameNavigationOwner.cancel {
+            clearPendingMainFrameNavigationState()
+        }
+    }
+
+    func clearPendingMainFrameNavigationState() {
         pendingBackForwardSettleTask?.cancel()
         pendingBackForwardSettleTask = nil
         pendingMainFrameNavigationKind = nil
@@ -156,20 +159,13 @@ extension Tab {
         on webView: WKWebView,
         performLoad: @escaping @MainActor (WKWebView) -> Void
     ) {
-        cancelPendingMainFrameNavigation()
-
-        let token = UUID()
-        pendingMainFrameNavigationToken = token
-
-        let loadClosure: @MainActor (WKWebView) -> Void = { [weak self] loadedWebView in
-            guard let self else { return }
-            guard self.pendingMainFrameNavigationToken == token else { return }
-            performLoad(loadedWebView)
-            self.pendingMainFrameNavigationTask = nil
-            self.pendingMainFrameNavigationToken = nil
-        }
-
-        loadClosure(webView)
+        mainFrameNavigationOwner.perform(
+            on: webView,
+            clearRelatedNavigationState: {
+                self.clearPendingMainFrameNavigationState()
+            },
+            performLoad: performLoad
+        )
     }
 
     func setupWebView() {

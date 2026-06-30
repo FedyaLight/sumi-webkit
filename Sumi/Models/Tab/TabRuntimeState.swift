@@ -85,12 +85,11 @@ final class TabNavigationRuntime {
     var loadingState: Tab.LoadingState = .idle
     var restoredCanGoBack: Bool?
     var restoredCanGoForward: Bool?
-    var pendingMainFrameNavigationTask: Task<Void, Never>?
-    var pendingMainFrameNavigationToken: UUID?
     var pendingMainFrameNavigationKind: TabMainFrameNavigationKind?
     var pendingBackForwardNavigationContext: TabBackForwardNavigationContext?
     var pendingBackForwardSettleTask: Task<Void, Never>?
     var isFreezingNavigationStateDuringBackForwardGesture = false
+    let mainFrameNavigationOwner = TabMainFrameNavigationOwner()
     let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()
     let titleUpdateOwner = TabTitleUpdateOwner()
