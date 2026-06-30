@@ -410,7 +410,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             extensionsModule: extensionsModule,
             profile: profile
         )
-        extensionsModule.attach(browserManager: browserManager)
+        extensionsModule.attach(runtime: .live(browserManager: browserManager))
 
         let scratchDirectory = try makeScratchDirectory()
         let manager = try XCTUnwrap(extensionsModule.managerIfEnabled())
@@ -455,7 +455,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             extensionsModule: extensionsModule,
             profile: profile
         )
-        extensionsModule.attach(browserManager: browserManager)
+        extensionsModule.attach(runtime: .live(browserManager: browserManager))
         browserManager.tabManager = TabManager(
             runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,

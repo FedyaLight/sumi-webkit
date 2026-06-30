@@ -15,7 +15,7 @@ enum BrowserManagerRuntimeWiring {
         browserManager.tabManager.attachRuntimeContext(.live(browserManager: browserManager))
         browserManager.liveFolderManager.attach(runtime: liveFolderRuntime(for: browserManager))
         browserManager.downloadManager.retryRuntime = downloadRetryRuntime(for: browserManager)
-        browserManager.extensionsModule.attach(browserManager: browserManager)
+        browserManager.extensionsModule.attach(runtime: .live(browserManager: browserManager))
         browserManager.userscriptsModule.attach(runtime: .live(browserManager: browserManager))
         browserManager.boostsModule.attach(runtime: boostRuntime(for: browserManager))
         let structuralChangeCancellable = bindTabManagerStructuralUpdates(for: browserManager)
@@ -662,6 +662,26 @@ extension SumiScriptsManagerRuntime {
                 } else if let active = browserManager.tabManager.currentTab {
                     browserManager.tabManager.removeTab(active.id)
                 }
+            }
+        )
+    }
+}
+
+extension SumiExtensionsModuleRuntime {
+    static func live(browserManager: BrowserManager) -> Self {
+        Self(
+            currentProfile: { [weak browserManager] in
+                browserManager?.currentProfile
+            },
+            attachManager: { [weak browserManager] manager in
+                guard let browserManager else { return }
+                manager.attach(browserManager: browserManager)
+            },
+            liveTabs: { [weak browserManager] in
+                browserManager?.tabManager.allTabs() ?? []
+            },
+            invalidateTabStructuralRevision: { [weak browserManager] in
+                browserManager?.tabStructuralRevision &+= 1
             }
         )
     }

@@ -4,6 +4,26 @@ import SwiftData
 import WebKit
 
 @MainActor
+struct SumiExtensionsModuleRuntime {
+    typealias CurrentProfileProvider = @MainActor () -> Profile?
+    typealias ManagerAttacher = @MainActor (_ manager: ExtensionManager) -> Void
+    typealias LiveTabsProvider = @MainActor () -> [Tab]
+    typealias StructuralRevisionInvalidator = @MainActor () -> Void
+
+    let currentProfile: CurrentProfileProvider
+    let attachManager: ManagerAttacher
+    let liveTabs: LiveTabsProvider
+    let invalidateTabStructuralRevision: StructuralRevisionInvalidator
+
+    static let inactive = SumiExtensionsModuleRuntime(
+        currentProfile: { nil },
+        attachManager: { _ in },
+        liveTabs: { [] },
+        invalidateTabStructuralRevision: {}
+    )
+}
+
+@MainActor
 final class SumiExtensionsModule {
     static let shared = SumiExtensionsModule()
 
@@ -24,7 +44,7 @@ final class SumiExtensionsModule {
     private var cachedManager: ExtensionManager?
     private var pendingActionAnchors: [String: [WeakAnchor]] = [:]
     private let safariContentBlockerRuntimeOwner: SafariContentBlockerRuntimeOwner
-    weak var browserManager: BrowserManager?
+    private var runtime = SumiExtensionsModuleRuntime.inactive
 
     init(
         moduleRegistry: SumiModuleRegistry = .shared,
@@ -77,9 +97,11 @@ final class SumiExtensionsModule {
         cachedManager?.extensionController != nil
     }
 
-    func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
-        cachedManager?.attach(browserManager: browserManager)
+    func attach(runtime: SumiExtensionsModuleRuntime) {
+        self.runtime = runtime
+        if let cachedManager {
+            runtime.attachManager(cachedManager)
+        }
         ensureActionSurfaceMetadataLoadedIfNeeded()
     }
 
@@ -114,14 +136,12 @@ final class SumiExtensionsModule {
 
         let manager = managerFactory(
             context,
-            browserManager?.currentProfile ?? initialProfileProvider(),
+            runtime.currentProfile() ?? initialProfileProvider(),
             browserConfiguration,
             moduleRegistry
         )
         cachedManager = manager
-        if let browserManager {
-            manager.attach(browserManager: browserManager)
-        }
+        runtime.attachManager(manager)
         transferPendingActionAnchors(to: manager)
         surfaceStore.bind(manager)
         return manager
@@ -404,7 +424,7 @@ final class SumiExtensionsModule {
     }
 
     private func markSafariContentBlockerReloadRequiredForLiveTabs() {
-        browserManager?.tabManager.allTabs().forEach {
+        runtime.liveTabs().forEach {
             $0.updateSafariContentBlockerReloadRequirementForCurrentSite()
         }
     }
@@ -412,7 +432,7 @@ final class SumiExtensionsModule {
     private func markSafariContentBlockerReloadRequiredForLiveTabs(
         afterChangingPolicyFor url: URL?
     ) {
-        browserManager?.tabManager.allTabs().forEach {
+        runtime.liveTabs().forEach {
             $0.markSafariContentBlockerReloadRequiredIfNeeded(
                 afterChangingPolicyFor: url
             )
@@ -457,12 +477,12 @@ final class SumiExtensionsModule {
 
     func pinToToolbar(_ extensionId: String) {
         managerIfEnabled()?.pinToToolbar(extensionId)
-        browserManager?.tabStructuralRevision &+= 1
+        runtime.invalidateTabStructuralRevision()
     }
 
     func unpinFromToolbar(_ extensionId: String) {
         managerIfEnabled()?.unpinFromToolbar(extensionId)
-        browserManager?.tabStructuralRevision &+= 1
+        runtime.invalidateTabStructuralRevision()
     }
 
     func siteAccessPolicy(
@@ -473,7 +493,7 @@ final class SumiExtensionsModule {
         let resolvedProfileId =
             profileId
             ?? manager.currentProfileId
-            ?? browserManager?.currentProfile?.id
+            ?? runtime.currentProfile()?.id
         guard let resolvedProfileId else { return nil }
         return manager.siteAccessPolicy(
             extensionId: extensionId,
@@ -490,7 +510,7 @@ final class SumiExtensionsModule {
         let resolvedProfileId =
             profileId
             ?? manager.currentProfileId
-            ?? browserManager?.currentProfile?.id
+            ?? runtime.currentProfile()?.id
         guard let resolvedProfileId else { return }
         manager.setDefaultSiteAccess(
             access,
@@ -508,7 +528,7 @@ final class SumiExtensionsModule {
         let resolvedProfileId =
             profileId
             ?? manager.currentProfileId
-            ?? browserManager?.currentProfile?.id
+            ?? runtime.currentProfile()?.id
         guard let resolvedProfileId else { return }
         manager.setPrivateBrowsingAccess(
             isAllowed,
@@ -527,7 +547,7 @@ final class SumiExtensionsModule {
         let resolvedProfileId =
             profileId
             ?? manager.currentProfileId
-            ?? browserManager?.currentProfile?.id
+            ?? runtime.currentProfile()?.id
         guard let resolvedProfileId else { return }
         manager.setConfiguredSiteAccess(
             access,
@@ -558,7 +578,7 @@ final class SumiExtensionsModule {
         let resolvedProfileId =
             profileId
             ?? manager.currentProfileId
-            ?? browserManager?.currentProfile?.id
+            ?? runtime.currentProfile()?.id
         guard let resolvedProfileId,
               let context = try? await manager.ensureExtensionLoaded(
                   extensionId: extensionId,

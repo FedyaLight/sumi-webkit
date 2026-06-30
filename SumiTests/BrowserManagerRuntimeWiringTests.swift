@@ -20,7 +20,6 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertTrue(tabManagerRuntimeCanPrepareCreatedTabs(browserManager))
         XCTAssertTrue(splitManagerCanUseAttachedRuntime(browserManager))
         XCTAssertTrue(downloadRetryRuntimeCanResolveWindowOwnedWebView(browserManager))
-        XCTAssertIdentical(browserManager.extensionsModule.browserManager, browserManager)
         XCTAssertTrue(boostsModuleCanUseAttachedRuntime(browserManager))
         XCTAssertTrue(auxiliaryWindowManagerCanUseAttachedRuntime(browserManager))
         XCTAssertTrue(glanceRuntimeCanPreparePreviewTabs(browserManager))

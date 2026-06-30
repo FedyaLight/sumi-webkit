@@ -59,6 +59,42 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         )
     }
 
+    func testExtensionsModuleRuntimeSuppliesProfileAndAttachesManager() throws {
+        let container = try makeTestContainer()
+        let registry = makeScopedModuleRegistry()
+        registry.enable(.extensions)
+        let fallbackProfile = Profile(name: "Fallback Module Profile")
+        let runtimeProfile = Profile(name: "Runtime Module Profile")
+        let browserManager = BrowserManager()
+        browserManager.profileManager.profiles = [runtimeProfile]
+        browserManager.currentProfile = runtimeProfile
+
+        var initialProfileUsedByFactory: Profile?
+        var createdManager: ExtensionManager?
+        let module = SumiExtensionsModule(
+            moduleRegistry: registry,
+            context: container.mainContext,
+            initialProfileProvider: { fallbackProfile },
+            managerFactory: { context, initialProfile, browserConfiguration, moduleRegistry in
+                initialProfileUsedByFactory = initialProfile
+                let manager = ExtensionManager(
+                    context: context,
+                    initialProfile: initialProfile,
+                    browserConfiguration: browserConfiguration,
+                    moduleRegistry: moduleRegistry
+                )
+                createdManager = manager
+                return manager
+            }
+        )
+
+        module.attach(runtime: .live(browserManager: browserManager))
+        _ = try XCTUnwrap(module.managerIfEnabled())
+
+        XCTAssertIdentical(initialProfileUsedByFactory, runtimeProfile)
+        XCTAssertIdentical(createdManager?.browserManager, browserManager)
+    }
+
     func testDisabledInstallDoesNotCreateRuntimeControllerOrContext() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Disabled Install")

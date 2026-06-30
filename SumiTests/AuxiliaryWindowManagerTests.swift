@@ -115,7 +115,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        extensionsModule.attach(browserManager: browserManager)
+        extensionsModule.attach(runtime: .live(browserManager: browserManager))
         extensionManager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
         extensionManager.extensionsLoaded = true
@@ -170,7 +170,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        extensionsModule.attach(browserManager: browserManager)
+        extensionsModule.attach(runtime: .live(browserManager: browserManager))
         extensionManager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
         extensionManager.extensionsLoaded = true
@@ -391,7 +391,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        extensionsModule.attach(browserManager: browserManager)
+        extensionsModule.attach(runtime: .live(browserManager: browserManager))
         extensionManager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
         extensionManager.extensionsLoaded = true
@@ -451,7 +451,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        extensionsModule.attach(browserManager: browserManager)
+        extensionsModule.attach(runtime: .live(browserManager: browserManager))
         extensionManager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
         extensionManager.extensionsLoaded = true
@@ -512,7 +512,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
-        extensionsModule.attach(browserManager: browserManager)
+        extensionsModule.attach(runtime: .live(browserManager: browserManager))
         extensionManager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
         extensionManager.extensionsLoaded = true
@@ -1038,7 +1038,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.webViewCoordinator = WebViewCoordinator()
-        extensionsModule.attach(browserManager: browserManager)
+        extensionsModule.attach(runtime: .live(browserManager: browserManager))
         extensionManager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
         extensionManager.extensionsLoaded = true
