@@ -102,6 +102,17 @@ struct TabHistoryRecordingRuntime {
 }
 
 @MainActor
+struct TabFindInPageRuntime {
+    var activeWindowId: () -> UUID?
+    var webView: (_ tabId: UUID, _ windowId: UUID) -> WKWebView?
+
+    static let inactive = Self(
+        activeWindowId: { nil },
+        webView: { _, _ in nil }
+    )
+}
+
+@MainActor
 struct TabProfileResolutionRuntime {
     var ephemeralProfileForTab: (_ tabId: UUID, _ profileId: UUID) -> Profile?
     var profile: (UUID) -> Profile?
@@ -202,6 +213,7 @@ final class TabNavigationRuntime {
     var persistenceCallbacks = TabRuntimePersistenceCallbacks.inactive
     var historySwipeRuntime = TabHistorySwipeRuntime.inactive
     var historyRecordingRuntime = TabHistoryRecordingRuntime.inactive
+    var findInPageRuntime = TabFindInPageRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
     var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
     var reloadPolicyRuntime = TabReloadPolicyRuntime.empty

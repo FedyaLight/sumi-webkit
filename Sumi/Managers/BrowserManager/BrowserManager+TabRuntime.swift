@@ -90,6 +90,19 @@ extension TabHistorySwipeRuntime {
 }
 
 @MainActor
+extension TabFindInPageRuntime {
+    static func live(
+        activeWindowId: @escaping () -> UUID?,
+        webView: @escaping (_ tabId: UUID, _ windowId: UUID) -> WKWebView?
+    ) -> Self {
+        Self(
+            activeWindowId: activeWindowId,
+            webView: webView
+        )
+    }
+}
+
+@MainActor
 extension TabHistoryRecordingRuntime {
     static func live(
         historyManager: @escaping () -> HistoryManager?,

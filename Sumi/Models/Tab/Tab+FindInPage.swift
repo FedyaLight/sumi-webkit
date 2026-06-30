@@ -4,9 +4,8 @@ import WebKit
 extension Tab {
     func targetFindWebView() -> FocusableWKWebView? {
         let targetWebView: WKWebView?
-        if let browserManager,
-           let activeWindowId = browserManager.windowRegistry?.activeWindow?.id {
-            targetWebView = browserManager.getWebView(for: id, in: activeWindowId)
+        if let activeWindowId = findInPageRuntime.activeWindowId() {
+            targetWebView = findInPageRuntime.webView(id, activeWindowId)
         } else {
             targetWebView = existingWebView
         }

@@ -190,6 +190,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.historyRecordingRuntime }
         set { navigationRuntime.historyRecordingRuntime = newValue }
     }
+    var findInPageRuntime: TabFindInPageRuntime {
+        get { navigationRuntime.findInPageRuntime }
+        set { navigationRuntime.findInPageRuntime = newValue }
+    }
     var navigationCommandRuntime: TabNavigationCommandRuntime {
         get { navigationRuntime.navigationCommandRuntime }
         set { navigationRuntime.navigationCommandRuntime = newValue }
@@ -370,12 +374,21 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.currentProfile?.id
                     }
                 )
+                findInPageRuntime = .live(
+                    activeWindowId: { [weak browserManager] in
+                        browserManager?.windowRegistry?.activeWindow?.id
+                    },
+                    webView: { [weak browserManager] tabId, windowId in
+                        browserManager?.getWebView(for: tabId, in: windowId)
+                    }
+                )
             } else {
                 webViewRoutingRuntime = .inactive
                 persistenceRuntimeCallbacks = .inactive
                 mediaRuntimeCallbacks = .inactive
                 historySwipeRuntime = .inactive
                 historyRecordingRuntime = .inactive
+                findInPageRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive
                 reloadPolicyRuntime = .empty
