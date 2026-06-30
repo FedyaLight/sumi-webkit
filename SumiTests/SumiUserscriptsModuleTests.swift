@@ -310,7 +310,7 @@ final class SumiUserscriptsModuleTests: XCTestCase {
             ?? browserManager.tabManager.createSpace(name: "Userscripts Runtime")
         let initialTabCount = browserManager.tabManager.tabs(in: space).count
 
-        module.attach(browserManager: browserManager)
+        module.attach(runtime: .live(browserManager: browserManager))
         let manager = try XCTUnwrap(module.managerIfEnabled())
 
         manager.openTab(

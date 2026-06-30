@@ -34,8 +34,8 @@ final class SumiUserscriptsModule {
         cachedManager != nil
     }
 
-    func attach(browserManager: BrowserManager) {
-        managerRuntime = .live(browserManager: browserManager)
+    func attach(runtime: SumiScriptsManagerRuntime) {
+        managerRuntime = runtime
         cachedManager?.attach(runtime: managerRuntime)
     }
 
@@ -88,52 +88,6 @@ final class SumiUserscriptsModule {
         cachedManager?.cleanupWebView(
             controller: controller,
             webViewId: webViewId
-        )
-    }
-}
-
-extension SumiScriptsManagerRuntime {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            injectorRuntime: { [weak browserManager] in
-                guard let browserManager else { return .inactive }
-                return .live(browserManager: browserManager)
-            },
-            openTab: { [weak browserManager] url, background in
-                guard let browserManager else { return }
-                let tab = browserManager.tabManager.createNewTab(
-                    url: url,
-                    in: browserManager.tabManager.currentSpace
-                )
-                if background == false {
-                    tab.activate()
-                }
-            },
-            closeTab: { [weak browserManager] tabId in
-                guard let browserManager else { return }
-                if let tabId, let uuid = UUID(uuidString: tabId) {
-                    browserManager.tabManager.removeTab(uuid)
-                } else if let active = browserManager.tabManager.currentTab {
-                    browserManager.tabManager.removeTab(active.id)
-                }
-            }
-        )
-    }
-}
-
-extension UserScriptInjectorRuntime {
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            downloadManager: { [weak browserManager] in
-                browserManager?.downloadManager
-            },
-            notificationPermissionBridge: { [weak browserManager] in
-                browserManager?.notificationPermissionBridge
-            },
-            notificationTabContext: { [weak browserManager] webViewId, webView in
-                browserManager?.tabManager.tab(for: webViewId)?
-                    .webNotificationTabContext(for: webView)
-            }
         )
     }
 }

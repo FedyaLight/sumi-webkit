@@ -4,7 +4,7 @@ This document describes how the native Sumi userscript runtime is wired into the
 
 ## Overview
 
-The runtime is owned by `SumiUserscriptsModule`, which is attached to `BrowserManager` but does not construct `SumiScriptsManager` until `SumiModuleRegistry.isEnabled(.userScripts)` is true and a userscript feature actually needs the manager. While disabled there is no manager, store watcher, installed-script adapter, pending install/update work, GM bridge, or Sumi `UserScript` contribution for future normal-tab navigations.
+The runtime is owned by `SumiUserscriptsModule`, which is attached to a BrowserManager-provided runtime but does not construct `SumiScriptsManager` until `SumiModuleRegistry.isEnabled(.userScripts)` is true and a userscript feature actually needs the manager. While disabled there is no manager, store watcher, installed-script adapter, pending install/update work, GM bridge, or Sumi `UserScript` contribution for future normal-tab navigations.
 
 Normal tabs do not mutate `WKUserContentController` directly. They build one `SumiNormalTabUserScripts` provider and install it through Sumi's normal-tab user-content controller adapter.
 
