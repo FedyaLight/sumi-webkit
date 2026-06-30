@@ -670,6 +670,139 @@ extension SplitViewRuntime {
     }
 }
 
+extension TabManagerRuntimeContext {
+    static func live(browserManager: BrowserManager) -> TabManagerRuntimeContext {
+        TabManagerRuntimeContext(
+            currentProfileId: { [weak browserManager] in
+                browserManager?.currentProfile?.id
+            },
+            defaultProfileId: { [weak browserManager] in
+                browserManager?.currentProfile?.id ?? browserManager?.profileManager.profiles.first?.id
+            },
+            settings: { [weak browserManager] in
+                browserManager?.sumiSettings
+            },
+            activeWindowId: { [weak browserManager] in
+                browserManager?.windowRegistry?.activeWindow?.id
+            },
+            activeWindowState: { [weak browserManager] in
+                browserManager?.windowRegistry?.activeWindow
+            },
+            profileExists: { [weak browserManager] profileId in
+                guard let browserManager else { return true }
+                return browserManager.profileManager.profiles.contains { $0.id == profileId }
+            },
+            profile: { [weak browserManager] profileId in
+                browserManager?.profileManager.profiles.first { $0.id == profileId }
+            },
+            windowState: { [weak browserManager] windowId in
+                browserManager?.windowRegistry?.windows[windowId]
+            },
+            windows: { [weak browserManager] in
+                browserManager?.windowRegistry?.windows.map { ($0.key, $0.value) } ?? []
+            },
+            windowStates: { [weak browserManager] in
+                browserManager?.windowRegistry?.allWindows ?? []
+            },
+            updateTabVisibility: { [weak browserManager] in
+                browserManager?.compositorManager.updateTabVisibility()
+            },
+            materializeVisibleTabWebViewIfNeeded: { [weak browserManager] tab, windowState in
+                browserManager?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
+            },
+            loadTab: { [weak browserManager] tab in
+                browserManager?.compositorManager.loadTab(tab)
+            },
+            unloadTab: { [weak browserManager] tab in
+                browserManager?.compositorManager.unloadTab(tab)
+            },
+            removeAllWebViews: { [weak browserManager] tab, closeActiveFullscreenMedia in
+                browserManager?.webViewCoordinator?.removeAllWebViews(
+                    for: tab,
+                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
+                )
+            },
+            requireRemoveAllWebViews: { [weak browserManager] tab, closeActiveFullscreenMedia in
+                guard let browserManager else { return }
+                browserManager.requireWebViewCoordinator().removeAllWebViews(
+                    for: tab,
+                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
+                )
+            },
+            windowIDsTrackingWebViews: { [weak browserManager] tabId in
+                browserManager?.webViewCoordinator?.windowIDs(for: tabId) ?? []
+            },
+            rebuildLiveWebViews: { [weak browserManager] tab, preferredPrimaryWindowId, url in
+                if #available(macOS 15.5, *) {
+                    browserManager?.webViewCoordinator?.rebuildLiveWebViews(
+                        for: tab,
+                        preferredPrimaryWindowId: preferredPrimaryWindowId,
+                        load: url
+                    )
+                }
+            },
+            handleTabClosure: { [weak browserManager] tabId in
+                browserManager?.splitManager.handleTabClosure(tabId)
+            },
+            visibleSplitTabIds: { [weak browserManager] windowId in
+                browserManager?.splitManager.visibleTabIds(for: windowId) ?? []
+            },
+            isTabVisibleInSplit: { [weak browserManager] tabId, windowId in
+                browserManager?.splitManager.isTabVisibleInSplit(tabId, in: windowId) == true
+            },
+            isTabActiveInSplit: { [weak browserManager] tabId, windowId in
+                browserManager?.splitManager.isTabActiveInSplit(tabId, in: windowId) == true
+            },
+            updateActiveSplitSide: { [weak browserManager] tabId, windowId in
+                browserManager?.splitManager.updateActiveSide(for: tabId, in: windowId)
+            },
+            notifyTabClosedIfLoaded: { [weak browserManager] tab in
+                browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)
+            },
+            notifyTabActivatedIfLoaded: { [weak browserManager] newTab, previous in
+                browserManager?.extensionsModule.notifyTabActivatedIfLoaded(
+                    newTab: newTab,
+                    previous: previous
+                )
+            },
+            captureClosedTab: { [weak browserManager] tab, sourceSpaceId in
+                browserManager?.recentlyClosedManager.captureClosedTab(
+                    tab,
+                    sourceSpaceId: sourceSpaceId,
+                    currentURL: tab.url,
+                    canGoBack: tab.canGoBack,
+                    canGoForward: tab.canGoForward
+                )
+            },
+            captureDeletedShortcutLauncher: { [weak browserManager] pin in
+                browserManager?.recentlyClosedManager.captureDeletedShortcutLauncher(pin)
+            },
+            presentTabClosureToast: { [weak browserManager] tabCount in
+                browserManager?.presentTabClosureToast(tabCount: tabCount)
+            },
+            validateWindowStates: { [weak browserManager] in
+                browserManager?.validateWindowStates()
+            },
+            syncWorkspaceThemeAcrossWindows: { [weak browserManager] space, animate in
+                browserManager?.syncWorkspaceThemeAcrossWindows(for: space, animate: animate)
+            },
+            closeAuxiliaryMiniWindow: { [weak browserManager] tab, reason in
+                browserManager?.closeAuxiliaryMiniWindow(for: tab, reason: reason)
+            },
+            isLiveFolder: { [weak browserManager] folderId in
+                browserManager?.liveFolderManager.isLiveFolder(folderId) == true
+            },
+            deleteLiveFolderState: { [weak browserManager] folderIds in
+                browserManager?.liveFolderManager.deleteState(forFolderIds: folderIds)
+            },
+            prepareTab: { [weak browserManager] tab in
+                guard let browserManager else { return }
+                tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+            }
+        )
+    }
+}
+
 extension SumiScriptsManagerRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
