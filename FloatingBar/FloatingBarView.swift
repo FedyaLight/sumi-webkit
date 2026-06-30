@@ -22,6 +22,7 @@ struct FloatingBarView: View {
     @State private var interactionCommitOwner = FloatingBarInteractionCommitOwner()
     @State private var outsideClickMonitor = ChromeLocalEventMonitor()
     @State private var focusRequestOwner = FloatingBarFocusRequestOwner()
+    @State private var deferredTextOwner = FloatingBarDeferredTextOwner()
     @State private var searchFocusRequestID = 0
     @State private var searchFocusSelectAll = false
 
@@ -192,10 +193,10 @@ struct FloatingBarView: View {
                                             .accessibilityLabel("Search")
                                             .onChange(of: searchSession.text) { _, newValue in
                                                 // Defer floating bar / window session writes so `BrowserWindowState` is not mutated during SwiftUI view updates.
-                                                Task { @MainActor in
-                                                    browserContext.updateFloatingBarDraft(in: windowState, text: newValue)
+                                                deferredTextOwner.scheduleTextChange(in: windowState, text: newValue) { text in
+                                                    browserContext.updateFloatingBarDraft(in: windowState, text: text)
                                                     searchSession.handleTextChanged(
-                                                        newValue,
+                                                        text,
                                                         isFloatingBarVisible: windowState.isFloatingBarVisible,
                                                         presentationReason: windowState.floatingBarPresentationReason,
                                                         emptyStateMode: sumiSettings.floatingBarEmptyStateMode,
@@ -332,6 +333,7 @@ struct FloatingBarView: View {
         }
         .onDisappear {
             searchSession.cancelPendingSearch()
+            deferredTextOwner.endSession()
             removeOutsideClickMonitor()
         }
         .onChange(of: browserContext.currentProfileId) { _, _ in
@@ -395,6 +397,7 @@ struct FloatingBarView: View {
             let windowID = windowState.id
             focusRequestOwner.beginSession(windowID: windowID)
             interactionCommitOwner.beginSession(windowID: windowID)
+            deferredTextOwner.beginSession(windowID: windowID)
             installOutsideClickMonitorIfNeeded()
             browserContext.configureSearchManager(searchSession.searchManager)
 
@@ -410,6 +413,7 @@ struct FloatingBarView: View {
         } else {
             focusRequestOwner.endSession()
             interactionCommitOwner.endSession()
+            deferredTextOwner.endSession()
             removeOutsideClickMonitor()
             isSearchFocused = false
             searchSession.resetForHiddenBar()
