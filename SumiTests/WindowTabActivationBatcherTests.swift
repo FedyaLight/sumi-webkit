@@ -157,7 +157,7 @@ final class WindowTabActivationBatcherTests: XCTestCase {
 private struct FlushedActivation: Equatable {
     let windowId: UUID
     let tabId: UUID
-    let loadPolicy: BrowserManager.TabSelectionLoadPolicy
+    let loadPolicy: TabSelectionLoadPolicy
 
     init(
         windowId: UUID,
@@ -173,7 +173,7 @@ private struct FlushedActivation: Equatable {
     init(
         windowId: UUID,
         tabId: UUID,
-        loadPolicy: BrowserManager.TabSelectionLoadPolicy
+        loadPolicy: TabSelectionLoadPolicy
     ) {
         self.windowId = windowId
         self.tabId = tabId

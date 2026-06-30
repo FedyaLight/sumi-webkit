@@ -7,15 +7,22 @@ import Foundation
 
 @MainActor
 final class SumiStartupSessionCoordinator {
+    struct Dependencies {
+        let hasLoadedInitialTabData: @MainActor () -> Bool
+        let startupMode: @MainActor () -> SumiStartupMode?
+        let startupWindow: @MainActor () -> BrowserWindowState?
+        let applyStartupPolicy: @MainActor (SumiStartupMode) -> Void
+    }
+
     private var didApplyStartupPolicy = false
     private var isApplyingStartupPolicy = false
 
-    func applyIfReady(browserManager: BrowserManager) {
+    func applyIfReady(dependencies: Dependencies) {
         guard !didApplyStartupPolicy,
               !isApplyingStartupPolicy,
-              browserManager.tabManager.hasLoadedInitialData,
-              let settings = browserManager.sumiSettings,
-              browserManager.firstRegularWindowForStartupPolicy != nil
+              dependencies.hasLoadedInitialTabData(),
+              let startupMode = dependencies.startupMode(),
+              dependencies.startupWindow() != nil
         else {
             return
         }
@@ -23,7 +30,7 @@ final class SumiStartupSessionCoordinator {
         isApplyingStartupPolicy = true
         defer { isApplyingStartupPolicy = false }
 
-        browserManager.applyStartupPolicy(settings.startupMode)
+        dependencies.applyStartupPolicy(startupMode)
         didApplyStartupPolicy = true
     }
 }
@@ -70,12 +77,23 @@ enum StartupWindowRestorationPlanner {
 
 @MainActor
 extension BrowserManager {
-    var firstRegularWindowForStartupPolicy: BrowserWindowState? {
-        startupPolicyOwner.firstRegularWindowForStartupPolicy
-    }
-
     func reconcileStartupSessionIfPossible() {
-        startupSessionRestoreOwner.reconcileIfReady(browserManager: self)
+        startupSessionRestoreOwner.reconcileIfReady(
+            dependencies: .init(
+                hasLoadedInitialTabData: { [weak self] in
+                    self?.tabManager.hasLoadedInitialData ?? false
+                },
+                startupMode: { [weak self] in
+                    self?.sumiSettings?.startupMode
+                },
+                startupWindow: { [weak self] in
+                    self?.startupPolicyOwner.firstRegularWindowForStartupPolicy
+                },
+                applyStartupPolicy: { [weak self] mode in
+                    self?.startupPolicyOwner.applyStartupPolicy(mode)
+                }
+            )
+        )
     }
 
     func applyStartupPolicy(_ mode: SumiStartupMode) {

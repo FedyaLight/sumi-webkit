@@ -34,8 +34,8 @@ final class BrowserStartupSessionRestoreOwner: BrowserStartupSessionRestoreProvi
         didConsumeRestoreOffer = false
     }
 
-    func reconcileIfReady(browserManager: BrowserManager) {
-        coordinator.applyIfReady(browserManager: browserManager)
+    func reconcileIfReady(dependencies: SumiStartupSessionCoordinator.Dependencies) {
+        coordinator.applyIfReady(dependencies: dependencies)
     }
 
     func archiveLoadedSessionForManualRestore(

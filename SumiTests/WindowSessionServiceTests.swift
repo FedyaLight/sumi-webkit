@@ -50,7 +50,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let service = WindowSessionService(lastWindowSessionKey: sessionKey)
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
 
-        service.setupWindowState(windowState, delegate: delegate)
+        service.setupWindowState(windowState, runtime: delegate.runtime)
 
         XCTAssertEqual(windowState.currentSpaceId, spaceId)
         XCTAssertTrue(windowState.isAwaitingInitialSessionResolution)
@@ -121,7 +121,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
         let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
 
-        service.setupWindowState(windowState, delegate: delegate)
+        service.setupWindowState(windowState, runtime: delegate.runtime)
 
         XCTAssertTrue(windowState.isShowingEmptyState)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .emptySpace)
@@ -164,7 +164,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.isDownloadsPopoverPresented = true
 
-        service.applyWindowSessionSnapshot(snapshot, to: windowState, delegate: delegate)
+        service.applyWindowSessionSnapshot(snapshot, to: windowState, runtime: delegate.runtime)
 
         XCTAssertEqual(windowState.currentTabId, tab.id)
         XCTAssertEqual(windowState.currentSpaceId, space.id)
@@ -215,7 +215,7 @@ final class WindowSessionServiceTests: XCTestCase {
         delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        service.setupWindowState(windowState, delegate: delegate)
+        service.setupWindowState(windowState, runtime: delegate.runtime)
 
         XCTAssertEqual(windowState.currentTabId, staleLiveTabId)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
@@ -227,7 +227,7 @@ final class WindowSessionServiceTests: XCTestCase {
         tabManager.setPinnedTabs([pin], for: profileId)
         tabManager.markInitialDataLoadFinished()
 
-        service.handleTabManagerDataLoaded(delegate: delegate)
+        service.handleTabManagerDataLoaded(runtime: delegate.runtime)
 
         let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: windowState.id))
         XCTAssertEqual(windowState.currentTabId, liveTab.id)
@@ -266,7 +266,7 @@ final class WindowSessionServiceTests: XCTestCase {
         delegate.windowRegistry = windowRegistry
         windowRegistry.register(windowState)
 
-        service.setupWindowState(windowState, delegate: delegate)
+        service.setupWindowState(windowState, runtime: delegate.runtime)
 
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertEqual(windowState.selectedShortcutPinForSpace[space.id], pin.id)
@@ -277,7 +277,7 @@ final class WindowSessionServiceTests: XCTestCase {
         tabManager.setSpacePinnedShortcuts([pin], for: space.id)
         tabManager.markInitialDataLoadFinished()
 
-        service.handleTabManagerDataLoaded(delegate: delegate)
+        service.handleTabManagerDataLoaded(runtime: delegate.runtime)
 
         let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: windowState.id))
         XCTAssertEqual(windowState.currentTabId, liveTab.id)
@@ -328,7 +328,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
         let windowState = BrowserWindowState()
 
-        service.applyWindowSessionSnapshot(snapshot, to: windowState, delegate: delegate)
+        service.applyWindowSessionSnapshot(snapshot, to: windowState, runtime: delegate.runtime)
 
         XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
         XCTAssertEqual(windowState.currentTabId, second.id)
@@ -351,7 +351,7 @@ final class WindowSessionServiceTests: XCTestCase {
         let service = WindowSessionService(lastWindowSessionKey: sessionKey)
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
 
-        service.setupWindowState(windowState, delegate: delegate)
+        service.setupWindowState(windowState, runtime: delegate.runtime)
 
         XCTAssertEqual(windowState.currentSpaceId, spaceId)
         XCTAssertTrue(windowState.workspaceTheme.visuallyEquals(.default))
@@ -423,7 +423,7 @@ final class WindowSessionServiceTests: XCTestCase {
 }
 
 @MainActor
-private final class TestWindowSessionDelegate: WindowSessionServiceDelegate {
+private final class TestWindowSessionDelegate {
     let tabManager: TabManager
     let splitManager = SplitViewManager()
     let glanceManager = GlanceManager()
@@ -436,6 +436,51 @@ private final class TestWindowSessionDelegate: WindowSessionServiceDelegate {
 
     init(tabManager: TabManager) {
         self.tabManager = tabManager
+    }
+
+    var runtime: WindowSessionRuntime {
+        WindowSessionRuntime(
+            currentProfile: { self.currentProfile },
+            tabManager: tabManager,
+            windowRegistry: { self.windowRegistry },
+            splitManager: splitManager,
+            glanceManager: glanceManager,
+            shellSelectionService: shellSelectionService,
+            hasValidCurrentSelection: { [self] windowState in
+                hasValidCurrentSelection(in: windowState)
+            },
+            applyTabSelection: { [self] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
+                applyTabSelection(
+                    tab,
+                    in: windowState,
+                    updateSpaceFromTab: updateSpaceFromTab,
+                    updateTheme: updateTheme,
+                    rememberSelection: rememberSelection,
+                    persistSelection: persistSelection
+                )
+            },
+            showEmptyState: { [self] windowState in
+                showEmptyState(in: windowState)
+            },
+            sanitizeFloatingBarState: { [self] windowState in
+                sanitizeFloatingBarState(in: windowState)
+            },
+            syncShortcutSelectionState: { [self] windowState in
+                syncShortcutSelectionState(for: windowState)
+            },
+            commitWorkspaceTheme: { [self] theme, windowState in
+                commitWorkspaceTheme(theme, for: windowState)
+            },
+            space: { [self] spaceId in
+                space(for: spaceId)
+            },
+            syncSidebarPresentationState: { [self] windowState in
+                syncSidebarPresentationState(from: windowState)
+            },
+            focusSplitGroup: { [self] group, windowState in
+                focusSplitGroup(group, in: windowState)
+            }
+        )
     }
 
     func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
@@ -474,7 +519,7 @@ private final class TestWindowSessionDelegate: WindowSessionServiceDelegate {
         return tabManager.spaces.first { $0.id == spaceId }
     }
 
-    func syncBrowserManagerSidebarCachesFromWindow(_: BrowserWindowState) { /* no-op */ }
+    func syncSidebarPresentationState(from _: BrowserWindowState) { /* no-op */ }
 
     func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState) {
         focusedSplitGroupIds.append(group.id)

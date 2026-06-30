@@ -11,7 +11,7 @@ final class BrowserStartupPolicyOwner {
         let space: @MainActor (UUID?) -> Space?
         let splitManager: @MainActor () -> SplitViewManager
         let glanceManager: @MainActor () -> GlanceManager
-        let selectTab: @MainActor (Tab, BrowserWindowState, BrowserManager.TabSelectionLoadPolicy) -> Void
+        let selectTab: @MainActor (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
         let showEmptyState: @MainActor (BrowserWindowState) -> Void
         let currentRegularWindowSnapshots: @MainActor (UUID?) -> [LastSessionWindowSnapshot]
         let currentTabSnapshot: @MainActor () -> TabSnapshotRepository.Snapshot
@@ -212,7 +212,7 @@ extension BrowserStartupPolicyOwner.Dependencies {
                 browserManager.windowSessionService.applyWindowSessionSnapshot(
                     snapshot,
                     to: windowState,
-                    delegate: browserManager
+                    runtime: browserManager.makeWindowSessionRuntime()
                 )
             },
             reopenWindow: { [weak browserManager] snapshot in

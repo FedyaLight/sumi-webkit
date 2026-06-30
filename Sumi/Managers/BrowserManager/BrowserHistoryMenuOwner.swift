@@ -77,7 +77,7 @@ extension BrowserHistoryMenuOwner.Dependencies {
                 browserManager.windowSessionService.applyWindowSessionSnapshot(
                     snapshot,
                     to: windowState,
-                    delegate: browserManager
+                    runtime: browserManager.makeWindowSessionRuntime()
                 )
             },
             bringWindowToFront: { windowState in

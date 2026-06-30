@@ -312,7 +312,7 @@ class BrowserManager: ObservableObject {
                 guard let self else { return nil }
                 return self.windowSessionService.makeWindowSessionSnapshot(
                     for: windowState,
-                    delegate: self
+                    runtime: self.makeWindowSessionRuntime()
                 )
             },
             windowDisplayTitle: { [weak self] windowState in
@@ -567,7 +567,7 @@ class BrowserManager: ObservableObject {
 
     /// Called when TabManager finishes loading initial data from persistence
     private func handleTabManagerDataLoaded() {
-        windowSessionService.handleTabManagerDataLoaded(delegate: self)
+        windowSessionService.handleTabManagerDataLoaded(runtime: makeWindowSessionRuntime())
         liveFolderManager.startAfterTabRestore()
         reconcileStartupSessionIfPossible()
     }
@@ -696,11 +696,6 @@ class BrowserManager: ObservableObject {
     func updateFindManagerCurrentTab() {
         // Update the current tab for find manager
         findManager.updateCurrentTab(activePageTabForActiveWindow())
-    }
-
-    enum TabSelectionLoadPolicy: Equatable {
-        case immediate
-        case deferred
     }
 
     typealias TabOpenActivationPolicy = BrowserTabOpenActivationPolicy
@@ -1050,10 +1045,8 @@ class BrowserManager: ObservableObject {
             actions: tabSelectionActions
         )
     }
-}
 
-extension BrowserManager: WindowSessionServiceDelegate {
-    func syncBrowserManagerSidebarCachesFromWindow(_ windowState: BrowserWindowState) {
+    func syncSidebarPresentationState(from windowState: BrowserWindowState) {
         sidebarPresentationOwner.syncFromWindow(windowState)
     }
 }

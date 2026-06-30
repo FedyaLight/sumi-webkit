@@ -1,10 +1,15 @@
 import Foundation
 
+enum TabSelectionLoadPolicy: Equatable {
+    case immediate
+    case deferred
+}
+
 @MainActor
 final class WindowTabActivationBatcher {
     struct Activation: Equatable {
         let tabId: UUID
-        let loadPolicy: BrowserManager.TabSelectionLoadPolicy
+        let loadPolicy: TabSelectionLoadPolicy
     }
 
     private var pendingActivationsByWindow: [UUID: Activation] = [:]
@@ -13,7 +18,7 @@ final class WindowTabActivationBatcher {
     func requestActivation(
         tabId: UUID,
         in windowId: UUID,
-        loadPolicy: BrowserManager.TabSelectionLoadPolicy,
+        loadPolicy: TabSelectionLoadPolicy,
         onFlush: @escaping @MainActor (UUID, Activation) -> Void
     ) {
         pendingActivationsByWindow[windowId] = Activation(

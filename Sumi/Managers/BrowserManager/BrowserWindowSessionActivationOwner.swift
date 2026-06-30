@@ -4,7 +4,7 @@ import Foundation
 final class BrowserWindowSessionActivationOwner {
     struct Dependencies {
         let windowSessionService: WindowSessionService
-        let delegate: @MainActor () -> WindowSessionServiceDelegate?
+        let runtime: @MainActor () -> WindowSessionRuntime?
         let refreshSplitPublishedState: @MainActor (UUID) -> Void
         let updateFindManagerCurrentTab: @MainActor () -> Void
         let notifyExtensionWindowOpened: @MainActor (BrowserWindowState) -> Void
@@ -25,21 +25,21 @@ final class BrowserWindowSessionActivationOwner {
     }
 
     func setupWindowState(_ windowState: BrowserWindowState) {
-        guard let delegate = dependencies.delegate() else { return }
+        guard let runtime = dependencies.runtime() else { return }
         dependencies.windowSessionService.setupWindowState(
             windowState,
-            delegate: delegate
+            runtime: runtime
         )
         dependencies.notifyExtensionWindowOpened(windowState)
         dependencies.reconcileStartupSessionIfPossible()
     }
 
     func setActiveWindowState(_ windowState: BrowserWindowState) {
-        guard let delegate = dependencies.delegate() else { return }
+        guard let runtime = dependencies.runtime() else { return }
         dependencies.refreshSplitPublishedState(windowState.id)
         dependencies.windowSessionService.setActiveWindowState(
             windowState,
-            delegate: delegate
+            runtime: runtime
         )
         dependencies.updateFindManagerCurrentTab()
         dependencies.notifyExtensionWindowFocused(windowState)
@@ -86,7 +86,7 @@ final class BrowserWindowSessionActivationOwner {
     }
 
     private func persistWindowSessionNow(for windowState: BrowserWindowState) {
-        guard let delegate = dependencies.delegate() else { return }
+        guard let runtime = dependencies.runtime() else { return }
         let signpostState = PerformanceTrace.beginInterval("WindowSession.persist")
         defer {
             PerformanceTrace.endInterval("WindowSession.persist", signpostState)
@@ -94,9 +94,60 @@ final class BrowserWindowSessionActivationOwner {
 
         dependencies.windowSessionService.persistWindowSession(
             for: windowState,
-            delegate: delegate
+            runtime: runtime
         )
         dependencies.refreshLastSessionWindowsStore()
+    }
+}
+
+extension BrowserManager {
+    func makeWindowSessionRuntime() -> WindowSessionRuntime {
+        WindowSessionRuntime(
+            currentProfile: { [weak self] in
+                self?.currentProfile
+            },
+            tabManager: tabManager,
+            windowRegistry: { [weak self] in
+                self?.windowRegistry
+            },
+            splitManager: splitManager,
+            glanceManager: glanceManager,
+            shellSelectionService: shellSelectionService,
+            hasValidCurrentSelection: { [weak self] windowState in
+                self?.hasValidCurrentSelection(in: windowState) ?? false
+            },
+            applyTabSelection: { [weak self] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
+                self?.applyTabSelection(
+                    tab,
+                    in: windowState,
+                    updateSpaceFromTab: updateSpaceFromTab,
+                    updateTheme: updateTheme,
+                    rememberSelection: rememberSelection,
+                    persistSelection: persistSelection
+                )
+            },
+            showEmptyState: { [weak self] windowState in
+                self?.showEmptyState(in: windowState)
+            },
+            sanitizeFloatingBarState: { [weak self] windowState in
+                self?.sanitizeFloatingBarState(in: windowState)
+            },
+            syncShortcutSelectionState: { [weak self] windowState in
+                self?.syncShortcutSelectionState(for: windowState)
+            },
+            commitWorkspaceTheme: { [weak self] theme, windowState in
+                self?.commitWorkspaceTheme(theme, for: windowState)
+            },
+            space: { [weak self] spaceId in
+                self?.space(for: spaceId)
+            },
+            syncSidebarPresentationState: { [weak self] windowState in
+                self?.syncSidebarPresentationState(from: windowState)
+            },
+            focusSplitGroup: { [weak self] group, windowState in
+                self?.focusSplitGroup(group, in: windowState)
+            }
+        )
     }
 }
 
@@ -110,7 +161,9 @@ extension BrowserWindowSessionActivationOwner.Dependencies {
 
         return Self(
             windowSessionService: windowSessionService,
-            delegate: { [weak browserManager] in browserManager },
+            runtime: { [weak browserManager] in
+                browserManager?.makeWindowSessionRuntime()
+            },
             refreshSplitPublishedState: { [weak browserManager] windowId in
                 browserManager?.splitManager.refreshPublishedState(for: windowId)
             },

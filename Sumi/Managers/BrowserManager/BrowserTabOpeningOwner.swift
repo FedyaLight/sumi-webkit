@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 enum BrowserTabOpenActivationPolicy {
-    case foreground(windowState: BrowserWindowState, loadPolicy: BrowserManager.TabSelectionLoadPolicy)
+    case foreground(windowState: BrowserWindowState, loadPolicy: TabSelectionLoadPolicy)
     case background
 }
 
@@ -44,7 +44,7 @@ struct BrowserTabOpenContext {
         sourceTab: Tab? = nil,
         preferredSpaceId: UUID? = nil,
         regularInsertionIndex: Int? = nil,
-        loadPolicy: BrowserManager.TabSelectionLoadPolicy = .deferred
+        loadPolicy: TabSelectionLoadPolicy = .deferred
     ) -> BrowserTabOpenContext {
         BrowserTabOpenContext(
             windowState: windowState,
@@ -81,7 +81,7 @@ final class BrowserTabOpeningOwner {
         let windowStateContainingTab: (Tab) -> BrowserWindowState?
         let canMaterializeBackgroundTab: (Tab) -> Bool
         let deferBackgroundTabUntilStartupReady: (Tab) -> Void
-        let selectTab: (Tab, BrowserWindowState, BrowserManager.TabSelectionLoadPolicy) -> Void
+        let selectTab: (Tab, BrowserWindowState, TabSelectionLoadPolicy) -> Void
     }
 
     private let dependencies: Dependencies

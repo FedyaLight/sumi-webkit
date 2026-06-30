@@ -125,19 +125,19 @@ enum SidebarUITestShortcutDriftOverride {
     @MainActor
     static func applyIfNeeded(
         to windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) {
         guard let pinIDRaw = ProcessInfo.processInfo.environment[pinIDEnvironmentKey],
               let urlRaw = ProcessInfo.processInfo.environment[urlEnvironmentKey],
               let pinID = UUID(uuidString: pinIDRaw),
               let driftURL = URL(string: urlRaw),
-              let pin = delegate.tabManager.shortcutPin(by: pinID)
+              let pin = runtime.tabManager.shortcutPin(by: pinID)
         else {
             return
         }
 
-        let liveTab = delegate.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
-            ?? delegate.tabManager.activateShortcutPin(
+        let liveTab = runtime.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+            ?? runtime.tabManager.activateShortcutPin(
                 pin,
                 in: windowState.id,
                 currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
@@ -155,15 +155,84 @@ enum SidebarUITestShortcutDriftOverride {
 }
 
 @MainActor
-protocol WindowSessionServiceDelegate: AnyObject {
-    var currentProfile: Profile? { get }
-    var tabManager: TabManager { get }
-    var windowRegistry: WindowRegistry? { get }
-    var splitManager: SplitViewManager { get }
-    var glanceManager: GlanceManager { get }
-    var shellSelectionService: ShellSelectionService { get }
+struct WindowSessionRuntime {
+    let tabManager: TabManager
+    let splitManager: SplitViewManager
+    let glanceManager: GlanceManager
+    let shellSelectionService: ShellSelectionService
 
-    func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool
+    private let currentProfileProvider: @MainActor () -> Profile?
+    private let windowRegistryProvider: @MainActor () -> WindowRegistry?
+    private let hasValidCurrentSelectionHandler: @MainActor (BrowserWindowState) -> Bool
+    private let applyTabSelectionHandler: @MainActor (
+        Tab,
+        BrowserWindowState,
+        Bool,
+        Bool,
+        Bool,
+        Bool
+    ) -> Void
+    private let showEmptyStateHandler: @MainActor (BrowserWindowState) -> Void
+    private let sanitizeFloatingBarStateHandler: @MainActor (BrowserWindowState) -> Void
+    private let syncShortcutSelectionStateHandler: @MainActor (BrowserWindowState) -> Void
+    private let commitWorkspaceThemeHandler: @MainActor (WorkspaceTheme, BrowserWindowState) -> Void
+    private let spaceProvider: @MainActor (UUID?) -> Space?
+    private let syncSidebarPresentationStateHandler: @MainActor (BrowserWindowState) -> Void
+    private let focusSplitGroupHandler: @MainActor (SplitGroup, BrowserWindowState) -> Void
+
+    init(
+        currentProfile: @escaping @MainActor () -> Profile?,
+        tabManager: TabManager,
+        windowRegistry: @escaping @MainActor () -> WindowRegistry?,
+        splitManager: SplitViewManager,
+        glanceManager: GlanceManager,
+        shellSelectionService: ShellSelectionService,
+        hasValidCurrentSelection: @escaping @MainActor (BrowserWindowState) -> Bool,
+        applyTabSelection: @escaping @MainActor (
+            Tab,
+            BrowserWindowState,
+            Bool,
+            Bool,
+            Bool,
+            Bool
+        ) -> Void,
+        showEmptyState: @escaping @MainActor (BrowserWindowState) -> Void,
+        sanitizeFloatingBarState: @escaping @MainActor (BrowserWindowState) -> Void,
+        syncShortcutSelectionState: @escaping @MainActor (BrowserWindowState) -> Void,
+        commitWorkspaceTheme: @escaping @MainActor (WorkspaceTheme, BrowserWindowState) -> Void,
+        space: @escaping @MainActor (UUID?) -> Space?,
+        syncSidebarPresentationState: @escaping @MainActor (BrowserWindowState) -> Void,
+        focusSplitGroup: @escaping @MainActor (SplitGroup, BrowserWindowState) -> Void
+    ) {
+        self.currentProfileProvider = currentProfile
+        self.tabManager = tabManager
+        self.windowRegistryProvider = windowRegistry
+        self.splitManager = splitManager
+        self.glanceManager = glanceManager
+        self.shellSelectionService = shellSelectionService
+        self.hasValidCurrentSelectionHandler = hasValidCurrentSelection
+        self.applyTabSelectionHandler = applyTabSelection
+        self.showEmptyStateHandler = showEmptyState
+        self.sanitizeFloatingBarStateHandler = sanitizeFloatingBarState
+        self.syncShortcutSelectionStateHandler = syncShortcutSelectionState
+        self.commitWorkspaceThemeHandler = commitWorkspaceTheme
+        self.spaceProvider = space
+        self.syncSidebarPresentationStateHandler = syncSidebarPresentationState
+        self.focusSplitGroupHandler = focusSplitGroup
+    }
+
+    var currentProfile: Profile? {
+        currentProfileProvider()
+    }
+
+    var windowRegistry: WindowRegistry? {
+        windowRegistryProvider()
+    }
+
+    func hasValidCurrentSelection(in windowState: BrowserWindowState) -> Bool {
+        hasValidCurrentSelectionHandler(windowState)
+    }
+
     func applyTabSelection(
         _ tab: Tab,
         in windowState: BrowserWindowState,
@@ -171,14 +240,44 @@ protocol WindowSessionServiceDelegate: AnyObject {
         updateTheme: Bool,
         rememberSelection: Bool,
         persistSelection: Bool
-    )
-    func showEmptyState(in windowState: BrowserWindowState)
-    func sanitizeFloatingBarState(in windowState: BrowserWindowState)
-    func syncShortcutSelectionState(for windowState: BrowserWindowState)
-    func commitWorkspaceTheme(_ theme: WorkspaceTheme, for windowState: BrowserWindowState)
-    func space(for spaceId: UUID?) -> Space?
-    func syncBrowserManagerSidebarCachesFromWindow(_ windowState: BrowserWindowState)
-    func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState)
+    ) {
+        applyTabSelectionHandler(
+            tab,
+            windowState,
+            updateSpaceFromTab,
+            updateTheme,
+            rememberSelection,
+            persistSelection
+        )
+    }
+
+    func showEmptyState(in windowState: BrowserWindowState) {
+        showEmptyStateHandler(windowState)
+    }
+
+    func sanitizeFloatingBarState(in windowState: BrowserWindowState) {
+        sanitizeFloatingBarStateHandler(windowState)
+    }
+
+    func syncShortcutSelectionState(for windowState: BrowserWindowState) {
+        syncShortcutSelectionStateHandler(windowState)
+    }
+
+    func commitWorkspaceTheme(_ theme: WorkspaceTheme, for windowState: BrowserWindowState) {
+        commitWorkspaceThemeHandler(theme, windowState)
+    }
+
+    func space(for spaceId: UUID?) -> Space? {
+        spaceProvider(spaceId)
+    }
+
+    func syncSidebarPresentationState(from windowState: BrowserWindowState) {
+        syncSidebarPresentationStateHandler(windowState)
+    }
+
+    func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState) {
+        focusSplitGroupHandler(group, windowState)
+    }
 }
 
 @MainActor
@@ -186,7 +285,7 @@ private enum WindowSessionSnapshotApplier {
     static func apply(
         _ snapshot: WindowSessionSnapshot,
         to windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) {
         windowState.currentTabId = snapshot.currentTabId
         windowState.currentSpaceId = snapshot.currentSpaceId
@@ -214,9 +313,9 @@ private enum WindowSessionSnapshotApplier {
         windowState.floatingBarDraftText = snapshot.floatingBarDraft.text
         windowState.floatingBarDraftNavigatesCurrentTab = snapshot.floatingBarDraft.navigateCurrentTab
         windowState.pendingSessionSplitGroupId = snapshot.activeSplitGroupId
-        delegate.splitManager.restoreSession(snapshot.splitSession, for: windowState.id)
-        delegate.glanceManager.restoreSession(snapshot.glanceSession, in: windowState)
-        delegate.sanitizeFloatingBarState(in: windowState)
+        runtime.splitManager.restoreSession(snapshot.splitSession, for: windowState.id)
+        runtime.glanceManager.restoreSession(snapshot.glanceSession, in: windowState)
+        runtime.sanitizeFloatingBarState(in: windowState)
     }
 }
 
@@ -248,7 +347,7 @@ final class WindowSessionService {
         lastPersistedWindowSessionData = nil
     }
 
-    func handleTabManagerDataLoaded(delegate: WindowSessionServiceDelegate) {
+    func handleTabManagerDataLoaded(runtime: WindowSessionRuntime) {
         let startupTrace = StartupPerformanceTrace.sessionRestoreStarted()
         defer {
             StartupPerformanceTrace.sessionRestoreFinished(startupTrace)
@@ -259,49 +358,49 @@ final class WindowSessionService {
             category: "WindowSessionService"
         )
 
-        guard let windowRegistry = delegate.windowRegistry else { return }
+        guard let windowRegistry = runtime.windowRegistry else { return }
 
         for (_, windowState) in windowRegistry.windows {
             if windowState.currentSpaceId == nil
-                || delegate.tabManager.spaces.first(where: { $0.id == windowState.currentSpaceId }) == nil {
-                windowState.currentSpaceId = delegate.tabManager.currentSpace?.id
-                    ?? delegate.tabManager.spaces.first?.id
+                || runtime.tabManager.spaces.first(where: { $0.id == windowState.currentSpaceId }) == nil {
+                windowState.currentSpaceId = runtime.tabManager.currentSpace?.id
+                    ?? runtime.tabManager.spaces.first?.id
             }
 
             if let shortcutPinId = windowState.currentShortcutPinId,
-               let pin = delegate.tabManager.shortcutPin(by: shortcutPinId) {
-                materializeShortcutSelection(pin, in: windowState, delegate: delegate)
-            } else if materializeRememberedSpaceShortcut(in: windowState, delegate: delegate) {
+               let pin = runtime.tabManager.shortcutPin(by: shortcutPinId) {
+                materializeShortcutSelection(pin, in: windowState, runtime: runtime)
+            } else if materializeRememberedSpaceShortcut(in: windowState, runtime: runtime) {
                 // Restored from the per-space launcher selection snapshot.
             } else if let currentTabId = windowState.currentTabId,
-                      delegate.tabManager.allTabs().contains(where: { $0.id == currentTabId }) == false {
+                      runtime.tabManager.allTabs().contains(where: { $0.id == currentTabId }) == false {
                 windowState.currentTabId = nil
             }
 
             SidebarUITestShortcutDriftOverride.applyIfNeeded(
                 to: windowState,
-                delegate: delegate
+                runtime: runtime
             )
 
             if windowState.currentTabId == nil && !windowState.isShowingEmptyState {
-                let restoredTab = delegate.shellSelectionService.preferredTabForWindow(
+                let restoredTab = runtime.shellSelectionService.preferredTabForWindow(
                     windowState,
-                    tabStore: delegate.tabManager.runtimeStore
+                    tabStore: runtime.tabManager.runtimeStore
                 )
                 if let restoredTab {
                     windowState.currentTabId = restoredTab.id
                 } else {
-                    delegate.showEmptyState(in: windowState)
+                    runtime.showEmptyState(in: windowState)
                 }
             }
 
-            delegate.syncShortcutSelectionState(for: windowState)
-            restorePendingSplitGroupSelectionIfNeeded(in: windowState, delegate: delegate)
-            delegate.glanceManager.restorePendingSessionIfPossible(in: windowState)
+            runtime.syncShortcutSelectionState(for: windowState)
+            restorePendingSplitGroupSelectionIfNeeded(in: windowState, runtime: runtime)
+            runtime.glanceManager.restorePendingSessionIfPossible(in: windowState)
 
             syncWorkspaceThemeAfterSessionRestore(
                 windowState,
-                delegate: delegate,
+                runtime: runtime,
                 source: "tabManagerDataLoaded"
             )
 
@@ -309,7 +408,7 @@ final class WindowSessionService {
             StartupPerformanceTrace.firstSelectedTabResolved()
             StartupPerformanceTrace.firstTabsClickable()
             windowState.refreshCompositor()
-            persistWindowSession(for: windowState, delegate: delegate)
+            persistWindowSession(for: windowState, runtime: runtime)
         }
 
         RuntimeDiagnostics.debug(
@@ -320,57 +419,57 @@ final class WindowSessionService {
 
     func setupWindowState(
         _ windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) {
-        windowState.tabManager = delegate.tabManager
+        windowState.tabManager = runtime.tabManager
 
-        let restored = restoreWindowSession(into: windowState, delegate: delegate)
+        let restored = restoreWindowSession(into: windowState, runtime: runtime)
         if !restored {
-            windowState.currentProfileId = delegate.currentProfile?.id
-            windowState.currentSpaceId = delegate.tabManager.currentSpace?.id
-            windowState.currentTabId = delegate.tabManager.currentTab?.id
+            windowState.currentProfileId = runtime.currentProfile?.id
+            windowState.currentSpaceId = runtime.tabManager.currentSpace?.id
+            windowState.currentTabId = runtime.tabManager.currentTab?.id
         }
 
-        if restored && !delegate.tabManager.hasLoadedInitialData {
+        if restored && !runtime.tabManager.hasLoadedInitialData {
             syncWorkspaceThemeAfterSessionRestore(
                 windowState,
-                delegate: delegate,
+                runtime: runtime,
                 source: "setupWindowState.preInitialTabManagerLoad"
             )
             return
         }
 
-        finalizeWindowStateRestore(windowState, delegate: delegate, source: "setupWindowState")
+        finalizeWindowStateRestore(windowState, runtime: runtime, source: "setupWindowState")
     }
 
     func applyWindowSessionSnapshot(
         _ snapshot: WindowSessionSnapshot,
         to windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) {
-        windowState.tabManager = delegate.tabManager
-        WindowSessionSnapshotApplier.apply(snapshot, to: windowState, delegate: delegate)
-        finalizeWindowStateRestore(windowState, delegate: delegate, source: "applyWindowSessionSnapshot")
+        windowState.tabManager = runtime.tabManager
+        WindowSessionSnapshotApplier.apply(snapshot, to: windowState, runtime: runtime)
+        finalizeWindowStateRestore(windowState, runtime: runtime, source: "applyWindowSessionSnapshot")
     }
 
     private func finalizeWindowStateRestore(
         _ windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate,
+        runtime: WindowSessionRuntime,
         source: String
     ) {
-        materializeShortcutSelectionIfNeeded(in: windowState, delegate: delegate)
-        restorePendingSplitGroupSelectionIfNeeded(in: windowState, delegate: delegate)
-        delegate.glanceManager.restorePendingSessionIfPossible(in: windowState)
+        materializeShortcutSelectionIfNeeded(in: windowState, runtime: runtime)
+        restorePendingSplitGroupSelectionIfNeeded(in: windowState, runtime: runtime)
+        runtime.glanceManager.restorePendingSessionIfPossible(in: windowState)
 
         if !windowState.isShowingEmptyState,
-           !delegate.hasValidCurrentSelection(in: windowState) {
-            if let currentSpace = delegate.space(for: windowState.currentSpaceId),
-               let preferred = delegate.shellSelectionService.preferredTabForSpace(
+           !runtime.hasValidCurrentSelection(in: windowState) {
+            if let currentSpace = runtime.space(for: windowState.currentSpaceId),
+               let preferred = runtime.shellSelectionService.preferredTabForSpace(
                     currentSpace,
                     in: windowState,
-                    tabStore: delegate.tabManager.runtimeStore
+                    tabStore: runtime.tabManager.runtimeStore
                ) {
-                delegate.applyTabSelection(
+                runtime.applyTabSelection(
                     preferred,
                     in: windowState,
                     updateSpaceFromTab: false,
@@ -378,11 +477,11 @@ final class WindowSessionService {
                     rememberSelection: false,
                     persistSelection: false
                 )
-            } else if let preferred = delegate.shellSelectionService.preferredTabForWindow(
+            } else if let preferred = runtime.shellSelectionService.preferredTabForWindow(
                 windowState,
-                tabStore: delegate.tabManager.runtimeStore
+                tabStore: runtime.tabManager.runtimeStore
             ) {
-                delegate.applyTabSelection(
+                runtime.applyTabSelection(
                     preferred,
                     in: windowState,
                     updateSpaceFromTab: false,
@@ -394,13 +493,13 @@ final class WindowSessionService {
         }
 
         if windowState.isShowingEmptyState,
-           let currentSpace = delegate.space(for: windowState.currentSpaceId),
-           let preferred = delegate.shellSelectionService.preferredTabForSpace(
+           let currentSpace = runtime.space(for: windowState.currentSpaceId),
+           let preferred = runtime.shellSelectionService.preferredTabForSpace(
                 currentSpace,
                 in: windowState,
-                tabStore: delegate.tabManager.runtimeStore
+                tabStore: runtime.tabManager.runtimeStore
            ) {
-            delegate.applyTabSelection(
+            runtime.applyTabSelection(
                 preferred,
                 in: windowState,
                 updateSpaceFromTab: false,
@@ -411,20 +510,20 @@ final class WindowSessionService {
         }
 
         if windowState.currentTabId == nil
-            && delegate.shellSelectionService.preferredTabForWindow(
+            && runtime.shellSelectionService.preferredTabForWindow(
                 windowState,
-                tabStore: delegate.tabManager.runtimeStore
+                tabStore: runtime.tabManager.runtimeStore
             ) == nil {
             windowState.isShowingEmptyState = true
         }
 
-        delegate.sanitizeFloatingBarState(in: windowState)
-        delegate.syncShortcutSelectionState(for: windowState)
-        restorePendingSplitGroupSelectionIfNeeded(in: windowState, delegate: delegate)
+        runtime.sanitizeFloatingBarState(in: windowState)
+        runtime.syncShortcutSelectionState(for: windowState)
+        restorePendingSplitGroupSelectionIfNeeded(in: windowState, runtime: runtime)
 
         syncWorkspaceThemeAfterSessionRestore(
             windowState,
-            delegate: delegate,
+            runtime: runtime,
             source: source
         )
 
@@ -435,46 +534,46 @@ final class WindowSessionService {
             "Setup window state \(windowState.id.uuidString) currentTab=\(windowState.currentTabId?.uuidString ?? "none") currentSpace=\(windowState.currentSpaceId?.uuidString ?? "none")",
             category: "WindowSessionService"
         )
-        persistWindowSession(for: windowState, delegate: delegate)
+        persistWindowSession(for: windowState, runtime: runtime)
     }
 
     @discardableResult
     private func materializeShortcutSelectionIfNeeded(
         in windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) -> Bool {
         if let shortcutPinId = windowState.currentShortcutPinId,
-           let pin = delegate.tabManager.shortcutPin(by: shortcutPinId) {
-            materializeShortcutSelection(pin, in: windowState, delegate: delegate)
+           let pin = runtime.tabManager.shortcutPin(by: shortcutPinId) {
+            materializeShortcutSelection(pin, in: windowState, runtime: runtime)
             return true
         }
 
-        return materializeRememberedSpaceShortcut(in: windowState, delegate: delegate)
+        return materializeRememberedSpaceShortcut(in: windowState, runtime: runtime)
     }
 
     @discardableResult
     private func materializeRememberedSpaceShortcut(
         in windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) -> Bool {
         guard let currentSpaceId = windowState.currentSpaceId,
               let shortcutPinId = windowState.selectedShortcutPinForSpace[currentSpaceId],
-              let pin = delegate.tabManager.shortcutPin(by: shortcutPinId)
+              let pin = runtime.tabManager.shortcutPin(by: shortcutPinId)
         else {
             return false
         }
 
-        materializeShortcutSelection(pin, in: windowState, delegate: delegate)
+        materializeShortcutSelection(pin, in: windowState, runtime: runtime)
         return true
     }
 
     private func materializeShortcutSelection(
         _ pin: ShortcutPin,
         in windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) {
-        let liveTab = delegate.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
-            ?? delegate.tabManager.activateShortcutPin(
+        let liveTab = runtime.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+            ?? runtime.tabManager.activateShortcutPin(
                 pin,
                 in: windowState.id,
                 currentSpaceId: windowState.currentSpaceId
@@ -493,18 +592,18 @@ final class WindowSessionService {
 
     private func syncWorkspaceThemeAfterSessionRestore(
         _ windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate,
+        runtime: WindowSessionRuntime,
         source: String
     ) {
         if let spaceId = windowState.currentSpaceId,
-           let space = delegate.tabManager.spaces.first(where: { $0.id == spaceId }) {
-            windowState.currentProfileId = space.profileId ?? delegate.currentProfile?.id
-            delegate.commitWorkspaceTheme(space.workspaceTheme, for: windowState)
+           let space = runtime.tabManager.spaces.first(where: { $0.id == spaceId }) {
+            windowState.currentProfileId = space.profileId ?? runtime.currentProfile?.id
+            runtime.commitWorkspaceTheme(space.workspaceTheme, for: windowState)
             return
         }
 
         if let spaceId = windowState.currentSpaceId,
-           !delegate.tabManager.hasLoadedInitialData {
+           !runtime.tabManager.hasLoadedInitialData {
             RuntimeDiagnostics.debug(
                 "Preserving bootstrap workspace theme for window \(windowState.id.uuidString) while waiting for initial TabManager data; source=\(source) currentSpace=\(spaceId.uuidString)",
                 category: "WindowSessionService"
@@ -518,27 +617,27 @@ final class WindowSessionService {
                 category: "WindowSessionService"
             )
         }
-        delegate.commitWorkspaceTheme(.default, for: windowState)
+        runtime.commitWorkspaceTheme(.default, for: windowState)
     }
 
     func setActiveWindowState(
         _ windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) {
         if windowState.currentProfileId == nil {
-            windowState.currentProfileId = delegate.currentProfile?.id
+            windowState.currentProfileId = runtime.currentProfile?.id
         }
-        delegate.syncBrowserManagerSidebarCachesFromWindow(windowState)
-        persistWindowSession(for: windowState, delegate: delegate)
+        runtime.syncSidebarPresentationState(from: windowState)
+        persistWindowSession(for: windowState, runtime: runtime)
     }
 
     func persistWindowSession(
         for windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) {
         cancelPendingPersistence(for: windowState.id)
         guard !windowState.isIncognito else { return }
-        let snapshot = makeWindowSessionSnapshot(for: windowState, delegate: delegate)
+        let snapshot = makeWindowSessionSnapshot(for: windowState, runtime: runtime)
         let data: Data
         do {
             data = try JSONEncoder().encode(snapshot)
@@ -619,7 +718,7 @@ final class WindowSessionService {
     @discardableResult
     func restoreWindowSession(
         into windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) -> Bool {
         guard !windowState.isIncognito else { return false }
         if didRestoreGlobalWindowSessionThisCycle {
@@ -640,30 +739,30 @@ final class WindowSessionService {
             didRestoreGlobalWindowSessionThisCycle = true
             lastPersistedWindowSessionData = data
 
-            WindowSessionSnapshotApplier.apply(snapshot, to: windowState, delegate: delegate)
+            WindowSessionSnapshotApplier.apply(snapshot, to: windowState, runtime: runtime)
             return true
         }
     }
 
     private func restorePendingSplitGroupSelectionIfNeeded(
         in windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) {
         guard let groupId = windowState.pendingSessionSplitGroupId else { return }
-        guard let group = delegate.tabManager.splitGroup(with: groupId) else {
-            if delegate.tabManager.hasLoadedInitialData {
+        guard let group = runtime.tabManager.splitGroup(with: groupId) else {
+            if runtime.tabManager.hasLoadedInitialData {
                 windowState.pendingSessionSplitGroupId = nil
             }
             return
         }
 
         windowState.pendingSessionSplitGroupId = nil
-        delegate.focusSplitGroup(group, in: windowState)
+        runtime.focusSplitGroup(group, in: windowState)
     }
 
     func makeWindowSessionSnapshot(
         for windowState: BrowserWindowState,
-        delegate: WindowSessionServiceDelegate
+        runtime: WindowSessionRuntime
     ) -> WindowSessionSnapshot {
         WindowSessionSnapshot(
             currentTabId: windowState.currentTabId,
@@ -687,8 +786,8 @@ final class WindowSessionService {
                 text: windowState.floatingBarDraftText,
                 navigateCurrentTab: windowState.floatingBarDraftNavigatesCurrentTab
             ),
-            activeSplitGroupId: delegate.splitManager.splitGroup(for: windowState.id)?.id,
-            glanceSession: delegate.glanceManager.makeSessionSnapshot(for: windowState),
+            activeSplitGroupId: runtime.splitManager.splitGroup(for: windowState.id)?.id,
+            glanceSession: runtime.glanceManager.makeSessionSnapshot(for: windowState),
             splitSession: nil
         )
     }

@@ -43,7 +43,7 @@ final class BrowserTabSelectionOwner {
     func selectTab(
         _ tab: Tab,
         in windowState: BrowserWindowState,
-        loadPolicy: BrowserManager.TabSelectionLoadPolicy,
+        loadPolicy: TabSelectionLoadPolicy,
         actions: Actions
     ) {
         applyTabSelection(
@@ -61,7 +61,7 @@ final class BrowserTabSelectionOwner {
     func requestUserTabActivation(
         _ tab: Tab,
         in windowState: BrowserWindowState,
-        loadPolicy: BrowserManager.TabSelectionLoadPolicy,
+        loadPolicy: TabSelectionLoadPolicy,
         actions: Actions
     ) {
         userActivationBatcher.requestActivation(
@@ -100,7 +100,7 @@ final class BrowserTabSelectionOwner {
         updateTheme: Bool,
         rememberSelection: Bool,
         persistSelection: Bool,
-        loadPolicy: BrowserManager.TabSelectionLoadPolicy,
+        loadPolicy: TabSelectionLoadPolicy,
         actions: Actions
     ) {
         let selectionApplication = WindowTabSelectionStateApplicator.apply(
@@ -242,7 +242,7 @@ final class BrowserTabSelectionOwner {
     private static func scheduleTabLoadIfNeeded(
         _ tab: Tab,
         in windowState: BrowserWindowState,
-        loadPolicy: BrowserManager.TabSelectionLoadPolicy,
+        loadPolicy: TabSelectionLoadPolicy,
         actions: Actions
     ) {
         if tab.isUnloaded {
