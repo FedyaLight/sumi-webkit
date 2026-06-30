@@ -3,11 +3,11 @@ import WebKit
 
 extension Tab {
     func sampleSumiNativeNowPlayingInfo(
-        using browserManager: BrowserManager,
+        using context: SumiNativeNowPlayingRuntimeContext,
         in windowState: BrowserWindowState
     ) async -> SumiNativeNowPlayingInfo? {
         guard let webView = resolvedNowPlayingWebView(
-            using: browserManager,
+            using: context,
             in: windowState
         ) else {
             // No resolvable web view for this window (e.g. tab backgrounded and host evicted from
@@ -22,12 +22,12 @@ extension Tab {
     }
 
     func playSumiNativeNowPlayingSession(
-        using browserManager: BrowserManager,
+        using context: SumiNativeNowPlayingRuntimeContext,
         in windowState: BrowserWindowState,
         focusIfNeeded: Bool
     ) async -> Bool {
         await performSumiNativeNowPlayingCommand(
-            using: browserManager,
+            using: context,
             in: windowState,
             focusIfNeeded: focusIfNeeded
         ) { webView in
@@ -36,12 +36,12 @@ extension Tab {
     }
 
     func pauseSumiNativeNowPlayingSession(
-        using browserManager: BrowserManager,
+        using context: SumiNativeNowPlayingRuntimeContext,
         in windowState: BrowserWindowState,
         focusIfNeeded: Bool
     ) async -> Bool {
         await performSumiNativeNowPlayingCommand(
-            using: browserManager,
+            using: context,
             in: windowState,
             focusIfNeeded: focusIfNeeded
         ) { webView in
@@ -50,32 +50,29 @@ extension Tab {
     }
 
     private func resolvedNowPlayingWebView(
-        using browserManager: BrowserManager,
+        using context: SumiNativeNowPlayingRuntimeContext,
         in windowState: BrowserWindowState
     ) -> SumiNowPlayingWebViewAdapter? {
-        authoritativeMediaWebView(
-            using: browserManager,
-            in: windowState
-        )
+        context.resolvedNowPlayingWebView(self, windowState)
     }
 
     private func performSumiNativeNowPlayingCommand(
-        using browserManager: BrowserManager,
+        using context: SumiNativeNowPlayingRuntimeContext,
         in windowState: BrowserWindowState,
         focusIfNeeded: Bool,
         perform: @escaping @MainActor (SumiNowPlayingWebViewAdapter) async -> Bool
     ) async -> Bool {
-        if let webView = resolvedNowPlayingWebView(using: browserManager, in: windowState) {
+        if let webView = resolvedNowPlayingWebView(using: context, in: windowState) {
             return await perform(webView)
         }
 
         guard focusIfNeeded else { return false }
 
-        browserManager.selectTab(self, in: windowState)
+        context.selectTab(self, windowState)
         try? await Task.sleep(nanoseconds: 180_000_000)
 
         guard let focusedWebView = resolvedNowPlayingWebView(
-            using: browserManager,
+            using: context,
             in: windowState
         ) else {
             return false

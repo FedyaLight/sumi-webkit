@@ -12,7 +12,7 @@ protocol SumiNativeNowPlayingRuntimeControlling: SumiNativeNowPlayingFeatureCont
     var cardState: SumiBackgroundMediaCardState? { get }
     var cardStatePublisher: AnyPublisher<SumiBackgroundMediaCardState?, Never> { get }
 
-    func configure(browserManager: BrowserManager)
+    func configure(context: SumiNativeNowPlayingRuntimeContext)
     func handleSceneActive()
     func scheduleRefresh(delayNanoseconds: UInt64)
     func handleTabActivated(_ tabId: UUID)
@@ -26,17 +26,17 @@ protocol SumiNativeNowPlayingRuntimeControlling: SumiNativeNowPlayingFeatureCont
 final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayingRuntimeControlling {
     static let shared = SumiNativeNowPlayingController()
 
-    typealias Candidate = (tab: Tab, windowState: BrowserWindowState)
-    typealias CandidateProvider = @MainActor (BrowserManager) -> [Candidate]
-    typealias InfoProvider = @MainActor (Tab, BrowserManager, BrowserWindowState) async -> SumiNativeNowPlayingInfo?
-    typealias CommandExecutor = @MainActor (SumiNativeNowPlayingCommand, Tab, BrowserManager, BrowserWindowState) async -> Bool
-    typealias ActivationHandler = @MainActor (Tab, BrowserManager, BrowserWindowState) -> Void
+    typealias Candidate = SumiNativeNowPlayingRuntimeContext.Candidate
+    typealias CandidateProvider = @MainActor (SumiNativeNowPlayingRuntimeContext) -> [Candidate]
+    typealias InfoProvider = @MainActor (Tab, SumiNativeNowPlayingRuntimeContext, BrowserWindowState) async -> SumiNativeNowPlayingInfo?
+    typealias CommandExecutor = @MainActor (SumiNativeNowPlayingCommand, Tab, SumiNativeNowPlayingRuntimeContext, BrowserWindowState) async -> Bool
+    typealias ActivationHandler = @MainActor (Tab, SumiNativeNowPlayingRuntimeContext, BrowserWindowState) -> Void
 
     @Published private(set) var cardState: SumiBackgroundMediaCardState?
 
     private(set) var isFeatureEnabled = true
 
-    private weak var browserManager: BrowserManager?
+    private var runtimeContext: SumiNativeNowPlayingRuntimeContext?
     private let candidateProvider: CandidateProvider
     private let infoProvider: InfoProvider
     private let commandExecutor: CommandExecutor
@@ -81,8 +81,8 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
         }
     }
 
-    func configure(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    func configure(context: SumiNativeNowPlayingRuntimeContext) {
+        runtimeContext = context
         guard isFeatureEnabled else { return }
         scheduleRefresh(delayNanoseconds: 0)
     }
@@ -111,21 +111,21 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             return
         }
 
-        guard let browserManager else {
+        guard let runtimeContext else {
             clearCardState()
             return
         }
 
         if currentOwner == nil,
            pausedCardOwner == nil,
-           !candidateProvider(browserManager).contains(where: { $0.tab.audioState.isPlayingAudio }) {
+           !candidateProvider(runtimeContext).contains(where: { $0.tab.audioState.isPlayingAudio }) {
             clearCardState()
             return
         }
 
         if shouldPreferFreshDiscovery,
            let discoveredOwner = await discoverOwner(
-            using: browserManager,
+            using: runtimeContext,
             preferCurrentOwner: false,
             allowsPausedRetention: false
            ) {
@@ -133,13 +133,13 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             return
         }
 
-        if let retainedOwner = await refreshCurrentOwnerIfPossible(using: browserManager) {
+        if let retainedOwner = await refreshCurrentOwnerIfPossible(using: runtimeContext) {
             apply(cardState: retainedOwner)
             return
         }
 
         if let discoveredOwner = await discoverOwner(
-            using: browserManager,
+            using: runtimeContext,
             preferCurrentOwner: true,
             allowsPausedRetention: true
         ) {
@@ -152,19 +152,19 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
 
     func activateOwner() {
         guard isFeatureEnabled,
-              let browserManager,
-              let owner = resolvedOwner(using: browserManager)
+              let runtimeContext,
+              let owner = resolvedOwner(using: runtimeContext)
         else {
             return
         }
 
-        activationHandler(owner.tab, browserManager, owner.windowState)
+        activationHandler(owner.tab, runtimeContext, owner.windowState)
     }
 
     func togglePlayPause() async {
         guard isFeatureEnabled,
-              let browserManager,
-              let owner = resolvedOwner(using: browserManager),
+              let runtimeContext,
+              let owner = resolvedOwner(using: runtimeContext),
               let cardState
         else {
             return
@@ -172,7 +172,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
 
         let command: SumiNativeNowPlayingCommand =
             cardState.isPlaying ? .pause : .play
-        let success = await commandExecutor(command, owner.tab, browserManager, owner.windowState)
+        let success = await commandExecutor(command, owner.tab, runtimeContext, owner.windowState)
         guard success else { return }
 
         switch command {
@@ -211,8 +211,8 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
 
     func toggleMute() async {
         guard isFeatureEnabled,
-              let browserManager,
-              let owner = resolvedOwner(using: browserManager),
+              let runtimeContext,
+              let owner = resolvedOwner(using: runtimeContext),
               let cardState,
               cardState.canMute
         else {
@@ -230,9 +230,9 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     }
 
     private func refreshCurrentOwnerIfPossible(
-        using browserManager: BrowserManager
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext
     ) async -> SumiBackgroundMediaCardState? {
-        guard let owner = resolvedOwner(using: browserManager) else {
+        guard let owner = resolvedOwner(using: runtimeContext) else {
             return nil
         }
 
@@ -248,7 +248,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
             return nil
         }
 
-        let info = await infoProvider(owner.tab, browserManager, owner.windowState)
+        let info = await infoProvider(owner.tab, runtimeContext, owner.windowState)
         return makeCardState(
             tab: owner.tab,
             windowState: owner.windowState,
@@ -257,12 +257,12 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     }
 
     private func discoverOwner(
-        using browserManager: BrowserManager,
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext,
         preferCurrentOwner: Bool,
         allowsPausedRetention: Bool
     ) async -> SumiBackgroundMediaCardState? {
         let candidates = prioritizedCandidates(
-            using: browserManager,
+            using: runtimeContext,
             preferCurrentOwner: preferCurrentOwner
         )
 
@@ -275,7 +275,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
                 continue
             }
 
-            let info = await infoProvider(tab, browserManager, windowState)
+            let info = await infoProvider(tab, runtimeContext, windowState)
             return makeCardState(
                 tab: tab,
                 windowState: windowState,
@@ -287,12 +287,12 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     }
 
     private func prioritizedCandidates(
-        using browserManager: BrowserManager,
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext,
         preferCurrentOwner: Bool
     ) -> [Candidate] {
         let ownerTabId = preferCurrentOwner ? currentOwner?.tabId : nil
 
-        return candidateProvider(browserManager)
+        return candidateProvider(runtimeContext)
             .filter { canBecomeOwner($0.tab, in: $0.windowState) }
             .sorted { lhs, rhs in
                 let lhsIsOwner = lhs.tab.id == ownerTabId
@@ -383,14 +383,14 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     }
 
     private func resolvedOwner(
-        using browserManager: BrowserManager
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext
     ) -> Candidate? {
         guard let currentOwner,
-              let windowState = browserManager.windowRegistry?.windows[currentOwner.windowId],
+              let windowState = runtimeContext.windowState(currentOwner.windowId),
               let tab = resolvedTab(
                 tabId: currentOwner.tabId,
                 in: windowState,
-                using: browserManager
+                using: runtimeContext
               )
         else {
             return nil
@@ -402,18 +402,9 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
     private func resolvedTab(
         tabId: UUID,
         in windowState: BrowserWindowState,
-        using browserManager: BrowserManager
+        using runtimeContext: SumiNativeNowPlayingRuntimeContext
     ) -> Tab? {
-        if windowState.isIncognito {
-            return windowState.ephemeralTabs.first(where: { $0.id == tabId })
-        }
-
-        if let visibleTab = browserManager.windowScopedMediaCandidateTabs(in: windowState)
-            .first(where: { $0.id == tabId }) {
-            return visibleTab
-        }
-
-        return browserManager.tabManager.tab(for: tabId)
+        runtimeContext.resolvedTab(tabId, windowState)
     }
 
     private func apply(cardState: SumiBackgroundMediaCardState) {
@@ -448,38 +439,18 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
 
 extension SumiNativeNowPlayingController {
     private static func defaultCandidateProvider(
-        browserManager: BrowserManager
+        context: SumiNativeNowPlayingRuntimeContext
     ) -> [Candidate] {
-        guard let windowRegistry = browserManager.windowRegistry else { return [] }
-
-        var candidates: [Candidate] = []
-        var seen = Set<UUID>()
-
-        for windowState in windowRegistry.windows.values {
-            guard !windowState.isIncognito else { continue }
-
-            let scopedTabs = browserManager.windowScopedMediaCandidateTabs(in: windowState)
-            let preferredTabs = scopedTabs.filter { $0.audioState.isPlayingAudio }
-            let discoveryTabs = preferredTabs.isEmpty
-                ? [browserManager.currentTab(for: windowState)].compactMap { $0 }
-                : preferredTabs
-
-            for tab in discoveryTabs {
-                guard seen.insert(tab.id).inserted else { continue }
-                candidates.append((tab, windowState))
-            }
-        }
-
-        return candidates
+        context.candidateTabs()
     }
 
     private static func defaultInfoProvider(
         tab: Tab,
-        browserManager: BrowserManager,
+        context: SumiNativeNowPlayingRuntimeContext,
         windowState: BrowserWindowState
     ) async -> SumiNativeNowPlayingInfo? {
         await tab.sampleSumiNativeNowPlayingInfo(
-            using: browserManager,
+            using: context,
             in: windowState
         )
     }
@@ -487,19 +458,19 @@ extension SumiNativeNowPlayingController {
     private static func defaultCommandExecutor(
         command: SumiNativeNowPlayingCommand,
         tab: Tab,
-        browserManager: BrowserManager,
+        context: SumiNativeNowPlayingRuntimeContext,
         windowState: BrowserWindowState
     ) async -> Bool {
         switch command {
         case .play:
             return await tab.playSumiNativeNowPlayingSession(
-                using: browserManager,
+                using: context,
                 in: windowState,
                 focusIfNeeded: true
             )
         case .pause:
             return await tab.pauseSumiNativeNowPlayingSession(
-                using: browserManager,
+                using: context,
                 in: windowState,
                 focusIfNeeded: true
             )
@@ -508,12 +479,12 @@ extension SumiNativeNowPlayingController {
 
     private static func defaultActivationHandler(
         tab: Tab,
-        browserManager: BrowserManager,
+        context: SumiNativeNowPlayingRuntimeContext,
         windowState: BrowserWindowState
     ) {
         NSApp.activate(ignoringOtherApps: true)
         windowState.window?.makeKeyAndOrderFront(nil)
-        browserManager.selectTab(tab, in: windowState)
+        context.selectTab(tab, windowState)
     }
 }
 
@@ -537,11 +508,11 @@ final class SumiBackgroundMediaCardStore: ObservableObject {
     }
 
     func configure(
-        browserManager: BrowserManager,
+        context: SumiNativeNowPlayingRuntimeContext,
         windowState: BrowserWindowState
     ) {
         self.windowState = windowState
-        controller.configure(browserManager: browserManager)
+        controller.configure(context: context)
         applyVisibleState(controller.cardState)
     }
 

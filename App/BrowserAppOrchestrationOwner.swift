@@ -50,7 +50,9 @@ final class BrowserAppOrchestrationOwner {
         browserManager.windowShellContentViewFactory = dependencies.windowShellContentViewFactory
 
         nowPlayingController.setFeatureEnabled(settingsManager.sidebarMiniPlayerEnabled)
-        nowPlayingController.configure(browserManager: browserManager)
+        nowPlayingController.configure(
+            context: SumiNativeNowPlayingRuntimeContext.live(browserManager: browserManager)
+        )
         browserManager.tabManager.sumiSettings = settingsManager
 
         dependencies.startUpdater()

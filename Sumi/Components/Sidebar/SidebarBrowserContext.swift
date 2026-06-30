@@ -166,7 +166,10 @@ struct SidebarBrowserContext {
             },
             configureMediaStore: { [weak browserManager] mediaStore, windowState in
                 guard let browserManager else { return }
-                mediaStore.configure(browserManager: browserManager, windowState: windowState)
+                mediaStore.configure(
+                    context: SumiNativeNowPlayingRuntimeContext.live(browserManager: browserManager),
+                    windowState: windowState
+                )
             },
             spaceTransitions: browserManager.sidebarSpaceTransitionRoutingOwner.makeActions(),
             commands: browserManager.sidebarCommandRoutingOwner.makeActions()

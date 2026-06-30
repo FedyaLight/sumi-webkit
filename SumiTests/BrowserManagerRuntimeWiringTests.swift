@@ -364,7 +364,7 @@ private final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeC
     private(set) var scheduledRefreshDelays: [UInt64] = []
     private(set) var activatedTabIds: [UUID] = []
     private(set) var unloadedTabIds: [UUID] = []
-    private(set) var configuredBrowserManagers: [BrowserManager] = []
+    private(set) var configuredContextCount = 0
     private(set) var sceneActiveCallCount = 0
     private(set) var activateOwnerCallCount = 0
     private(set) var togglePlayPauseCallCount = 0
@@ -382,8 +382,8 @@ private final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeC
         featureEnabledValues.append(enabled)
     }
 
-    func configure(browserManager: BrowserManager) {
-        configuredBrowserManagers.append(browserManager)
+    func configure(context _: SumiNativeNowPlayingRuntimeContext) {
+        configuredContextCount += 1
     }
 
     func handleSceneActive() {
