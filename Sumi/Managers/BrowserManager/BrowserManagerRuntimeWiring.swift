@@ -4,7 +4,7 @@ import Foundation
 @MainActor
 enum BrowserManagerRuntimeWiring {
     static func attach(to browserManager: BrowserManager) -> AnyCancellable {
-        browserManager.compositorManager.browserManager = browserManager
+        browserManager.compositorManager.attach(runtime: .live(browserManager: browserManager))
         browserManager.tabSuspensionService.attach(browserManager: browserManager)
         browserManager.backgroundMediaOptimizationService.attach(
             runtime: backgroundMediaOptimizationRuntime(for: browserManager)

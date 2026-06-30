@@ -15,7 +15,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             )
         )
 
-        XCTAssertIdentical(browserManager.compositorManager.browserManager, browserManager)
+        XCTAssertTrue(compositorManagerCanUseAttachedRuntime(browserManager))
         XCTAssertIdentical(browserManager.tabManager.browserManager, browserManager)
         XCTAssertTrue(browserManager.tabManager.runtimeContext is BrowserManagerTabRuntimeContext)
         XCTAssertTrue(splitManagerCanUseAttachedRuntime(browserManager))
@@ -27,6 +27,30 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(browserManager.glanceManager.browserManager, browserManager)
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
+    }
+
+    private func compositorManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Compositor Runtime Wiring")
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/compositor",
+            in: space,
+            activate: true
+        )
+        tab.replaceUntrackedWebView(WKWebView())
+
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        browserManager.compositorManager.unloadTab(tab)
+        return tab.currentWebView != nil
     }
 
     private func splitManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {

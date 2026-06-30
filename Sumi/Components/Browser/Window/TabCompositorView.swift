@@ -2,15 +2,60 @@ import AppKit
 import Combine
 
 @MainActor
+struct TabCompositorRuntime {
+    let markTabAccessed: @MainActor (UUID) -> Void
+    let isTabDisplayedInAnyWindow: @MainActor (UUID) -> Bool
+    let registeredCompositorWindows: @MainActor () -> [BrowserWindowState]
+    let refreshCompositor: @MainActor (BrowserWindowState) -> Void
+}
+
+extension TabCompositorRuntime {
+    static func live(browserManager: BrowserManager) -> Self {
+        Self(
+            markTabAccessed: { [weak browserManager] tabId in
+                if let tab = browserManager?.tabManager.tab(for: tabId) {
+                    tab.noteSuspensionAccess()
+                    return
+                }
+                browserManager?.windowRegistry?.windows.values
+                    .flatMap(\.ephemeralTabs)
+                    .first { $0.id == tabId }?
+                    .noteSuspensionAccess()
+            },
+            isTabDisplayedInAnyWindow: { [weak browserManager] tabId in
+                browserManager?.isTabDisplayedInAnyWindow(tabId) ?? false
+            },
+            registeredCompositorWindows: { [weak browserManager] in
+                guard let browserManager,
+                      let windowRegistry = browserManager.windowRegistry,
+                      let coordinator = browserManager.webViewCoordinator
+                else { return [] }
+
+                return coordinator.compositorContainers().compactMap { windowId, _ in
+                    windowRegistry.windows[windowId]
+                }
+            },
+            refreshCompositor: { [weak browserManager] windowState in
+                browserManager?.refreshCompositor(for: windowState)
+            }
+        )
+    }
+}
+
+@MainActor
 class TabCompositorManager: ObservableObject {
-    weak var browserManager: BrowserManager?
+    private var runtime: TabCompositorRuntime?
+
+    func attach(runtime: TabCompositorRuntime) {
+        self.runtime = runtime
+    }
 
     func markTabAccessed(_ tabId: UUID) {
-        findTab(by: tabId)?.noteSuspensionAccess()
+        runtime?.markTabAccessed(tabId)
     }
 
     func unloadTab(_ tab: Tab) {
-        if browserManager?.isTabDisplayedInAnyWindow(tab.id) == true {
+        if runtime?.isTabDisplayedInAnyWindow(tab.id) == true {
             markTabAccessed(tab.id)
             return
         }
@@ -24,21 +69,9 @@ class TabCompositorManager: ObservableObject {
     }
 
     func updateTabVisibility() {
-        guard let browserManager = browserManager,
-              let coordinator = browserManager.webViewCoordinator else { return }
-        for (windowId, _) in coordinator.compositorContainers() {
-            guard let windowState = browserManager.windowRegistry?.windows[windowId] else { continue }
-            browserManager.refreshCompositor(for: windowState)
+        guard let runtime else { return }
+        for windowState in runtime.registeredCompositorWindows() {
+            runtime.refreshCompositor(windowState)
         }
-    }
-
-    private func findTab(by id: UUID) -> Tab? {
-        guard let browserManager else { return nil }
-        if let tab = browserManager.tabManager.tab(for: id) {
-            return tab
-        }
-        return browserManager.windowRegistry?.windows.values
-            .flatMap(\.ephemeralTabs)
-            .first { $0.id == id }
     }
 }
