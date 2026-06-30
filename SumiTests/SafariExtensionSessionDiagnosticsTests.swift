@@ -3,6 +3,39 @@ import XCTest
 @testable import Sumi
 
 final class SafariExtensionSessionDiagnosticsTests: XCTestCase {
+    @MainActor
+    func testLogIfDiagnosticsEnabledDoesNotBuildWhenVerboseLoggingIsDisabled() async throws {
+        try XCTSkipIf(
+            RuntimeDiagnostics.isVerboseEnabled,
+            "This assertion only holds when verbose runtime logging is disabled."
+        )
+
+        var built = false
+        await SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled {
+            built = true
+            return SafariExtensionSessionDiagnostic(
+                recordedAt: Date(),
+                extensionId: "example-extension",
+                phase: .opened,
+                safariRuntimeLoadSource: nil,
+                popupUsesOriginalAppex: false,
+                extensionContextLoaded: false,
+                popupWebViewPresent: false,
+                isPopupActive: false,
+                activeTabStore: nil,
+                extensionControllerDefaultStore: nil,
+                extensionPageConfigurationStore: nil,
+                popupWebViewStore: nil,
+                cookieDomainCounts: [],
+                permissionBucketSummary: "notBuilt",
+                inferredFailureBucket: .unknown,
+                note: "not built"
+            )
+        }
+
+        XCTAssertFalse(built)
+    }
+
     func testFailureBucketIncludesCookieStoreNotShared() {
         XCTAssertTrue(
             SafariExtensionSessionFailureBucket.allCases.contains(.cookieStoreNotShared)

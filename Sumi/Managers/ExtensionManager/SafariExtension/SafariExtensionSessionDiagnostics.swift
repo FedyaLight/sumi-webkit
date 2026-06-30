@@ -207,6 +207,14 @@ enum SafariExtensionSessionDiagnosticsBuilder {
         )
     }
 
+    static func logIfDiagnosticsEnabled(
+        _ makeDiagnostic: @MainActor () async -> SafariExtensionSessionDiagnostic
+    ) async {
+        guard RuntimeDiagnostics.isVerboseEnabled else { return }
+        let diagnostic = await makeDiagnostic()
+        logIfDiagnosticsEnabled(diagnostic)
+    }
+
     private static func snapshot(for store: WKWebsiteDataStore?) -> SafariExtensionWebsiteDataStoreSnapshot? {
         guard let store else { return nil }
         return SafariExtensionWebsiteDataStoreSnapshot(

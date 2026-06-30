@@ -235,14 +235,16 @@ extension ExtensionManager: NSPopoverDelegate {
                 forExtensionId: extensionId,
                 profileId: popupIdentity.profileId
             )
+            guard RuntimeDiagnostics.isVerboseEnabled else { return }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let diagnostic = await SafariExtensionSessionDiagnosticsBuilder.build(
-                    extensionId: extensionId,
-                    phase: .closed,
-                    extensionManager: self
-                )
-                SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled(diagnostic)
+                await SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled {
+                    await SafariExtensionSessionDiagnosticsBuilder.build(
+                        extensionId: extensionId,
+                        phase: .closed,
+                        extensionManager: self
+                    )
+                }
                 if SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
                     == false {
                     self.activePopupIdentity = nil
@@ -362,15 +364,17 @@ extension ExtensionManager: NSPopoverDelegate {
         if phase == .opened || phase == .reopened {
             SumiNativeMessagingRuntimeCounters.recordPopupOpened(extensionId: extensionId)
         }
+        guard RuntimeDiagnostics.isVerboseEnabled else { return }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let diagnostic = await SafariExtensionSessionDiagnosticsBuilder.build(
-                extensionId: extensionId,
-                phase: phase,
-                extensionManager: self,
-                popupWebView: popupWebView
-            )
-            SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled(diagnostic)
+            await SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled {
+                await SafariExtensionSessionDiagnosticsBuilder.build(
+                    extensionId: extensionId,
+                    phase: phase,
+                    extensionManager: self,
+                    popupWebView: popupWebView
+                )
+            }
         }
     }
 }
