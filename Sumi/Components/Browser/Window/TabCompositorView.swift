@@ -51,12 +51,13 @@ class TabCompositorManager: ObservableObject {
     }
 
     func markTabAccessed(_ tabId: UUID) {
-        runtime?.markTabAccessed(tabId)
+        requireRuntime().markTabAccessed(tabId)
     }
 
     func unloadTab(_ tab: Tab) {
-        if runtime?.isTabDisplayedInAnyWindow(tab.id) == true {
-            markTabAccessed(tab.id)
+        let runtime = requireRuntime()
+        if runtime.isTabDisplayedInAnyWindow(tab.id) {
+            runtime.markTabAccessed(tab.id)
             return
         }
         tab.unloadWebView()
@@ -69,9 +70,18 @@ class TabCompositorManager: ObservableObject {
     }
 
     func updateTabVisibility() {
-        guard let runtime else { return }
+        let runtime = requireRuntime()
         for windowState in runtime.registeredCompositorWindows() {
             runtime.refreshCompositor(windowState)
         }
+    }
+
+    private func requireRuntime() -> TabCompositorRuntime {
+        guard let runtime else {
+            preconditionFailure(
+                "TabCompositorManager runtime is not attached. BrowserManagerRuntimeWiring.attach(to:) must run before compositor operations."
+            )
+        }
+        return runtime
     }
 }

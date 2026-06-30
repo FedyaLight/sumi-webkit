@@ -47,15 +47,6 @@ final class TabCompositorManagerTests: XCTestCase {
         XCTAssertNil(tab.currentWebView)
     }
 
-    func testUnloadWithoutRuntimeKeepsLegacyFallbackAndUnloadsWebView() {
-        let tab = makeTabWithWebView()
-        let manager = TabCompositorManager()
-
-        manager.unloadTab(tab)
-
-        XCTAssertNil(tab.currentWebView)
-    }
-
     private func makeManager(
         markTabAccessed: @escaping @MainActor (UUID) -> Void = { _ in },
         isTabDisplayedInAnyWindow: @escaping @MainActor (UUID) -> Bool = { _ in false },
