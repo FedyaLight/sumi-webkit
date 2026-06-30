@@ -16,7 +16,7 @@ final class SumiGlanceNavigationResponder: SumiNavigationActionWebViewResponding
         preferences _: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
         guard let tab,
-              tab.browserManager != nil,
+              tab.popupHandlingRuntime.hasBrowserRuntime(),
               let url = navigationAction.url,
               url.sumiIsGlancePreviewableLink,
               navigationAction.isNativeGlanceLinkActivation
@@ -76,7 +76,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         windowFeatures: WKWindowFeatures
     ) async -> WKWebView? {
         guard let tab,
-              let browserManager = tab.browserManager
+              tab.popupHandlingRuntime.hasBrowserRuntime()
         else { return nil }
 
         let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
@@ -88,7 +88,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         if let requestURL,
            SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(sourceURL: sourceURL, requestURL: requestURL),
-           browserManager.extensionsModule.consumeRecentlyOpenedExtensionTabRequestIfLoaded(for: requestURL) {
+           tab.popupHandlingRuntime.consumeRecentlyOpenedExtensionTabRequest(requestURL) {
             return nil
         }
 
@@ -153,11 +153,11 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             activationState: activationState,
             isExtensionOriginated: isExtensionOriginated
         )
-        let permissionResult = await browserManager.popupPermissionBridge.evaluate(
+        let permissionResult = await tab.popupHandlingRuntime.evaluatePopupPermission(
             request,
-            tabContext: tabContext
+            tabContext
         )
-        guard permissionResult.isAllowed else { return nil }
+        guard permissionResult?.isAllowed == true else { return nil }
         tab.popupUserActivationTracker.consumeIfUserActivated(request.userActivation)
 
         return createChildWebView(
@@ -178,7 +178,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         guard let tab,
-              let browserManager = tab.browserManager
+              tab.popupHandlingRuntime.hasBrowserRuntime()
         else { return nil }
 
         let sourceURL = navigationAction.sumiWebKitSourceURL ?? webView.url ?? tab.url
@@ -190,7 +190,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
 
         if let requestURL,
            SumiPopupNavigationOrigin.isExtensionOriginatedExternalPopupNavigation(sourceURL: sourceURL, requestURL: requestURL),
-           browserManager.extensionsModule.consumeRecentlyOpenedExtensionTabRequestIfLoaded(for: requestURL) {
+           tab.popupHandlingRuntime.consumeRecentlyOpenedExtensionTabRequest(requestURL) {
             return nil
         }
 
@@ -255,11 +255,11 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             activationState: activationState,
             isExtensionOriginated: isExtensionOriginated
         )
-        let permissionResult = browserManager.popupPermissionBridge.evaluateSynchronouslyForWebKitFallback(
+        let permissionResult = tab.popupHandlingRuntime.evaluatePopupPermissionSynchronouslyForWebKitFallback(
             request,
-            tabContext: tabContext
+            tabContext
         )
-        guard permissionResult.isAllowed else { return nil }
+        guard permissionResult?.isAllowed == true else { return nil }
         tab.popupUserActivationTracker.consumeIfUserActivated(request.userActivation)
 
         return createChildWebView(
@@ -283,7 +283,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         preferences _: inout SumiNavigationPreferences
     ) async -> SumiNavigationActionPolicy? {
         guard let tab,
-              let browserManager = tab.browserManager
+              tab.popupHandlingRuntime.hasBrowserRuntime()
         else { return .next }
 
         if let url = navigationAction.url,
@@ -367,11 +367,11 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                 navigationAction,
                 activationState: activationState
             )
-            let permissionResult = await browserManager.popupPermissionBridge.evaluate(
+            let permissionResult = await tab.popupHandlingRuntime.evaluatePopupPermission(
                 request,
-                tabContext: tabContext
+                tabContext
             )
-            guard permissionResult.isAllowed,
+            guard permissionResult?.isAllowed == true,
                   let policy = behavior.newWindowPolicy()
             else {
                 return .cancel
@@ -484,7 +484,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         isExtensionOriginated: Bool
     ) -> WKWebView? {
         guard let tab,
-              let browserManager = tab.browserManager
+              tab.popupHandlingRuntime.hasBrowserRuntime()
         else { return nil }
 
         if navigationAction.request.url?.sumiNavigationalScheme == .javascript {
@@ -502,57 +502,33 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
                sourceURL: sourceURL,
                requestURL: requestURL
            ) {
-            let targetSpace = tab.spaceId.flatMap { spaceID in
-                browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-            } ?? browserManager.tabManager.currentSpace
-            let childTab = browserManager.tabManager.createNewTab(
-                url: requestURL.absoluteString,
-                in: targetSpace,
-                activate: true
-            )
-            if let windowState = browserManager.windowState(containing: tab) {
-                browserManager.materializeVisibleTabWebViewIfNeeded(childTab, in: windowState)
-                browserManager.selectTab(childTab, in: windowState, loadPolicy: .immediate)
-            }
-            if childTab.isUnloaded {
-                childTab.loadWebViewIfNeeded()
-            }
-            browserManager.extensionsModule.registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
-                childTab,
-                reason: "SumiPopupHandlingNavigationResponder.extensionExternalTab"
-            )
+            _ = tab.popupHandlingRuntime.openExtensionExternalTab(requestURL, tab)
             resetLinkGestureModifierState(for: tab)
             return nil
         }
 
         if policy.isPopup {
-            let popupWebView = browserManager.auxiliaryWindowManager.presentWebPopup(
-                configuration: configuration,
-                request: navigationAction.request,
-                windowFeatures: windowFeatures,
-                openerTab: tab,
-                isExtensionOriginated: isExtensionOriginated,
-                shouldActivateApp: true
+            let popupWebView = tab.popupHandlingRuntime.presentWebPopup(
+                configuration,
+                navigationAction.request,
+                windowFeatures,
+                tab,
+                isExtensionOriginated
             )
             resetLinkGestureModifierState(for: tab)
             return popupWebView
         }
 
-        if let profile = explicitPopupOpenerProfile(for: tab, browserManager: browserManager) {
-            tab.visitedLinkStore.applyStore(
-                to: configuration,
-                for: profile
-            )
-        }
+        tab.popupHandlingRuntime.applyVisitedLinkStoreToPopupConfiguration(tab, configuration)
 
         WebContentProcessDisplayNameProvider.apply(
             WebContentProcessDisplayNameProvider.popup,
             to: configuration
         )
 
-        guard let childTab = browserManager.createPopupTab(
-            from: tab,
-            activate: policy.shouldActivateTab
+        guard let childTab = tab.popupHandlingRuntime.createPopupTab(
+            tab,
+            policy.shouldActivateTab
         ) else { return nil }
         let childWebView = childTab.createPopupWebViewFromWebKitConfiguration(
             configuration,
@@ -561,8 +537,8 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             reason: "SumiPopupHandlingNavigationResponder.createChildWebView"
         )
         if policy.shouldActivateTab,
-           let windowState = browserManager.windowState(containing: tab) {
-            browserManager.selectTab(childTab, in: windowState)
+           let windowState = tab.popupHandlingRuntime.windowStateContainingTab(tab) {
+            tab.popupHandlingRuntime.selectTab(childTab, windowState)
         }
         resetLinkGestureModifierState(for: tab)
         return childWebView
@@ -579,31 +555,6 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
         SumiSurface.isSettingsSurfaceURL(url)
             || SumiSurface.isHistorySurfaceURL(url)
             || SumiSurface.isBookmarksSurfaceURL(url)
-    }
-
-    private func explicitPopupOpenerProfile(
-        for tab: Tab,
-        browserManager: BrowserManager
-    ) -> Profile? {
-        if let profileId = tab.profileId {
-            if let windowState = browserManager.windowRegistry?.windows.values.first(where: { window in
-                window.ephemeralTabs.contains(where: { $0.id == tab.id })
-            }),
-               let ephemeralProfile = windowState.ephemeralProfile,
-               ephemeralProfile.id == profileId {
-                return ephemeralProfile
-            }
-
-            return browserManager.profileManager.profiles.first { $0.id == profileId }
-        }
-
-        if let spaceId = tab.spaceId,
-           let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId }),
-           let profileId = space.profileId {
-            return browserManager.profileManager.profiles.first { $0.id == profileId }
-        }
-
-        return nil
     }
 }
 

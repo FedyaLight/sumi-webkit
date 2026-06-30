@@ -2072,6 +2072,61 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
     }
 
+    func testPopupResponderUsesInjectedRuntimeWithoutBrowserManager() async {
+        let profile = Profile(name: "Popup Runtime")
+        let tab = Tab(url: URL(string: "https://source.example/page")!, loadsCachedFaviconOnInit: false)
+        tab.profileId = profile.id
+        tab.profileResolutionRuntime = TabProfileResolutionRuntime(
+            ephemeralProfileForTab: { _, _ in nil },
+            profile: { profileId in
+                profileId == profile.id ? profile : nil
+            },
+            spaceProfile: { _ in nil },
+            currentProfile: { nil },
+            firstProfile: { nil }
+        )
+        var evaluatedRequests: [SumiPopupPermissionRequest] = []
+        var evaluatedContexts: [SumiPopupPermissionTabContext] = []
+        tab.popupHandlingRuntime = TabPopupHandlingRuntime(
+            hasBrowserRuntime: { true },
+            consumeRecentlyOpenedExtensionTabRequest: { _ in false },
+            evaluatePopupPermission: { request, context in
+                evaluatedRequests.append(request)
+                evaluatedContexts.append(context)
+                return SumiPopupPermissionResult(action: .allow)
+            },
+            evaluatePopupPermissionSynchronouslyForWebKitFallback: { _, _ in nil },
+            openExtensionExternalTab: { _, _ in false },
+            presentWebPopup: { _, _, _, _, _ in nil },
+            applyVisitedLinkStoreToPopupConfiguration: { _, _ in },
+            createPopupTab: { _, _ in nil },
+            windowStateContainingTab: { _ in nil },
+            selectTab: { _, _ in }
+        )
+        let responder = SumiPopupHandlingNavigationResponder(tab: tab)
+        let adapter = SumiNavigationResponderAdapter(target: responder)
+        let webView = WKWebView(frame: .zero)
+        let targetURL = URL(string: "https://destination.example/page")!
+        var preferences = NavigationPreferences.default
+
+        let policy = await adapter.decidePolicy(
+            for: navigationAction(
+                url: targetURL,
+                navigationType: .linkActivated(isMiddleClick: false),
+                webView: webView,
+                sourceURL: tab.url,
+                modifierFlags: [.command]
+            ),
+            preferences: &preferences
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(policy?.isCancel, true)
+        XCTAssertEqual(evaluatedRequests.map(\.targetURL), [targetURL])
+        XCTAssertEqual(evaluatedContexts.map(\.tabId), [tab.id.uuidString.lowercased()])
+        XCTAssertEqual(evaluatedContexts.map(\.profilePartitionId), [profile.id.uuidString.lowercased()])
+    }
+
     func testPopupCreateWebViewFocusesCleanClickNewTab() {
         let harness = makePopupFocusHarness()
         let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)

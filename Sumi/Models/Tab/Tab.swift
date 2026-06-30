@@ -210,6 +210,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.permissionRuntime }
         set { navigationRuntime.permissionRuntime = newValue }
     }
+    var popupHandlingRuntime: TabPopupHandlingRuntime {
+        get { navigationRuntime.popupHandlingRuntime }
+        set { navigationRuntime.popupHandlingRuntime = newValue }
+    }
     var configurationPolicyWebViewReplacementRuntime: TabConfigurationPolicyWebViewReplacementRuntime {
         get { navigationRuntime.configurationPolicyWebViewReplacementRuntime }
         set { navigationRuntime.configurationPolicyWebViewReplacementRuntime = newValue }
@@ -459,6 +463,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         return true
                     }
                 )
+                popupHandlingRuntime = .live(browserManager: browserManager)
                 configurationPolicyWebViewReplacementRuntime = .live(
                     webViewCoordinator: { [weak browserManager] in
                         browserManager?.webViewCoordinator
@@ -481,6 +486,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 closeLifecycleRuntime = .inactive
                 lifecycleNavigationRuntime = .inactive
                 permissionRuntime = .inactive
+                popupHandlingRuntime = .inactive
                 configurationPolicyWebViewReplacementRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive

@@ -181,6 +181,45 @@ struct TabPermissionRuntime {
 }
 
 @MainActor
+struct TabPopupHandlingRuntime {
+    var hasBrowserRuntime: () -> Bool
+    var consumeRecentlyOpenedExtensionTabRequest: (URL) -> Bool
+    var evaluatePopupPermission: (
+        _ request: SumiPopupPermissionRequest,
+        _ tabContext: SumiPopupPermissionTabContext
+    ) async -> SumiPopupPermissionResult?
+    var evaluatePopupPermissionSynchronouslyForWebKitFallback: (
+        _ request: SumiPopupPermissionRequest,
+        _ tabContext: SumiPopupPermissionTabContext
+    ) -> SumiPopupPermissionResult?
+    var openExtensionExternalTab: (_ requestURL: URL, _ openerTab: Tab) -> Bool
+    var presentWebPopup: (
+        _ configuration: WKWebViewConfiguration,
+        _ request: URLRequest,
+        _ windowFeatures: WKWindowFeatures,
+        _ openerTab: Tab,
+        _ isExtensionOriginated: Bool
+    ) -> WKWebView?
+    var applyVisitedLinkStoreToPopupConfiguration: (_ openerTab: Tab, _ configuration: WKWebViewConfiguration) -> Void
+    var createPopupTab: (_ openerTab: Tab, _ activate: Bool) -> Tab?
+    var windowStateContainingTab: (Tab) -> BrowserWindowState?
+    var selectTab: (_ tab: Tab, _ windowState: BrowserWindowState) -> Void
+
+    static let inactive = Self(
+        hasBrowserRuntime: { false },
+        consumeRecentlyOpenedExtensionTabRequest: { _ in false },
+        evaluatePopupPermission: { _, _ in nil },
+        evaluatePopupPermissionSynchronouslyForWebKitFallback: { _, _ in nil },
+        openExtensionExternalTab: { _, _ in false },
+        presentWebPopup: { _, _, _, _, _ in nil },
+        applyVisitedLinkStoreToPopupConfiguration: { _, _ in },
+        createPopupTab: { _, _ in nil },
+        windowStateContainingTab: { _ in nil },
+        selectTab: { _, _ in }
+    )
+}
+
+@MainActor
 struct TabConfigurationPolicyWebViewReplacementRuntime {
     var trackedWindowIdContainingWebView: (WKWebView) -> UUID?
     var hasTrackedWebViews: (UUID) -> Bool
@@ -303,6 +342,7 @@ final class TabNavigationRuntime {
     var closeLifecycleRuntime = TabCloseLifecycleRuntime.inactive
     var lifecycleNavigationRuntime = TabLifecycleNavigationRuntime.inactive
     var permissionRuntime = TabPermissionRuntime.inactive
+    var popupHandlingRuntime = TabPopupHandlingRuntime.inactive
     var configurationPolicyWebViewReplacementRuntime =
         TabConfigurationPolicyWebViewReplacementRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
