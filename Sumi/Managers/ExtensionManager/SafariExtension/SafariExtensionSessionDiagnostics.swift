@@ -63,19 +63,69 @@ struct SafariExtensionSessionDiagnostic: Codable, Equatable, Sendable, Identifia
     let note: String
 }
 
+@available(macOS 15.5, *)
+@MainActor
+struct SafariExtensionSessionDiagnosticsRuntime {
+    typealias CurrentTabProvider = @MainActor () -> Tab?
+    typealias CurrentProfileProvider = @MainActor () -> Profile?
+    typealias ProfileProvider = @MainActor (_ profileId: UUID) -> Profile?
+    typealias ActiveTabStoreProvider = @MainActor (_ tab: Tab) -> WKWebsiteDataStore?
+
+    let currentTab: CurrentTabProvider
+    let currentProfile: CurrentProfileProvider
+    let profile: ProfileProvider
+    let activeTabStore: ActiveTabStoreProvider
+
+    static let inactive = SafariExtensionSessionDiagnosticsRuntime(
+        currentTab: { nil },
+        currentProfile: { nil },
+        profile: { _ in nil },
+        activeTabStore: { _ in nil }
+    )
+
+    static func live(extensionManager: ExtensionManager) -> Self {
+        Self(
+            currentTab: { [weak extensionManager] in
+                extensionManager?.browserBridgeContext?
+                    .currentExtensionTabForActiveWindow()
+            },
+            currentProfile: { [weak extensionManager] in
+                extensionManager?.runtime.currentProfile()
+            },
+            profile: { [weak extensionManager] profileId in
+                extensionManager?.runtime.profile(profileId)
+            },
+            activeTabStore: { [weak extensionManager] tab in
+                guard let browserContext = extensionManager?.browserBridgeContext,
+                      let activeWindow = browserContext.activeExtensionWindowState,
+                      let webView = browserContext.extensionWindowOwnedWebView(
+                          for: tab,
+                          in: activeWindow.id
+                      )
+                else {
+                    return nil
+                }
+                return webView.configuration.websiteDataStore
+            }
+        )
+    }
+}
+
 @MainActor
 enum SafariExtensionSessionDiagnosticsBuilder {
     static func build(
         extensionId: String,
         phase: SafariExtensionPopupLifecyclePhase,
         extensionManager: ExtensionManager,
-        popupWebView: WKWebView? = nil
+        popupWebView: WKWebView? = nil,
+        runtime: SafariExtensionSessionDiagnosticsRuntime? = nil
     ) async -> SafariExtensionSessionDiagnostic {
+        let runtime = runtime ?? .live(extensionManager: extensionManager)
         let installed = extensionManager.installedExtensions.first { $0.id == extensionId }
-        let activeTab = extensionManager.browserManager?.currentTabForActiveWindow()
+        let activeTab = runtime.currentTab()
         let activeProfileId =
             activeTab.flatMap { extensionManager.resolvedProfileId(for: $0) }
-            ?? extensionManager.browserManager?.currentProfile?.id
+            ?? runtime.currentProfile()?.id
         let context = extensionManager.getExtensionContext(
             for: extensionId,
             profileId: activeProfileId
@@ -95,10 +145,9 @@ enum SafariExtensionSessionDiagnosticsBuilder {
 
         let profileStore =
             activeProfileId.flatMap { profileId in
-                extensionManager.browserManager?.profileManager.profiles
-                    .first(where: { $0.id == profileId })?.dataStore
+                runtime.profile(profileId)?.dataStore
             }
-            ?? extensionManager.browserManager?.currentProfile?.dataStore
+            ?? runtime.currentProfile()?.dataStore
         let controllerDefaultStore =
             activeProfileId
             .flatMap { extensionManager.extensionControllersByProfile[$0] }?
@@ -109,17 +158,8 @@ enum SafariExtensionSessionDiagnosticsBuilder {
             .configuration.webViewConfiguration?
             .websiteDataStore
         let activeTabStore: WKWebsiteDataStore? = {
-            guard let activeTab,
-                  let browserManager = extensionManager.browserManager,
-                  let activeWindow = browserManager.windowRegistry?.activeWindow,
-                  let webView = browserManager.windowOwnedWebView(
-                      for: activeTab,
-                      in: activeWindow.id
-                  )
-            else {
-                return nil
-            }
-            return webView.configuration.websiteDataStore
+            guard let activeTab else { return nil }
+            return runtime.activeTabStore(activeTab)
         }()
 
         let profileSnapshot = snapshot(for: profileStore)

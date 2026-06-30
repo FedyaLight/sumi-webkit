@@ -55,6 +55,10 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
         _ tab: Tab,
         in windowState: BrowserWindowState
     )
+    func extensionWindowOwnedWebView(
+        for tab: Tab,
+        in windowId: UUID
+    ) -> WKWebView?
     func assignExtensionWebView(
         _ webView: WKWebView,
         to tab: Tab,
@@ -299,6 +303,13 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
         in windowState: BrowserWindowState
     ) {
         materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
+    }
+
+    func extensionWindowOwnedWebView(
+        for tab: Tab,
+        in windowId: UUID
+    ) -> WKWebView? {
+        windowOwnedWebView(for: tab, in: windowId)
     }
 
     func assignExtensionWebView(

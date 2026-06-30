@@ -1,3 +1,4 @@
+import SwiftData
 import XCTest
 
 @testable import Sumi
@@ -34,6 +35,40 @@ final class SafariExtensionSessionDiagnosticsTests: XCTestCase {
         }
 
         XCTAssertFalse(built)
+    }
+
+    @MainActor
+    func testBuildUsesInjectedRuntimeWithoutBrowserManager() async throws {
+        let container = try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let profile = Profile(name: "Diagnostics Runtime")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: nil
+        )
+        let runtime = SafariExtensionSessionDiagnosticsRuntime(
+            currentTab: { nil },
+            currentProfile: { profile },
+            profile: { profileId in
+                profileId == profile.id ? profile : nil
+            },
+            activeTabStore: { _ in nil }
+        )
+
+        let diagnostic = await SafariExtensionSessionDiagnosticsBuilder.build(
+            extensionId: "example-extension",
+            phase: .opened,
+            extensionManager: manager,
+            runtime: runtime
+        )
+
+        XCTAssertNil(manager.browserManager)
+        XCTAssertFalse(diagnostic.extensionContextLoaded)
+        XCTAssertNil(diagnostic.activeTabStore)
+        XCTAssertNil(diagnostic.extensionControllerDefaultStore)
+        XCTAssertNil(diagnostic.extensionPageConfigurationStore)
     }
 
     func testFailureBucketIncludesCookieStoreNotShared() {
