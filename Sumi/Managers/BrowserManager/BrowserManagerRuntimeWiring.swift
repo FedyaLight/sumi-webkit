@@ -638,6 +638,38 @@ enum BrowserManagerRuntimeWiring {
     }
 }
 
+extension SplitViewRuntime {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        let fallbackTabManager = browserManager.tabManager
+        return Self(
+            tabManager: { [weak browserManager] in
+                browserManager?.tabManager ?? fallbackTabManager
+            },
+            currentTab: { [weak browserManager] windowState in
+                browserManager?.currentTab(for: windowState)
+            },
+            selectTab: { [weak browserManager] tab, windowState in
+                browserManager?.selectTab(tab, in: windowState)
+            },
+            refreshCompositor: { [weak browserManager] windowState in
+                browserManager?.refreshCompositor(for: windowState)
+            },
+            schedulePersistWindowSession: { [weak browserManager] windowState in
+                browserManager?.schedulePersistWindowSession(for: windowState)
+            },
+            focusFloatingBar: { [weak browserManager] windowState, reason in
+                browserManager?.focusFloatingBar(
+                    in: windowState,
+                    prefill: "",
+                    navigateCurrentTab: true,
+                    presentationReason: reason
+                )
+            }
+        )
+    }
+}
+
 extension SumiScriptsManagerRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
