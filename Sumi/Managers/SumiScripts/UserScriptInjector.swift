@@ -13,6 +13,19 @@ import Foundation
 import WebKit
 
 @MainActor
+struct UserScriptInjectorRuntime {
+    var downloadManager: () -> DownloadManager?
+    var notificationPermissionBridge: () -> SumiNotificationPermissionBridge?
+    var notificationTabContext: (UUID, WKWebView?) -> SumiWebNotificationTabContext?
+
+    static let inactive = Self(
+        downloadManager: { nil },
+        notificationPermissionBridge: { nil },
+        notificationTabContext: { _, _ in nil }
+    )
+}
+
+@MainActor
 final class UserScriptInjector {
     nonisolated static let userScriptMarker = "/* SUMI_USER_SCRIPT_RUNTIME */"
 
@@ -20,7 +33,11 @@ final class UserScriptInjector {
     private var activeBridges: [UUID: [UUID: UserScriptGMBridge]] = [:]
 
     weak var tabHandler: SumiScriptsTabHandler?
-    weak var browserManager: BrowserManager?
+    private var runtime = UserScriptInjectorRuntime.inactive
+
+    func attach(runtime: UserScriptInjectorRuntime) {
+        self.runtime = runtime
+    }
 
     // MARK: - Public API
 
@@ -35,17 +52,17 @@ final class UserScriptInjector {
         return scripts.map { script in
             switch script.fileType {
             case .javascript:
-                let notificationContextProvider: @MainActor (WKWebView?) -> SumiWebNotificationTabContext? = { [weak browserManager] webView in
-                    browserManager?.tabManager.tab(for: webViewId)?
-                        .webNotificationTabContext(for: webView)
+                let runtime = runtime
+                let notificationContextProvider: @MainActor (WKWebView?) -> SumiWebNotificationTabContext? = { webView in
+                    runtime.notificationTabContext(webViewId, webView)
                 }
                 let adapter = SumiInstalledUserScriptAdapter(
                     script: script,
                     profileId: profileId,
                     isEphemeral: isEphemeral,
                     tabHandler: tabHandler,
-                    downloadManager: browserManager?.downloadManager,
-                    notificationPermissionBridge: browserManager?.notificationPermissionBridge,
+                    downloadManager: runtime.downloadManager(),
+                    notificationPermissionBridge: runtime.notificationPermissionBridge(),
                     notificationTabContextProvider: notificationContextProvider
                 )
                 if let bridge = adapter.bridge {

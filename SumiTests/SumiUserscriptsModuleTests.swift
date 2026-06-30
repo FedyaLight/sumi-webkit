@@ -296,6 +296,38 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         XCTAssertEqual(probe.injectorCount, 0)
     }
 
+    func testAttachedModuleRoutesTabCommandsThroughRuntime() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.userScripts)
+        let probe = UserscriptsRuntimeProbe()
+        let module = makeModule(registry: registry, probe: probe)
+        let browserManager = BrowserManager()
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Userscripts Runtime")
+        let initialTabCount = browserManager.tabManager.tabs(in: space).count
+
+        module.attach(browserManager: browserManager)
+        let manager = try XCTUnwrap(module.managerIfEnabled())
+
+        manager.openTab(
+            url: "https://example.com/userscript-open",
+            background: false
+        )
+
+        let openedTab = try XCTUnwrap(browserManager.tabManager.currentTab)
+        XCTAssertEqual(openedTab.url.absoluteString, "https://example.com/userscript-open")
+        XCTAssertEqual(openedTab.spaceId, space.id)
+        XCTAssertEqual(browserManager.tabManager.tabs(in: space).count, initialTabCount + 1)
+
+        manager.closeTab(tabId: openedTab.id.uuidString)
+
+        XCTAssertNil(browserManager.tabManager.tab(for: openedTab.id))
+    }
+
     private func makeModule(
         registry: SumiModuleRegistry,
         probe: UserscriptsRuntimeProbe,
@@ -366,7 +398,6 @@ final class SumiUserscriptsModuleTests: XCTestCase {
             encoding: .utf8
         )
     }
-
 }
 
 private final class UserscriptsRuntimeProbe {

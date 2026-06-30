@@ -31,6 +31,19 @@ import SwiftData
 import WebKit
 
 @MainActor
+struct SumiScriptsManagerRuntime {
+    var injectorRuntime: () -> UserScriptInjectorRuntime
+    var openTab: (String, Bool) -> Void
+    var closeTab: (String?) -> Void
+
+    static let inactive = Self(
+        injectorRuntime: { .inactive },
+        openTab: { _, _ in },
+        closeTab: { _ in }
+    )
+}
+
+@MainActor
 final class SumiScriptsManager: ObservableObject {
     // MARK: - Published State
 
@@ -63,7 +76,7 @@ final class SumiScriptsManager: ObservableObject {
     private let context: ModelContext?
     private let storeFactory: @MainActor (ModelContext?) -> UserScriptStore
     private let injectorFactory: @MainActor () -> UserScriptInjector
-    weak var browserManager: BrowserManager?
+    private var runtime = SumiScriptsManagerRuntime.inactive
 
     // Track which webViews have been configured (to avoid double injection)
     private var configuredWebViews: NSHashTable<WKWebView> = .weakObjects()
@@ -88,10 +101,10 @@ final class SumiScriptsManager: ObservableObject {
         self.injectorFactory = injectorFactory
     }
 
-    func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    func attach(runtime: SumiScriptsManagerRuntime) {
+        self.runtime = runtime
         injector?.tabHandler = self
-        injector?.browserManager = browserManager
+        injector?.attach(runtime: runtime.injectorRuntime())
     }
 
     // MARK: - Activation / Deactivation
@@ -129,7 +142,7 @@ final class SumiScriptsManager: ObservableObject {
         store = newStore
         let newInjector = injectorFactory()
         newInjector.tabHandler = self
-        newInjector.browserManager = browserManager
+        newInjector.attach(runtime: runtime.injectorRuntime())
         injector = newInjector
         totalScriptCount = newStore.scripts.count
 
@@ -477,22 +490,10 @@ private struct UserScriptRuntimeErrorNotificationSnapshot: Sendable {
 
 extension SumiScriptsManager: SumiScriptsTabHandler {
     func openTab(url: String, background: Bool) {
-        guard let browserManager else { return }
-        let tab = browserManager.tabManager.createNewTab(
-            url: url,
-            in: browserManager.tabManager.currentSpace
-        )
-        if background == false {
-            tab.activate()
-        }
+        runtime.openTab(url, background)
     }
 
     func closeTab(tabId: String?) {
-        guard let browserManager else { return }
-        if let tabId, let uuid = UUID(uuidString: tabId) {
-            browserManager.tabManager.removeTab(uuid)
-        } else if let active = browserManager.tabManager.currentTab {
-            browserManager.tabManager.removeTab(active.id)
-        }
+        runtime.closeTab(tabId)
     }
 }
