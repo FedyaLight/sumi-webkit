@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 @MainActor
 final class BrowserURLBarContextOwner {
@@ -11,6 +12,7 @@ final class BrowserURLBarContextOwner {
         let bookmarkEditorPresentationRequest: @MainActor () -> SumiBookmarkEditorPresentationRequest?
         let currentTab: @MainActor (BrowserWindowState) -> Tab?
         let tabForID: @MainActor (UUID) -> Tab?
+        let webView: @MainActor (Tab, BrowserWindowState) -> WKWebView?
         let profiles: @MainActor () -> [Profile]
         let currentProfile: @MainActor () -> Profile?
         let siteControlsSnapshot: @MainActor (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
@@ -51,6 +53,7 @@ final class BrowserURLBarContextOwner {
             bookmarkEditorPresentationRequest: dependencies.bookmarkEditorPresentationRequest(),
             currentTab: dependencies.currentTab,
             tabForID: dependencies.tabForID,
+            webView: dependencies.webView,
             profiles: dependencies.profiles,
             currentProfile: dependencies.currentProfile,
             siteControlsSnapshot: dependencies.siteControlsSnapshot,
@@ -155,6 +158,9 @@ extension BrowserURLBarContextOwner.Dependencies {
             },
             tabForID: { [weak browserManager] tabId in
                 browserManager?.tabManager.tab(for: tabId)
+            },
+            webView: { [weak browserManager] tab, windowState in
+                browserManager?.windowOwnedWebView(for: tab, in: windowState.id)
             },
             profiles: { [weak browserManager] in
                 browserManager?.profileManager.profiles ?? []

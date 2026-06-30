@@ -439,8 +439,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 },
                 currentTab: { tab },
                 activeWindowId: { activeWindowId },
-                webViewLookup: { tabId, windowId in
-                    tabId == tab.id && windowId == activeWindowId ? originalWebView : nil
+                webViewLookup: { candidateTab, windowId in
+                    candidateTab === tab && windowId == activeWindowId ? originalWebView : nil
                 }
             )
         )

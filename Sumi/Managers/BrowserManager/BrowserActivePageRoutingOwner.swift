@@ -10,7 +10,7 @@ final class BrowserActivePageRoutingOwner {
         let currentTab: @MainActor (BrowserWindowState) -> Tab?
         let activePreviewTab: @MainActor (BrowserWindowState) -> Tab?
         let activeSessionURL: @MainActor (BrowserWindowState) -> URL?
-        let webView: @MainActor (UUID, UUID) -> WKWebView?
+        let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
         let createNewTab: @MainActor (BrowserWindowState, String) -> Void
         let openNewTab: @MainActor (String, BrowserTabOpenContext) -> Tab?
         let containsSpace: @MainActor (UUID) -> Bool
@@ -49,8 +49,13 @@ final class BrowserActivePageRoutingOwner {
     }
 
     func activePageWebView(for windowState: BrowserWindowState) -> WKWebView? {
-        guard let tab = activePageTab(for: windowState) else { return nil }
-        return tab.existingWebView ?? dependencies.webView(tab.id, windowState.id)
+        if let previewTab = dependencies.activePreviewTab(windowState) {
+            return dependencies.windowOwnedWebView(previewTab, windowState.id)
+                ?? previewTab.currentWebView
+        }
+
+        guard let tab = dependencies.currentTab(windowState) else { return nil }
+        return dependencies.windowOwnedWebView(tab, windowState.id)
     }
 
     func activePageWebViewForActiveWindow() -> WKWebView? {
@@ -243,8 +248,8 @@ extension BrowserActivePageRoutingOwner.Dependencies {
             activeSessionURL: { [weak browserManager] windowState in
                 browserManager?.glanceManager.activeSession(for: windowState)?.currentURL
             },
-            webView: { [weak browserManager] tabId, windowId in
-                browserManager?.getWebView(for: tabId, in: windowId)
+            windowOwnedWebView: { [weak browserManager] tab, windowId in
+                browserManager?.windowOwnedWebView(for: tab, in: windowId)
             },
             createNewTab: { [weak browserManager] windowState, urlString in
                 browserManager?.createNewTab(in: windowState, url: urlString)

@@ -420,7 +420,17 @@ final class ExtensionRequestedTabLifecycleOwner {
         targetWindow: BrowserWindowState?,
         manager: ExtensionManager
     ) {
-        if let webView = tab.assignedWebView ?? tab.existingWebView {
+        let currentWebView: WKWebView?
+        if let targetWindow {
+            currentWebView = manager.browserManager?.windowOwnedWebView(
+                for: tab,
+                in: targetWindow.id
+            )
+        } else {
+            currentWebView = manager.ownedUntrackedCurrentWebView(for: tab)
+        }
+
+        if let webView = currentWebView {
             manager.prepareWebViewForExtensionRuntime(
                 webView,
                 currentURL: tab.url,

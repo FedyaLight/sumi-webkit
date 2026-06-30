@@ -84,6 +84,7 @@ struct URLBarBrowserContext {
     let bookmarkEditorPresentationRequest: SumiBookmarkEditorPresentationRequest?
     let currentTab: (BrowserWindowState) -> Tab?
     let tabForID: (UUID) -> Tab?
+    let webView: (Tab, BrowserWindowState) -> WKWebView?
     let profiles: () -> [Profile]
     let currentProfile: () -> Profile?
     let siteControlsSnapshot: (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot

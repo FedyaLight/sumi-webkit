@@ -22,8 +22,7 @@ extension BrowserManager {
     ) {
         guard tabManager.isAuxiliaryMiniWindowTab(tab) else { return }
 
-        if let webView = tab.existingWebView,
-           auxiliaryWindowManager.contains(webView: webView) {
+        if let webView = auxiliaryWindowManager.session(for: tab)?.webView {
             auxiliaryWindowManager.teardown(for: webView, reason: reason)
             return
         }

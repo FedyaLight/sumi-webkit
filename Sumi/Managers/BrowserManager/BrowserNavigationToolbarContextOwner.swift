@@ -89,7 +89,7 @@ extension BrowserNavigationToolbarContextOwner.Dependencies {
                 browserManager?.currentTab(for: windowState)
             },
             webView: { tab, windowState in
-                webViewRoutingService.webView(for: tab.id, in: windowState.id)
+                webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
             },
             faviconService: {
                 dataServices.faviconService

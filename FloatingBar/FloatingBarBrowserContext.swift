@@ -16,8 +16,8 @@ struct FloatingBarBrowserContext {
     private let dismissHandler: (BrowserWindowState, Bool) -> Void
     private let deleteHistoryEntryHandler: (HistoryListItem) async -> Void
     private let commitNavigatesCurrentTabHandler: (BrowserWindowState) -> Bool
-    private let commitNavigationHandler: (String, BrowserWindowState, Bool) -> Void
-    private let commitSuggestionHandler: (SearchManager.SearchSuggestion, BrowserWindowState, Bool) -> Void
+    private let commitNavigationHandler: (String, BrowserWindowState) -> Void
+    private let commitSuggestionHandler: (SearchManager.SearchSuggestion, BrowserWindowState) -> Void
 
     init(
         currentProfileId: UUID?,
@@ -27,8 +27,8 @@ struct FloatingBarBrowserContext {
         dismiss: @escaping (BrowserWindowState, Bool) -> Void,
         deleteHistoryEntry: @escaping (HistoryListItem) async -> Void,
         commitNavigatesCurrentTab: @escaping (BrowserWindowState) -> Bool,
-        commitNavigation: @escaping (String, BrowserWindowState, Bool) -> Void,
-        commitSuggestion: @escaping (SearchManager.SearchSuggestion, BrowserWindowState, Bool) -> Void
+        commitNavigation: @escaping (String, BrowserWindowState) -> Void,
+        commitSuggestion: @escaping (SearchManager.SearchSuggestion, BrowserWindowState) -> Void
     ) {
         self.currentProfileId = currentProfileId
         self.favicon = favicon
@@ -69,17 +69,15 @@ struct FloatingBarBrowserContext {
 
     func commitFloatingBarNavigation(
         to urlString: String,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
+        in windowState: BrowserWindowState
     ) {
-        commitNavigationHandler(urlString, windowState, navigatesCurrentTab)
+        commitNavigationHandler(urlString, windowState)
     }
 
     func commitFloatingBarSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
+        in windowState: BrowserWindowState
     ) {
-        commitSuggestionHandler(suggestion, windowState, navigatesCurrentTab)
+        commitSuggestionHandler(suggestion, windowState)
     }
 }

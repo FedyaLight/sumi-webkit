@@ -2,6 +2,11 @@ import Foundation
 
 @MainActor
 struct FloatingBarNavigationOwner {
+    private enum CommitTarget {
+        case currentPage(Tab)
+        case newTab
+    }
+
     struct Actions {
         let activeWindow: @MainActor () -> BrowserWindowState?
         let window: @MainActor (UUID) -> BrowserWindowState?
@@ -136,16 +141,18 @@ struct FloatingBarNavigationOwner {
         in windowState: BrowserWindowState,
         actions: Actions
     ) -> Bool {
-        windowState.floatingBarDraftNavigatesCurrentTab
-            && actions.activePageTab(windowState) != nil
+        if case .currentPage = resolveCommitTarget(in: windowState, actions: actions) {
+            return true
+        }
+        return false
     }
 
     func commitSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
         in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool,
         actions: Actions
     ) {
+        let commitTarget = resolveCommitTarget(in: windowState, actions: actions)
         dismiss(
             in: windowState,
             preserveDraft: false,
@@ -155,7 +162,7 @@ struct FloatingBarNavigationOwner {
         openSuggestion(
             suggestion,
             in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
+            commitTarget: commitTarget,
             actions: actions
         )
     }
@@ -163,10 +170,9 @@ struct FloatingBarNavigationOwner {
     func commitNavigation(
         to urlString: String,
         in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool,
         actions: Actions
     ) {
-        let navigationTargetTab = actions.activePageTab(windowState)
+        let commitTarget = resolveCommitTarget(in: windowState, actions: actions)
         dismiss(
             in: windowState,
             preserveDraft: false,
@@ -174,12 +180,12 @@ struct FloatingBarNavigationOwner {
             actions: actions
         )
 
-        if navigatesCurrentTab,
-           let navigationTargetTab {
+        switch commitTarget {
+        case .currentPage(let navigationTargetTab):
             actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
             navigationTargetTab.loadURL(urlString)
             actions.applySettingsSurfaceNavigation(urlString)
-        } else {
+        case .newTab:
             actions.createNewTabAfterSidebarInsertion(windowState, urlString)
         }
     }
@@ -187,11 +193,22 @@ struct FloatingBarNavigationOwner {
     func openSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
         in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool,
         actions: Actions
     ) {
-        let navigationTargetTab = actions.activePageTab(windowState)
+        openSuggestion(
+            suggestion,
+            in: windowState,
+            commitTarget: resolveCommitTarget(in: windowState, actions: actions),
+            actions: actions
+        )
+    }
 
+    private func openSuggestion(
+        _ suggestion: SearchManager.SearchSuggestion,
+        in windowState: BrowserWindowState,
+        commitTarget: CommitTarget,
+        actions: Actions
+    ) {
         switch suggestion.type {
         case .tab(let existingTab):
             if !actions.replaceEmptySplitPlaceholder(existingTab, windowState) {
@@ -202,8 +219,8 @@ struct FloatingBarNavigationOwner {
                 category: "FloatingBar"
             )
         case .history(let historyEntry):
-            if navigatesCurrentTab,
-               let navigationTargetTab {
+            switch commitTarget {
+            case .currentPage(let navigationTargetTab):
                 actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
                 navigationTargetTab.loadURL(historyEntry.url.absoluteString)
                 actions.applySettingsSurfaceNavigation(historyEntry.url.absoluteString)
@@ -211,7 +228,7 @@ struct FloatingBarNavigationOwner {
                     "Navigated current tab to history URL: \(historyEntry.url)",
                     category: "FloatingBar"
                 )
-            } else {
+            case .newTab:
                 actions.createNewTabAfterSidebarInsertion(windowState, historyEntry.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Created new tab from history in window \(windowState.id)",
@@ -219,8 +236,8 @@ struct FloatingBarNavigationOwner {
                 )
             }
         case .bookmark(let bookmark):
-            if navigatesCurrentTab,
-               let navigationTargetTab {
+            switch commitTarget {
+            case .currentPage(let navigationTargetTab):
                 actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
                 navigationTargetTab.loadURL(bookmark.url.absoluteString)
                 actions.applySettingsSurfaceNavigation(bookmark.url.absoluteString)
@@ -228,7 +245,7 @@ struct FloatingBarNavigationOwner {
                     "Navigated current tab to bookmark URL: \(bookmark.url)",
                     category: "FloatingBar"
                 )
-            } else {
+            case .newTab:
                 actions.createNewTabAfterSidebarInsertion(windowState, bookmark.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Created new tab from bookmark in window \(windowState.id)",
@@ -236,8 +253,8 @@ struct FloatingBarNavigationOwner {
                 )
             }
         case .url, .search:
-            if navigatesCurrentTab,
-               let navigationTargetTab {
+            switch commitTarget {
+            case .currentPage(let navigationTargetTab):
                 actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
                 navigationTargetTab.navigateToURL(suggestion.text)
                 actions.applySettingsSurfaceNavigation(suggestion.text)
@@ -245,7 +262,7 @@ struct FloatingBarNavigationOwner {
                     "Navigated current tab to: \(suggestion.text)",
                     category: "FloatingBar"
                 )
-            } else {
+            case .newTab:
                 let resolved = actions.normalizeURL(suggestion.text)
                 actions.createNewTabAfterSidebarInsertion(windowState, resolved)
                 RuntimeDiagnostics.debug(
@@ -254,6 +271,18 @@ struct FloatingBarNavigationOwner {
                 )
             }
         }
+    }
+
+    private func resolveCommitTarget(
+        in windowState: BrowserWindowState,
+        actions: Actions
+    ) -> CommitTarget {
+        guard windowState.floatingBarDraftNavigatesCurrentTab,
+              let navigationTargetTab = actions.activePageTab(windowState)
+        else {
+            return .newTab
+        }
+        return .currentPage(navigationTargetTab)
     }
 
     func dismissAfterSelection(

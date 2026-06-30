@@ -182,6 +182,49 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(preparer as AnyObject, coordinator)
     }
 
+    func testShellRuntimeCoordinatorBindingTransfersOwnershipAndCleanupPreparer() throws {
+        let cleanupService = makeBrowsingDataCleanupService()
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            ),
+            browsingDataCleanupService: cleanupService,
+            permissionSiteActivityStore: try makeSiteActivityStore()
+        )
+        let firstCoordinator = WebViewCoordinator()
+        let secondCoordinator = WebViewCoordinator()
+
+        browserManager.webViewCoordinator = firstCoordinator
+
+        XCTAssertIdentical(browserManager.webViewCoordinator, firstCoordinator)
+        XCTAssertIdentical(cleanupService.destructiveCleanupPreparer as AnyObject, firstCoordinator)
+
+        browserManager.webViewCoordinator = secondCoordinator
+
+        XCTAssertIdentical(browserManager.webViewCoordinator, secondCoordinator)
+        XCTAssertIdentical(cleanupService.destructiveCleanupPreparer as AnyObject, secondCoordinator)
+
+        browserManager.webViewCoordinator = nil
+
+        XCTAssertNil(browserManager.webViewCoordinator)
+        XCTAssertNil(cleanupService.destructiveCleanupPreparer)
+    }
+
+    func testShellRuntimeWindowRegistryBindingUpdatesDependentRuntimeManagers() throws {
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        let windowRegistry = WindowRegistry()
+
+        browserManager.windowRegistry = windowRegistry
+
+        XCTAssertIdentical(browserManager.windowRegistry, windowRegistry)
+        XCTAssertIdentical(browserManager.glanceManager.windowRegistry, windowRegistry)
+        XCTAssertIdentical(browserManager.splitManager.windowRegistry, windowRegistry)
+    }
+
     func testBrowserManagerRuntimeDataServicesUseInjectedBundle() async throws {
         let browsingDataCleanupService = makeBrowsingDataCleanupService()
         let automaticCleanupService = FakeAutomaticBrowsingDataCleanupScheduler()

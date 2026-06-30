@@ -178,7 +178,7 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
 
         if let browserContext,
            browserContext.isAuxiliaryMiniWindowTab(tab),
-           let webView = tab.existingWebView,
+           let webView = browserContext.auxiliaryWindowSession(for: tab)?.webView,
            browserContext.containsAuxiliaryWebView(webView) {
             browserContext.closeAuxiliaryWindowWebView(webView)
             ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)

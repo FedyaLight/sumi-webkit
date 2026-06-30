@@ -108,8 +108,19 @@ enum SafariExtensionSessionDiagnosticsBuilder {
             .flatMap { extensionManager.extensionControllersByProfile[$0] }?
             .configuration.webViewConfiguration?
             .websiteDataStore
-        let activeTabStore = activeTab?.existingWebView?.configuration.websiteDataStore
-            ?? activeTab?.assignedWebView?.configuration.websiteDataStore
+        let activeTabStore: WKWebsiteDataStore? = {
+            guard let activeTab,
+                  let browserManager = extensionManager.browserManager,
+                  let activeWindow = browserManager.windowRegistry?.activeWindow,
+                  let webView = browserManager.windowOwnedWebView(
+                      for: activeTab,
+                      in: activeWindow.id
+                  )
+            else {
+                return nil
+            }
+            return webView.configuration.websiteDataStore
+        }()
 
         let profileSnapshot = snapshot(for: profileStore)
         let controllerSnapshot = snapshot(for: controllerDefaultStore)

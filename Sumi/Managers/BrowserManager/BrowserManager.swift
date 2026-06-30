@@ -66,8 +66,6 @@ class BrowserManager: ObservableObject {
     let dataServices: BrowserManagerDataServices
     let browsingDataCleanupService: SumiBrowsingDataCleanupService
     let permissionRuntime: BrowserManagerPermissionRuntime
-    /// App-shell owned factory for AppKit-created browser windows.
-    var windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory?
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {
@@ -199,6 +197,7 @@ class BrowserManager: ObservableObject {
     private lazy var sidebarActionOwner = BrowserSidebarActionOwner(
         dependencies: .live(browserManager: self)
     )
+    private let shellRuntime = BrowserShellRuntime()
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
             self?.tabManager.tab(for: tabId)
@@ -222,13 +221,8 @@ class BrowserManager: ObservableObject {
     /// Shared with app shell / `ContentView` via `.environment`; retained strongly so routing never sees a dangling coordinator.
     /// After `SumiApp.setupApplicationLifecycle` runs, this must be set before any WebView routing or coordinator cleanup.
     var webViewCoordinator: WebViewCoordinator? {
-        didSet {
-            if oldValue?.browserManager === self {
-                oldValue?.browserManager = nil
-            }
-            webViewCoordinator?.browserManager = self
-            browsingDataCleanupService.destructiveCleanupPreparer = webViewCoordinator
-        }
+        get { shellRuntime.webViewCoordinator }
+        set { shellRuntime.bindWebViewCoordinator(newValue) }
     }
 
     /// Use for cleanup and cross-window operations; fails fast if the coordinator was not wired (e.g. tests forgot to assign `webViewCoordinator`).
@@ -241,17 +235,15 @@ class BrowserManager: ObservableObject {
         return webViewCoordinator
     }
 
-    weak var windowRegistry: WindowRegistry? {
-        didSet {
-            // Update GlanceManager's windowRegistry reference when this changes
-            glanceManager.windowRegistry = windowRegistry
-            splitManager.windowRegistry = windowRegistry
-            Task { @MainActor [weak self] in
-                await self?.permissionSidebarPinningOwner.reconcile(reason: "window-registry-updated")
-            }
-            backgroundMediaOptimizationService.scheduleReconcile(reason: "window-registry-updated")
-            reconcileStartupSessionIfPossible()
-        }
+    var windowRegistry: WindowRegistry? {
+        get { shellRuntime.windowRegistry }
+        set { shellRuntime.bindWindowRegistry(newValue) }
+    }
+
+    /// App-shell owned factory for AppKit-created browser windows.
+    var windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory? {
+        get { shellRuntime.windowShellContentViewFactory }
+        set { shellRuntime.windowShellContentViewFactory = newValue }
     }
 
     private lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
@@ -441,6 +433,7 @@ class BrowserManager: ObservableObject {
         )
 
         // Phase 2: wire dependencies and perform side effects (safe to use self)
+        shellRuntime.attach(dependencies: shellRuntimeDependencies())
         structuralChangeCancellable = BrowserManagerRuntimeWiring.attach(to: self)
 
         tabManagerLoadObserverToken = NotificationCenter.default.addObserver(
@@ -468,6 +461,42 @@ class BrowserManager: ObservableObject {
         }
 
         beginProtectionRestoreForStartupIfNeeded()
+    }
+
+    private func shellRuntimeDependencies() -> BrowserShellRuntime.Dependencies {
+        BrowserShellRuntime.Dependencies(
+            releaseWebViewCoordinator: { [weak self] coordinator in
+                guard self != nil else { return }
+                coordinator?.attachVisiblePreparationRuntimeContext(nil)
+                coordinator?.attachBrowserRuntimeContext(nil)
+            },
+            adoptWebViewCoordinator: { [weak self] coordinator in
+                guard let self else { return }
+                coordinator?.attachBrowserRuntimeContext(
+                    BrowserManagerWebViewCoordinatorRuntimeFactory.browserRuntimeContext(
+                        for: self
+                    )
+                )
+                coordinator?.attachVisiblePreparationRuntimeContext(
+                    BrowserManagerWebViewCoordinatorRuntimeFactory.visiblePreparationContext(
+                        for: self
+                    )
+                )
+            },
+            setDestructiveCleanupPreparer: { [weak self] coordinator in
+                self?.browsingDataCleanupService.destructiveCleanupPreparer = coordinator
+            },
+            windowRegistryChanged: { [weak self] registry in
+                guard let self else { return }
+                self.glanceManager.windowRegistry = registry
+                self.splitManager.windowRegistry = registry
+                Task { @MainActor [weak self] in
+                    await self?.permissionSidebarPinningOwner.reconcile(reason: "window-registry-updated")
+                }
+                self.backgroundMediaOptimizationService.scheduleReconcile(reason: "window-registry-updated")
+                self.reconcileStartupSessionIfPossible()
+            }
+        )
     }
 
     /// Called when TabManager finishes loading initial data from persistence
@@ -684,25 +713,21 @@ class BrowserManager: ObservableObject {
 
     func commitFloatingBarSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
+        in windowState: BrowserWindowState
     ) {
         floatingBarRoutingOwner.commitFloatingBarSuggestion(
             suggestion,
-            in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab
+            in: windowState
         )
     }
 
     func commitFloatingBarNavigation(
         to urlString: String,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
+        in windowState: BrowserWindowState
     ) {
         floatingBarRoutingOwner.commitFloatingBarNavigation(
             to: urlString,
-            in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab
+            in: windowState
         )
     }
 
@@ -710,22 +735,9 @@ class BrowserManager: ObservableObject {
         _ suggestion: SearchManager.SearchSuggestion,
         in windowState: BrowserWindowState
     ) {
-        openFloatingBarSuggestion(
-            suggestion,
-            in: windowState,
-            navigatesCurrentTab: windowState.floatingBarDraftNavigatesCurrentTab
-        )
-    }
-
-    func openFloatingBarSuggestion(
-        _ suggestion: SearchManager.SearchSuggestion,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
-    ) {
         floatingBarRoutingOwner.openFloatingBarSuggestion(
             suggestion,
-            in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab
+            in: windowState
         )
     }
 
@@ -1127,6 +1139,10 @@ extension BrowserManager: BrowserAppLifecycleHandling {
 extension BrowserManager {
     func getWebView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
         webViewRoutingService.webView(for: tabId, in: windowId)
+    }
+
+    func windowOwnedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
+        webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
     }
 
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {

@@ -976,6 +976,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         browserManager.sumiSettings = settings
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
         browserManager.tabManager.spaces = [space]
         browserManager.tabManager.currentSpace = space
@@ -1036,6 +1037,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         )
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
+        browserManager.webViewCoordinator = WebViewCoordinator()
         extensionsModule.attach(browserManager: browserManager)
         extensionManager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)

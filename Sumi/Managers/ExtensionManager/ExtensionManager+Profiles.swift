@@ -851,12 +851,18 @@ extension ExtensionManager {
     }
 
     func liveWebViews(for tab: Tab) -> [WKWebView] {
-        var webViews = [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
+        guard let browserManager else { return [] }
 
-        if let browserManager,
-           let coordinator = browserManager.webViewCoordinator {
-            webViews.append(contentsOf: coordinator.getAllWebViews(for: tab.id))
+        var webViews: [WKWebView] = []
+
+        if let primaryWindowId = tab.primaryWindowId,
+           let webView = browserManager.windowOwnedWebView(for: tab, in: primaryWindowId) {
+            webViews.append(webView)
         }
+        if let webView = ownedUntrackedCurrentWebView(for: tab) {
+            webViews.append(webView)
+        }
+        webViews.append(contentsOf: browserManager.webViewCoordinator?.getAllWebViews(for: tab.id) ?? [])
 
         var uniqueWebViews: [WKWebView] = []
         var seen: Set<ObjectIdentifier> = []

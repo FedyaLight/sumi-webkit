@@ -25,8 +25,8 @@ extension BrowserManager {
             activeWindowId: { [weak self] in
                 self?.windowRegistry?.activeWindow?.id
             },
-            webViewLookup: { [weak self] tabId, windowId in
-                self?.getWebView(for: tabId, in: windowId)
+            webViewLookup: { [weak self] tab, windowId in
+                self?.windowOwnedWebView(for: tab, in: windowId)
             }
         )
     }

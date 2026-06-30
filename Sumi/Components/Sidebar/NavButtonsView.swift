@@ -50,10 +50,7 @@ class ObservableTabWrapper: ObservableObject {
 
     func activeWebView() -> WKWebView? {
         guard let tab else { return nil }
-        if let webView = webViewProvider?(tab) {
-            return webView
-        }
-        return tab.assignedWebView ?? tab.existingWebView
+        return webViewProvider?(tab)
     }
 
     private func refreshNavigationState() {

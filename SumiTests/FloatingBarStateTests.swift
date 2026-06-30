@@ -59,18 +59,12 @@ final class FloatingBarStateTests: XCTestCase {
             navigateCurrentTab: true
         )
 
-        let navigatesCurrentTab = windowState.floatingBarDraftNavigatesCurrentTab
-            && browserManager.currentTab(for: windowState) != nil
-        browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
-
-        XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
-
-        browserManager.openFloatingBarSuggestion(
+        browserManager.commitFloatingBarSuggestion(
             SearchManager.SearchSuggestion(text: "https://example.com/replaced", type: .url),
-            in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab
+            in: windowState
         )
 
+        XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
         XCTAssertEqual(browserManager.tabManager.tabs(in: space).count, 1)
         XCTAssertEqual(browserManager.currentTab(for: windowState)?.id, currentTab.id)
         XCTAssertEqual(currentTab.url.absoluteString, "https://example.com/replaced")
@@ -89,14 +83,9 @@ final class FloatingBarStateTests: XCTestCase {
         )
 
         browserManager.showNewTabFloatingBar(in: windowState)
-        let navigatesCurrentTab = windowState.floatingBarDraftNavigatesCurrentTab
-            && browserManager.currentTab(for: windowState) != nil
-        browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
-
-        browserManager.openFloatingBarSuggestion(
+        browserManager.commitFloatingBarSuggestion(
             SearchManager.SearchSuggestion(text: "https://example.com/new", type: .url),
-            in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab
+            in: windowState
         )
 
         XCTAssertEqual(browserManager.tabManager.tabs(in: space).count, 2)

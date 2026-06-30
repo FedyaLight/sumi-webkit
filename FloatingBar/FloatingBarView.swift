@@ -488,12 +488,10 @@ struct FloatingBarView: View {
             }
             guard !query.isEmpty else { return }
             let navigateURL = resolvedSiteSearchURL(site: site, query: query).absoluteString
-            let navigatesCurrentTab = browserContext.floatingBarCommitNavigatesCurrentTab(in: windowState)
             guard interactionCommitOwner.requestCommit(in: windowState, perform: {
                 browserContext.commitFloatingBarNavigation(
                     to: navigateURL,
-                    in: windowState,
-                    navigatesCurrentTab: navigatesCurrentTab
+                    in: windowState
                 )
             }) else { return }
             searchSession.text = ""
@@ -519,12 +517,10 @@ struct FloatingBarView: View {
     }
 
     private func selectSuggestion(_ suggestion: SearchManager.SearchSuggestion) {
-        let navigatesCurrentTab = browserContext.floatingBarCommitNavigatesCurrentTab(in: windowState)
         guard interactionCommitOwner.requestCommit(in: windowState, perform: {
             browserContext.commitFloatingBarSuggestion(
                 suggestion,
-                in: windowState,
-                navigatesCurrentTab: navigatesCurrentTab
+                in: windowState
             )
         }) else { return }
         searchSession.text = ""

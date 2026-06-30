@@ -503,12 +503,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     func extensionRuntimeTabDescription(_ tab: Tab) -> String {
-        let webViews = [tab.assignedWebView, tab.existingWebView]
-            .compactMap { $0 }
+        let webViews = liveWebViews(for: tab)
             .map { extensionRuntimeWebViewDescription($0) }
             .joined(separator: ",")
-        let resolvedURL = tab.assignedWebView?.url?.absoluteString
-            ?? tab.existingWebView?.url?.absoluteString
+        let resolvedURL = resolvedLiveWebView(for: tab)?.url?.absoluteString
             ?? tab.url.absoluteString
         return "tab=\(tab.id.uuidString.prefix(8)) url=\(resolvedURL) webViews=[\(webViews)]"
     }

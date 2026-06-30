@@ -296,10 +296,17 @@ final class DownloadManager: ObservableObject {
     }
 
     private func retryWebView() -> WKWebView? {
-        if let current = browserManager?.currentTabForActiveWindow()?.existingWebView {
+        guard let browserManager,
+              let activeWindow = browserManager.windowRegistry?.activeWindow,
+              let currentTab = browserManager.currentTab(for: activeWindow)
+        else {
+            return nil
+        }
+
+        if let current = browserManager.windowOwnedWebView(for: currentTab, in: activeWindow.id) {
             return current
         }
-        return browserManager?.currentTabForActiveWindow()?.ensureWebView()
+        return currentTab.ensureWebView()
     }
 
     private func publishCoordinatorState() {

@@ -31,7 +31,7 @@ final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
         )
     }
 
-    func testPerformStopsAfterWarmupWhenCommandIsNoLongerValid() async {
+    func testPerformSkipsWarmupWhenCommandIsNoLongerValidAfterUserContent() async {
         var events: [String] = []
 
         await NormalTabInitialDocumentRuntimeHandoff.perform {
@@ -40,6 +40,31 @@ final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
             events.append("warmInitialDocumentContexts")
         } isStillValid: {
             false
+        } register: {
+            events.append("register")
+        } load: {
+            events.append("load")
+        }
+
+        XCTAssertEqual(
+            events,
+            [
+                "waitUserContent",
+            ]
+        )
+    }
+
+    func testPerformStopsAfterWarmupWhenCommandIsNoLongerValidBeforeLoad() async {
+        var events: [String] = []
+        var isValid = true
+
+        await NormalTabInitialDocumentRuntimeHandoff.perform {
+            events.append("waitUserContent")
+        } warmInitialDocumentContexts: {
+            events.append("warmInitialDocumentContexts")
+            isValid = false
+        } isStillValid: {
+            isValid
         } register: {
             events.append("register")
         } load: {

@@ -118,39 +118,33 @@ final class BrowserFloatingBarRoutingOwner {
 
     func commitFloatingBarSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
+        in windowState: BrowserWindowState
     ) {
         navigationOwner.commitSuggestion(
             suggestion,
             in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
             actions: actions
         )
     }
 
     func commitFloatingBarNavigation(
         to urlString: String,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
+        in windowState: BrowserWindowState
     ) {
         navigationOwner.commitNavigation(
             to: urlString,
             in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
             actions: actions
         )
     }
 
     func openFloatingBarSuggestion(
         _ suggestion: SearchManager.SearchSuggestion,
-        in windowState: BrowserWindowState,
-        navigatesCurrentTab: Bool
+        in windowState: BrowserWindowState
     ) {
         navigationOwner.openSuggestion(
             suggestion,
             in: windowState,
-            navigatesCurrentTab: navigatesCurrentTab,
             actions: actions
         )
     }

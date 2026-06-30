@@ -28,6 +28,18 @@ final class BrowserWebViewRoutingService {
         return coordinator.getWebView(for: tabId, in: windowId)
     }
 
+    func windowOwnedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
+        if let trackedWebView = webView(for: tab.id, in: windowId) {
+            return trackedWebView
+        }
+
+        if tab.primaryWindowId == windowId {
+            return tab.assignedWebView
+        }
+
+        return nil
+    }
+
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
         guard let tab = tabLookup(tabId) else { return }
         guard ExtensionUtils.isExtensionOwnedURL(tab.url) == false else { return }

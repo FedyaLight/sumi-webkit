@@ -127,8 +127,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
             autoplayReloadRequired: tab.isAutoplayReloadRequired
         )
 
-        let webView = browserManager.getWebView(for: tab.id, in: windowId)
-            ?? tab.existingWebView
+        let webView = browserManager.windowOwnedWebView(for: tab, in: windowId)
         if currentWebView !== webView {
             runtimeObservation?.cancel()
             runtimeObservation = nil

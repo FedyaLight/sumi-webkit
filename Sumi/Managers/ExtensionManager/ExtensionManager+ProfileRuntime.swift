@@ -524,22 +524,22 @@ extension ExtensionManager {
     }
 
     func resolvedLiveWebView(for tab: Tab) -> WKWebView? {
-        if let webView = tab.assignedWebView ?? tab.existingWebView {
-            return webView
-        }
-
-        if let browserManager,
-           let windowState = browserManager.windowState(containing: tab)
-           ?? tab.primaryWindowId.flatMap({ browserManager.windowRegistry?.windows[$0] }) {
-            if let webView = browserManager.getWebView(
-                for: tab.id,
-                in: windowState.id
-            ) {
+        if let browserManager {
+            let windowId = browserManager.windowState(containing: tab)?.id ?? tab.primaryWindowId
+            if let windowId,
+               let webView = browserManager.windowOwnedWebView(for: tab, in: windowId) {
                 return webView
             }
         }
 
-        return nil
+        return ownedUntrackedCurrentWebView(for: tab)
+    }
+
+    func ownedUntrackedCurrentWebView(for tab: Tab) -> WKWebView? {
+        guard tab.primaryWindowId == nil else { return nil }
+        guard let webView = tab.currentWebView else { return nil }
+        guard (webView as? FocusableWKWebView)?.owningTab === tab else { return nil }
+        return webView
     }
 
     @discardableResult
@@ -669,13 +669,39 @@ extension ExtensionManager {
         _ webView: WKWebView,
         for tab: Tab
     ) -> Bool {
-        let expectedController = resolvedProfileId(for: tab).flatMap {
-            extensionControllersByProfile[$0]
-        }
-        return ExtensionRuntimeWebViewBindingPolicy.needsRuntimeRebuild(
+        webViewNeedsExtensionRuntimeRebuild(
             currentController: webView.configuration.webExtensionController,
+            currentURL: webView.url,
+            for: tab
+        )
+    }
+
+    func webViewNeedsExtensionRuntimeRebuild(
+        currentController: WKWebExtensionController?,
+        currentURL: URL?,
+        for tab: Tab
+    ) -> Bool {
+        guard let profileId = resolvedProfileId(for: tab) else {
+            return ExtensionRuntimeWebViewBindingPolicy.needsRuntimeRebuild(
+                currentController: currentController,
+                expectedController: nil,
+                currentURL: currentURL
+            )
+        }
+
+        if let currentController,
+           let currentProfileId = self.profileId(for: currentController),
+           currentProfileId != profileId {
+            return true
+        }
+
+        let expectedController =
+            extensionControllersByProfile[profileId]
+            ?? extensionController(for: tab)
+        return ExtensionRuntimeWebViewBindingPolicy.needsRuntimeRebuild(
+            currentController: currentController,
             expectedController: expectedController,
-            currentURL: webView.url
+            currentURL: currentURL
         )
     }
 

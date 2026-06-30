@@ -127,7 +127,8 @@ extension URLBarView {
     ) -> SumiPermissionRuntimeControlsViewModel.PageContext? {
         guard let context = SumiCurrentSitePermissionsViewModel.context(
             tab: tab,
-            profile: effectiveProfile
+            profile: effectiveProfile,
+            webView: browserContext.webView(tab, windowState)
         ),
               context.isSupportedWebOrigin
         else { return nil }
@@ -138,7 +139,8 @@ extension URLBarView {
             navigationOrPageGeneration: context.navigationOrPageGeneration,
             displayDomain: context.displayDomain,
             currentWebView: { [weak tab] in
-                tab?.existingWebView
+                guard let tab else { return nil }
+                return browserContext.webView(tab, windowState)
             },
             isCurrentPage: { [weak tab] tabId, pageId, navigationOrPageGeneration in
                 guard let tab,
@@ -154,7 +156,7 @@ extension URLBarView {
             },
             reloadPage: { [weak tab] in
                 guard let tab,
-                      tab.existingWebView != nil
+                      browserContext.webView(tab, windowState) != nil
                 else { return false }
                 tab.refresh()
                 tab.updateAutoplayReloadRequirementForCurrentSite()

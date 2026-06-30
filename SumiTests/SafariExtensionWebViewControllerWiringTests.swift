@@ -89,6 +89,51 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
+    func testExtensionRuntimeLiveLookupPrefersWindowOwnedTrackedWebView() throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Profile A")
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile
+        ).manager
+        let browserManager = makeBrowserManager(profile: profile)
+        let windowRegistry = WindowRegistry()
+        let coordinator = WebViewCoordinator()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = coordinator
+        browserManager.tabManager = TabManager(
+            browserManager: browserManager,
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let space = browserManager.tabManager.createSpace(
+            name: "Work",
+            profileId: profile.id
+        )
+        let windowState = BrowserWindowState()
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = space.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        manager.attach(browserManager: browserManager)
+
+        let tab = makeTab(
+            profileId: profile.id,
+            url: URL(string: "https://example.com")!
+        )
+        tab.browserManager = browserManager
+        windowState.currentTabId = tab.id
+        let staleWebView = WKWebView()
+        let trackedWebView = WKWebView()
+        tab.assignWebViewToWindow(staleWebView, windowId: windowState.id)
+        coordinator.setWebView(trackedWebView, for: tab.id, in: windowState.id)
+
+        XCTAssertIdentical(manager.resolvedLiveWebView(for: tab), trackedWebView)
+        let liveWebViews = manager.liveWebViews(for: tab)
+        XCTAssertEqual(liveWebViews.count, 1)
+        XCTAssertIdentical(liveWebViews.first, trackedWebView)
+    }
+
     func testProfileExtensionControllerUsesSumiNativeMessagingDelegate() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Profile A")
@@ -2542,7 +2587,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertTrue(manager.tabNeedsExtensionContentScriptRebind(tab))
     }
 
-    func testWrongControllerTriggersContentScriptRebind() throws {
+    func testWrongControllerRequiresRuntimeRebuild() throws {
         let container = try makeTestContainer()
         let profileA = Profile(name: "Profile A")
         let profileB = Profile(name: "Profile B")
@@ -2568,14 +2613,32 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        configuration.webExtensionController = controllerB
+        manager.prepareWebViewConfigurationForExtensionRuntime(
+            configuration,
+            profileId: profileB.id,
+            reason: "SafariExtensionWebViewControllerWiringTests"
+        )
+        XCTAssertEqual(manager.resolvedProfileId(for: tab), profileA.id)
+        XCTAssertIdentical(configuration.webExtensionController, controllerB)
+        XCTAssertNotIdentical(configuration.webExtensionController, controllerA)
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
-        webView.load(URLRequest(url: pageURL))
-        tab._webView = webView
+        webView.owningTab = tab
+        tab.replaceUntrackedWebView(webView)
+        let currentController = try XCTUnwrap(webView.configuration.webExtensionController)
+        XCTAssertIdentical(currentController, controllerB)
+        XCTAssertEqual(manager.profileId(for: currentController), profileB.id)
+        XCTAssertEqual(manager.resolvedProfileId(for: tab), profileA.id)
+        XCTAssertIdentical(manager.extensionControllersByProfile[profileA.id], controllerA)
+        XCTAssertIdentical(manager.extensionControllersByProfile[profileB.id], controllerB)
+        XCTAssertIdentical(manager.extensionController(for: tab), controllerA)
 
-        XCTAssertTrue(manager.webViewNeedsExtensionRuntimeRebuild(webView, for: tab))
-        XCTAssertTrue(manager.tabNeedsExtensionContentScriptRebind(tab))
-        _ = controllerA
+        XCTAssertTrue(
+            manager.webViewNeedsExtensionRuntimeRebuild(
+                currentController: currentController,
+                currentURL: pageURL,
+                for: tab
+            )
+        )
     }
 
     func testContentScriptProbeExtensionDeclaresManifestCSS() async throws {

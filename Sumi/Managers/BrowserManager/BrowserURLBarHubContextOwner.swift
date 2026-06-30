@@ -159,7 +159,7 @@ extension BrowserURLBarHubContextOwner.Dependencies {
                 browserManager?.currentProfile
             },
             webView: { tab, windowState in
-                webViewRoutingService.webView(for: tab.id, in: windowState.id)
+                webViewRoutingService.windowOwnedWebView(for: tab, in: windowState.id)
             },
             siteControlsSnapshot: siteControlsSnapshot,
             openExtensionSettings: { [weak browserManager] windowState in

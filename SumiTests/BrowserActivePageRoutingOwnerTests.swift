@@ -52,7 +52,7 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         XCTAssertEqual(owner.activePageURLForActiveWindow(), fallbackTab.url)
     }
 
-    func testActivePageWebViewPrefersTabExistingWebViewBeforeCoordinatorLookup() throws {
+    func testActivePageWebViewPrefersWindowOwnedLookupBeforeTabCurrentWebView() throws {
         let windowState = BrowserWindowState()
         let tabWebView = WKWebView(frame: .zero)
         let coordinatorWebView = WKWebView(frame: .zero)
@@ -63,19 +63,59 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         harness.webViewsByKey[harness.webViewKey(tabId: tab.id, windowId: windowState.id)] = coordinatorWebView
         let owner = harness.makeOwner()
 
-        XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), tabWebView)
+        XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), coordinatorWebView)
     }
 
-    func testActivePageWebViewFallsBackToCoordinatorLookup() throws {
+    func testActivePageWebViewDoesNotUseUntrackedTabCurrentWebView() throws {
         let windowState = BrowserWindowState()
-        let coordinatorWebView = WKWebView(frame: .zero)
+        let tabWebView = WKWebView(frame: .zero)
         let tab = makeTab("https://tab.example")
+        tab.replaceUntrackedWebView(tabWebView)
         let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
         harness.currentTabsByWindowId[windowState.id] = tab
-        harness.webViewsByKey[harness.webViewKey(tabId: tab.id, windowId: windowState.id)] = coordinatorWebView
         let owner = harness.makeOwner()
 
-        XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), coordinatorWebView)
+        XCTAssertNil(owner.activePageWebView(for: windowState))
+    }
+
+    func testActivePageWebViewUsesActivePreviewCurrentWebView() throws {
+        let windowState = BrowserWindowState()
+        let currentTab = makeTab("https://current.example")
+        let previewWebView = WKWebView(frame: .zero)
+        let previewTab = makeTab("https://preview.example")
+        previewTab.replaceUntrackedWebView(previewWebView)
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
+        harness.currentTabsByWindowId[windowState.id] = currentTab
+        harness.previewTabsByWindowId[windowState.id] = previewTab
+        let owner = harness.makeOwner()
+
+        XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), previewWebView)
+    }
+
+    func testActivePageWebViewDoesNotUseTabAssignedWebViewForAnotherWindow() {
+        let requestedWindow = BrowserWindowState()
+        let owningWindowId = UUID()
+        let tab = makeTab("https://tab.example")
+        tab.replaceUntrackedWebView(WKWebView(frame: .zero))
+        tab.primaryWindowId = owningWindowId
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: requestedWindow)
+        harness.currentTabsByWindowId[requestedWindow.id] = tab
+        let owner = harness.makeOwner()
+
+        XCTAssertNil(owner.activePageWebView(for: requestedWindow))
+    }
+
+    func testActivePageWebViewFallsBackToWindowAssignedTabWebView() throws {
+        let windowState = BrowserWindowState()
+        let tabWebView = WKWebView(frame: .zero)
+        let tab = makeTab("https://tab.example")
+        tab.replaceUntrackedWebView(tabWebView)
+        tab.primaryWindowId = windowState.id
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
+        harness.currentTabsByWindowId[windowState.id] = tab
+        let owner = harness.makeOwner()
+
+        XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), tabWebView)
     }
 
     func testPresentExternalURLCreatesTabInActiveWindow() throws {
@@ -235,9 +275,15 @@ private final class BrowserActivePageRoutingOwnerHarness {
                 activeSessionURL: { [weak self] windowState in
                     self?.sessionURLsByWindowId[windowState.id]
                 },
-                webView: { [weak self] tabId, windowId in
+                windowOwnedWebView: { [weak self] tab, windowId in
                     guard let self else { return nil }
-                    return webViewsByKey[webViewKey(tabId: tabId, windowId: windowId)]
+                    if let webView = webViewsByKey[webViewKey(tabId: tab.id, windowId: windowId)] {
+                        return webView
+                    }
+                    if tab.primaryWindowId == windowId {
+                        return tab.assignedWebView
+                    }
+                    return nil
                 },
                 createNewTab: { [weak self] windowState, url in
                     self?.createdTabs.append(.init(windowId: windowState.id, url: url))

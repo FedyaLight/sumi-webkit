@@ -641,9 +641,17 @@ struct URLBarHubPopover: View {
     }
 
     private func reloadPermissions() async {
+        let currentWebView = currentTab.flatMap { browserContext.webView($0, windowState) }
         await currentSitePermissionsModel.load(
-            tab: currentTab,
+            context: SumiCurrentSitePermissionsViewModel.context(
+                tab: currentTab,
+                profile: activeProfile,
+                webView: currentWebView
+            ),
+            webView: currentWebView,
             profile: activeProfile,
+            reloadRequired: currentTab?.isAutoplayReloadRequired == true,
+            autoplayInUse: currentTab?.audioState.isPlayingAudio == true,
             dependencies: permissionDependencies,
             systemSnapshotMode: .none
         )

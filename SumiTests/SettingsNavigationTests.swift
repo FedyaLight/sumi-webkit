@@ -358,14 +358,18 @@ final class SettingsNavigationTests: XCTestCase {
         browserManager.selectTab(existing, in: windowState, loadPolicy: .deferred)
         settings.currentSettingsTab = .general
         settings.extensionsSettingsSubPane = .userScripts
+        browserManager.focusFloatingBar(
+            in: windowState,
+            prefill: existing.url.absoluteString,
+            navigateCurrentTab: true
+        )
 
         browserManager.commitFloatingBarSuggestion(
             SearchManager.SearchSuggestion(
                 text: "sumi://settings?pane=extensions",
                 type: .url
             ),
-            in: windowState,
-            navigatesCurrentTab: true
+            in: windowState
         )
 
         XCTAssertEqual(existing.url, SettingsTabs.extensions.settingsSurfaceURL)

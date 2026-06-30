@@ -272,8 +272,7 @@ final class GlanceManagerTests: XCTestCase {
 
         browserManager.commitFloatingBarSuggestion(
             SearchManager.SearchSuggestion(text: sourceTab.name, type: .tab(sourceTab)),
-            in: sourceWindow,
-            navigatesCurrentTab: true
+            in: sourceWindow
         )
 
         let filledGroup = try XCTUnwrap(browserManager.tabManager.splitGroup(containing: previewTab.id))

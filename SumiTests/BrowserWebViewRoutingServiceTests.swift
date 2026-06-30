@@ -57,6 +57,56 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         XCTAssertEqual(coordinator.muteCalls.first?.muted, true)
         XCTAssertEqual(coordinator.muteCalls.first?.tabId, tab.id)
     }
+
+    func testWindowOwnedWebViewPrefersCoordinatorTrackedWebView() throws {
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/page")),
+            loadsCachedFaviconOnInit: false
+        )
+        let tabWebView = WKWebView()
+        let trackedWebView = WKWebView()
+        tab.replaceUntrackedWebView(tabWebView)
+        let coordinator = RecordingWebViewCoordinator()
+        coordinator.webViewToReturn = trackedWebView
+        let service = BrowserWebViewRoutingService(
+            tabLookup: { tabId in tabId == tab.id ? tab : nil },
+            coordinatorLookup: { coordinator }
+        )
+
+        XCTAssertIdentical(service.windowOwnedWebView(for: tab, in: UUID()), trackedWebView)
+    }
+
+    func testWindowOwnedWebViewDoesNotReturnUntrackedCurrentWebView() throws {
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/page")),
+            loadsCachedFaviconOnInit: false
+        )
+        let tabWebView = WKWebView()
+        tab.replaceUntrackedWebView(tabWebView)
+        let coordinator = RecordingWebViewCoordinator()
+        let service = BrowserWebViewRoutingService(
+            tabLookup: { tabId in tabId == tab.id ? tab : nil },
+            coordinatorLookup: { coordinator }
+        )
+
+        XCTAssertNil(service.windowOwnedWebView(for: tab, in: UUID()))
+    }
+
+    func testWindowOwnedWebViewDoesNotReturnAssignedWebViewForDifferentWindow() throws {
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com/page")),
+            loadsCachedFaviconOnInit: false
+        )
+        tab.replaceUntrackedWebView(WKWebView())
+        tab.primaryWindowId = UUID()
+        let coordinator = RecordingWebViewCoordinator()
+        let service = BrowserWebViewRoutingService(
+            tabLookup: { tabId in tabId == tab.id ? tab : nil },
+            coordinatorLookup: { coordinator }
+        )
+
+        XCTAssertNil(service.windowOwnedWebView(for: tab, in: UUID()))
+    }
 }
 
 private final class RecordingWebViewCoordinator: WebViewCoordinator {

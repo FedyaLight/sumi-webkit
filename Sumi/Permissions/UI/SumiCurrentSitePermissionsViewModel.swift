@@ -108,23 +108,6 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
     private(set) var transientRecords: [SumiPermissionStoreRecord] = []
 
     func load(
-        tab: Tab?,
-        profile: Profile?,
-        dependencies: LoadDependencies,
-        systemSnapshotMode: SumiCurrentSiteSystemSnapshotMode = .none
-    ) async {
-        await load(
-            context: Self.context(tab: tab, profile: profile),
-            webView: tab?.existingWebView,
-            profile: profile,
-            reloadRequired: tab?.isAutoplayReloadRequired == true,
-            autoplayInUse: tab?.audioState.isPlayingAudio == true,
-            dependencies: dependencies,
-            systemSnapshotMode: systemSnapshotMode
-        )
-    }
-
-    func load(
         context: Context?,
         webView: WKWebView?,
         profile: Profile?,
@@ -314,12 +297,12 @@ final class SumiCurrentSitePermissionsViewModel: ObservableObject {
         _ = await systemPermissionService.openSystemSettings(for: kind)
     }
 
-    static func context(tab: Tab?, profile: Profile?) -> Context? {
+    static func context(tab: Tab?, profile: Profile?, webView: WKWebView? = nil) -> Context? {
         guard let tab, let profile else { return nil }
 
         let identity = tab.extensionPageRuntimeOwner.pageIdentity(tabId: tab.id)
         let committedURL = tab.extensionPageRuntimeOwner.committedMainDocumentURLForCurrentPage()
-        let visibleURL = tab.existingWebView?.url ?? tab.url
+        let visibleURL = webView?.url ?? tab.url
         let mainFrameURL = committedURL ?? visibleURL
         let origin = SumiPermissionOrigin(url: mainFrameURL)
         let displayDomain = displayDomain(for: origin, fallbackURL: mainFrameURL)

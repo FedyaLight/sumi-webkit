@@ -201,9 +201,9 @@ final class SumiBoostsModule: ObservableObject {
         onSelector: @escaping @MainActor (SumiBoost) -> Void,
         onFinish: @escaping @MainActor () -> Void
     ) -> Bool {
-        guard let webView = browserManager?.getWebView(for: tab.id, in: windowState.id)
-            ?? tab.existingWebView
-        else { return false }
+        guard let webView = browserManager?.windowOwnedWebView(for: tab, in: windowState.id) else {
+            return false
+        }
 
         activeZapSession?.stop()
         activeZapSession = SumiBoostZapSession(
@@ -311,8 +311,7 @@ final class SumiBoostsModule: ObservableObject {
         for windowState in browserManager.windowRegistry?.allWindows ?? [] {
             for tab in browserManager.tabsForDisplay(in: windowState)
                 where tabMatches(tab, profileId: profileId, host: host) {
-                if let webView = browserManager.getWebView(for: tab.id, in: windowState.id)
-                    ?? tab.existingWebView {
+                if let webView = browserManager.windowOwnedWebView(for: tab, in: windowState.id) {
                     visit(tab, webView)
                 }
             }
@@ -320,7 +319,7 @@ final class SumiBoostsModule: ObservableObject {
 
         for tab in browserManager.tabManager.allTabs()
             where tabMatches(tab, profileId: profileId, host: host) {
-            if let webView = tab.existingWebView {
+            for webView in browserManager.webViewCoordinator?.getAllWebViews(for: tab.id) ?? [] {
                 visit(tab, webView)
             }
         }

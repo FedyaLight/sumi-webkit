@@ -10,8 +10,8 @@ final class BrowserFloatingBarBrowserContextOwner {
         let dismiss: @MainActor (BrowserWindowState, Bool) -> Void
         let deleteHistoryEntry: @MainActor (HistoryListItem) async -> Void
         let commitNavigatesCurrentTab: @MainActor (BrowserWindowState) -> Bool
-        let commitNavigation: @MainActor (String, BrowserWindowState, Bool) -> Void
-        let commitSuggestion: @MainActor (SearchManager.SearchSuggestion, BrowserWindowState, Bool) -> Void
+        let commitNavigation: @MainActor (String, BrowserWindowState) -> Void
+        let commitSuggestion: @MainActor (SearchManager.SearchSuggestion, BrowserWindowState) -> Void
     }
 
     private let dependencies: Dependencies
@@ -78,18 +78,16 @@ extension BrowserFloatingBarBrowserContextOwner.Dependencies {
             commitNavigatesCurrentTab: { [weak browserManager] windowState in
                 browserManager?.floatingBarCommitNavigatesCurrentTab(in: windowState) ?? false
             },
-            commitNavigation: { [weak browserManager] urlString, windowState, navigatesCurrentTab in
+            commitNavigation: { [weak browserManager] urlString, windowState in
                 browserManager?.commitFloatingBarNavigation(
                     to: urlString,
-                    in: windowState,
-                    navigatesCurrentTab: navigatesCurrentTab
+                    in: windowState
                 )
             },
-            commitSuggestion: { [weak browserManager] suggestion, windowState, navigatesCurrentTab in
+            commitSuggestion: { [weak browserManager] suggestion, windowState in
                 browserManager?.commitFloatingBarSuggestion(
                     suggestion,
-                    in: windowState,
-                    navigatesCurrentTab: navigatesCurrentTab
+                    in: windowState
                 )
             }
         )

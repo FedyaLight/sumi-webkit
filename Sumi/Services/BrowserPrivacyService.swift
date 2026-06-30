@@ -6,7 +6,7 @@ final class BrowserPrivacyService {
         let currentDataStore: @MainActor () -> WKWebsiteDataStore
         let currentTab: @MainActor () -> Tab?
         let activeWindowId: @MainActor () -> UUID?
-        let webViewLookup: @MainActor (UUID, UUID) -> WKWebView?
+        let webViewLookup: @MainActor (Tab, UUID) -> WKWebView?
     }
 
     private let cleanupService: any SumiWebsiteDataCleanupServicing
@@ -43,9 +43,7 @@ final class BrowserPrivacyService {
               let activeWindowId = context.activeWindowId()
         else { return }
 
-        if let webView = context.webViewLookup(currentTab.id, activeWindowId) {
-            reloadFromOrigin(currentTab, webView: webView)
-        } else if let webView = currentTab.existingWebView {
+        if let webView = context.webViewLookup(currentTab, activeWindowId) {
             reloadFromOrigin(currentTab, webView: webView)
         }
 

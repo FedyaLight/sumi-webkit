@@ -16,6 +16,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
         load: @MainActor () -> Void
     ) async {
         await waitForInitialUserContent()
+        guard isStillValid() else { return }
         await warmInitialDocumentContexts()
         guard isStillValid() else { return }
         register()
