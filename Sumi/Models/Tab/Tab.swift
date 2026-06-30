@@ -417,6 +417,22 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         extensionPageRuntimeOwner.markDidOpenTab(generation: generation)
     }
 
+    func hasDidOpenTabNotificationForExtensionRuntime(generation: UInt64) -> Bool {
+        extensionPageRuntimeOwner.hasDidOpenTabNotification(for: generation)
+    }
+
+    func hasAnyDidOpenTabNotificationForExtensionRuntime() -> Bool {
+        extensionPageRuntimeOwner.hasAnyDidOpenTabNotification()
+    }
+
+    func currentExtensionOpenNotificationGeneration() -> UInt64 {
+        extensionPageRuntimeOwner.currentOpenNotificationGeneration()
+    }
+
+    func currentExtensionRuntimeEligibleGeneration() -> UInt64 {
+        extensionPageRuntimeOwner.currentEligibleGeneration()
+    }
+
     func resetExtensionOpenNotificationGeneration() {
         extensionPageRuntimeOwner.clearOpenNotificationGeneration()
     }
@@ -435,6 +451,38 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func noteCommittedMainDocumentNavigation(to url: URL) {
         extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: url)
+    }
+
+    func extensionRuntimeDocumentBindingSnapshot() -> TabExtensionDocumentBindingSnapshot {
+        extensionPageRuntimeOwner.documentBindingSnapshot()
+    }
+
+    func committedExtensionRuntimeMainDocumentURL() -> URL? {
+        extensionPageRuntimeOwner.committedMainDocumentURLForCurrentPage()
+    }
+
+    func hasCommittedExtensionRuntimeDocumentBinding() -> Bool {
+        extensionPageRuntimeOwner.hasCommittedDocumentBinding()
+    }
+
+    func hasExtensionRuntimeDocumentBindingForLifecycleRebind() -> Bool {
+        extensionPageRuntimeOwner.hasDocumentBindingForLifecycleRebind()
+    }
+
+    func shouldSkipExtensionRuntimePreCommitRebindForInitialDocument() -> Bool {
+        extensionPageRuntimeOwner.shouldSkipPreCommitRebindForInitialDocument()
+    }
+
+    func recordExtensionRuntimeReportedURLIfChanged(_ resolvedURL: URL?) -> Bool {
+        extensionPageRuntimeOwner.recordReportedURLIfChanged(resolvedURL)
+    }
+
+    func recordExtensionRuntimeReportedLoadingCompleteIfChanged(_ isLoadingComplete: Bool) -> Bool {
+        extensionPageRuntimeOwner.recordReportedLoadingCompleteIfChanged(isLoadingComplete)
+    }
+
+    func recordExtensionRuntimeReportedTitleIfChanged(_ title: String?) -> Bool {
+        extensionPageRuntimeOwner.recordReportedTitleIfChanged(title)
     }
 
     func currentExtensionPageIdentity() -> TabExtensionPageIdentity {

@@ -471,7 +471,7 @@ extension ExtensionManager {
             return
         }
 
-        if tab.extensionRuntimeDocumentSequence > 0,
+        if tab.hasCommittedExtensionRuntimeDocumentBinding(),
            tabNeedsExtensionContentScriptRebind(tab) {
             ensureExtensionControllerAttachedForTab(tab, reason: reason)
             return

@@ -545,7 +545,7 @@ extension Tab {
         guard let profile = resolveProfile() else { return nil }
 
         let identity = currentExtensionPageIdentity()
-        let committedURL = extensionRuntimeCommittedMainDocumentURL
+        let committedURL = committedExtensionRuntimeMainDocumentURL()
         let surfaceState = permissionRequestSurfaceState(for: webView)
         return SumiWebNotificationTabContext(
             tabId: identity.tabId,

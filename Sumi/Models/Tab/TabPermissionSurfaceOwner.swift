@@ -33,7 +33,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.extensionRuntimeCommittedMainDocumentURL
+        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
         return SumiPopupPermissionTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
@@ -52,7 +52,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.extensionRuntimeCommittedMainDocumentURL
+        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
         return SumiExternalSchemePermissionTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
@@ -75,7 +75,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.extensionRuntimeCommittedMainDocumentURL
+        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
         let surfaceState = surfaceState(for: webView)
         return SumiWebKitGeolocationTabContext(
             tabId: identity.tabId,
@@ -102,7 +102,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.extensionRuntimeCommittedMainDocumentURL
+        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
         let surfaceState = surfaceState(for: webView)
         return SumiWebKitMediaCaptureTabContext(
             tabId: identity.tabId,
@@ -126,7 +126,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.extensionRuntimeCommittedMainDocumentURL
+        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
         let surfaceState = surfaceState(for: webView)
         return SumiFilePickerPermissionTabContext(
             tabId: identity.tabId,
@@ -146,7 +146,7 @@ final class TabPermissionSurfaceOwner {
         guard let profile = tab.resolveProfile() else { return nil }
 
         let identity = pageIdentity()
-        let committedURL = tab.extensionRuntimeCommittedMainDocumentURL
+        let committedURL = tab.committedExtensionRuntimeMainDocumentURL()
         let surfaceState = surfaceState(for: webView)
         return SumiStorageAccessTabContext(
             tabId: identity.tabId,

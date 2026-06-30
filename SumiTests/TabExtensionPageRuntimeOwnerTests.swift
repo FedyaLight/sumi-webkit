@@ -78,6 +78,58 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         ))
     }
 
+    func testDocumentBindingSnapshotAndLifecycleQueriesDescribeOwnedState() {
+        let owner = TabExtensionPageRuntimeOwner()
+        let url = URL(string: "https://example.com/page")!
+
+        owner.noteCommittedMainDocumentNavigation(to: url)
+        owner.noteOpenNotification(
+            extensionContextBindingGeneration: 11,
+            loadedContexts: false
+        )
+
+        let snapshot = owner.documentBindingSnapshot()
+        XCTAssertEqual(snapshot.documentSequence, 1)
+        XCTAssertEqual(snapshot.committedMainDocumentURL, url)
+        XCTAssertEqual(snapshot.openNotifiedDocumentSequence, 1)
+        XCTAssertEqual(snapshot.openNotifiedExtensionContextBindingGeneration, 11)
+        XCTAssertEqual(snapshot.openNotifiedWithLoadedContexts, false)
+        XCTAssertEqual(owner.committedMainDocumentURLForCurrentPage(), url)
+        XCTAssertTrue(owner.hasCommittedDocumentBinding())
+        XCTAssertTrue(owner.hasDocumentBindingForLifecycleRebind())
+        XCTAssertFalse(owner.shouldSkipPreCommitRebindForInitialDocument())
+    }
+
+    func testInitialDocumentOpenNotificationCanSkipPreCommitRebind() {
+        let owner = TabExtensionPageRuntimeOwner()
+
+        owner.noteOpenNotification(
+            extensionContextBindingGeneration: 11,
+            loadedContexts: true
+        )
+
+        XCTAssertTrue(owner.shouldSkipPreCommitRebindForInitialDocument())
+        XCTAssertFalse(owner.hasCommittedDocumentBinding())
+        XCTAssertTrue(owner.hasDocumentBindingForLifecycleRebind())
+    }
+
+    func testReportedTabPropertiesCoalesceThroughOwner() {
+        let owner = TabExtensionPageRuntimeOwner()
+        let url = URL(string: "https://example.com/page")!
+
+        XCTAssertTrue(owner.recordReportedURLIfChanged(url))
+        XCTAssertFalse(owner.recordReportedURLIfChanged(url))
+        XCTAssertTrue(owner.recordReportedURLIfChanged(URL(string: "https://example.com/other")!))
+
+        XCTAssertTrue(owner.recordReportedLoadingCompleteIfChanged(true))
+        XCTAssertFalse(owner.recordReportedLoadingCompleteIfChanged(true))
+        XCTAssertTrue(owner.recordReportedLoadingCompleteIfChanged(false))
+
+        XCTAssertTrue(owner.recordReportedTitleIfChanged("Title"))
+        XCTAssertFalse(owner.recordReportedTitleIfChanged("Title"))
+        XCTAssertTrue(owner.recordReportedTitleIfChanged(nil))
+    }
+
     func testResetDocumentBindingClearsCommittedURLAndOpenNotificationContext() {
         let owner = TabExtensionPageRuntimeOwner()
         owner.noteCommittedMainDocumentNavigation(to: URL(string: "https://example.com")!)

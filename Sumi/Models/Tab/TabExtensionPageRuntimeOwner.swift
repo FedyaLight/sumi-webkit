@@ -24,6 +24,14 @@ struct TabExtensionPageIdentity: Equatable, Sendable {
     let pageId: String
 }
 
+struct TabExtensionDocumentBindingSnapshot: Equatable {
+    let documentSequence: UInt64
+    let committedMainDocumentURL: URL?
+    let openNotifiedDocumentSequence: UInt64?
+    let openNotifiedExtensionContextBindingGeneration: UInt64?
+    let openNotifiedWithLoadedContexts: Bool?
+}
+
 @MainActor
 final class TabExtensionPageRuntimeOwner {
     private let state = TabExtensionRuntimeState()
@@ -112,6 +120,74 @@ final class TabExtensionPageRuntimeOwner {
 
     func isEligible(for generation: UInt64) -> Bool {
         state.eligibleGeneration == generation
+    }
+
+    func hasDidOpenTabNotification(for generation: UInt64) -> Bool {
+        state.didReportOpenForGeneration == generation
+    }
+
+    func hasAnyDidOpenTabNotification() -> Bool {
+        state.didReportOpenForGeneration > 0
+    }
+
+    func currentOpenNotificationGeneration() -> UInt64 {
+        state.didReportOpenForGeneration
+    }
+
+    func currentEligibleGeneration() -> UInt64 {
+        state.eligibleGeneration
+    }
+
+    func documentBindingSnapshot() -> TabExtensionDocumentBindingSnapshot {
+        TabExtensionDocumentBindingSnapshot(
+            documentSequence: state.documentSequence,
+            committedMainDocumentURL: state.committedMainDocumentURL,
+            openNotifiedDocumentSequence: state.openNotifiedDocumentSequence,
+            openNotifiedExtensionContextBindingGeneration: state.openNotifiedExtensionContextBindingGeneration,
+            openNotifiedWithLoadedContexts: state.openNotifiedWithLoadedContexts
+        )
+    }
+
+    func committedMainDocumentURLForCurrentPage() -> URL? {
+        state.committedMainDocumentURL
+    }
+
+    func hasCommittedDocumentBinding() -> Bool {
+        state.documentSequence > 0
+    }
+
+    func hasDocumentBindingForLifecycleRebind() -> Bool {
+        state.openNotifiedDocumentSequence != nil || state.documentSequence > 0
+    }
+
+    func shouldSkipPreCommitRebindForInitialDocument() -> Bool {
+        state.documentSequence == 0
+            && state.openNotifiedDocumentSequence == 0
+            && state.openNotifiedWithLoadedContexts == true
+    }
+
+    func recordReportedURLIfChanged(_ resolvedURL: URL?) -> Bool {
+        guard resolvedURL?.absoluteString != state.lastReportedURL?.absoluteString else {
+            return false
+        }
+        state.lastReportedURL = resolvedURL
+        return true
+    }
+
+    func recordReportedLoadingCompleteIfChanged(_ isLoadingComplete: Bool) -> Bool {
+        guard state.lastReportedLoadingComplete != isLoadingComplete else {
+            return false
+        }
+        state.lastReportedLoadingComplete = isLoadingComplete
+        return true
+    }
+
+    func recordReportedTitleIfChanged(_ title: String?) -> Bool {
+        guard state.lastReportedTitle != title else {
+            return false
+        }
+        state.lastReportedTitle = title
+        return true
     }
 
     func noteCommittedMainDocumentNavigation(to url: URL) {

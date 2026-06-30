@@ -228,7 +228,7 @@ final class ExtensionRequestedTabLifecycleOwner {
                 dataStoreMatched: nil,
                 controllerMatched: nil,
                 tabAdapterCreated: manager.stableAdapter(for: newTab) != nil,
-                didOpenTabTiming: newTab.lastExtensionOpenNotificationGeneration > 0
+                didOpenTabTiming: newTab.hasAnyDidOpenTabNotificationForExtensionRuntime()
                     ? .beforeNavigation : .deferred,
                 firstNavigationHost: SafariExtensionPermissionLifecycleDiagnostics.host(
                     from: resolvedExtensionLoad.url
@@ -277,7 +277,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         tab.prepareExtensionRuntimeGeneration(generation)
         tab.markExtensionRuntimeEligible(for: generation)
 
-        guard tab.lastExtensionOpenNotificationGeneration != generation else {
+        guard tab.hasDidOpenTabNotificationForExtensionRuntime(generation: generation) == false else {
             manager.extensionRuntimeTrace(
                 "registerExtensionCreatedTab skip reason=\(reason) because=alreadyNotified generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
             )

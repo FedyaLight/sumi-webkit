@@ -16,7 +16,7 @@ final class BrowserPermissionSiteSettingsRoutingOwner {
     }
 
     func privacySiteSettingsFilter(focusing tab: Tab?) -> SumiSettingsSiteSettingsFilter? {
-        let mainURL = tab?.extensionRuntimeCommittedMainDocumentURL
+        let mainURL = tab?.committedExtensionRuntimeMainDocumentURL()
             ?? tab?.existingWebView?.url
             ?? tab?.url
         let origin = SumiPermissionOrigin(url: mainURL)
