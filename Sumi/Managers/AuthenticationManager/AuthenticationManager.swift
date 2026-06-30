@@ -9,8 +9,14 @@ import Foundation
 import WebKit
 
 @MainActor
+struct AuthenticationManagerRuntime {
+    var presentBasicAuthSheet: (BasicAuthSheetSession, Tab) -> Bool
+    var dismissNativeModalPresentation: () -> Void
+}
+
+@MainActor
 final class AuthenticationManager: NSObject {
-    private weak var browserManager: BrowserManager?
+    private var runtime: AuthenticationManagerRuntime?
     private let credentialStore: BasicAuthCredentialStore
 
     init(credentialStore: BasicAuthCredentialStore = BasicAuthCredentialStore()) {
@@ -18,8 +24,8 @@ final class AuthenticationManager: NSObject {
         super.init()
     }
 
-    func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    func attach(runtime: AuthenticationManagerRuntime) {
+        self.runtime = runtime
     }
 
     func handleAuthenticationChallenge(
@@ -72,7 +78,7 @@ final class AuthenticationManager: NSObject {
         tab: Tab,
         completion: @escaping (URLCredential?) -> Void
     ) {
-        guard let manager = browserManager else {
+        guard let runtime else {
             completion(nil)
             return
         }
@@ -123,17 +129,17 @@ final class AuthenticationManager: NSObject {
                     }
                 }
 
-                manager.dismissNativeModalPresentation()
+                runtime.dismissNativeModalPresentation()
                 finish(with: URLCredential(user: username, password: password, persistence: .forSession))
             },
             onCancel: {
                 NSApp.mainWindow?.makeFirstResponder(nil)
-                manager.dismissNativeModalPresentation()
+                runtime.dismissNativeModalPresentation()
                 finish(with: nil)
             }
         )
 
-        if manager.presentBasicAuthSheet(session, in: manager.windowState(containing: tab)) == false {
+        if runtime.presentBasicAuthSheet(session, tab) == false {
             session.cancel()
         }
     }

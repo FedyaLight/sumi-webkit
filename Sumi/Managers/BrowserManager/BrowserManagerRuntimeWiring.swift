@@ -21,7 +21,7 @@ enum BrowserManagerRuntimeWiring {
         let structuralChangeCancellable = bindTabManagerStructuralUpdates(for: browserManager)
         browserManager.auxiliaryWindowManager.attach(browserManager: browserManager)
         browserManager.glanceManager.attach(runtime: glanceRuntime(for: browserManager))
-        browserManager.authenticationManager.attach(browserManager: browserManager)
+        browserManager.authenticationManager.attach(runtime: authenticationRuntime(for: browserManager))
         return structuralChangeCancellable
     }
 
@@ -49,6 +49,23 @@ enum BrowserManagerRuntimeWiring {
     ) -> SumiNativeNowPlayingRuntimeContext {
         SumiNativeNowPlayingRuntimeContext.live(
             runtime: nativeNowPlayingBrowserRuntime(for: browserManager)
+        )
+    }
+
+    private static func authenticationRuntime(
+        for browserManager: BrowserManager
+    ) -> AuthenticationManagerRuntime {
+        AuthenticationManagerRuntime(
+            presentBasicAuthSheet: { [weak browserManager] session, tab in
+                guard let browserManager else { return false }
+                return browserManager.presentBasicAuthSheet(
+                    session,
+                    in: browserManager.windowState(containing: tab)
+                )
+            },
+            dismissNativeModalPresentation: { [weak browserManager] in
+                browserManager?.dismissNativeModalPresentation()
+            }
         )
     }
 

@@ -113,6 +113,48 @@ final class BasicAuthCredentialStoreTests: XCTestCase {
         XCTAssertNil(crossRealmResult.credential)
     }
 
+    func testAuthenticationManagerPromptUsesInjectedRuntime() throws {
+        let store = BasicAuthCredentialStore(service: "com.sumi.basicAuth.tests.\(UUID().uuidString)")
+        let manager = AuthenticationManager(credentialStore: store)
+        let tab = Tab(url: URL(string: "https://auth.example")!)
+        var capturedSession: BasicAuthSheetSession?
+        var capturedTab: Tab?
+        var dismissCount = 0
+        manager.attach(
+            runtime: AuthenticationManagerRuntime(
+                presentBasicAuthSheet: { session, tab in
+                    capturedSession = session
+                    capturedTab = tab
+                    return true
+                },
+                dismissNativeModalPresentation: {
+                    dismissCount += 1
+                }
+            )
+        )
+
+        var result: (URLSession.AuthChallengeDisposition?, URLCredential?) = (nil, nil)
+        let handled = manager.handleAuthenticationChallenge(
+            makeChallenge(realm: "runtime-realm"),
+            for: tab
+        ) { disposition, credential in
+            result = (disposition, credential)
+        }
+
+        XCTAssertTrue(handled)
+        XCTAssertNil(result.0)
+        XCTAssertIdentical(capturedTab, tab)
+        let session = try XCTUnwrap(capturedSession)
+        XCTAssertEqual(session.model.host, "auth.example")
+
+        session.submit(username: "bob", password: "secret", rememberCredential: false)
+
+        XCTAssertEqual(result.0, .useCredential)
+        XCTAssertEqual(result.1?.user, "bob")
+        XCTAssertEqual(result.1?.password, "secret")
+        XCTAssertEqual(dismissCount, 1)
+    }
+
     private func handle(
         _ challenge: URLAuthenticationChallenge,
         manager: AuthenticationManager,
