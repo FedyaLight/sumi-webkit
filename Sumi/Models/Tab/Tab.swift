@@ -57,6 +57,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     let normalWebViewSetupOwner = TabNormalWebViewSetupOwner()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
+    lazy var normalWebViewRuntimeContextOwner = TabNormalWebViewRuntimeContextOwner(tab: self)
     private let closeLifecycleOwner = TabCloseLifecycleOwner()
     let configurationPolicyWebViewReplacementContextOwner =
         TabConfigurationPolicyWebViewReplacementContextOwner()
