@@ -291,7 +291,11 @@ final class TabExtensionPageRuntimeOwner {
     private let state = TabExtensionRuntimeState()
 
     var didNotifyOpenToExtensions: Bool {
-        state.didReportOpenForGeneration != 0
+        get { state.didReportOpenForGeneration != 0 }
+        set {
+            guard newValue == false else { return }
+            clearOpenNotificationGeneration()
+        }
     }
 
     var lastOpenNotificationGeneration: UInt64 {
@@ -368,6 +372,10 @@ final class TabExtensionPageRuntimeOwner {
         state.eligibleGeneration = generation
     }
 
+    func isEligible(for generation: UInt64) -> Bool {
+        state.eligibleGeneration == generation
+    }
+
     func noteCommittedMainDocumentNavigation(to url: URL) {
         state.documentSequence &+= 1
         state.committedMainDocumentURL = url
@@ -390,6 +398,14 @@ final class TabExtensionPageRuntimeOwner {
         state.openNotifiedDocumentSequence = state.documentSequence
         state.openNotifiedExtensionContextBindingGeneration = extensionContextBindingGeneration
         state.openNotifiedWithLoadedContexts = loadedContexts
+    }
+
+    func hasOpenNotificationForCurrentDocumentWithLoadedContexts(
+        generation: UInt64
+    ) -> Bool {
+        state.didReportOpenForGeneration == generation
+            && state.openNotifiedDocumentSequence == state.documentSequence
+            && state.openNotifiedWithLoadedContexts == true
     }
 
     func markDidOpenTab(generation: UInt64) {

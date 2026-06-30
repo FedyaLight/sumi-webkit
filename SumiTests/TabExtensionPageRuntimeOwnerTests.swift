@@ -70,6 +70,12 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         XCTAssertEqual(owner.openNotifiedWithLoadedContexts, true)
         XCTAssertEqual(owner.lastOpenNotificationGeneration, 5)
         XCTAssertTrue(owner.didNotifyOpenToExtensions)
+        XCTAssertTrue(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
+            generation: 5
+        ))
+        XCTAssertFalse(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
+            generation: 4
+        ))
     }
 
     func testResetDocumentBindingClearsCommittedURLAndOpenNotificationContext() {
@@ -87,5 +93,51 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         XCTAssertNil(owner.openNotifiedDocumentSequence)
         XCTAssertNil(owner.openNotifiedExtensionContextBindingGeneration)
         XCTAssertNil(owner.openNotifiedWithLoadedContexts)
+    }
+
+    func testDidNotifyOpenSetterOnlyClearsGenerationForFalseCompatibilityWrite() {
+        let owner = TabExtensionPageRuntimeOwner()
+        owner.markDidOpenTab(generation: 7)
+
+        owner.didNotifyOpenToExtensions = true
+
+        XCTAssertEqual(owner.lastOpenNotificationGeneration, 7)
+
+        owner.didNotifyOpenToExtensions = false
+
+        XCTAssertEqual(owner.lastOpenNotificationGeneration, 0)
+        XCTAssertFalse(owner.didNotifyOpenToExtensions)
+    }
+
+    func testEligibilityIsOwnedByRuntimeGeneration() {
+        let owner = TabExtensionPageRuntimeOwner()
+
+        XCTAssertFalse(owner.isEligible(for: 2))
+
+        owner.markEligible(for: 2)
+
+        XCTAssertTrue(owner.isEligible(for: 2))
+        XCTAssertFalse(owner.isEligible(for: 3))
+    }
+
+    func testCurrentDocumentOpenNotificationInvalidatesWhenDocumentChanges() {
+        let owner = TabExtensionPageRuntimeOwner()
+        owner.noteCommittedMainDocumentNavigation(to: URL(string: "https://example.com/one")!)
+        owner.noteOpenNotification(
+            extensionContextBindingGeneration: 1,
+            loadedContexts: true
+        )
+        owner.markDidOpenTab(generation: 9)
+
+        XCTAssertTrue(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
+            generation: 9
+        ))
+
+        owner.invalidateCurrentPageForWebViewReplacement()
+
+        XCTAssertFalse(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
+            generation: 9
+        ))
+        XCTAssertEqual(owner.committedMainDocumentURL, URL(string: "https://example.com/one")!)
     }
 }

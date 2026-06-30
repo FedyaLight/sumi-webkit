@@ -257,11 +257,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
     var didNotifyOpenToExtensions: Bool {
         get { extensionPageRuntimeOwner.didNotifyOpenToExtensions }
-        set {
-            if newValue == false {
-                extensionPageRuntimeOwner.clearOpenNotificationGeneration()
-            }
-        }
+        set { extensionPageRuntimeOwner.didNotifyOpenToExtensions = newValue }
     }
     var lastExtensionOpenNotificationGeneration: UInt64 {
         get { extensionPageRuntimeOwner.lastOpenNotificationGeneration }
@@ -427,13 +423,13 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     func hasExtensionOpenNotificationForCurrentDocumentWithLoadedContexts(
         generation: UInt64
     ) -> Bool {
-        lastExtensionOpenNotificationGeneration == generation
-            && extensionRuntimeOpenNotifiedDocumentSequence == extensionRuntimeDocumentSequence
-            && extensionRuntimeOpenNotifiedWithLoadedContexts == true
+        extensionPageRuntimeOwner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
+            generation: generation
+        )
     }
 
     func isEligibleForExtensionRuntime(generation: UInt64) -> Bool {
-        extensionRuntimeEligibleGeneration == generation
+        extensionPageRuntimeOwner.isEligible(for: generation)
     }
 
     func noteCommittedMainDocumentNavigation(to url: URL) {
