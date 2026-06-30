@@ -70,7 +70,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     )
     private let suspensionStateOwner = TabSuspensionStateOwner()
     private let webViewInteractionStateOwner = TabWebViewInteractionStateOwner()
-    lazy var permissionSurfaceOwner = TabPermissionSurfaceOwner(tab: self)
+    lazy var permissionSurfaceOwner = TabPermissionSurfaceOwner(context: .live(tab: self))
     lazy var webKitUIDelegateOwner = TabWebKitUIDelegateOwner(tab: self)
     lazy var webKitPermissionUIDelegateOwner = TabWebKitPermissionUIDelegateOwner(tab: self)
     lazy var scriptMessageRuntimeOwner = TabScriptMessageRuntimeOwner(tab: self)

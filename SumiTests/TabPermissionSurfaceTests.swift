@@ -46,6 +46,90 @@ final class TabPermissionSurfaceTests: XCTestCase {
         XCTAssertEqual(tab.currentPermissionPageId(), "\(tab.id.uuidString.lowercased()):1")
     }
 
+    func testPermissionSurfaceOwnerUsesNarrowContextWithoutTab() throws {
+        let tabId = UUID()
+        let profile = Profile(
+            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            name: "Permission Context",
+            icon: "person"
+        )
+        let currentURL = URL(string: "https://visible.example/page")!
+        let committedURL = URL(string: "https://committed.example/main")!
+        let targetURL = URL(string: "https://next.example/")!
+        var pageGeneration = 0
+        var lifecycleEvents: [SumiPermissionLifecycleEvent] = []
+
+        let owner = TabPermissionSurfaceOwner(
+            context: TabPermissionSurfaceOwner.Context(
+                tabId: tabId,
+                currentURL: { currentURL },
+                resolveProfile: { profile },
+                isActiveTab: { true },
+                isVisibleTab: { false },
+                pageIdentity: {
+                    let tabIdString = tabId.uuidString.lowercased()
+                    let generation = String(pageGeneration)
+                    return TabExtensionPageIdentity(
+                        tabId: tabIdString,
+                        pageGeneration: generation,
+                        pageId: "\(tabIdString):\(generation)"
+                    )
+                },
+                committedMainDocumentURL: { committedURL },
+                isCurrentPage: { pageId, pageGenerationSnapshot in
+                    let tabIdString = tabId.uuidString.lowercased()
+                    let generation = String(pageGeneration)
+                    return pageId == "\(tabIdString):\(generation)"
+                        && pageGenerationSnapshot == generation
+                },
+                invalidateCurrentPageForWebViewReplacement: {
+                    pageGeneration += 1
+                },
+                handlePermissionLifecycleEvent: { event in
+                    lifecycleEvents.append(event)
+                },
+                isActiveGlancePreviewSurface: { _ in false }
+            )
+        )
+        let webView = WKWebView()
+
+        let permissionContext = try XCTUnwrap(owner.externalSchemeContext(for: webView))
+
+        XCTAssertEqual(permissionContext.tabId, tabId.uuidString.lowercased())
+        XCTAssertEqual(permissionContext.pageId, "\(tabId.uuidString.lowercased()):0")
+        XCTAssertEqual(permissionContext.profilePartitionId, profile.id.uuidString.lowercased())
+        XCTAssertEqual(permissionContext.committedURL, committedURL)
+        XCTAssertEqual(permissionContext.visibleURL, currentURL)
+        XCTAssertEqual(permissionContext.mainFrameURL, committedURL)
+        XCTAssertTrue(permissionContext.isActiveTab)
+        XCTAssertFalse(permissionContext.isVisibleTab)
+        XCTAssertTrue(try XCTUnwrap(permissionContext.isCurrentPage)())
+
+        owner.handleNormalTabPermissionNavigation(to: targetURL)
+        owner.invalidateCurrentPageForWebViewReplacement(reason: "test-replacement")
+
+        XCTAssertFalse(try XCTUnwrap(permissionContext.isCurrentPage)())
+        XCTAssertEqual(owner.currentPageId(), "\(tabId.uuidString.lowercased()):1")
+        XCTAssertEqual(
+            lifecycleEvents,
+            [
+                .mainFrameNavigation(
+                    pageId: "\(tabId.uuidString.lowercased()):0",
+                    tabId: tabId.uuidString.lowercased(),
+                    profilePartitionId: profile.id.uuidString,
+                    targetURL: targetURL,
+                    reason: "normal-tab-main-frame-navigation"
+                ),
+                .webViewReplaced(
+                    pageId: "\(tabId.uuidString.lowercased()):0",
+                    tabId: tabId.uuidString.lowercased(),
+                    profilePartitionId: profile.id.uuidString,
+                    reason: "test-replacement"
+                ),
+            ]
+        )
+    }
+
     func testPermissionSurfaceStateAndPopupContextUseActiveVisibleWindowSurface() throws {
         let browserManager = BrowserManager()
         let tab = makeManagedTab(in: browserManager)
