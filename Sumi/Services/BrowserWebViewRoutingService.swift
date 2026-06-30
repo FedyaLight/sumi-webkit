@@ -55,6 +55,16 @@ final class BrowserWebViewRoutingService {
         coordinator.reloadTab(tab)
     }
 
+    func reloadTab(_ tabId: UUID, in windowId: UUID) {
+        guard let tab = tabLookup(tabId) else { return }
+        guard let coordinator = resolvedCoordinator(
+            for: "reloadTab",
+            tabId: tabId,
+            windowId: windowId
+        ) else { return }
+        coordinator.reloadTab(tab, in: windowId)
+    }
+
     func setMuteState(_ muted: Bool, for tabId: UUID) {
         guard let coordinator = resolvedCoordinator(
             for: "setMuteState",

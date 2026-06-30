@@ -113,7 +113,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         webViewRegistry.webViews(for: tabId)
     }
 
-    func liveWebViews(for tab: Tab) -> [WKWebView] {
+    func trackedLiveWebViews(for tab: Tab) -> [WKWebView] {
+        uniqueWebViews(Array(webViewRegistry.windowWebViews(for: tab.id).values))
+    }
+
+    private func allKnownWebViews(for tab: Tab) -> [WKWebView] {
         var seen = Set<ObjectIdentifier>()
         var result: [WKWebView] = []
         func appendUnique(_ webView: WKWebView?) {
@@ -154,7 +158,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             tabs: runtimeContext.regularTabs(),
             profileIDs: profileIDs,
             liveWebViews: { [self] tab in
-                liveWebViews(for: tab)
+                allKnownWebViews(for: tab)
             },
             isWebViewProtectedFromCompositorMutation: { [self] webView in
                 isWebViewProtectedFromCompositorMutation(webView)
@@ -521,7 +525,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     @discardableResult
     func suspendWebViews(for tab: Tab, reason: String) -> Bool {
-        let liveWebViews = liveWebViews(for: tab)
+        let liveWebViews = allKnownWebViews(for: tab)
         guard !liveWebViews.isEmpty else { return false }
         guard !liveWebViews.contains(where: isWebViewProtectedFromCompositorMutation) else {
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
@@ -774,7 +778,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 return resolvedTab(with: tabID)
             },
             liveWebViews: { [self] tab in
-                liveWebViews(for: tab)
+                trackedLiveWebViews(for: tab)
             },
             globallyVisibleTabIDs: globallyVisibleTabIDs,
             isWebViewProtectedFromCompositorMutation: { [self] webView in
@@ -1333,6 +1337,24 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 }
             }
         )
+    }
+
+    /// Reload a tab only in the requested window.
+    @discardableResult
+    func reloadTab(_ tab: Tab, in windowId: UUID) -> Bool {
+        guard let webView = getWebView(for: tab.id, in: windowId) else { return false }
+        if isWebViewProtectedFromCompositorMutation(webView) {
+            RuntimeDiagnostics.protectedWebViewTrace(
+                "skipReloadProtected webView=\(ObjectIdentifier(webView)) tab=\(tab.id.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))"
+            )
+            return false
+        }
+        tab.performMainFrameNavigationAfterHydrationIfNeeded(
+            on: webView
+        ) { resolvedWebView in
+            resolvedWebView.reload()
+        }
+        return true
     }
 
     /// Set mute state for a tab across all windows

@@ -6,7 +6,6 @@ import WebKit
 final class BrowserActivePageRoutingOwner {
     struct Dependencies {
         let activeWindow: @MainActor () -> BrowserWindowState?
-        let fallbackCurrentTab: @MainActor () -> Tab?
         let currentTab: @MainActor (BrowserWindowState) -> Tab?
         let activePreviewTab: @MainActor (BrowserWindowState) -> Tab?
         let activeSessionURL: @MainActor (BrowserWindowState) -> URL?
@@ -31,10 +30,8 @@ final class BrowserActivePageRoutingOwner {
     }
 
     func currentTabForActiveWindow() -> Tab? {
-        if let activeWindow = dependencies.activeWindow() {
-            return dependencies.currentTab(activeWindow)
-        }
-        return dependencies.fallbackCurrentTab()
+        guard let activeWindow = dependencies.activeWindow() else { return nil }
+        return dependencies.currentTab(activeWindow)
     }
 
     func activePageTab(for windowState: BrowserWindowState) -> Tab? {
@@ -43,10 +40,8 @@ final class BrowserActivePageRoutingOwner {
     }
 
     func activePageTabForActiveWindow() -> Tab? {
-        if let activeWindow = dependencies.activeWindow() {
-            return activePageTab(for: activeWindow)
-        }
-        return dependencies.fallbackCurrentTab()
+        guard let activeWindow = dependencies.activeWindow() else { return nil }
+        return activePageTab(for: activeWindow)
     }
 
     func activePageWebView(for windowState: BrowserWindowState) -> WKWebView? {
@@ -70,9 +65,7 @@ final class BrowserActivePageRoutingOwner {
     }
 
     func activePageURLForActiveWindow() -> URL? {
-        guard let activeWindow = dependencies.activeWindow() else {
-            return dependencies.fallbackCurrentTab()?.url
-        }
+        guard let activeWindow = dependencies.activeWindow() else { return nil }
         return activePageURL(for: activeWindow)
     }
 
@@ -261,9 +254,6 @@ extension BrowserActivePageRoutingOwner.Dependencies {
         Self(
             activeWindow: { [weak browserManager] in
                 browserManager?.windowRegistry?.activeWindow
-            },
-            fallbackCurrentTab: { [weak browserManager] in
-                browserManager?.tabManager.currentTab
             },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.currentTab(for: windowState)

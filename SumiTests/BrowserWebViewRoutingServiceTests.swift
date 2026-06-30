@@ -18,6 +18,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         XCTAssertNil(service.webView(for: tab.id, in: UUID()))
         service.syncTabAcrossWindows(tab.id)
         service.reloadTabAcrossWindows(tab.id)
+        service.reloadTab(tab.id, in: UUID())
         service.setMuteState(true, for: tab.id)
     }
 
@@ -31,6 +32,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         let originatingWebView = WKWebView()
         coordinator.webViewToReturn = expectedWebView
         let windowId = UUID()
+        let reloadWindowId = UUID()
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
             coordinatorLookup: { coordinator }
@@ -39,6 +41,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         let webView = service.webView(for: tab.id, in: windowId)
         service.syncTabAcrossWindows(tab.id, originatingWebView: originatingWebView)
         service.reloadTabAcrossWindows(tab.id)
+        service.reloadTab(tab.id, in: reloadWindowId)
         service.setMuteState(true, for: tab.id)
 
         XCTAssertIdentical(webView, expectedWebView)
@@ -53,6 +56,9 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
 
         XCTAssertEqual(coordinator.reloadCalls.count, 1)
         XCTAssertIdentical(coordinator.reloadCalls.first, tab)
+        let windowReload = try XCTUnwrap(coordinator.windowReloadCalls.first)
+        XCTAssertIdentical(windowReload.tab, tab)
+        XCTAssertEqual(windowReload.windowId, reloadWindowId)
         XCTAssertEqual(coordinator.muteCalls.count, 1)
         XCTAssertEqual(coordinator.muteCalls.first?.muted, true)
         XCTAssertEqual(coordinator.muteCalls.first?.tabId, tab.id)
@@ -126,10 +132,16 @@ private final class RecordingWebViewCoordinator: WebViewCoordinator {
         let tabId: UUID
     }
 
+    struct WindowReloadCall {
+        let tab: Tab
+        let windowId: UUID
+    }
+
     var webViewToReturn: WKWebView?
     private(set) var webViewRequests: [WebViewRequest] = []
     private(set) var syncCalls: [SyncCall] = []
     private(set) var reloadCalls: [Tab] = []
+    private(set) var windowReloadCalls: [WindowReloadCall] = []
     private(set) var muteCalls: [MuteCall] = []
 
     override func getWebView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
@@ -149,6 +161,11 @@ private final class RecordingWebViewCoordinator: WebViewCoordinator {
 
     override func reloadTab(_ tab: Tab) {
         reloadCalls.append(tab)
+    }
+
+    override func reloadTab(_ tab: Tab, in windowId: UUID) -> Bool {
+        windowReloadCalls.append(WindowReloadCall(tab: tab, windowId: windowId))
+        return true
     }
 
     override func setMuteState(_ muted: Bool, for tabId: UUID) {

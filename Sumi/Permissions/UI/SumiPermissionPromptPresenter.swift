@@ -106,8 +106,7 @@ final class SumiPermissionPromptPresenter: ObservableObject {
 
     func update(
         tab: Tab,
-        windowState: BrowserWindowState,
-        browserManager: BrowserManager
+        windowState: BrowserWindowState
     ) {
         currentContext = SourceSnapshot(
             coordinatorState: nil,
@@ -121,7 +120,6 @@ final class SumiPermissionPromptPresenter: ObservableObject {
             await Task.yield()
             await self?.refresh(autoPresent: true)
         }
-        _ = browserManager
     }
 
     func clear() {

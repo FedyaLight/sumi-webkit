@@ -43,13 +43,13 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         XCTAssertEqual(owner.activePageURLForActiveWindow(), sessionURL)
     }
 
-    func testActivePageURLFallsBackToCurrentTabWhenNoActiveWindowExists() {
-        let fallbackTab = makeTab("https://fallback.example")
+    func testActivePageRoutingReturnsNilWhenNoActiveWindowExists() {
         let harness = BrowserActivePageRoutingOwnerHarness()
-        harness.fallbackCurrentTab = fallbackTab
         let owner = harness.makeOwner()
 
-        XCTAssertEqual(owner.activePageURLForActiveWindow(), fallbackTab.url)
+        XCTAssertNil(owner.currentTabForActiveWindow())
+        XCTAssertNil(owner.activePageTabForActiveWindow())
+        XCTAssertNil(owner.activePageURLForActiveWindow())
     }
 
     func testActivePageWebViewPrefersWindowOwnedLookupBeforeTabCurrentWebView() throws {
@@ -263,7 +263,6 @@ private final class BrowserActivePageRoutingOwnerHarness {
     }
 
     var activeWindow: BrowserWindowState?
-    var fallbackCurrentTab: Tab?
     var currentTabsByWindowId: [UUID: Tab] = [:]
     var previewTabsByWindowId: [UUID: Tab] = [:]
     var sessionURLsByWindowId: [UUID: URL] = [:]
@@ -286,7 +285,6 @@ private final class BrowserActivePageRoutingOwnerHarness {
         BrowserActivePageRoutingOwner(
             dependencies: BrowserActivePageRoutingOwner.Dependencies(
                 activeWindow: { [weak self] in self?.activeWindow },
-                fallbackCurrentTab: { [weak self] in self?.fallbackCurrentTab },
                 currentTab: { [weak self] windowState in
                     self?.currentTabsByWindowId[windowState.id]
                 },

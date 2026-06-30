@@ -301,7 +301,7 @@ final class SumiBackgroundMediaOptimizationService {
             )
         }
 
-        for webView in coordinator.liveWebViews(for: tab) {
+        for webView in coordinator.trackedLiveWebViews(for: tab) {
             append(
                 windowID: coordinator.windowID(containing: webView) ?? tab.primaryWindowId,
                 webView: webView

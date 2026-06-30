@@ -46,7 +46,8 @@ extension BrowserManager {
     ) {
         guard !tab.representsSumiNativeSurface else { return }
 
-        let targetURL = windowOwnedOrCreatedWebView(for: tab, in: windowState.id)?.url ?? tab.url
+        let targetWebView = windowOwnedOrCreatedWebView(for: tab, in: windowState.id)
+        let targetURL = targetWebView?.url ?? tab.url
         let protectionReloadWasRequired = tab.isProtectionReloadRequired
         if tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) {
             guard let preparation = prepareWindowScopedConfigurationPolicy(
@@ -77,6 +78,7 @@ extension BrowserManager {
             return
         }
 
+        guard targetWebView != nil else { return }
         tab.beginLoadingPresentationIfNeeded()
         if protectionReloadWasRequired {
             tab.noteProtectionManualReloadResult(
@@ -84,7 +86,7 @@ extension BrowserManager {
                 targetURL: targetURL
             )
         }
-        reloadTabAcrossWindows(tab.id)
+        reloadTab(tab.id, in: windowState.id)
     }
 
     func loadFloatingBarCurrentPage(

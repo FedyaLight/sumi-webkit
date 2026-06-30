@@ -1156,6 +1156,10 @@ extension BrowserManager {
         webViewRoutingService.reloadTabAcrossWindows(tabId)
     }
 
+    func reloadTab(_ tabId: UUID, in windowId: UUID) {
+        webViewRoutingService.reloadTab(tabId, in: windowId)
+    }
+
     func setMuteState(_ muted: Bool, for tabId: UUID) {
         webViewRoutingService.setMuteState(muted, for: tabId)
     }

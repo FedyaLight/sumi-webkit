@@ -81,12 +81,10 @@ extension BrowserURLBarPermissionContextOwner.Dependencies {
                     webView: webView
                 )
             },
-            updatePrompt: { [weak browserManager] presenter, tab, windowState in
-                guard let browserManager else { return }
+            updatePrompt: { presenter, tab, windowState in
                 presenter.update(
                     tab: tab,
-                    windowState: windowState,
-                    browserManager: browserManager
+                    windowState: windowState
                 )
             }
         )
