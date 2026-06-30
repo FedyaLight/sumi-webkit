@@ -8,14 +8,12 @@ final class BrowserWindowShellService {
     struct Context {
         let windowRegistry: WindowRegistry
         let webViewCoordinator: WebViewCoordinator
-        let permissionLifecycleController: SumiPermissionGrantLifecycleController?
+        let permissionLifecycleController: SumiPermissionGrantLifecycleController
         let profileManager: ProfileManager
         let tabManager: TabManager
         let makeContentView: ContentViewFactory
         let showEmptyState: EmptyStatePresenter
     }
-
-    private var incognitoWindowIds: Set<UUID> = []
 
     func createNewWindow(using context: Context) {
         let windowState = BrowserWindowState()
@@ -55,8 +53,6 @@ final class BrowserWindowShellService {
         windowState.currentSpaceId = ephemeralSpace.id
         windowState.tabManager = context.tabManager
 
-        incognitoWindowIds.insert(windowState.id)
-
         let newWindow = makeWindow(
             title: "Incognito - Sumi",
             contentView: context.makeContentView(
@@ -83,8 +79,7 @@ final class BrowserWindowShellService {
         using context: Context
     ) async {
         guard windowState.isIncognito else { return }
-        guard incognitoWindowIds.contains(windowState.id)
-            || windowState.ephemeralProfile != nil
+        guard windowState.ephemeralProfile != nil
             || windowState.ephemeralTabs.isEmpty == false
             || windowState.ephemeralSpaces.isEmpty == false
         else {
@@ -103,8 +98,6 @@ final class BrowserWindowShellService {
             tab.performComprehensiveWebViewCleanup()
         }
 
-        incognitoWindowIds.remove(windowState.id)
-
         let ephemeralTabs = windowState.ephemeralTabs
         let ephemeralSpaces = windowState.ephemeralSpaces
         let ephemeralProfileId = windowState.ephemeralProfile?.id.uuidString
@@ -113,7 +106,7 @@ final class BrowserWindowShellService {
         windowState.currentTabId = nil
 
         if let ephemeralProfileId {
-            context.permissionLifecycleController?.handle(
+            context.permissionLifecycleController.handle(
                 .profileClosed(
                     profilePartitionId: ephemeralProfileId,
                     reason: "incognito-profile-close"

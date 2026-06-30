@@ -60,7 +60,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let context = BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
             webViewCoordinator: harness.webViewCoordinator,
-            permissionLifecycleController: nil,
+            permissionLifecycleController: harness.permissionLifecycleController,
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,
             makeContentView: { windowRegistry, webViewCoordinator, windowState in
@@ -132,10 +132,49 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         XCTAssertNil(windowState.ephemeralProfile)
     }
 
+    func testCloseIncognitoWindowUsesWindowStateOwnershipAndCancelsProfilePermissions() async throws {
+        let harness = try makeHarness()
+        let service = BrowserWindowShellService()
+        let context = makeContext(harness: harness) { _ in }
+        let windowState = BrowserWindowState()
+        windowState.isIncognito = true
+        windowState.tabManager = harness.tabManager
+
+        let ephemeralProfile = harness.profileManager.createEphemeralProfile(for: windowState.id)
+        windowState.ephemeralProfile = ephemeralProfile
+        windowState.currentProfileId = ephemeralProfile.id
+
+        let ephemeralSpace = Space(name: "Incognito", profileId: ephemeralProfile.id)
+        ephemeralSpace.isEphemeral = true
+        windowState.ephemeralSpaces.append(ephemeralSpace)
+        windowState.currentSpaceId = ephemeralSpace.id
+
+        _ = harness.tabManager.createEphemeralTab(
+            url: try XCTUnwrap(URL(string: "https://private.example")),
+            in: windowState,
+            profile: ephemeralProfile
+        )
+
+        await service.closeIncognitoWindow(windowState, using: context)
+
+        XCTAssertTrue(windowState.ephemeralTabs.isEmpty)
+        XCTAssertTrue(windowState.ephemeralSpaces.isEmpty)
+        XCTAssertNil(windowState.currentTabId)
+        XCTAssertNil(windowState.currentSpaceId)
+        XCTAssertNil(windowState.ephemeralProfile)
+
+        await waitForPermissionProfileClose(
+            coordinator: harness.permissionCoordinator,
+            profilePartitionId: ephemeralProfile.id.uuidString
+        )
+    }
+
     private struct Harness {
         let startupContainer: ModelContainer
         let windowRegistry: WindowRegistry
         let webViewCoordinator: WebViewCoordinator
+        let permissionCoordinator: RecordingPermissionCoordinator
+        let permissionLifecycleController: SumiPermissionGrantLifecycleController
         let profileManager: ProfileManager
         let tabManager: TabManager
     }
@@ -145,10 +184,21 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let context = startupContainer.mainContext
         let profileManager = ProfileManager(context: context)
         let tabManager = TabManager(context: context)
+        let permissionCoordinator = RecordingPermissionCoordinator()
+        let permissionLifecycleController = SumiPermissionGrantLifecycleController(
+            coordinator: permissionCoordinator,
+            geolocationProvider: nil,
+            filePickerBridge: nil,
+            indicatorEventStore: SumiPermissionIndicatorEventStore(),
+            blockedPopupStore: SumiBlockedPopupStore(),
+            externalSchemeSessionStore: SumiExternalSchemeSessionStore()
+        )
         return Harness(
             startupContainer: startupContainer,
             windowRegistry: WindowRegistry(),
             webViewCoordinator: WebViewCoordinator(),
+            permissionCoordinator: permissionCoordinator,
+            permissionLifecycleController: permissionLifecycleController,
             profileManager: profileManager,
             tabManager: tabManager
         )
@@ -168,11 +218,97 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         BrowserWindowShellService.Context(
             windowRegistry: harness.windowRegistry,
             webViewCoordinator: harness.webViewCoordinator,
-            permissionLifecycleController: nil,
+            permissionLifecycleController: harness.permissionLifecycleController,
             profileManager: harness.profileManager,
             tabManager: harness.tabManager,
             makeContentView: { _, _, _ in NSView() },
             showEmptyState: showEmptyState
+        )
+    }
+
+    private func waitForPermissionProfileClose(
+        coordinator: RecordingPermissionCoordinator,
+        profilePartitionId: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<50 {
+            let calls = await coordinator.profileCloseCalls
+            if calls.contains(
+                ProfileCloseCall(
+                    profilePartitionId: profilePartitionId,
+                    reason: "incognito-profile-close"
+                )
+            ) {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        let calls = await coordinator.profileCloseCalls
+        XCTFail("Missing profile close event in \(calls)", file: file, line: line)
+    }
+}
+
+private struct ProfileCloseCall: Equatable {
+    let profilePartitionId: String
+    let reason: String
+}
+
+private actor RecordingPermissionCoordinator: SumiPermissionCoordinating {
+    private(set) var profileCloseCalls: [ProfileCloseCall] = []
+
+    func requestPermission(
+        _ context: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision {
+        SumiPermissionCoordinatorDecision(
+            outcome: .ignored,
+            state: nil,
+            persistence: nil,
+            source: .runtime,
+            reason: "test-permission-coordinator",
+            permissionTypes: context.request.permissionTypes
+        )
+    }
+
+    func queryPermissionState(
+        _ context: SumiPermissionSecurityContext
+    ) async -> SumiPermissionCoordinatorDecision {
+        await requestPermission(context)
+    }
+
+    func activeQuery(forPageId pageId: String) async -> SumiPermissionAuthorizationQuery? {
+        _ = pageId
+        return nil
+    }
+
+    func stateSnapshot() async -> SumiPermissionCoordinatorState {
+        SumiPermissionCoordinatorState()
+    }
+
+    func events() async -> AsyncStream<SumiPermissionCoordinatorEvent> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func cancelProfile(
+        profilePartitionId: String,
+        reason: String
+    ) async -> SumiPermissionCoordinatorDecision {
+        profileCloseCalls.append(
+            ProfileCloseCall(
+                profilePartitionId: profilePartitionId,
+                reason: reason
+            )
+        )
+        return SumiPermissionCoordinatorDecision(
+            outcome: .ignored,
+            state: nil,
+            persistence: nil,
+            source: .runtime,
+            reason: reason,
+            permissionTypes: []
         )
     }
 }
