@@ -168,6 +168,7 @@ final class TabNavigationRuntime {
     var persistenceCallbacks = TabRuntimePersistenceCallbacks.inactive
     var historySwipeRuntime = TabHistorySwipeRuntime.inactive
     var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
+    var reloadPolicyRuntime = TabReloadPolicyRuntime.empty
     let navigationTransactionOwner = TabNavigationTransactionOwner()
     let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()

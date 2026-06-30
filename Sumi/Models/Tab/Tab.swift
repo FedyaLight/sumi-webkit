@@ -190,6 +190,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.profileResolutionRuntime }
         set { navigationRuntime.profileResolutionRuntime = newValue }
     }
+    var reloadPolicyRuntime: TabReloadPolicyRuntime {
+        get { navigationRuntime.reloadPolicyRuntime }
+        set { navigationRuntime.reloadPolicyRuntime = newValue }
+    }
     var isFreezingNavigationStateDuringBackForwardGesture: Bool {
         get { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture }
         set { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture = newValue }
@@ -335,6 +339,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                     backgroundMediaOptimizationService: newValue.backgroundMediaOptimizationService
                 )
                 profileResolutionRuntime = .live(browserManager: newValue)
+                reloadPolicyRuntime = .live(browserManager: newValue)
                 historySwipeRuntime = .live(
                     webViewCoordinator: { [weak browserManager] in
                         browserManager?.webViewCoordinator
@@ -352,6 +357,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 mediaRuntimeCallbacks = .inactive
                 historySwipeRuntime = .inactive
                 profileResolutionRuntime = .inactive
+                reloadPolicyRuntime = .empty
             }
             dependencyStateOwner.attachDataServicesProvider { [weak self] in
                 guard let dataServices = self?.browserManagerStorage?.dataServices else { return nil }

@@ -100,6 +100,41 @@ final class TabRuntimeRoutingTests: XCTestCase {
 
         XCTAssertEqual(runtime.windowIDContaining(webView), windowId)
     }
+
+    func testReloadPolicyUsesInjectedRuntimeWithoutBrowserManager() throws {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let pageURL = try XCTUnwrap(URL(string: "https://example.com/article"))
+        let safariState = SumiSafariContentBlockerAttachmentState(
+            siteHost: "example.com",
+            isEnabledForSite: true,
+            enabledContentBlockerIds: ["blocker"]
+        )
+        let protectionState = SumiProtectionAttachmentState(
+            siteHost: "example.com",
+            requestedLevel: .protection,
+            effectiveLevel: .protection,
+            activeGroups: [.trackingNetwork],
+            attachedRuleListIdentifiers: ["tracking-rule"],
+            activeGenerationId: "generation-1"
+        )
+        tab.reloadPolicyRuntime = TabReloadPolicyRuntime(
+            safariContentBlockerAttachmentState: { _ in safariState },
+            protectionAttachmentState: { _ in protectionState },
+            protectionSurfaceHost: { _ in "example.com" },
+            protectionCurrentTabDiagnostics: { _ in nil },
+            evaluateAutoplayPolicyChange: { _, _ in .noOp }
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(
+            tab.safariContentBlockerDesiredAttachmentState(for: pageURL),
+            safariState
+        )
+        XCTAssertEqual(
+            tab.protectionDesiredAttachmentState(for: pageURL),
+            protectionState
+        )
+    }
 }
 
 @MainActor

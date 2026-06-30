@@ -244,7 +244,4 @@ extension Tab {
         )
     }
 
-    private var reloadPolicyRuntime: TabReloadPolicyRuntime {
-        TabReloadPolicyRuntime.live(browserManager: browserManager)
-    }
 }
