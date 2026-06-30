@@ -82,32 +82,3 @@ final class BrowserWindowVisualMutationOwner {
             || currentTab.isFreezingNavigationStateDuringBackForwardGesture
     }
 }
-
-extension BrowserWindowVisualMutationOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            hasActiveHistorySwipe: { [weak browserManager] windowId in
-                browserManager?.webViewCoordinator?.hasActiveHistorySwipe(in: windowId) == true
-            },
-            currentTab: { [weak browserManager] windowState in
-                browserManager?.currentTab(for: windowState)
-            },
-            performImmediateVisualHandoffIfPossible: { [weak browserManager] windowId in
-                browserManager?.webViewCoordinator?.performImmediateVisualHandoffIfPossible(
-                    in: windowId
-                ) ?? false
-            },
-            prepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.webViewCoordinator?.prepareVisibleWebViews(
-                    for: windowState
-                ) ?? false
-            },
-            schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
-                browserManager?.webViewCoordinator?.schedulePrepareVisibleWebViews(
-                    for: windowState
-                )
-            }
-        )
-    }
-}

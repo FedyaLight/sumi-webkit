@@ -276,7 +276,29 @@ class BrowserManager: ObservableObject {
     private var browsingDataRetentionObserverToken: NSObjectProtocol?
     private var startupProtectionRuntime: BrowserStartupProtectionRuntime!
     private lazy var windowVisualMutationOwner = BrowserWindowVisualMutationOwner(
-        dependencies: .live(browserManager: self)
+        dependencies: BrowserWindowVisualMutationOwner.Dependencies(
+            hasActiveHistorySwipe: { [weak self] windowId in
+                self?.webViewCoordinator?.hasActiveHistorySwipe(in: windowId) == true
+            },
+            currentTab: { [weak self] windowState in
+                self?.currentTab(for: windowState)
+            },
+            performImmediateVisualHandoffIfPossible: { [weak self] windowId in
+                self?.webViewCoordinator?.performImmediateVisualHandoffIfPossible(
+                    in: windowId
+                ) ?? false
+            },
+            prepareVisibleWebViews: { [weak self] windowState in
+                self?.webViewCoordinator?.prepareVisibleWebViews(
+                    for: windowState
+                ) ?? false
+            },
+            schedulePrepareVisibleWebViews: { [weak self] windowState in
+                self?.webViewCoordinator?.schedulePrepareVisibleWebViews(
+                    for: windowState
+                )
+            }
+        )
     )
     lazy var windowHistorySessionOwner = BrowserWindowHistorySessionOwner(
         dependencies: .live(browserManager: self)
