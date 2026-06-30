@@ -40,23 +40,10 @@ struct SumiApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView(
-                windowLifecycleHandler: browserManager,
-                browserContext: .live(browserManager: browserManager),
+            rootContentView(
+                windowState: nil,
                 initialWorkspaceTheme: browserManager.startupWorkspaceTheme
             )
-                .ignoresSafeArea(.all)
-                .writingToolsBehavior(.disabled)
-                .environmentObject(browserManager.glanceManager)
-                .environmentObject(browserManager.extensionSurfaceStore)
-                .environmentObject(nowPlayingController)
-                .environment(windowRegistry)
-                .environment(webViewCoordinator)
-                .environment(\.sumiSettings, settingsManager)
-                .environment(\.sumiModuleRegistry, browserManager.moduleRegistry)
-                .environment(\.sumiExtensionsModule, browserManager.extensionsModule)
-                .environment(\.sumiUserscriptsModule, browserManager.userscriptsModule)
-                .environment(keyboardShortcutManager)
                 .onAppear {
                     setupApplicationLifecycle()
                 }
@@ -127,6 +114,22 @@ struct SumiApp: App {
         )
     }
 
+    private func rootContentView(
+        windowState: BrowserWindowState?,
+        initialWorkspaceTheme: WorkspaceTheme?
+    ) -> some View {
+        Self.makeRootContentView(
+            browserManager: browserManager,
+            settingsManager: settingsManager,
+            keyboardShortcutManager: keyboardShortcutManager,
+            nowPlayingController: nowPlayingController,
+            windowRegistry: windowRegistry,
+            webViewCoordinator: webViewCoordinator,
+            windowState: windowState,
+            initialWorkspaceTheme: initialWorkspaceTheme
+        )
+    }
+
     private static func makeWindowShellContentView(
         browserManager: BrowserManager,
         settingsManager: SumiSettingsService,
@@ -136,13 +139,38 @@ struct SumiApp: App {
         webViewCoordinator: WebViewCoordinator,
         windowState: BrowserWindowState
     ) -> NSView {
-        let contentView = ContentView(
-            windowLifecycleHandler: browserManager,
-            browserContext: .live(browserManager: browserManager),
+        let contentView = makeRootContentView(
+            browserManager: browserManager,
+            settingsManager: settingsManager,
+            keyboardShortcutManager: keyboardShortcutManager,
+            nowPlayingController: nowPlayingController,
+            windowRegistry: windowRegistry,
+            webViewCoordinator: webViewCoordinator,
             windowState: windowState,
             initialWorkspaceTheme: browserManager.tabManager.currentSpace?.workspaceTheme
         )
+
+        return NSHostingView(rootView: contentView)
+    }
+
+    private static func makeRootContentView(
+        browserManager: BrowserManager,
+        settingsManager: SumiSettingsService,
+        keyboardShortcutManager: KeyboardShortcutManager,
+        nowPlayingController: SumiNativeNowPlayingController,
+        windowRegistry: WindowRegistry,
+        webViewCoordinator: WebViewCoordinator,
+        windowState: BrowserWindowState?,
+        initialWorkspaceTheme: WorkspaceTheme?
+    ) -> some View {
+        ContentView(
+            windowLifecycleHandler: browserManager,
+            browserContext: .live(browserManager: browserManager),
+            windowState: windowState,
+            initialWorkspaceTheme: initialWorkspaceTheme
+        )
             .ignoresSafeArea(.all)
+            .writingToolsBehavior(.disabled)
             .environmentObject(browserManager.glanceManager)
             .environmentObject(browserManager.extensionSurfaceStore)
             .environmentObject(nowPlayingController)
@@ -154,7 +182,5 @@ struct SumiApp: App {
             .environment(\.sumiExtensionsModule, browserManager.extensionsModule)
             .environment(\.sumiUserscriptsModule, browserManager.userscriptsModule)
             .environment(keyboardShortcutManager)
-
-        return NSHostingView(rootView: contentView)
     }
 }
