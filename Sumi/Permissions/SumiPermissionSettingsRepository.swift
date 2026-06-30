@@ -48,18 +48,26 @@ final class SumiPermissionSettingsRepository {
         self.now = now
     }
 
-    convenience init(browserManager: BrowserManager) {
+    convenience init(
+        permissionRuntime: BrowserManagerPermissionRuntime,
+        dataServices: BrowserManagerDataServices,
+        autoplayStore: SumiAutoplayPolicyStoreAdapter = .shared,
+        userDefaults: UserDefaults = .standard,
+        now: @escaping () -> Date = Date.init
+    ) {
         self.init(
-            coordinator: browserManager.permissionCoordinator,
-            systemPermissionService: browserManager.systemPermissionService,
-            autoplayStore: .shared,
-            recentActivityStore: browserManager.permissionRecentActivityStore,
-            siteActivityStore: browserManager.permissionSiteActivityStore,
-            blockedPopupStore: browserManager.blockedPopupStore,
-            externalSchemeSessionStore: browserManager.externalSchemeSessionStore,
-            indicatorEventStore: browserManager.permissionIndicatorEventStore,
-            websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService,
-            permissionCleanupService: browserManager.permissionCleanupService
+            coordinator: permissionRuntime.permissionCoordinator,
+            systemPermissionService: permissionRuntime.systemPermissionService,
+            autoplayStore: autoplayStore,
+            recentActivityStore: permissionRuntime.permissionRecentActivityStore,
+            siteActivityStore: permissionRuntime.permissionSiteActivityStore,
+            blockedPopupStore: permissionRuntime.blockedPopupStore,
+            externalSchemeSessionStore: permissionRuntime.externalSchemeSessionStore,
+            indicatorEventStore: permissionRuntime.permissionIndicatorEventStore,
+            websiteDataCleanupService: dataServices.websiteDataCleanupService,
+            permissionCleanupService: permissionRuntime.permissionCleanupService,
+            userDefaults: userDefaults,
+            now: now
         )
     }
 

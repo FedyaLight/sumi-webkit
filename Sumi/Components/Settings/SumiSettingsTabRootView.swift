@@ -319,7 +319,10 @@ struct SumiSettingsTabRootView: View {
             SettingsPerformanceTab()
         case .privacy:
             PrivacySettingsView(
-                repository: SumiPermissionSettingsRepository(browserManager: browserManager),
+                repository: SumiPermissionSettingsRepository(
+                    permissionRuntime: browserManager.permissionRuntime,
+                    dataServices: browserManager.dataServices
+                ),
                 activeProfile: activePrivacyProfile
             )
         case .profiles:

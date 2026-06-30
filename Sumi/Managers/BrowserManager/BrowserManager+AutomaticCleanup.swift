@@ -5,7 +5,10 @@ extension BrowserManager {
         for profile: Profile?
     ) async -> SumiPermissionCleanupResult? {
         guard let profile else { return nil }
-        let repository = SumiPermissionSettingsRepository(browserManager: self)
+        let repository = SumiPermissionSettingsRepository(
+            permissionRuntime: permissionRuntime,
+            dataServices: dataServices
+        )
         return await repository.runAutomaticCleanupIfNeeded(
             profile: SumiPermissionSettingsProfileContext(profile: profile)
         )
