@@ -57,6 +57,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let webViewConfigurationOwner = TabWebViewConfigurationOwner()
     let normalWebViewSetupOwner = TabNormalWebViewSetupOwner()
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
+    let configurationPolicyWebViewReplacementContextOwner =
+        TabConfigurationPolicyWebViewReplacementContextOwner()
     lazy var profileWebViewCreationGate = TabProfileWebViewCreationGate(
         dependencies: .live(tab: self)
     )

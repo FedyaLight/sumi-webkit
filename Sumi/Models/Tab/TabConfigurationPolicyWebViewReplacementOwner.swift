@@ -20,6 +20,59 @@ struct TabConfigurationPolicyWebViewReplacementContext {
 }
 
 @MainActor
+final class TabConfigurationPolicyWebViewReplacementContextOwner {
+    func makeContext(for tab: Tab) -> TabConfigurationPolicyWebViewReplacementContext {
+        TabConfigurationPolicyWebViewReplacementContext(
+            tabId: tab.id,
+            existingWebView: {
+                tab.existingWebView
+            },
+            primaryWindowId: tab.primaryWindowId,
+            trackedWindowIdContainingWebView: { webView in
+                tab.browserManager?.webViewCoordinator?.windowID(containing: webView)
+            },
+            hasTrackedWebViews: { tabId in
+                tab.browserManager?.webViewCoordinator?.windowIDs(for: tabId).isEmpty == false
+            },
+            setTrackedWebView: { webView, tabId, windowId in
+                tab.browserManager?.webViewCoordinator?.setWebView(
+                    webView,
+                    for: tabId,
+                    in: windowId
+                )
+            },
+            makeNormalTabWebView: { reason in
+                tab.makeNormalTabWebView(reason: reason)
+            },
+            invalidateCurrentPermissionPageForWebViewReplacement: { reason in
+                tab.invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
+            },
+            removeTrackedWebViews: {
+                tab.browserManager?.webViewCoordinator?.removeAllWebViews(for: tab) ?? false
+            },
+            cleanupCloneWebView: { webView in
+                tab.cleanupCloneWebView(webView)
+            },
+            clearCurrentWebViewOwnership: {
+                tab.clearCurrentWebViewOwnership()
+            },
+            replaceUntrackedWebView: { webView in
+                tab.replaceUntrackedWebView(webView)
+            },
+            assignWebViewToWindow: { webView, windowId in
+                tab.assignWebViewToWindow(webView, windowId: windowId)
+            },
+            refreshWindowAfterWebViewReplacement: { windowId in
+                guard let browserManager = tab.browserManager,
+                      let windowState = browserManager.windowRegistry?.windows[windowId]
+                else { return }
+                browserManager.refreshCompositor(for: windowState)
+            }
+        )
+    }
+}
+
+@MainActor
 final class TabConfigurationPolicyWebViewReplacementOwner {
     @discardableResult
     func replaceNormalWebView(

@@ -237,57 +237,9 @@ extension Tab {
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
             profile: resolveProfile(),
-            replacementContext: configurationPolicyWebViewReplacementContext(),
+            replacementContext: configurationPolicyWebViewReplacementContextOwner.makeContext(for: self),
             publishNavigationStateChangeIfNeeded: { didChange in
                 self.publishNavigationStateChangeIfNeeded(didChange)
-            }
-        )
-    }
-
-    private func configurationPolicyWebViewReplacementContext() -> TabConfigurationPolicyWebViewReplacementContext {
-        TabConfigurationPolicyWebViewReplacementContext(
-            tabId: id,
-            existingWebView: { self.existingWebView },
-            primaryWindowId: primaryWindowId,
-            trackedWindowIdContainingWebView: { webView in
-                self.browserManager?.webViewCoordinator?.windowID(containing: webView)
-            },
-            hasTrackedWebViews: { tabId in
-                self.browserManager?.webViewCoordinator?.windowIDs(for: tabId).isEmpty == false
-            },
-            setTrackedWebView: { webView, tabId, windowId in
-                self.browserManager?.webViewCoordinator?.setWebView(
-                    webView,
-                    for: tabId,
-                    in: windowId
-                )
-            },
-            makeNormalTabWebView: { reason in
-                self.makeNormalTabWebView(reason: reason)
-            },
-            invalidateCurrentPermissionPageForWebViewReplacement: { reason in
-                self.invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
-            },
-            removeTrackedWebViews: {
-                self.browserManager?.webViewCoordinator?.removeAllWebViews(for: self) ?? false
-            },
-            cleanupCloneWebView: { webView in
-                self.cleanupCloneWebView(webView)
-            },
-            clearCurrentWebViewOwnership: {
-                self.clearCurrentWebViewOwnership()
-            },
-            replaceUntrackedWebView: { webView in
-                self.replaceUntrackedWebView(webView)
-            },
-            assignWebViewToWindow: { webView, windowId in
-                self.assignWebViewToWindow(webView, windowId: windowId)
-            },
-            refreshWindowAfterWebViewReplacement: { windowId in
-                guard let browserManager = self.browserManager,
-                      let windowState = browserManager.windowRegistry?.windows[windowId]
-                else { return }
-                browserManager.refreshCompositor(for: windowState)
             }
         )
     }
