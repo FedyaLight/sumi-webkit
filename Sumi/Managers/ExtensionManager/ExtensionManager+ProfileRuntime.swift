@@ -534,12 +534,10 @@ extension ExtensionManager {
     }
 
     func resolvedLiveWebView(for tab: Tab) -> WKWebView? {
-        if let browserManager {
-            let windowId = browserManager.windowState(containing: tab)?.id ?? tab.primaryWindowId
-            if let windowId,
-               let webView = browserManager.windowOwnedWebView(for: tab, in: windowId) {
-                return webView
-            }
+        let windowId = runtime.windowStateContainingTab(tab)?.id ?? tab.primaryWindowId
+        if let windowId,
+           let webView = runtime.windowOwnedWebView(tab, windowId) {
+            return webView
         }
 
         return ownedUntrackedCurrentWebView(for: tab)
@@ -651,7 +649,7 @@ extension ExtensionManager {
         }
 
         if needsRebuild,
-           let coordinator = browserManager?.webViewCoordinator {
+           runtime.browserRuntimeAvailable() {
             extensionRuntimeTrace(
                 "ensureExtensionControllerAttachedForTab rebuild reason=\(reason) controllerMismatch=true contentScriptRebind=\(tabNeedsExtensionContentScriptRebind(tab)) \(extensionRuntimeTabDescription(tab))"
             )
@@ -668,7 +666,7 @@ extension ExtensionManager {
                 )
             )
             tab.extensionPageRuntimeOwner.resetDocumentBindingForContentScriptRebind()
-            coordinator.rebuildLiveWebViews(for: tab)
+            runtime.rebuildLiveWebViews(tab)
             // WebKit only injects manifest content scripts when the controller is on the
             // configuration before navigation; allow `notifyTabOpenedIfNeeded` to run again.
             tab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()

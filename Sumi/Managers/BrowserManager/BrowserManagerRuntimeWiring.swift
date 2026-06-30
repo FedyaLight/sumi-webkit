@@ -704,6 +704,30 @@ extension ExtensionManagerRuntime {
             windowState: { [weak browserManager] windowId in
                 browserManager?.windowRegistry?.windows[windowId]
             },
+            activeWindowState: { [weak browserManager] in
+                browserManager?.windowRegistry?.activeWindow
+            },
+            allTabs: { [weak browserManager] in
+                browserManager?.tabManager.allTabs() ?? []
+            },
+            allWindowStates: { [weak browserManager] in
+                browserManager?.windowRegistry?.allWindows ?? []
+            },
+            windowStateContainingTab: { [weak browserManager] tab in
+                browserManager?.windowState(containing: tab)
+            },
+            windowOwnedWebView: { [weak browserManager] tab, windowId in
+                browserManager?.windowOwnedWebView(for: tab, in: windowId)
+            },
+            trackedWebViews: { [weak browserManager] tabId in
+                browserManager?.webViewCoordinator?.getAllWebViews(for: tabId) ?? []
+            },
+            rebuildLiveWebViews: { [weak browserManager] tab in
+                browserManager?.webViewCoordinator?.rebuildLiveWebViews(for: tab)
+            },
+            browserRuntimeAvailable: { [weak browserManager] in
+                browserManager != nil
+            },
             extensionsModuleEnabled: { [weak browserManager] in
                 browserManager?.extensionsModule.isEnabled
             }

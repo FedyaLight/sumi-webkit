@@ -634,7 +634,7 @@ extension ExtensionManager {
         if let owningTab,
            didAttach == false,
            webViewNeedsExtensionRuntimeRebuild(webView, for: owningTab),
-           let coordinator = browserManager?.webViewCoordinator {
+           runtime.browserRuntimeAvailable() {
             SafariExtensionPermissionLifecycleDiagnostics.logReloadRebuild(
                 SafariExtensionReloadRebuildSnapshot(
                     triggerReason: reason,
@@ -647,7 +647,7 @@ extension ExtensionManager {
                     action: .destructiveRebuild
                 )
             )
-            coordinator.rebuildLiveWebViews(for: owningTab)
+            runtime.rebuildLiveWebViews(owningTab)
             owningTab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
             registerTabWithExtensionRuntime(
                 owningTab,

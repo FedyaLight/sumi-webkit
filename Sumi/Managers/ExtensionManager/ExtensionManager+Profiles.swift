@@ -10,14 +10,14 @@ extension ExtensionManager {
         browserBridgeContext = browserManager
         runtime = .live(browserManager: browserManager)
 
-        if browserManager.windowRegistry?.activeWindow == nil,
-           let currentProfile = browserManager.currentProfile {
+        if runtime.activeWindowState() == nil,
+           let currentProfile = runtime.currentProfile() {
             switchProfile(profileId: currentProfile.id)
         }
 
         if let controller = extensionController {
             extensionRuntimeTrace(
-                "attach browserManager controller=\(extensionRuntimeControllerDescription(controller)) windows=\(browserManager.windowRegistry?.allWindows.count ?? 0) tabs=\(browserManager.tabManager.allTabs().count)"
+                "attach browserManager controller=\(extensionRuntimeControllerDescription(controller)) windows=\(runtime.allWindowStates().count) tabs=\(runtime.allTabs().count)"
             )
             if let profileId = currentProfileId {
                 updateWebViewsForProfile(profileId)
@@ -680,7 +680,7 @@ extension ExtensionManager {
             extensionRuntimeTrace(
                 "runtimeTeardown rebuildLiveWebViews reason=\(reason) \(extensionRuntimeTabDescription(tab))"
             )
-            browserManager?.webViewCoordinator?.rebuildLiveWebViews(for: tab)
+            runtime.rebuildLiveWebViews(tab)
         }
     }
 
@@ -693,20 +693,13 @@ extension ExtensionManager {
     }
 
     private func pruneRuntimeAdapters() {
-        if let browserManager {
-            let liveTabIDs = Set(
-                browserManager.tabManager.allTabs().map(\.id)
-                    + (browserManager.windowRegistry?.allWindows ?? [])
-                    .flatMap(\.ephemeralTabs)
-                    .map(\.id)
-            )
-            let liveWindowIDs = Set(
-                browserManager.windowRegistry?.windows.keys.map { $0 } ?? []
-            )
-            adapterStore.prune(liveTabIDs: liveTabIDs, liveWindowIDs: liveWindowIDs)
-        } else {
-            adapterStore.removeTabAndWindowAdapters()
-        }
+        let windowStates = runtime.allWindowStates()
+        let liveTabIDs = Set(
+            runtime.allTabs().map(\.id)
+                + windowStates.flatMap(\.ephemeralTabs).map(\.id)
+        )
+        let liveWindowIDs = Set(windowStates.map(\.id))
+        adapterStore.prune(liveTabIDs: liveTabIDs, liveWindowIDs: liveWindowIDs)
     }
 
     func validateExpectedExtensionLoadGeneration(_ expectedGeneration: UInt64?) throws {
@@ -828,10 +821,8 @@ extension ExtensionManager {
     }
 
     func allKnownTabs() -> [Tab] {
-        guard let browserManager else { return [] }
-
-        var tabs = browserManager.tabManager.allTabs()
-        for windowState in browserManager.windowRegistry?.allWindows ?? [] {
+        var tabs = runtime.allTabs()
+        for windowState in runtime.allWindowStates() {
             tabs.append(contentsOf: windowState.ephemeralTabs)
         }
 
@@ -839,18 +830,18 @@ extension ExtensionManager {
     }
 
     func liveWebViews(for tab: Tab) -> [WKWebView] {
-        guard let browserManager else { return [] }
+        guard runtime.browserRuntimeAvailable() else { return [] }
 
         var webViews: [WKWebView] = []
 
         if let primaryWindowId = tab.primaryWindowId,
-           let webView = browserManager.windowOwnedWebView(for: tab, in: primaryWindowId) {
+           let webView = runtime.windowOwnedWebView(tab, primaryWindowId) {
             webViews.append(webView)
         }
         if let webView = ownedUntrackedCurrentWebView(for: tab) {
             webViews.append(webView)
         }
-        webViews.append(contentsOf: browserManager.webViewCoordinator?.getAllWebViews(for: tab.id) ?? [])
+        webViews.append(contentsOf: runtime.trackedWebViews(tab.id))
 
         var uniqueWebViews: [WKWebView] = []
         var seen: Set<ObjectIdentifier> = []
