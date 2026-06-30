@@ -271,6 +271,9 @@ class BrowserManager: ObservableObject {
     private lazy var windowSessionActivationOwner = BrowserWindowSessionActivationOwner(
         dependencies: .live(browserManager: self)
     )
+    lazy var startupPolicyOwner = BrowserStartupPolicyOwner(
+        dependencies: .live(browserManager: self)
+    )
 
     private func adoptProfileIfNeeded(
         for windowState: BrowserWindowState, context: ProfileSwitchContext
