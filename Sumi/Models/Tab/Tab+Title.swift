@@ -43,9 +43,9 @@ extension Tab {
                 self.persistenceRuntimeCallbacks.scheduleRuntimeStatePersistence(self)
             },
             notifyTitleChangedToExtensions: {
-                self.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(
+                self.extensionPropertiesRuntime.notifyTabPropertiesChanged(
                     self,
-                    properties: [.title]
+                    [.title]
                 )
             },
             recordHistoryTitle: { title in

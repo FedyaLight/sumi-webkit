@@ -90,6 +90,20 @@ extension TabHistorySwipeRuntime {
 }
 
 @MainActor
+extension TabExtensionPropertiesRuntime {
+    static func live(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
+        Self(
+            notifyTabPropertiesChanged: { tab, properties in
+                extensionsModule()?.notifyTabPropertiesChangedIfLoaded(
+                    tab,
+                    properties: properties
+                )
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabFindInPageRuntime {
     static func live(
         activeWindowId: @escaping () -> UUID?,

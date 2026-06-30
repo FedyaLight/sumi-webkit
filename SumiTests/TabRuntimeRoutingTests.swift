@@ -57,11 +57,15 @@ final class TabRuntimeRoutingTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         let persistence = RecordingTabPersistenceCallbacks()
+        let extensionProperties = RecordingTabExtensionPropertiesRuntime()
         tab.persistenceRuntimeCallbacks = persistence.runtime
+        tab.extensionPropertiesRuntime = extensionProperties.runtime
 
         XCTAssertTrue(tab.acceptResolvedDisplayTitle("Updated"))
 
         XCTAssertEqual(persistence.persistedTabIds, [tab.id])
+        XCTAssertEqual(extensionProperties.tabIds, [tab.id])
+        XCTAssertEqual(extensionProperties.properties, [[.title]])
     }
 
     func testHistoryRecorderUsesInjectedRuntimeWithoutBrowserManager() throws {
@@ -199,6 +203,21 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(
             tab.url.absoluteString,
             "https://search.example/?q=sumi%20browser"
+        )
+    }
+}
+
+@MainActor
+private final class RecordingTabExtensionPropertiesRuntime {
+    private(set) var tabIds: [UUID] = []
+    private(set) var properties: [WKWebExtension.TabChangedProperties] = []
+
+    var runtime: TabExtensionPropertiesRuntime {
+        TabExtensionPropertiesRuntime(
+            notifyTabPropertiesChanged: { [weak self] tab, properties in
+                self?.tabIds.append(tab.id)
+                self?.properties.append(properties)
+            }
         )
     }
 }

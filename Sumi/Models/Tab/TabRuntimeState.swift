@@ -113,6 +113,18 @@ struct TabFindInPageRuntime {
 }
 
 @MainActor
+struct TabExtensionPropertiesRuntime {
+    var notifyTabPropertiesChanged: (
+        _ tab: Tab,
+        _ properties: WKWebExtension.TabChangedProperties
+    ) -> Void
+
+    static let inactive = Self(
+        notifyTabPropertiesChanged: { _, _ in }
+    )
+}
+
+@MainActor
 struct TabProfileResolutionRuntime {
     var ephemeralProfileForTab: (_ tabId: UUID, _ profileId: UUID) -> Profile?
     var profile: (UUID) -> Profile?
@@ -214,6 +226,7 @@ final class TabNavigationRuntime {
     var historySwipeRuntime = TabHistorySwipeRuntime.inactive
     var historyRecordingRuntime = TabHistoryRecordingRuntime.inactive
     var findInPageRuntime = TabFindInPageRuntime.inactive
+    var extensionPropertiesRuntime = TabExtensionPropertiesRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
     var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
     var reloadPolicyRuntime = TabReloadPolicyRuntime.empty

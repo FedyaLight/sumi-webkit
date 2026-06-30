@@ -194,6 +194,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.findInPageRuntime }
         set { navigationRuntime.findInPageRuntime = newValue }
     }
+    var extensionPropertiesRuntime: TabExtensionPropertiesRuntime {
+        get { navigationRuntime.extensionPropertiesRuntime }
+        set { navigationRuntime.extensionPropertiesRuntime = newValue }
+    }
     var navigationCommandRuntime: TabNavigationCommandRuntime {
         get { navigationRuntime.navigationCommandRuntime }
         set { navigationRuntime.navigationCommandRuntime = newValue }
@@ -382,6 +386,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.getWebView(for: tabId, in: windowId)
                     }
                 )
+                extensionPropertiesRuntime = .live(extensionsModule: { [weak browserManager] in
+                    browserManager?.extensionsModule
+                })
             } else {
                 webViewRoutingRuntime = .inactive
                 persistenceRuntimeCallbacks = .inactive
@@ -389,6 +396,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 historySwipeRuntime = .inactive
                 historyRecordingRuntime = .inactive
                 findInPageRuntime = .inactive
+                extensionPropertiesRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive
                 reloadPolicyRuntime = .empty
