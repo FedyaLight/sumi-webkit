@@ -20,19 +20,16 @@ final class SumiBookmarkMenuSnapshotStore: ObservableObject {
 }
 
 struct SumiBookmarksCommands: Commands {
-    let browserManager: BrowserManager
-    private let faviconService: any BrowserFaviconServicing
+    let browserContext: SumiCommandsBrowserContext
     @ObservedObject private var bookmarkManager: SumiBookmarkManager
     @ObservedObject private var snapshotStore: SumiBookmarkMenuSnapshotStore
     @ObservedObject private var menuFaviconInvalidator = SumiMenuFaviconInvalidator.shared
 
     init(
-        browserManager: BrowserManager,
-        faviconService: any BrowserFaviconServicing
+        browserContext: SumiCommandsBrowserContext
     ) {
-        self.browserManager = browserManager
-        self.faviconService = faviconService
-        let bookmarkManager = browserManager.bookmarkManager
+        self.browserContext = browserContext
+        let bookmarkManager = browserContext.bookmarkManager
         self.bookmarkManager = bookmarkManager
         self.snapshotStore = SumiBookmarkMenuSnapshotStore(bookmarkManager: bookmarkManager)
     }
@@ -44,7 +41,7 @@ struct SumiBookmarksCommands: Commands {
 
     private var bookmarkMenuFaviconPartition: SumiFaviconPartition {
         _ = menuFaviconInvalidator.revision
-        return faviconService.partition(profile: browserManager.currentProfile)
+        return browserContext.faviconPartition
     }
 
     var body: some Commands {
@@ -53,32 +50,30 @@ struct SumiBookmarksCommands: Commands {
             let faviconPartition = bookmarkMenuFaviconPartition
 
             Button("Bookmark This Page…") {
-                browserManager.requestBookmarkEditorForActiveWindowFromMenu()
+                browserContext.requestBookmarkEditorForActiveWindowFromMenu()
             }
             .keyboardShortcut("d", modifiers: .command)
-            .disabled(
-                !bookmarkManager.canBookmark(browserManager.activePageTabForActiveWindow())
-            )
+            .disabled(!browserContext.canBookmarkActivePage)
 
             Button("Bookmark All Tabs…") {
-                browserManager.bookmarkAllTabsFromMenu()
+                browserContext.bookmarkAllTabsFromMenu()
             }
             .keyboardShortcut("d", modifiers: [.command, .shift])
-            .disabled(!browserManager.canBookmarkAllTabsInActiveWindow())
+            .disabled(!browserContext.canBookmarkAllTabsInActiveWindow)
 
             Button("Manage Bookmarks") {
-                browserManager.manageBookmarksFromMenu()
+                browserContext.manageBookmarksFromMenu()
             }
             .keyboardShortcut("b", modifiers: [.command, .option])
 
             Divider()
 
             Button("Import Bookmarks…") {
-                browserManager.importBookmarksFromMenu()
+                browserContext.importBookmarksFromMenu()
             }
 
             Button("Export Bookmarks…") {
-                browserManager.exportBookmarksFromMenu()
+                browserContext.exportBookmarksFromMenu()
             }
             .disabled(!bookmarkSnapshot.hasBookmarks)
 
@@ -91,7 +86,7 @@ struct SumiBookmarksCommands: Commands {
             } else {
                 SumiBookmarkCommandItems(
                     entities: bookmarkChildren,
-                    browserManager: browserManager,
+                    browserContext: browserContext,
                     faviconPartition: faviconPartition
                 )
             }
@@ -101,14 +96,14 @@ struct SumiBookmarksCommands: Commands {
 
 private struct SumiBookmarkCommandItems: View {
     let entities: [SumiBookmarkEntity]
-    let browserManager: BrowserManager
+    let browserContext: SumiCommandsBrowserContext
     let faviconPartition: SumiFaviconPartition
 
     var body: some View {
         ForEach(entities) { entity in
             SumiBookmarkCommandItem(
                 entity: entity,
-                browserManager: browserManager,
+                browserContext: browserContext,
                 faviconPartition: faviconPartition
             )
         }
@@ -117,7 +112,7 @@ private struct SumiBookmarkCommandItems: View {
 
 private struct SumiBookmarkCommandItem: View {
     let entity: SumiBookmarkEntity
-    let browserManager: BrowserManager
+    let browserContext: SumiCommandsBrowserContext
     let faviconPartition: SumiFaviconPartition
 
     var body: some View {
@@ -129,7 +124,7 @@ private struct SumiBookmarkCommandItem: View {
                 } else {
                     SumiBookmarkCommandItems(
                         entities: entity.children,
-                        browserManager: browserManager,
+                        browserContext: browserContext,
                         faviconPartition: faviconPartition
                     )
                 }
@@ -142,7 +137,7 @@ private struct SumiBookmarkCommandItem: View {
         } else {
             Button {
                 if let url = entity.url {
-                    browserManager.openBookmarkURLFromMenuItem(url)
+                    browserContext.openBookmarkURLFromMenuItem(url)
                 }
             } label: {
                 SumiCommandMenuLabels.site(

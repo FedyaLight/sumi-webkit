@@ -9,17 +9,18 @@ import AppKit
 import SwiftUI
 
 struct SumiCommands: Commands {
-    let browserManager: BrowserManager
+    let browserContext: SumiCommandsBrowserContext
     let windowRegistry: WindowRegistry
     let shortcutManager: KeyboardShortcutManager
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @Environment(\.sumiSettings) var sumiSettings
 
     init(browserManager: BrowserManager, windowRegistry: WindowRegistry, shortcutManager: KeyboardShortcutManager) {
-        self.browserManager = browserManager
+        let browserContext = SumiCommandsBrowserContext(browserManager: browserManager)
+        self.browserContext = browserContext
         self.windowRegistry = windowRegistry
         self.shortcutManager = shortcutManager
-        self.recentlyClosedManager = browserManager.recentlyClosedManager
+        self.recentlyClosedManager = browserContext.recentlyClosedManager
     }
 
     // MARK: - Dynamic Keyboard Shortcuts
@@ -44,7 +45,7 @@ struct SumiCommands: Commands {
             keyWindow.performClose(nil)
             return
         }
-        browserManager.closeCurrentTab()
+        browserContext.closeCurrentTab()
     }
 
     private func closeKeyWindowOrSumiBrowserWindow() {
@@ -52,14 +53,14 @@ struct SumiCommands: Commands {
             keyWindow.performClose(nil)
             return
         }
-        browserManager.closeActiveWindow()
+        browserContext.closeActiveWindow()
     }
 
     @CommandsBuilder
     private var applicationCommands: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About Sumi") {
-                browserManager.openSettingsTab(selecting: .about)
+                browserContext.openSettingsTab(selecting: .about)
             }
         }
 
@@ -67,13 +68,13 @@ struct SumiCommands: Commands {
             SumiCheckForUpdatesCommand(updaterService: SumiUpdaterService.shared)
             Divider()
             Button("Make Sumi Default Browser") {
-                browserManager.setAsDefaultBrowser()
+                browserContext.setAsDefaultBrowser()
             }
         }
 
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") {
-                browserManager.openSettingsTab(selecting: sumiSettings.currentSettingsTab)
+                browserContext.openSettingsTab(selecting: sumiSettings.currentSettingsTab)
             }
             .keyboardShortcut(",", modifiers: .command)
         }
@@ -86,54 +87,52 @@ struct SumiCommands: Commands {
     @CommandsBuilder
     private var secondaryCommandMenus: some Commands {
         SumiHistoryCommands(
-            browserManager: browserManager,
-            shortcutManager: shortcutManager,
-            faviconService: browserManager.dataServices.faviconService
+            browserContext: browserContext,
+            shortcutManager: shortcutManager
         )
 
         SumiBookmarksCommands(
-            browserManager: browserManager,
-            faviconService: browserManager.dataServices.faviconService
+            browserContext: browserContext
         )
 
         CommandMenu("Extensions") {
             Button("Manage Extensions...") {
-                browserManager.openSettingsTab(selecting: .extensions)
+                browserContext.openSettingsTab(selecting: .extensions)
             }
             #if DEBUG
             Divider()
             Button("Run Safari Extension Acceptance Check") {
-                browserManager.extensionsModule.printSafariExtensionAcceptanceCheckToConsole()
+                browserContext.printSafariExtensionAcceptanceCheckToConsole()
             }
-            .disabled(browserManager.extensionsModule.isEnabled == false)
+            .disabled(browserContext.extensionsDiagnosticsAreEnabled == false)
             Button("Run Safari Extension Native Messaging Probe") {
-                browserManager.extensionsModule.printSafariExtensionNativeMessagingProbeToConsole()
+                browserContext.printSafariExtensionNativeMessagingProbeToConsole()
             }
-            .disabled(browserManager.extensionsModule.isEnabled == false)
+            .disabled(browserContext.extensionsDiagnosticsAreEnabled == false)
             Button("Run Safari Extension Dev Diagnostics Report") {
-                browserManager.extensionsModule.printSafariExtensionDevDiagnosticsReportToConsole()
+                browserContext.printSafariExtensionDevDiagnosticsReportToConsole()
             }
-            .disabled(browserManager.extensionsModule.isEnabled == false)
+            .disabled(browserContext.extensionsDiagnosticsAreEnabled == false)
             #endif
         }
 
         CommandMenu("Privacy") {
             Button("Clear Cookies for Current Site") {
-                browserManager.clearCurrentPageCookies()
+                browserContext.clearCurrentPageCookies()
             }
-            .disabled(browserManager.activePageURLForActiveWindow()?.host == nil)
+            .disabled(browserContext.activePageHost == nil)
 
             Button("Clear Browsing History") {
-                browserManager.clearAllHistoryFromMenu()
+                browserContext.clearAllHistoryFromMenu()
             }
         }
 
         CommandMenu("Appearance") {
             Button("Customize Space Gradient...") {
-                browserManager.showGradientEditor()
+                browserContext.showGradientEditor()
             }
             .modifier(dynamicShortcut(.customizeSpaceGradient))
-            .disabled(browserManager.tabManager.currentSpace == nil)
+            .disabled(browserContext.canCustomizeSpaceGradient == false)
         }
     }
 
@@ -143,7 +142,7 @@ struct SumiCommands: Commands {
         }
         CommandGroup(replacing: .appTermination) {
             Button("Quit Sumi") {
-                browserManager.showQuitDialog()
+                browserContext.showQuitDialog()
             }
             .keyboardShortcut("q", modifiers: [.command])
         }
@@ -184,7 +183,7 @@ struct SumiCommands: Commands {
         // Edit Section
         CommandGroup(replacing: .undoRedo) {
             Button("Undo Close Tab") {
-                browserManager.undoCloseTab()
+                browserContext.undoCloseTab()
             }
             .modifier(dynamicShortcut(.undoCloseTab))
             .disabled(recentlyClosedManager.canReopenRecentlyClosedItem == false)
@@ -193,41 +192,37 @@ struct SumiCommands: Commands {
         // File Section
         CommandGroup(after: .newItem) {
             Button("New Tab") {
-                browserManager.openNewTabSurfaceInActiveWindow()
+                browserContext.openNewTabSurfaceInActiveWindow()
             }
             .modifier(dynamicShortcut(.newTab))
             Button("New Window") {
-                browserManager.createNewWindow()
+                browserContext.createNewWindow()
             }
             .modifier(dynamicShortcut(.newWindow))
 
             Button("New Incognito Window") {
-                browserManager.createIncognitoWindow()
+                browserContext.createIncognitoWindow()
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
 
             Divider()
             Button("Open Command Bar") {
-                let currentURL = browserManager.activePageURLForActiveWindow()?.absoluteString ?? ""
-                browserManager.focusFloatingBarForActiveWindow(
-                    prefill: currentURL,
-                    navigateCurrentTab: true
-                )
+                browserContext.openCommandBarForActivePage()
             }
             .modifier(dynamicShortcut(.focusAddressBar))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil)
+            .disabled(browserContext.hasActivePageTab == false)
 
             Button("Copy Current URL") {
-                browserManager.copyCurrentURL()
+                browserContext.copyCurrentURL()
             }
             .modifier(dynamicShortcut(.copyCurrentURL))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil)
+            .disabled(browserContext.hasActivePageTab == false)
         }
 
         // Sidebar commands
         CommandGroup(after: .sidebar) {
             Button("Toggle Sidebar") {
-                browserManager.toggleSidebar()
+                browserContext.toggleSidebar()
             }
             .modifier(dynamicShortcut(.toggleSidebar))
         }
@@ -235,71 +230,65 @@ struct SumiCommands: Commands {
         // View commands
         CommandGroup(after: .windowSize) {
             Button("Find in Page") {
-                browserManager.showFindBar()
+                browserContext.showFindBar()
             }
             .modifier(dynamicShortcut(.findInPage))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil)
+            .disabled(browserContext.hasActivePageTab == false)
 
             Button("Reload Page") {
-                browserManager.refreshCurrentTabInActiveWindow()
+                browserContext.refreshCurrentTabInActiveWindow()
             }
             .modifier(dynamicShortcut(.refresh))
-            .disabled(
-                browserManager.activePageTabForActiveWindow() == nil
-                    || browserManager.activePageTabForActiveWindow()?.representsSumiNativeSurface == true
-            )
+            .disabled(browserContext.canReloadActivePage == false)
 
             Divider()
 
             Button("Zoom In") {
-                browserManager.zoomInCurrentTab()
+                browserContext.zoomInCurrentTab()
             }
             .modifier(dynamicShortcut(.zoomIn))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil)
+            .disabled(browserContext.hasActivePageTab == false)
 
             Button("Zoom Out") {
-                browserManager.zoomOutCurrentTab()
+                browserContext.zoomOutCurrentTab()
             }
             .modifier(dynamicShortcut(.zoomOut))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil)
+            .disabled(browserContext.hasActivePageTab == false)
 
             Button("Actual Size") {
-                browserManager.resetZoomCurrentTab()
+                browserContext.resetZoomCurrentTab()
             }
             .modifier(dynamicShortcut(.actualSize))
-            .disabled(browserManager.activePageTabForActiveWindow() == nil)
+            .disabled(browserContext.hasActivePageTab == false)
 
             Divider()
 
             Button("Hard Reload (Ignore Cache)") {
-                browserManager.hardReloadCurrentPage()
+                browserContext.hardReloadCurrentPage()
             }
             .modifier(dynamicShortcut(.hardReload))
-            .disabled(
-                browserManager.activePageTabForActiveWindow() == nil
-                    || browserManager.activePageTabForActiveWindow()?.representsSumiNativeSurface == true
-            )
+            .disabled(browserContext.canReloadActivePage == false)
 
             Divider()
 
             Button("Web Inspector") {
-                browserManager.openWebInspector()
+                browserContext.openWebInspector()
             }
             .modifier(dynamicShortcut(.openDevTools))
             .disabled(
-                browserManager.activePageTabForActiveWindow() == nil
+                browserContext.hasActivePageTab == false
                     || !RuntimeDiagnostics.isDeveloperInspectionEnabled
             )
 
             Divider()
 
-            Button(browserManager.currentTabIsMuted() ? "Unmute Audio" : "Mute Audio") {
-                browserManager.toggleMuteCurrentTabInActiveWindow()
+            Button(browserContext.currentTabIsMuted ? "Unmute Audio" : "Mute Audio") {
+                browserContext.toggleMuteCurrentTabInActiveWindow()
             }
             .modifier(dynamicShortcut(.muteUnmuteAudio))
             .disabled(
-                browserManager.activePageTabForActiveWindow() == nil
-                    || !browserManager.currentTabHasAudioContent())
+                browserContext.hasActivePageTab == false
+                    || !browserContext.currentTabHasAudioContent)
         }
 
         secondaryCommandMenus

@@ -1,23 +1,20 @@
 import SwiftUI
 
 struct SumiHistoryCommands: Commands {
-    let browserManager: BrowserManager
+    let browserContext: SumiCommandsBrowserContext
     let shortcutManager: KeyboardShortcutManager
-    private let faviconService: any BrowserFaviconServicing
     @ObservedObject private var historyManager: HistoryManager
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @ObservedObject private var menuFaviconInvalidator = SumiMenuFaviconInvalidator.shared
 
     init(
-        browserManager: BrowserManager,
-        shortcutManager: KeyboardShortcutManager,
-        faviconService: any BrowserFaviconServicing
+        browserContext: SumiCommandsBrowserContext,
+        shortcutManager: KeyboardShortcutManager
     ) {
-        self.browserManager = browserManager
+        self.browserContext = browserContext
         self.shortcutManager = shortcutManager
-        self.faviconService = faviconService
-        self.historyManager = browserManager.historyManager
-        self.recentlyClosedManager = browserManager.recentlyClosedManager
+        self.historyManager = browserContext.historyManager
+        self.recentlyClosedManager = browserContext.recentlyClosedManager
     }
 
     private func dynamicShortcut(_ action: ShortcutAction) -> some ViewModifier {
@@ -31,7 +28,7 @@ struct SumiHistoryCommands: Commands {
 
     private var historyMenuFaviconPartition: SumiFaviconPartition {
         _ = menuFaviconInvalidator.revision
-        return faviconService.partition(profile: browserManager.currentProfile)
+        return browserContext.faviconPartition
     }
 
     private var recentVisitedItems: [HistoryListItem] {
@@ -44,16 +41,16 @@ struct SumiHistoryCommands: Commands {
             let faviconPartition = historyMenuFaviconPartition
 
             Button("Back") {
-                browserManager.goBackInActiveWindow()
+                browserContext.goBackInActiveWindow()
             }
             .modifier(dynamicShortcut(.goBack))
-            .disabled(!browserManager.canGoBackInActiveWindow)
+            .disabled(!browserContext.canGoBackInActiveWindow)
 
             Button("Forward") {
-                browserManager.goForwardInActiveWindow()
+                browserContext.goForwardInActiveWindow()
             }
             .modifier(dynamicShortcut(.goForward))
-            .disabled(!browserManager.canGoForwardInActiveWindow)
+            .disabled(!browserContext.canGoForwardInActiveWindow)
 
             Divider()
 
@@ -64,7 +61,7 @@ struct SumiHistoryCommands: Commands {
                     return "Reopen Last Closed Tab"
                 } ?? "Reopen Last Closed Tab"
             ) {
-                browserManager.reopenMostRecentClosedItem()
+                browserContext.reopenMostRecentClosedItem()
             }
             .modifier(dynamicShortcut(.undoCloseTab))
             .disabled(recentlyClosedManager.canReopenRecentlyClosedItem == false)
@@ -77,7 +74,7 @@ struct SumiHistoryCommands: Commands {
                 } else {
                     ForEach(recentlyClosedItems) { item in
                         Button {
-                            browserManager.reopenRecentlyClosedItem(item)
+                            browserContext.reopenRecentlyClosedItem(item)
                         } label: {
                             switch item {
                             case .tab(let tab):
@@ -111,9 +108,9 @@ struct SumiHistoryCommands: Commands {
             .disabled(recentlyClosedManager.items.isEmpty)
 
             Button("Reopen All Windows From Last Session") {
-                browserManager.reopenAllWindowsFromLastSession()
+                browserContext.reopenAllWindowsFromLastSession()
             }
-            .disabled(!browserManager.canRestoreAnyLastSession)
+            .disabled(!browserContext.canRestoreAnyLastSession)
 
             Divider()
 
@@ -124,7 +121,7 @@ struct SumiHistoryCommands: Commands {
 
                 ForEach(visits) { visit in
                     Button {
-                        browserManager.openHistoryURLFromMenuItem(visit.url)
+                        browserContext.openHistoryURLFromMenuItem(visit.url)
                     } label: {
                         SumiCommandMenuLabels.site(
                             visit.displayTitle,
@@ -138,14 +135,14 @@ struct SumiHistoryCommands: Commands {
             Divider()
 
             Button("Show All History") {
-                browserManager.showHistory()
+                browserContext.showHistory()
             }
             .modifier(dynamicShortcut(.viewHistory))
 
             Divider()
 
             Button("Clear All History") {
-                browserManager.clearAllHistoryFromMenu()
+                browserContext.clearAllHistoryFromMenu()
             }
             .keyboardShortcut(.delete, modifiers: [.command, .shift])
             .disabled(!historyManager.canClearHistory)
