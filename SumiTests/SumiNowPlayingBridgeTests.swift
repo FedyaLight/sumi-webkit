@@ -105,3 +105,115 @@ final class SumiNativeNowPlayingControllerFeatureGateTests: XCTestCase {
         )
     }
 }
+
+@MainActor
+final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
+    func testRuntimeCandidatesSkipIncognitoPreferPlayingTabsAndFallbackToCurrentTab() {
+        let playingTab = makeTab("https://example.com/playing")
+        playingTab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let pausedCandidate = makeTab("https://example.com/paused-candidate")
+        let fallbackCurrentTab = makeTab("https://example.org/current")
+        let incognitoPlayingTab = makeTab("https://private.example/playing")
+        incognitoPlayingTab.applyAudioState(.unmuted(isPlayingAudio: true))
+
+        let regularWindow = BrowserWindowState()
+        let fallbackWindow = BrowserWindowState()
+        let incognitoWindow = BrowserWindowState()
+        incognitoWindow.isIncognito = true
+
+        let context = SumiNativeNowPlayingRuntimeContext.live(
+            runtime: SumiNativeNowPlayingBrowserRuntime(
+                windowStates: { [regularWindow, fallbackWindow, incognitoWindow] },
+                windowState: { _ in nil },
+                currentTab: { windowState in
+                    windowState === fallbackWindow ? fallbackCurrentTab : pausedCandidate
+                },
+                mediaCandidateTabs: { windowState in
+                    if windowState === regularWindow {
+                        return [pausedCandidate, playingTab]
+                    }
+                    if windowState === incognitoWindow {
+                        return [incognitoPlayingTab]
+                    }
+                    return []
+                },
+                tab: { _ in nil },
+                resolvedNowPlayingWebView: { _, _ in nil },
+                selectTab: { _, _ in }
+            )
+        )
+
+        let candidates = context.candidateTabs()
+
+        XCTAssertEqual(candidates.map { $0.tab.id }, [playingTab.id, fallbackCurrentTab.id])
+        XCTAssertIdentical(candidates[0].windowState, regularWindow)
+        XCTAssertIdentical(candidates[1].windowState, fallbackWindow)
+    }
+
+    func testRuntimeCandidateDiscoveryDeduplicatesTabsAcrossWindows() {
+        let sharedPlayingTab = makeTab("https://example.com/shared")
+        sharedPlayingTab.applyAudioState(.unmuted(isPlayingAudio: true))
+        let firstWindow = BrowserWindowState()
+        let secondWindow = BrowserWindowState()
+
+        let context = SumiNativeNowPlayingRuntimeContext.live(
+            runtime: SumiNativeNowPlayingBrowserRuntime(
+                windowStates: { [firstWindow, secondWindow] },
+                windowState: { _ in nil },
+                currentTab: { _ in sharedPlayingTab },
+                mediaCandidateTabs: { _ in [sharedPlayingTab] },
+                tab: { _ in nil },
+                resolvedNowPlayingWebView: { _, _ in nil },
+                selectTab: { _, _ in }
+            )
+        )
+
+        let candidates = context.candidateTabs()
+
+        XCTAssertEqual(candidates.count, 1)
+        XCTAssertIdentical(candidates.first?.windowState, firstWindow)
+    }
+
+    func testRuntimeResolvedTabUsesIncognitoEphemeralThenWindowCandidateThenTabLookup() {
+        let ephemeralTab = makeTab("https://private.example/tab")
+        let visibleCandidate = makeTab("https://example.com/visible")
+        let lookupTab = makeTab("https://example.com/lookup")
+        let incognitoWindow = BrowserWindowState()
+        incognitoWindow.isIncognito = true
+        incognitoWindow.ephemeralTabs = [ephemeralTab]
+        let regularWindow = BrowserWindowState()
+
+        let context = SumiNativeNowPlayingRuntimeContext.live(
+            runtime: SumiNativeNowPlayingBrowserRuntime(
+                windowStates: { [regularWindow, incognitoWindow] },
+                windowState: { windowId in
+                    if windowId == regularWindow.id { return regularWindow }
+                    if windowId == incognitoWindow.id { return incognitoWindow }
+                    return nil
+                },
+                currentTab: { _ in nil },
+                mediaCandidateTabs: { windowState in
+                    windowState === regularWindow ? [visibleCandidate] : []
+                },
+                tab: { tabId in
+                    tabId == lookupTab.id ? lookupTab : nil
+                },
+                resolvedNowPlayingWebView: { _, _ in nil },
+                selectTab: { _, _ in }
+            )
+        )
+
+        XCTAssertIdentical(context.windowState(regularWindow.id), regularWindow)
+        XCTAssertIdentical(context.resolvedTab(ephemeralTab.id, incognitoWindow), ephemeralTab)
+        XCTAssertIdentical(context.resolvedTab(visibleCandidate.id, regularWindow), visibleCandidate)
+        XCTAssertIdentical(context.resolvedTab(lookupTab.id, regularWindow), lookupTab)
+        XCTAssertNil(context.resolvedTab(lookupTab.id, incognitoWindow))
+    }
+
+    private func makeTab(_ url: String) -> Tab {
+        Tab(
+            url: URL(string: url)!,
+            loadsCachedFaviconOnInit: false
+        )
+    }
+}

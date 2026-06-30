@@ -1,6 +1,17 @@
 import Foundation
 
 @MainActor
+struct SumiNativeNowPlayingBrowserRuntime {
+    let windowStates: @MainActor () -> [BrowserWindowState]
+    let windowState: @MainActor (UUID) -> BrowserWindowState?
+    let currentTab: @MainActor (BrowserWindowState) -> Tab?
+    let mediaCandidateTabs: @MainActor (BrowserWindowState) -> [Tab]
+    let tab: @MainActor (UUID) -> Tab?
+    let resolvedNowPlayingWebView: @MainActor (Tab, BrowserWindowState) -> SumiNowPlayingWebViewAdapter?
+    let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
+}
+
+@MainActor
 struct SumiNativeNowPlayingRuntimeContext {
     typealias Candidate = (tab: Tab, windowState: BrowserWindowState)
 
@@ -12,24 +23,19 @@ struct SumiNativeNowPlayingRuntimeContext {
 }
 
 extension SumiNativeNowPlayingRuntimeContext {
-    static func live(browserManager: BrowserManager) -> Self {
+    static func live(runtime: SumiNativeNowPlayingBrowserRuntime) -> Self {
         Self(
-            candidateTabs: { [weak browserManager] in
-                guard let browserManager,
-                      let windowRegistry = browserManager.windowRegistry else {
-                    return []
-                }
-
+            candidateTabs: {
                 var candidates: [Candidate] = []
                 var seen = Set<UUID>()
 
-                for windowState in windowRegistry.windows.values {
+                for windowState in runtime.windowStates() {
                     guard !windowState.isIncognito else { continue }
 
-                    let scopedTabs = browserManager.windowScopedMediaCandidateTabs(in: windowState)
+                    let scopedTabs = runtime.mediaCandidateTabs(windowState)
                     let preferredTabs = scopedTabs.filter { $0.audioState.isPlayingAudio }
                     let discoveryTabs = preferredTabs.isEmpty
-                        ? [browserManager.currentTab(for: windowState)].compactMap { $0 }
+                        ? [runtime.currentTab(windowState)].compactMap { $0 }
                         : preferredTabs
 
                     for tab in discoveryTabs {
@@ -40,31 +46,26 @@ extension SumiNativeNowPlayingRuntimeContext {
 
                 return candidates
             },
-            windowState: { [weak browserManager] windowId in
-                browserManager?.windowRegistry?.windows[windowId]
+            windowState: { windowId in
+                runtime.windowState(windowId)
             },
-            resolvedTab: { [weak browserManager] tabId, windowState in
-                guard let browserManager else { return nil }
+            resolvedTab: { tabId, windowState in
                 if windowState.isIncognito {
                     return windowState.ephemeralTabs.first(where: { $0.id == tabId })
                 }
 
-                if let visibleTab = browserManager.windowScopedMediaCandidateTabs(in: windowState)
+                if let visibleTab = runtime.mediaCandidateTabs(windowState)
                     .first(where: { $0.id == tabId }) {
                     return visibleTab
                 }
 
-                return browserManager.tabManager.tab(for: tabId)
+                return runtime.tab(tabId)
             },
-            resolvedNowPlayingWebView: { [weak browserManager] tab, windowState in
-                guard let browserManager else { return nil }
-                return tab.authoritativeMediaWebView(
-                    using: browserManager,
-                    in: windowState
-                )
+            resolvedNowPlayingWebView: { tab, windowState in
+                runtime.resolvedNowPlayingWebView(tab, windowState)
             },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
+            selectTab: { tab, windowState in
+                runtime.selectTab(tab, windowState)
             }
         )
     }

@@ -167,7 +167,9 @@ struct SidebarBrowserContext {
             configureMediaStore: { [weak browserManager] mediaStore, windowState in
                 guard let browserManager else { return }
                 mediaStore.configure(
-                    context: SumiNativeNowPlayingRuntimeContext.live(browserManager: browserManager),
+                    context: BrowserManagerRuntimeWiring.nativeNowPlayingRuntimeContext(
+                        for: browserManager
+                    ),
                     windowState: windowState
                 )
             },

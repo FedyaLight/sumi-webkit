@@ -5,10 +5,9 @@ import WebKit
 @MainActor
 extension Tab {
     func authoritativeMediaWebView(
-        using browserManager: BrowserManager,
-        in windowState: BrowserWindowState
+        resolvedWindowWebView: WKWebView?
     ) -> WKWebView? {
-        browserManager.getWebView(for: id, in: windowState.id)
+        resolvedWindowWebView
             ?? assignedWebView
             ?? existingWebView
     }

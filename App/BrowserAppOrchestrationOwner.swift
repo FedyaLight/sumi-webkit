@@ -51,7 +51,7 @@ final class BrowserAppOrchestrationOwner {
 
         nowPlayingController.setFeatureEnabled(settingsManager.sidebarMiniPlayerEnabled)
         nowPlayingController.configure(
-            context: SumiNativeNowPlayingRuntimeContext.live(browserManager: browserManager)
+            context: BrowserManagerRuntimeWiring.nativeNowPlayingRuntimeContext(for: browserManager)
         )
         browserManager.tabManager.sumiSettings = settingsManager
 
