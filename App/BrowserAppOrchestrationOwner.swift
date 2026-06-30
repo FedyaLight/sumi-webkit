@@ -61,7 +61,11 @@ final class BrowserAppOrchestrationOwner {
         browserManager.tabManager.sumiSettings = settingsManager
 
         dependencies.startUpdater()
-        keyboardShortcutManager.setBrowserManager(browserManager)
+        keyboardShortcutManager.attach(
+            actionRouter: browserManager,
+            chromeRouter: browserManager,
+            windowRegistry: windowRegistry
+        )
 
         windowLifecycleOwner.attachIfNeeded(
             dependencies: .live(

@@ -75,10 +75,14 @@ class KeyboardShortcutManager {
         }
     }
 
-    func setBrowserManager(_ manager: BrowserManager) {
-        shortcutActionRouter = manager
-        chromeRouter = manager
-        windowRegistry = manager.windowRegistry
+    func attach(
+        actionRouter: any ShortcutActionRouting,
+        chromeRouter: any KeyboardShortcutChromeRouting,
+        windowRegistry: WindowRegistry?
+    ) {
+        shortcutActionRouter = actionRouter
+        self.chromeRouter = chromeRouter
+        self.windowRegistry = windowRegistry
     }
 
     var shortcuts: [KeyboardShortcut] {
