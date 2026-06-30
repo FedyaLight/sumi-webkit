@@ -97,3 +97,6 @@ docs/*
 !docs/RELEASES.md
 !docs/appcast-alpha.xml
 !docs/appcast.xml
+!docs/refactor/
+docs/refactor/*
+!docs/refactor/*.md

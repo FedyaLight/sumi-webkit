@@ -1,6 +1,6 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-06-12 (Cycle 17 extension-popup login routing and reload stability)
+Last updated: 2026-06-30 (modernization audit and Safari-native runtime guardrails)
 
 Sumi targets native Safari Web Extension support through public WebKit APIs
 (`WKWebExtension`, `WKWebExtensionContext`, `WKWebExtensionController`,
@@ -10,6 +10,17 @@ controlled Chrome compatibility popups are out of scope and must not return.
 Deployment target remains **macOS 15.7** until a specific API is confirmed to
 require macOS 27. Local SDK (Xcode macOS SDK) exposes `WKWebExtension` from
 **macOS 15.4+** including `extensionWithAppExtensionBundle:completionHandler:`.
+
+## Modernization Audit Guardrails (2026-06-30)
+
+- Production Swift has no active `ChromeMV3`, CRX installer,
+  `sumiExternallyConnectableRuntime`, `SUMI_EC_PAGE_BRIDGE`,
+  `setupExternallyConnectableBridge`, or `patchManifestForWebKit` paths.
+- Remaining Chrome MV3 / externally-connectable references in this document are
+  historical regression guardrails for removed code and should not be treated as
+  active runtime architecture.
+- `docs/architecture.md` now describes the active Safari-native
+  `WKWebExtension` architecture and does not require Chrome MV3 cleanup.
 
 ## Cycle 17 Extension Popup Routing and Reload Stability (2026-06-12)
 
@@ -324,7 +335,7 @@ Evidence base:
 | Compat JS bundle | `ExtensionRuntimeResources/*.js` | **Deleted in Cycle 11** — `webkit_runtime_compat*`, `externally_connectable_*`, `selective_content_script_guard` |
 | Page-world EC bridge injection | `SumiExternallyConnectableUserScript` | **Removed in Cycle 11** — normal tabs no longer inject compat bridge scripts |
 | Externally-connectable native relay (legacy) | `ExtensionManager+ExternallyConnectableNativeMessaging` | **Deleted in Cycle 13** — no active registration or runtime dependency |
-| Architecture doc wording | `docs/architecture.md` | Still says "Chrome MV3" — update in cleanup phase |
+| Architecture doc wording | `docs/architecture.md` | Current architecture wording is Safari-native; no Chrome MV3 cleanup remains |
 | Stale test guards | `SumiPerformanceModularRegressionTests`, `NativeMessagingProcessSessionTests` | Assert old `ChromeMV3*` symbols absent (good) |
 
 No production `ChromeMV3NativeMessagingInternalRuntime` or CRX installer found.

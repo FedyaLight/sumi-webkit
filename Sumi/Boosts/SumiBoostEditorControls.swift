@@ -60,29 +60,3 @@ struct SumiBoostActionButton: View {
             : SumiBoostEditorStyle.primaryText(for: colorScheme)
     }
 }
-
-private struct SumiBoostZapSelectorRow: View {
-    let selector: String
-    let onHover: (Bool) -> Void
-    let onRemove: () -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(selector)
-                .font(.system(size: 11, design: .monospaced))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button("Remove", systemImage: "xmark.circle.fill", action: onRemove)
-                .labelStyle(.iconOnly)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 5)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .onHover(perform: onHover)
-    }
-}
