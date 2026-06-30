@@ -96,7 +96,10 @@ final class WindowViewBrowserContext {
         _ hoverSidebarManager: HoverSidebarManager,
         windowState: BrowserWindowState
     ) {
-        hoverSidebarManager.attach(browserManager: browserManager, windowState: windowState)
+        hoverSidebarManager.attach(
+            runtime: .live(browserManager: browserManager),
+            windowState: windowState
+        )
     }
 
     func websiteViewBrowserContext(sidebarDragState: SidebarDragState) -> WebsiteViewBrowserContext {

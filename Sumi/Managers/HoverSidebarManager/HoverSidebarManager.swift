@@ -88,6 +88,17 @@ enum HoverSidebarOverlayHostLifecycleState: Equatable {
     case visible
 }
 
+@MainActor
+struct HoverSidebarRuntime {
+    let browserRuntimeAvailable: @MainActor () -> Bool
+    let settings: @MainActor () -> SumiSettingsService?
+
+    static let inactive = HoverSidebarRuntime(
+        browserRuntimeAvailable: { false },
+        settings: { nil }
+    )
+}
+
 /// Manages reveal/hide of the overlay sidebar when the real sidebar is collapsed.
 /// Uses a local monitor for in-app hover and drag responsiveness without global
 /// event monitoring.
@@ -117,8 +128,8 @@ final class HoverSidebarManager: ObservableObject {
     var inactiveHostRetentionDelay: TimeInterval
 
     // MARK: - Dependencies
-    weak var browserManager: BrowserManager?
     weak var windowRegistry: WindowRegistry?
+    private var runtime = HoverSidebarRuntime.inactive
     private var hostedWindowId: UUID?
 
     // MARK: - Monitors
@@ -147,8 +158,8 @@ final class HoverSidebarManager: ObservableObject {
     }
 
     // MARK: - Lifecycle
-    func attach(browserManager: BrowserManager, windowState: BrowserWindowState) {
-        self.browserManager = browserManager
+    func attach(runtime: HoverSidebarRuntime, windowState: BrowserWindowState) {
+        self.runtime = runtime
         hostedWindowId = windowState.id
     }
 
@@ -258,7 +269,7 @@ final class HoverSidebarManager: ObservableObject {
 
     @MainActor
     private func handleMouseMovementOnMain() {
-        guard browserManager != nil,
+        guard runtime.browserRuntimeAvailable(),
               let registry = windowRegistry,
               let hostedWindowId,
               registry.activeWindowId == hostedWindowId,
@@ -446,7 +457,7 @@ final class HoverSidebarManager: ObservableObject {
 
     private func shouldCompletePendingPointerReveal(sidebarPosition: SidebarPosition) -> Bool {
         guard isActive,
-              browserManager != nil,
+              runtime.browserRuntimeAvailable(),
               let registry = windowRegistry,
               let hostedWindowId,
               registry.activeWindowId == hostedWindowId,
@@ -502,7 +513,7 @@ final class HoverSidebarManager: ObservableObject {
 
     private func sidebarOverlayAnimation(fallbackDuration: TimeInterval) -> Animation? {
         SidebarMotionPolicy.overlayAnimation(
-            for: SidebarMotionPolicy.appKitCurrentMode(settings: browserManager?.sumiSettings)
+            for: SidebarMotionPolicy.appKitCurrentMode(settings: runtime.settings())
         )
             ?? .easeOut(duration: fallbackDuration)
     }

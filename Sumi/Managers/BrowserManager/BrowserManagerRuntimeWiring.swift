@@ -803,6 +803,19 @@ extension TabManagerRuntimeContext {
     }
 }
 
+extension HoverSidebarRuntime {
+    static func live(browserManager: BrowserManager) -> Self {
+        HoverSidebarRuntime(
+            browserRuntimeAvailable: { [weak browserManager] in
+                browserManager != nil
+            },
+            settings: { [weak browserManager] in
+                browserManager?.sumiSettings
+            }
+        )
+    }
+}
+
 extension SumiScriptsManagerRuntime {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
