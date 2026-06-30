@@ -718,7 +718,7 @@ extension ExtensionManager {
         allowWhenExtensionsNotLoaded: Bool = false
     ) {
         guard extensionControllersByProfile[profileId] != nil else { return }
-        guard browserManager != nil else { return }
+        guard runtime.browserRuntimeAvailable() else { return }
 
         for tab in allKnownTabs() {
             guard resolvedProfileId(for: tab) == profileId else { continue }

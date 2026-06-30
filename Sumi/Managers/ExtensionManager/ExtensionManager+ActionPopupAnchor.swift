@@ -217,7 +217,7 @@ extension ExtensionManager {
     }
 
     private func urlHubFallbackAnchorView(for windowId: UUID) -> NSView? {
-        browserManager?.urlBarHubPopoverPresenter.anchorView(for: windowId)
+        browserBridgeContext?.extensionURLHubFallbackAnchorView(for: windowId)
     }
 
     private func resolveActionPopupTargetWindow(

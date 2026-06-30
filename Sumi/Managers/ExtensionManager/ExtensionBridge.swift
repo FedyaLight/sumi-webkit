@@ -94,6 +94,7 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
         extensionManager: ExtensionManager,
         parentWindow: NSWindow?
     ) async -> ExtensionMiniWindowAdapter?
+    func extensionURLHubFallbackAnchorView(for windowId: UUID) -> NSView?
 }
 
 @available(macOS 15.5, *)
@@ -406,6 +407,10 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
             extensionManager: extensionManager,
             parentWindow: parentWindow
         )
+    }
+
+    func extensionURLHubFallbackAnchorView(for windowId: UUID) -> NSView? {
+        urlBarHubPopoverPresenter.anchorView(for: windowId)
     }
 }
 
