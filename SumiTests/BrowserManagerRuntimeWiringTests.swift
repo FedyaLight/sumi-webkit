@@ -27,6 +27,46 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
     }
 
+    func testDetachedRuntimeTabContextMenuForegroundOpenDoesNotUseActiveWindow() throws {
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Detached Runtime Source")
+        let activeTab = browserManager.tabManager.createNewTab(
+            url: "https://active.example",
+            in: space,
+            activate: true
+        )
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = activeTab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        let detachedTab = Tab(
+            url: URL(string: "https://detached.example")!,
+            loadsCachedFaviconOnInit: false
+        )
+        detachedTab.spaceId = space.id
+        detachedTab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+
+        let targetURL = URL(string: "https://detached-target.example")!
+        detachedTab.openContextMenuURLInForegroundTab(targetURL)
+
+        XCTAssertFalse(
+            browserManager.tabManager.allTabs().contains { $0.url == targetURL },
+            "Detached tab runtime actions must not retarget through the active window."
+        )
+        XCTAssertEqual(windowState.currentTabId, activeTab.id)
+    }
+
     private func compositorManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry

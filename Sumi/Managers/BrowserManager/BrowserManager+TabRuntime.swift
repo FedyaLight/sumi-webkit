@@ -342,7 +342,6 @@ extension BrowserManager {
             openURLInForegroundTab: { [weak self] url, tab in
                 guard let self,
                       let windowState = windowState(containing: tab)
-                        ?? windowRegistry?.activeWindow
                 else { return }
 
                 _ = openNewTab(
@@ -370,13 +369,8 @@ extension BrowserManager {
             },
             isCurrentTab: { [weak self] tab in
                 guard let self else { return false }
-                if let windowState = windowState(containing: tab) {
-                    return currentTab(for: windowState)?.id == tab.id
-                }
-                if let activeWindow = windowRegistry?.activeWindow {
-                    return currentTab(for: activeWindow)?.id == tab.id
-                }
-                return false
+                guard let windowState = windowState(containing: tab) else { return false }
+                return currentTab(for: windowState)?.id == tab.id
             },
             activate: { [weak self] tab in
                 self?.tabManager.setActiveTab(tab)
