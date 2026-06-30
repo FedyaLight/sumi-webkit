@@ -237,8 +237,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
                 savedSidebarWidth: sidebarWidth,
                 sidebarContentWidth: sidebarWidth - Double(BrowserWindowState.sidebarHorizontalPadding),
                 isSidebarVisible: true,
-                floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
-                splitSession: nil
+                floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
             )
         )
     }

@@ -105,8 +105,7 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
                 )
             ),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
-            splitSession: nil
+            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
         )
     }
 }

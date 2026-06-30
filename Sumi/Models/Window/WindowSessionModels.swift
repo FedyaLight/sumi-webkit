@@ -56,30 +56,21 @@ struct GlanceSessionSnapshot: Codable, Equatable, Hashable {
     var originRectInWindow: GlanceSessionRectSnapshot?
 }
 
-// Legacy decoder only. New split groups are persisted with tab snapshots.
+// Decode-only compatibility for window snapshots written before split groups moved
+// into the tab structural store.
 struct LegacySplitSessionSnapshot: Codable, Equatable, Hashable {
     var leftTabId: UUID
     var rightTabId: UUID
     var dividerFraction: Double
     var activeSideRawValue: String?
     var orientation: LegacySplitOrientation
-}
 
-enum LegacySplitSessionMigrator {
-    @MainActor
-    static func makeSplitGroup(
-        from snapshot: LegacySplitSessionSnapshot,
-        tabManager: TabManager
-    ) -> SplitGroup? {
-        guard let leftTab = tabManager.tab(for: snapshot.leftTabId),
-              let rightTab = tabManager.tab(for: snapshot.rightTabId)
-        else {
-            return nil
-        }
-        return SplitGroup.make(
-            tabIds: [leftTab.id, rightTab.id],
-            layoutKind: snapshot.orientation == .vertical ? .horizontal : .vertical,
-            activeTabId: snapshot.activeSideRawValue == "left" ? leftTab.id : rightTab.id
+    func makeSplitGroup(spaceId: UUID?) -> SplitGroup? {
+        SplitGroup.make(
+            tabIds: [leftTabId, rightTabId],
+            layoutKind: orientation == .vertical ? .horizontal : .vertical,
+            activeTabId: activeSideRawValue == "left" ? leftTabId : rightTabId,
+            host: .regular(spaceId: spaceId)
         )
     }
 }
@@ -101,5 +92,109 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var floatingBarDraft: FloatingBarDraftState
     var activeSplitGroupId: UUID? = nil
     var glanceSession: GlanceSessionSnapshot? = nil
-    var splitSession: LegacySplitSessionSnapshot?
+    var legacySplitSessionForMigration: LegacySplitSessionSnapshot? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case currentTabId
+        case currentSpaceId
+        case currentProfileId
+        case activeShortcutPinId
+        case activeShortcutPinRole
+        case isShowingEmptyState
+        case floatingBarReason
+        case activeTabsBySpace
+        case activeShortcutsBySpace
+        case sidebarWidth
+        case savedSidebarWidth
+        case sidebarContentWidth
+        case isSidebarVisible
+        case floatingBarDraft
+        case activeSplitGroupId
+        case glanceSession
+        case splitSession
+    }
+
+    init(
+        currentTabId: UUID?,
+        currentSpaceId: UUID?,
+        currentProfileId: UUID?,
+        activeShortcutPinId: UUID?,
+        activeShortcutPinRole: ShortcutPinRole?,
+        isShowingEmptyState: Bool,
+        floatingBarReason: FloatingBarPresentationReason?,
+        activeTabsBySpace: [SpaceTabSelectionSnapshot],
+        activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]?,
+        sidebarWidth: Double,
+        savedSidebarWidth: Double,
+        sidebarContentWidth: Double,
+        isSidebarVisible: Bool,
+        floatingBarDraft: FloatingBarDraftState,
+        activeSplitGroupId: UUID? = nil,
+        glanceSession: GlanceSessionSnapshot? = nil
+    ) {
+        self.currentTabId = currentTabId
+        self.currentSpaceId = currentSpaceId
+        self.currentProfileId = currentProfileId
+        self.activeShortcutPinId = activeShortcutPinId
+        self.activeShortcutPinRole = activeShortcutPinRole
+        self.isShowingEmptyState = isShowingEmptyState
+        self.floatingBarReason = floatingBarReason
+        self.activeTabsBySpace = activeTabsBySpace
+        self.activeShortcutsBySpace = activeShortcutsBySpace
+        self.sidebarWidth = sidebarWidth
+        self.savedSidebarWidth = savedSidebarWidth
+        self.sidebarContentWidth = sidebarContentWidth
+        self.isSidebarVisible = isSidebarVisible
+        self.floatingBarDraft = floatingBarDraft
+        self.activeSplitGroupId = activeSplitGroupId
+        self.glanceSession = glanceSession
+        legacySplitSessionForMigration = nil
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        currentTabId = try container.decodeIfPresent(UUID.self, forKey: .currentTabId)
+        currentSpaceId = try container.decodeIfPresent(UUID.self, forKey: .currentSpaceId)
+        currentProfileId = try container.decodeIfPresent(UUID.self, forKey: .currentProfileId)
+        activeShortcutPinId = try container.decodeIfPresent(UUID.self, forKey: .activeShortcutPinId)
+        activeShortcutPinRole = try container.decodeIfPresent(ShortcutPinRole.self, forKey: .activeShortcutPinRole)
+        isShowingEmptyState = try container.decode(Bool.self, forKey: .isShowingEmptyState)
+        floatingBarReason = try container.decodeIfPresent(FloatingBarPresentationReason.self, forKey: .floatingBarReason)
+        activeTabsBySpace = try container.decode([SpaceTabSelectionSnapshot].self, forKey: .activeTabsBySpace)
+        activeShortcutsBySpace = try container.decodeIfPresent(
+            [SpaceShortcutSelectionSnapshot].self,
+            forKey: .activeShortcutsBySpace
+        )
+        sidebarWidth = try container.decode(Double.self, forKey: .sidebarWidth)
+        savedSidebarWidth = try container.decode(Double.self, forKey: .savedSidebarWidth)
+        sidebarContentWidth = try container.decode(Double.self, forKey: .sidebarContentWidth)
+        isSidebarVisible = try container.decode(Bool.self, forKey: .isSidebarVisible)
+        floatingBarDraft = try container.decode(FloatingBarDraftState.self, forKey: .floatingBarDraft)
+        activeSplitGroupId = try container.decodeIfPresent(UUID.self, forKey: .activeSplitGroupId)
+        glanceSession = try container.decodeIfPresent(GlanceSessionSnapshot.self, forKey: .glanceSession)
+        legacySplitSessionForMigration = try container.decodeIfPresent(
+            LegacySplitSessionSnapshot.self,
+            forKey: .splitSession
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(currentTabId, forKey: .currentTabId)
+        try container.encodeIfPresent(currentSpaceId, forKey: .currentSpaceId)
+        try container.encodeIfPresent(currentProfileId, forKey: .currentProfileId)
+        try container.encodeIfPresent(activeShortcutPinId, forKey: .activeShortcutPinId)
+        try container.encodeIfPresent(activeShortcutPinRole, forKey: .activeShortcutPinRole)
+        try container.encode(isShowingEmptyState, forKey: .isShowingEmptyState)
+        try container.encodeIfPresent(floatingBarReason, forKey: .floatingBarReason)
+        try container.encode(activeTabsBySpace, forKey: .activeTabsBySpace)
+        try container.encodeIfPresent(activeShortcutsBySpace, forKey: .activeShortcutsBySpace)
+        try container.encode(sidebarWidth, forKey: .sidebarWidth)
+        try container.encode(savedSidebarWidth, forKey: .savedSidebarWidth)
+        try container.encode(sidebarContentWidth, forKey: .sidebarContentWidth)
+        try container.encode(isSidebarVisible, forKey: .isSidebarVisible)
+        try container.encode(floatingBarDraft, forKey: .floatingBarDraft)
+        try container.encodeIfPresent(activeSplitGroupId, forKey: .activeSplitGroupId)
+        try container.encodeIfPresent(glanceSession, forKey: .glanceSession)
+    }
 }

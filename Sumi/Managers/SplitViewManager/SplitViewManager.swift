@@ -37,7 +37,6 @@ final class SplitViewManager: ObservableObject {
     private var runtime: SplitViewRuntime?
 
     private var transientWindowSplitStates: [UUID: TransientWindowSplitState] = [:]
-    private var pendingLegacySnapshotsByWindow: [UUID: LegacySplitSessionSnapshot] = [:]
     private var emptySplitPlaceholderTabIdsByWindow: [UUID: UUID] = [:]
     private var splitDropTargetResolver = SplitDropTargetResolver()
 
@@ -63,7 +62,6 @@ final class SplitViewManager: ObservableObject {
     }
 
     func splitGroup(for windowId: UUID) -> SplitGroup? {
-        applyPendingLegacySnapshotIfPossible(for: windowId)
         guard let windowState = windowRegistry?.windows[windowId] else { return nil }
         guard let currentTabId = windowState.currentTabId else { return nil }
         return tabManager?.splitGroup(containing: currentTabId)
@@ -120,7 +118,6 @@ final class SplitViewManager: ObservableObject {
 
     func cleanupWindow(_ windowId: UUID) {
         transientWindowSplitStates.removeValue(forKey: windowId)
-        pendingLegacySnapshotsByWindow.removeValue(forKey: windowId)
         emptySplitPlaceholderTabIdsByWindow.removeValue(forKey: windowId)
         syncPublishedStateIfNeeded(for: windowId)
     }
@@ -531,15 +528,6 @@ final class SplitViewManager: ObservableObject {
         refreshWindow(windowId)
     }
 
-    func restoreSession(_ snapshot: LegacySplitSessionSnapshot?, for windowId: UUID) {
-        guard let snapshot else {
-            pendingLegacySnapshotsByWindow.removeValue(forKey: windowId)
-            return
-        }
-        pendingLegacySnapshotsByWindow[windowId] = snapshot
-        applyPendingLegacySnapshotIfPossible(for: windowId)
-    }
-
     private func resolvedSplitTab(
         _ candidate: Tab,
         host: SplitGroupHost,
@@ -801,18 +789,6 @@ final class SplitViewManager: ObservableObject {
 
     private func transientState(for windowId: UUID) -> TransientWindowSplitState {
         transientWindowSplitStates[windowId] ?? TransientWindowSplitState()
-    }
-
-    private func applyPendingLegacySnapshotIfPossible(for windowId: UUID) {
-        guard let snapshot = pendingLegacySnapshotsByWindow[windowId],
-              let tabManager,
-              let group = LegacySplitSessionMigrator.makeSplitGroup(from: snapshot, tabManager: tabManager)
-        else {
-            return
-        }
-        pendingLegacySnapshotsByWindow.removeValue(forKey: windowId)
-        tabManager.upsertSplitGroup(group)
-        notifyChanged(for: windowId)
     }
 
     private func setTransientState(_ state: TransientWindowSplitState, for windowId: UUID) {

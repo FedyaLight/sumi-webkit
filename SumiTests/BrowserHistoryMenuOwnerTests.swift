@@ -125,8 +125,7 @@ final class BrowserHistoryMenuOwnerTests: XCTestCase {
             savedSidebarWidth: 280,
             sidebarContentWidth: 260,
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
-            splitSession: nil
+            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
         )
     }
 }

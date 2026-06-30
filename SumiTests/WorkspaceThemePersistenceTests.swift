@@ -239,8 +239,7 @@ final class WorkspaceThemePersistenceTests: XCTestCase {
                 for: BrowserWindowState.sidebarDefaultWidth
             )),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
-            splitSession: nil
+            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
         )
         harness.defaults.set(try JSONEncoder().encode(snapshot), forKey: sessionKey)
 

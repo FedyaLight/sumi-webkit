@@ -2634,31 +2634,6 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertTrue(decoded.splitGroups.isEmpty)
     }
 
-    func testLegacyWindowSplitSessionMigratesIntoSplitGroup() throws {
-        let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
-        let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
-        let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
-        harness.windowState.currentSpaceId = space.id
-        harness.windowState.currentTabId = left.id
-
-        harness.browserManager.splitManager.restoreSession(
-            LegacySplitSessionSnapshot(
-                leftTabId: left.id,
-                rightTabId: right.id,
-                dividerFraction: 0.4,
-                activeSideRawValue: "right",
-                orientation: .horizontal
-            ),
-            for: harness.windowState.id
-        )
-
-        let group = try XCTUnwrap(harness.tabManager.splitGroup(containing: left.id))
-        XCTAssertEqual(group.tabIds, [left.id, right.id])
-        XCTAssertEqual(group.layoutKind, .vertical)
-        XCTAssertEqual(group.activeTabId, right.id)
-    }
-
     func testLegacyDuplicateAsRegularHelperCreatesRegularCopy() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")

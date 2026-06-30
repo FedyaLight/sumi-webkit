@@ -114,6 +114,10 @@ class BrowserWindowState {
     @ObservationIgnored
     var pendingSessionSplitGroupId: UUID?
 
+    /// Decode-only migrated split group from older window-session snapshots.
+    @ObservationIgnored
+    var pendingSessionLegacySplitGroup: SplitGroup?
+
     /// Window-scoped AppKit coordinator for sidebar context menus.
     @ObservationIgnored
     let sidebarContextMenuController: SidebarContextMenuController

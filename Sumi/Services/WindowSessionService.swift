@@ -312,8 +312,14 @@ private enum WindowSessionSnapshotApplier {
         windowState.isDownloadsPopoverPresented = false
         windowState.floatingBarDraftText = snapshot.floatingBarDraft.text
         windowState.floatingBarDraftNavigatesCurrentTab = snapshot.floatingBarDraft.navigateCurrentTab
-        windowState.pendingSessionSplitGroupId = snapshot.activeSplitGroupId
-        runtime.splitManager.restoreSession(snapshot.splitSession, for: windowState.id)
+        if snapshot.activeSplitGroupId == nil,
+           let legacyGroup = snapshot.legacySplitSessionForMigration?.makeSplitGroup(spaceId: snapshot.currentSpaceId) {
+            windowState.pendingSessionLegacySplitGroup = legacyGroup
+            windowState.pendingSessionSplitGroupId = legacyGroup.id
+        } else {
+            windowState.pendingSessionLegacySplitGroup = nil
+            windowState.pendingSessionSplitGroupId = snapshot.activeSplitGroupId
+        }
         runtime.glanceManager.restoreSession(snapshot.glanceSession, in: windowState)
         runtime.sanitizeFloatingBarState(in: windowState)
     }
@@ -748,6 +754,7 @@ final class WindowSessionService {
         in windowState: BrowserWindowState,
         runtime: WindowSessionRuntime
     ) {
+        restorePendingLegacySplitGroupIfNeeded(in: windowState, runtime: runtime)
         guard let groupId = windowState.pendingSessionSplitGroupId else { return }
         guard let group = runtime.tabManager.splitGroup(with: groupId) else {
             if runtime.tabManager.hasLoadedInitialData {
@@ -758,6 +765,25 @@ final class WindowSessionService {
 
         windowState.pendingSessionSplitGroupId = nil
         runtime.focusSplitGroup(group, in: windowState)
+    }
+
+    private func restorePendingLegacySplitGroupIfNeeded(
+        in windowState: BrowserWindowState,
+        runtime: WindowSessionRuntime
+    ) {
+        guard let group = windowState.pendingSessionLegacySplitGroup else { return }
+        guard runtime.tabManager.hasLoadedInitialData else { return }
+
+        guard group.tabIds.allSatisfy({ runtime.tabManager.tab(for: $0) != nil }) else {
+            windowState.pendingSessionLegacySplitGroup = nil
+            if windowState.pendingSessionSplitGroupId == group.id {
+                windowState.pendingSessionSplitGroupId = nil
+            }
+            return
+        }
+
+        runtime.tabManager.upsertSplitGroup(group)
+        windowState.pendingSessionLegacySplitGroup = nil
     }
 
     func makeWindowSessionSnapshot(
@@ -787,8 +813,7 @@ final class WindowSessionService {
                 navigateCurrentTab: windowState.floatingBarDraftNavigatesCurrentTab
             ),
             activeSplitGroupId: runtime.splitManager.splitGroup(for: windowState.id)?.id,
-            glanceSession: runtime.glanceManager.makeSessionSnapshot(for: windowState),
-            splitSession: nil
+            glanceSession: runtime.glanceManager.makeSessionSnapshot(for: windowState)
         )
     }
 }

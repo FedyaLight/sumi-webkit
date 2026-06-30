@@ -158,7 +158,6 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
 
     private func makeWindowSession(
         currentTabId: UUID? = nil,
-        splitSession: LegacySplitSessionSnapshot? = nil,
         isShowingEmptyState: Bool = false
     ) -> WindowSessionSnapshot {
         WindowSessionSnapshot(
@@ -179,8 +178,7 @@ final class BrowserWindowHistorySessionOwnerTests: XCTestCase {
                 )
             ),
             isSidebarVisible: true,
-            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
-            splitSession: splitSession
+            floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
         )
     }
 }

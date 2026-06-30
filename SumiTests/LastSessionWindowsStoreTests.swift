@@ -58,8 +58,7 @@ final class LastSessionWindowsStoreTests: XCTestCase {
                     for: BrowserWindowState.sidebarDefaultWidth
                 )),
                 isSidebarVisible: true,
-                floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
-                splitSession: nil
+                floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false)
             )
         )
     }

@@ -30,7 +30,7 @@ final class BrowserWindowHistorySessionOwner {
             refreshLastSessionWindowsStore(excludingWindowID: windowId)
             return
         }
-        if snapshot.currentTabId != nil || snapshot.splitSession != nil || !snapshot.isShowingEmptyState {
+        if snapshot.currentTabId != nil || snapshot.activeSplitGroupId != nil || !snapshot.isShowingEmptyState {
             dependencies.recentlyClosedManager().captureClosedWindow(
                 title: dependencies.windowDisplayTitle(windowState),
                 session: snapshot

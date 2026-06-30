@@ -156,8 +156,7 @@ final class WindowSessionServiceTests: XCTestCase {
             savedSidebarWidth: 340,
             sidebarContentWidth: 1,
             isSidebarVisible: false,
-            floatingBarDraft: FloatingBarDraftState(text: "persisted draft", navigateCurrentTab: true),
-            splitSession: nil
+            floatingBarDraft: FloatingBarDraftState(text: "persisted draft", navigateCurrentTab: true)
         )
         let service = WindowSessionService(lastWindowSessionKey: sessionKey)
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
@@ -321,8 +320,7 @@ final class WindowSessionServiceTests: XCTestCase {
             )),
             isSidebarVisible: true,
             floatingBarDraft: FloatingBarDraftState(text: "", navigateCurrentTab: false),
-            activeSplitGroupId: group.id,
-            splitSession: nil
+            activeSplitGroupId: group.id
         )
         let service = WindowSessionService(lastWindowSessionKey: "SumiTests.windowSession.\(UUID().uuidString)")
         let delegate = TestWindowSessionDelegate(tabManager: tabManager)
@@ -333,6 +331,49 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
         XCTAssertEqual(windowState.currentTabId, second.id)
         XCTAssertNil(windowState.pendingSessionSplitGroupId)
+    }
+
+    func testLegacySplitSessionSnapshotMigratesAfterTabLoad() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let space = tabManager.createSpace(name: "Legacy Split", profileId: UUID())
+        let left = tabManager.createNewTab(url: "https://left.example", in: space, activate: true)
+        let right = tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
+        let sessionKey = try seedLegacySplitWindowSession(
+            currentSpaceId: space.id,
+            currentTabId: left.id,
+            leftTabId: left.id,
+            rightTabId: right.id,
+            activeSideRawValue: "right",
+            orientation: "vertical"
+        )
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+
+        let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
+        delegate.windowRegistry = windowRegistry
+        windowRegistry.register(windowState)
+
+        service.setupWindowState(windowState, runtime: delegate.runtime)
+
+        XCTAssertEqual(windowState.currentTabId, left.id)
+        XCTAssertNotNil(windowState.pendingSessionSplitGroupId)
+        XCTAssertNotNil(windowState.pendingSessionLegacySplitGroup)
+        XCTAssertNil(tabManager.splitGroup(containing: left.id))
+
+        tabManager.markInitialDataLoadFinished()
+        service.handleTabManagerDataLoaded(runtime: delegate.runtime)
+
+        let group = try XCTUnwrap(tabManager.splitGroup(containing: left.id))
+        XCTAssertEqual(Set(group.tabIds), Set([left.id, right.id]))
+        XCTAssertEqual(group.layoutKind, .horizontal)
+        XCTAssertEqual(group.activeTabId, right.id)
+        XCTAssertEqual(group.host, .regular(spaceId: space.id))
+        XCTAssertEqual(delegate.focusedSplitGroupIds, [group.id])
+        XCTAssertEqual(windowState.currentTabId, right.id)
+        XCTAssertNil(windowState.pendingSessionSplitGroupId)
+        XCTAssertNil(windowState.pendingSessionLegacySplitGroup)
     }
 
     func testSetupWindowStateFallsBackToDefaultWhenLoadedSpaceIsMissing() async throws {
@@ -414,10 +455,47 @@ final class WindowSessionServiceTests: XCTestCase {
                 for: BrowserWindowState.sidebarDefaultWidth
             )),
             isSidebarVisible: true,
-            floatingBarDraft: floatingBarDraft,
-            splitSession: nil
+            floatingBarDraft: floatingBarDraft
         )
         UserDefaults.standard.set(try JSONEncoder().encode(snapshot), forKey: sessionKey)
+        return sessionKey
+    }
+
+    private func seedLegacySplitWindowSession(
+        currentSpaceId: UUID,
+        currentTabId: UUID,
+        leftTabId: UUID,
+        rightTabId: UUID,
+        activeSideRawValue: String,
+        orientation: String
+    ) throws -> String {
+        let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
+        let payload: [String: Any] = [
+            "currentTabId": currentTabId.uuidString,
+            "currentSpaceId": currentSpaceId.uuidString,
+            "isShowingEmptyState": false,
+            "activeTabsBySpace": [],
+            "activeShortcutsBySpace": [],
+            "sidebarWidth": Double(BrowserWindowState.sidebarDefaultWidth),
+            "savedSidebarWidth": Double(BrowserWindowState.sidebarDefaultWidth),
+            "sidebarContentWidth": Double(BrowserWindowState.sidebarContentWidth(
+                for: BrowserWindowState.sidebarDefaultWidth
+            )),
+            "isSidebarVisible": true,
+            "floatingBarDraft": [
+                "text": "",
+                "navigateCurrentTab": false,
+            ],
+            "splitSession": [
+                "leftTabId": leftTabId.uuidString,
+                "rightTabId": rightTabId.uuidString,
+                "dividerFraction": 0.5,
+                "activeSideRawValue": activeSideRawValue,
+                "orientation": orientation,
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        UserDefaults.standard.set(data, forKey: sessionKey)
         return sessionKey
     }
 }

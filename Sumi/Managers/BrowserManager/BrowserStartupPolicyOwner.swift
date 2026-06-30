@@ -106,7 +106,6 @@ final class BrowserStartupPolicyOwner {
             windowState.currentProfileId = fallbackSpaceId.flatMap { dependencies.space($0)?.profileId }
                 ?? dependencies.currentProfile()?.id
             windowState.isAwaitingInitialSessionResolution = false
-            dependencies.splitManager().restoreSession(nil, for: windowState.id)
             dependencies.glanceManager().restoreSession(nil, in: windowState)
             windowState.refreshCompositor()
         }
