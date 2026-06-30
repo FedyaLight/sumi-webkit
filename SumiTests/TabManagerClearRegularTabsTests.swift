@@ -5,6 +5,23 @@ import XCTest
 
 @MainActor
 final class TabManagerClearRegularTabsTests: XCTestCase {
+    func testRemoveTabUsesRequiredRuntimeWebViewCleanup() throws {
+        var cleanupCalls: [(tabId: UUID, closeActiveFullscreenMedia: Bool)] = []
+        let tabManager = try makeInMemoryTabManager(
+            requireRemoveAllWebViews: { tab, closeActiveFullscreenMedia in
+                cleanupCalls.append((tab.id, closeActiveFullscreenMedia))
+            }
+        )
+        let space = tabManager.createSpace(name: "S", profileId: UUID())
+        let tab = tabManager.createNewTab(in: space, activate: true)
+
+        tabManager.removeTab(tab.id)
+
+        XCTAssertEqual(cleanupCalls.count, 1)
+        XCTAssertEqual(cleanupCalls.first?.tabId, tab.id)
+        XCTAssertEqual(cleanupCalls.first?.closeActiveFullscreenMedia, true)
+    }
+
     func testClearRegularTabs_secondClearRemovesLastActiveTab() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
@@ -178,11 +195,19 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         XCTAssertEqual(tabManager.resolvedFaviconPartition(for: spacePin, currentSpaceId: space.id), .regular(profileId))
     }
 
-    private func makeInMemoryTabManager() throws -> TabManager {
+    private func makeInMemoryTabManager(
+        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in }
+    ) throws -> TabManager {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
-        return TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        tabManager.attachRuntimeContext(
+            TabManagerRuntimeContext(
+                requireRemoveAllWebViews: requireRemoveAllWebViews
+            )
+        )
+        return tabManager
     }
 }

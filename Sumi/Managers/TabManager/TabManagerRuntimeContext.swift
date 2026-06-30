@@ -16,7 +16,6 @@ struct TabManagerRuntimeContext {
     private let materializeVisibleTabWebViewIfNeededHandler: (Tab, BrowserWindowState) -> Void
     private let loadTabHandler: (Tab) -> Void
     private let unloadTabHandler: (Tab) -> Void
-    private let removeAllWebViewsHandler: (Tab, Bool) -> Void
     private let requireRemoveAllWebViewsHandler: (Tab, Bool) -> Void
     private let windowIDsTrackingWebViewsProvider: (UUID) -> [UUID]
     private let rebuildLiveWebViewsHandler: (Tab, UUID?, URL?) -> Void
@@ -52,8 +51,7 @@ struct TabManagerRuntimeContext {
         materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in },
         loadTab: @escaping (Tab) -> Void = { _ in },
         unloadTab: @escaping (Tab) -> Void = { _ in },
-        removeAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in },
-        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in },
+        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void,
         windowIDsTrackingWebViews: @escaping (UUID) -> [UUID] = { _ in [] },
         rebuildLiveWebViews: @escaping (Tab, UUID?, URL?) -> Void = { _, _, _ in },
         handleTabClosure: @escaping (UUID) -> Void = { _ in },
@@ -87,7 +85,6 @@ struct TabManagerRuntimeContext {
         self.materializeVisibleTabWebViewIfNeededHandler = materializeVisibleTabWebViewIfNeeded
         self.loadTabHandler = loadTab
         self.unloadTabHandler = unloadTab
-        self.removeAllWebViewsHandler = removeAllWebViews
         self.requireRemoveAllWebViewsHandler = requireRemoveAllWebViews
         self.windowIDsTrackingWebViewsProvider = windowIDsTrackingWebViews
         self.rebuildLiveWebViewsHandler = rebuildLiveWebViews
@@ -153,10 +150,6 @@ struct TabManagerRuntimeContext {
 
     func unloadTab(_ tab: Tab) {
         unloadTabHandler(tab)
-    }
-
-    func removeAllWebViews(for tab: Tab, closeActiveFullscreenMedia: Bool) {
-        removeAllWebViewsHandler(tab, closeActiveFullscreenMedia)
     }
 
     func requireRemoveAllWebViews(for tab: Tab, closeActiveFullscreenMedia: Bool) {

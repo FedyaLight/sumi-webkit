@@ -707,18 +707,19 @@ class TabManager: ObservableObject {
             }
 
             guard let tab = removed else { return }
+            let runtimeContext = requireRuntimeContext()
 
-            runtimeContext?.notifyTabClosedIfLoaded(tab)
+            runtimeContext.notifyTabClosedIfLoaded(tab)
 
-            runtimeContext?.forEachWindowState { windowState in
+            runtimeContext.forEachWindowState { windowState in
                 windowState.removeFromRegularTabHistory(tab.id)
             }
 
             captureRecentlyClosedTab(tab, spaceId: removedSpaceId)
 
             // Force unload the tab from compositor before removing
-            runtimeContext?.unloadTab(tab)
-            runtimeContext?.removeAllWebViews(
+            runtimeContext.unloadTab(tab)
+            runtimeContext.requireRemoveAllWebViews(
                 for: tab,
                 closeActiveFullscreenMedia: true
             )
@@ -769,7 +770,7 @@ class TabManager: ObservableObject {
             scheduleStructuralPersistence()
 
             // Validate window states after tab removal
-            runtimeContext?.validateWindowStates()
+            runtimeContext.validateWindowStates()
         }
     }
 
@@ -983,6 +984,15 @@ class TabManager: ObservableObject {
 }
 
 extension TabManager {
+    func requireRuntimeContext() -> TabManagerRuntimeContext {
+        guard let runtimeContext else {
+            preconditionFailure(
+                "TabManager.runtimeContext is nil. BrowserManagerRuntimeWiring.attach(to:) must run before destructive tab operations."
+            )
+        }
+        return runtimeContext
+    }
+
     func attachRuntimeContext(_ context: TabManagerRuntimeContext?) {
         runtimeContext = context
         guard context != nil else { return }

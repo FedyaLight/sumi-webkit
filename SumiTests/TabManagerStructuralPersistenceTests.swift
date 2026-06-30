@@ -7,7 +7,7 @@ import XCTest
 final class TabManagerStructuralPersistenceTests: XCTestCase {
     func testIncrementalAddAndRemoveRegularTabPersistence() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Work", profileId: UUID())
         let tab = tabManager.createNewTab(in: space, activate: true)
 
@@ -35,7 +35,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testFullReconcileDoesNotPersistExtensionOwnedRegularTabs() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Work", profileId: UUID())
         let normalTab = tabManager.createNewTab(
             url: "https://example.com/keep",
@@ -65,7 +65,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testIncrementalPersistenceDeletesRegularTabThatBecomesExtensionOwned() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Work", profileId: UUID())
         let tab = tabManager.createNewTab(
             url: "https://example.com/start",
@@ -169,7 +169,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         )
         try mutationContext.save()
 
-        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let tabManager = makeTabManager(context: ModelContext(container))
         let didLoad = await tabManager.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
@@ -189,7 +189,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testIncrementalFolderRelationshipPersistence() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
         let folder = tabManager.createFolder(for: space.id, name: "Docs")
         let tab = tabManager.createNewTab(url: "https://example.com/docs", in: space, activate: true)
@@ -233,7 +233,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testDeleteFolderRemovesFolderChildrenPersistence() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
         let folder = tabManager.createFolder(for: space.id, name: "Docs")
         let nested = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: folder.id, name: "Nested"))
@@ -271,7 +271,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testFolderOpenStatePersistence() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
         let folder = tabManager.createFolder(for: space.id, name: "Docs")
 
@@ -288,7 +288,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testTopLevelFolderPositionPersistsAfterSpacePinnedShortcuts() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
         let firstTab = tabManager.createNewTab(url: "https://example.com/first", in: space, activate: true)
         let secondTab = tabManager.createNewTab(url: "https://example.com/second", in: space, activate: false)
@@ -331,7 +331,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
                 && storedFolder.index == 2
         }
 
-        let restoredManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let restoredManager = makeTabManager(context: ModelContext(container))
         let didLoad = await restoredManager.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
@@ -343,7 +343,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testIncrementalSpaceMembershipAndOrderPersistence() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let profileId = UUID()
         let spaceA = tabManager.createSpace(name: "A", profileId: profileId)
         let tabA = tabManager.createNewTab(url: "https://example.com/a", in: spaceA, activate: true)
@@ -377,7 +377,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testReorderSpaceUpdatesPersistedIndicesAndPreservesCurrentSpace() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let profileId = UUID()
         let first = tabManager.createSpace(name: "First", profileId: profileId)
         let second = tabManager.createSpace(name: "Second", profileId: profileId)
@@ -402,7 +402,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testReorderSpacePersistsThroughRestore() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let profileId = UUID()
         let first = tabManager.createSpace(name: "First", profileId: profileId)
         let second = tabManager.createSpace(name: "Second", profileId: profileId)
@@ -415,7 +415,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             try fetchSpacesSortedByIndex(in: context).map(\.id) == [second.id, third.id, first.id]
         }
 
-        let restoredManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let restoredManager = makeTabManager(context: ModelContext(container))
         let didLoad = await restoredManager.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
@@ -427,7 +427,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testReorderSpaceClampsInvalidTargetIndices() throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let profileId = UUID()
         let first = tabManager.createSpace(name: "First", profileId: profileId)
         let second = tabManager.createSpace(name: "Second", profileId: profileId)
@@ -442,7 +442,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testSelectionOnlyPersistenceCreatesAndUpdatesState() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Select", profileId: UUID())
         _ = tabManager.createNewTab(url: "https://example.com/one", in: space, activate: true)
         let second = tabManager.createNewTab(url: "https://example.com/two", in: space, activate: false)
@@ -459,7 +459,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testActiveTabStatePathsPersistSelectionWithoutSchedulingStructuralPersistence() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let profileId = UUID()
         let firstSpace = tabManager.createSpace(name: "First", profileId: profileId)
         let secondSpace = tabManager.createSpace(name: "Second", profileId: profileId)
@@ -506,7 +506,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testRuntimeStateBatchFlushUpdatesStoredTabFields() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Runtime", profileId: UUID())
         let tab = tabManager.createNewTab(url: "https://example.com/initial", in: space, activate: true)
 
@@ -534,7 +534,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testSplitGroupLayoutPersistsThroughStoreReload() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Split", profileId: UUID())
         let tabs = [
             tabManager.createNewTab(url: "https://example.com/one", in: space, activate: true),
@@ -569,7 +569,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
                 && storedGroup.activeTabId == resizedGroup.activeTabId
         }
 
-        let restoredManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let restoredManager = makeTabManager(context: ModelContext(container))
         let didLoad = await restoredManager.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
@@ -581,7 +581,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testShortcutBackedSplitGroupPersistsThroughStoreReload() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Split", profileId: UUID())
         let regular = tabManager.createNewTab(url: "https://example.com/regular", in: space, activate: true)
         let pinnedSource = tabManager.createNewTab(
@@ -632,7 +632,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
             return decoded.contains { $0.id == group.id && $0.contains(livePinnedTab.id) }
         }
 
-        let restoredManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let restoredManager = makeTabManager(context: ModelContext(container))
         let didLoad = await restoredManager.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
@@ -645,7 +645,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testFullReconcileDeletesStaleEntitiesAndPreservesFolders() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Clean", profileId: UUID())
         let folder = tabManager.createFolder(for: space.id, name: "Keep")
         _ = tabManager.createNewTab(url: "https://example.com/keep", in: space, activate: true)
@@ -816,7 +816,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         mutationContext.insert(TabsStateEntity(currentTabID: selectedTabId, currentSpaceID: spaceAId))
         try mutationContext.save()
 
-        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let tabManager = makeTabManager(context: ModelContext(container))
         let didLoad = await tabManager.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
@@ -913,7 +913,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         mutationContext.insert(TabsStateEntity(currentTabID: UUID(), currentSpaceID: missingSpaceId))
         try mutationContext.save()
 
-        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let tabManager = makeTabManager(context: ModelContext(container))
         let didLoad = await tabManager.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
@@ -983,7 +983,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         mutationContext.insert(TabsStateEntity(currentTabID: nil, currentSpaceID: spaceId))
         try mutationContext.save()
 
-        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let tabManager = makeTabManager(context: ModelContext(container))
         let didLoad = await tabManager.loadFromStoreAwaitingResult()
 
         XCTAssertTrue(didLoad)
@@ -1001,7 +1001,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
     func testStartupRestoreCurrentFormatDoesNotDuplicateAcrossRepeatedLoads() async throws {
         let container = try makeInMemoryContainer()
         let fixture = try insertCurrentFormatRestoreFixture(in: container)
-        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let tabManager = makeTabManager(context: ModelContext(container))
 
         let firstLoad = await tabManager.loadFromStoreAwaitingResult()
         XCTAssertTrue(firstLoad)
@@ -1025,7 +1025,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
     func testPostRestoreStructuralMutationPersistsOnceWithoutDuplicatingRestoredGraph() async throws {
         let container = try makeInMemoryContainer()
         let fixture = try insertCurrentFormatRestoreFixture(in: container)
-        let tabManager = TabManager(context: ModelContext(container), loadPersistedState: false)
+        let tabManager = makeTabManager(context: ModelContext(container))
 
         let didLoad = await tabManager.loadFromStoreAwaitingResult()
         XCTAssertTrue(didLoad)
@@ -1047,7 +1047,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     func testStructuralTransactionPersistsFinalOrderOnce() async throws {
         let container = try makeInMemoryContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Batch", profileId: UUID())
         let first = tabManager.createNewTab(url: "https://example.com/one", in: space)
         let second = tabManager.createNewTab(url: "https://example.com/two", in: space, activate: false)
@@ -1072,6 +1072,16 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertEqual(try fetchTab(third.id, in: ModelContext(container))?.index, 0)
         XCTAssertEqual(try fetchTab(first.id, in: ModelContext(container))?.index, 1)
         XCTAssertEqual(try fetchTab(second.id, in: ModelContext(container))?.index, 2)
+    }
+
+    private func makeTabManager(context: ModelContext) -> TabManager {
+        let tabManager = TabManager(context: context, loadPersistedState: false)
+        tabManager.attachRuntimeContext(
+            TabManagerRuntimeContext(
+                requireRemoveAllWebViews: { _, _ in }
+            )
+        )
+        return tabManager
     }
 
     private func makeInMemoryContainer() throws -> ModelContainer {

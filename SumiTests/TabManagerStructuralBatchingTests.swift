@@ -429,7 +429,13 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
-        return TabManager(context: container.mainContext, loadPersistedState: false)
+        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
+        tabManager.attachRuntimeContext(
+            TabManagerRuntimeContext(
+                requireRemoveAllWebViews: { _, _ in }
+            )
+        )
+        return tabManager
     }
 }
 

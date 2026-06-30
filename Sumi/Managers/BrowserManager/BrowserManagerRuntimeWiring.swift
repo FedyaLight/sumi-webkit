@@ -716,12 +716,6 @@ extension TabManagerRuntimeContext {
             unloadTab: { [weak browserManager] tab in
                 browserManager?.compositorManager.unloadTab(tab)
             },
-            removeAllWebViews: { [weak browserManager] tab, closeActiveFullscreenMedia in
-                browserManager?.webViewCoordinator?.removeAllWebViews(
-                    for: tab,
-                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
-                )
-            },
             requireRemoveAllWebViews: { [weak browserManager] tab, closeActiveFullscreenMedia in
                 guard let browserManager else { return }
                 browserManager.requireWebViewCoordinator().removeAllWebViews(

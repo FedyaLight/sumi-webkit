@@ -9,6 +9,7 @@ import Foundation
 @MainActor
 extension TabManager {
     func resetRegularTabsAndShortcutLiveInstancesForStartup() {
+        let runtimeContext = requireRuntimeContext()
         withStructuralUpdateTransaction {
             lazyRestoreCoordinator.clear()
             let liveShortcutTabs = transientShortcutTabsByWindow.values.flatMap(\.values)
@@ -16,8 +17,8 @@ extension TabManager {
                 for tab in liveShortcutTabs {
                     cancelRuntimeStatePersistence(for: tab.id)
                     tab.performComprehensiveWebViewCleanup()
-                    runtimeContext?.unloadTab(tab)
-                    runtimeContext?.removeAllWebViews(
+                    runtimeContext.unloadTab(tab)
+                    runtimeContext.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )
@@ -31,8 +32,8 @@ extension TabManager {
                 let regularTabs = regularTabCollectionOwner.tabs(in: space)
                 for tab in regularTabs {
                     cancelRuntimeStatePersistence(for: tab.id)
-                    runtimeContext?.unloadTab(tab)
-                    runtimeContext?.removeAllWebViews(
+                    runtimeContext.unloadTab(tab)
+                    runtimeContext.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )

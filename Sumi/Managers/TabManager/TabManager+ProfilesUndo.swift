@@ -297,8 +297,9 @@ extension TabManager {
 
         guard let tab = removed else { return }
 
-        runtimeContext?.unloadTab(tab)
-        runtimeContext?.requireRemoveAllWebViews(
+        let runtimeContext = requireRuntimeContext()
+        runtimeContext.unloadTab(tab)
+        runtimeContext.requireRemoveAllWebViews(
             for: tab,
             closeActiveFullscreenMedia: true
         )
@@ -310,7 +311,7 @@ extension TabManager {
 
         if wasCurrent {
             if tab.spaceId == nil {
-                let tabs = essentialTabs(for: runtimeContext?.currentProfileId)
+                let tabs = essentialTabs(for: runtimeContext.currentProfileId)
                 if let first = tabs.first {
                     setActiveTab(first)
                 }
