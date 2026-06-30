@@ -181,8 +181,9 @@ struct SidebarHoverOverlayView: View {
                         .contentShape(Rectangle())
                         .onHover { isIn in
                             if isIn && isCollapsedSidebar {
-                                hoverManager.requestOverlayReveal(
-                                    animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration
+                                hoverManager.requestPointerOverlayReveal(
+                                    animationDuration: SidebarHoverOverlayMetrics.revealAnimationDuration,
+                                    sidebarPosition: sumiSettings.sidebarPosition
                                 )
                             }
                             NSCursor.arrow.set()

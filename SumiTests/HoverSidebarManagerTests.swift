@@ -266,6 +266,61 @@ final class HoverSidebarManagerTests: XCTestCase {
         XCTAssertTrue(manager.isOverlayHostPrewarmed)
     }
 
+    func testPendingPointerRevealDoesNotPublishVisibleAfterPointerLeavesProjectedOverlay() async {
+        var mouse = CGPoint(x: 102, y: 300)
+        let harness = makePointerRevealHarness(mouseLocationProvider: { mouse })
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+
+        harness.manager.requestPointerOverlayReveal(animationDuration: 0)
+
+        XCTAssertTrue(harness.manager.isOverlayHostPrewarmed)
+        XCTAssertFalse(harness.manager.isOverlayVisible)
+
+        mouse = CGPoint(x: 650, y: 300)
+        await drainMainQueue()
+
+        XCTAssertTrue(harness.manager.isOverlayHostPrewarmed)
+        XCTAssertFalse(harness.manager.isOverlayVisible)
+    }
+
+    func testPendingPointerRevealPublishesVisibleWhenPointerMovesIntoProjectedOverlay() async {
+        var mouse = CGPoint(x: 102, y: 300)
+        let harness = makePointerRevealHarness(mouseLocationProvider: { mouse })
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+
+        harness.manager.requestPointerOverlayReveal(animationDuration: 0)
+
+        mouse = CGPoint(x: 180, y: 300)
+        await drainMainQueue()
+
+        XCTAssertTrue(harness.manager.isOverlayVisible)
+        XCTAssertTrue(harness.manager.isOverlayHostPrewarmed)
+    }
+
+    func testPendingPointerRevealUsesExplicitRightSidebarPosition() async {
+        var mouse = CGPoint(x: 898, y: 300)
+        let harness = makePointerRevealHarness(mouseLocationProvider: { mouse })
+        defer {
+            harness.windowRegistry.unregister(harness.windowState.id)
+        }
+
+        harness.manager.sidebarPosition = .left
+        harness.manager.requestPointerOverlayReveal(
+            animationDuration: 0,
+            sidebarPosition: .right
+        )
+
+        mouse = CGPoint(x: 820, y: 300)
+        await drainMainQueue()
+
+        XCTAssertTrue(harness.manager.isOverlayVisible)
+        XCTAssertTrue(harness.manager.isOverlayHostPrewarmed)
+    }
+
     func testRefreshMonitoringInstallsAndRemovesMonitorsForActiveCollapsedWindow() async {
         let recorder = EventMonitorRecorder()
         let manager = HoverSidebarManager(
@@ -358,6 +413,55 @@ private func waitForPrewarmedHost(_ manager: HoverSidebarManager) async {
 
 private func sleep(milliseconds: UInt64) async {
     try? await Task.sleep(nanoseconds: milliseconds * 1_000_000)
+}
+
+@MainActor
+private struct PointerRevealHarness {
+    let manager: HoverSidebarManager
+    let browserManager: BrowserManager
+    let windowRegistry: WindowRegistry
+    let windowState: BrowserWindowState
+    let recorder: EventMonitorRecorder
+}
+
+@MainActor
+private func makePointerRevealHarness(
+    mouseLocationProvider: @escaping () -> CGPoint
+) -> PointerRevealHarness {
+    let recorder = EventMonitorRecorder()
+    let manager = HoverSidebarManager(
+        eventMonitors: recorder.client,
+        mouseLocationProvider: mouseLocationProvider,
+        inactiveHostRetentionDelay: 0
+    )
+    let browserManager = BrowserManager()
+    let windowRegistry = WindowRegistry()
+    let windowState = BrowserWindowState()
+    windowState.tabManager = browserManager.tabManager
+    windowState.window = NSWindow(
+        contentRect: NSRect(x: 100, y: 100, width: 800, height: 600),
+        styleMask: [.titled],
+        backing: .buffered,
+        defer: false
+    )
+    windowState.isSidebarVisible = false
+
+    browserManager.windowRegistry = windowRegistry
+    manager.windowRegistry = windowRegistry
+    manager.attach(browserManager: browserManager, windowState: windowState)
+
+    windowRegistry.register(windowState)
+    windowRegistry.setActive(windowState)
+    manager.start()
+    manager.refreshMonitoring()
+
+    return PointerRevealHarness(
+        manager: manager,
+        browserManager: browserManager,
+        windowRegistry: windowRegistry,
+        windowState: windowState,
+        recorder: recorder
+    )
 }
 
 @MainActor
