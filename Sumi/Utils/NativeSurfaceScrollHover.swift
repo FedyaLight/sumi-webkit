@@ -9,7 +9,23 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
 
     private var phaseScrollingRegions: Set<String> = []
     private var activityRegions: Set<String> = []
+    private var activeTokensByRegion: [String: UUID] = [:]
     private var restoreTask: Task<Void, Never>?
+
+    func registerRegion(_ region: String) -> UUID {
+        let token = UUID()
+        activeTokensByRegion[region] = token
+        return token
+    }
+
+    func unregisterRegion(_ region: String, token: UUID) {
+        guard activeTokensByRegion[region] == token else { return }
+
+        activeTokensByRegion.removeValue(forKey: region)
+        phaseScrollingRegions.remove(region)
+        activityRegions.remove(region)
+        scheduleHoverRestoreIfIdle()
+    }
 
     func setScrolling(_ isScrolling: Bool, region: String) {
         if isScrolling {
@@ -33,6 +49,7 @@ final class NativeSurfaceScrollHoverCoordinator: ObservableObject {
         restoreTask = nil
         phaseScrollingRegions.removeAll()
         activityRegions.removeAll()
+        activeTokensByRegion.removeAll()
         setHoverUpdatesEnabled(true)
     }
 
@@ -252,6 +269,40 @@ private struct NativeSurfaceHoverModifier: ViewModifier {
     }
 }
 
+private struct NativeSurfaceScrollHoverSuppressionModifier: ViewModifier {
+    let coordinator: NativeSurfaceScrollHoverCoordinator
+    let region: String
+
+    @State private var regionToken: UUID?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                registerRegionIfNeeded()
+            }
+            .onScrollPhaseChange { _, newPhase in
+                registerRegionIfNeeded()
+                coordinator.setScrolling(newPhase.isScrolling, region: region)
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y
+            } action: { _, _ in
+                registerRegionIfNeeded()
+                coordinator.notifyScrollActivity(region: region)
+            }
+            .onDisappear {
+                guard let token = regionToken else { return }
+                regionToken = nil
+                coordinator.unregisterRegion(region, token: token)
+            }
+    }
+
+    private func registerRegionIfNeeded() {
+        guard regionToken == nil else { return }
+        regionToken = coordinator.registerRegion(region)
+    }
+}
+
 extension View {
     func nativeSurfaceHover(
         _ isHovered: Binding<Bool>,
@@ -269,14 +320,11 @@ extension View {
         _ coordinator: NativeSurfaceScrollHoverCoordinator,
         region: String
     ) -> some View {
-        self
-            .onScrollPhaseChange { _, newPhase in
-                coordinator.setScrolling(newPhase.isScrolling, region: region)
-            }
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y
-            } action: { _, _ in
-                coordinator.notifyScrollActivity(region: region)
-            }
+        modifier(
+            NativeSurfaceScrollHoverSuppressionModifier(
+                coordinator: coordinator,
+                region: region
+            )
+        )
     }
 }
