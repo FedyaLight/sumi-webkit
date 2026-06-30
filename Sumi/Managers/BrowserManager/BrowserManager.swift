@@ -242,7 +242,9 @@ class BrowserManager: ObservableObject {
         }
     }
 
-    private let sidebarPresentationStateOwner = BrowserSidebarPresentationStateOwner()
+    private lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
+        dependencies: .live(browserManager: self)
+    )
     var isSwitchingProfile: Bool = false
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
@@ -520,76 +522,37 @@ class BrowserManager: ObservableObject {
         for windowState: BrowserWindowState,
         persist: Bool = true
     ) {
-        sidebarPresentationStateOwner.updateSidebarWidth(width, for: windowState)
-        if persist {
-            schedulePersistWindowSession(for: windowState)
-        }
+        sidebarPresentationOwner.updateSidebarWidth(
+            width,
+            for: windowState,
+            persist: persist
+        )
     }
 
     func updateSavedSidebarVisibility(_ isVisible: Bool) {
-        sidebarPresentationStateOwner.updateSavedSidebarVisibility(isVisible)
+        sidebarPresentationOwner.updateSavedSidebarVisibility(isVisible)
     }
 
     func toggleSavedSidebarVisibility() {
-        sidebarPresentationStateOwner.toggleSavedSidebarVisibility()
+        sidebarPresentationOwner.toggleSavedSidebarVisibility()
     }
 
     func updateSavedSidebarWidth(_ width: CGFloat) {
-        sidebarPresentationStateOwner.updateSavedSidebarWidth(width)
+        sidebarPresentationOwner.updateSavedSidebarWidth(width)
     }
 
     func toggleSidebar() {
-        if let windowState = sidebarToggleTargetWindowState() {
-            toggleSidebar(for: windowState)
-        } else {
-            toggleSavedSidebarVisibility()
-        }
+        sidebarPresentationOwner.toggleSidebar()
     }
 
     func toggleSidebar(for windowState: BrowserWindowState) {
-        windowState.isSidebarVisible.toggle()
-        updateSavedSidebarVisibility(windowState.isSidebarVisible)
-        updateSavedSidebarWidth(windowState.savedSidebarWidth)
-        schedulePersistWindowSession(for: windowState, delayNanoseconds: 150_000_000)
-    }
-
-    private func sidebarToggleTargetWindowState() -> BrowserWindowState? {
-        if let activeWindow = windowRegistry?.activeWindow {
-            return activeWindow
-        }
-
-        guard let windowRegistry else {
-            return nil
-        }
-
-        if let keyWindow = NSApp.keyWindow,
-           let keyWindowState = windowRegistry.allWindows.first(where: { windowState in
-               guard let browserWindow = windowState.window else { return false }
-               if browserWindow === keyWindow {
-                   return true
-               }
-               return browserWindow.childWindows?.contains(where: { $0 === keyWindow }) == true
-           }) {
-            windowRegistry.setActive(keyWindowState)
-            return keyWindowState
-        }
-
-        if windowRegistry.allWindows.count == 1,
-           let onlyWindow = windowRegistry.allWindows.first {
-            windowRegistry.setActive(onlyWindow)
-            return onlyWindow
-        }
-
-        return nil
+        sidebarPresentationOwner.toggleSidebar(for: windowState)
     }
 
     // MARK: - Sidebar width access for overlays
     /// Returns the last saved sidebar width (used when sidebar is collapsed to size hover overlay)
     func getSavedSidebarWidth(for windowState: BrowserWindowState? = nil) -> CGFloat {
-        sidebarPresentationStateOwner.savedSidebarWidth(
-            for: windowState,
-            activeWindow: windowRegistry?.activeWindow
-        )
+        sidebarPresentationOwner.savedSidebarWidth(for: windowState)
     }
 
     private var tabSelectionActions: BrowserTabSelectionOwner.Actions {
@@ -1159,7 +1122,7 @@ class BrowserManager: ObservableObject {
 
 extension BrowserManager: WindowSessionServiceDelegate {
     func syncBrowserManagerSidebarCachesFromWindow(_ windowState: BrowserWindowState) {
-        sidebarPresentationStateOwner.syncFromWindow(windowState)
+        sidebarPresentationOwner.syncFromWindow(windowState)
     }
 }
 
