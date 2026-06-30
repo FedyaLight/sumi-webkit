@@ -303,6 +303,12 @@ extension TabNormalWebViewExtensionRuntime {
                     currentURL: currentURL,
                     reason: reason
                 )
+            },
+            ensureInitialDocumentExtensionContextsLoadedIfNeeded: { profileId in
+                await extensionsModule()?
+                    .ensureInitialDocumentExtensionContextsLoadedIfNeeded(
+                        profileId: profileId
+                    )
             }
         )
     }

@@ -105,7 +105,8 @@ final class TabRuntimeRoutingTests: XCTestCase {
                 registeredTabIds.append(registeredTab.id)
                 registrationReasons.append(reason)
             },
-            prepareWebViewForExtensionRuntime: { _, _, _ in }
+            prepareWebViewForExtensionRuntime: { _, _, _ in },
+            ensureInitialDocumentExtensionContextsLoadedIfNeeded: { _ in }
         )
 
         tab.normalWebViewRuntimeContext()
@@ -129,7 +130,8 @@ final class TabRuntimeRoutingTests: XCTestCase {
                 preparedWebViews.append(webView)
                 preparedURLs.append(currentURL)
                 preparedReasons.append(reason)
-            }
+            },
+            ensureInitialDocumentExtensionContextsLoadedIfNeeded: { _ in }
         )
 
         tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(

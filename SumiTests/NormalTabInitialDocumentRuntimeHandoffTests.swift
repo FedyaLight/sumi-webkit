@@ -125,6 +125,51 @@ final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
 
         XCTAssertEqual(tab.url, targetURL)
     }
+
+    func testTabSetupInitialLoadWarmsInitialDocumentContextsThroughInjectedRuntime() async throws {
+        let profileId = UUID()
+        let targetURL = URL(string: "https://example.com/deferred")!
+        let controller = DelayedNormalTabUserContentController()
+        controller.hasInstalledInitialUserContent = true
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+        let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
+        let tab = Tab(
+            url: URL(string: "about:blank")!,
+            existingWebView: webView,
+            loadsCachedFaviconOnInit: false
+        )
+        tab._webView = webView
+        tab._existingWebView = nil
+
+        var warmedProfileIds: [UUID] = []
+        tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
+            registerNormalTabWithExtensionRuntimeIfNeeded: { _, _ in },
+            prepareWebViewForExtensionRuntime: { _, _, _ in },
+            ensureInitialDocumentExtensionContextsLoadedIfNeeded: { warmedProfileId in
+                warmedProfileIds.append(warmedProfileId)
+            }
+        )
+
+        NormalTabInitialDocumentRuntimeHandoff.scheduleTabSetupInitialLoad(
+            tab: tab,
+            webView: webView,
+            targetURL: targetURL,
+            profileId: profileId,
+            registrationReason: "NormalTabInitialDocumentRuntimeHandoffTests",
+            registrationGuard: .currentWebViewIdentity
+        )
+
+        for _ in 0..<20 {
+            await Task.yield()
+            if warmedProfileIds.isEmpty == false {
+                break
+            }
+        }
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(warmedProfileIds, [profileId])
+    }
 }
 
 @MainActor
