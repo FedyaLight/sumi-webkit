@@ -301,7 +301,31 @@ class BrowserManager: ObservableObject {
         )
     )
     lazy var windowHistorySessionOwner = BrowserWindowHistorySessionOwner(
-        dependencies: .live(browserManager: self)
+        dependencies: BrowserWindowHistorySessionOwner.Dependencies(
+            windowState: { [weak self] windowId in
+                self?.windowRegistry?.windows[windowId]
+            },
+            allWindows: { [weak self] in
+                self?.windowRegistry?.allWindows ?? []
+            },
+            makeWindowSessionSnapshot: { [weak self] windowState in
+                guard let self else { return nil }
+                return self.windowSessionService.makeWindowSessionSnapshot(
+                    for: windowState,
+                    delegate: self
+                )
+            },
+            windowDisplayTitle: { [weak self] windowState in
+                self?.windowDisplayTitle(for: windowState) ?? ""
+            },
+            recentlyClosedManager: { [weak self, recentlyClosedManager = self.recentlyClosedManager] in
+                self?.recentlyClosedManager ?? recentlyClosedManager
+            },
+            lastSessionWindowsStore: { [weak self, lastSessionWindowsStore = self.lastSessionWindowsStore] in
+                self?.lastSessionWindowsStore ?? lastSessionWindowsStore
+            },
+            startupRestore: startupSessionRestoreOwner
+        )
     )
     lazy var recentlyClosedRestoreOwner = BrowserRecentlyClosedRestoreOwner(
         dependencies: .live(browserManager: self)
