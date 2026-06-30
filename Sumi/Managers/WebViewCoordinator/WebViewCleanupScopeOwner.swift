@@ -13,11 +13,10 @@ final class WebViewCleanupScopeOwner {
     typealias TabResolver = (UUID) -> Tab?
     typealias WebViewProtectionCheck = (WKWebView) -> Bool
     typealias ProtectedCommandEnqueuer = (DeferredWebViewCommand, WKWebView, String) -> Bool
-    typealias UnprotectedTrackedCleanup = (WKWebView, TrackedWebViewOwner, Tab?, BrowserManager?) -> Void
-    typealias PrimaryTrackedWebViewRefresh = (Tab, BrowserManager?) -> Void
+    typealias UnprotectedTrackedCleanup = (WKWebView, TrackedWebViewOwner, Tab?) -> Void
+    typealias PrimaryTrackedWebViewRefresh = (Tab) -> Void
 
     struct Runtime {
-        let browserManager: BrowserManager?
         let tabForID: TabResolver
         let isWebViewProtectedFromCompositorMutation: WebViewProtectionCheck
         let enqueueDeferredProtectedCommand: ProtectedCommandEnqueuer
@@ -84,11 +83,10 @@ final class WebViewCleanupScopeOwner {
             runtime.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner,
-                tab,
-                runtime.browserManager
+                tab
             )
             if let tab {
-                runtime.refreshPrimaryTrackedWebView(tab, runtime.browserManager)
+                runtime.refreshPrimaryTrackedWebView(tab)
             }
 
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {

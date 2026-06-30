@@ -14,7 +14,7 @@ final class WebViewTrackedCleanupExecutionOwner {
     typealias ContainerRemoval = (WKWebView) -> Void
     typealias RuntimeObservationUninstaller = (WKWebView) -> Void
     typealias DeferredCommandPruner = (String) -> Void
-    typealias FallbackCleanup = (WKWebView, UUID, BrowserManager?) -> Void
+    typealias FallbackCleanup = (WKWebView, UUID) -> Void
 
     struct Runtime {
         let finishDestructiveCleanupSuppression: DestructiveCleanupSuppressionFinisher
@@ -28,7 +28,6 @@ final class WebViewTrackedCleanupExecutionOwner {
         _ webView: WKWebView,
         owner: TrackedWebViewOwner,
         tab: Tab?,
-        browserManager: BrowserManager?,
         webViewRegistry: WindowWebViewRegistry,
         trackingLifecycleOwner: WebViewTrackingLifecycleOwner,
         runtime: Runtime
@@ -48,7 +47,7 @@ final class WebViewTrackedCleanupExecutionOwner {
         if let tab {
             tab.cleanupCloneWebView(webView)
         } else {
-            runtime.fallbackCleanup(webView, owner.tabID, browserManager)
+            runtime.fallbackCleanup(webView, owner.tabID)
         }
     }
 }

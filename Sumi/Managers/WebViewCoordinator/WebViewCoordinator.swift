@@ -721,8 +721,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func cleanupScopeRuntime(tabManager: TabManager) -> WebViewCleanupScopeOwner.Runtime {
-        WebViewCleanupScopeOwner.Runtime(
-            browserManager: tabManager.browserManager,
+        let browserManager = tabManager.browserManager
+        return WebViewCleanupScopeOwner.Runtime(
             tabForID: { tabID in
                 tabManager.tab(for: tabID)
             },
@@ -732,7 +732,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             enqueueDeferredProtectedCommand: { [self] command, webView, reason in
                 enqueueDeferredProtectedCommand(command, for: webView, reason: reason)
             },
-            cleanupUnprotectedTrackedWebView: { [self] webView, owner, tab, browserManager in
+            cleanupUnprotectedTrackedWebView: { [self] webView, owner, tab in
                 cleanupUnprotectedTrackedWebView(
                     webView,
                     owner: owner,
@@ -740,13 +740,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                     browserManager: browserManager
                 )
             },
-            refreshPrimaryTrackedWebView: { [self] tab, browserManager in
+            refreshPrimaryTrackedWebView: { [self] tab in
                 refreshPrimaryTrackedWebView(for: tab, browserManager: browserManager)
             }
         )
     }
 
-    private func hiddenCloneEvictionRuntime() -> WebViewHiddenCloneEvictionOwner.Runtime {
+    private func hiddenCloneEvictionRuntime(
+        browserManager: BrowserManager?
+    ) -> WebViewHiddenCloneEvictionOwner.Runtime {
         WebViewHiddenCloneEvictionOwner.Runtime(
             tabForID: { [self] tabID in
                 resolvedTab(with: tabID)
@@ -754,13 +756,18 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             liveWebViews: { [self] tab in
                 liveWebViews(for: tab)
             },
+            globallyVisibleTabIDs: {
+                browserManager?.tabSuspensionService
+                    .suspensionEvaluationContext()
+                    .visibleTabIDs ?? []
+            },
             isWebViewProtectedFromCompositorMutation: { [self] webView in
                 isWebViewProtectedFromCompositorMutation(webView)
             },
             enqueueDeferredProtectedCommand: { [self] command, webView, reason in
                 enqueueDeferredProtectedCommand(command, for: webView, reason: reason)
             },
-            cleanupUnprotectedTrackedWebView: { [self] webView, owner, tab, browserManager in
+            cleanupUnprotectedTrackedWebView: { [self] webView, owner, tab in
                 cleanupUnprotectedTrackedWebView(
                     webView,
                     owner: owner,
@@ -768,7 +775,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                     browserManager: browserManager
                 )
             },
-            refreshPrimaryTrackedWebView: { [self] tab, browserManager in
+            refreshPrimaryTrackedWebView: { [self] tab in
                 refreshPrimaryTrackedWebView(for: tab, browserManager: browserManager)
             }
         )
@@ -886,14 +893,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             webView,
             owner: owner,
             tab: tab,
-            browserManager: browserManager,
             webViewRegistry: webViewRegistry,
             trackingLifecycleOwner: webViewTrackingLifecycleOwner,
-            runtime: trackedCleanupExecutionRuntime()
+            runtime: trackedCleanupExecutionRuntime(browserManager: browserManager)
         )
     }
 
-    private func trackedCleanupExecutionRuntime() -> WebViewTrackedCleanupExecutionOwner.Runtime {
+    private func trackedCleanupExecutionRuntime(
+        browserManager: BrowserManager?
+    ) -> WebViewTrackedCleanupExecutionOwner.Runtime {
         WebViewTrackedCleanupExecutionOwner.Runtime(
             finishDestructiveCleanupSuppression: { [self] webView in
                 finishDestructiveDataCleanupNavigation(on: webView)
@@ -907,7 +915,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             pruneInvalidDeferredCommands: { [self] reason in
                 pruneInvalidDeferredProtectedCommands(reason: reason)
             },
-            fallbackCleanup: { [self] webView, tabID, browserManager in
+            fallbackCleanup: { [self] webView, tabID in
                 performFallbackWebViewCleanup(
                     webView,
                     tabId: tabID,
@@ -1170,8 +1178,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             in: windowId,
             visibleTabIDs: visibleTabIDs,
             entries: webViewRegistry.trackedWebViews(in: windowId),
-            tabManager: tabManager,
-            runtime: hiddenCloneEvictionRuntime()
+            runtime: hiddenCloneEvictionRuntime(browserManager: tabManager.browserManager)
         )
     }
 

@@ -12,14 +12,16 @@ import WebKit
 final class WebViewHiddenCloneEvictionOwner {
     typealias TabResolver = (UUID) -> Tab?
     typealias LiveWebViews = (Tab) -> [WKWebView]
+    typealias GloballyVisibleTabIDs = () -> Set<UUID>
     typealias WebViewProtectionCheck = (WKWebView) -> Bool
     typealias ProtectedCommandEnqueuer = (DeferredWebViewCommand, WKWebView, String) -> Bool
-    typealias UnprotectedTrackedCleanup = (WKWebView, TrackedWebViewOwner, Tab, BrowserManager) -> Void
-    typealias PrimaryTrackedWebViewRefresh = (Tab, BrowserManager) -> Void
+    typealias UnprotectedTrackedCleanup = (WKWebView, TrackedWebViewOwner, Tab) -> Void
+    typealias PrimaryTrackedWebViewRefresh = (Tab) -> Void
 
     struct Runtime {
         let tabForID: TabResolver
         let liveWebViews: LiveWebViews
+        let globallyVisibleTabIDs: GloballyVisibleTabIDs
         let isWebViewProtectedFromCompositorMutation: WebViewProtectionCheck
         let enqueueDeferredProtectedCommand: ProtectedCommandEnqueuer
         let cleanupUnprotectedTrackedWebView: UnprotectedTrackedCleanup
@@ -30,7 +32,6 @@ final class WebViewHiddenCloneEvictionOwner {
         in windowId: UUID,
         visibleTabIDs: Set<UUID>,
         entries: [(TrackedWebViewOwner, WKWebView)],
-        tabManager: TabManager,
         runtime: Runtime
     ) {
         let signpostState = PerformanceTrace.beginInterval("WebViewCoordinator.evictHiddenWebViews")
@@ -44,10 +45,7 @@ final class WebViewHiddenCloneEvictionOwner {
 
         guard hiddenEntries.isEmpty == false else { return }
 
-        guard let browserManager = tabManager.browserManager else { return }
-        let globallyVisibleTabIDs = browserManager.tabSuspensionService
-            .suspensionEvaluationContext()
-            .visibleTabIDs
+        let globallyVisibleTabIDs = runtime.globallyVisibleTabIDs()
 
         for (owner, webView) in hiddenEntries.sorted(by: {
             if $0.0.tabID != $1.0.tabID {
@@ -71,10 +69,9 @@ final class WebViewHiddenCloneEvictionOwner {
             runtime.cleanupUnprotectedTrackedWebView(
                 webView,
                 owner,
-                tab,
-                browserManager
+                tab
             )
-            runtime.refreshPrimaryTrackedWebView(tab, browserManager)
+            runtime.refreshPrimaryTrackedWebView(tab)
 
             RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
                 "Cleaned hidden clone for visible tab=\(owner.tabID.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))."
