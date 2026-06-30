@@ -1,5 +1,5 @@
-import XCTest
 import WebKit
+import XCTest
 
 @testable import Sumi
 
@@ -87,7 +87,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
 
         tab.cleanupCloneWebView(webView)
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(permissionLifecycleEventCount, 1)
         XCTAssertEqual(deferredTabIds, [tab.id])
         XCTAssertEqual(deferredReasons, ["Tab.cleanupCloneWebView"])
@@ -112,7 +112,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         tab.normalWebViewRuntimeContext()
             .registerNormalTabWithExtensionRuntimeIfNeeded("test.registration")
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(registeredTabIds, [tab.id])
         XCTAssertEqual(registrationReasons, ["test.registration"])
     }
@@ -141,7 +141,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             installFaviconRuntime: false
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(preparedWebViews.count, 1)
         XCTAssertIdentical(preparedWebViews.first, webView)
         XCTAssertEqual(preparedURLs, [targetURL])
@@ -168,7 +168,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             originRectInWindow: originRect
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(capturedURL, targetURL)
         XCTAssertIdentical(capturedTab, tab)
         XCTAssertEqual(capturedOriginRect, originRect)
@@ -191,7 +191,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
 
         await tab.fetchFaviconForVisiblePresentation()
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(installedExtensionsLookupCount, 1)
     }
 
@@ -202,7 +202,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
 
         tab.closeTab()
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(lifecycle.cleanedZoomTabIds, [tab.id])
         XCTAssertEqual(lifecycle.visibilityUpdateCount, 1)
         XCTAssertEqual(lifecycle.removedTabIds, [tab.id])
@@ -244,7 +244,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         )
         tab.historyRecorder.updateTitle("Resolved Title", tab: tab)
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(history.visitURLs, [pageURL])
         XCTAssertEqual(history.visitTabIds, [tab.id])
         XCTAssertEqual(history.visitProfileIds, [profileId])
@@ -268,7 +268,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             }
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertIdentical(tab.targetFindWebView(), activeWindowWebView)
         XCTAssertEqual(lookup?.tabId, tab.id)
         XCTAssertEqual(lookup?.windowId, windowId)
@@ -283,7 +283,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         tab.beginBackForwardNavigationTracking(on: webView)
         tab.finishBackForwardNavigationTracking(using: webView)
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(historySwipe.beginTabIds, [tab.id])
         XCTAssertEqual(historySwipe.finishTabIds, [tab.id])
         XCTAssertEqual(historySwipe.windowLookupWebViews, [ObjectIdentifier(webView)])
@@ -335,7 +335,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
             evaluateAutoplayPolicyChange: { _, _ in .noOp }
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(
             tab.safariContentBlockerDesiredAttachmentState(for: pageURL),
             safariState
@@ -357,7 +357,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
 
         tab.navigationCommandOwner.navigateToURL("sumi browser", for: tab)
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(
             tab.url.absoluteString,
             "https://search.example/?q=sumi%20browser"

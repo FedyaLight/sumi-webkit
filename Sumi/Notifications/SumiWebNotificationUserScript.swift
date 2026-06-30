@@ -388,7 +388,7 @@ private final class SumiWebNotificationSubfeature: NSObject, @MainActor SumiUser
 
     private func handle(method: String, params: Any, original: WKScriptMessage) async throws -> Encodable? {
         guard let tab,
-              let browserManager = tab.browserManager,
+              let notificationPermissionBridge = tab.notificationPermissionBridgeForRuntime(),
               let tabContext = tab.webNotificationTabContext(for: original.webView)
         else {
             return SumiJSONValue.object([
@@ -404,21 +404,21 @@ private final class SumiWebNotificationSubfeature: NSObject, @MainActor SumiUser
 
         switch method {
         case "getPermission":
-            let state = await browserManager.notificationPermissionBridge.currentWebsitePermissionState(
+            let state = await notificationPermissionBridge.currentWebsitePermissionState(
                 request: request,
                 tabContext: tabContext
             )
             return permissionResponse(state: state, reason: "permission-state")
 
         case "requestPermission":
-            let state = await browserManager.notificationPermissionBridge.requestWebsitePermission(
+            let state = await notificationPermissionBridge.requestWebsitePermission(
                 request: request,
                 tabContext: tabContext
             )
             return permissionResponse(state: state, reason: "request-permission")
 
         case "showNotification":
-            let result = await browserManager.notificationPermissionBridge.postWebsiteNotification(
+            let result = await notificationPermissionBridge.postWebsiteNotification(
                 request: request,
                 tabContext: tabContext,
                 title: payload.title,
@@ -436,7 +436,7 @@ private final class SumiWebNotificationSubfeature: NSObject, @MainActor SumiUser
 
         case "closeNotification":
             if let identifier = payload.identifier {
-                await browserManager.notificationPermissionBridge.closeNotification(identifier: identifier)
+                await notificationPermissionBridge.closeNotification(identifier: identifier)
             }
             return SumiJSONValue.object(["accepted": .bool(true)])
 

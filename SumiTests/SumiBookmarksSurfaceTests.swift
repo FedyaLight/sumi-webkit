@@ -51,9 +51,21 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         let secondURL = try XCTUnwrap(URL(string: "https://second.example"))
         _ = try harness.browserManager.bookmarkManager.createBookmark(url: firstURL, title: "Existing")
 
-        let duplicate = Tab(url: firstURL, name: "Duplicate", browserManager: harness.browserManager)
-        let fresh = Tab(url: secondURL, name: "Second", browserManager: harness.browserManager)
-        let unsupported = Tab(url: SumiSurface.emptyTabURL, name: "Empty", browserManager: harness.browserManager)
+        let duplicate = makeRuntimeTab(
+            url: firstURL,
+            name: "Duplicate",
+            browserManager: harness.browserManager
+        )
+        let fresh = makeRuntimeTab(
+            url: secondURL,
+            name: "Second",
+            browserManager: harness.browserManager
+        )
+        let unsupported = makeRuntimeTab(
+            url: SumiSurface.emptyTabURL,
+            name: "Empty",
+            browserManager: harness.browserManager
+        )
         let revisionBeforeBatch = harness.browserManager.bookmarkManager.revision
 
         let result = try harness.browserManager.bookmarkTabs(
@@ -117,5 +129,15 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
             database: SumiBookmarkDatabase(directory: directory),
             syncFavicons: false
         )
+    }
+
+    private func makeRuntimeTab(
+        url: URL,
+        name: String,
+        browserManager: BrowserManager
+    ) -> Tab {
+        let tab = Tab(url: url, name: name)
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        return tab
     }
 }

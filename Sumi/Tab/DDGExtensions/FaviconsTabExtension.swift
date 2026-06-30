@@ -132,7 +132,7 @@ extension FaviconsTabExtension: SumiFaviconUserScriptDelegate {
     private func aliasPageURLs(for tab: Tab, currentURL: URL) -> [URL] {
         var urls = [currentURL, tab.url]
         if let shortcutPinId = tab.shortcutPinId,
-           let launchURL = tab.browserManager?.tabManager.shortcutPin(by: shortcutPinId)?.launchURL {
+           let launchURL = tab.shortcutLaunchURL(for: shortcutPinId) {
             urls.append(launchURL)
         }
 

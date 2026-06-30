@@ -69,7 +69,7 @@ final class TabConfigurationPolicyWebViewReplacementContextOwnerTests: XCTestCas
 
         let context = owner.makeContext(for: tab)
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(context.trackedWindowIdContainingWebView(webView), windowId)
         XCTAssertTrue(context.hasTrackedWebViews(tab.id))
         context.setTrackedWebView(webView, tab.id, windowId)

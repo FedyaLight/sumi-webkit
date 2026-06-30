@@ -333,16 +333,16 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             url: URL(string: "https://example.com/first")!,
             name: "First",
             spaceId: source.id,
-            index: 0,
-            browserManager: browserManager
+            index: 0
         )
         let second = Tab(
             url: URL(string: "https://example.com/second")!,
             name: "Second",
             spaceId: source.id,
-            index: 1,
-            browserManager: browserManager
+            index: 1
         )
+        first.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        second.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
 
         browserManager.tabManager.spaces = [source, destination]
         browserManager.tabManager.addTab(first)
@@ -374,9 +374,9 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             url: URL(string: "https://example.com/unloaded")!,
             name: "Unloaded",
             spaceId: source.id,
-            index: 0,
-            browserManager: browserManager
+            index: 0
         )
+        unloadedTab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
 
         browserManager.tabManager.spaces = [source, destination]
         browserManager.tabManager.addTab(unloadedTab)
@@ -832,5 +832,4 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             title: title
         )
     }
-
 }

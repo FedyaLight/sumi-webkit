@@ -330,10 +330,9 @@ enum BrowserManagerRuntimeWiring {
             name: url.host ?? "Glance",
             favicon: "globe",
             spaceId: targetSpace?.id,
-            index: 0,
-            browserManager: browserManager
+            index: 0
         )
-        tab.sumiSettings = browserManager.sumiSettings
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.profileId = sourceProfile?.id ?? targetSpace?.profileId ?? browserManager.currentProfile?.id
         return tab
     }

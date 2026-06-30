@@ -26,7 +26,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
             firstProfile: { firstProfile }
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertIdentical(tab.resolveProfile(), explicitProfile)
 
         tab.profileId = nil
@@ -39,7 +39,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
     func testResolveProfilePrefersMatchingEphemeralWindowProfile() {
         let harness = makeHarness()
         let ephemeralProfile = Profile(name: "Private")
-        let tab = Tab(browserManager: harness.browserManager, loadsCachedFaviconOnInit: false)
+        let tab = makeRuntimeTab(in: harness.browserManager)
         tab.profileId = ephemeralProfile.id
 
         let windowState = BrowserWindowState()
@@ -60,7 +60,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
         let spaceProfile = Profile(name: "Space")
         let currentProfile = Profile(name: "Current")
         let space = Space(name: "Space", profileId: spaceProfile.id)
-        let tab = Tab(browserManager: harness.browserManager, loadsCachedFaviconOnInit: false)
+        let tab = makeRuntimeTab(in: harness.browserManager)
 
         harness.browserManager.profileManager.profiles = [
             currentProfile,
@@ -83,7 +83,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
         let currentProfile = Profile(name: "Current")
         let spaceProfile = Profile(name: "Space")
         let space = Space(name: "Space", profileId: spaceProfile.id)
-        let tab = Tab(browserManager: harness.browserManager, loadsCachedFaviconOnInit: false)
+        let tab = makeRuntimeTab(in: harness.browserManager)
 
         harness.browserManager.profileManager.profiles = [currentProfile, spaceProfile]
         harness.browserManager.currentProfile = currentProfile
@@ -100,7 +100,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
         let harness = makeHarness()
         let firstProfile = Profile(name: "First")
         let currentProfile = Profile(name: "Current")
-        let tab = Tab(browserManager: harness.browserManager, loadsCachedFaviconOnInit: false)
+        let tab = makeRuntimeTab(in: harness.browserManager)
 
         harness.browserManager.profileManager.profiles = [firstProfile, currentProfile]
         harness.browserManager.currentProfile = currentProfile
@@ -120,6 +120,12 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
             browserManager: browserManager,
             windowRegistry: windowRegistry
         )
+    }
+
+    private func makeRuntimeTab(in browserManager: BrowserManager) -> Tab {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        return tab
     }
 }
 

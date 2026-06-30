@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 import SwiftData
 import WebKit
 import XCTest
@@ -83,8 +83,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             in: space,
             activate: false
         )
-        guard let preparedManager = tab.browserManager else { return false }
-        return preparedManager === browserManager
+        return tab.hasBrowserRuntime && tab.sumiSettings === browserManager.sumiSettings
     }
 
     private func downloadRetryRuntimeCanResolveWindowOwnedWebView(_ browserManager: BrowserManager) -> Bool {
@@ -180,7 +179,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         guard let previewTab = browserManager.glanceManager.currentSession?.previewTab else {
             return false
         }
-        return previewTab.browserManager === browserManager
+        return previewTab.hasBrowserRuntime
             && previewTab.sumiSettings === browserManager.sumiSettings
     }
 
@@ -366,9 +365,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         let tab = Tab(
             url: URL(string: "https://example.com/path")!,
-            browserManager: browserManager,
             loadsCachedFaviconOnInit: false
         )
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         XCTAssertIdentical(tab.faviconService as AnyObject, faviconService)
         XCTAssertIdentical(tab.visitedLinkStore as AnyObject, visitedLinkStore)
 
@@ -511,9 +510,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
         let tab = Tab(
             url: URL(string: "https://example.com/video")!,
-            browserManager: browserManager,
             loadsCachedFaviconOnInit: false
         )
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
 
         tab.applyAudioState(.unmuted(isPlayingAudio: true))
 

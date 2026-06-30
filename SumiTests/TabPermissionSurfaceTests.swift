@@ -51,7 +51,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
         let surfaceState = tab.permissionRequestSurfaceState(for: webView)
         tab.handleNormalTabPermissionNavigation(to: targetURL)
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertTrue(surfaceState.isActive)
         XCTAssertTrue(surfaceState.isVisible)
         XCTAssertEqual(glanceLookupTabIds, [tab.id])
@@ -194,12 +194,15 @@ final class TabPermissionSurfaceTests: XCTestCase {
     }
 
     private func makeTab(browserManager: BrowserManager? = nil) -> Tab {
-        Tab(
+        let tab = Tab(
             url: URL(string: "https://example.com/page")!,
             name: "Example",
-            browserManager: browserManager,
             loadsCachedFaviconOnInit: false
         )
+        if let browserManager {
+            tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        }
+        return tab
     }
 
     private func makeManagedTab(in browserManager: BrowserManager) -> Tab {

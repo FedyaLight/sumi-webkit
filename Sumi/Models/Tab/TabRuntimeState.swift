@@ -1,7 +1,93 @@
+import AppKit
 import Combine
 import Foundation
 import ObjectiveC.runtime
 import WebKit
+
+@MainActor
+struct TabBrowserRuntime {
+    var webViewRoutingRuntime: TabWebViewRoutingRuntime
+    var persistenceRuntimeCallbacks: TabRuntimePersistenceCallbacks
+    var mediaRuntimeCallbacks: TabMediaRuntimeCallbacks
+    var navigationCommandRuntime: TabNavigationCommandRuntime
+    var profileResolutionRuntime: TabProfileResolutionRuntime
+    var reloadPolicyRuntime: TabReloadPolicyRuntime
+    var historySwipeRuntime: TabHistorySwipeRuntime
+    var historyRecordingRuntime: TabHistoryRecordingRuntime
+    var findInPageRuntime: TabFindInPageRuntime
+    var extensionPropertiesRuntime: TabExtensionPropertiesRuntime
+    var closeLifecycleRuntime: TabCloseLifecycleRuntime
+    var lifecycleNavigationRuntime: TabLifecycleNavigationRuntime
+    var permissionRuntime: TabPermissionRuntime
+    var webViewCleanupRuntime: TabWebViewCleanupRuntime
+    var normalWebViewExtensionRuntime: TabNormalWebViewExtensionRuntime
+    var scriptMessageRuntime: TabScriptMessageRuntime
+    var navigationDelegateRuntime: TabNavigationDelegateRuntime
+    var faviconExtensionRuntime: TabFaviconExtensionRuntime
+    var popupHandlingRuntime: TabPopupHandlingRuntime
+    var installNavigationRuntime: TabInstallNavigationRuntime
+    var webKitUIRuntime: TabWebKitUIRuntime
+    var configurationPolicyWebViewReplacementRuntime: TabConfigurationPolicyWebViewReplacementRuntime
+    var webViewConfigurationContext: () -> TabWebViewConfigurationContext
+    var dataServices: () -> TabDependencyDataServices?
+    var currentProfileUpdates: () -> AnyPublisher<Profile?, Never>?
+    var settings: () -> SumiSettingsService?
+    var hasBrowserRuntime: () -> Bool
+    var webPageMenuAppearance: (Tab, NSAppearance?) -> NSAppearance?
+    var canBookmark: (Tab) -> Bool
+    var requestBookmarkEditorFromMenu: () -> Void
+    var canStartContextMenuDownload: () -> Bool
+    var startContextMenuDownload: (WKWebView, URLRequest) -> Void
+    var openURLInForegroundTab: (URL, Tab) -> Void
+    var openURLsInNewWindow: ([URL]) -> Void
+    var notificationPermissionBridge: () -> SumiNotificationPermissionBridge?
+    var shortcutLaunchURL: (UUID) -> URL?
+    var reconcileExtensionRuntimeOnUserGesture: (Tab, String) -> Void
+    var isCurrentTab: (Tab) -> Bool
+    var activate: (Tab) -> Void
+
+    static let inactive = Self(
+        webViewRoutingRuntime: .inactive,
+        persistenceRuntimeCallbacks: .inactive,
+        mediaRuntimeCallbacks: .inactive,
+        navigationCommandRuntime: .inactive,
+        profileResolutionRuntime: .inactive,
+        reloadPolicyRuntime: .empty,
+        historySwipeRuntime: .inactive,
+        historyRecordingRuntime: .inactive,
+        findInPageRuntime: .inactive,
+        extensionPropertiesRuntime: .inactive,
+        closeLifecycleRuntime: .inactive,
+        lifecycleNavigationRuntime: .inactive,
+        permissionRuntime: .inactive,
+        webViewCleanupRuntime: .inactive,
+        normalWebViewExtensionRuntime: .inactive,
+        scriptMessageRuntime: .inactive,
+        navigationDelegateRuntime: .inactive,
+        faviconExtensionRuntime: .inactive,
+        popupHandlingRuntime: .inactive,
+        installNavigationRuntime: .inactive,
+        webKitUIRuntime: .inactive,
+        configurationPolicyWebViewReplacementRuntime: .inactive,
+        webViewConfigurationContext: { .empty },
+        dataServices: { nil },
+        currentProfileUpdates: { nil },
+        settings: { nil },
+        hasBrowserRuntime: { false },
+        webPageMenuAppearance: { _, fallback in fallback },
+        canBookmark: { _ in false },
+        requestBookmarkEditorFromMenu: {},
+        canStartContextMenuDownload: { false },
+        startContextMenuDownload: { _, _ in },
+        openURLInForegroundTab: { _, _ in },
+        openURLsInNewWindow: { _ in },
+        notificationPermissionBridge: { nil },
+        shortcutLaunchURL: { _ in nil },
+        reconcileExtensionRuntimeOnUserGesture: { _, _ in },
+        isCurrentTab: { _ in false },
+        activate: { _ in }
+    )
+}
 
 @MainActor
 struct TabWebViewRoutingRuntime {

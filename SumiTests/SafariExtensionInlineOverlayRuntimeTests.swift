@@ -52,7 +52,7 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             webViewConfigurationOverride: configuration
         )
         tab.profileId = profile.id
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab

@@ -117,21 +117,7 @@ extension Tab {
     // MARK: - WebView Runtime
 
     func webViewConfigurationContext() -> TabWebViewConfigurationContext {
-        guard let browserManager else { return .empty }
-        return .live(
-            extensionsModule: { [weak browserManager] in
-                browserManager?.extensionsModule
-            },
-            userscriptsModule: { [weak browserManager] in
-                browserManager?.userscriptsModule
-            },
-            boostsModule: { [weak browserManager] in
-                browserManager?.boostsModule
-            },
-            protectionCoordinator: { [weak browserManager] in
-                browserManager?.protectionCoordinator
-            }
-        )
+        makeWebViewConfigurationContext()
     }
 
     func normalTabUserScriptsProvider(for targetURL: URL?) -> SumiNormalTabUserScripts {

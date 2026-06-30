@@ -145,7 +145,7 @@ final class HistoryTabRecorderTests: XCTestCase {
         let harness = try makeHarness()
         let ephemeralProfile = Profile.createEphemeral()
         let ephemeralTab = Tab(url: URL(string: "https://private.example.com")!)
-        ephemeralTab.browserManager = harness.browserManager
+        ephemeralTab.attachBrowserRuntime(harness.browserManager.makeTabBrowserRuntime())
         ephemeralTab.profileId = ephemeralProfile.id
         harness.browserManager.profileManager.profiles.append(ephemeralProfile)
 
@@ -188,7 +188,7 @@ final class HistoryTabRecorderTests: XCTestCase {
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.historyManager = historyManager
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.profileId = profile.id
 
         return (container, browserManager, historyManager.store, profile, tab)

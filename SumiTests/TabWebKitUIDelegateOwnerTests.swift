@@ -112,7 +112,7 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
 
         tab.webKitUIDelegateOwner.webViewDidClose(webView)
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(closedWebViewIds, [ObjectIdentifier(webView)])
     }
 
@@ -138,7 +138,7 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
             originatingURL: originatingURL
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(saved.count, 1)
         XCTAssertEqual(saved.first?.0, data)
         XCTAssertEqual(saved.first?.1, "report.txt")

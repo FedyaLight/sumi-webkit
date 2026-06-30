@@ -140,7 +140,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences: &preferences
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(policy?.isCancel, true)
         XCTAssertEqual(resolver.openedURLs, [mailURL])
     }
@@ -861,7 +861,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             )
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(actionPolicy, .cancel)
         XCTAssertEqual(responsePolicy, .cancel)
         XCTAssertEqual(interceptedURLs, [installURL, installURL])
@@ -942,7 +942,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             )
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(lifecycle.resetRevisitProtectionTabIds, [tab.id])
         XCTAssertEqual(lifecycle.preparedExtensionWebViewIds, [ObjectIdentifier(webView)])
         XCTAssertEqual(lifecycle.preparedExtensionURLs, [destinationURL])
@@ -972,7 +972,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             )
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(tab.url, finalURL)
         XCTAssertEqual(lifecycle.zoomTabIds, [tab.id])
         XCTAssertEqual(lifecycle.adblockWebViewIds, [ObjectIdentifier(webView)])
@@ -997,7 +997,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
         let disposition = await responder.didReceive(challenge)
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(lifecycle.authChallengeHosts, ["auth.example"])
         XCTAssertEqual(lifecycle.authTabIds, [tab.id])
         guard case .credential(let resolvedCredential)? = disposition else {
@@ -1028,7 +1028,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             )
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(lifecycle.cleanupCheckWebViewIds, [ObjectIdentifier(webView)])
         XCTAssertEqual(lifecycle.finishedCleanupWebViewIds, [ObjectIdentifier(webView)])
         XCTAssertTrue(extensionProperties.properties.isEmpty)
@@ -1942,7 +1942,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = BrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.sumiSettings = settings
         let targetURL = URL(string: "https://destination.example/page")!
 
@@ -2001,7 +2001,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = BrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.sumiSettings = settings
         tab.shortcutPinRole = .essential
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -2046,7 +2046,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = BrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.sumiSettings = settings
         tab.setClickModifierFlags([.option])
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -2073,7 +2073,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = BrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.sumiSettings = settings
         tab.shortcutPinRole = .essential
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -2099,7 +2099,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = BrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.sumiSettings = settings
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
@@ -2123,7 +2123,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = BrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.sumiSettings = settings
         tab.setClickModifierFlags([.command])
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -2200,7 +2200,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             preferences: &preferences
         )
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(policy?.isCancel, true)
         XCTAssertEqual(evaluatedRequests.map(\.targetURL), [targetURL])
         XCTAssertEqual(evaluatedContexts.map(\.tabId), [tab.id.uuidString.lowercased()])

@@ -66,7 +66,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         dependencies: .live(
             tab: self,
             currentProfileUpdates: { [weak self] in
-                self?.browserManager?.$currentProfile.eraseToAnyPublisher()
+                self?.browserRuntime.currentProfileUpdates()
             }
         )
     )
@@ -79,7 +79,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     lazy var webKitUIDelegateOwner = TabWebKitUIDelegateOwner(tab: self)
     lazy var webKitPermissionUIDelegateOwner = TabWebKitPermissionUIDelegateOwner(tab: self)
     lazy var scriptMessageRuntimeOwner = TabScriptMessageRuntimeOwner(tab: self)
-    private weak var browserManagerStorage: BrowserManager?
+    private var browserRuntime = TabBrowserRuntime.inactive
     private let dependencyStateOwner: TabDependencyStateOwner
 
     // MARK: - Pin State
@@ -395,298 +395,83 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set { webViewInteractionStateOwner.webViewInteractionCancellables = newValue }
     }
 
-    var browserManager: BrowserManager? {
-        get { browserManagerStorage }
-        set {
-            browserManagerStorage = newValue
-            if let newValue {
-                let browserManager = newValue
-                webViewRoutingRuntime = .live(webViewRoutingService: newValue.webViewRoutingService)
-                persistenceRuntimeCallbacks = .live(tabManager: newValue.tabManager)
-                mediaRuntimeCallbacks = .live(
-                    nowPlayingController: newValue.nativeNowPlayingController,
-                    backgroundMediaOptimizationService: newValue.backgroundMediaOptimizationService
-                )
-                navigationCommandRuntime = .live(settings: { [weak browserManager] in
-                    browserManager?.sumiSettings
-                })
-                profileResolutionRuntime = .live(
-                    ephemeralProfileForTab: { [weak browserManager] tabId, profileId in
-                        browserManager?.windowRegistry?.windows.values.first(where: { window in
-                            window.ephemeralTabs.contains(where: { $0.id == tabId })
-                        })?.ephemeralProfile.flatMap { profile in
-                            profile.id == profileId ? profile : nil
-                        }
-                    },
-                    profile: { [weak browserManager] profileId in
-                        browserManager?.profileManager.profiles.first { $0.id == profileId }
-                    },
-                    spaceProfile: { [weak browserManager] spaceId in
-                        guard let browserManager,
-                              let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId }),
-                              let profileId = space.profileId
-                        else {
-                            return nil
-                        }
-                        return browserManager.profileManager.profiles.first { $0.id == profileId }
-                    },
-                    currentProfile: { [weak browserManager] in
-                        browserManager?.currentProfile
-                    },
-                    firstProfile: { [weak browserManager] in
-                        browserManager?.profileManager.profiles.first
-                    }
-                )
-                reloadPolicyRuntime = .live(
-                    extensionsModule: { [weak browserManager] in
-                        browserManager?.extensionsModule
-                    },
-                    protectionCoordinator: { [weak browserManager] in
-                        browserManager?.protectionCoordinator
-                    },
-                    runtimePermissionController: { [weak browserManager] in
-                        browserManager?.runtimePermissionController
-                    }
-                )
-                historySwipeRuntime = .live(
-                    webViewCoordinator: { [weak browserManager] in
-                        browserManager?.webViewCoordinator
-                    },
-                    cancelWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
-                        browserManager?.cancelWindowMutationsAfterHistorySwipe(in: windowId)
-                    },
-                    flushWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
-                        browserManager?.flushWindowMutationsAfterHistorySwipe(in: windowId)
-                    }
-                )
-                historyRecordingRuntime = .live(
-                    historyManager: { [weak browserManager] in
-                        browserManager?.historyManager
-                    },
-                    currentProfileId: { [weak browserManager] in
-                        browserManager?.currentProfile?.id
-                    }
-                )
-                findInPageRuntime = .live(
-                    activeWindowId: { [weak browserManager] in
-                        browserManager?.windowRegistry?.activeWindow?.id
-                    },
-                    webView: { [weak browserManager] tabId, windowId in
-                        browserManager?.getWebView(for: tabId, in: windowId)
-                    }
-                )
-                extensionPropertiesRuntime = .live(extensionsModule: { [weak browserManager] in
-                    browserManager?.extensionsModule
-                })
-                closeLifecycleRuntime = .live(
-                    cleanupZoomForTab: { [weak browserManager] tabId in
-                        browserManager?.cleanupZoomForTab(tabId)
-                    },
-                    updateTabVisibility: { [weak browserManager] in
-                        browserManager?.compositorManager.updateTabVisibility()
-                    },
-                    removeTab: { [weak browserManager] tabId in
-                        browserManager?.tabManager.removeTab(tabId)
-                    }
-                )
-                lifecycleNavigationRuntime = .live(
-                    tabSuspensionService: { [weak browserManager] in
-                        browserManager?.tabSuspensionService
-                    },
-                    extensionsModule: { [weak browserManager] in
-                        browserManager?.extensionsModule
-                    },
-                    loadZoomForTab: { [weak browserManager] tabId in
-                        browserManager?.loadZoomForTab(tabId)
-                    },
-                    adBlockingModule: { [weak browserManager] in
-                        browserManager?.adBlockingModule
-                    },
-                    enforceSiteDataPolicyAfterNavigation: { [weak browserManager] tab in
-                        browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
-                    },
-                    authenticationManager: { [weak browserManager] in
-                        browserManager?.authenticationManager
-                    },
-                    webViewCoordinator: { [weak browserManager] in
-                        browserManager?.webViewCoordinator
-                    }
-                )
-                permissionRuntime = .live(
-                    permissionBridges: { [weak browserManager] in
-                        browserManager?.permissionBridges
-                    },
-                    handlePermissionLifecycleEvent: { [weak browserManager] event in
-                        browserManager?.permissionLifecycleController.handle(event)
-                    },
-                    isActiveGlancePreviewSurface: { [weak browserManager] tabId, webView in
-                        guard let browserManager,
-                              let session = browserManager.glanceManager.currentSession,
-                              session.previewTab.id == tabId,
-                              session.previewTab.existingWebView === webView,
-                              let windowState = browserManager.windowRegistry?.windows[session.windowId],
-                              browserManager.glanceManager.activeSession(for: windowState)?.id == session.id
-                        else {
-                            return false
-                        }
-                        return true
-                    }
-                )
-                webViewCleanupRuntime = .live(
-                    userscriptsModule: { [weak browserManager] in
-                        browserManager?.userscriptsModule
-                    },
-                    webViewCoordinator: { [weak browserManager] in
-                        browserManager?.webViewCoordinator
-                    }
-                )
-                normalWebViewExtensionRuntime = .live(
-                    extensionsModule: { [weak browserManager] in
-                        browserManager?.extensionsModule
-                    },
-                    windowState: { [weak browserManager] windowId in
-                        browserManager?.windowRegistry?.windows[windowId]
-                    },
-                    currentTab: { [weak browserManager] windowState in
-                        browserManager?.currentTab(for: windowState)
-                    }
-                )
-                scriptMessageRuntime = .live(glanceManager: browserManager.glanceManager)
-                navigationDelegateRuntime = .live(
-                    externalSchemePermissionBridge: { [weak browserManager] in
-                        browserManager?.externalSchemePermissionBridge
-                    },
-                    downloadManager: { [weak browserManager] in
-                        browserManager?.downloadManager
-                    }
-                )
-                faviconExtensionRuntime = .live(
-                    extensionsModule: { [weak browserManager] in
-                        browserManager?.extensionsModule
-                    },
-                    extensionSurfaceStore: { [weak browserManager] in
-                        browserManager?.extensionSurfaceStore
-                    }
-                )
-                popupHandlingRuntime = .live(
-                    isAvailable: { [weak browserManager] in
-                        browserManager != nil
-                    },
-                    extensionsModule: { [weak browserManager] in
-                        browserManager?.extensionsModule
-                    },
-                    popupPermissionBridge: { [weak browserManager] in
-                        browserManager?.popupPermissionBridge
-                    },
-                    targetSpaceForOpener: { [weak browserManager] openerTab in
-                        guard let tabManager = browserManager?.tabManager else { return nil }
-                        return TabPopupHandlingRuntime.targetSpace(
-                            for: openerTab,
-                            tabManager: tabManager
-                        )
-                    },
-                    createNewTab: { [weak browserManager] url, space, activate in
-                        browserManager?.tabManager.createNewTab(
-                            url: url,
-                            in: space,
-                            activate: activate
-                        )
-                    },
-                    materializeVisibleTabWebViewIfNeeded: { [weak browserManager] tab, windowState in
-                        browserManager?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
-                    },
-                    presentWebPopup: { [weak browserManager] configuration, request, windowFeatures, openerTab, isExtensionOriginated in
-                        browserManager?.auxiliaryWindowManager.presentWebPopup(
-                            configuration: configuration,
-                            request: request,
-                            windowFeatures: windowFeatures,
-                            openerTab: openerTab,
-                            isExtensionOriginated: isExtensionOriginated,
-                            shouldActivateApp: true
-                        )
-                    },
-                    openerProfile: { [weak browserManager] openerTab in
-                        guard let browserManager else { return nil }
-                        return TabPopupHandlingRuntime.explicitPopupOpenerProfile(
-                            for: openerTab,
-                            windowRegistry: browserManager.windowRegistry,
-                            profiles: browserManager.profileManager.profiles,
-                            spaces: browserManager.tabManager.spaces
-                        )
-                    },
-                    createPopupTab: { [weak browserManager] openerTab, activate in
-                        browserManager?.createPopupTab(
-                            from: openerTab,
-                            activate: activate
-                        )
-                    },
-                    windowStateContainingTab: { [weak browserManager] tab in
-                        browserManager?.windowState(containing: tab)
-                    },
-                    selectTab: { [weak browserManager] tab, windowState in
-                        browserManager?.selectTab(tab, in: windowState)
-                    }
-                )
-                installNavigationRuntime = .live(userscriptsModule: { [weak browserManager] in
-                    browserManager?.userscriptsModule
-                })
-                webKitUIRuntime = .live(
-                    handleWebViewDidClose: { [weak browserManager] webView in
-                        browserManager?.handleWebViewDidClose(webView) == true
-                    },
-                    saveDownloadedData: { [weak browserManager] data, suggestedFilename, mimeType, originatingURL in
-                        browserManager?.downloadManager.saveDownloadedData(
-                            data,
-                            suggestedFilename: suggestedFilename,
-                            mimeType: mimeType,
-                            originatingURL: originatingURL
-                        )
-                    }
-                )
-                configurationPolicyWebViewReplacementRuntime = .live(
-                    webViewCoordinator: { [weak browserManager] in
-                        browserManager?.webViewCoordinator
-                    },
-                    windowState: { [weak browserManager] windowId in
-                        browserManager?.windowRegistry?.windows[windowId]
-                    },
-                    refreshCompositor: { [weak browserManager] windowState in
-                        browserManager?.refreshCompositor(for: windowState)
-                    }
-                )
-            } else {
-                webViewRoutingRuntime = .inactive
-                persistenceRuntimeCallbacks = .inactive
-                mediaRuntimeCallbacks = .inactive
-                historySwipeRuntime = .inactive
-                historyRecordingRuntime = .inactive
-                findInPageRuntime = .inactive
-                extensionPropertiesRuntime = .inactive
-                closeLifecycleRuntime = .inactive
-                lifecycleNavigationRuntime = .inactive
-                permissionRuntime = .inactive
-                webViewCleanupRuntime = .inactive
-                normalWebViewExtensionRuntime = .inactive
-                scriptMessageRuntime = .inactive
-                navigationDelegateRuntime = .inactive
-                faviconExtensionRuntime = .inactive
-                popupHandlingRuntime = .inactive
-                webKitUIRuntime = .inactive
-                installNavigationRuntime = .inactive
-                configurationPolicyWebViewReplacementRuntime = .inactive
-                navigationCommandRuntime = .inactive
-                profileResolutionRuntime = .inactive
-                reloadPolicyRuntime = .empty
-            }
-            dependencyStateOwner.attachDataServicesProvider { [weak self] in
-                guard let dataServices = self?.browserManagerStorage?.dataServices else { return nil }
-                return TabDependencyDataServices(
-                    faviconService: dataServices.faviconService,
-                    faviconImageService: dataServices.faviconImageService,
-                    visitedLinkStore: dataServices.visitedLinkStore
-                )
-            }
+    var hasBrowserRuntime: Bool {
+        browserRuntime.hasBrowserRuntime()
+    }
+
+    func webPageMenuAppearance(fallback: NSAppearance?) -> NSAppearance? {
+        browserRuntime.webPageMenuAppearance(self, fallback)
+    }
+
+    func canBookmarkFromWebPageMenu() -> Bool {
+        browserRuntime.canBookmark(self)
+    }
+
+    func requestBookmarkEditorFromWebPageMenu() {
+        browserRuntime.requestBookmarkEditorFromMenu()
+    }
+
+    func canStartContextMenuDownload() -> Bool {
+        browserRuntime.canStartContextMenuDownload()
+    }
+
+    func startContextMenuDownload(using request: URLRequest, in webView: WKWebView) {
+        browserRuntime.startContextMenuDownload(webView, request)
+    }
+
+    func openContextMenuURLInForegroundTab(_ url: URL) {
+        browserRuntime.openURLInForegroundTab(url, self)
+    }
+
+    func openContextMenuURLsInNewWindow(_ urls: [URL]) {
+        browserRuntime.openURLsInNewWindow(urls)
+    }
+
+    func notificationPermissionBridgeForRuntime() -> SumiNotificationPermissionBridge? {
+        browserRuntime.notificationPermissionBridge()
+    }
+
+    func shortcutLaunchURL(for shortcutPinId: UUID) -> URL? {
+        browserRuntime.shortcutLaunchURL(shortcutPinId)
+    }
+
+    func makeWebViewConfigurationContext() -> TabWebViewConfigurationContext {
+        browserRuntime.webViewConfigurationContext()
+    }
+
+    func attachBrowserRuntime(_ runtime: TabBrowserRuntime) {
+        browserRuntime = runtime
+        webViewRoutingRuntime = runtime.webViewRoutingRuntime
+        persistenceRuntimeCallbacks = runtime.persistenceRuntimeCallbacks
+        mediaRuntimeCallbacks = runtime.mediaRuntimeCallbacks
+        navigationCommandRuntime = runtime.navigationCommandRuntime
+        profileResolutionRuntime = runtime.profileResolutionRuntime
+        reloadPolicyRuntime = runtime.reloadPolicyRuntime
+        historySwipeRuntime = runtime.historySwipeRuntime
+        historyRecordingRuntime = runtime.historyRecordingRuntime
+        findInPageRuntime = runtime.findInPageRuntime
+        extensionPropertiesRuntime = runtime.extensionPropertiesRuntime
+        closeLifecycleRuntime = runtime.closeLifecycleRuntime
+        lifecycleNavigationRuntime = runtime.lifecycleNavigationRuntime
+        permissionRuntime = runtime.permissionRuntime
+        webViewCleanupRuntime = runtime.webViewCleanupRuntime
+        normalWebViewExtensionRuntime = runtime.normalWebViewExtensionRuntime
+        scriptMessageRuntime = runtime.scriptMessageRuntime
+        navigationDelegateRuntime = runtime.navigationDelegateRuntime
+        faviconExtensionRuntime = runtime.faviconExtensionRuntime
+        popupHandlingRuntime = runtime.popupHandlingRuntime
+        installNavigationRuntime = runtime.installNavigationRuntime
+        webKitUIRuntime = runtime.webKitUIRuntime
+        configurationPolicyWebViewReplacementRuntime =
+            runtime.configurationPolicyWebViewReplacementRuntime
+        dependencyStateOwner.attachDataServicesProvider { [weak self] in
+            self?.browserRuntime.dataServices()
         }
+        sumiSettings = runtime.settings()
+    }
+
+    func detachBrowserRuntime() {
+        attachBrowserRuntime(.inactive)
     }
 
     var sumiSettings: SumiSettingsService? {
@@ -739,9 +524,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
              .middleMouseDown(let event),
              .keyDown(let event):
             recordWebViewInteraction(event)
-            browserManager?.extensionsModule.reconcileExtensionRuntimeOnUserGestureIfNeeded(
+            browserRuntime.reconcileExtensionRuntimeOnUserGesture(
                 self,
-                reason: "Tab.recordWebViewInteraction"
+                "Tab.recordWebViewInteraction"
             )
         case .scrollWheel:
             break
@@ -773,14 +558,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     var isCurrentTab: Bool {
-        guard let browserManager else { return false }
-        if let windowState = browserManager.windowState(containing: self) {
-            return browserManager.currentTab(for: windowState)?.id == id
-        }
-        if let activeWindow = browserManager.windowRegistry?.activeWindow {
-            return browserManager.currentTab(for: activeWindow)?.id == id
-        }
-        return false
+        browserRuntime.isCurrentTab(self)
     }
 
     var isLoading: Bool {
@@ -834,7 +612,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         favicon: String = "globe",
         spaceId: UUID? = nil,
         index: Int = 0,
-        browserManager: BrowserManager? = nil,
         existingWebView: WKWebView? = nil,
         loadsCachedFaviconOnInit: Bool = true,
         faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService,
@@ -852,7 +629,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             visitedLinkStore: visitedLinkStore
         )
         super.init()
-        self.browserManager = browserManager
         self.spaceId = spaceId
         self.index = index
         navigationStateController.delegate = self
@@ -981,9 +757,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func activate() {
-        browserManager?.tabManager.setActiveTab(self)
+        browserRuntime.activate(self)
     }
-
 }
 
 // MARK: - Hashable & Equatable

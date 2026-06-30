@@ -121,7 +121,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profileId: profile.id,
             url: URL(string: "https://example.com")!
         )
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         windowState.currentTabId = tab.id
         let staleWebView = WKWebView()
         let trackedWebView = WKWebView()
@@ -306,7 +306,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profileId: ephemeralProfile.id,
             url: URL(string: "https://example.com")!
         )
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         XCTAssertTrue(ephemeralProfile.isEphemeral)
@@ -336,7 +336,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profileId: ephemeralProfile.id,
             url: URL(string: "https://example.com")!
         )
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         var activatedTabIDs: [UUID] = []
@@ -1273,7 +1273,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         manager.attach(browserManager: browserManager)
 
         let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -1326,7 +1326,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         manager.attach(browserManager: browserManager)
 
         let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -1394,7 +1394,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
 
         let tab = makeTab(profileId: profile.id, url: pageURL)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab
         tab._webView = webView
@@ -1477,7 +1477,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profileId: profile.id,
             url: URL(string: "http://127.0.0.1:8765/login-basic.html")!
         )
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         XCTAssertFalse(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
@@ -1551,7 +1551,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profileId: profile.id,
             url: URL(string: "https://example.com/login")!
         )
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
         attachUsableExtensionWebView(
             to: tab,
@@ -1611,7 +1611,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profileId: profile.id,
             url: URL(string: "https://example.com/login")!
         )
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         XCTAssertTrue(manager.profileHasLoadedContentScriptContexts(profileId: profile.id))
@@ -2458,7 +2458,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
             surface: .extensionOptions
@@ -2530,7 +2530,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
 
         let pageURL = URL(string: "http://127.0.0.1:8765/login-basic.html")!
         let tab = makeTab(profileId: profile.id, url: pageURL)
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         tab.extensionPageRuntimeOwner.openNotifiedDocumentSequence = 0
         tab.extensionPageRuntimeOwner.openNotifiedExtensionContextBindingGeneration = 0
         tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(to: pageURL)

@@ -167,7 +167,7 @@ final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
             }
         }
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(warmedProfileIds, [profileId])
     }
 }

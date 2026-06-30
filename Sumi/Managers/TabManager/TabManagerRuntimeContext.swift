@@ -364,8 +364,7 @@ extension TabManagerRuntimeContext {
             },
             prepareTab: { [weak browserManager] tab in
                 guard let browserManager else { return }
-                tab.browserManager = browserManager
-                tab.sumiSettings = browserManager.sumiSettings
+                tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
             }
         )
     }

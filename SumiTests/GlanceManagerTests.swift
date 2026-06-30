@@ -299,9 +299,9 @@ final class GlanceManagerTests: XCTestCase {
 
         let previewTab = Tab(
             url: URL(string: "https://destination.example/page")!,
-            name: "Destination",
-            browserManager: browserManager
+            name: "Destination"
         )
+        previewTab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         let session = GlanceSession(
             targetURL: previewTab.url,
             windowId: windowState.id,
@@ -351,7 +351,8 @@ final class GlanceManagerTests: XCTestCase {
         let browserManager = BrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let targetURL = URL(string: "https://destination.example/page")!
-        let previewTab = Tab(url: targetURL, name: "Destination", browserManager: browserManager)
+        let previewTab = Tab(url: targetURL, name: "Destination")
+        previewTab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         let session = GlanceSession(
             targetURL: targetURL,
             windowId: UUID(),

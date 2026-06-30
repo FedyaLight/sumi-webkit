@@ -67,7 +67,7 @@ final class TabProfileWebViewCreationGateTests: XCTestCase {
 
         owner.deferCreationUntilProfileAvailable()
 
-        XCTAssertNil(tab.browserManager)
+        XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(currentProfileUpdatesCallCount, 1)
         XCTAssertNotNil(tab.profileAwaitCancellable)
     }

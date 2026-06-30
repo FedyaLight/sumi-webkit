@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 import WebKit
 
 /// Shapes the contextual menu after WebKit has resolved the page element under
@@ -28,13 +27,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
         updateOwnedItemState(in: menu)
 
         if let tab = webView.owningTab,
-           let browserManager = tab.browserManager,
-           let windowState = browserManager.windowState(containing: tab),
-           let settings = browserManager.sumiSettings {
-            let globalScheme: ColorScheme = webView.window?.effectiveAppearance.name == .darkAqua ? .dark : .light
-            let themeContext = windowState.resolvedThemeContext(global: globalScheme, settings: settings)
-            let colorScheme = themeContext.nativeSurfaceColorScheme
-            let appearance = NSAppearance.sumiChromeAppearance(for: colorScheme, fallback: webView.window?.effectiveAppearance)
+           let appearance = tab.webPageMenuAppearance(fallback: webView.window?.effectiveAppearance) {
             menu.sumiApplyAppearance(appearance)
         }
     }
@@ -54,10 +47,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
         case .stop:
             return webView.isLoading
         case .bookmarkPage:
-            guard let tab = webView.owningTab,
-                  let browserManager = tab.browserManager
-            else { return false }
-            return browserManager.bookmarkManager.canBookmark(tab)
+            return webView.owningTab?.canBookmarkFromWebPageMenu() ?? false
         case .copyPageAddress:
             return pageURL != nil
         case .copySelection:
@@ -112,7 +102,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
 
     @objc func bookmarkPage(_: Any?) {
         webView?.owningTab?.activate()
-        webView?.owningTab?.browserManager?.requestBookmarkEditorForActiveWindowFromMenu()
+        webView?.owningTab?.requestBookmarkEditorFromWebPageMenu()
     }
 
     @objc func copyPageAddress(_: Any?) {
@@ -246,7 +236,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
     }
 
     private var canStartSumiDownload: Bool {
-        webView?.owningTab?.browserManager?.downloadManager != nil
+        webView?.owningTab?.canStartContextMenuDownload() ?? false
     }
 
     private func consumeNativeContextReference(
@@ -287,23 +277,11 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
     }
 
     private func openInNewTab(_ url: URL) {
-        guard let tab = webView?.owningTab,
-              let browserManager = tab.browserManager,
-              let windowState = browserManager.windowState(containing: tab)
-                ?? browserManager.windowRegistry?.activeWindow
-        else { return }
-
-        _ = browserManager.openNewTab(
-            url: url.absoluteString,
-            context: .foreground(
-                windowState: windowState,
-                preferredSpaceId: tab.spaceId
-            )
-        )
+        webView?.owningTab?.openContextMenuURLInForegroundTab(url)
     }
 
     private func openInNewWindow(_ url: URL) {
-        webView?.owningTab?.browserManager?.openURLsInNewWindow([url])
+        webView?.owningTab?.openContextMenuURLsInNewWindow([url])
     }
 
     private func nonZeroPrintSize(for webView: WKWebView) -> CGSize {
@@ -317,22 +295,11 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
 
     private func startDownload(using request: URLRequest) {
         guard let webView,
-              let url = request.url,
-              let downloadManager = webView.owningTab?.browserManager?.downloadManager
+              request.url != nil,
+              let tab = webView.owningTab
         else { return }
 
-        let callback: @MainActor @Sendable (WKDownload) -> Void = { download in
-            _ = downloadManager.addDownload(
-                download,
-                originalURL: url,
-                suggestedFilename: DownloadFileUtilities.suggestedFilename(
-                    response: nil,
-                    requestURL: url,
-                    fallback: "download"
-                )
-            )
-        }
-        webView.startDownload(using: request, completionHandler: callback)
+        tab.startContextMenuDownload(using: request, in: webView)
     }
 }
 

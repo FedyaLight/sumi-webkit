@@ -8,7 +8,6 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
     func testLegacyMediaUIDelegateFailsClosedWithoutBrowserManager() {
         let tab = Tab(
             url: URL(string: "https://top.example/page")!,
-            browserManager: nil,
             loadsCachedFaviconOnInit: false
         )
         let webView = WKWebView()
@@ -30,9 +29,9 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
         let browserManager = BrowserManager()
         let tab = Tab(
             url: URL(string: "https://files.example/page")!,
-            browserManager: browserManager,
             loadsCachedFaviconOnInit: false
         )
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
         let webView = WKWebView()
 
         let context = try XCTUnwrap(tab.filePickerPermissionTabContext(for: webView))

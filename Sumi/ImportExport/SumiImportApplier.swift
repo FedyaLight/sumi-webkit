@@ -343,6 +343,7 @@ final class SumiImportApplier {
             uniquingKeysWith: { first, _ in first }
         )
 
+        let tabBrowserRuntime = browserManager.makeTabBrowserRuntime()
         var tabsBySpace: [UUID: [Tab]] = [:]
         let tabRecordsBySpace = Dictionary(grouping: data.regularTabs, by: \.spaceId)
         for space in spaces {
@@ -360,7 +361,6 @@ final class SumiImportApplier {
                         favicon: "globe",
                         spaceId: space.id,
                         index: record.index,
-                        browserManager: browserManager,
                         loadsCachedFaviconOnInit: false
                     )
                     tab.profileId = record.profileId.flatMap(UUID.init(uuidString:))
@@ -368,6 +368,7 @@ final class SumiImportApplier {
                        folderSpaceById[folderId] == space.id {
                         tab.folderId = folderId
                     }
+                    tab.attachBrowserRuntime(tabBrowserRuntime)
                     return tab
                 }
         }

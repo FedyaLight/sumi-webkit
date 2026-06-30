@@ -49,7 +49,7 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
             name: "Extension requested"
         )
         tab.profileId = profile.id
-        tab.browserManager = browserManager
+        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
 
         owner.materializeNormalTabIfNeeded(
             tab,

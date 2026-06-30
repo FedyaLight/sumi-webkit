@@ -13,7 +13,6 @@ extension BrowserTabOpeningOwner.Dependencies {
             tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
                 browserManager?.tabManager ?? tabManager
             },
-            browserManager: { [weak browserManager] in browserManager },
             settings: { [weak browserManager] in browserManager?.sumiSettings },
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             windowStateContainingTab: { [weak browserManager] tab in
@@ -75,7 +74,6 @@ struct BrowserTabOpenContext {
 final class BrowserTabOpeningOwner {
     struct Dependencies {
         let tabManager: () -> TabManager
-        let browserManager: () -> BrowserManager?
         let settings: () -> SumiSettingsService?
         let activeWindow: () -> BrowserWindowState?
         let windowStateContainingTab: (Tab) -> BrowserWindowState?
@@ -226,8 +224,7 @@ final class BrowserTabOpeningOwner {
             name: tab.name,
             favicon: "globe",
             spaceId: targetSpace?.id,
-            index: 0,
-            browserManager: dependencies.browserManager()
+            index: 0
         )
         newTab.favicon = tab.favicon
         newTab.faviconIsTemplateGlobePlaceholder = tab.faviconIsTemplateGlobePlaceholder
