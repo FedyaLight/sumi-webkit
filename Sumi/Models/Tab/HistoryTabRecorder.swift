@@ -44,24 +44,24 @@ final class HistoryTabRecorder {
     func updateTitle(_ title: String, tab: Tab) {
         let url = currentURL ?? tab.existingWebView?.url ?? tab.url
         let profile = tab.resolveProfile()
-        tab.browserManager?.historyManager.updateTitleIfNeeded(
-            title: title,
-            url: url,
-            profileId: profile?.id ?? tab.browserManager?.currentProfile?.id,
-            isEphemeral: profile?.isEphemeral ?? tab.isEphemeral
+        tab.historyRecordingRuntime.updateTitleIfNeeded(
+            title,
+            url,
+            profile?.id ?? tab.historyRecordingRuntime.currentProfileId(),
+            profile?.isEphemeral ?? tab.isEphemeral
         )
     }
 
     private func addVisit(url: URL, tab: Tab) {
         let profile = tab.resolveProfile()
         let title = tab.resolvedHistoryTitle(for: url)
-        if let visitID = tab.browserManager?.historyManager.addVisit(
-            url: url,
-            title: title,
-            timestamp: Date(),
-            tabId: tab.id,
-            profileId: profile?.id ?? tab.browserManager?.currentProfile?.id,
-            isEphemeral: profile?.isEphemeral ?? tab.isEphemeral
+        if let visitID = tab.historyRecordingRuntime.addVisit(
+            url,
+            title,
+            Date(),
+            tab.id,
+            profile?.id ?? tab.historyRecordingRuntime.currentProfileId(),
+            profile?.isEphemeral ?? tab.isEphemeral
         ) {
             localVisitIDs.append(visitID)
             if let profile {

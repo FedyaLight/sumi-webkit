@@ -77,6 +77,31 @@ struct TabNavigationCommandRuntime {
 }
 
 @MainActor
+struct TabHistoryRecordingRuntime {
+    var updateTitleIfNeeded: (
+        _ title: String,
+        _ url: URL,
+        _ profileId: UUID?,
+        _ isEphemeral: Bool
+    ) -> Void
+    var addVisit: (
+        _ url: URL,
+        _ title: String,
+        _ timestamp: Date,
+        _ tabId: UUID,
+        _ profileId: UUID?,
+        _ isEphemeral: Bool
+    ) -> UUID?
+    var currentProfileId: () -> UUID?
+
+    static let inactive = Self(
+        updateTitleIfNeeded: { _, _, _, _ in },
+        addVisit: { _, _, _, _, _, _ in nil },
+        currentProfileId: { nil }
+    )
+}
+
+@MainActor
 struct TabProfileResolutionRuntime {
     var ephemeralProfileForTab: (_ tabId: UUID, _ profileId: UUID) -> Profile?
     var profile: (UUID) -> Profile?
@@ -176,6 +201,7 @@ final class TabNavigationRuntime {
     var webViewRouting = TabWebViewRoutingRuntime.inactive
     var persistenceCallbacks = TabRuntimePersistenceCallbacks.inactive
     var historySwipeRuntime = TabHistorySwipeRuntime.inactive
+    var historyRecordingRuntime = TabHistoryRecordingRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
     var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
     var reloadPolicyRuntime = TabReloadPolicyRuntime.empty

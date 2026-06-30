@@ -90,6 +90,36 @@ extension TabHistorySwipeRuntime {
 }
 
 @MainActor
+extension TabHistoryRecordingRuntime {
+    static func live(
+        historyManager: @escaping () -> HistoryManager?,
+        currentProfileId: @escaping () -> UUID?
+    ) -> Self {
+        Self(
+            updateTitleIfNeeded: { title, url, profileId, isEphemeral in
+                historyManager()?.updateTitleIfNeeded(
+                    title: title,
+                    url: url,
+                    profileId: profileId,
+                    isEphemeral: isEphemeral
+                )
+            },
+            addVisit: { url, title, timestamp, tabId, profileId, isEphemeral in
+                historyManager()?.addVisit(
+                    url: url,
+                    title: title,
+                    timestamp: timestamp,
+                    tabId: tabId,
+                    profileId: profileId,
+                    isEphemeral: isEphemeral
+                )
+            },
+            currentProfileId: currentProfileId
+        )
+    }
+}
+
+@MainActor
 extension TabNavigationCommandRuntime {
     static func live(settings: @escaping () -> SumiSettingsService?) -> Self {
         Self(

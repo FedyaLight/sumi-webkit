@@ -64,6 +64,34 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(persistence.persistedTabIds, [tab.id])
     }
 
+    func testHistoryRecorderUsesInjectedRuntimeWithoutBrowserManager() throws {
+        let pageURL = try XCTUnwrap(URL(string: "https://example.com/history"))
+        let profileId = UUID()
+        let tab = Tab(
+            url: pageURL,
+            name: "History Title",
+            loadsCachedFaviconOnInit: false
+        )
+        let history = RecordingTabHistoryRecordingRuntime(currentProfileId: profileId)
+        tab.historyRecordingRuntime = history.runtime
+
+        tab.historyRecorder.didCommitMainFrameNavigation(
+            to: pageURL,
+            kind: .regular,
+            tab: tab
+        )
+        tab.historyRecorder.updateTitle("Resolved Title", tab: tab)
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(history.visitURLs, [pageURL])
+        XCTAssertEqual(history.visitTabIds, [tab.id])
+        XCTAssertEqual(history.visitProfileIds, [profileId])
+        XCTAssertEqual(tab.historyRecorder.localVisitIDs, [history.visitId])
+        XCTAssertEqual(history.titleUpdateTitles, ["Resolved Title"])
+        XCTAssertEqual(history.titleUpdateURLs, [pageURL])
+        XCTAssertEqual(history.titleUpdateProfileIds, [profileId])
+    }
+
     func testHistorySwipeUsesInjectedRuntimeWithoutBrowserManager() {
         let tab = Tab(loadsCachedFaviconOnInit: false)
         let webView = WKWebView()
@@ -151,6 +179,41 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(
             tab.url.absoluteString,
             "https://search.example/?q=sumi%20browser"
+        )
+    }
+}
+
+@MainActor
+private final class RecordingTabHistoryRecordingRuntime {
+    let visitId = UUID()
+    let profileId: UUID?
+    private(set) var visitURLs: [URL] = []
+    private(set) var visitTabIds: [UUID] = []
+    private(set) var visitProfileIds: [UUID?] = []
+    private(set) var titleUpdateTitles: [String] = []
+    private(set) var titleUpdateURLs: [URL] = []
+    private(set) var titleUpdateProfileIds: [UUID?] = []
+
+    init(currentProfileId: UUID?) {
+        self.profileId = currentProfileId
+    }
+
+    var runtime: TabHistoryRecordingRuntime {
+        TabHistoryRecordingRuntime(
+            updateTitleIfNeeded: { [weak self] title, url, profileId, _ in
+                self?.titleUpdateTitles.append(title)
+                self?.titleUpdateURLs.append(url)
+                self?.titleUpdateProfileIds.append(profileId)
+            },
+            addVisit: { [weak self] url, _, _, tabId, profileId, _ in
+                self?.visitURLs.append(url)
+                self?.visitTabIds.append(tabId)
+                self?.visitProfileIds.append(profileId)
+                return self?.visitId
+            },
+            currentProfileId: { [weak self] in
+                self?.profileId
+            }
         )
     }
 }

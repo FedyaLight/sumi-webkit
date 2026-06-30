@@ -186,6 +186,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.historySwipeRuntime }
         set { navigationRuntime.historySwipeRuntime = newValue }
     }
+    var historyRecordingRuntime: TabHistoryRecordingRuntime {
+        get { navigationRuntime.historyRecordingRuntime }
+        set { navigationRuntime.historyRecordingRuntime = newValue }
+    }
     var navigationCommandRuntime: TabNavigationCommandRuntime {
         get { navigationRuntime.navigationCommandRuntime }
         set { navigationRuntime.navigationCommandRuntime = newValue }
@@ -358,11 +362,20 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.flushWindowMutationsAfterHistorySwipe(in: windowId)
                     }
                 )
+                historyRecordingRuntime = .live(
+                    historyManager: { [weak browserManager] in
+                        browserManager?.historyManager
+                    },
+                    currentProfileId: { [weak browserManager] in
+                        browserManager?.currentProfile?.id
+                    }
+                )
             } else {
                 webViewRoutingRuntime = .inactive
                 persistenceRuntimeCallbacks = .inactive
                 mediaRuntimeCallbacks = .inactive
                 historySwipeRuntime = .inactive
+                historyRecordingRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive
                 reloadPolicyRuntime = .empty
