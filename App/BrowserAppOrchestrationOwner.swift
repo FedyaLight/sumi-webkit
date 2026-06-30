@@ -15,7 +15,12 @@ final class BrowserAppOrchestrationOwner {
         let startUpdater: @MainActor () -> Void
     }
 
+    private let windowLifecycleOwner: BrowserWindowLifecycleOwner
     private var didSetup = false
+
+    init(windowLifecycleOwner: BrowserWindowLifecycleOwner = BrowserWindowLifecycleOwner()) {
+        self.windowLifecycleOwner = windowLifecycleOwner
+    }
 
     @discardableResult
     func setupIfNeeded(dependencies: Dependencies) -> Bool {
@@ -58,55 +63,13 @@ final class BrowserAppOrchestrationOwner {
         dependencies.startUpdater()
         keyboardShortcutManager.setBrowserManager(browserManager)
 
-        windowRegistry.onWindowRegister = { [weak browserManager] windowState in
-            browserManager?.setupWindowState(windowState)
-        }
-
-        for windowState in windowRegistry.allWindows {
-            browserManager.setupWindowState(windowState)
-        }
-
-        windowRegistry.onWindowClose = { [webViewCoordinator, weak browserManager] windowId in
-            if let browserManager {
-                browserManager.handleWindowWillClose(windowId)
-                browserManager.extensionsModule.notifyWindowClosedIfLoaded(windowId)
-                webViewCoordinator.cleanupWindow(
-                    windowId,
-                    tabManager: browserManager.tabManager
-                )
-                browserManager.splitManager.cleanupWindow(windowId)
-                browserManager.backgroundMediaOptimizationService.scheduleReconcile(
-                    reason: "window-closed"
-                )
-
-                if let windowState = browserManager.windowRegistry?.windows[windowId],
-                   windowState.isIncognito {
-                    Task {
-                        await browserManager.closeIncognitoWindow(windowState)
-                    }
-                }
-            } else {
-                webViewCoordinator.removeCompositorContainerView(for: windowId)
-                RuntimeDiagnostics.emit(
-                    "⚠️ [SumiApp] Window \(windowId) closed after BrowserManager deallocation - performed minimal cleanup"
-                )
-            }
-        }
-
-        windowRegistry.onActiveWindowChange = { [weak browserManager] windowState in
-            browserManager?.setActiveWindowState(windowState)
-        }
-
-        windowRegistry.onWindowVisibilityChange = { [weak browserManager] windowState in
-            browserManager?.handleWindowVisibilityChanged(windowState)
-        }
-
-        windowRegistry.onAllWindowsClosed = { [weak browserManager] in
-            browserManager?.windowSessionService.prepareForAllWindowsClosed()
-            Task { @MainActor [weak browserManager] in
-                await browserManager?.performSiteDataPolicyAllWindowsClosedCleanup()
-            }
-        }
+        windowLifecycleOwner.attachIfNeeded(
+            dependencies: .live(
+                browserManager: browserManager,
+                windowRegistry: windowRegistry,
+                webViewCoordinator: webViewCoordinator
+            )
+        )
 
         Task { @MainActor [browserManager] in
             await browserManager.runAutomaticPermissionCleanupIfNeeded(
