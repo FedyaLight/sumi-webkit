@@ -40,6 +40,33 @@ struct TabMediaRuntimeCallbacks {
     )
 }
 
+@MainActor
+struct TabHistorySwipeRuntime {
+    var windowIDContaining: (WKWebView) -> UUID?
+    var beginHistorySwipeProtection: (
+        _ tabId: UUID,
+        _ webView: WKWebView,
+        _ originURL: URL?,
+        _ originHistoryItem: WKBackForwardListItem?
+    ) -> Void
+    var finishHistorySwipeProtection: (
+        _ tabId: UUID,
+        _ webView: WKWebView?,
+        _ currentURL: URL?,
+        _ currentHistoryItem: WKBackForwardListItem?
+    ) -> Bool
+    var cancelWindowMutationsAfterHistorySwipe: (UUID) -> Void
+    var flushWindowMutationsAfterHistorySwipe: (UUID) -> Void
+
+    static let inactive = Self(
+        windowIDContaining: { _ in nil },
+        beginHistorySwipeProtection: { _, _, _, _ in },
+        finishHistorySwipeProtection: { _, _, _, _ in false },
+        cancelWindowMutationsAfterHistorySwipe: { _ in },
+        flushWindowMutationsAfterHistorySwipe: { _ in }
+    )
+}
+
 enum TabMainFrameNavigationKind {
     case load
     case backForward
@@ -122,6 +149,7 @@ final class TabNavigationRuntime {
     var restoredCanGoForward: Bool?
     var webViewRouting = TabWebViewRoutingRuntime.inactive
     var persistenceCallbacks = TabRuntimePersistenceCallbacks.inactive
+    var historySwipeRuntime = TabHistorySwipeRuntime.inactive
     let navigationTransactionOwner = TabNavigationTransactionOwner()
     let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()

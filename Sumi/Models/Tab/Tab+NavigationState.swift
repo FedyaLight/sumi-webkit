@@ -123,29 +123,29 @@ extension Tab {
                 self?.url
             },
             windowIDContaining: { [weak self] webView in
-                self?.browserManager?.webViewCoordinator?.windowID(containing: webView)
+                self?.historySwipeRuntime.windowIDContaining(webView)
             },
             beginHistorySwipeProtection: { [weak self] tabId, webView, originURL, originHistoryItem in
-                self?.browserManager?.webViewCoordinator?.beginHistorySwipeProtection(
-                    tabId: tabId,
-                    webView: webView,
-                    originURL: originURL,
-                    originHistoryItem: originHistoryItem
+                self?.historySwipeRuntime.beginHistorySwipeProtection(
+                    tabId,
+                    webView,
+                    originURL,
+                    originHistoryItem
                 )
             },
             finishHistorySwipeProtection: { [weak self] tabId, webView, currentURL, currentHistoryItem in
-                self?.browserManager?.webViewCoordinator?.finishHistorySwipeProtection(
-                    tabId: tabId,
-                    webView: webView,
-                    currentURL: currentURL,
-                    currentHistoryItem: currentHistoryItem
+                self?.historySwipeRuntime.finishHistorySwipeProtection(
+                    tabId,
+                    webView,
+                    currentURL,
+                    currentHistoryItem
                 ) ?? false
             },
             cancelWindowMutationsAfterHistorySwipe: { [weak self] windowId in
-                self?.browserManager?.cancelWindowMutationsAfterHistorySwipe(in: windowId)
+                self?.historySwipeRuntime.cancelWindowMutationsAfterHistorySwipe(windowId)
             },
             flushWindowMutationsAfterHistorySwipe: { [weak self] windowId in
-                self?.browserManager?.flushWindowMutationsAfterHistorySwipe(in: windowId)
+                self?.historySwipeRuntime.flushWindowMutationsAfterHistorySwipe(windowId)
             },
             updateNavigationStateIfCurrentWebViewExists: { [weak self] in
                 guard let self, self.hasCurrentWebView else { return }

@@ -1,4 +1,5 @@
 import XCTest
+import WebKit
 
 @testable import Sumi
 
@@ -61,6 +62,43 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertTrue(tab.acceptResolvedDisplayTitle("Updated"))
 
         XCTAssertEqual(persistence.persistedTabIds, [tab.id])
+    }
+
+    func testHistorySwipeUsesInjectedRuntimeWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let webView = WKWebView()
+        let historySwipe = RecordingTabHistorySwipeRuntime()
+        tab.historySwipeRuntime = historySwipe.runtime
+
+        tab.beginBackForwardNavigationTracking(on: webView)
+        tab.finishBackForwardNavigationTracking(using: webView)
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(historySwipe.beginTabIds, [tab.id])
+        XCTAssertEqual(historySwipe.finishTabIds, [tab.id])
+        XCTAssertEqual(historySwipe.windowLookupWebViews, [ObjectIdentifier(webView)])
+        XCTAssertEqual(historySwipe.flushedWindowIds, [historySwipe.windowId])
+        XCTAssertTrue(historySwipe.cancelledWindowIds.isEmpty)
+    }
+
+    func testLiveHistorySwipeRuntimeUsesLateBoundCoordinator() {
+        var coordinator: WebViewCoordinator?
+        let webView = WKWebView()
+        let tabId = UUID()
+        let windowId = UUID()
+        let runtime = TabHistorySwipeRuntime.live(
+            webViewCoordinator: { coordinator },
+            cancelWindowMutationsAfterHistorySwipe: { _ in },
+            flushWindowMutationsAfterHistorySwipe: { _ in }
+        )
+
+        XCTAssertNil(runtime.windowIDContaining(webView))
+
+        let resolvedCoordinator = WebViewCoordinator()
+        resolvedCoordinator.setWebView(webView, for: tabId, in: windowId)
+        coordinator = resolvedCoordinator
+
+        XCTAssertEqual(runtime.windowIDContaining(webView), windowId)
     }
 }
 
@@ -125,6 +163,38 @@ private final class RecordingTabPersistenceCallbacks {
             },
             scheduleRuntimeStatePersistence: { [weak self] tab in
                 self?.persistedTabIds.append(tab.id)
+            }
+        )
+    }
+}
+
+@MainActor
+private final class RecordingTabHistorySwipeRuntime {
+    let windowId = UUID()
+    private(set) var beginTabIds: [UUID] = []
+    private(set) var finishTabIds: [UUID] = []
+    private(set) var windowLookupWebViews: [ObjectIdentifier] = []
+    private(set) var cancelledWindowIds: [UUID] = []
+    private(set) var flushedWindowIds: [UUID] = []
+
+    var runtime: TabHistorySwipeRuntime {
+        TabHistorySwipeRuntime(
+            windowIDContaining: { [weak self] webView in
+                self?.windowLookupWebViews.append(ObjectIdentifier(webView))
+                return self?.windowId
+            },
+            beginHistorySwipeProtection: { [weak self] tabId, _, _, _ in
+                self?.beginTabIds.append(tabId)
+            },
+            finishHistorySwipeProtection: { [weak self] tabId, _, _, _ in
+                self?.finishTabIds.append(tabId)
+                return false
+            },
+            cancelWindowMutationsAfterHistorySwipe: { [weak self] windowId in
+                self?.cancelledWindowIds.append(windowId)
+            },
+            flushWindowMutationsAfterHistorySwipe: { [weak self] windowId in
+                self?.flushedWindowIds.append(windowId)
             }
         )
     }

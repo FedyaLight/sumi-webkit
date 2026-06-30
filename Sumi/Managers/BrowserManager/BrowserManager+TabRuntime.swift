@@ -55,3 +55,36 @@ extension TabMediaRuntimeCallbacks {
         )
     }
 }
+
+@MainActor
+extension TabHistorySwipeRuntime {
+    static func live(
+        webViewCoordinator: @escaping () -> WebViewCoordinator?,
+        cancelWindowMutationsAfterHistorySwipe: @escaping (UUID) -> Void,
+        flushWindowMutationsAfterHistorySwipe: @escaping (UUID) -> Void
+    ) -> Self {
+        Self(
+            windowIDContaining: { webView in
+                webViewCoordinator()?.windowID(containing: webView)
+            },
+            beginHistorySwipeProtection: { tabId, webView, originURL, originHistoryItem in
+                webViewCoordinator()?.beginHistorySwipeProtection(
+                    tabId: tabId,
+                    webView: webView,
+                    originURL: originURL,
+                    originHistoryItem: originHistoryItem
+                )
+            },
+            finishHistorySwipeProtection: { tabId, webView, currentURL, currentHistoryItem in
+                webViewCoordinator()?.finishHistorySwipeProtection(
+                    tabId: tabId,
+                    webView: webView,
+                    currentURL: currentURL,
+                    currentHistoryItem: currentHistoryItem
+                ) ?? false
+            },
+            cancelWindowMutationsAfterHistorySwipe: cancelWindowMutationsAfterHistorySwipe,
+            flushWindowMutationsAfterHistorySwipe: flushWindowMutationsAfterHistorySwipe
+        )
+    }
+}

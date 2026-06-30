@@ -182,6 +182,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.persistenceCallbacks }
         set { navigationRuntime.persistenceCallbacks = newValue }
     }
+    var historySwipeRuntime: TabHistorySwipeRuntime {
+        get { navigationRuntime.historySwipeRuntime }
+        set { navigationRuntime.historySwipeRuntime = newValue }
+    }
     var isFreezingNavigationStateDuringBackForwardGesture: Bool {
         get { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture }
         set { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture = newValue }
@@ -319,16 +323,29 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         set {
             browserManagerStorage = newValue
             if let newValue {
+                let browserManager = newValue
                 webViewRoutingRuntime = .live(webViewRoutingService: newValue.webViewRoutingService)
                 persistenceRuntimeCallbacks = .live(tabManager: newValue.tabManager)
                 mediaRuntimeCallbacks = .live(
                     nowPlayingController: newValue.nativeNowPlayingController,
                     backgroundMediaOptimizationService: newValue.backgroundMediaOptimizationService
                 )
+                historySwipeRuntime = .live(
+                    webViewCoordinator: { [weak browserManager] in
+                        browserManager?.webViewCoordinator
+                    },
+                    cancelWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
+                        browserManager?.cancelWindowMutationsAfterHistorySwipe(in: windowId)
+                    },
+                    flushWindowMutationsAfterHistorySwipe: { [weak browserManager] windowId in
+                        browserManager?.flushWindowMutationsAfterHistorySwipe(in: windowId)
+                    }
+                )
             } else {
                 webViewRoutingRuntime = .inactive
                 persistenceRuntimeCallbacks = .inactive
                 mediaRuntimeCallbacks = .inactive
+                historySwipeRuntime = .inactive
             }
             dependencyStateOwner.attachDataServicesProvider { [weak self] in
                 guard let dataServices = self?.browserManagerStorage?.dataServices else { return nil }
