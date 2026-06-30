@@ -360,68 +360,77 @@ extension TabFaviconExtensionRuntime {
 
 @MainActor
 extension TabPopupHandlingRuntime {
-    static func live(browserManager: BrowserManager) -> Self {
+    static func live(
+        isAvailable: @escaping () -> Bool,
+        extensionsModule: @escaping () -> SumiExtensionsModule?,
+        popupPermissionBridge: @escaping () -> SumiPopupPermissionBridge?,
+        targetSpaceForOpener: @escaping (Tab) -> Space?,
+        createNewTab: @escaping (_ url: String, _ space: Space?, _ activate: Bool) -> Tab?,
+        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void,
+        presentWebPopup: @escaping (
+            _ configuration: WKWebViewConfiguration,
+            _ request: URLRequest,
+            _ windowFeatures: WKWindowFeatures,
+            _ openerTab: Tab,
+            _ isExtensionOriginated: Bool
+        ) -> WKWebView?,
+        openerProfile: @escaping (Tab) -> Profile?,
+        createPopupTab: @escaping (_ openerTab: Tab, _ activate: Bool) -> Tab?,
+        windowStateContainingTab: @escaping (Tab) -> BrowserWindowState?,
+        selectTab: @escaping (Tab, BrowserWindowState) -> Void
+    ) -> Self {
         Self(
-            hasBrowserRuntime: { [weak browserManager] in
-                browserManager != nil
-            },
-            consumeRecentlyOpenedExtensionTabRequest: { [weak browserManager] requestURL in
-                browserManager?.extensionsModule
+            hasBrowserRuntime: isAvailable,
+            consumeRecentlyOpenedExtensionTabRequest: { requestURL in
+                extensionsModule()?
                     .consumeRecentlyOpenedExtensionTabRequestIfLoaded(for: requestURL) == true
             },
-            evaluatePopupPermission: { [weak browserManager] request, tabContext in
-                guard let browserManager else { return nil }
-                return await browserManager.popupPermissionBridge.evaluate(
+            evaluatePopupPermission: { request, tabContext in
+                await popupPermissionBridge()?.evaluate(
                     request,
                     tabContext: tabContext
                 )
             },
-            evaluatePopupPermissionSynchronouslyForWebKitFallback: { [weak browserManager] request, tabContext in
-                browserManager?.popupPermissionBridge.evaluateSynchronouslyForWebKitFallback(
+            evaluatePopupPermissionSynchronouslyForWebKitFallback: { request, tabContext in
+                popupPermissionBridge()?.evaluateSynchronouslyForWebKitFallback(
                     request,
                     tabContext: tabContext
                 )
             },
-            openExtensionExternalTab: { [weak browserManager] requestURL, openerTab in
-                guard let browserManager else { return false }
-                let targetSpace = openerTab.spaceId.flatMap { spaceID in
-                    browserManager.tabManager.spaces.first(where: { $0.id == spaceID })
-                } ?? browserManager.tabManager.currentSpace
-                let childTab = browserManager.tabManager.createNewTab(
-                    url: requestURL.absoluteString,
-                    in: targetSpace,
-                    activate: true
-                )
-                if let windowState = browserManager.windowState(containing: openerTab) {
-                    browserManager.materializeVisibleTabWebViewIfNeeded(childTab, in: windowState)
-                    browserManager.selectTab(childTab, in: windowState, loadPolicy: .immediate)
+            openExtensionExternalTab: { requestURL, openerTab in
+                guard isAvailable(),
+                      let childTab = createNewTab(
+                          requestURL.absoluteString,
+                          targetSpaceForOpener(openerTab),
+                          true
+                      )
+                else {
+                    return false
+                }
+                if let windowState = windowStateContainingTab(openerTab) {
+                    materializeVisibleTabWebViewIfNeeded(childTab, windowState)
+                    selectTab(childTab, windowState)
                 }
                 if childTab.isUnloaded {
                     childTab.loadWebViewIfNeeded()
                 }
-                browserManager.extensionsModule.registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
+                extensionsModule()?.registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
                     childTab,
                     reason: "SumiPopupHandlingNavigationResponder.extensionExternalTab"
                 )
                 return true
             },
-            presentWebPopup: { [weak browserManager] configuration, request, windowFeatures, openerTab, isExtensionOriginated in
-                browserManager?.auxiliaryWindowManager.presentWebPopup(
-                    configuration: configuration,
-                    request: request,
-                    windowFeatures: windowFeatures,
-                    openerTab: openerTab,
-                    isExtensionOriginated: isExtensionOriginated,
-                    shouldActivateApp: true
+            presentWebPopup: { configuration, request, windowFeatures, openerTab, isExtensionOriginated in
+                presentWebPopup(
+                    configuration,
+                    request,
+                    windowFeatures,
+                    openerTab,
+                    isExtensionOriginated
                 )
             },
-            applyVisitedLinkStoreToPopupConfiguration: { [weak browserManager] openerTab, configuration in
-                guard let browserManager,
-                      let profile = explicitPopupOpenerProfile(
-                          for: openerTab,
-                          browserManager: browserManager
-                      )
-                else {
+            applyVisitedLinkStoreToPopupConfiguration: { openerTab, configuration in
+                guard let profile = openerProfile(openerTab) else {
                     return
                 }
                 openerTab.visitedLinkStore.applyStore(
@@ -429,27 +438,29 @@ extension TabPopupHandlingRuntime {
                     for: profile
                 )
             },
-            createPopupTab: { [weak browserManager] openerTab, activate in
-                browserManager?.createPopupTab(
-                    from: openerTab,
-                    activate: activate
-                )
-            },
-            windowStateContainingTab: { [weak browserManager] tab in
-                browserManager?.windowState(containing: tab)
-            },
-            selectTab: { [weak browserManager] tab, windowState in
-                browserManager?.selectTab(tab, in: windowState)
-            }
+            createPopupTab: createPopupTab,
+            windowStateContainingTab: windowStateContainingTab,
+            selectTab: selectTab
         )
     }
 
-    private static func explicitPopupOpenerProfile(
+    static func targetSpace(
+        for openerTab: Tab,
+        tabManager: TabManager
+    ) -> Space? {
+        openerTab.spaceId.flatMap { spaceID in
+            tabManager.spaces.first(where: { $0.id == spaceID })
+        } ?? tabManager.currentSpace
+    }
+
+    static func explicitPopupOpenerProfile(
         for tab: Tab,
-        browserManager: BrowserManager
+        windowRegistry: WindowRegistry?,
+        profiles: [Profile],
+        spaces: [Space]
     ) -> Profile? {
         if let profileId = tab.profileId {
-            if let windowState = browserManager.windowRegistry?.windows.values.first(where: { window in
+            if let windowState = windowRegistry?.windows.values.first(where: { window in
                 window.ephemeralTabs.contains(where: { $0.id == tab.id })
             }),
                let ephemeralProfile = windowState.ephemeralProfile,
@@ -457,13 +468,13 @@ extension TabPopupHandlingRuntime {
                 return ephemeralProfile
             }
 
-            return browserManager.profileManager.profiles.first { $0.id == profileId }
+            return profiles.first { $0.id == profileId }
         }
 
         if let spaceId = tab.spaceId,
-           let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId }),
+           let space = spaces.first(where: { $0.id == spaceId }),
            let profileId = space.profileId {
-            return browserManager.profileManager.profiles.first { $0.id == profileId }
+            return profiles.first { $0.id == profileId }
         }
 
         return nil

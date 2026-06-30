@@ -542,7 +542,65 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.extensionSurfaceStore
                     }
                 )
-                popupHandlingRuntime = .live(browserManager: browserManager)
+                popupHandlingRuntime = .live(
+                    isAvailable: { [weak browserManager] in
+                        browserManager != nil
+                    },
+                    extensionsModule: { [weak browserManager] in
+                        browserManager?.extensionsModule
+                    },
+                    popupPermissionBridge: { [weak browserManager] in
+                        browserManager?.popupPermissionBridge
+                    },
+                    targetSpaceForOpener: { [weak browserManager] openerTab in
+                        guard let tabManager = browserManager?.tabManager else { return nil }
+                        return TabPopupHandlingRuntime.targetSpace(
+                            for: openerTab,
+                            tabManager: tabManager
+                        )
+                    },
+                    createNewTab: { [weak browserManager] url, space, activate in
+                        browserManager?.tabManager.createNewTab(
+                            url: url,
+                            in: space,
+                            activate: activate
+                        )
+                    },
+                    materializeVisibleTabWebViewIfNeeded: { [weak browserManager] tab, windowState in
+                        browserManager?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
+                    },
+                    presentWebPopup: { [weak browserManager] configuration, request, windowFeatures, openerTab, isExtensionOriginated in
+                        browserManager?.auxiliaryWindowManager.presentWebPopup(
+                            configuration: configuration,
+                            request: request,
+                            windowFeatures: windowFeatures,
+                            openerTab: openerTab,
+                            isExtensionOriginated: isExtensionOriginated,
+                            shouldActivateApp: true
+                        )
+                    },
+                    openerProfile: { [weak browserManager] openerTab in
+                        guard let browserManager else { return nil }
+                        return TabPopupHandlingRuntime.explicitPopupOpenerProfile(
+                            for: openerTab,
+                            windowRegistry: browserManager.windowRegistry,
+                            profiles: browserManager.profileManager.profiles,
+                            spaces: browserManager.tabManager.spaces
+                        )
+                    },
+                    createPopupTab: { [weak browserManager] openerTab, activate in
+                        browserManager?.createPopupTab(
+                            from: openerTab,
+                            activate: activate
+                        )
+                    },
+                    windowStateContainingTab: { [weak browserManager] tab in
+                        browserManager?.windowState(containing: tab)
+                    },
+                    selectTab: { [weak browserManager] tab, windowState in
+                        browserManager?.selectTab(tab, in: windowState)
+                    }
+                )
                 installNavigationRuntime = .live(userscriptsModule: { [weak browserManager] in
                     browserManager?.userscriptsModule
                 })
