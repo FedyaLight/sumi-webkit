@@ -84,31 +84,3 @@ final class BrowserWindowTabContextOwner {
         )
     }
 }
-
-extension BrowserWindowTabContextOwner.Dependencies {
-    @MainActor
-    static func live(browserManager: BrowserManager) -> Self {
-        Self(
-            selectionService: { [weak browserManager] in
-                browserManager?.shellSelectionService
-            },
-            tabStore: { [weak browserManager] in
-                browserManager?.tabManager.runtimeStore
-            },
-            windows: { [weak browserManager] in
-                guard let browserManager,
-                      let windowRegistry = browserManager.windowRegistry
-                else {
-                    return []
-                }
-                return Array(windowRegistry.windows.values)
-            },
-            liveShortcutTabs: { [weak browserManager] windowId in
-                browserManager?.tabManager.liveShortcutTabs(in: windowId) ?? []
-            },
-            visibleSplitTabIds: { [weak browserManager] windowId in
-                Set(browserManager?.splitManager.visibleTabIds(for: windowId) ?? [])
-            }
-        )
-    }
-}

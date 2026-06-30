@@ -114,7 +114,28 @@ class BrowserManager: ObservableObject {
         return self.splitManager.visibleTabIds(for: windowId)
     }
     private lazy var windowTabContextOwner = BrowserWindowTabContextOwner(
-        dependencies: .live(browserManager: self)
+        dependencies: BrowserWindowTabContextOwner.Dependencies(
+            selectionService: { [weak self] in
+                self?.shellSelectionService
+            },
+            tabStore: { [weak self] in
+                self?.tabManager.runtimeStore
+            },
+            windows: { [weak self] in
+                guard let self,
+                      let windowRegistry = self.windowRegistry
+                else {
+                    return []
+                }
+                return Array(windowRegistry.windows.values)
+            },
+            liveShortcutTabs: { [weak self] windowId in
+                self?.tabManager.liveShortcutTabs(in: windowId) ?? []
+            },
+            visibleSplitTabIds: { [weak self] windowId in
+                Set(self?.splitManager.visibleTabIds(for: windowId) ?? [])
+            }
+        )
     )
     private lazy var windowSpaceStateOwner = BrowserWindowSpaceStateOwner(
         dependencies: .live(browserManager: self)
