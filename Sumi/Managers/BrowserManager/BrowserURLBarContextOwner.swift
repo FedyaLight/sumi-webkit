@@ -181,10 +181,12 @@ extension BrowserURLBarContextOwner.Dependencies {
         let extensionsModule = browserManager.extensionsModule
         let userscriptsModule = browserManager.userscriptsModule
         let extensionSurfaceStore = browserManager.extensionSurfaceStore
-        let permissionRuntime = browserManager.permissionRuntime
         let protectionCoordinator = browserManager.protectionCoordinator
         let urlBarHubPopoverPresenter = browserManager.urlBarHubPopoverPresenter
         let zoomManager = browserManager.zoomManager
+        let permissionContextOwner = BrowserURLBarPermissionContextOwner(
+            dependencies: .live(browserManager: browserManager)
+        )
         return Self(
             zoomContext: { [weak browserManager] in
                 BrowserURLBarContextOwner.makeZoomContext(
@@ -192,16 +194,11 @@ extension BrowserURLBarContextOwner.Dependencies {
                     zoomManager: zoomManager
                 )
             },
-            permissionContext: { [weak browserManager] in
-                BrowserURLBarContextOwner.makePermissionContext(
-                    browserManager: browserManager,
-                    permissionRuntime: permissionRuntime
-                )
+            permissionContext: {
+                permissionContextOwner.context
             },
             permissionLoadDependencies: {
-                BrowserURLBarContextOwner.makePermissionLoadDependencies(
-                    permissionRuntime: permissionRuntime
-                )
+                permissionContextOwner.loadDependencies
             },
             extensionActionContext: { [weak browserManager] in
                 BrowserURLBarContextOwner.makeExtensionActionContext(
@@ -247,16 +244,16 @@ extension BrowserURLBarContextOwner.Dependencies {
                 protectionCoordinator.sitePolicyChangesPublisher()
             },
             blockedPopupChanges: {
-                permissionRuntime.blockedPopupStore.objectWillChange.eraseVoid()
+                permissionContextOwner.blockedPopupChanges
             },
             externalSchemeChanges: {
-                permissionRuntime.externalSchemeSessionStore.objectWillChange.eraseVoid()
+                permissionContextOwner.externalSchemeChanges
             },
             indicatorEventChanges: {
-                permissionRuntime.permissionIndicatorEventStore.objectWillChange.eraseVoid()
+                permissionContextOwner.indicatorEventChanges
             },
             permissionSiteActivityChanges: {
-                permissionRuntime.permissionSiteActivityStore.objectWillChange.eraseVoid()
+                permissionContextOwner.siteActivityChanges
             },
             boostChanges: {
                 boostsModule.store.changesPublisher
@@ -453,55 +450,6 @@ private extension BrowserURLBarContextOwner {
         )
     }
 
-    static func makePermissionContext(
-        browserManager: BrowserManager?,
-        permissionRuntime: BrowserManagerPermissionRuntime
-    ) -> URLBarPermissionContext {
-        return URLBarPermissionContext(
-            coordinator: permissionRuntime.permissionCoordinator,
-            runtimeController: permissionRuntime.runtimePermissionController,
-            popupStore: permissionRuntime.blockedPopupStore,
-            externalSchemeStore: permissionRuntime.externalSchemeSessionStore,
-            indicatorEventStore: permissionRuntime.permissionIndicatorEventStore,
-            systemPermissionService: permissionRuntime.systemPermissionService,
-            externalAppResolver: permissionRuntime.externalAppResolver,
-            siteActivityRevision: { [weak browserManager] in
-                browserManager?.permissionSiteActivityStore.revision ?? 0
-            },
-            updateIndicator: { [weak browserManager] viewModel, tab, windowState in
-                guard let browserManager else { return }
-                viewModel.update(
-                    tab: tab,
-                    windowId: windowState.id,
-                    browserManager: browserManager
-                )
-            },
-            updatePrompt: { [weak browserManager] presenter, tab, windowState in
-                guard let browserManager else { return }
-                presenter.update(
-                    tab: tab,
-                    windowState: windowState,
-                    browserManager: browserManager
-                )
-            }
-        )
-    }
-
-    static func makePermissionLoadDependencies(
-        permissionRuntime: BrowserManagerPermissionRuntime
-    ) -> SumiCurrentSitePermissionsViewModel.LoadDependencies {
-        return SumiCurrentSitePermissionsViewModel.LoadDependencies(
-            coordinator: permissionRuntime.permissionCoordinator,
-            systemPermissionService: permissionRuntime.systemPermissionService,
-            runtimeController: permissionRuntime.runtimePermissionController,
-            autoplayStore: SumiAutoplayPolicyStoreAdapter.shared,
-            blockedPopupStore: permissionRuntime.blockedPopupStore,
-            externalSchemeSessionStore: permissionRuntime.externalSchemeSessionStore,
-            indicatorEventStore: permissionRuntime.permissionIndicatorEventStore,
-            siteActivityStore: permissionRuntime.permissionSiteActivityStore
-        )
-    }
-
     static func siteControlsSnapshot(
         url: URL?,
         profile: Profile?,
@@ -546,11 +494,5 @@ private extension BrowserURLBarContextOwner {
         }
 
         browserManager.openNewTab(url: url.absoluteString, context: context)
-    }
-}
-
-private extension Publisher where Failure == Never {
-    func eraseVoid() -> AnyPublisher<Void, Never> {
-        map { _ in () }.eraseToAnyPublisher()
     }
 }
