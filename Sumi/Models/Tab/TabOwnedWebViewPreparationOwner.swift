@@ -5,9 +5,9 @@ import WebKit
 final class TabOwnedWebViewPreparationOwner {
     struct Dependencies {
         let tab: @MainActor () -> Tab?
-        let browserManager: @MainActor () -> BrowserManager?
         let uiDelegate: @MainActor () -> WKUIDelegate?
         let visitedLinkStore: @MainActor () -> (any BrowserVisitedLinkStoreManaging)?
+        let prepareWebViewForExtensionRuntime: @MainActor (WKWebView, URL?, String) -> Void
         let installNavigationDelegate: @MainActor (WKWebView) -> Void
         let setupNavigationStateObservers: @MainActor (WKWebView) -> Void
         let bindAudioState: @MainActor (WKWebView) -> Void
@@ -109,10 +109,10 @@ final class TabOwnedWebViewPreparationOwner {
         shouldPrepare: Bool
     ) {
         guard shouldPrepare else { return }
-        dependencies.browserManager()?.extensionsModule.prepareWebViewForExtensionRuntime(
+        dependencies.prepareWebViewForExtensionRuntime(
             webView,
-            currentURL: currentURL,
-            reason: reason
+            currentURL,
+            reason
         )
     }
 }
@@ -122,9 +122,15 @@ extension TabOwnedWebViewPreparationOwner.Dependencies {
     static func live(tab: Tab) -> Self {
         Self(
             tab: { [weak tab] in tab },
-            browserManager: { [weak tab] in tab?.browserManager },
             uiDelegate: { [weak tab] in tab?.webKitUIDelegateOwner },
             visitedLinkStore: { [weak tab] in tab?.visitedLinkStore },
+            prepareWebViewForExtensionRuntime: { [weak tab] webView, currentURL, reason in
+                tab?.browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
+                    webView,
+                    currentURL: currentURL,
+                    reason: reason
+                )
+            },
             installNavigationDelegate: { [weak tab] webView in
                 tab?.installNavigationDelegate(on: webView)
             },

@@ -5,6 +5,54 @@ import XCTest
 
 @MainActor
 final class TabWebViewProvisioningOwnerTests: XCTestCase {
+    func testOwnedWebViewPreparationUsesInjectedExtensionRuntimeCapability() {
+        let targetURL = URL(string: "https://example.com/runtime")!
+        let webView = FocusableWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        var capturedWebView: WKWebView?
+        var capturedURL: URL?
+        var capturedReason: String?
+        let owner = TabOwnedWebViewPreparationOwner(
+            dependencies: makeOwnedWebViewPreparationDependencies(
+                prepareWebViewForExtensionRuntime: { webView, currentURL, reason in
+                    capturedWebView = webView
+                    capturedURL = currentURL
+                    capturedReason = reason
+                }
+            )
+        )
+
+        owner.prepareCreatedFocusableWebView(
+            webView,
+            currentURL: targetURL,
+            reason: "test.extension-runtime"
+        )
+
+        XCTAssertIdentical(capturedWebView, webView)
+        XCTAssertEqual(capturedURL, targetURL)
+        XCTAssertEqual(capturedReason, "test.extension-runtime")
+    }
+
+    func testOwnedWebViewPreparationCanSkipExtensionRuntimeCapability() {
+        let webView = FocusableWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        var didPrepareExtensionRuntime = false
+        let owner = TabOwnedWebViewPreparationOwner(
+            dependencies: makeOwnedWebViewPreparationDependencies(
+                prepareWebViewForExtensionRuntime: { _, _, _ in
+                    didPrepareExtensionRuntime = true
+                }
+            )
+        )
+
+        owner.prepareCreatedFocusableWebView(
+            webView,
+            currentURL: URL(string: "https://example.com/runtime"),
+            reason: "test.extension-runtime",
+            prepareExtensionRuntime: false
+        )
+
+        XCTAssertFalse(didPrepareExtensionRuntime)
+    }
+
     func testApplyWebViewConfigurationOverrideUsesProfileIdFallbackWhenProfileIsUnresolved() {
         let fallbackProfileId = UUID()
         var preparedProfileId: UUID?
@@ -140,6 +188,22 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             prepareAssignedWebView: prepareAssignedWebView,
             prepareReusedOrExternallyCreatedWebView: prepareReusedOrExternallyCreatedWebView,
             applyOwnedTabWebViewNavigationPreferences: applyOwnedTabWebViewNavigationPreferences
+        )
+    }
+
+    private func makeOwnedWebViewPreparationDependencies(
+        prepareWebViewForExtensionRuntime: @MainActor @escaping (WKWebView, URL?, String) -> Void = { _, _, _ in }
+    ) -> TabOwnedWebViewPreparationOwner.Dependencies {
+        TabOwnedWebViewPreparationOwner.Dependencies(
+            tab: { nil },
+            uiDelegate: { nil },
+            visitedLinkStore: { nil },
+            prepareWebViewForExtensionRuntime: prepareWebViewForExtensionRuntime,
+            installNavigationDelegate: { _ in },
+            setupNavigationStateObservers: { _ in },
+            bindAudioState: { _ in },
+            applyRestoredNavigationState: {},
+            ensureFaviconsTabExtension: { _ in }
         )
     }
 }
