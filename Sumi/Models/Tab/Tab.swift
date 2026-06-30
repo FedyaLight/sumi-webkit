@@ -202,6 +202,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.closeLifecycleRuntime }
         set { navigationRuntime.closeLifecycleRuntime = newValue }
     }
+    var lifecycleNavigationRuntime: TabLifecycleNavigationRuntime {
+        get { navigationRuntime.lifecycleNavigationRuntime }
+        set { navigationRuntime.lifecycleNavigationRuntime = newValue }
+    }
     var configurationPolicyWebViewReplacementRuntime: TabConfigurationPolicyWebViewReplacementRuntime {
         get { navigationRuntime.configurationPolicyWebViewReplacementRuntime }
         set { navigationRuntime.configurationPolicyWebViewReplacementRuntime = newValue }
@@ -408,6 +412,29 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                         browserManager?.tabManager.removeTab(tabId)
                     }
                 )
+                lifecycleNavigationRuntime = .live(
+                    tabSuspensionService: { [weak browserManager] in
+                        browserManager?.tabSuspensionService
+                    },
+                    extensionsModule: { [weak browserManager] in
+                        browserManager?.extensionsModule
+                    },
+                    loadZoomForTab: { [weak browserManager] tabId in
+                        browserManager?.loadZoomForTab(tabId)
+                    },
+                    adBlockingModule: { [weak browserManager] in
+                        browserManager?.adBlockingModule
+                    },
+                    enforceSiteDataPolicyAfterNavigation: { [weak browserManager] tab in
+                        browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
+                    },
+                    authenticationManager: { [weak browserManager] in
+                        browserManager?.authenticationManager
+                    },
+                    webViewCoordinator: { [weak browserManager] in
+                        browserManager?.webViewCoordinator
+                    }
+                )
                 configurationPolicyWebViewReplacementRuntime = .live(
                     webViewCoordinator: { [weak browserManager] in
                         browserManager?.webViewCoordinator
@@ -428,6 +455,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 findInPageRuntime = .inactive
                 extensionPropertiesRuntime = .inactive
                 closeLifecycleRuntime = .inactive
+                lifecycleNavigationRuntime = .inactive
                 configurationPolicyWebViewReplacementRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive

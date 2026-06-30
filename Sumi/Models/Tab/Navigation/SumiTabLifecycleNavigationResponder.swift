@@ -39,21 +39,20 @@ final class SumiTabLifecycleNavigationResponder:
             tab.markRegularMainFrameNavigation(on: webView)
         }
         tab.resetPageSuspensionRuntimeState()
-        tab.browserManager?.tabSuspensionService.resetRevisitProtection(for: tab)
+        tab.lifecycleNavigationRuntime.resetRevisitProtection(tab)
 
         if let url = context.url {
-            tab.browserManager?.extensionsModule.prepareWebViewForExtensionRuntime(
+            tab.lifecycleNavigationRuntime.prepareExtensionWebView(
                 webView,
-                currentURL: url,
-                reason: "SumiTabLifecycleNavigationResponder.willStart"
+                url,
+                "SumiTabLifecycleNavigationResponder.willStart"
             )
             if context.action?.navigationType.isBackForward != true {
-                tab.browserManager?.extensionsModule
-                    .prepareExtensionRuntimeBeforeCommittedMainFrameNavigationIfLoaded(
-                        tab,
-                        destinationURL: url,
-                        reason: "SumiTabLifecycleNavigationResponder.willStart"
-                    )
+                tab.lifecycleNavigationRuntime.prepareExtensionRuntimeBeforeCommit(
+                    tab,
+                    url,
+                    "SumiTabLifecycleNavigationResponder.willStart"
+                )
             }
         }
     }
@@ -74,7 +73,7 @@ final class SumiTabLifecycleNavigationResponder:
         }
 
         tab.beginLoadingPresentationIfNeeded()
-        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
+        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
 
         if let newURL = webView.url {
             if newURL.absoluteString != tab.url.absoluteString {
@@ -116,7 +115,7 @@ final class SumiTabLifecycleNavigationResponder:
         StartupPerformanceTrace.firstNavigationCommitted()
 
         tab.loadingState = .didCommit
-        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
+        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
 
         if let newURL = webView.url {
             tab.url = newURL
@@ -132,14 +131,14 @@ final class SumiTabLifecycleNavigationResponder:
                 kind: tab.pendingMainFrameNavigationKind == .backForward ? .backForward : .regular,
                 tab: tab
             )
-            tab.browserManager?.extensionsModule.markTabEligibleAfterCommittedNavigationIfLoaded(
+            tab.lifecycleNavigationRuntime.markExtensionEligibleAfterCommit(
                 tab,
-                reason: "SumiTabLifecycleNavigationResponder.didCommit"
+                "SumiTabLifecycleNavigationResponder.didCommit"
             )
             if tab.pendingMainFrameNavigationKind != .backForward {
                 tab.webViewRoutingRuntime.syncTabAcrossWindows(tab.id, webView)
             }
-            tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.URL, .loading])
+            tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.URL, .loading])
         }
 
         tab.stateChangeEmitter.postNavigationStateDidChange(for: tab)
@@ -164,19 +163,13 @@ final class SumiTabLifecycleNavigationResponder:
         StartupPerformanceTrace.firstNavigationFinished()
 
         tab.loadingState = .didFinish
-        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
+        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
 
         if let newURL = webView.url {
             tab.url = newURL
-            tab.browserManager?.loadZoomForTab(tab.id)
+            tab.lifecycleNavigationRuntime.loadZoomForTab(tab.id)
             tab.refreshFaviconExtensionCache()
-            if let policy = tab.browserManager?.adBlockingModule.effectivePolicy(for: newURL),
-               let host = policy.host,
-               policy.isEnabled {
-                SumiAdblockZapperInjector.applySavedRules(to: webView, host: host)
-            } else {
-                SumiAdblockZapperInjector.clearAppliedRules(to: webView)
-            }
+            tab.lifecycleNavigationRuntime.applyAdblockZapperRulesAfterNavigation(webView, newURL)
         }
 
         tab.updateNavigationState()
@@ -197,12 +190,12 @@ final class SumiTabLifecycleNavigationResponder:
             tab.setMuted(true)
         }
 
-        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(
+        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(
             tab,
-            properties: [.URL, .title, .loading]
+            [.URL, .title, .loading]
         )
         tab.mediaRuntimeCallbacks.scheduleBackgroundMediaReconcile("navigation-did-finish")
-        tab.browserManager?.enforceSiteDataPolicyAfterNavigation(for: tab)
+        tab.lifecycleNavigationRuntime.enforceSiteDataPolicyAfterNavigation(tab)
         SafariExtensionAutofillFillDiagnostics.endInlineUISession(extensionId: nil)
     }
 
@@ -230,7 +223,7 @@ final class SumiTabLifecycleNavigationResponder:
             tab.pendingMainFrameNavigationKind = nil
         }
 
-        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.URL])
+        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.URL])
     }
 
     func navigationDidFail(_ error: WKError, context: SumiNavigationContext?) {
@@ -259,7 +252,7 @@ final class SumiTabLifecycleNavigationResponder:
                 tab.loadingState = .idle
             }
             tab.updateNavigationState()
-            tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
+            tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
             return
         }
 
@@ -270,7 +263,7 @@ final class SumiTabLifecycleNavigationResponder:
             tab.finishBackForwardNavigationTracking(using: webView)
         }
         tab.updateNavigationState()
-        tab.browserManager?.extensionsModule.notifyTabPropertiesChangedIfLoaded(tab, properties: [.loading])
+        tab.extensionPropertiesRuntime.notifyTabPropertiesChanged(tab, [.loading])
     }
 
     func didReceive(
@@ -287,32 +280,11 @@ final class SumiTabLifecycleNavigationResponder:
     private func sumiAuthChallengeDisposition(
         for authenticationChallenge: URLAuthenticationChallenge
     ) async -> SumiAuthChallengeDisposition? {
-        guard let tab,
-              let authenticationManager = tab.browserManager?.authenticationManager
-        else { return .next }
-
-        return await withCheckedContinuation { continuation in
-            let handled = authenticationManager.handleAuthenticationChallenge(authenticationChallenge, for: tab) { disposition, credential in
-                switch disposition {
-                case .useCredential:
-                    if let credential {
-                        continuation.resume(returning: .credential(credential))
-                    } else {
-                        continuation.resume(returning: .next)
-                    }
-                case .cancelAuthenticationChallenge:
-                    continuation.resume(returning: .cancel)
-                case .rejectProtectionSpace:
-                    continuation.resume(returning: .rejectProtectionSpace)
-                default:
-                    continuation.resume(returning: .next)
-                }
-            }
-
-            if !handled {
-                continuation.resume(returning: .next)
-            }
-        }
+        guard let tab else { return .next }
+        return await tab.lifecycleNavigationRuntime.resolveAuthenticationChallenge(
+            authenticationChallenge,
+            tab
+        )
     }
 
     private func shouldSuppressForDestructiveDataCleanup(
@@ -321,8 +293,8 @@ final class SumiTabLifecycleNavigationResponder:
         requestURL: URL?,
         allowCurrentWebViewURLFallback: Bool
     ) -> Bool {
-        guard tab?.browserManager?.webViewCoordinator?
-            .isPreparingForDestructiveDataCleanupNavigation(on: webView) == true
+        guard tab?.lifecycleNavigationRuntime
+            .isPreparingForDestructiveDataCleanupNavigation(webView) == true
         else {
             return false
         }
@@ -341,8 +313,7 @@ final class SumiTabLifecycleNavigationResponder:
     }
 
     private func finishDestructiveDataCleanupSuppression(on webView: WKWebView) {
-        tab?.browserManager?.webViewCoordinator?
-            .finishDestructiveDataCleanupNavigation(on: webView)
+        tab?.lifecycleNavigationRuntime.finishDestructiveDataCleanupNavigation(webView)
     }
 }
 

@@ -133,6 +133,95 @@ extension TabCloseLifecycleRuntime {
 }
 
 @MainActor
+extension TabLifecycleNavigationRuntime {
+    static func live(
+        tabSuspensionService: @escaping () -> TabSuspensionService?,
+        extensionsModule: @escaping () -> SumiExtensionsModule?,
+        loadZoomForTab: @escaping (UUID) -> Void,
+        adBlockingModule: @escaping () -> SumiAdBlockingModule?,
+        enforceSiteDataPolicyAfterNavigation: @escaping (Tab) -> Void,
+        authenticationManager: @escaping () -> AuthenticationManager?,
+        webViewCoordinator: @escaping () -> WebViewCoordinator?
+    ) -> Self {
+        Self(
+            resetRevisitProtection: { tab in
+                tabSuspensionService()?.resetRevisitProtection(for: tab)
+            },
+            prepareExtensionWebView: { webView, url, reason in
+                extensionsModule()?.prepareWebViewForExtensionRuntime(
+                    webView,
+                    currentURL: url,
+                    reason: reason
+                )
+            },
+            prepareExtensionRuntimeBeforeCommit: { tab, url, reason in
+                extensionsModule()?
+                    .prepareExtensionRuntimeBeforeCommittedMainFrameNavigationIfLoaded(
+                        tab,
+                        destinationURL: url,
+                        reason: reason
+                    )
+            },
+            markExtensionEligibleAfterCommit: { tab, reason in
+                extensionsModule()?.markTabEligibleAfterCommittedNavigationIfLoaded(
+                    tab,
+                    reason: reason
+                )
+            },
+            loadZoomForTab: loadZoomForTab,
+            applyAdblockZapperRulesAfterNavigation: { webView, url in
+                if let policy = adBlockingModule()?.effectivePolicy(for: url),
+                   let host = policy.host,
+                   policy.isEnabled {
+                    SumiAdblockZapperInjector.applySavedRules(to: webView, host: host)
+                } else {
+                    SumiAdblockZapperInjector.clearAppliedRules(to: webView)
+                }
+            },
+            enforceSiteDataPolicyAfterNavigation: enforceSiteDataPolicyAfterNavigation,
+            resolveAuthenticationChallenge: { challenge, tab in
+                guard let authenticationManager = authenticationManager() else {
+                    return .next
+                }
+
+                return await withCheckedContinuation { continuation in
+                    let handled = authenticationManager.handleAuthenticationChallenge(
+                        challenge,
+                        for: tab
+                    ) { disposition, credential in
+                        switch disposition {
+                        case .useCredential:
+                            if let credential {
+                                continuation.resume(returning: .credential(credential))
+                            } else {
+                                continuation.resume(returning: .next)
+                            }
+                        case .cancelAuthenticationChallenge:
+                            continuation.resume(returning: .cancel)
+                        case .rejectProtectionSpace:
+                            continuation.resume(returning: .rejectProtectionSpace)
+                        default:
+                            continuation.resume(returning: .next)
+                        }
+                    }
+
+                    if !handled {
+                        continuation.resume(returning: .next)
+                    }
+                }
+            },
+            isPreparingForDestructiveDataCleanupNavigation: { webView in
+                webViewCoordinator()?
+                    .isPreparingForDestructiveDataCleanupNavigation(on: webView) == true
+            },
+            finishDestructiveDataCleanupNavigation: { webView in
+                webViewCoordinator()?.finishDestructiveDataCleanupNavigation(on: webView)
+            }
+        )
+    }
+}
+
+@MainActor
 extension TabExtensionPropertiesRuntime {
     static func live(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
         Self(

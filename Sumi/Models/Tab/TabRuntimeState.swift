@@ -138,6 +138,36 @@ struct TabCloseLifecycleRuntime {
 }
 
 @MainActor
+struct TabLifecycleNavigationRuntime {
+    var resetRevisitProtection: (Tab) -> Void
+    var prepareExtensionWebView: (WKWebView, URL, String) -> Void
+    var prepareExtensionRuntimeBeforeCommit: (Tab, URL, String) -> Void
+    var markExtensionEligibleAfterCommit: (Tab, String) -> Void
+    var loadZoomForTab: (UUID) -> Void
+    var applyAdblockZapperRulesAfterNavigation: (WKWebView, URL) -> Void
+    var enforceSiteDataPolicyAfterNavigation: (Tab) -> Void
+    var resolveAuthenticationChallenge: (
+        _ challenge: URLAuthenticationChallenge,
+        _ tab: Tab
+    ) async -> SumiAuthChallengeDisposition?
+    var isPreparingForDestructiveDataCleanupNavigation: (WKWebView) -> Bool
+    var finishDestructiveDataCleanupNavigation: (WKWebView) -> Void
+
+    static let inactive = Self(
+        resetRevisitProtection: { _ in },
+        prepareExtensionWebView: { _, _, _ in },
+        prepareExtensionRuntimeBeforeCommit: { _, _, _ in },
+        markExtensionEligibleAfterCommit: { _, _ in },
+        loadZoomForTab: { _ in },
+        applyAdblockZapperRulesAfterNavigation: { _, _ in },
+        enforceSiteDataPolicyAfterNavigation: { _ in },
+        resolveAuthenticationChallenge: { _, _ in .next },
+        isPreparingForDestructiveDataCleanupNavigation: { _ in false },
+        finishDestructiveDataCleanupNavigation: { _ in }
+    )
+}
+
+@MainActor
 struct TabConfigurationPolicyWebViewReplacementRuntime {
     var trackedWindowIdContainingWebView: (WKWebView) -> UUID?
     var hasTrackedWebViews: (UUID) -> Bool
@@ -258,6 +288,7 @@ final class TabNavigationRuntime {
     var findInPageRuntime = TabFindInPageRuntime.inactive
     var extensionPropertiesRuntime = TabExtensionPropertiesRuntime.inactive
     var closeLifecycleRuntime = TabCloseLifecycleRuntime.inactive
+    var lifecycleNavigationRuntime = TabLifecycleNavigationRuntime.inactive
     var configurationPolicyWebViewReplacementRuntime =
         TabConfigurationPolicyWebViewReplacementRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive

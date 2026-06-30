@@ -844,6 +844,118 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertFalse(tab.isDisplayingPDFDocument)
     }
 
+    func testTabLifecycleWillStartUsesInjectedRuntimeWithoutBrowserManager() {
+        let destinationURL = URL(string: "https://example.com/page")!
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let lifecycle = RecordingTabLifecycleNavigationRuntime()
+        tab.lifecycleNavigationRuntime = lifecycle.runtime
+        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+
+        responder.navigationWillStart(
+            SumiNavigationContext(
+                action: nil,
+                url: destinationURL,
+                isCurrent: true,
+                isMainFrame: true,
+                webView: webView
+            )
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(lifecycle.resetRevisitProtectionTabIds, [tab.id])
+        XCTAssertEqual(lifecycle.preparedExtensionWebViewIds, [ObjectIdentifier(webView)])
+        XCTAssertEqual(lifecycle.preparedExtensionURLs, [destinationURL])
+        XCTAssertEqual(lifecycle.preparedExtensionReasons, ["SumiTabLifecycleNavigationResponder.willStart"])
+        XCTAssertEqual(lifecycle.beforeCommitTabIds, [tab.id])
+        XCTAssertEqual(lifecycle.beforeCommitURLs, [destinationURL])
+    }
+
+    func testTabLifecycleDidFinishUsesInjectedRuntimesWithoutBrowserManager() {
+        let finalURL = URL(string: "https://example.com/finished")!
+        let tab = Tab(url: URL(string: "https://example.com/start")!, loadsCachedFaviconOnInit: false)
+        let lifecycle = RecordingTabLifecycleNavigationRuntime()
+        let extensionProperties = RecordingTabExtensionPropertiesRuntime()
+        tab.lifecycleNavigationRuntime = lifecycle.runtime
+        tab.extensionPropertiesRuntime = extensionProperties.runtime
+        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+        webView.reportedURL = finalURL
+
+        responder.navigationDidFinish(
+            SumiNavigationContext(
+                action: nil,
+                url: finalURL,
+                isCurrent: true,
+                isMainFrame: true,
+                webView: webView
+            )
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(tab.url, finalURL)
+        XCTAssertEqual(lifecycle.zoomTabIds, [tab.id])
+        XCTAssertEqual(lifecycle.adblockWebViewIds, [ObjectIdentifier(webView)])
+        XCTAssertEqual(lifecycle.adblockURLs, [finalURL])
+        XCTAssertEqual(lifecycle.siteDataPolicyTabIds, [tab.id])
+        XCTAssertEqual(extensionProperties.tabIds, [tab.id, tab.id])
+        XCTAssertEqual(extensionProperties.properties, [[.loading], [.URL, .title, .loading]])
+    }
+
+    func testTabLifecycleAuthChallengeUsesInjectedRuntimeWithoutBrowserManager() async {
+        let credential = URLCredential(
+            user: "alice",
+            password: "secret",
+            persistence: .forSession
+        )
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let lifecycle = RecordingTabLifecycleNavigationRuntime()
+        lifecycle.authDisposition = .credential(credential)
+        tab.lifecycleNavigationRuntime = lifecycle.runtime
+        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let challenge = makeAuthenticationChallenge()
+
+        let disposition = await responder.didReceive(challenge)
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(lifecycle.authChallengeHosts, ["auth.example"])
+        XCTAssertEqual(lifecycle.authTabIds, [tab.id])
+        guard case .credential(let resolvedCredential)? = disposition else {
+            return XCTFail("Expected credential disposition, got \(String(describing: disposition))")
+        }
+        XCTAssertEqual(resolvedCredential.user, credential.user)
+        XCTAssertEqual(resolvedCredential.password, credential.password)
+        XCTAssertEqual(resolvedCredential.persistence, credential.persistence)
+    }
+
+    func testTabLifecycleDestructiveCleanupSuppressionUsesInjectedRuntimeWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let lifecycle = RecordingTabLifecycleNavigationRuntime()
+        let extensionProperties = RecordingTabExtensionPropertiesRuntime()
+        lifecycle.isPreparingForDestructiveCleanup = true
+        tab.lifecycleNavigationRuntime = lifecycle.runtime
+        tab.extensionPropertiesRuntime = extensionProperties.runtime
+        let responder = SumiTabLifecycleNavigationResponder(tab: tab)
+        let webView = SumiNavigationURLReportingWebView(frame: .zero)
+
+        responder.navigationDidFinish(
+            SumiNavigationContext(
+                action: nil,
+                url: SumiSurface.emptyTabURL,
+                isCurrent: true,
+                isMainFrame: true,
+                webView: webView
+            )
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(lifecycle.cleanupCheckWebViewIds, [ObjectIdentifier(webView)])
+        XCTAssertEqual(lifecycle.finishedCleanupWebViewIds, [ObjectIdentifier(webView)])
+        XCTAssertTrue(extensionProperties.properties.isEmpty)
+        XCTAssertTrue(lifecycle.zoomTabIds.isEmpty)
+        XCTAssertTrue(lifecycle.siteDataPolicyTabIds.isEmpty)
+    }
+
     func testTabLifecycleIgnoresNonCurrentSameDocumentNavigation() {
         let initialURL = URL(string: "https://example.com/page")!
         let sameDocumentURL = URL(string: "https://example.com/page#running")!
@@ -2547,6 +2659,85 @@ private final class SumiNavigationURLReportingWebView: WKWebView {
 
     override var url: URL? {
         reportedURL
+    }
+}
+
+@MainActor
+private final class RecordingTabLifecycleNavigationRuntime {
+    var authDisposition: SumiAuthChallengeDisposition? = .next
+    var isPreparingForDestructiveCleanup = false
+    private(set) var resetRevisitProtectionTabIds: [UUID] = []
+    private(set) var preparedExtensionWebViewIds: [ObjectIdentifier] = []
+    private(set) var preparedExtensionURLs: [URL] = []
+    private(set) var preparedExtensionReasons: [String] = []
+    private(set) var beforeCommitTabIds: [UUID] = []
+    private(set) var beforeCommitURLs: [URL] = []
+    private(set) var markedEligibleTabIds: [UUID] = []
+    private(set) var zoomTabIds: [UUID] = []
+    private(set) var adblockWebViewIds: [ObjectIdentifier] = []
+    private(set) var adblockURLs: [URL] = []
+    private(set) var siteDataPolicyTabIds: [UUID] = []
+    private(set) var authChallengeHosts: [String] = []
+    private(set) var authTabIds: [UUID] = []
+    private(set) var cleanupCheckWebViewIds: [ObjectIdentifier] = []
+    private(set) var finishedCleanupWebViewIds: [ObjectIdentifier] = []
+
+    var runtime: TabLifecycleNavigationRuntime {
+        TabLifecycleNavigationRuntime(
+            resetRevisitProtection: { [weak self] tab in
+                self?.resetRevisitProtectionTabIds.append(tab.id)
+            },
+            prepareExtensionWebView: { [weak self] webView, url, reason in
+                self?.preparedExtensionWebViewIds.append(ObjectIdentifier(webView))
+                self?.preparedExtensionURLs.append(url)
+                self?.preparedExtensionReasons.append(reason)
+            },
+            prepareExtensionRuntimeBeforeCommit: { [weak self] tab, url, _ in
+                self?.beforeCommitTabIds.append(tab.id)
+                self?.beforeCommitURLs.append(url)
+            },
+            markExtensionEligibleAfterCommit: { [weak self] tab, _ in
+                self?.markedEligibleTabIds.append(tab.id)
+            },
+            loadZoomForTab: { [weak self] tabId in
+                self?.zoomTabIds.append(tabId)
+            },
+            applyAdblockZapperRulesAfterNavigation: { [weak self] webView, url in
+                self?.adblockWebViewIds.append(ObjectIdentifier(webView))
+                self?.adblockURLs.append(url)
+            },
+            enforceSiteDataPolicyAfterNavigation: { [weak self] tab in
+                self?.siteDataPolicyTabIds.append(tab.id)
+            },
+            resolveAuthenticationChallenge: { [weak self] challenge, tab in
+                guard let self else { return .next }
+                authChallengeHosts.append(challenge.protectionSpace.host)
+                authTabIds.append(tab.id)
+                return authDisposition
+            },
+            isPreparingForDestructiveDataCleanupNavigation: { [weak self] webView in
+                self?.cleanupCheckWebViewIds.append(ObjectIdentifier(webView))
+                return self?.isPreparingForDestructiveCleanup == true
+            },
+            finishDestructiveDataCleanupNavigation: { [weak self] webView in
+                self?.finishedCleanupWebViewIds.append(ObjectIdentifier(webView))
+            }
+        )
+    }
+}
+
+@MainActor
+private final class RecordingTabExtensionPropertiesRuntime {
+    private(set) var tabIds: [UUID] = []
+    private(set) var properties: [WKWebExtension.TabChangedProperties] = []
+
+    var runtime: TabExtensionPropertiesRuntime {
+        TabExtensionPropertiesRuntime(
+            notifyTabPropertiesChanged: { [weak self] tab, properties in
+                self?.tabIds.append(tab.id)
+                self?.properties.append(properties)
+            }
+        )
     }
 }
 
