@@ -166,10 +166,10 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
 
         let browserManager = BrowserManager()
         let tabManager = try makeInMemoryTabManager()
-        tabManager.browserManager = browserManager
         tabManager.sumiSettings = settings
         browserManager.tabManager = tabManager
         browserManager.sumiSettings = settings
+        tabManager.attachRuntimeContext(.live(browserManager: browserManager))
         browserManager.lastSessionWindowsStore = LastSessionWindowsStore(userDefaults: defaults.defaults)
 
         let windowRegistry = WindowRegistry()

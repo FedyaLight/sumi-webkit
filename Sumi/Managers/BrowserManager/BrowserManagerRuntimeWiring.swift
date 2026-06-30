@@ -12,11 +12,7 @@ enum BrowserManagerRuntimeWiring {
         )
         browserManager.splitManager.attach(runtime: .live(browserManager: browserManager))
         browserManager.splitManager.windowRegistry = browserManager.windowRegistry
-        browserManager.tabManager.browserManager = browserManager
-        browserManager.tabManager.attachRuntimeContext(
-            BrowserManagerTabRuntimeContext(browserManager: browserManager)
-        )
-        browserManager.tabManager.reattachBrowserManager(browserManager)
+        browserManager.tabManager.attachRuntimeContext(.live(browserManager: browserManager))
         browserManager.liveFolderManager.attach(browserManager: browserManager)
         browserManager.downloadManager.retryRuntime = downloadRetryRuntime(for: browserManager)
         browserManager.extensionsModule.attach(browserManager: browserManager)

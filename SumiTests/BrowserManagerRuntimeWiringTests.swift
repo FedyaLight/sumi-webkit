@@ -16,8 +16,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         )
 
         XCTAssertTrue(compositorManagerCanUseAttachedRuntime(browserManager))
-        XCTAssertIdentical(browserManager.tabManager.browserManager, browserManager)
-        XCTAssertTrue(browserManager.tabManager.runtimeContext is BrowserManagerTabRuntimeContext)
+        XCTAssertNotNil(browserManager.tabManager.runtimeContext)
+        XCTAssertTrue(tabManagerRuntimeCanPrepareCreatedTabs(browserManager))
         XCTAssertTrue(splitManagerCanUseAttachedRuntime(browserManager))
         XCTAssertTrue(downloadRetryRuntimeCanResolveWindowOwnedWebView(browserManager))
         XCTAssertIdentical(browserManager.extensionsModule.browserManager, browserManager)
@@ -73,6 +73,18 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         browserManager.splitManager.createEmptySplit(in: windowState)
         return browserManager.splitManager.splitGroup(for: windowState.id) != nil
+    }
+
+    private func tabManagerRuntimeCanPrepareCreatedTabs(_ browserManager: BrowserManager) -> Bool {
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "TabManager Runtime Wiring")
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/tab-manager-runtime",
+            in: space,
+            activate: false
+        )
+        guard let preparedManager = tab.browserManager else { return false }
+        return preparedManager === browserManager
     }
 
     private func downloadRetryRuntimeCanResolveWindowOwnedWebView(_ browserManager: BrowserManager) -> Bool {

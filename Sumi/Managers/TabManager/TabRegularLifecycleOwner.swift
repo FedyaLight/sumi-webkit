@@ -121,7 +121,6 @@ final class TabRegularLifecycleOwner {
                 favicon: "globe",
                 spaceId: sid,
                 index: nextIndex,
-                browserManager: tabManager.browserManager,
                 faviconService: tabManager.faviconService,
                 faviconImageService: tabManager.faviconImageService,
                 visitedLinkStore: tabManager.visitedLinkStore
@@ -179,7 +178,6 @@ final class TabRegularLifecycleOwner {
                 favicon: "globe",
                 spaceId: sid,
                 index: nextIndex,
-                browserManager: tabManager.browserManager,
                 existingWebView: existingWebView,
                 faviconService: tabManager.faviconService,
                 faviconImageService: tabManager.faviconImageService,
@@ -220,7 +218,6 @@ final class TabRegularLifecycleOwner {
                 favicon: "globe",
                 spaceId: sid,
                 index: resolvedIndex,
-                browserManager: tabManager.browserManager,
                 faviconService: tabManager.faviconService,
                 faviconImageService: tabManager.faviconImageService,
                 visitedLinkStore: tabManager.visitedLinkStore

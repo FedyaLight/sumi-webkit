@@ -4,7 +4,6 @@ import WebKit
 @MainActor
 final class TabTransientWebKitTabLifecycleOwner {
     struct Dependencies {
-        let browserManager: () -> BrowserManager?
         let settings: () -> SumiSettingsService?
         let runtimeContext: () -> TabManagerRuntimeContext?
         let membershipOwner: () -> TabCollectionMembershipOwner
@@ -57,7 +56,6 @@ final class TabTransientWebKitTabLifecycleOwner {
             favicon: "globe",
             spaceId: sid,
             index: nextIndex,
-            browserManager: dependencies.browserManager(),
             faviconService: dependencies.faviconService(),
             faviconImageService: dependencies.faviconImageService(),
             visitedLinkStore: dependencies.visitedLinkStore()
@@ -89,7 +87,6 @@ final class TabTransientWebKitTabLifecycleOwner {
             favicon: "globe",
             spaceId: openerTab?.spaceId,
             index: -1,
-            browserManager: dependencies.browserManager(),
             faviconService: dependencies.faviconService(),
             faviconImageService: dependencies.faviconImageService(),
             visitedLinkStore: dependencies.visitedLinkStore()

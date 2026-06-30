@@ -18,7 +18,6 @@ class TabManager: ObservableObject {
             }
         }
     }
-    weak var browserManager: BrowserManager?
     private(set) var runtimeContext: TabManagerRuntimeContext?
     weak var sumiSettings: SumiSettingsService?
     let context: ModelContext
@@ -73,7 +72,6 @@ class TabManager: ObservableObject {
     )
     private lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: TabTransientWebKitTabLifecycleOwner.Dependencies(
-            browserManager: { [unowned self] in self.browserManager },
             settings: { [unowned self] in self.sumiSettings ?? self.runtimeContext?.settings },
             runtimeContext: { [unowned self] in self.runtimeContext },
             membershipOwner: { [unowned self] in self.tabCollectionMembershipOwner },
@@ -237,15 +235,14 @@ class TabManager: ObservableObject {
     }
 
     init(
-        browserManager: BrowserManager? = nil,
+        runtimeContext: TabManagerRuntimeContext? = nil,
         context: ModelContext,
         loadPersistedState: Bool = true,
         faviconService: any BrowserFaviconServicing = BrowserManagerDataServices.productionFaviconService,
         faviconImageService: any BrowserFaviconImageServicing = BrowserManagerDataServices.productionFaviconImageService,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging = BrowserManagerDataServices.productionVisitedLinkStore
     ) {
-        self.browserManager = browserManager
-        self.runtimeContext = browserManager.map(BrowserManagerTabRuntimeContext.init)
+        self.runtimeContext = runtimeContext
         self.context = context
         self.faviconService = faviconService
         self.faviconImageService = faviconImageService
@@ -300,7 +297,6 @@ class TabManager: ObservableObject {
             currentTab = nil
             currentSpace = nil
             runtimeContext = nil
-            browserManager = nil
         }
 
         RuntimeDiagnostics.debug("Cleaned up all tab resources.", category: "TabManager")
@@ -455,6 +451,13 @@ class TabManager: ObservableObject {
         tabCollectionMembershipOwner.contains(tab)
     }
 
+    func prepareTabForRuntime(_ tab: Tab) {
+        runtimeContext?.prepareTab(tab)
+        if tab.sumiSettings == nil {
+            tab.sumiSettings = sumiSettings ?? runtimeContext?.settings
+        }
+    }
+
     // MARK: - Container Membership Helpers
     /// True if the tab is globally pinned (Essentials) in any profile.
     func isGlobalPinned(_ tab: Tab) -> Bool {
@@ -497,7 +500,6 @@ class TabManager: ObservableObject {
                 favicon: "globe",
                 spaceId: targetSpace.id,
                 index: 0,
-                browserManager: browserManager,
                 faviconService: faviconService,
                 faviconImageService: faviconImageService,
                 visitedLinkStore: visitedLinkStore
@@ -876,12 +878,12 @@ class TabManager: ObservableObject {
             favicon: "globe",
             spaceId: nil,
             index: nextIndex,
-            browserManager: browserManager,
             faviconService: faviconService,
             faviconImageService: faviconImageService,
             visitedLinkStore: visitedLinkStore
         )
         newTab.profileId = profile.id
+        prepareTabForRuntime(newTab)
 
         // Add to window's ephemeral tabs (NOT to persistent tabs)
         windowState.ephemeralTabs.append(newTab)
@@ -983,23 +985,13 @@ class TabManager: ObservableObject {
 extension TabManager {
     func attachRuntimeContext(_ context: TabManagerRuntimeContext?) {
         runtimeContext = context
-    }
+        guard context != nil else { return }
 
-    nonisolated func reattachBrowserManager(_ bm: BrowserManager) {
-        Task { @MainActor in
-            await _reattachBrowserManager(bm)
+        let knownTabs = allTabs()
+        for tab in knownTabs {
+            prepareTabForRuntime(tab)
         }
-    }
 
-    private func _reattachBrowserManager(_ bm: BrowserManager) async {
-        self.browserManager = bm
-        if runtimeContext == nil {
-            attachRuntimeContext(BrowserManagerTabRuntimeContext(browserManager: bm))
-        }
-        let visibleTabs = selectionTabsForCurrentContext()
-        for t in visibleTabs {
-            t.browserManager = bm
-        }
         // Assign any pinned tabs that were loaded without a profile once currentProfile is known
         if let currentProfileId = runtimeContext?.currentProfileId,
            !pendingPinnedWithoutProfile.isEmpty {
@@ -1010,16 +1002,16 @@ extension TabManager {
             scheduleStructuralPersistence()
         }
         if let current = self.currentTab {
-            if let match = visibleTabs.first(where: { $0.id == current.id }) {
+            if let match = knownTabs.first(where: { $0.id == current.id }) {
                 self.currentTab = match
             }
         }
-        // After reattaching, ensure gradient matches the restored current space.
+        // After attaching runtime, ensure gradient matches the restored current space.
         if let space = self.currentSpace {
             runtimeContext?.syncWorkspaceThemeAcrossWindows(for: space, animate: false)
         }
 
-        // After reattaching BrowserManager, backfill any missing space.profileId
+        // After attaching runtime, backfill any missing space.profileId.
         reconcileSpaceProfilesIfNeeded()
     }
 }

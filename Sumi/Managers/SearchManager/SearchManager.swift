@@ -142,7 +142,7 @@ class SearchManager {
     }
 
     @MainActor func updateProfileContext() {
-        let pid = tabManager?.browserManager?.currentProfile?.id
+        let pid = tabManager?.runtimeContext?.currentProfileId
         currentProfileId = pid
         #if DEBUG
         if let pid { RuntimeDiagnostics.emit("🔎 [SearchManager] Profile context updated: \(pid.uuidString)") }
@@ -470,7 +470,7 @@ class SearchManager {
     private func activeTabSuggestions(for windowState: BrowserWindowState) -> [SearchSuggestion] {
         guard let tabManager else { return [] }
 
-        let visibleSplitTabIds = Set(tabManager.browserManager?.splitManager.visibleTabIds(for: windowState.id) ?? [])
+        let visibleSplitTabIds = Set(tabManager.runtimeContext?.visibleSplitTabIds(for: windowState.id) ?? [])
         let rankByTabId = activeTabRankById(for: windowState, tabManager: tabManager)
         let currentSpaceId = windowState.currentSpaceId
         var seenTabIds = Set<UUID>()

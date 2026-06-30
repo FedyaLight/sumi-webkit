@@ -11,8 +11,7 @@ final class TabCollectionMembershipOwner {
     }
 
     func attach(_ tab: Tab) {
-        tab.browserManager = tabManager.browserManager
-        tab.sumiSettings = tabManager.sumiSettings
+        tabManager.prepareTabForRuntime(tab)
         structuralLookupOwner.attach(tab)
     }
 

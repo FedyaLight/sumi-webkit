@@ -166,7 +166,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
         let startupContainer = try makeInMemoryStartupContainer()
         let context = startupContainer.mainContext
         let profileManager = ProfileManager(context: context)
-        let tabManager = TabManager(browserManager: nil, context: context)
+        let tabManager = TabManager(context: context)
         return Harness(
             startupContainer: startupContainer,
             windowRegistry: WindowRegistry(),

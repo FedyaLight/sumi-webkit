@@ -364,7 +364,6 @@ class BrowserManager: ObservableObject {
             )
 
         self.tabManager = TabManager(
-            browserManager: nil,
             context: startupModelContext,
             faviconService: resolvedDataServices.faviconService,
             faviconImageService: resolvedDataServices.faviconImageService,

@@ -2984,7 +2984,7 @@ final class SplitGroupTests: XCTestCase {
         )
         let browserManager = BrowserManager()
         let tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )

@@ -319,7 +319,6 @@ private struct TabRestoreRuntimeState {
 
 @MainActor
 private struct TabRestoreRuntimeStateBuilder {
-    let browserManager: BrowserManager?
     let faviconService: any BrowserFaviconServicing
     let faviconImageService: any BrowserFaviconImageServicing
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
@@ -417,7 +416,6 @@ private struct TabRestoreRuntimeStateBuilder {
             favicon: "globe",
             spaceId: dto.spaceId,
             index: dto.index,
-            browserManager: browserManager,
             loadsCachedFaviconOnInit: false,
             faviconService: faviconService,
             faviconImageService: faviconImageService,
@@ -810,7 +808,6 @@ extension TabManager {
         )
 
         let restoredState = TabRestoreRuntimeStateBuilder(
-            browserManager: browserManager,
             faviconService: faviconService,
             faviconImageService: faviconImageService,
             visitedLinkStore: visitedLinkStore
@@ -826,7 +823,7 @@ extension TabManager {
         splitGroups = sanitizedRepairedSplitGroups(payload.splitGroups)
 
         for tab in restoredState.tabsBySpace.values.flatMap(\.self) {
-            tab.browserManager = browserManager
+            prepareTabForRuntime(tab)
         }
 
         currentSpace = payload.currentSpaceId.flatMap { currentSpaceId in

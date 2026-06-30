@@ -438,7 +438,9 @@ final class SidebarContextMenuController {
         if let windowState,
            let window = ownerView.window {
             let globalScheme: ColorScheme = window.effectiveAppearance.name == .darkAqua ? .dark : .light
-            let settings = windowState.tabManager?.browserManager?.sumiSettings ?? SumiSettingsService()
+            let settings = windowState.tabManager?.runtimeContext?.settings
+                ?? windowState.tabManager?.sumiSettings
+                ?? SumiSettingsService()
             let themeContext = windowState.resolvedThemeContext(global: globalScheme, settings: settings)
             let colorScheme = themeContext.nativeSurfaceColorScheme
             let appearance = NSAppearance.sumiChromeAppearance(for: colorScheme, fallback: window.effectiveAppearance)

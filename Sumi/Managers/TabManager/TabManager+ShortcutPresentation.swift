@@ -79,7 +79,6 @@ extension TabManager {
             favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: pin.role == .essential ? nil : pin.spaceId,
             index: pin.index,
-            browserManager: browserManager,
             faviconService: faviconService,
             faviconImageService: faviconImageService,
             visitedLinkStore: visitedLinkStore
@@ -88,6 +87,7 @@ extension TabManager {
         tab.profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: pin.spaceId)
         tab.folderId = pin.folderId
         _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
+        prepareTabForRuntime(tab)
         return tab
     }
 

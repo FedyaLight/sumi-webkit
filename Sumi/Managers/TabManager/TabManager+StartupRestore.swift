@@ -238,7 +238,6 @@ extension TabManager {
                     favicon: "globe",
                     spaceId: spaceId,
                     index: snapshotTab.index,
-                    browserManager: browserManager,
                     loadsCachedFaviconOnInit: false,
                     faviconService: faviconService,
                     faviconImageService: faviconImageService,

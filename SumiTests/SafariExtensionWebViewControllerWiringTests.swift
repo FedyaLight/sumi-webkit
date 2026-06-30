@@ -102,7 +102,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = coordinator
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -457,7 +457,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
         extensionsModule.attach(browserManager: browserManager)
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -547,7 +547,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -659,7 +659,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -740,7 +740,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -844,7 +844,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -925,7 +925,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -1030,7 +1030,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -1183,7 +1183,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             profile: profile
         )
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -1648,7 +1648,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -1717,7 +1717,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -1808,7 +1808,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -1910,7 +1910,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
         browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )
@@ -2274,7 +2274,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         let browserManager = makeBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
         browserManager.tabManager = TabManager(
-            browserManager: browserManager,
+            runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
             loadPersistedState: false
         )

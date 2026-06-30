@@ -615,7 +615,6 @@ private extension TabManager {
             favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: targetSpaceId,
             index: 0,
-            browserManager: browserManager,
             faviconService: faviconService,
             faviconImageService: faviconImageService,
             visitedLinkStore: visitedLinkStore
