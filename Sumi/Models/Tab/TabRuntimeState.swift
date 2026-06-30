@@ -220,6 +220,22 @@ struct TabPopupHandlingRuntime {
 }
 
 @MainActor
+struct TabWebKitUIRuntime {
+    var handleWebViewDidClose: (WKWebView) -> Bool
+    var saveDownloadedData: (
+        _ data: Data,
+        _ suggestedFilename: String,
+        _ mimeType: String?,
+        _ originatingURL: URL
+    ) -> Void
+
+    static let inactive = Self(
+        handleWebViewDidClose: { _ in false },
+        saveDownloadedData: { _, _, _, _ in }
+    )
+}
+
+@MainActor
 struct TabConfigurationPolicyWebViewReplacementRuntime {
     var trackedWindowIdContainingWebView: (WKWebView) -> UUID?
     var hasTrackedWebViews: (UUID) -> Bool
@@ -343,6 +359,7 @@ final class TabNavigationRuntime {
     var lifecycleNavigationRuntime = TabLifecycleNavigationRuntime.inactive
     var permissionRuntime = TabPermissionRuntime.inactive
     var popupHandlingRuntime = TabPopupHandlingRuntime.inactive
+    var webKitUIRuntime = TabWebKitUIRuntime.inactive
     var configurationPolicyWebViewReplacementRuntime =
         TabConfigurationPolicyWebViewReplacementRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive

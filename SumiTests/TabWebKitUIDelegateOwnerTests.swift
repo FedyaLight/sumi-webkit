@@ -97,6 +97,54 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
 
         XCTAssertTrue((webView.uiDelegate as? TabWebKitUIDelegateOwner) === tab.webKitUIDelegateOwner)
     }
+
+    func testWebViewDidCloseUsesInjectedRuntimeWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let webView = WKWebView(frame: .zero)
+        var closedWebViewIds: [ObjectIdentifier] = []
+        tab.webKitUIRuntime = TabWebKitUIRuntime(
+            handleWebViewDidClose: { webView in
+                closedWebViewIds.append(ObjectIdentifier(webView))
+                return true
+            },
+            saveDownloadedData: { _, _, _, _ in }
+        )
+
+        tab.webKitUIDelegateOwner.webViewDidClose(webView)
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(closedWebViewIds, [ObjectIdentifier(webView)])
+    }
+
+    func testSaveDataUsesInjectedRuntimeWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let owner = tab.webKitUIDelegateOwner
+        let webView = WKWebView(frame: .zero)
+        let data = Data("payload".utf8)
+        let originatingURL = URL(string: "https://example.com/file.txt")!
+        var saved: [(Data, String, String?, URL)] = []
+        tab.webKitUIRuntime = TabWebKitUIRuntime(
+            handleWebViewDidClose: { _ in false },
+            saveDownloadedData: { data, suggestedFilename, mimeType, originatingURL in
+                saved.append((data, suggestedFilename, mimeType, originatingURL))
+            }
+        )
+
+        owner.webView(
+            webView,
+            saveDataToFile: data,
+            suggestedFilename: "report.txt",
+            mimeType: "text/plain",
+            originatingURL: originatingURL
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(saved.count, 1)
+        XCTAssertEqual(saved.first?.0, data)
+        XCTAssertEqual(saved.first?.1, "report.txt")
+        XCTAssertEqual(saved.first?.2, "text/plain")
+        XCTAssertEqual(saved.first?.3, originatingURL)
+    }
 }
 
 private final class TabWebKitUIDelegateOwnerFrameInfoMock: NSObject {

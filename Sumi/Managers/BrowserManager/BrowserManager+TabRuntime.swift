@@ -349,6 +349,24 @@ extension TabPopupHandlingRuntime {
 }
 
 @MainActor
+extension TabWebKitUIRuntime {
+    static func live(
+        handleWebViewDidClose: @escaping (WKWebView) -> Bool,
+        saveDownloadedData: @escaping (
+            _ data: Data,
+            _ suggestedFilename: String,
+            _ mimeType: String?,
+            _ originatingURL: URL
+        ) -> Void
+    ) -> Self {
+        Self(
+            handleWebViewDidClose: handleWebViewDidClose,
+            saveDownloadedData: saveDownloadedData
+        )
+    }
+}
+
+@MainActor
 extension TabExtensionPropertiesRuntime {
     static func live(extensionsModule: @escaping () -> SumiExtensionsModule?) -> Self {
         Self(

@@ -214,6 +214,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.popupHandlingRuntime }
         set { navigationRuntime.popupHandlingRuntime = newValue }
     }
+    var webKitUIRuntime: TabWebKitUIRuntime {
+        get { navigationRuntime.webKitUIRuntime }
+        set { navigationRuntime.webKitUIRuntime = newValue }
+    }
     var configurationPolicyWebViewReplacementRuntime: TabConfigurationPolicyWebViewReplacementRuntime {
         get { navigationRuntime.configurationPolicyWebViewReplacementRuntime }
         set { navigationRuntime.configurationPolicyWebViewReplacementRuntime = newValue }
@@ -464,6 +468,19 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                     }
                 )
                 popupHandlingRuntime = .live(browserManager: browserManager)
+                webKitUIRuntime = .live(
+                    handleWebViewDidClose: { [weak browserManager] webView in
+                        browserManager?.handleWebViewDidClose(webView) == true
+                    },
+                    saveDownloadedData: { [weak browserManager] data, suggestedFilename, mimeType, originatingURL in
+                        browserManager?.downloadManager.saveDownloadedData(
+                            data,
+                            suggestedFilename: suggestedFilename,
+                            mimeType: mimeType,
+                            originatingURL: originatingURL
+                        )
+                    }
+                )
                 configurationPolicyWebViewReplacementRuntime = .live(
                     webViewCoordinator: { [weak browserManager] in
                         browserManager?.webViewCoordinator
@@ -487,6 +504,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
                 lifecycleNavigationRuntime = .inactive
                 permissionRuntime = .inactive
                 popupHandlingRuntime = .inactive
+                webKitUIRuntime = .inactive
                 configurationPolicyWebViewReplacementRuntime = .inactive
                 navigationCommandRuntime = .inactive
                 profileResolutionRuntime = .inactive

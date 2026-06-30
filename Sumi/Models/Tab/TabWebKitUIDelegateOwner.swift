@@ -61,7 +61,7 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
             "WebKit requested WebView close for tab=\(tab.id.uuidString.prefix(8))."
         }
 
-        if tab.browserManager?.handleWebViewDidClose(webView) == true {
+        if tab.webKitUIRuntime.handleWebViewDidClose(webView) {
             return
         }
 
@@ -162,11 +162,11 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
         mimeType: String?,
         originatingURL: URL
     ) {
-        tab?.browserManager?.downloadManager.saveDownloadedData(
+        tab?.webKitUIRuntime.saveDownloadedData(
             data,
-            suggestedFilename: suggestedFilename.isEmpty ? (webView.url?.lastPathComponent ?? "download") : suggestedFilename,
-            mimeType: mimeType,
-            originatingURL: originatingURL
+            suggestedFilename.isEmpty ? (webView.url?.lastPathComponent ?? "download") : suggestedFilename,
+            mimeType,
+            originatingURL
         )
     }
 
