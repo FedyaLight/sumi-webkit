@@ -53,7 +53,6 @@ final class SplitPaneControlsView: NSVisualEffectView {
 
     func configure(
         tab: Tab,
-        browserManager: BrowserManager,
         splitManager: SplitViewManager,
         windowState: BrowserWindowState,
         sidebarDragState: SidebarDragState
@@ -64,8 +63,6 @@ final class SplitPaneControlsView: NSVisualEffectView {
         dragButton.configure(
             tab: tab,
             windowState: windowState,
-            browserManager: browserManager,
-            splitManager: splitManager,
             sidebarDragState: sidebarDragState
         )
     }
@@ -214,8 +211,6 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
 
     private weak var tab: Tab?
     private weak var windowState: BrowserWindowState?
-    private weak var browserManager: BrowserManager?
-    private weak var splitManager: SplitViewManager?
     private var sidebarDragState: SidebarDragState?
     private var didStartDrag = false
     private var mouseDownEvent: NSEvent?
@@ -229,14 +224,10 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
     func configure(
         tab: Tab,
         windowState: BrowserWindowState,
-        browserManager: BrowserManager,
-        splitManager: SplitViewManager,
         sidebarDragState: SidebarDragState
     ) {
         self.tab = tab
         self.windowState = windowState
-        self.browserManager = browserManager
-        self.splitManager = splitManager
         self.sidebarDragState = sidebarDragState
     }
 
@@ -366,7 +357,6 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
     }
 
     private func setSplitDropShieldActive(_ isActive: Bool) {
-        guard browserManager != nil, splitManager != nil, windowState != nil else { return }
         splitDropShieldHandler?(isActive)
     }
 }

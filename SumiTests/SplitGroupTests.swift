@@ -2506,8 +2506,7 @@ final class SplitGroupTests: XCTestCase {
     func testSplitDropCaptureCancelClearsStalePreviewWithoutExitEvent() throws {
         let harness = try makeHarness()
         let captureView = SplitDropCaptureView(frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
-        captureView.splitManager = harness.browserManager.splitManager
-        captureView.windowId = harness.windowState.id
+        configure(captureView, harness: harness)
 
         harness.browserManager.splitManager.beginPreview(
             targetRect: CGRect(x: 500, y: 0, width: 500, height: 800),
@@ -2526,8 +2525,7 @@ final class SplitGroupTests: XCTestCase {
     func testSplitDropCaptureClearsStalePreviewWhenDragSessionEndsElsewhere() throws {
         let harness = try makeHarness()
         let captureView = SplitDropCaptureView(frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
-        captureView.splitManager = harness.browserManager.splitManager
-        captureView.windowId = harness.windowState.id
+        configure(captureView, harness: harness)
 
         harness.browserManager.splitManager.beginPreview(
             targetRect: CGRect(x: 0, y: 0, width: 1000, height: 400),
@@ -2950,6 +2948,25 @@ final class SplitGroupTests: XCTestCase {
             tabManager: tabManager,
             windowRegistry: windowRegistry,
             windowState: windowState
+        )
+    }
+
+    private func configure(
+        _ captureView: SplitDropCaptureView,
+        harness: SplitGroupTestHarness
+    ) {
+        captureView.configure(
+            runtime: SplitDropCaptureRuntime(
+                splitManager: harness.browserManager.splitManager,
+                sidebarDragState: SidebarDragState(),
+                windowState: { [weak windowRegistry = harness.windowRegistry] windowId in
+                    windowRegistry?.windows[windowId]
+                },
+                resolveDragTab: { [weak tabManager = harness.tabManager] tabId in
+                    tabManager?.resolveDragTab(for: tabId)
+                }
+            ),
+            windowId: harness.windowState.id
         )
     }
 

@@ -131,10 +131,19 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
     }
 
     func configureSplitDropCapture(_ view: SplitDropCaptureView, windowId: UUID) {
-        view.browserManager = browserManager
-        view.splitManager = browserManager.splitManager
-        view.sidebarDragState = sidebarDragState
-        view.windowId = windowId
+        view.configure(
+            runtime: SplitDropCaptureRuntime(
+                splitManager: browserManager.splitManager,
+                sidebarDragState: sidebarDragState,
+                windowState: { [weak browserManager] windowId in
+                    browserManager?.windowRegistry?.windows[windowId]
+                },
+                resolveDragTab: { [weak browserManager] tabId in
+                    browserManager?.tabManager.resolveDragTab(for: tabId)
+                }
+            ),
+            windowId: windowId
+        )
     }
 
     func configureSplitControls(
@@ -144,7 +153,6 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
     ) {
         controls.configure(
             tab: tab,
-            browserManager: browserManager,
             splitManager: browserManager.splitManager,
             windowState: windowState,
             sidebarDragState: sidebarDragState
@@ -954,35 +962,6 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
     var chromeGeometry: BrowserChromeGeometry
     let windowState: BrowserWindowState
     var contentBackgroundColor: Color
-
-    init(
-        browserManager: BrowserManager,
-        sidebarDragState: SidebarDragState,
-        webViewCoordinator: WebViewCoordinator,
-        hoveredLink: Binding<String?>,
-        splitGroup: SplitGroup?,
-        isSplitDropCaptureActive: Bool,
-        chromeGeometry: BrowserChromeGeometry,
-        windowState: BrowserWindowState,
-        contentBackgroundColor: Color
-    ) {
-        self.makeBrowserContext = {
-            BrowserManagerWindowWebContentContext(
-                browserManager: browserManager,
-                sidebarDragState: sidebarDragState
-            )
-        }
-        self.currentTabForDisplayState = { windowState in
-            browserManager.currentTab(for: windowState)
-        }
-        self.webViewCoordinator = webViewCoordinator
-        self._hoveredLink = hoveredLink
-        self.splitGroup = splitGroup
-        self.isSplitDropCaptureActive = isSplitDropCaptureActive
-        self.chromeGeometry = chromeGeometry
-        self.windowState = windowState
-        self.contentBackgroundColor = contentBackgroundColor
-    }
 
     init(
         browserContext: any WindowWebContentBrowserContext,
