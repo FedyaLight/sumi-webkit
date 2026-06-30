@@ -685,33 +685,19 @@ extension TabNavigationCommandRuntime {
 
 @MainActor
 extension TabProfileResolutionRuntime {
-    static func live(browserManager: BrowserManager) -> Self {
+    static func live(
+        ephemeralProfileForTab: @escaping (_ tabId: UUID, _ profileId: UUID) -> Profile?,
+        profile: @escaping (UUID) -> Profile?,
+        spaceProfile: @escaping (UUID) -> Profile?,
+        currentProfile: @escaping () -> Profile?,
+        firstProfile: @escaping () -> Profile?
+    ) -> Self {
         Self(
-            ephemeralProfileForTab: { [weak browserManager] tabId, profileId in
-                browserManager?.windowRegistry?.windows.values.first(where: { window in
-                    window.ephemeralTabs.contains(where: { $0.id == tabId })
-                })?.ephemeralProfile.flatMap { profile in
-                    profile.id == profileId ? profile : nil
-                }
-            },
-            profile: { [weak browserManager] profileId in
-                browserManager?.profileManager.profiles.first { $0.id == profileId }
-            },
-            spaceProfile: { [weak browserManager] spaceId in
-                guard let browserManager,
-                      let space = browserManager.tabManager.spaces.first(where: { $0.id == spaceId }),
-                      let profileId = space.profileId
-                else {
-                    return nil
-                }
-                return browserManager.profileManager.profiles.first { $0.id == profileId }
-            },
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
-            },
-            firstProfile: { [weak browserManager] in
-                browserManager?.profileManager.profiles.first
-            }
+            ephemeralProfileForTab: ephemeralProfileForTab,
+            profile: profile,
+            spaceProfile: spaceProfile,
+            currentProfile: currentProfile,
+            firstProfile: firstProfile
         )
     }
 }
