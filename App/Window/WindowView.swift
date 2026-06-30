@@ -193,7 +193,6 @@ struct WindowView: View {
         .onDisappear {
             hoverSidebarManager.stop()
         }
-        .environmentObject(browserContext.browserManagerForUnmigratedChildren)
         .environmentObject(glanceManager)
         .environmentObject(browserContext.splitManager)
         .environmentObject(hoverSidebarManager)
@@ -458,7 +457,7 @@ struct WindowView: View {
     ) -> some View {
         switch presentation.kind {
         case .browsingData:
-            SumiBrowsingDataDialog(browserManager: browserContext.browserManagerForUnmigratedChildren)
+            SumiBrowsingDataDialog(context: browserContext.browsingDataDialogContext)
         case .basicAuth(let session):
             BasicAuthDialog(
                 model: session.model,

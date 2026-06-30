@@ -67,13 +67,7 @@ class BrowserManager: ObservableObject {
     let browsingDataCleanupService: SumiBrowsingDataCleanupService
     let permissionRuntime: BrowserManagerPermissionRuntime
     /// App-shell owned factory for AppKit-created browser windows.
-    typealias WindowShellContentViewFactory = @MainActor (
-        BrowserManager,
-        WindowRegistry,
-        WebViewCoordinator,
-        BrowserWindowState?
-    ) -> NSView
-    var windowShellContentViewFactory: WindowShellContentViewFactory?
+    var windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory?
     var zoomManager = ZoomManager()
     weak var sumiSettings: SumiSettingsService? {
         didSet {

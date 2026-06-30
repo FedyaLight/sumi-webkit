@@ -42,11 +42,11 @@ struct SumiApp: App {
         WindowGroup {
             ContentView(
                 windowLifecycleHandler: browserManager,
+                browserContext: WindowViewBrowserContext(browserManager: browserManager),
                 initialWorkspaceTheme: browserManager.startupWorkspaceTheme
             )
                 .ignoresSafeArea(.all)
                 .writingToolsBehavior(.disabled)
-                .environmentObject(browserManager)
                 .environmentObject(browserManager.glanceManager)
                 .environmentObject(browserManager.extensionSurfaceStore)
                 .environmentObject(nowPlayingController)
@@ -102,12 +102,13 @@ struct SumiApp: App {
         )
     }
 
-    private func makeWindowShellContentViewFactory() -> BrowserManager.WindowShellContentViewFactory {
+    private func makeWindowShellContentViewFactory() -> BrowserWindowShellService.ContentViewFactory {
+        let browserManager = browserManager
         let settingsManager = settingsManager
         let keyboardShortcutManager = keyboardShortcutManager
         let nowPlayingController = nowPlayingController
 
-        return { browserManager, windowRegistry, webViewCoordinator, windowState in
+        return { windowRegistry, webViewCoordinator, windowState in
             Self.makeWindowShellContentView(
                 browserManager: browserManager,
                 settingsManager: settingsManager,
@@ -131,11 +132,11 @@ struct SumiApp: App {
     ) -> NSView {
         let contentView = ContentView(
             windowLifecycleHandler: browserManager,
+            browserContext: WindowViewBrowserContext(browserManager: browserManager),
             windowState: windowState,
             initialWorkspaceTheme: browserManager.tabManager.currentSpace?.workspaceTheme
         )
             .ignoresSafeArea(.all)
-            .environmentObject(browserManager)
             .environmentObject(browserManager.glanceManager)
             .environmentObject(browserManager.extensionSurfaceStore)
             .environmentObject(nowPlayingController)

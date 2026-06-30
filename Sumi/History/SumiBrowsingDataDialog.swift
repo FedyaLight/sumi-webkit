@@ -5,14 +5,10 @@ struct SumiBrowsingDataDialog: View {
     @Environment(\.sumiSettings) private var sumiSettings
     @StateObject private var viewModel: SumiBrowsingDataDialogViewModel
 
-    init(
-        browserManager: BrowserManager,
-        cleanupService: SumiBrowsingDataCleanupService? = nil
-    ) {
+    init(context: SumiBrowsingDataDialogContext) {
         _viewModel = StateObject(
             wrappedValue: SumiBrowsingDataDialogViewModel(
-                browserManager: browserManager,
-                cleanupService: cleanupService ?? browserManager.browsingDataCleanupService
+                context: context
             )
         )
     }
@@ -199,6 +195,25 @@ private struct SumiBrowsingDataSheetBackground: View {
 }
 
 @MainActor
+struct SumiBrowsingDataDialogContext {
+    let cleanupService: SumiBrowsingDataCleanupService
+    let profileSnapshot: () -> [Profile]
+    let activeCleanupDependencies: () -> SumiBrowsingDataDialogCleanupDependencies?
+    let dismissNativeModalPresentation: () -> Void
+
+    var regularProfileCount: Int {
+        profileSnapshot().filter { !$0.isEphemeral }.count
+    }
+}
+
+@MainActor
+struct SumiBrowsingDataDialogCleanupDependencies {
+    let historyManager: HistoryManager
+    let profiles: [Profile]
+    let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
+}
+
+@MainActor
 final class SumiBrowsingDataDialogViewModel: ObservableObject {
     @Published private(set) var summary = SumiBrowsingDataSummary()
     @Published private(set) var isLoadingSummary = false
@@ -213,17 +228,12 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
     }
     @Published private var selectedCategories = SumiBrowsingDataCategory.defaultSelection
 
-    private weak var browserManager: BrowserManager?
-    private let cleanupService: SumiBrowsingDataCleanupService
+    private let context: SumiBrowsingDataDialogContext
     private var summaryTask: Task<Void, Never>?
     private var loadingDelayTask: Task<Void, Never>?
 
-    init(
-        browserManager: BrowserManager,
-        cleanupService: SumiBrowsingDataCleanupService
-    ) {
-        self.browserManager = browserManager
-        self.cleanupService = cleanupService
+    init(context: SumiBrowsingDataDialogContext) {
+        self.context = context
     }
 
     deinit {
@@ -286,7 +296,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
     }
 
     func cancel() {
-        browserManager?.dismissNativeModalPresentation()
+        context.dismissNativeModalPresentation()
     }
 
     func delete() {
@@ -311,19 +321,17 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
         summaryTask = Task { @MainActor [weak self] in
             guard let self else { return }
 
-            guard let browserManager,
-                  browserManager.currentProfile != nil
-            else {
+            guard let cleanupDependencies = context.activeCleanupDependencies() else {
                 self.loadingDelayTask?.cancel()
                 self.isLoadingSummary = false
                 self.summary = SumiBrowsingDataSummary()
                 return
             }
 
-            let latestSummary = await cleanupService.summary(
+            let latestSummary = await context.cleanupService.summary(
                 range: selectedRange,
-                historyManager: browserManager.historyManager,
-                profiles: browserManager.profileManager.profiles,
+                historyManager: cleanupDependencies.historyManager,
+                profiles: cleanupDependencies.profiles,
                 includeAllProfiles: clearsAllProfiles
             )
             guard !Task.isCancelled else { return }
@@ -335,9 +343,7 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
     }
 
     private func deleteNow() async {
-        guard let browserManager,
-              browserManager.currentProfile != nil
-        else {
+        guard let cleanupDependencies = context.activeCleanupDependencies() else {
             errorMessage = "No active profile."
             return
         }
@@ -346,25 +352,25 @@ final class SumiBrowsingDataDialogViewModel: ObservableObject {
         isDeleting = true
         errorMessage = nil
 
-        await cleanupService.clear(
+        await context.cleanupService.clear(
             range: selectedRange,
             categories: selectedCategories,
-            historyManager: browserManager.historyManager,
-            profiles: browserManager.profileManager.profiles,
+            historyManager: cleanupDependencies.historyManager,
+            profiles: cleanupDependencies.profiles,
             includeAllProfiles: clearsAllProfiles
         )
-        for profile in browserManager.profileManager.profiles where !profile.isEphemeral {
+        for profile in cleanupDependencies.profiles where !profile.isEphemeral {
             await profile.refreshDataStoreStats(
-                cleanupService: browserManager.dataServices.websiteDataCleanupService
+                cleanupService: cleanupDependencies.websiteDataCleanupService
             )
         }
 
         isDeleting = false
-        browserManager.dismissNativeModalPresentation()
+        context.dismissNativeModalPresentation()
     }
 
     private var regularProfileCount: Int {
-        browserManager?.profileManager.profiles.filter { !$0.isEphemeral }.count ?? 0
+        context.regularProfileCount
     }
 
     private func plural(_ value: Int, singular: String, plural: String) -> String {

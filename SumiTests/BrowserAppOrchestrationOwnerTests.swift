@@ -51,7 +51,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         let webViewCoordinator = WebViewCoordinator()
         let keyboardShortcutManager = KeyboardShortcutManager(installEventMonitor: false)
         var startUpdaterCallCount = 0
-        let factory: BrowserManager.WindowShellContentViewFactory = { _, _, _, _ in
+        let factory: BrowserWindowShellService.ContentViewFactory = { _, _, _ in
             NSView()
         }
         let dependencies = BrowserAppOrchestrationOwner.Dependencies(

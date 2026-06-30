@@ -9,10 +9,6 @@ final class WindowViewBrowserContext {
         self.browserManager = browserManager
     }
 
-    var browserManagerForUnmigratedChildren: BrowserManager {
-        browserManager
-    }
-
     var splitManager: SplitViewManager {
         browserManager.splitManager
     }
@@ -54,6 +50,30 @@ final class WindowViewBrowserContext {
 
     var nativeModalPresentation: BrowserNativeModalPresentation? {
         browserManager.nativeModalPresentation
+    }
+
+    var browsingDataDialogContext: SumiBrowsingDataDialogContext {
+        SumiBrowsingDataDialogContext(
+            cleanupService: browserManager.browsingDataCleanupService,
+            profileSnapshot: { [weak browserManager] in
+                browserManager?.profileManager.profiles ?? []
+            },
+            activeCleanupDependencies: { [weak browserManager] in
+                guard let browserManager,
+                      browserManager.currentProfile != nil
+                else {
+                    return nil
+                }
+                return SumiBrowsingDataDialogCleanupDependencies(
+                    historyManager: browserManager.historyManager,
+                    profiles: browserManager.profileManager.profiles,
+                    websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService
+                )
+            },
+            dismissNativeModalPresentation: { [weak browserManager] in
+                browserManager?.dismissNativeModalPresentation()
+            }
+        )
     }
 
     var hasCurrentSpace: Bool {

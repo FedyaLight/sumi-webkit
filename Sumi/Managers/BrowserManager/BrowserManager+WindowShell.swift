@@ -24,22 +24,13 @@ extension BrowserManager {
     }
 
     private func makeWindowShellContext() -> BrowserWindowShellService.Context {
-        let makeContentView: BrowserWindowShellService.ContentViewFactory?
-        if let factory = windowShellContentViewFactory {
-            makeContentView = { windowRegistry, webViewCoordinator, windowState in
-                factory(self, windowRegistry, webViewCoordinator, windowState)
-            }
-        } else {
-            makeContentView = nil
-        }
-
         return BrowserWindowShellService.Context(
             windowRegistry: windowRegistry,
             webViewCoordinator: webViewCoordinator,
             permissionLifecycleController: permissionLifecycleController,
             profileManager: profileManager,
             tabManager: tabManager,
-            makeContentView: makeContentView,
+            makeContentView: windowShellContentViewFactory,
             showEmptyState: { [weak self] windowState in
                 self?.showEmptyState(in: windowState)
             }

@@ -362,9 +362,11 @@ final class BrowserWindowChromeTests: XCTestCase {
     func testContentViewCanBeConstructedWithWindowLifecycleHandlerProtocol() throws {
         let handler = try FakeWindowLifecycleHandler()
         let lifecycleHandler: any BrowserWindowLifecycleHandling = handler
+        let browserManager = BrowserManager()
 
         let contentView = ContentView(
             windowLifecycleHandler: lifecycleHandler,
+            browserContext: WindowViewBrowserContext(browserManager: browserManager),
             initialWorkspaceTheme: .default
         )
 

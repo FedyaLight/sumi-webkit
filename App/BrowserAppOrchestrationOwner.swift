@@ -10,7 +10,7 @@ final class BrowserAppOrchestrationOwner {
         let settingsManager: SumiSettingsService
         let keyboardShortcutManager: KeyboardShortcutManager
         let nowPlayingController: SumiNativeNowPlayingController
-        let windowShellContentViewFactory: BrowserManager.WindowShellContentViewFactory
+        let windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory
         let fallbackPersistenceSave: @MainActor () throws -> Void
         let startUpdater: @MainActor () -> Void
     }

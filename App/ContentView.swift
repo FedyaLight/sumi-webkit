@@ -8,9 +8,9 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(WindowRegistry.self) private var windowRegistry
-    @EnvironmentObject private var browserManager: BrowserManager
 
     private let windowLifecycleHandler: any BrowserWindowLifecycleHandling
+    private let browserContext: WindowViewBrowserContext
     private let providedWindowState: BrowserWindowState?
 
     @State private var defaultWindowState: BrowserWindowState
@@ -18,10 +18,12 @@ struct ContentView: View {
 
     init(
         windowLifecycleHandler: any BrowserWindowLifecycleHandling,
+        browserContext: WindowViewBrowserContext,
         windowState: BrowserWindowState? = nil,
         initialWorkspaceTheme: WorkspaceTheme? = nil
     ) {
         self.windowLifecycleHandler = windowLifecycleHandler
+        self.browserContext = browserContext
         self.providedWindowState = windowState
         _defaultWindowState = State(
             initialValue: BrowserWindowState(
@@ -37,7 +39,7 @@ struct ContentView: View {
 
     var body: some View {
         WindowView(
-            browserContext: WindowViewBrowserContext(browserManager: browserManager),
+            browserContext: browserContext,
             sidebarDragState: sidebarDragState
         )
             .environment(windowState)
