@@ -58,6 +58,8 @@ class WindowRegistry {
     @ObservationIgnored
     var onAllWindowsClosed: (() -> Void)?
 
+    private static let defaultWindowRegistrationTimeoutNanoseconds: UInt64 = 2_000_000_000
+
     /// Register a new window
     func register(_ window: BrowserWindowState) {
         let wasRegistered = windows[window.id] != nil
@@ -128,7 +130,8 @@ class WindowRegistry {
     }
 
     func awaitNextRegisteredWindow(
-        excluding existingWindowIDs: Set<UUID>
+        excluding existingWindowIDs: Set<UUID>,
+        timeoutNanoseconds: UInt64 = defaultWindowRegistrationTimeoutNanoseconds
     ) async -> BrowserWindowState? {
         if let existingWindow = windows.values.first(where: {
             existingWindowIDs.contains($0.id) == false
@@ -143,6 +146,17 @@ class WindowRegistry {
                     existingWindowIDs: existingWindowIDs,
                     continuation: continuation
                 )
+
+                guard timeoutNanoseconds > 0 else { return }
+                Task { @MainActor [weak self] in
+                    try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                    guard !Task.isCancelled,
+                          let awaiter = self?.windowAwaiters.removeValue(forKey: awaiterID)
+                    else {
+                        return
+                    }
+                    awaiter.continuation.resume(returning: nil)
+                }
             }
         } onCancel: { [weak self] in
             Task { @MainActor [weak self] in

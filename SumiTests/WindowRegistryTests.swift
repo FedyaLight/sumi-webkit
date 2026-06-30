@@ -35,6 +35,29 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertEqual(awaitedWindow?.id, secondWindow.id)
     }
 
+    func testAwaitNextRegisteredWindowTimesOutAndDoesNotPoisonFutureAwaiters() async {
+        let registry = WindowRegistry()
+
+        let timedOutWindow = await registry.awaitNextRegisteredWindow(
+            excluding: [],
+            timeoutNanoseconds: 20_000_000
+        )
+
+        XCTAssertNil(timedOutWindow)
+
+        let awaitedWindowTask = Task { @MainActor in
+            await registry.awaitNextRegisteredWindow(
+                excluding: [],
+                timeoutNanoseconds: 500_000_000
+            )
+        }
+        let newWindow = BrowserWindowState()
+        registry.register(newWindow)
+
+        let awaitedWindow = await awaitedWindowTask.value
+        XCTAssertEqual(awaitedWindow?.id, newWindow.id)
+    }
+
     func testUnregisterRunsCloseCallbackOnlyOnceForDuplicateCloseSignals() {
         let registry = WindowRegistry()
         let window = BrowserWindowState()
