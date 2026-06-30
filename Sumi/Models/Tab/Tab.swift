@@ -74,6 +74,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     lazy var webKitUIDelegateOwner = TabWebKitUIDelegateOwner(tab: self)
     lazy var webKitPermissionUIDelegateOwner = TabWebKitPermissionUIDelegateOwner(tab: self)
     lazy var scriptMessageRuntimeOwner = TabScriptMessageRuntimeOwner(tab: self)
+    private weak var browserManagerStorage: BrowserManager?
     private let dependencyStateOwner: TabDependencyStateOwner
 
     // MARK: - Pin State
@@ -302,8 +303,14 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     var browserManager: BrowserManager? {
-        get { dependencyStateOwner.browserManager }
-        set { dependencyStateOwner.browserManager = newValue }
+        get { browserManagerStorage }
+        set {
+            browserManagerStorage = newValue
+            dependencyStateOwner.attachDataServicesProvider { [weak self] in
+                guard let dataServices = self?.browserManagerStorage?.dataServices else { return nil }
+                return TabDependencyDataServices(browserManagerDataServices: dataServices)
+            }
+        }
     }
 
     var sumiSettings: SumiSettingsService? {
@@ -464,12 +471,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         self.favicon = Image(systemName: favicon)
         self.faviconIsTemplateGlobePlaceholder = (favicon == "globe")
         self.dependencyStateOwner = TabDependencyStateOwner(
-            browserManager: browserManager,
             faviconService: faviconService,
             faviconImageService: faviconImageService,
             visitedLinkStore: visitedLinkStore
         )
         super.init()
+        self.browserManager = browserManager
         self.spaceId = spaceId
         self.index = index
         navigationStateController.delegate = self

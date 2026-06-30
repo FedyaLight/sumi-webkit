@@ -1,35 +1,62 @@
 import Foundation
 
+struct TabDependencyDataServices {
+    let faviconService: any BrowserFaviconServicing
+    let faviconImageService: any BrowserFaviconImageServicing
+    let visitedLinkStore: any BrowserVisitedLinkStoreManaging
+
+    init(
+        faviconService: any BrowserFaviconServicing,
+        faviconImageService: any BrowserFaviconImageServicing,
+        visitedLinkStore: any BrowserVisitedLinkStoreManaging
+    ) {
+        self.faviconService = faviconService
+        self.faviconImageService = faviconImageService
+        self.visitedLinkStore = visitedLinkStore
+    }
+
+    @MainActor
+    init(browserManagerDataServices dataServices: BrowserManagerDataServices) {
+        self.init(
+            faviconService: dataServices.faviconService,
+            faviconImageService: dataServices.faviconImageService,
+            visitedLinkStore: dataServices.visitedLinkStore
+        )
+    }
+}
+
 @MainActor
 final class TabDependencyStateOwner {
-    weak var browserManager: BrowserManager?
     weak var sumiSettings: SumiSettingsService?
 
+    private var dataServicesProvider: (@MainActor () -> TabDependencyDataServices?)?
     private let fallbackFaviconService: any BrowserFaviconServicing
     private let fallbackFaviconImageService: any BrowserFaviconImageServicing
     private let fallbackVisitedLinkStore: any BrowserVisitedLinkStoreManaging
 
     init(
-        browserManager: BrowserManager?,
         faviconService: any BrowserFaviconServicing,
         faviconImageService: any BrowserFaviconImageServicing,
         visitedLinkStore: any BrowserVisitedLinkStoreManaging
     ) {
-        self.browserManager = browserManager
         self.fallbackFaviconService = faviconService
         self.fallbackFaviconImageService = faviconImageService
         self.fallbackVisitedLinkStore = visitedLinkStore
     }
 
+    func attachDataServicesProvider(_ provider: @MainActor @escaping () -> TabDependencyDataServices?) {
+        dataServicesProvider = provider
+    }
+
     var faviconService: any BrowserFaviconServicing {
-        browserManager?.dataServices.faviconService ?? fallbackFaviconService
+        dataServicesProvider?()?.faviconService ?? fallbackFaviconService
     }
 
     var faviconImageService: any BrowserFaviconImageServicing {
-        browserManager?.dataServices.faviconImageService ?? fallbackFaviconImageService
+        dataServicesProvider?()?.faviconImageService ?? fallbackFaviconImageService
     }
 
     var visitedLinkStore: any BrowserVisitedLinkStoreManaging {
-        browserManager?.dataServices.visitedLinkStore ?? fallbackVisitedLinkStore
+        dataServicesProvider?()?.visitedLinkStore ?? fallbackVisitedLinkStore
     }
 }

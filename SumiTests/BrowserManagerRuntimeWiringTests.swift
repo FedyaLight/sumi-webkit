@@ -217,6 +217,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             browserManager: browserManager,
             loadsCachedFaviconOnInit: false
         )
+        XCTAssertIdentical(tab.faviconService as AnyObject, faviconService)
+        XCTAssertIdentical(tab.visitedLinkStore as AnyObject, visitedLinkStore)
+
         browserManager.enforceSiteDataPolicyAfterNavigation(for: tab)
 
         XCTAssertEqual(siteDataPolicyService.enforcedURLs, [tab.url])
