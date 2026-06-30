@@ -16,7 +16,7 @@ struct SumiApp: App {
     @State private var webViewCoordinator = WebViewCoordinator()
     @State private var settingsManager: SumiSettingsService
     @State private var keyboardShortcutManager = KeyboardShortcutManager()
-    @State private var didSetupApplicationLifecycle = false
+    @State private var appOrchestrationOwner = BrowserAppOrchestrationOwner()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     // NOTE: `BrowserManager` remains the central app coordinator; incremental refactors move
@@ -84,112 +84,30 @@ struct SumiApp: App {
     /// - `BrowserManager` holds the shared `WebViewCoordinator` and `WindowRegistry` until DI is wider.
     /// Follow-up: narrow `BrowserManager` by moving window/session setup into dedicated services.
     private func setupApplicationLifecycle() {
-        guard !didSetupApplicationLifecycle else { return }
-        didSetupApplicationLifecycle = true
-
-        // Connect AppDelegate for termination and menu routing
-        appDelegate.windowRegistry = windowRegistry
-        appDelegate.commandRouter = browserManager
-        appDelegate.windowRouter = browserManager
-        appDelegate.webViewLookup = browserManager
-        appDelegate.externalURLHandler = browserManager
-        appDelegate.persistenceHandler = browserManager
-        appDelegate.updateHandler = browserManager
-        appDelegate.appLifecycleHandler = browserManager
-        appDelegate.settingsHandler = settingsManager
-        appDelegate.shortcutManager = keyboardShortcutManager
-        appDelegate.fallbackPersistenceSave = SumiStartupPersistenceComposition.saveMainContext
-
-        // Required: routing and cleanup call `requireWebViewCoordinator()` after this point.
-        browserManager.webViewCoordinator = webViewCoordinator
-        browserManager.windowRegistry = windowRegistry
-        browserManager.sumiSettings = settingsManager
-        browserManager.keyboardShortcutManager = keyboardShortcutManager
-        configureWindowShellContentViewFactory()
-
-        // `MediaControlsView` also configures this, but tab selection / activation can refresh the
-        // shared controller before the sidebar appears; without an early configure, `refreshImmediately`
-        // clears state because `browserManager` was still nil on the controller.
-        nowPlayingController.setFeatureEnabled(settingsManager.sidebarMiniPlayerEnabled)
-        nowPlayingController.configure(browserManager: browserManager)
-        browserManager.tabManager.sumiSettings = settingsManager
-
-        // Start Sparkle after the first browser window appears so launch stays focused on browsing.
-        SumiUpdaterService.shared.start()
-
-        // Initialize keyboard shortcut manager
-        keyboardShortcutManager.setBrowserManager(browserManager)
-
-        // Set up window lifecycle callbacks
-        windowRegistry.onWindowRegister = { [weak browserManager] windowState in
-            if let browserManager {
-                browserManager.setupWindowState(windowState)
-            }
-        }
-
-        for windowState in windowRegistry.allWindows {
-            browserManager.setupWindowState(windowState)
-        }
-
-        windowRegistry.onWindowClose = { [webViewCoordinator, weak browserManager] windowId in
-            // Only cleanup if browserManager still exists (it's captured weakly)
-            if let browserManager = browserManager {
-                browserManager.handleWindowWillClose(windowId)
-                browserManager.extensionsModule.notifyWindowClosedIfLoaded(windowId)
-                webViewCoordinator.cleanupWindow(
-                    windowId,
-                    tabManager: browserManager.tabManager
-                )
-                browserManager.splitManager.cleanupWindow(windowId)
-                browserManager.backgroundMediaOptimizationService.scheduleReconcile(
-                    reason: "window-closed"
-                )
-
-                // Clean up incognito window if applicable
-                if let windowState = browserManager.windowRegistry?.windows[windowId],
-                   windowState.isIncognito {
-                    Task {
-                        await browserManager.closeIncognitoWindow(windowState)
-                    }
+        appOrchestrationOwner.setupIfNeeded(
+            dependencies: BrowserAppOrchestrationOwner.Dependencies(
+                appDelegate: appDelegate,
+                browserManager: browserManager,
+                windowRegistry: windowRegistry,
+                webViewCoordinator: webViewCoordinator,
+                settingsManager: settingsManager,
+                keyboardShortcutManager: keyboardShortcutManager,
+                nowPlayingController: nowPlayingController,
+                windowShellContentViewFactory: makeWindowShellContentViewFactory(),
+                fallbackPersistenceSave: SumiStartupPersistenceComposition.saveMainContext,
+                startUpdater: {
+                    SumiUpdaterService.shared.start()
                 }
-            } else {
-                // BrowserManager was deallocated - perform minimal cleanup
-                // Remove compositor container view to prevent leaks
-                webViewCoordinator.removeCompositorContainerView(for: windowId)
-                RuntimeDiagnostics.emit(
-                    "⚠️ [SumiApp] Window \(windowId) closed after BrowserManager deallocation - performed minimal cleanup"
-                )
-            }
-        }
-
-        windowRegistry.onActiveWindowChange = { [weak browserManager] windowState in
-            browserManager?.setActiveWindowState(windowState)
-        }
-
-        windowRegistry.onWindowVisibilityChange = { [weak browserManager] windowState in
-            browserManager?.handleWindowVisibilityChanged(windowState)
-        }
-
-        windowRegistry.onAllWindowsClosed = { [weak browserManager] in
-            browserManager?.windowSessionService.prepareForAllWindowsClosed()
-            Task { @MainActor [weak browserManager] in
-                await browserManager?.performSiteDataPolicyAllWindowsClosedCleanup()
-            }
-        }
-
-        Task { @MainActor [browserManager] in
-            await browserManager.runAutomaticPermissionCleanupIfNeeded(
-                for: browserManager.currentProfile
             )
-        }
+        )
     }
 
-    private func configureWindowShellContentViewFactory() {
+    private func makeWindowShellContentViewFactory() -> BrowserManager.WindowShellContentViewFactory {
         let settingsManager = settingsManager
         let keyboardShortcutManager = keyboardShortcutManager
         let nowPlayingController = nowPlayingController
 
-        browserManager.windowShellContentViewFactory = { browserManager, windowRegistry, webViewCoordinator, windowState in
+        return { browserManager, windowRegistry, webViewCoordinator, windowState in
             Self.makeWindowShellContentView(
                 browserManager: browserManager,
                 settingsManager: settingsManager,
