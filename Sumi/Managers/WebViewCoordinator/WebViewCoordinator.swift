@@ -565,11 +565,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     // MARK: - WebView Creation & Cross-Window Sync
 
     @available(macOS 15.5, *)
+    @discardableResult
     func rebuildLiveWebViews(
         for tab: Tab,
         preferredPrimaryWindowId: UUID? = nil,
         load url: URL? = nil
-    ) {
+    ) -> Bool {
         webViewAssignmentRebuildOwner.rebuildLiveWebViews(
             for: tab,
             preferredPrimaryWindowId: preferredPrimaryWindowId,
@@ -1303,8 +1304,18 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     /// Reload a tab across all windows displaying it
     func reloadTab(_ tab: Tab) {
         let reloadTargetURL = tab.existingWebView?.url ?? tab.url
+        let protectionReloadWasRequired = tab.isProtectionReloadRequired
         if tab.configurationPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
-            tab.refresh()
+            if rebuildLiveWebViews(
+                for: tab,
+                preferredPrimaryWindowId: tab.primaryWindowId,
+                load: reloadTargetURL
+            ), protectionReloadWasRequired {
+                tab.noteProtectionManualReloadResult(
+                    rebuiltForConfigurationPolicy: true,
+                    targetURL: reloadTargetURL
+                )
+            }
             return
         }
         let tabId = tab.id

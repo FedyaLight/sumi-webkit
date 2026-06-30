@@ -317,6 +317,39 @@ final class SumiPermissionIndicatorViewModelTests: XCTestCase {
         XCTAssertTrue(store.recordsSnapshot(forPageId: "tab-a:2").isEmpty)
     }
 
+    func testRuntimeObservationRefreshesWhenPageIdChangesOnSameWebView() {
+        let tab = Tab(
+            url: URL(string: "https://example.com")!,
+            loadsCachedFaviconOnInit: false
+        )
+        let webView = WKWebView()
+        let runtimeController = FakeSumiRuntimePermissionController(
+            cameraRuntimeState: .active
+        )
+        let viewModel = SumiPermissionIndicatorViewModel()
+        viewModel.configure(
+            coordinator: SiteSettingsFakePermissionCoordinator(),
+            runtimeController: runtimeController,
+            popupStore: SumiBlockedPopupStore(),
+            externalSchemeStore: SumiExternalSchemeSessionStore(),
+            indicatorEventStore: SumiPermissionIndicatorEventStore()
+        )
+
+        let firstPageId = tab.currentPermissionPageId()
+        viewModel.update(tab: tab, webView: webView)
+        tab.extensionPageRuntimeOwner.noteCommittedMainDocumentNavigation(
+            to: URL(string: "https://example.com/next")!
+        )
+        let secondPageId = tab.currentPermissionPageId()
+        viewModel.update(tab: tab, webView: webView)
+
+        XCTAssertNotEqual(firstPageId, secondPageId)
+        XCTAssertEqual(
+            runtimeController.observedRuntimeStatePageIds,
+            [firstPageId, secondPageId]
+        )
+    }
+
     private func indicatorState(
         runtimeState: SumiRuntimePermissionState
     ) -> SumiPermissionIndicatorState {

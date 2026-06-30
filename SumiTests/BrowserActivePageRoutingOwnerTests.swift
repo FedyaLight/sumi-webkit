@@ -105,7 +105,7 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         XCTAssertNil(owner.activePageWebView(for: requestedWindow))
     }
 
-    func testActivePageWebViewFallsBackToWindowAssignedTabWebView() throws {
+    func testActivePageWebViewDoesNotUseWindowAssignedTabWebViewWithoutCoordinatorTracking() throws {
         let windowState = BrowserWindowState()
         let tabWebView = WKWebView(frame: .zero)
         let tab = makeTab("https://tab.example")
@@ -115,7 +115,22 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         harness.currentTabsByWindowId[windowState.id] = tab
         let owner = harness.makeOwner()
 
-        XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), tabWebView)
+        XCTAssertNil(owner.activePageWebView(for: windowState))
+    }
+
+    func testRefreshCurrentTabInActiveWindowRoutesThroughWindowScopedDependency() {
+        let windowState = BrowserWindowState()
+        let tab = makeTab("https://refresh.example")
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
+        harness.currentTabsByWindowId[windowState.id] = tab
+        let owner = harness.makeOwner()
+
+        owner.refreshCurrentTabInActiveWindow()
+
+        XCTAssertEqual(
+            harness.refreshedPages,
+            [.init(tabId: tab.id, windowId: windowState.id)]
+        )
     }
 
     func testPresentExternalURLCreatesTabInActiveWindow() throws {
@@ -242,6 +257,11 @@ private final class BrowserActivePageRoutingOwnerHarness {
         let openTargetFolder: Bool
     }
 
+    struct RefreshedPage: Equatable {
+        let tabId: UUID
+        let windowId: UUID
+    }
+
     var activeWindow: BrowserWindowState?
     var fallbackCurrentTab: Tab?
     var currentTabsByWindowId: [UUID: Tab] = [:]
@@ -254,6 +274,7 @@ private final class BrowserActivePageRoutingOwnerHarness {
     var createdTabs: [CreatedTab] = []
     var openedTabs: [OpenedTab] = []
     var convertedPins: [ConvertedPin] = []
+    var refreshedPages: [RefreshedPage] = []
     var copyToastWindowIds: [UUID] = []
     var pasteboardWrites: [String] = []
 
@@ -277,13 +298,12 @@ private final class BrowserActivePageRoutingOwnerHarness {
                 },
                 windowOwnedWebView: { [weak self] tab, windowId in
                     guard let self else { return nil }
-                    if let webView = webViewsByKey[webViewKey(tabId: tab.id, windowId: windowId)] {
-                        return webView
-                    }
-                    if tab.primaryWindowId == windowId {
-                        return tab.assignedWebView
-                    }
-                    return nil
+                    return webViewsByKey[webViewKey(tabId: tab.id, windowId: windowId)]
+                },
+                refreshActivePage: { [weak self] tab, windowState in
+                    self?.refreshedPages.append(
+                        .init(tabId: tab.id, windowId: windowState.id)
+                    )
                 },
                 createNewTab: { [weak self] windowState, url in
                     self?.createdTabs.append(.init(windowId: windowState.id, url: url))

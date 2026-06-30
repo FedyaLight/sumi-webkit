@@ -12,6 +12,8 @@ final class BrowserFloatingBarRoutingOwner {
         let commitEmptySplitPlaceholder: @MainActor @Sendable (UUID, BrowserWindowState) -> Void
         let replaceEmptySplitPlaceholder: @MainActor @Sendable (Tab, BrowserWindowState) -> Bool
         let selectTab: @MainActor @Sendable (Tab, BrowserWindowState) -> Void
+        let loadCurrentPageURL: @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void
+        let navigateCurrentPage: @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void
         let dismissWorkspaceThemePickerIfNeededDiscarding: @MainActor @Sendable () -> Void
         let persistWindowSession: @MainActor @Sendable (BrowserWindowState) -> Void
         let schedulePersistWindowSession: @MainActor @Sendable (BrowserWindowState, UInt64) -> Void
@@ -196,6 +198,8 @@ final class BrowserFloatingBarRoutingOwner {
                     ?? SearchProvider.google.queryTemplate
                 return Sumi.normalizeURL(text, queryTemplate: template)
             },
+            loadCurrentPageURL: dependencies.loadCurrentPageURL,
+            navigateCurrentPage: dependencies.navigateCurrentPage,
             applySettingsSurfaceNavigation: { text in
                 let template = self.dependencies.settings()?.resolvedSearchEngineTemplate
                     ?? SearchProvider.google.queryTemplate
@@ -239,6 +243,20 @@ extension BrowserFloatingBarRoutingOwner.Dependencies {
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
+            },
+            loadCurrentPageURL: { [weak browserManager] tab, windowState, urlString in
+                browserManager?.loadFloatingBarCurrentPage(
+                    urlString,
+                    tab: tab,
+                    in: windowState
+                )
+            },
+            navigateCurrentPage: { [weak browserManager] tab, windowState, input in
+                browserManager?.navigateFloatingBarCurrentPage(
+                    input,
+                    tab: tab,
+                    in: windowState
+                )
             },
             dismissWorkspaceThemePickerIfNeededDiscarding: { [weak browserManager] in
                 browserManager?.dismissWorkspaceThemePickerIfNeededDiscarding()

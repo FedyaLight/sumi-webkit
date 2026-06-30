@@ -11,6 +11,7 @@ final class BrowserActivePageRoutingOwner {
         let activePreviewTab: @MainActor (BrowserWindowState) -> Tab?
         let activeSessionURL: @MainActor (BrowserWindowState) -> URL?
         let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
+        let refreshActivePage: @MainActor (Tab, BrowserWindowState) -> Void
         let createNewTab: @MainActor (BrowserWindowState, String) -> Void
         let openNewTab: @MainActor (String, BrowserTabOpenContext) -> Tab?
         let containsSpace: @MainActor (UUID) -> Bool
@@ -76,7 +77,12 @@ final class BrowserActivePageRoutingOwner {
     }
 
     func refreshCurrentTabInActiveWindow() {
-        activePageTabForActiveWindow()?.refresh()
+        guard let activeWindow = dependencies.activeWindow(),
+              let tab = activePageTab(for: activeWindow)
+        else {
+            return
+        }
+        dependencies.refreshActivePage(tab, activeWindow)
     }
 
     func toggleMuteCurrentTabInActiveWindow() {
@@ -116,18 +122,33 @@ final class BrowserActivePageRoutingOwner {
             return
         }
 
-        guard let currentTab = activePageTabForActiveWindow() else {
-            RuntimeDiagnostics.emit("No current tab to inspect")
+        guard let activeWindow = dependencies.activeWindow() else {
+            RuntimeDiagnostics.emit("No active window to inspect")
             return
         }
 
-        guard let webView = currentTab.ensureWebView() else {
-            RuntimeDiagnostics.emit("No web view available to inspect")
+        guard let tab = activePageTab(for: activeWindow),
+              let webView = dependencies.windowOwnedWebView(tab, activeWindow.id)
+        else {
+            RuntimeDiagnostics.emit("No window-owned web view available to inspect")
             return
         }
 
-        webView.isInspectable = true
-        showWebInspectorAlert()
+        inspect(webView)
+    }
+
+    func openWebInspector(for tab: Tab, in windowState: BrowserWindowState) {
+        guard RuntimeDiagnostics.isDeveloperInspectionEnabled else {
+            RuntimeDiagnostics.emit("Developer inspection is disabled for this runtime.")
+            return
+        }
+
+        guard let webView = dependencies.windowOwnedWebView(tab, windowState.id) else {
+            RuntimeDiagnostics.emit("No window-owned web view available to inspect")
+            return
+        }
+
+        inspect(webView)
     }
 
     func presentExternalURL(_ url: URL) {
@@ -227,6 +248,11 @@ final class BrowserActivePageRoutingOwner {
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
+
+    private func inspect(_ webView: WKWebView) {
+        webView.isInspectable = true
+        showWebInspectorAlert()
+    }
 }
 
 extension BrowserActivePageRoutingOwner.Dependencies {
@@ -250,6 +276,13 @@ extension BrowserActivePageRoutingOwner.Dependencies {
             },
             windowOwnedWebView: { [weak browserManager] tab, windowId in
                 browserManager?.windowOwnedWebView(for: tab, in: windowId)
+            },
+            refreshActivePage: { [weak browserManager] tab, windowState in
+                browserManager?.refreshWindowScopedPage(
+                    tab: tab,
+                    in: windowState,
+                    reason: "BrowserActivePage.refresh"
+                )
             },
             createNewTab: { [weak browserManager] windowState, urlString in
                 browserManager?.createNewTab(in: windowState, url: urlString)

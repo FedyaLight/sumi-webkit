@@ -75,10 +75,10 @@ extension BrowserURLBarPermissionContextOwner.Dependencies {
             },
             updateIndicator: { [weak browserManager] viewModel, tab, windowState in
                 guard let browserManager else { return }
+                let webView = browserManager.windowOwnedWebView(for: tab, in: windowState.id)
                 viewModel.update(
                     tab: tab,
-                    windowId: windowState.id,
-                    browserManager: browserManager
+                    webView: webView
                 )
             },
             updatePrompt: { [weak browserManager] presenter, tab, windowState in

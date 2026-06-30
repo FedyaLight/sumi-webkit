@@ -267,6 +267,11 @@ struct ExtensionActionPopupAnchorResolution: Equatable, Sendable {
     }
 }
 
+struct ExtensionActionPopupIdentity: Equatable, Hashable, Sendable {
+    let extensionId: String
+    let profileId: UUID?
+}
+
 /// Click-time anchor captured before async extension runtime work.
 @available(macOS 15.5, *)
 @MainActor

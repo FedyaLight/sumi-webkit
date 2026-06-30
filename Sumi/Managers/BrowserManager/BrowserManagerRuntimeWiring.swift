@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import WebKit
 
 @MainActor
 enum BrowserManagerRuntimeWiring {
@@ -17,10 +18,10 @@ enum BrowserManagerRuntimeWiring {
         )
         browserManager.tabManager.reattachBrowserManager(browserManager)
         browserManager.liveFolderManager.attach(browserManager: browserManager)
-        browserManager.downloadManager.browserManager = browserManager
+        browserManager.downloadManager.retryRuntime = downloadRetryRuntime(for: browserManager)
         browserManager.extensionsModule.attach(browserManager: browserManager)
         browserManager.userscriptsModule.attach(browserManager: browserManager)
-        browserManager.boostsModule.attach(browserManager: browserManager)
+        browserManager.boostsModule.attach(runtime: boostRuntime(for: browserManager))
         let structuralChangeCancellable = bindTabManagerStructuralUpdates(for: browserManager)
         browserManager.auxiliaryWindowManager.attach(browserManager: browserManager)
         browserManager.glanceManager.attach(browserManager: browserManager)
@@ -153,17 +154,88 @@ enum BrowserManagerRuntimeWiring {
             },
             resolvedNowPlayingWebView: { [weak browserManager] tab, windowState in
                 guard let browserManager else { return nil }
-                return tab.authoritativeMediaWebView(
-                    resolvedWindowWebView: browserManager.webViewRoutingService.webView(
-                        for: tab.id,
-                        in: windowState.id
-                    )
-                )
+                return browserManager.windowOwnedWebView(for: tab, in: windowState.id)
             },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
             }
         )
+    }
+
+    private static func downloadRetryRuntime(
+        for browserManager: BrowserManager
+    ) -> DownloadManager.RetryRuntime {
+        DownloadManager.RetryRuntime(
+            activeWindow: { [weak browserManager] in
+                browserManager?.windowRegistry?.activeWindow
+            },
+            currentTab: { [weak browserManager] windowState in
+                browserManager?.currentTab(for: windowState)
+            },
+            windowOwnedWebView: { [weak browserManager] tab, windowId in
+                browserManager?.windowOwnedWebView(for: tab, in: windowId)
+            }
+        )
+    }
+
+    private static func boostRuntime(
+        for browserManager: BrowserManager
+    ) -> SumiBoostsModule.Runtime {
+        SumiBoostsModule.Runtime(
+            windowOwnedWebView: { [weak browserManager] tab, windowId in
+                browserManager?.windowOwnedWebView(for: tab, in: windowId)
+            },
+            matchingLivePages: { [weak browserManager] profileId, host in
+                guard let browserManager else { return [] }
+                return matchingBoostLivePages(
+                    browserManager: browserManager,
+                    profileId: profileId,
+                    host: host
+                )
+            },
+            applyBoostAwareZoom: { [weak browserManager] tab, webView in
+                browserManager?.applyBoostAwareZoom(for: tab, webView: webView)
+            },
+            openWebInspector: { [weak browserManager] tab, windowState in
+                browserManager?.openWebInspector(for: tab, in: windowState)
+            }
+        )
+    }
+
+    private static func matchingBoostLivePages(
+        browserManager: BrowserManager,
+        profileId: UUID,
+        host: String
+    ) -> [SumiBoostsModule.LivePage] {
+        var visited = Set<ObjectIdentifier>()
+        var pages: [SumiBoostsModule.LivePage] = []
+
+        func tabMatches(_ tab: Tab) -> Bool {
+            (tab.resolveProfile()?.id ?? tab.profileId) == profileId
+                && SumiBoostURLPolicy.normalizedBoostableHost(for: tab.url) == host
+        }
+
+        func visit(_ tab: Tab, _ webView: WKWebView) {
+            let identifier = ObjectIdentifier(webView)
+            guard visited.insert(identifier).inserted else { return }
+            pages.append(SumiBoostsModule.LivePage(tab: tab, webView: webView))
+        }
+
+        for windowState in browserManager.windowRegistry?.allWindows ?? [] {
+            for tab in browserManager.tabsForDisplay(in: windowState) where tabMatches(tab) {
+                if let webView = browserManager.windowOwnedWebView(for: tab, in: windowState.id) {
+                    visit(tab, webView)
+                }
+            }
+        }
+
+        for tab in browserManager.tabManager.allTabs() where tabMatches(tab) {
+            for webView in browserManager.webViewCoordinator?.getAllWebViews(for: tab.id) ?? [] {
+                visit(tab, webView)
+            }
+        }
+
+        return pages
     }
 
     private static func backgroundMediaVisibleTabIDsByWindow(

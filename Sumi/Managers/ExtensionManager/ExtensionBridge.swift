@@ -159,7 +159,20 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
     }
 
     func extensionTargetSpace(for windowState: BrowserWindowState?) -> Space? {
-        windowState?.currentSpaceId.flatMap(extensionSpace(for:)) ?? currentExtensionSpace
+        if let windowState {
+            if let currentSpaceId = windowState.currentSpaceId,
+               let currentSpace = extensionSpace(for: currentSpaceId),
+               windowState.currentProfileId.map({ currentSpace.profileId == $0 }) ?? true {
+                return currentSpace
+            }
+
+            if let profileId = windowState.currentProfileId,
+               let profileSpace = tabManager.spaces.first(where: { $0.profileId == profileId }) {
+                return profileSpace
+            }
+        }
+
+        return currentExtensionSpace
     }
 
     func extensionTargetSpace(for tab: Tab) -> Space? {
@@ -431,6 +444,19 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         browserContext?.extensionWindowState(for: windowId)
     }
 
+    private func profileMatchedWindowState(
+        for extensionContext: WKWebExtensionContext
+    ) -> BrowserWindowState? {
+        guard let extensionManager,
+              let windowState,
+              let contextProfileId = extensionManager.profileId(for: extensionContext),
+              extensionManager.windowMatchesProfile(windowState, profileId: contextProfileId)
+        else {
+            return nil
+        }
+        return windowState
+    }
+
     override func isEqual(_ object: Any?) -> Bool {
         guard let other = object as? ExtensionWindowAdapter else { return false }
         return other.windowId == windowId
@@ -484,19 +510,19 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         }
     }
 
-    func frame(for _: WKWebExtensionContext) -> CGRect {
-        windowState?.window?.frame ?? .zero
+    func frame(for extensionContext: WKWebExtensionContext) -> CGRect {
+        profileMatchedWindowState(for: extensionContext)?.window?.frame ?? .zero
     }
 
-    func screenFrame(for _: WKWebExtensionContext) -> CGRect {
-        windowState?.window?.screen?.frame ?? NSScreen.main?.frame ?? .zero
+    func screenFrame(for extensionContext: WKWebExtensionContext) -> CGRect {
+        profileMatchedWindowState(for: extensionContext)?.window?.screen?.frame ?? NSScreen.main?.frame ?? .zero
     }
 
     func focus(
-        for _: WKWebExtensionContext,
+        for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let windowState else {
+        guard let windowState = profileMatchedWindowState(for: extensionContext) else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
@@ -513,16 +539,16 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .windowAdapterCompletion, error: nil)
     }
 
-    func isPrivate(for _: WKWebExtensionContext) -> Bool {
-        windowState?.isIncognito ?? false
+    func isPrivate(for extensionContext: WKWebExtensionContext) -> Bool {
+        profileMatchedWindowState(for: extensionContext)?.isIncognito ?? false
     }
 
     func windowType(for _: WKWebExtensionContext) -> WKWebExtension.WindowType {
         .normal
     }
 
-    func windowState(for _: WKWebExtensionContext) -> WKWebExtension.WindowState {
-        guard let window = windowState?.window else { return .normal }
+    func windowState(for extensionContext: WKWebExtensionContext) -> WKWebExtension.WindowState {
+        guard let window = profileMatchedWindowState(for: extensionContext)?.window else { return .normal }
         if window.isMiniaturized { return .minimized }
         if window.styleMask.contains(.fullScreen) { return .fullscreen }
         return .normal
@@ -530,10 +556,10 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
     func setWindowState(
         _ windowState: WKWebExtension.WindowState,
-        for _: WKWebExtensionContext,
+        for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let window = self.windowState?.window else {
+        guard let window = profileMatchedWindowState(for: extensionContext)?.window else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
@@ -571,10 +597,10 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
 
     func setFrame(
         _ frame: CGRect,
-        for _: WKWebExtensionContext,
+        for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let window = windowState?.window else {
+        guard let window = profileMatchedWindowState(for: extensionContext)?.window else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,
@@ -590,10 +616,10 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
     }
 
     func close(
-        for _: WKWebExtensionContext,
+        for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        guard let window = windowState?.window else {
+        guard let window = profileMatchedWindowState(for: extensionContext)?.window else {
             ExtensionBridgeCallbackSupport.complete(
                 completionHandler,
                 api: .windowAdapterCompletion,

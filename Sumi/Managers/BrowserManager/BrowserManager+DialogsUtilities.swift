@@ -123,6 +123,10 @@ extension BrowserManager {
         activePageRoutingOwner.openWebInspector()
     }
 
+    func openWebInspector(for tab: Tab, in windowState: BrowserWindowState) {
+        activePageRoutingOwner.openWebInspector(for: tab, in: windowState)
+    }
+
     // MARK: - Profile Switch Toast
 
     func showProfileSwitchToast(to: Profile, in windowState: BrowserWindowState?) {

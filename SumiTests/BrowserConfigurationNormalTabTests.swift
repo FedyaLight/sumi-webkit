@@ -381,13 +381,26 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             for: tab,
             reason: "BrowserConfigurationNormalTabTests.safariContentBlockerCoordinatorInitial"
         )
+        let windowRegistry = WindowRegistry()
+        harness.browserManager.windowRegistry = windowRegistry
+        let currentSpace = try XCTUnwrap(harness.browserManager.tabManager.currentSpace)
+        let windowState = BrowserWindowState()
+        windowState.currentProfileId = harness.browserManager.currentProfile?.id
+        windowState.currentSpaceId = currentSpace.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        tab.assignWebViewToWindow(originalWebView, windowId: windowState.id)
+        let coordinator = try XCTUnwrap(harness.browserManager.webViewCoordinator)
+        coordinator.setWebView(originalWebView, for: tab.id, in: windowState.id)
+
         let originalController = try XCTUnwrap(
             originalWebView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await originalController.waitForContentBlockingAssetsInstalled()
 
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
-        try XCTUnwrap(harness.browserManager.webViewCoordinator).reloadTab(tab)
+        coordinator.reloadTab(tab)
 
         let replacementWebView = try XCTUnwrap(tab.existingWebView)
         XCTAssertNotIdentical(replacementWebView, originalWebView)
@@ -396,6 +409,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         await replacementController.waitForContentBlockingAssetsInstalled()
 
+        try await waitForWebViewURL(replacementWebView, toEqual: tab.url)
         XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
         XCTAssertTrue(
             harness.ruleListIdentifiers.isDisjoint(
@@ -1283,6 +1297,21 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             ruleListLookupDuration: nil,
             tabAttachmentDuration: nil
         )
+    }
+
+    private func waitForWebViewURL(
+        _ webView: WKWebView,
+        toEqual expectedURL: URL,
+        timeout: TimeInterval = 5
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if webView.url == expectedURL {
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Timed out waiting for WebView URL \(expectedURL); latest URL: \(webView.url?.absoluteString ?? "nil")")
     }
 
     private func temporaryDirectory(prefix: String) -> URL {

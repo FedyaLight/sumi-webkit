@@ -3,30 +3,61 @@ import WebKit
 
 @MainActor
 final class TabNavigationCommandOwner {
-    func loadURL(_ newURL: URL, for tab: Tab) {
-        tab.url = newURL
-        tab.beginLoadingPresentationIfNeeded()
+    typealias WebViewResolver = @MainActor () -> WKWebView?
 
+    func loadURL(_ newURL: URL, for tab: Tab) {
         guard tab.hasCurrentWebView else {
+            tab.url = newURL
+            tab.beginLoadingPresentationIfNeeded()
             tab.setupWebView()
             return
         }
 
-        let rebuiltForConfigurationPolicy = tab.rebuildNormalWebViewForConfigurationPolicyIfNeeded(
-            targetURL: newURL,
+        loadURL(
+            newURL,
+            for: tab,
+            resolvedWebView: { [weak tab] in tab?.currentWebView },
             reason: "Tab.loadURL"
         )
+    }
+
+    func loadURL(
+        _ newURL: URL,
+        for tab: Tab,
+        resolvedWebView: @escaping WebViewResolver,
+        reason: String,
+        rebuildConfigurationPolicy: Bool = true
+    ) {
+        tab.url = newURL
+        tab.beginLoadingPresentationIfNeeded()
         tab.resetPlaybackActivity()
+
+        guard let initialWebView = resolvedWebView() else {
+            tab.applyCachedFaviconOrPlaceholder(for: newURL)
+            return
+        }
+
+        let rebuiltForConfigurationPolicy = rebuildConfigurationPolicy
+            ? tab.rebuildNormalWebViewForConfigurationPolicyIfNeeded(
+                targetURL: newURL,
+                reason: reason
+            )
+            : false
+        let webView = rebuiltForConfigurationPolicy
+            ? (resolvedWebView() ?? initialWebView)
+            : initialWebView
 
         if newURL.isFileURL {
             loadFileURL(
                 newURL,
+                on: webView,
                 for: tab,
                 waitForContentBlockingAssets: rebuiltForConfigurationPolicy
             )
         } else {
             loadWebURL(
                 newURL,
+                on: webView,
                 for: tab,
                 waitForContentBlockingAssets: rebuiltForConfigurationPolicy
             )
@@ -146,38 +177,36 @@ final class TabNavigationCommandOwner {
 
     private func loadFileURL(
         _ url: URL,
+        on webView: WKWebView,
         for tab: Tab,
         waitForContentBlockingAssets: Bool
     ) {
         let directoryURL = url.deletingLastPathComponent()
-        if let webView = tab.currentWebView {
-            performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
-                on: webView,
-                tab: tab,
-                waitForContentBlockingAssets: waitForContentBlockingAssets
-            ) { resolvedWebView in
-                resolvedWebView.loadFileURL(
-                    url,
-                    allowingReadAccessTo: directoryURL
-                )
-            }
+        performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+            on: webView,
+            tab: tab,
+            waitForContentBlockingAssets: waitForContentBlockingAssets
+        ) { resolvedWebView in
+            resolvedWebView.loadFileURL(
+                url,
+                allowingReadAccessTo: directoryURL
+            )
         }
     }
 
     private func loadWebURL(
         _ url: URL,
+        on webView: WKWebView,
         for tab: Tab,
         waitForContentBlockingAssets: Bool
     ) {
         let request = Self.navigationCommandURLRequest(for: url)
-        if let webView = tab.currentWebView {
-            performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
-                on: webView,
-                tab: tab,
-                waitForContentBlockingAssets: waitForContentBlockingAssets
-            ) { resolvedWebView in
-                resolvedWebView.load(request)
-            }
+        performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+            on: webView,
+            tab: tab,
+            waitForContentBlockingAssets: waitForContentBlockingAssets
+        ) { resolvedWebView in
+            resolvedWebView.load(request)
         }
     }
 }

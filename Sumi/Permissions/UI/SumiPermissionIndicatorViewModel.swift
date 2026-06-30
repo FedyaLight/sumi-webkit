@@ -55,6 +55,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
     private var indicatorEventStore: SumiPermissionIndicatorEventStore?
     private var currentContext: CurrentContext?
     private weak var currentWebView: WKWebView?
+    private var currentRuntimePageId: String?
     private var currentRuntimeState: SumiRuntimePermissionState?
     private var runtimeObservation: SumiRuntimePermissionObservation?
     private var eventTask: Task<Void, Never>?
@@ -115,8 +116,7 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
 
     func update(
         tab: Tab,
-        windowId: UUID,
-        browserManager: BrowserManager
+        webView: WKWebView?
     ) {
         let tabId = tab.id.uuidString.lowercased()
         let pageId = tab.currentPermissionPageId()
@@ -127,15 +127,16 @@ final class SumiPermissionIndicatorViewModel: ObservableObject {
             autoplayReloadRequired: tab.isAutoplayReloadRequired
         )
 
-        let webView = browserManager.windowOwnedWebView(for: tab, in: windowId)
-        if currentWebView !== webView {
+        let normalizedPageId = Self.normalizedId(pageId)
+        if currentWebView !== webView || currentRuntimePageId != normalizedPageId {
             runtimeObservation?.cancel()
             runtimeObservation = nil
             currentWebView = webView
+            currentRuntimePageId = normalizedPageId
 
             if let webView, let runtimeController {
-                currentRuntimeState = runtimeController.currentRuntimeState(for: webView, pageId: pageId)
-                runtimeObservation = runtimeController.observeRuntimeState(for: webView, pageId: pageId) { [weak self] runtimeState in
+                currentRuntimeState = runtimeController.currentRuntimeState(for: webView, pageId: normalizedPageId)
+                runtimeObservation = runtimeController.observeRuntimeState(for: webView, pageId: normalizedPageId) { [weak self] runtimeState in
                     self?.currentRuntimeState = runtimeState
                     self?.refresh()
                 }

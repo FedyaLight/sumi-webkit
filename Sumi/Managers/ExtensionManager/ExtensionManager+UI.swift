@@ -717,7 +717,9 @@ extension ExtensionManager {
         if let extensionContext,
            let firstURL = tabURLs.first,
            Self.isExtensionExternalWebPopupURL(firstURL),
-           let activeWindow = browserContext.activeExtensionWindowState {
+           let contextProfileId = profileId(for: extensionContext),
+           let activeWindow = browserContext.activeExtensionWindowState,
+           windowMatchesProfile(activeWindow, profileId: contextProfileId) {
             Task { @MainActor [weak self] in
                 guard let self, let browserContext = self.browserBridgeContext else {
                     completionHandler(
@@ -778,6 +780,21 @@ extension ExtensionManager {
                     ExtensionManagerCallbackError.newWindowUnavailable.nsError()
                 )
                 return
+            }
+
+            let contextProfileId = extensionContext.flatMap { self.profileId(for: $0) }
+            if let contextProfileId {
+                windowState.currentProfileId = contextProfileId
+                if let targetSpace = browserContext.extensionTargetSpace(for: windowState),
+                   targetSpace.profileId == contextProfileId {
+                    windowState.currentSpaceId = targetSpace.id
+                } else {
+                    completionHandler(
+                        nil,
+                        ExtensionManagerCallbackError.newWindowUnavailable.nsError()
+                    )
+                    return
+                }
             }
 
             let targetSpace = browserContext.extensionTargetSpace(for: windowState)

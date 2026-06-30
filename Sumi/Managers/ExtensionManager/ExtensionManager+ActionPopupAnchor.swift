@@ -62,33 +62,50 @@ extension ExtensionManager {
             ?? currentProfileId
             ?? browserManager?.currentProfile?.id
 
-        let pendingAnchor = actionPopupAnchorStore.latestAnchor(for: extensionId)
+        var pendingAnchor: ExtensionActionPopupAnchor? = actionPopupAnchorStore.latestAnchor(for: extensionId)
 
-        let targetWindowId =
-            pendingAnchor?.windowID
-            ?? preferredWindowId
-            ?? pendingAnchor.flatMap { browserBridgeContext?.extensionWindowState(for: $0.windowID)?.id }
-            ?? browserBridgeContext?.activeExtensionWindowState?.id
-
-        if let pendingAnchor,
+        if let staleAnchor = pendingAnchor,
            let presentationProfileId,
-           pendingAnchor.profileID != presentationProfileId {
-            actionPopupAnchorStore.consume(sessionToken: pendingAnchor.sessionToken)
+           staleAnchor.profileID != presentationProfileId {
+            actionPopupAnchorStore.consume(sessionToken: staleAnchor.sessionToken)
             extensionRuntimeTrace(
-                "actionPopupAnchor stale session extensionId=\(extensionId) reason=profileMismatch capturedProfile=\(pendingAnchor.profileID.uuidString) resolvedProfile=\(presentationProfileId.uuidString)"
+                "actionPopupAnchor stale session extensionId=\(extensionId) reason=profileMismatch capturedProfile=\(staleAnchor.profileID.uuidString) resolvedProfile=\(presentationProfileId.uuidString)"
             )
+            pendingAnchor = nil
+        }
+
+        let targetWindow = resolveActionPopupTargetWindow(
+            pendingAnchor: pendingAnchor,
+            preferredWindowId: preferredWindowId,
+            profileId: presentationProfileId
+        )
+        let targetWindowId = targetWindow?.id
+        let targetWindowProfileMatches = presentationProfileId.map { profileId in
+            targetWindow.map { windowMatchesProfile($0, profileId: profileId) } ?? false
+        } ?? true
+
+        if presentationProfileId != nil, targetWindowId == nil {
+            let resolution = ExtensionActionPopupAnchorResolution(
+                anchorResolved: false,
+                anchorSource: pendingAnchor == nil ? nil : .stale,
+                windowMatch: false,
+                profileMatch: false,
+                sessionToken: pendingAnchor?.sessionToken
+            )
+            extensionRuntimeTrace(
+                "actionPopupAnchor unresolved extensionId=\(extensionId) reason=profileWindowUnavailable \(resolution.traceLine)"
+            )
+            return nil
         } else if let pendingAnchor,
                   let buttonView = pendingAnchor.buttonView,
                   isActionPopupAnchorViewReady(buttonView),
                   let window = buttonView.window,
-                  let targetWindowId,
-                  window === browserBridgeContext?.extensionWindowState(for: targetWindowId)?.window
-                     || window === NSApp.keyWindow
-                     || window === NSApp.mainWindow {
+                  let targetWindow,
+                  window === targetWindow.window {
             let resolution = ExtensionActionPopupAnchorResolution(
                 anchorResolved: true,
                 anchorSource: .button,
-                windowMatch: window === browserBridgeContext?.extensionWindowState(for: pendingAnchor.windowID)?.window,
+                windowMatch: window === targetWindow.window,
                 profileMatch: presentationProfileId.map { pendingAnchor.profileID == $0 } ?? true,
                 sessionToken: pendingAnchor.sessionToken
             )
@@ -109,14 +126,12 @@ extension ExtensionManager {
            isActionPopupAnchorViewReady(currentView) {
             let windowMatch =
                 currentView.window
-                === browserBridgeContext?.extensionWindowState(for: targetWindowId)?.window
+                === targetWindow?.window
             let resolution = ExtensionActionPopupAnchorResolution(
                 anchorResolved: true,
                 anchorSource: .current,
                 windowMatch: windowMatch,
-                profileMatch: presentationProfileId.map {
-                    pendingAnchor?.profileID == $0
-                } ?? true,
+                profileMatch: targetWindowProfileMatches,
                 sessionToken: pendingAnchor?.sessionToken
             )
             extensionRuntimeTrace(
@@ -132,9 +147,7 @@ extension ExtensionManager {
                 anchorResolved: true,
                 anchorSource: .fallback,
                 windowMatch: true,
-                profileMatch: presentationProfileId.map {
-                    pendingAnchor?.profileID == $0
-                } ?? true,
+                profileMatch: targetWindowProfileMatches,
                 sessionToken: pendingAnchor?.sessionToken
             )
             extensionRuntimeTrace(
@@ -207,6 +220,28 @@ extension ExtensionManager {
 
     private func urlHubFallbackAnchorView(for windowId: UUID) -> NSView? {
         browserManager?.urlBarHubPopoverPresenter.anchorView(for: windowId)
+    }
+
+    private func resolveActionPopupTargetWindow(
+        pendingAnchor: ExtensionActionPopupAnchor?,
+        preferredWindowId: UUID?,
+        profileId: UUID?
+    ) -> BrowserWindowState? {
+        let candidates = [
+            pendingAnchor?.windowID,
+            preferredWindowId,
+            browserBridgeContext?.activeExtensionWindowState?.id,
+        ]
+        for candidateId in candidates.compactMap({ $0 }) {
+            guard let windowState = browserBridgeContext?.extensionWindowState(for: candidateId) else {
+                continue
+            }
+            guard profileId.map({ windowMatchesProfile(windowState, profileId: $0) }) ?? true else {
+                continue
+            }
+            return windowState
+        }
+        return nil
     }
 
     private func isActionPopupAnchorViewReady(_ view: NSView?) -> Bool {

@@ -107,7 +107,7 @@ enum ExtensionActionPopupPresentationOwner {
         let requestURL = navigationAction.request.url
         let resolvedOwnerExtensionID = manager.ownerExtensionID(extensionOwnedSourceURL: sourceURL)
             ?? manager.ownerExtensionID(extensionOwnedSourceURL: requestURL)
-            ?? manager.activePopupExtensionID
+            ?? manager.activePopupIdentity?.extensionId
 
         guard resolvedOwnerExtensionID != nil
             || SumiPopupNavigationOrigin.isExtensionOriginatedPopupNavigation(
@@ -118,32 +118,44 @@ enum ExtensionActionPopupPresentationOwner {
             return nil
         }
 
-        guard let openerTab = browserContext.currentExtensionTabForPopup() else {
-            return nil
-        }
-
         if let requestURL,
            isExtensionExternalWebPopupURL(requestURL) {
+            let popupController =
+                popupWebView.configuration.webExtensionController
+                ?? configuration.webExtensionController
+            let popupControllerProfileId = popupController.flatMap {
+                manager.profileId(for: $0)
+            }
             let profileId =
-                manager.resolvedProfileId(for: openerTab)
+                manager.activePopupIdentity?.profileId
+                ?? popupControllerProfileId
                 ?? manager.currentProfileId
                 ?? manager.browserManager?.currentProfile?.id
             let controller =
-                popupWebView.configuration.webExtensionController
-                ?? configuration.webExtensionController
+                (popupControllerProfileId == profileId ? popupController : nil)
                 ?? profileId.map { manager.ensureExtensionController(for: $0) }
             guard let controller else { return nil }
+            let extensionContext = resolvedOwnerExtensionID.flatMap {
+                manager.getExtensionContext(for: $0, profileId: profileId)
+            }
+            let requestedWindow = browserContext.currentExtensionTabForPopup()
+                .flatMap { openerTab -> ExtensionWindowAdapter? in
+                    guard let profileId else { return nil }
+                    guard manager.resolvedProfileId(for: openerTab) == profileId else {
+                        return nil
+                    }
+                    return browserContext.extensionWindowState(containing: openerTab)
+                        .flatMap { manager.windowAdapter(for: $0.id) }
+                }
 
             do {
                 _ = try manager.openExtensionRequestedTab(
                     url: requestURL,
                     shouldBeActive: true,
                     shouldBePinned: false,
-                    requestedWindow: nil,
+                    requestedWindow: requestedWindow,
                     controller: controller,
-                    extensionContext: resolvedOwnerExtensionID.flatMap {
-                        manager.getExtensionContext(for: $0, profileId: profileId)
-                    },
+                    extensionContext: extensionContext,
                     reason: "ExtensionManager.createNormalTabFromActionPopupExternalURL"
                 )
                 return nil
@@ -153,6 +165,10 @@ enum ExtensionActionPopupPresentationOwner {
                 }
                 return nil
             }
+        }
+
+        guard let openerTab = browserContext.currentExtensionTabForPopup() else {
+            return nil
         }
 
         return browserContext.presentExtensionExternalWebPopup(
@@ -207,18 +223,18 @@ extension ExtensionManager: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         isPopupActive = false
         activeExtensionActionPopover = nil
-        if let extensionId = activePopupExtensionID {
+        if let popupIdentity = activePopupIdentity {
+            let extensionId = popupIdentity.extensionId
             SafariExtensionAutofillFillDiagnostics.setPopupActive(false, extensionId: extensionId)
             restoreInlineUIHostingFocusIfNeeded()
             SafariExtensionAutofillFillDiagnostics.logSnapshotIfEnabled(
                 context: "popoverDidClose"
             )
-            let profileId = browserManager?.currentProfile?.id
             SumiNativeMessagingRuntimeCounters.recordPopupClosed(extensionId: extensionId)
             extensionActionPopupUIDelegates.removeValue(forKey: extensionId)
             scheduleOrPerformDeferredPopupContextUnload(
                 forExtensionId: extensionId,
-                profileId: profileId
+                profileId: popupIdentity.profileId
             )
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -230,7 +246,7 @@ extension ExtensionManager: NSPopoverDelegate {
                 SafariExtensionSessionDiagnosticsBuilder.logIfDiagnosticsEnabled(diagnostic)
                 if SafariExtensionAutofillFillDiagnostics.shouldDeferNativeMessagingTeardownOnPopupClose()
                     == false {
-                    self.activePopupExtensionID = nil
+                    self.activePopupIdentity = nil
                 }
             }
         }
@@ -266,22 +282,25 @@ extension ExtensionManager: NSPopoverDelegate {
             forExtensionId: extensionId,
             profileId: profileId
         )
-        activePopupExtensionID = nil
+        activePopupIdentity = nil
     }
 
     func scheduleDeferredPopupContextUnload(
         forExtensionId extensionId: String,
         profileId: UUID?
     ) {
-        cancelDeferredPopupContextUnload(forExtensionId: extensionId)
-        deferredPopupContextUnloadProfileIDs[extensionId] = profileId
-        deferredPopupContextUnloadTasks[extensionId] = Task { @MainActor [weak self] in
+        let identity = ExtensionActionPopupIdentity(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+        cancelDeferredPopupContextUnload(identity)
+        deferredPopupContextUnloadTasks[identity] = Task { @MainActor [weak self] in
             try? await Task.sleep(
                 for: SafariExtensionAutofillFillDiagnostics.deferredFillTeardownTimeout
             )
             guard !Task.isCancelled else { return }
             self?.completeDeferredPopupContextUnload(
-                forExtensionId: extensionId,
+                identity,
                 reason: "timeout"
             )
         }
@@ -291,26 +310,49 @@ extension ExtensionManager: NSPopoverDelegate {
         forExtensionId extensionId: String,
         reason: String
     ) {
-        cancelDeferredPopupContextUnload(forExtensionId: extensionId)
+        let identities = deferredPopupContextUnloadTasks.keys.filter {
+            $0.extensionId == extensionId
+        }
+        guard !identities.isEmpty else { return }
+        for identity in identities {
+            completeDeferredPopupContextUnload(identity, reason: reason)
+        }
+    }
+
+    private func completeDeferredPopupContextUnload(
+        _ identity: ExtensionActionPopupIdentity,
+        reason: String
+    ) {
+        cancelDeferredPopupContextUnload(identity)
         SafariExtensionAutofillFillDiagnostics.beginIntentionalDeferredTeardown()
         defer {
             SafariExtensionAutofillFillDiagnostics.endIntentionalDeferredTeardown()
         }
-        SafariExtensionAutofillFillDiagnostics.endFillSession(extensionId: extensionId)
-        let profileId = deferredPopupContextUnloadProfileIDs.removeValue(forKey: extensionId)
+        SafariExtensionAutofillFillDiagnostics.endFillSession(extensionId: identity.extensionId)
         performExtensionPopupContextUnload(
-            forExtensionId: extensionId,
-            profileId: profileId
+            forExtensionId: identity.extensionId,
+            profileId: identity.profileId
         )
-        activePopupExtensionID = nil
+        if activePopupIdentity == identity {
+            activePopupIdentity = nil
+        }
         SafariExtensionAutofillFillDiagnostics.logSnapshotIfEnabled(
             context: "deferredPopupContextUnload:\(reason)"
         )
     }
 
     func cancelDeferredPopupContextUnload(forExtensionId extensionId: String) {
-        deferredPopupContextUnloadTasks[extensionId]?.cancel()
-        deferredPopupContextUnloadTasks.removeValue(forKey: extensionId)
+        let identities = deferredPopupContextUnloadTasks.keys.filter {
+            $0.extensionId == extensionId
+        }
+        for identity in identities {
+            cancelDeferredPopupContextUnload(identity)
+        }
+    }
+
+    private func cancelDeferredPopupContextUnload(_ identity: ExtensionActionPopupIdentity) {
+        deferredPopupContextUnloadTasks[identity]?.cancel()
+        deferredPopupContextUnloadTasks.removeValue(forKey: identity)
     }
 
     func recordExtensionActionPopupPresentation(

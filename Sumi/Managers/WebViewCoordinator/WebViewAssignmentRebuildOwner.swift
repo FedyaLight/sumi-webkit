@@ -87,12 +87,13 @@ final class WebViewAssignmentRebuildOwner {
     }
 
     @available(macOS 15.5, *)
+    @discardableResult
     func rebuildLiveWebViews(
         for tab: Tab,
         preferredPrimaryWindowId: UUID? = nil,
         load url: URL? = nil,
         runtime: Runtime
-    ) {
+    ) -> Bool {
         let trackedWindowIds = Set(runtime.webViewRegistry.windowIDs(for: tab.id))
         var targetWindowIds = trackedWindowIds
 
@@ -103,7 +104,7 @@ final class WebViewAssignmentRebuildOwner {
             targetWindowIds.formIntersection(liveWindowIds)
         }
 
-        guard targetWindowIds.isEmpty == false else { return }
+        guard targetWindowIds.isEmpty == false else { return false }
 
         let targetURL = url ?? tab.existingWebView?.url ?? tab.url
         let preferredPrimaryWindowIdCandidate: UUID?
@@ -124,7 +125,7 @@ final class WebViewAssignmentRebuildOwner {
             ?? existingPrimaryWindowIdCandidate
             ?? targetWindowIds.sorted { $0.uuidString < $1.uuidString }.first
 
-        guard let primaryWindowId else { return }
+        guard let primaryWindowId else { return false }
 
         let protectedCandidateWebViews = Array(runtime.webViewRegistry.windowWebViews(for: tab.id).values)
             + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
@@ -137,7 +138,7 @@ final class WebViewAssignmentRebuildOwner {
                     preferredPrimaryWindowId
                 )
             }
-            return
+            return false
         }
 
         let oldEntries = runtime.webViewRegistry.windowWebViews(for: tab.id)
@@ -167,24 +168,61 @@ final class WebViewAssignmentRebuildOwner {
 
         guard let recreatedPrimary = tab.ensureWebView() else {
             assertionFailure("Unable to rebuild normal tab WebView without a resolved profile")
-            return
+            return false
         }
         tab.assignWebViewToWindow(recreatedPrimary, windowId: primaryWindowId)
         runtime.registerTrackedWebView(recreatedPrimary, tab.id, primaryWindowId)
+        var recreatedWebViews = [recreatedPrimary]
 
         for windowId in targetWindowIds
             .filter({ $0 != primaryWindowId })
             .sorted(by: { $0.uuidString < $1.uuidString }) {
-            _ = createCloneWebView(
+            if let clone = createCloneWebView(
                 for: tab,
                 in: windowId,
                 primaryWindowId: primaryWindowId,
                 runtime: runtime
-            )
+            ) {
+                recreatedWebViews.append(clone)
+            }
         }
+
+        if let url {
+            for webView in recreatedWebViews {
+                loadRecreatedWebView(webView, for: tab, targetURL: url)
+            }
+        }
+
+        tab.updateSafariContentBlockerReloadRequirementForCurrentSite()
+        tab.updateProtectionReloadRequirementForCurrentSite()
+        tab.updateAutoplayReloadRequirementForCurrentSite()
 
         for windowId in targetWindowIds {
             runtime.refreshCompositor(windowId)
+        }
+        return true
+    }
+
+    private func loadRecreatedWebView(
+        _ webView: WKWebView,
+        for tab: Tab,
+        targetURL: URL
+    ) {
+        tab.navigationCommandOwner.performMainFrameNavigationAfterContentBlockingAssetsIfNeeded(
+            on: webView,
+            tab: tab,
+            waitForContentBlockingAssets: true
+        ) { resolvedWebView in
+            if targetURL.isFileURL {
+                resolvedWebView.loadFileURL(
+                    targetURL,
+                    allowingReadAccessTo: targetURL.deletingLastPathComponent()
+                )
+            } else {
+                resolvedWebView.load(
+                    TabNavigationCommandOwner.navigationCommandURLRequest(for: targetURL)
+                )
+            }
         }
     }
 

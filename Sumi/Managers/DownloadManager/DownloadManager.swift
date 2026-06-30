@@ -6,6 +6,18 @@ import WebKit
 
 @MainActor
 final class DownloadManager: ObservableObject {
+    struct RetryRuntime {
+        let activeWindow: @MainActor () -> BrowserWindowState?
+        let currentTab: @MainActor (BrowserWindowState) -> Tab?
+        let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
+
+        static let empty = RetryRuntime(
+            activeWindow: { nil },
+            currentTab: { _ in nil },
+            windowOwnedWebView: { _, _ in nil }
+        )
+    }
+
     @Published private(set) var items: [DownloadItem] = []
     @Published private(set) var activeDownloadCount: Int = 0
     @Published private(set) var combinedProgressFraction: Double?
@@ -16,7 +28,7 @@ final class DownloadManager: ObservableObject {
             coordinator.settings = settings
         }
     }
-    weak var browserManager: BrowserManager?
+    var retryRuntime: RetryRuntime = .empty
 
     init() {
         DownloadFileUtilities.removeOrphanedIncompleteDownloads()
@@ -296,17 +308,13 @@ final class DownloadManager: ObservableObject {
     }
 
     private func retryWebView() -> WKWebView? {
-        guard let browserManager,
-              let activeWindow = browserManager.windowRegistry?.activeWindow,
-              let currentTab = browserManager.currentTab(for: activeWindow)
+        guard let activeWindow = retryRuntime.activeWindow(),
+              let currentTab = retryRuntime.currentTab(activeWindow)
         else {
             return nil
         }
 
-        if let current = browserManager.windowOwnedWebView(for: currentTab, in: activeWindow.id) {
-            return current
-        }
-        return currentTab.ensureWebView()
+        return retryRuntime.windowOwnedWebView(currentTab, activeWindow.id)
     }
 
     private func publishCoordinatorState() {

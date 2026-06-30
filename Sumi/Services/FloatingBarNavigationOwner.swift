@@ -19,6 +19,8 @@ struct FloatingBarNavigationOwner {
         let createNewTabAfterSidebarInsertion: @MainActor (BrowserWindowState, String) -> Void
         let configuredNewTabPageURL: @MainActor () -> String?
         let normalizeURL: @MainActor (String) -> String
+        let loadCurrentPageURL: @MainActor (Tab, BrowserWindowState, String) -> Void
+        let navigateCurrentPage: @MainActor (Tab, BrowserWindowState, String) -> Void
         let applySettingsSurfaceNavigation: @MainActor (String) -> Void
         let dismissWorkspaceThemePickerIfNeededDiscarding: @MainActor () -> Void
         let persistWindowSession: @MainActor (BrowserWindowState) -> Void
@@ -183,7 +185,7 @@ struct FloatingBarNavigationOwner {
         switch commitTarget {
         case .currentPage(let navigationTargetTab):
             actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
-            navigationTargetTab.loadURL(urlString)
+            actions.loadCurrentPageURL(navigationTargetTab, windowState, urlString)
             actions.applySettingsSurfaceNavigation(urlString)
         case .newTab:
             actions.createNewTabAfterSidebarInsertion(windowState, urlString)
@@ -222,7 +224,7 @@ struct FloatingBarNavigationOwner {
             switch commitTarget {
             case .currentPage(let navigationTargetTab):
                 actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
-                navigationTargetTab.loadURL(historyEntry.url.absoluteString)
+                actions.loadCurrentPageURL(navigationTargetTab, windowState, historyEntry.url.absoluteString)
                 actions.applySettingsSurfaceNavigation(historyEntry.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to history URL: \(historyEntry.url)",
@@ -239,7 +241,7 @@ struct FloatingBarNavigationOwner {
             switch commitTarget {
             case .currentPage(let navigationTargetTab):
                 actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
-                navigationTargetTab.loadURL(bookmark.url.absoluteString)
+                actions.loadCurrentPageURL(navigationTargetTab, windowState, bookmark.url.absoluteString)
                 actions.applySettingsSurfaceNavigation(bookmark.url.absoluteString)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to bookmark URL: \(bookmark.url)",
@@ -256,7 +258,7 @@ struct FloatingBarNavigationOwner {
             switch commitTarget {
             case .currentPage(let navigationTargetTab):
                 actions.commitEmptySplitPlaceholder(navigationTargetTab.id, windowState)
-                navigationTargetTab.navigateToURL(suggestion.text)
+                actions.navigateCurrentPage(navigationTargetTab, windowState, suggestion.text)
                 actions.applySettingsSurfaceNavigation(suggestion.text)
                 RuntimeDiagnostics.debug(
                     "Navigated current tab to: \(suggestion.text)",

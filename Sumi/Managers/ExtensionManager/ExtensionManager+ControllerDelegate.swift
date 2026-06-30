@@ -324,7 +324,10 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         }
 
         if let extensionId {
-            activePopupExtensionID = extensionId
+            activePopupIdentity = ExtensionActionPopupIdentity(
+                extensionId: extensionId,
+                profileId: profileId(for: extensionContext)
+            )
             recordExtensionActionPopupPresentation(
                 for: extensionId,
                 popupWebView: popupWebView,
@@ -345,7 +348,10 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
             }
 
             let profileId = self.profileId(for: extensionContext)
-            let preferredWindowId = self.browserBridgeContext?.activeExtensionWindowState?.id
+            let preferredWindowId = self.browserBridgeContext?.activeExtensionWindowState.flatMap { windowState in
+                guard let profileId else { return windowState.id }
+                return self.windowMatchesProfile(windowState, profileId: profileId) ? windowState.id : nil
+            }
             let resolution = self.presentResolvedExtensionActionPopup(
                 popover,
                 for: extensionId,

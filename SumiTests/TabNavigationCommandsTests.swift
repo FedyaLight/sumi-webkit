@@ -7,6 +7,27 @@ import XCTest
 
 @MainActor
 final class TabNavigationCommandsTests: XCTestCase {
+    func testResolverBasedLoadURLRecordsTargetWhenWebViewIsDeferred() throws {
+        let originalURL = try XCTUnwrap(URL(string: "https://example.com/start"))
+        let targetURL = try XCTUnwrap(URL(string: "https://target.example/path"))
+        let tab = Tab(url: originalURL, loadsCachedFaviconOnInit: false)
+        var resolverCallCount = 0
+
+        tab.navigationCommandOwner.loadURL(
+            targetURL,
+            for: tab,
+            resolvedWebView: {
+                resolverCallCount += 1
+                return nil
+            },
+            reason: "TabNavigationCommandsTests.deferredResolver"
+        )
+
+        XCTAssertEqual(resolverCallCount, 1)
+        XCTAssertEqual(tab.url, targetURL)
+        XCTAssertNil(tab.existingWebView)
+    }
+
     func testNavigationCommandURLRequestUsesReturnCacheDataElseLoadForRegularURL() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/path"))
 

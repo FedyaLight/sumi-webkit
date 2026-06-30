@@ -50,6 +50,8 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
     var deniedOperations: [SumiRuntimePermissionOperation: String] = [:]
     var autoplayChangesRequireReload = true
     private(set) var currentRuntimeStateCallCount = 0
+    private(set) var currentRuntimeStatePageIds: [String?] = []
+    private(set) var observedRuntimeStatePageIds: [String?] = []
     private(set) var revokeRuntimePermissionsCallCount = 0
     private(set) var pauseRuntimePermissionsCallCount = 0
     private(set) var resumeRuntimePermissionsCallCount = 0
@@ -81,8 +83,9 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         currentRuntimeState(for: webView, pageId: nil)
     }
 
-    func currentRuntimeState(for _: WKWebView, pageId _: String?) -> SumiRuntimePermissionState {
+    func currentRuntimeState(for _: WKWebView, pageId: String?) -> SumiRuntimePermissionState {
         currentRuntimeStateCallCount += 1
+        currentRuntimeStatePageIds.append(pageId)
         return SumiRuntimePermissionState(
             camera: cameraRuntimeState,
             microphone: microphoneRuntimeState,
@@ -360,6 +363,7 @@ final class FakeSumiRuntimePermissionController: SumiRuntimePermissionControllin
         handler: @escaping @MainActor (SumiRuntimePermissionState) -> Void
     ) -> SumiRuntimePermissionObservation {
         let id = UUID()
+        observedRuntimeStatePageIds.append(pageId)
         observers[id] = handler
         handler(currentRuntimeState(for: webView, pageId: pageId))
 

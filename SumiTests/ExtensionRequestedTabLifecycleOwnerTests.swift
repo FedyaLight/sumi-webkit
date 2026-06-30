@@ -79,10 +79,69 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
         XCTAssertIdentical(tab.currentWebView, materializedWebView)
     }
 
+    func testRequestedTargetSpaceUsesContextProfileWhenCurrentSpaceBelongsToAnotherProfile() throws {
+        let harness = try makeProfileRoutingHarness()
+        let owner = ExtensionRequestedTabLifecycleOwner()
+
+        let targetSpace = owner.requestedTargetSpace(
+            for: nil,
+            contextProfileId: harness.profileB.id,
+            manager: harness.manager
+        )
+
+        XCTAssertEqual(targetSpace?.id, harness.spaceB.id)
+    }
+
+    func testExtensionTargetSpaceUsesWindowProfileBeforeCurrentSpaceFallback() throws {
+        let harness = try makeProfileRoutingHarness()
+        let windowState = BrowserWindowState()
+        windowState.currentProfileId = harness.profileB.id
+        windowState.currentSpaceId = harness.spaceA.id
+
+        let targetSpace = harness.browserManager.extensionTargetSpace(for: windowState)
+
+        XCTAssertEqual(targetSpace?.id, harness.spaceB.id)
+    }
+
     private func makeTestContainer() throws -> ModelContainer {
         try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+    }
+
+    private struct ProfileRoutingHarness {
+        let manager: ExtensionManager
+        let browserManager: BrowserManager
+        let profileB: Profile
+        let spaceA: Space
+        let spaceB: Space
+    }
+
+    private func makeProfileRoutingHarness() throws -> ProfileRoutingHarness {
+        let container = try makeTestContainer()
+        let profileA = Profile(name: "Profile A")
+        let profileB = Profile(name: "Profile B")
+        let manager = makeSafariExtensionTestExtensionManager(
+            context: container.mainContext,
+            initialProfile: profileA
+        )
+        let browserManager = makeSafariExtensionTestBrowserManager(profile: profileA)
+        browserManager.profileManager.profiles = [profileA, profileB]
+        browserManager.currentProfile = profileA
+
+        let spaceA = Space(name: "Space A", profileId: profileA.id)
+        let spaceB = Space(name: "Space B", profileId: profileB.id)
+        browserManager.tabManager.spaces = [spaceA, spaceB]
+        browserManager.tabManager.currentSpace = spaceA
+        manager.attach(browserManager: browserManager)
+
+        return ProfileRoutingHarness(
+            manager: manager,
+            browserManager: browserManager,
+            profileB: profileB,
+            spaceA: spaceA,
+            spaceB: spaceB
         )
     }
 }

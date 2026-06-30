@@ -348,10 +348,20 @@ final class ExtensionRequestedTabLifecycleOwner {
             )
         }
 
+        let contextProfileId = extensionContext.flatMap { manager.profileId(for: $0) }
         let requestedWindowState = (requestedWindow as? ExtensionWindowAdapter)
             .flatMap { browserContext.extensionWindowState(for: $0.windowId) }
-        let targetWindow = requestedWindowState ?? browserContext.activeExtensionWindowState
-        let targetSpace = browserContext.extensionTargetSpace(for: targetWindow)
+        let targetWindow = [
+            requestedWindowState,
+            browserContext.activeExtensionWindowState,
+        ].compactMap { $0 }.first { windowState in
+            contextProfileId.map { manager.windowMatchesProfile(windowState, profileId: $0) } ?? true
+        }
+        let targetSpace = requestedTargetSpace(
+            for: targetWindow,
+            contextProfileId: contextProfileId,
+            manager: manager
+        )
         return Target(
             window: targetWindow,
             space: targetSpace
@@ -385,6 +395,27 @@ final class ExtensionRequestedTabLifecycleOwner {
         manager: ExtensionManager
     ) -> Space? {
         manager.browserBridgeContext?.extensionTargetSpace(for: tab)
+    }
+
+    func requestedTargetSpace(
+        for windowState: BrowserWindowState?,
+        contextProfileId: UUID?,
+        manager: ExtensionManager
+    ) -> Space? {
+        guard let browserContext = manager.browserBridgeContext else { return nil }
+        let windowSpace = browserContext.extensionTargetSpace(for: windowState)
+
+        guard let contextProfileId else {
+            return windowSpace
+        }
+
+        if windowSpace?.profileId == contextProfileId {
+            return windowSpace
+        }
+
+        return manager.browserManager?.tabManager.spaces.first {
+            $0.profileId == contextProfileId
+        }
     }
 
     private func shouldPreloadContentScriptContexts(

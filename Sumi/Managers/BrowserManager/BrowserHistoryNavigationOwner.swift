@@ -18,6 +18,7 @@ final class BrowserHistoryNavigationOwner {
             UUID?
         ) -> Void
         let openNewTab: @MainActor @Sendable (String, BrowserTabOpenContext) -> Tab?
+        let loadCurrentPageURL: @MainActor @Sendable (Tab, BrowserWindowState, URL) -> Void
         let windowIds: @MainActor @Sendable () -> [UUID]
         let createNewWindow: @MainActor @Sendable () -> Void
         let awaitNextRegisteredWindow: @MainActor @Sendable (Set<UUID>) async -> BrowserWindowState?
@@ -98,7 +99,7 @@ final class BrowserHistoryNavigationOwner {
                 if currentTab.representsSumiHistorySurface {
                     replaceNativeHistoryTab(currentTab, with: url, in: windowState)
                 } else {
-                    currentTab.loadURL(url)
+                    dependencies.loadCurrentPageURL(currentTab, windowState, url)
                 }
             } else {
                 openForegroundTab(for: url, in: windowState)
@@ -192,7 +193,7 @@ final class BrowserHistoryNavigationOwner {
         tab.name = displayName(for: url)
         tab.favicon = Image(systemName: "globe")
         tab.faviconIsTemplateGlobePlaceholder = true
-        tab.loadURL(url)
+        dependencies.loadCurrentPageURL(tab, windowState, url)
         windowState.invalidateNativeSurfaceRouting()
         dependencies.scheduleRuntimeStatePersistence(tab)
         dependencies.schedulePrepareVisibleWebViews(windowState)
@@ -241,6 +242,14 @@ extension BrowserHistoryNavigationOwner.Dependencies {
             },
             openNewTab: { [weak browserManager] url, context in
                 browserManager?.tabOpeningOwner.openNewTab(url: url, context: context)
+            },
+            loadCurrentPageURL: { [weak browserManager] tab, windowState, url in
+                browserManager?.loadWindowScopedPage(
+                    url,
+                    tab: tab,
+                    in: windowState,
+                    reason: "BrowserHistoryNavigation.currentPage"
+                )
             },
             windowIds: { [weak browserManager] in
                 browserManager?.windowRegistry?.windows.keys.map { $0 } ?? []

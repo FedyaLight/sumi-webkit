@@ -56,6 +56,67 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
         XCTAssertTrue(owner.commitNavigatesCurrentTab(in: windowState, actions: pageActions))
     }
 
+    func testCurrentPageCommitRoutesThroughWindowScopedLoadAction() {
+        let owner = FloatingBarNavigationOwner()
+        let windowState = BrowserWindowState()
+        let pageTab = Tab(url: URL(string: "https://example.com")!)
+        windowState.floatingBarDraftNavigatesCurrentTab = true
+        windowState.isFloatingBarVisible = true
+        var loadedPages: [(tabId: UUID, windowId: UUID, url: String)] = []
+        var newTabURLs: [String] = []
+        let actions = makeActions(
+            activePageTab: { _ in pageTab },
+            createNewTabAfterSidebarInsertion: { _, url in
+                newTabURLs.append(url)
+            },
+            loadCurrentPageURL: { tab, windowState, url in
+                loadedPages.append((tab.id, windowState.id, url))
+            }
+        )
+
+        owner.commitNavigation(
+            to: "https://target.example/",
+            in: windowState,
+            actions: actions
+        )
+
+        XCTAssertEqual(loadedPages.count, 1)
+        XCTAssertEqual(loadedPages.first?.tabId, pageTab.id)
+        XCTAssertEqual(loadedPages.first?.windowId, windowState.id)
+        XCTAssertEqual(loadedPages.first?.url, "https://target.example/")
+        XCTAssertTrue(newTabURLs.isEmpty)
+    }
+
+    func testCurrentPageURLSuggestionRoutesThroughWindowScopedNavigateAction() {
+        let owner = FloatingBarNavigationOwner()
+        let windowState = BrowserWindowState()
+        let pageTab = Tab(url: URL(string: "https://example.com")!)
+        windowState.floatingBarDraftNavigatesCurrentTab = true
+        var navigatedPages: [(tabId: UUID, windowId: UUID, input: String)] = []
+        var newTabURLs: [String] = []
+        let actions = makeActions(
+            activePageTab: { _ in pageTab },
+            createNewTabAfterSidebarInsertion: { _, url in
+                newTabURLs.append(url)
+            },
+            navigateCurrentPage: { tab, windowState, input in
+                navigatedPages.append((tab.id, windowState.id, input))
+            }
+        )
+        let suggestion = SearchManager.SearchSuggestion(
+            text: "target search",
+            type: .search
+        )
+
+        owner.openSuggestion(suggestion, in: windowState, actions: actions)
+
+        XCTAssertEqual(navigatedPages.count, 1)
+        XCTAssertEqual(navigatedPages.first?.tabId, pageTab.id)
+        XCTAssertEqual(navigatedPages.first?.windowId, windowState.id)
+        XCTAssertEqual(navigatedPages.first?.input, "target search")
+        XCTAssertTrue(newTabURLs.isEmpty)
+    }
+
     func testOpenNewTabSurfaceOwnsConfiguredPageFallbackToFloatingBar() {
         let owner = FloatingBarNavigationOwner()
         let configuredWindow = BrowserWindowState()
@@ -99,8 +160,12 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
         windows: [UUID: BrowserWindowState] = [:],
         activePageTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
         cancelEmptySplitPlaceholder: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* no-op */ },
+        commitEmptySplitPlaceholder: @escaping @MainActor (UUID, BrowserWindowState) -> Void = { _, _ in /* no-op */ },
         createNewTab: @escaping @MainActor (BrowserWindowState, String) -> Void = { _, _ in /* no-op */ },
+        createNewTabAfterSidebarInsertion: @escaping @MainActor (BrowserWindowState, String) -> Void = { _, _ in /* no-op */ },
         configuredNewTabPageURL: @escaping @MainActor () -> String? = { nil },
+        loadCurrentPageURL: @escaping @MainActor (Tab, BrowserWindowState, String) -> Void = { _, _, _ in /* no-op */ },
+        navigateCurrentPage: @escaping @MainActor (Tab, BrowserWindowState, String) -> Void = { _, _, _ in /* no-op */ },
         persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* no-op */ }
     ) -> FloatingBarNavigationOwner.Actions {
         FloatingBarNavigationOwner.Actions(
@@ -108,13 +173,15 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
             window: { windows[$0] },
             activePageTab: activePageTab,
             cancelEmptySplitPlaceholder: cancelEmptySplitPlaceholder,
-            commitEmptySplitPlaceholder: { _, _ in /* no-op */ },
+            commitEmptySplitPlaceholder: commitEmptySplitPlaceholder,
             replaceEmptySplitPlaceholder: { _, _ in false },
             selectTab: { _, _ in /* no-op */ },
             createNewTab: createNewTab,
-            createNewTabAfterSidebarInsertion: { _, _ in /* no-op */ },
+            createNewTabAfterSidebarInsertion: createNewTabAfterSidebarInsertion,
             configuredNewTabPageURL: configuredNewTabPageURL,
             normalizeURL: { $0 },
+            loadCurrentPageURL: loadCurrentPageURL,
+            navigateCurrentPage: navigateCurrentPage,
             applySettingsSurfaceNavigation: { _ in /* no-op */ },
             dismissWorkspaceThemePickerIfNeededDiscarding: { /* no-op */ },
             persistWindowSession: persistWindowSession,

@@ -33,7 +33,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionUtils.isExtensionSupportAvailable
     @Published var extensionsLoaded = false
     @Published var isPopupActive = false
-    var activePopupExtensionID: String?
+    var activePopupIdentity: ExtensionActionPopupIdentity?
     @Published var pinnedToolbarExtensionIDs: [String] = []
 
     enum ExtensionBackgroundWakeReason: String, Codable, CaseIterable {
@@ -201,8 +201,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     var optionsWindowDelegates: [String: ExtensionOptionsWindowDelegate] = [:]
     weak var activeExtensionActionPopover: NSPopover?
     var extensionActionPopupUIDelegates: [String: ExtensionActionPopupUIDelegate] = [:]
-    var deferredPopupContextUnloadTasks: [String: Task<Void, Never>] = [:]
-    var deferredPopupContextUnloadProfileIDs: [String: UUID] = [:]
+    var deferredPopupContextUnloadTasks: [ExtensionActionPopupIdentity: Task<Void, Never>] = [:]
     let adapterStore = ExtensionBrowserAdapterStore()
     let nativeMessagingPortRegistry = ExtensionNativeMessagingPortRegistry()
     private var nativeMessagingRelayStorage: SumiNativeMessagingRelay?

@@ -29,15 +29,7 @@ final class BrowserWebViewRoutingService {
     }
 
     func windowOwnedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
-        if let trackedWebView = webView(for: tab.id, in: windowId) {
-            return trackedWebView
-        }
-
-        if tab.primaryWindowId == windowId {
-            return tab.assignedWebView
-        }
-
-        return nil
+        webView(for: tab.id, in: windowId)
     }
 
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {

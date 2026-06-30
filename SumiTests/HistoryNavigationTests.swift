@@ -53,6 +53,45 @@ final class HistoryNavigationTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, firstHistoryTab.id)
     }
 
+    func testOpenHistoryURLInCurrentTabRoutesThroughWindowScopedLoader() throws {
+        let windowState = BrowserWindowState()
+        let currentTab = Tab(
+            url: try XCTUnwrap(URL(string: "https://old.example")),
+            name: "Old",
+            loadsCachedFaviconOnInit: false
+        )
+        let targetURL = try XCTUnwrap(URL(string: "https://target.example"))
+        let harness = HistoryNavigationOwnerHarness(activePageTab: currentTab)
+        let owner = harness.makeOwner()
+
+        owner.openHistoryURL(targetURL, in: windowState, preferredOpenMode: .currentTab)
+
+        XCTAssertEqual(
+            harness.loadedCurrentPages,
+            [.init(tabId: currentTab.id, windowId: windowState.id, url: targetURL)]
+        )
+    }
+
+    func testReplacingHistorySurfaceRoutesThroughWindowScopedLoader() throws {
+        let windowState = BrowserWindowState()
+        let historyTab = Tab(
+            url: SumiSurface.historySurfaceURL(rangeQuery: HistoryRange.all.paneQueryValue),
+            name: "History",
+            loadsCachedFaviconOnInit: false
+        )
+        let targetURL = try XCTUnwrap(URL(string: "https://target.example"))
+        let harness = HistoryNavigationOwnerHarness(activePageTab: historyTab)
+        let owner = harness.makeOwner()
+
+        owner.openHistoryURL(targetURL, in: windowState, preferredOpenMode: .currentTab)
+
+        XCTAssertEqual(
+            harness.loadedCurrentPages,
+            [.init(tabId: historyTab.id, windowId: windowState.id, url: targetURL)]
+        )
+        XCTAssertEqual(historyTab.name, "target.example")
+    }
+
     private func makeHarness() -> (BrowserManager, WindowRegistry, BrowserWindowState, Space) {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
@@ -77,4 +116,46 @@ final class HistoryNavigationTests: XCTestCase {
         return (browserManager, windowRegistry, windowState, space)
     }
 
+}
+
+@MainActor
+private final class HistoryNavigationOwnerHarness {
+    struct LoadedCurrentPage: Equatable {
+        let tabId: UUID
+        let windowId: UUID
+        let url: URL
+    }
+
+    var activeWindow: BrowserWindowState?
+    var activePageTab: Tab?
+    var loadedCurrentPages: [LoadedCurrentPage] = []
+
+    init(activeWindow: BrowserWindowState? = nil, activePageTab: Tab? = nil) {
+        self.activeWindow = activeWindow
+        self.activePageTab = activePageTab
+    }
+
+    func makeOwner() -> BrowserHistoryNavigationOwner {
+        BrowserHistoryNavigationOwner(
+            dependencies: BrowserHistoryNavigationOwner.Dependencies(
+                activeWindow: { [weak self] in self?.activeWindow },
+                activePageTab: { [weak self] _ in self?.activePageTab },
+                activePageWebView: { _ in nil },
+                webView: { _, _ in nil },
+                openNativeBrowserSurface: { _, _, _, _ in },
+                openNewTab: { _, _ in nil },
+                loadCurrentPageURL: { [weak self] tab, windowState, url in
+                    self?.loadedCurrentPages.append(
+                        .init(tabId: tab.id, windowId: windowState.id, url: url)
+                    )
+                },
+                windowIds: { [] },
+                createNewWindow: {},
+                awaitNextRegisteredWindow: { _ in nil },
+                scheduleRuntimeStatePersistence: { _ in },
+                schedulePrepareVisibleWebViews: { _ in },
+                refreshCompositor: { _ in }
+            )
+        )
+    }
 }

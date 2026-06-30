@@ -169,6 +169,35 @@ final class DownloadManagerTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: completedURL.path))
     }
 
+    func testRetryRequiresWindowOwnedWebViewAndDoesNotCreateTabWebView() {
+        let manager = DownloadManager()
+        let windowState = BrowserWindowState()
+        let tab = Tab(
+            url: URL(string: "https://example.com/download")!,
+            loadsCachedFaviconOnInit: false
+        )
+        let item = DownloadItem(
+            downloadURL: URL(string: "https://example.com/file.zip")!,
+            fileName: "file.zip",
+            state: .failed,
+            error: .failed(message: "network", resumeData: nil, isRetryable: true)
+        )
+        manager.retryRuntime = DownloadManager.RetryRuntime(
+            activeWindow: { windowState },
+            currentTab: { _ in tab },
+            windowOwnedWebView: { _, _ in nil }
+        )
+
+        manager.retry(item)
+
+        XCTAssertNil(tab.currentWebView)
+        XCTAssertEqual(item.state, .failed)
+        XCTAssertEqual(
+            item.error?.errorDescription,
+            "Open a browser tab to retry this download."
+        )
+    }
+
     func testStartupRemovesOrphanedIncompleteDownloads() throws {
         let directory = DownloadsDirectoryResolver.resolvedDownloadsDirectory()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)

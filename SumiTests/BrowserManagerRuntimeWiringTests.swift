@@ -19,10 +19,10 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertIdentical(browserManager.tabManager.browserManager, browserManager)
         XCTAssertTrue(browserManager.tabManager.runtimeContext is BrowserManagerTabRuntimeContext)
         XCTAssertTrue(splitManagerCanUseAttachedRuntime(browserManager))
-        XCTAssertIdentical(browserManager.downloadManager.browserManager, browserManager)
+        XCTAssertTrue(downloadRetryRuntimeCanResolveWindowOwnedWebView(browserManager))
         XCTAssertIdentical(browserManager.extensionsModule.browserManager, browserManager)
         XCTAssertIdentical(browserManager.userscriptsModule.browserManager, browserManager)
-        XCTAssertIdentical(browserManager.boostsModule.browserManager, browserManager)
+        XCTAssertTrue(boostsModuleCanUseAttachedRuntime(browserManager))
         XCTAssertIdentical(browserManager.auxiliaryWindowManager.browserManager, browserManager)
         XCTAssertIdentical(browserManager.glanceManager.browserManager, browserManager)
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
@@ -73,6 +73,79 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         browserManager.splitManager.createEmptySplit(in: windowState)
         return browserManager.splitManager.splitGroup(for: windowState.id) != nil
+    }
+
+    private func downloadRetryRuntimeCanResolveWindowOwnedWebView(_ browserManager: BrowserManager) -> Bool {
+        let windowRegistry = WindowRegistry()
+        let coordinator = WebViewCoordinator()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = coordinator
+
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Download Runtime Wiring")
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/download",
+            in: space,
+            activate: true
+        )
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        let webView = WKWebView()
+        coordinator.setWebView(webView, for: tab.id, in: windowState.id)
+
+        guard let activeWindow = browserManager.downloadManager.retryRuntime.activeWindow(),
+              let currentTab = browserManager.downloadManager.retryRuntime.currentTab(activeWindow),
+              let resolvedWebView = browserManager.downloadManager.retryRuntime
+                .windowOwnedWebView(currentTab, activeWindow.id)
+        else {
+            return false
+        }
+
+        return activeWindow === windowState
+            && currentTab === tab
+            && resolvedWebView === webView
+    }
+
+    private func boostsModuleCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
+        let windowRegistry = WindowRegistry()
+        let coordinator = WebViewCoordinator()
+        browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = coordinator
+
+        let profileId = UUID()
+        let space = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Boost Runtime Wiring", profileId: profileId)
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/boost",
+            in: space,
+            activate: true
+        )
+        tab.profileId = profileId
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentProfileId = profileId
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = tab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        coordinator.setWebView(WKWebView(), for: tab.id, in: windowState.id)
+
+        let started = browserManager.boostsModule.startZapSelection(
+            for: SumiBoost(profileId: profileId, host: "example.com"),
+            tab: tab,
+            windowState: windowState,
+            isEphemeral: false,
+            onSelector: { _ in },
+            onFinish: {}
+        )
+        browserManager.boostsModule.stopZapSelection()
+        return started
     }
 
     func testBrowserManagerInitializationRetainsInjectedPermissionRuntimeDependencies() throws {

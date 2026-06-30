@@ -4,14 +4,6 @@ import WebKit
 
 @MainActor
 extension Tab {
-    func authoritativeMediaWebView(
-        resolvedWindowWebView: WKWebView?
-    ) -> WKWebView? {
-        resolvedWindowWebView
-            ?? assignedWebView
-            ?? existingWebView
-    }
-
     func bindAudioState(to webView: WKWebView) {
         let key = ObjectIdentifier(webView)
         guard mediaRuntime.audioStateCancellables[key] == nil else {

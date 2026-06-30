@@ -147,6 +147,7 @@ final class SumiBoostEditorSessionActions {
     }
 
     func openInspector() {
-        module?.browserManager?.openWebInspector()
+        guard let tab, let windowState else { return }
+        module?.openInspector(tab: tab, windowState: windowState)
     }
 }

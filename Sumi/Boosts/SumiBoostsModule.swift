@@ -5,8 +5,27 @@ import WebKit
 
 @MainActor
 final class SumiBoostsModule: ObservableObject {
+    struct LivePage {
+        let tab: Tab
+        let webView: WKWebView
+    }
+
+    struct Runtime {
+        let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
+        let matchingLivePages: @MainActor (UUID, String) -> [LivePage]
+        let applyBoostAwareZoom: @MainActor (Tab, WKWebView) -> Void
+        let openWebInspector: @MainActor (Tab, BrowserWindowState) -> Void
+
+        static let empty = Runtime(
+            windowOwnedWebView: { _, _ in nil },
+            matchingLivePages: { _, _ in [] },
+            applyBoostAwareZoom: { _, _ in },
+            openWebInspector: { _, _ in }
+        )
+    }
+
     let store: SumiBoostStore
-    weak var browserManager: BrowserManager?
+    private var runtime: Runtime = .empty
 
     private let editorPresenter = SumiBoostEditorPanelController()
     private var activeZapSession: SumiBoostZapSession?
@@ -25,8 +44,8 @@ final class SumiBoostsModule: ObservableObject {
         self.store = store
     }
 
-    func attach(browserManager: BrowserManager) {
-        self.browserManager = browserManager
+    func attach(runtime: Runtime) {
+        self.runtime = runtime
     }
 
     func canBoost(url: URL?) -> Bool {
@@ -201,7 +220,7 @@ final class SumiBoostsModule: ObservableObject {
         onSelector: @escaping @MainActor (SumiBoost) -> Void,
         onFinish: @escaping @MainActor () -> Void
     ) -> Bool {
-        guard let webView = browserManager?.windowOwnedWebView(for: tab, in: windowState.id) else {
+        guard let webView = runtime.windowOwnedWebView(tab, windowState.id) else {
             return false
         }
 
@@ -229,10 +248,8 @@ final class SumiBoostsModule: ObservableObject {
     /// NOT touch the WKUserScript set — `atDocumentStart` scripts don't re-run
     /// on the current document anyway, so rebuilding them would be wasted work.
     func refreshLiveBoostState(profileId: UUID, host: String) {
-        guard let browserManager else { return }
         let normalizedHost = host.lowercased()
         forEachMatchingWebView(
-            browserManager: browserManager,
             profileId: profileId,
             host: normalizedHost
         ) { tab, webView in
@@ -244,14 +261,12 @@ final class SumiBoostsModule: ObservableObject {
     /// multiplier). Cheaper than `refreshLiveBoostState` because it skips the
     /// CSS injection entirely — use when only the size changed.
     func refreshBoostZoom(profileId: UUID, host: String) {
-        guard let browserManager else { return }
         let normalizedHost = host.lowercased()
         forEachMatchingWebView(
-            browserManager: browserManager,
             profileId: profileId,
             host: normalizedHost
         ) { tab, webView in
-            self.browserManager?.applyBoostAwareZoom(for: tab, webView: webView)
+            self.runtime.applyBoostAwareZoom(tab, webView)
         }
     }
 
@@ -263,10 +278,8 @@ final class SumiBoostsModule: ObservableObject {
     /// `reinstallUserScriptsAfterEdit` on close so the edited boost takes
     /// effect on future page loads.
     func reinstallUserScripts(profileId: UUID, host: String) {
-        guard let browserManager else { return }
         let normalizedHost = host.lowercased()
         forEachMatchingWebView(
-            browserManager: browserManager,
             profileId: profileId,
             host: normalizedHost
         ) { tab, webView in
@@ -290,48 +303,18 @@ final class SumiBoostsModule: ObservableObject {
     }
 
     private func forEachMatchingWebView(
-        browserManager: BrowserManager,
         profileId: UUID,
         host: String,
         body: @escaping @MainActor (Tab, WKWebView) -> Void
     ) {
-        // De-dupe by WebView identity so a tab surfaced through both the
-        // window registry and the tab manager is only visited once.
-        var visited = Set<ObjectIdentifier>()
-
-        func visit(_ tab: Tab, _ webView: WKWebView) {
-            let identifier = ObjectIdentifier(webView)
-            guard visited.insert(identifier).inserted else { return }
+        for page in runtime.matchingLivePages(profileId, host) {
+            let tab = page.tab
+            let webView = page.webView
             Task { @MainActor [weak tab, weak webView] in
                 guard let tab, let webView else { return }
                 body(tab, webView)
             }
         }
-
-        for windowState in browserManager.windowRegistry?.allWindows ?? [] {
-            for tab in browserManager.tabsForDisplay(in: windowState)
-                where tabMatches(tab, profileId: profileId, host: host) {
-                if let webView = browserManager.windowOwnedWebView(for: tab, in: windowState.id) {
-                    visit(tab, webView)
-                }
-            }
-        }
-
-        for tab in browserManager.tabManager.allTabs()
-            where tabMatches(tab, profileId: profileId, host: host) {
-            for webView in browserManager.webViewCoordinator?.getAllWebViews(for: tab.id) ?? [] {
-                visit(tab, webView)
-            }
-        }
-    }
-
-    private func tabMatches(_ tab: Tab, profileId: UUID, host: String) -> Bool {
-        guard (tab.resolveProfile()?.id ?? tab.profileId) == profileId,
-              SumiBoostURLPolicy.normalizedBoostableHost(for: tab.url) == host
-        else {
-            return false
-        }
-        return true
     }
 
     private func applyLiveBoostState(to webView: WKWebView, tab: Tab) {
@@ -347,6 +330,10 @@ final class SumiBoostsModule: ObservableObject {
                 completionHandler: nil
             )
         }
-        browserManager?.applyBoostAwareZoom(for: tab, webView: webView)
+        runtime.applyBoostAwareZoom(tab, webView)
+    }
+
+    func openInspector(tab: Tab, windowState: BrowserWindowState) {
+        runtime.openWebInspector(tab, windowState)
     }
 }
