@@ -35,10 +35,7 @@ extension GlanceManager {
             browserManager.selectTab(newTab)
         }
         if finishesAfterDisplayUpdate {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, sessionID = session.id] in
-                guard self?.currentSession?.id == sessionID else { return }
-                self?.finishPromotedSession(sessionID: sessionID)
-            }
+            beginPromotedSessionAttachmentWait(sessionID: session.id)
         } else {
             finishPromotedSession()
         }
@@ -84,6 +81,7 @@ extension GlanceManager {
 
     func finishPromotedSession(sessionID: UUID) {
         guard currentSession?.id == sessionID else { return }
+        completePromotedSessionAttachment(sessionID: sessionID)
         finishPromotedSession()
     }
 

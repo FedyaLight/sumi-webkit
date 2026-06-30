@@ -24,6 +24,7 @@ final class GlanceManager: ObservableObject {
     weak var browserManager: BrowserManager?
     weak var windowRegistry: WindowRegistry?
     private var pendingSessionSnapshotsByWindow: [UUID: GlanceSessionSnapshot] = [:]
+    private let promotionCompletionOwner = GlancePromotionCompletionOwner()
 
     var isActive: Bool {
         phase != .idle
@@ -261,10 +262,21 @@ final class GlanceManager: ObservableObject {
         phase = newPhase
     }
 
+    func beginPromotedSessionAttachmentWait(sessionID: UUID) {
+        promotionCompletionOwner.beginAwaitingAttachment(sessionID: sessionID) { [weak self] in
+            self?.finishPromotedSession(sessionID: sessionID)
+        }
+    }
+
+    func completePromotedSessionAttachment(sessionID: UUID) {
+        promotionCompletionOwner.completeAttachment(sessionID: sessionID)
+    }
+
     private func finishCurrentSession(
         preservesPreviewWebView: Bool,
         persistsWindowSession: Bool
     ) {
+        promotionCompletionOwner.cancel()
         guard let session = currentSession else {
             transition(to: .idle)
             return
@@ -297,6 +309,7 @@ final class GlanceManager: ObservableObject {
         initialTitle: String? = nil,
         persistsWindowSession: Bool
     ) {
+        promotionCompletionOwner.cancel()
         if currentSession != nil {
             finishCurrentSession(preservesPreviewWebView: false, persistsWindowSession: false)
         }
