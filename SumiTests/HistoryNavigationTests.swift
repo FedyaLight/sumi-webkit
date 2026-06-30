@@ -1,3 +1,4 @@
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -92,6 +93,52 @@ final class HistoryNavigationTests: XCTestCase {
         XCTAssertEqual(historyTab.name, "target.example")
     }
 
+    func testGoBackInSpecificWindowUsesThatWindowWebView() {
+        let activeWindow = BrowserWindowState()
+        let targetWindow = BrowserWindowState()
+        let activeTab = makeTab("https://active.example")
+        let targetTab = makeTab("https://target.example")
+        let activeWebView = HistoryNavigationRecordingWebView(canGoBack: true)
+        let targetWebView = HistoryNavigationRecordingWebView(canGoBack: true)
+        let harness = HistoryNavigationOwnerHarness(activeWindow: activeWindow)
+        harness.activePageTabsByWindowId = [
+            activeWindow.id: activeTab,
+            targetWindow.id: targetTab,
+        ]
+        harness.webViewsByWindowId = [
+            activeWindow.id: activeWebView,
+            targetWindow.id: targetWebView,
+        ]
+        let owner = harness.makeOwner()
+
+        owner.goBack(in: targetWindow)
+
+        XCTAssertEqual(harness.navigatedBackWebViewIDs, [ObjectIdentifier(targetWebView)])
+    }
+
+    func testGoBackInActiveWindowDelegatesThroughScopedActiveWindow() {
+        let activeWindow = BrowserWindowState()
+        let inactiveWindow = BrowserWindowState()
+        let activeTab = makeTab("https://active.example")
+        let inactiveTab = makeTab("https://inactive.example")
+        let activeWebView = HistoryNavigationRecordingWebView(canGoBack: true)
+        let inactiveWebView = HistoryNavigationRecordingWebView(canGoBack: true)
+        let harness = HistoryNavigationOwnerHarness(activeWindow: activeWindow)
+        harness.activePageTabsByWindowId = [
+            activeWindow.id: activeTab,
+            inactiveWindow.id: inactiveTab,
+        ]
+        harness.webViewsByWindowId = [
+            activeWindow.id: activeWebView,
+            inactiveWindow.id: inactiveWebView,
+        ]
+        let owner = harness.makeOwner()
+
+        owner.goBackInActiveWindow()
+
+        XCTAssertEqual(harness.navigatedBackWebViewIDs, [ObjectIdentifier(activeWebView)])
+    }
+
     private func makeHarness() -> (BrowserManager, WindowRegistry, BrowserWindowState, Space) {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
@@ -99,6 +146,7 @@ final class HistoryNavigationTests: XCTestCase {
         let space = Space(name: "Primary", profileId: profile.id)
         let windowState = BrowserWindowState()
 
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.historyManager.switchProfile(profile.id)
@@ -116,6 +164,14 @@ final class HistoryNavigationTests: XCTestCase {
         return (browserManager, windowRegistry, windowState, space)
     }
 
+    private func makeTab(_ url: String) -> Tab {
+        Tab(
+            url: URL(string: url)!,
+            name: url,
+            loadsCachedFaviconOnInit: false
+        )
+    }
+
 }
 
 @MainActor
@@ -128,7 +184,11 @@ private final class HistoryNavigationOwnerHarness {
 
     var activeWindow: BrowserWindowState?
     var activePageTab: Tab?
+    var activePageTabsByWindowId: [UUID: Tab] = [:]
+    var webViewsByWindowId: [UUID: WKWebView] = [:]
     var loadedCurrentPages: [LoadedCurrentPage] = []
+    var navigatedBackWebViewIDs: [ObjectIdentifier] = []
+    var navigatedForwardWebViewIDs: [ObjectIdentifier] = []
 
     init(activeWindow: BrowserWindowState? = nil, activePageTab: Tab? = nil) {
         self.activeWindow = activeWindow
@@ -139,9 +199,15 @@ private final class HistoryNavigationOwnerHarness {
         BrowserHistoryNavigationOwner(
             dependencies: BrowserHistoryNavigationOwner.Dependencies(
                 activeWindow: { [weak self] in self?.activeWindow },
-                activePageTab: { [weak self] _ in self?.activePageTab },
-                activePageWebView: { _ in nil },
-                webView: { _, _ in nil },
+                activePageTab: { [weak self] windowState in
+                    self?.activePageTabsByWindowId[windowState.id] ?? self?.activePageTab
+                },
+                activePageWebView: { [weak self] windowState in
+                    self?.webViewsByWindowId[windowState.id]
+                },
+                webView: { [weak self] _, windowId in
+                    self?.webViewsByWindowId[windowId]
+                },
                 openNativeBrowserSurface: { _, _, _, _ in },
                 openNewTab: { _, _ in nil },
                 loadCurrentPageURL: { [weak self] tab, windowState, url in
@@ -154,8 +220,38 @@ private final class HistoryNavigationOwnerHarness {
                 awaitNextRegisteredWindow: { _ in nil },
                 scheduleRuntimeStatePersistence: { _ in },
                 schedulePrepareVisibleWebViews: { _ in },
-                refreshCompositor: { _ in }
+                refreshCompositor: { _ in },
+                navigateBack: { [weak self] webView in
+                    self?.navigatedBackWebViewIDs.append(ObjectIdentifier(webView))
+                },
+                navigateForward: { [weak self] webView in
+                    self?.navigatedForwardWebViewIDs.append(ObjectIdentifier(webView))
+                }
             )
         )
+    }
+}
+
+private final class HistoryNavigationRecordingWebView: WKWebView {
+    private let canGoBackValue: Bool
+    private let canGoForwardValue: Bool
+
+    init(canGoBack: Bool = false, canGoForward: Bool = false) {
+        canGoBackValue = canGoBack
+        canGoForwardValue = canGoForward
+        super.init(frame: .zero, configuration: WKWebViewConfiguration())
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override var canGoBack: Bool {
+        canGoBackValue
+    }
+
+    override var canGoForward: Bool {
+        canGoForwardValue
     }
 }

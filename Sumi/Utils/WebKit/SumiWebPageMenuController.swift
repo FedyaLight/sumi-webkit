@@ -75,12 +75,12 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
 
     @objc func goBack(_: Any?) {
         guard let webView, webView.canGoBack else { return }
-        webView.goBack()
+        SumiWebViewNavigator.goBack(on: webView)
     }
 
     @objc func goForward(_: Any?) {
         guard let webView, webView.canGoForward else { return }
-        webView.goForward()
+        SumiWebViewNavigator.goForward(on: webView)
     }
 
     @objc func reloadPage(_: Any?) {

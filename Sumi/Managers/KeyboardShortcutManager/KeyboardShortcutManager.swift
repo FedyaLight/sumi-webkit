@@ -271,11 +271,11 @@ class KeyboardShortcutManager {
     }
 
     private func isManagedSumiBrowserWindow(_ window: NSWindow) -> Bool {
-        browserWindowState(containing: window) != nil
+        windowRegistry?.windowState(containing: window) != nil
     }
 
     private func shouldBypassShortcutRouting(keyWindow: NSWindow) -> Bool {
-        if let state = browserWindowState(containing: keyWindow),
+        if let state = windowRegistry?.windowState(containing: keyWindow),
            state.isFloatingBarVisible {
             return true
         }
@@ -323,13 +323,7 @@ class KeyboardShortcutManager {
     }
 
     private func browserWindowState(containing window: NSWindow) -> BrowserWindowState? {
-        windowRegistry?.windows.values.first { state in
-            guard let browserWindow = state.window else { return false }
-            if browserWindow === window {
-                return true
-            }
-            return browserWindow.childWindows?.contains(where: { $0 === window }) == true
-        }
+        windowRegistry?.windowState(containing: window)
     }
 
     private func routeControlTabThroughMenu(event: NSEvent, routingFlags: NSEvent.ModifierFlags) -> Bool {

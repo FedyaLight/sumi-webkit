@@ -24,12 +24,28 @@ extension BrowserManager {
         historyNavigationOwner.canGoForwardInActiveWindow
     }
 
+    func canGoBack(in windowState: BrowserWindowState) -> Bool {
+        historyNavigationOwner.canGoBack(in: windowState)
+    }
+
+    func canGoForward(in windowState: BrowserWindowState) -> Bool {
+        historyNavigationOwner.canGoForward(in: windowState)
+    }
+
     func goBackInActiveWindow() {
         historyNavigationOwner.goBackInActiveWindow()
     }
 
     func goForwardInActiveWindow() {
         historyNavigationOwner.goForwardInActiveWindow()
+    }
+
+    func goBack(in windowState: BrowserWindowState) {
+        historyNavigationOwner.goBack(in: windowState)
+    }
+
+    func goForward(in windowState: BrowserWindowState) {
+        historyNavigationOwner.goForward(in: windowState)
     }
 
     func openHistoryTab(

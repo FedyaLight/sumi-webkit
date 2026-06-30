@@ -5,6 +5,7 @@
 //  Tracks window states for cross-window coordination and command routing
 //
 
+import AppKit
 import Foundation
 import Observation
 import SwiftUI
@@ -131,6 +132,16 @@ class WindowRegistry {
     /// Get all windows as an array
     var allWindows: [BrowserWindowState] {
         Array(windows.values)
+    }
+
+    func windowState(containing appKitWindow: NSWindow) -> BrowserWindowState? {
+        windows.values.first { state in
+            guard let browserWindow = state.window else { return false }
+            if browserWindow === appKitWindow {
+                return true
+            }
+            return browserWindow.childWindows?.contains(where: { $0 === appKitWindow }) == true
+        }
     }
 
     func awaitNextRegisteredWindow(

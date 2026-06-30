@@ -1125,7 +1125,7 @@ extension BrowserManager {
 }
 
 extension BrowserManager: BrowserCommandRouting, WindowCommandRouting, BrowserWindowLifecycleHandling,
-    ExternalURLHandling, BrowserPersistenceHandling, WebViewLookup {
+    ExternalURLHandling, BrowserPersistenceHandling {
     func flushRuntimeStatePersistenceAwaitingResult() async -> Int {
         await tabManager.flushRuntimeStatePersistenceAwaitingResult()
     }
@@ -1134,9 +1134,6 @@ extension BrowserManager: BrowserCommandRouting, WindowCommandRouting, BrowserWi
         await tabManager.persistFullReconcileAwaitingResult(reason: reason)
     }
 
-    func webView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
-        getWebView(for: tabId, in: windowId)
-    }
 }
 
 extension Array {

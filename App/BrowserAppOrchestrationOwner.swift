@@ -38,7 +38,6 @@ final class BrowserAppOrchestrationOwner {
         appDelegate.windowRegistry = windowRegistry
         appDelegate.commandRouter = browserManager
         appDelegate.windowRouter = browserManager
-        appDelegate.webViewLookup = browserManager
         appDelegate.externalURLHandler = browserManager
         appDelegate.persistenceHandler = browserManager
         appDelegate.updateHandler = browserManager

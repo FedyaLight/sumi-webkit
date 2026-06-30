@@ -129,6 +129,12 @@ extension BrowserURLBarContextOwner.Dependencies {
                 },
                 openHistoryURLsInNewWindow: { [weak browserManager] urls in
                     browserManager?.openHistoryURLsInNewWindow(urls)
+                },
+                goBack: { [weak browserManager] windowState in
+                    browserManager?.goBack(in: windowState)
+                },
+                goForward: { [weak browserManager] windowState in
+                    browserManager?.goForward(in: windowState)
                 }
             )
         )

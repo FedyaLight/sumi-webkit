@@ -25,6 +25,8 @@ final class BrowserHistoryNavigationOwner {
         let scheduleRuntimeStatePersistence: @MainActor @Sendable (Tab) -> Void
         let schedulePrepareVisibleWebViews: @MainActor @Sendable (BrowserWindowState) -> Void
         let refreshCompositor: @MainActor @Sendable (BrowserWindowState) -> Void
+        let navigateBack: @MainActor @Sendable (WKWebView) -> Void
+        let navigateForward: @MainActor @Sendable (WKWebView) -> Void
     }
 
     private let dependencies: Dependencies
@@ -34,29 +36,45 @@ final class BrowserHistoryNavigationOwner {
     }
 
     var canGoBackInActiveWindow: Bool {
-        activePageWebViewInActiveWindow()?.canGoBack ?? false
+        guard let activeWindow = dependencies.activeWindow() else { return false }
+        return canGoBack(in: activeWindow)
     }
 
     var canGoForwardInActiveWindow: Bool {
-        activePageWebViewInActiveWindow()?.canGoForward ?? false
+        guard let activeWindow = dependencies.activeWindow() else { return false }
+        return canGoForward(in: activeWindow)
+    }
+
+    func canGoBack(in windowState: BrowserWindowState) -> Bool {
+        activePageWebView(in: windowState)?.canGoBack ?? false
+    }
+
+    func canGoForward(in windowState: BrowserWindowState) -> Bool {
+        activePageWebView(in: windowState)?.canGoForward ?? false
     }
 
     func goBackInActiveWindow() {
-        guard let webView = activePageWebViewInActiveWindow(),
-              webView.canGoBack
-        else {
-            return
-        }
-        webView.goBack()
+        guard let activeWindow = dependencies.activeWindow() else { return }
+        goBack(in: activeWindow)
     }
 
     func goForwardInActiveWindow() {
-        guard let webView = activePageWebViewInActiveWindow(),
+        guard let activeWindow = dependencies.activeWindow() else { return }
+        goForward(in: activeWindow)
+    }
+
+    func goBack(in windowState: BrowserWindowState) {
+        guard let webView = activePageWebView(in: windowState),
+              webView.canGoBack
+        else { return }
+        dependencies.navigateBack(webView)
+    }
+
+    func goForward(in windowState: BrowserWindowState) {
+        guard let webView = activePageWebView(in: windowState),
               webView.canGoForward
-        else {
-            return
-        }
-        webView.goForward()
+        else { return }
+        dependencies.navigateForward(webView)
     }
 
     func openHistoryTab(
@@ -155,14 +173,13 @@ final class BrowserHistoryNavigationOwner {
         openURLsInNewWindow(urls)
     }
 
-    private func activePageWebViewInActiveWindow() -> WKWebView? {
-        guard let activeWindow = dependencies.activeWindow(),
-              let currentTab = dependencies.activePageTab(activeWindow)
+    private func activePageWebView(in windowState: BrowserWindowState) -> WKWebView? {
+        guard let currentTab = dependencies.activePageTab(windowState)
         else {
             return nil
         }
-        return dependencies.activePageWebView(activeWindow)
-            ?? dependencies.webView(currentTab.id, activeWindow.id)
+        return dependencies.activePageWebView(windowState)
+            ?? dependencies.webView(currentTab.id, windowState.id)
     }
 
     private func openHistoryTab(
@@ -270,6 +287,12 @@ extension BrowserHistoryNavigationOwner.Dependencies {
             },
             refreshCompositor: { [weak browserManager] windowState in
                 browserManager?.refreshCompositor(for: windowState)
+            },
+            navigateBack: { webView in
+                SumiWebViewNavigator.goBack(on: webView)
+            },
+            navigateForward: { webView in
+                SumiWebViewNavigator.goForward(on: webView)
             }
         )
     }

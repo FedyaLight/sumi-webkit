@@ -1,6 +1,5 @@
 import AppKit
 import SwiftData
-import WebKit
 
 @MainActor
 protocol BrowserCommandRouting: AnyObject {
@@ -10,6 +9,8 @@ protocol BrowserCommandRouting: AnyObject {
         navigateCurrentTab: Bool
     )
     func currentTab(for windowState: BrowserWindowState) -> Tab?
+    func goBack(in windowState: BrowserWindowState)
+    func goForward(in windowState: BrowserWindowState)
     func closeCurrentTab()
 }
 
@@ -22,11 +23,6 @@ protocol WindowCommandRouting: AnyObject {
 protocol BrowserWindowLifecycleHandling: AnyObject {
     var tabManager: TabManager { get }
     func persistWindowSession(for windowState: BrowserWindowState)
-}
-
-@MainActor
-protocol WebViewLookup: AnyObject {
-    func webView(for tabId: UUID, in windowId: UUID) -> WKWebView?
 }
 
 @MainActor

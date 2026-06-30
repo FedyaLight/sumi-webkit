@@ -24,7 +24,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     weak var commandRouter: (any BrowserCommandRouting)?
     weak var windowRouter: (any WindowCommandRouting)?
-    weak var webViewLookup: (any WebViewLookup)?
     weak var externalURLHandler: (any ExternalURLHandling)?
     weak var persistenceHandler: (any BrowserPersistenceHandling)?
     weak var updateHandler: BrowserManager?
@@ -36,6 +35,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     // Window registry for accessing active window state
     weak var windowRegistry: WindowRegistry?
     private var quitConfirmationInProgress = false
+    private let mouseButtonRoutingOwner = BrowserMouseButtonRoutingOwner()
 
     private let urlEventClass = AEEventClass(kInternetEventClass)
     private let urlEventID = AEEventID(kAEGetURL)
@@ -104,41 +104,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         _ = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
             guard let self = self,
                   let commandRouter = self.commandRouter,
-                  let webViewLookup = self.webViewLookup,
                   let registry = self.windowRegistry else { return event }
 
             // Mouse events are delivered on the main thread, so we can safely assume main actor isolation
-            MainActor.assumeIsolated {
-                switch event.buttonNumber {
-                case 2: // Middle mouse button
-                    if let activeWindow = registry.activeWindow {
-                        commandRouter.focusFloatingBar(
-                            in: activeWindow,
-                            prefill: "",
-                            navigateCurrentTab: false
-                        )
-                    }
-                case 3: // Back button
-                    guard
-                        let windowState = registry.activeWindow,
-                        let currentTab = commandRouter.currentTab(for: windowState),
-                        let webView = webViewLookup.webView(for: currentTab.id, in: windowState.id)
-                    else {
-                        return
-                    }
-                    webView.goBack()
-                case 4: // Forward button
-                    guard
-                        let windowState = registry.activeWindow,
-                        let currentTab = commandRouter.currentTab(for: windowState),
-                        let webView = webViewLookup.webView(for: currentTab.id, in: windowState.id)
-                    else {
-                        return
-                    }
-                    webView.goForward()
-                default:
-                    break
-                }
+            _ = MainActor.assumeIsolated {
+                self.mouseButtonRoutingOwner.handleOtherMouseDown(
+                    event,
+                    commandRouter: commandRouter,
+                    windowRegistry: registry
+                )
             }
             return event
         }

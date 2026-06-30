@@ -74,6 +74,8 @@ struct NavigationToolbarBrowserContext {
     let currentTab: () -> Tab?
     let webView: (Tab) -> WKWebView?
     let historyContext: SumiNavigationHistoryContext
+    let goBack: () -> Void
+    let goForward: () -> Void
 }
 
 struct NavButtonsView: View {
@@ -147,11 +149,7 @@ struct NavButtonsView: View {
             return
         }
 
-        if let webView {
-            webView.goBack()
-        } else {
-            tabWrapper.tab?.goBack()
-        }
+        browserContext.goBack()
     }
 
     private func goForward() {
@@ -165,11 +163,7 @@ struct NavButtonsView: View {
             return
         }
 
-        if let webView {
-            webView.goForward()
-        } else {
-            tabWrapper.tab?.goForward()
-        }
+        browserContext.goForward()
     }
 
     private func reloadOrStopCurrentTab() {

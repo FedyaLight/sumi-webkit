@@ -1937,9 +1937,9 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertFalse(tab.shouldOpenDynamicallyInGlance(url: externalURL, modifierFlags: []))
     }
 
-    func testGlanceClickUsesEventModifierFlagsInsteadOfStaleClickState() {
+    func testGlanceClickUsesEventModifierFlagsInsteadOfStaleClickState() throws {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = BrowserManager()
+        let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
         tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
@@ -1996,9 +1996,9 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertTrue(tab.isGlanceTriggerActive(resolved))
     }
 
-    func testNativeContextMenuProbeConsumesChildWebViewRequestBeforeDynamicGlance() {
+    func testNativeContextMenuProbeConsumesChildWebViewRequestBeforeDynamicGlance() throws {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = BrowserManager()
+        let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
         tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
@@ -2041,9 +2041,9 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNil(browserManager.glanceManager.currentSession)
     }
 
-    func testPopupResponderOptionClickRoutesToGlance() async {
+    func testPopupResponderOptionClickRoutesToGlance() async throws {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = BrowserManager()
+        let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
         tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
@@ -2068,9 +2068,9 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
     }
 
-    func testPopupResponderEssentialExternalCleanClickRoutesToGlance() async {
+    func testPopupResponderEssentialExternalCleanClickRoutesToGlance() async throws {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = BrowserManager()
+        let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
         tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
@@ -2094,9 +2094,9 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(browserManager.glanceManager.currentSession?.currentURL, targetURL)
     }
 
-    func testPopupResponderRegularExternalCleanClickDoesNotRouteToGlance() async {
+    func testPopupResponderRegularExternalCleanClickDoesNotRouteToGlance() async throws {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = BrowserManager()
+        let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
         tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
@@ -2118,9 +2118,9 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNil(browserManager.glanceManager.currentSession)
     }
 
-    func testPopupResponderCommandClickDoesNotRouteToGlance() async {
+    func testPopupResponderCommandClickDoesNotRouteToGlance() async throws {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = BrowserManager()
+        let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
         tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
@@ -2207,8 +2207,8 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertEqual(evaluatedContexts.map(\.profilePartitionId), [profile.id.uuidString.lowercased()])
     }
 
-    func testPopupCreateWebViewFocusesCleanClickNewTab() {
-        let harness = makePopupFocusHarness()
+    func testPopupCreateWebViewFocusesCleanClickNewTab() throws {
+        let harness = try makePopupFocusHarness()
         let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
         let configuration = WKWebViewConfiguration()
         let markerScript = WKUserScript(
@@ -2246,7 +2246,7 @@ final class SumiNavigationResponderTests: XCTestCase {
     }
 
     func testExtensionPopupExternalCreateWebViewOpensNormalBrowserTab() async throws {
-        let harness = makePopupFocusHarness()
+        let harness = try makePopupFocusHarness()
         let extensionPopupURL = URL(
             string: "safari-web-extension://extension-id/popup.html"
         )!
@@ -2289,7 +2289,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
     func testExtensionPopupExternalCreateWebViewUsesTabURLWhenSourceFrameMissing()
         async throws {
-        let harness = makePopupFocusHarness()
+        let harness = try makePopupFocusHarness()
         let extensionPopupURL = URL(
             string: "safari-web-extension://extension-id/popup.html"
         )!
@@ -2321,8 +2321,8 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNotNil(openedTab.assignedWebView ?? openedTab.existingWebView)
     }
 
-    func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() {
-        let harness = makePopupFocusHarness()
+    func testPopupCreateWebViewLeavesCommandClickNewTabInBackground() throws {
+        let harness = try makePopupFocusHarness()
         harness.sourceTab.recordWebViewInteraction(
             makeMouseEvent(type: .leftMouseDown, modifierFlags: [.command])
         )
@@ -2369,6 +2369,39 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
     }
 
+    private func makePopupBrowserManager(needsWebViewCoordinator: Bool = false) throws -> BrowserManager {
+        let moduleRegistry = makePopupModuleRegistry()
+        moduleRegistry.setEnabled(false, for: .extensions)
+        let browserManager = BrowserManager(
+            moduleRegistry: moduleRegistry,
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try Self.makeInMemoryStartupContainer()
+            )
+        )
+        if needsWebViewCoordinator {
+            browserManager.webViewCoordinator = WebViewCoordinator()
+        }
+        return browserManager
+    }
+
+    private func makePopupModuleRegistry() -> SumiModuleRegistry {
+        let suiteName = UUID().uuidString
+        let userDefaults = UserDefaults(suiteName: suiteName)!
+        addTeardownBlock {
+            userDefaults.removePersistentDomain(forName: suiteName)
+        }
+        return SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: userDefaults)
+        )
+    }
+
+    private static func makeInMemoryStartupContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+    }
+
     private struct PopupFocusHarness {
         let browserManager: BrowserManager
         let windowRegistry: WindowRegistry
@@ -2377,9 +2410,9 @@ final class SumiNavigationResponderTests: XCTestCase {
         let sourceWebView: WKWebView
     }
 
-    private func makePopupFocusHarness() -> PopupFocusHarness {
+    private func makePopupFocusHarness() throws -> PopupFocusHarness {
         let settings = SumiSettingsService(userDefaults: TestDefaultsHarness().defaults)
-        let browserManager = BrowserManager()
+        let browserManager = try makePopupBrowserManager(needsWebViewCoordinator: true)
         let windowRegistry = WindowRegistry()
         let profile = Profile(name: "Primary")
         let space = Space(name: "Primary", profileId: profile.id)

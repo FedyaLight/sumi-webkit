@@ -157,12 +157,35 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
         XCTAssertEqual(delegatedURLs, urls)
     }
 
+    func testToolbarBackForwardActionsUseBoundWindow() {
+        let windowState = BrowserWindowState()
+        var backWindow: BrowserWindowState?
+        var forwardWindow: BrowserWindowState?
+        let owner = makeOwner(
+            goBack: { windowState in
+                backWindow = windowState
+            },
+            goForward: { windowState in
+                forwardWindow = windowState
+            }
+        )
+
+        let context = owner.navigationToolbarContext(for: windowState)
+        context.goBack()
+        context.goForward()
+
+        XCTAssertIdentical(backWindow, windowState)
+        XCTAssertIdentical(forwardWindow, windowState)
+    }
+
     private func makeOwner(
         currentTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
         webView: @escaping @MainActor (Tab, BrowserWindowState) -> WKWebView? = { _, _ in nil },
         openURLInCurrentTab: @escaping @MainActor (URL, BrowserWindowState) -> Void = { _, _ in },
         openNewTab: @escaping @MainActor (String, BrowserTabOpenContext) -> Void = { _, _ in },
-        openHistoryURLsInNewWindow: @escaping @MainActor ([URL]) -> Void = { _ in }
+        openHistoryURLsInNewWindow: @escaping @MainActor ([URL]) -> Void = { _ in },
+        goBack: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
+        goForward: @escaping @MainActor (BrowserWindowState) -> Void = { _ in }
     ) -> BrowserNavigationToolbarContextOwner {
         BrowserNavigationToolbarContextOwner(
             dependencies: BrowserNavigationToolbarContextOwner.Dependencies(
@@ -176,7 +199,9 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
                 },
                 openURLInCurrentTab: openURLInCurrentTab,
                 openNewTab: openNewTab,
-                openHistoryURLsInNewWindow: openHistoryURLsInNewWindow
+                openHistoryURLsInNewWindow: openHistoryURLsInNewWindow,
+                goBack: goBack,
+                goForward: goForward
             )
         )
     }

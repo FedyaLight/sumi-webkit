@@ -11,6 +11,8 @@ final class BrowserNavigationToolbarContextOwner {
         let openURLInCurrentTab: @MainActor (URL, BrowserWindowState) -> Void
         let openNewTab: @MainActor (String, BrowserTabOpenContext) -> Void
         let openHistoryURLsInNewWindow: @MainActor ([URL]) -> Void
+        let goBack: @MainActor (BrowserWindowState) -> Void
+        let goForward: @MainActor (BrowserWindowState) -> Void
     }
 
     private let dependencies: Dependencies
@@ -31,7 +33,15 @@ final class BrowserNavigationToolbarContextOwner {
                 guard let self, let windowState else { return nil }
                 return self.dependencies.webView(tab, windowState)
             },
-            historyContext: navigationHistoryContext(for: windowState)
+            historyContext: navigationHistoryContext(for: windowState),
+            goBack: { [weak self, weak windowState] in
+                guard let self, let windowState else { return }
+                self.dependencies.goBack(windowState)
+            },
+            goForward: { [weak self, weak windowState] in
+                guard let self, let windowState else { return }
+                self.dependencies.goForward(windowState)
+            }
         )
     }
 

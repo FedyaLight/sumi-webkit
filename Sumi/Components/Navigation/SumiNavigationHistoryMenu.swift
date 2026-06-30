@@ -111,7 +111,7 @@ enum SumiNavigationHistoryMenuModel {
 
             if let backForwardItem = item.backForwardItem,
                let webView {
-                webView.go(to: backForwardItem)
+                SumiWebViewNavigator.go(to: backForwardItem, on: webView)
             } else {
                 historyContext?.openURLInCurrentTab(url, tab)
             }
