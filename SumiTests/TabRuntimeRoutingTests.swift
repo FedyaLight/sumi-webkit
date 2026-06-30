@@ -104,7 +104,8 @@ final class TabRuntimeRoutingTests: XCTestCase {
             registerNormalTabWithExtensionRuntimeIfNeeded: { registeredTab, reason in
                 registeredTabIds.append(registeredTab.id)
                 registrationReasons.append(reason)
-            }
+            },
+            prepareWebViewForExtensionRuntime: { _, _, _ in }
         )
 
         tab.normalWebViewRuntimeContext()
@@ -113,6 +114,36 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertNil(tab.browserManager)
         XCTAssertEqual(registeredTabIds, [tab.id])
         XCTAssertEqual(registrationReasons, ["test.registration"])
+    }
+
+    func testOwnedWebViewPreparationUsesInjectedExtensionRuntimeWithoutBrowserManager() {
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let webView = FocusableWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let targetURL = URL(string: "https://example.com/runtime")!
+        var preparedWebViews: [WKWebView] = []
+        var preparedURLs: [URL?] = []
+        var preparedReasons: [String] = []
+        tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
+            registerNormalTabWithExtensionRuntimeIfNeeded: { _, _ in },
+            prepareWebViewForExtensionRuntime: { webView, currentURL, reason in
+                preparedWebViews.append(webView)
+                preparedURLs.append(currentURL)
+                preparedReasons.append(reason)
+            }
+        )
+
+        tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
+            webView,
+            currentURL: targetURL,
+            reason: "test.extension-runtime",
+            installFaviconRuntime: false
+        )
+
+        XCTAssertNil(tab.browserManager)
+        XCTAssertEqual(preparedWebViews.count, 1)
+        XCTAssertIdentical(preparedWebViews.first, webView)
+        XCTAssertEqual(preparedURLs, [targetURL])
+        XCTAssertEqual(preparedReasons, ["test.extension-runtime"])
     }
 
     func testExtensionPageFaviconUsesInjectedRuntimeWithoutBrowserManager() async throws {

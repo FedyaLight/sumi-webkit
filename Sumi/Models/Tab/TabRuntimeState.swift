@@ -198,9 +198,11 @@ struct TabWebViewCleanupRuntime {
 @MainActor
 struct TabNormalWebViewExtensionRuntime {
     var registerNormalTabWithExtensionRuntimeIfNeeded: (Tab, String) -> Void
+    var prepareWebViewForExtensionRuntime: (WKWebView, URL?, String) -> Void
 
     static let inactive = Self(
-        registerNormalTabWithExtensionRuntimeIfNeeded: { _, _ in }
+        registerNormalTabWithExtensionRuntimeIfNeeded: { _, _ in },
+        prepareWebViewForExtensionRuntime: { _, _, _ in }
     )
 }
 

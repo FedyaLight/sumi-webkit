@@ -296,6 +296,13 @@ extension TabNormalWebViewExtensionRuntime {
                     newTab: tab,
                     previous: nil
                 )
+            },
+            prepareWebViewForExtensionRuntime: { webView, currentURL, reason in
+                extensionsModule()?.prepareWebViewForExtensionRuntime(
+                    webView,
+                    currentURL: currentURL,
+                    reason: reason
+                )
             }
         )
     }
