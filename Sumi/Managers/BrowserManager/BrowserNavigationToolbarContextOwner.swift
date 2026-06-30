@@ -8,7 +8,7 @@ final class BrowserNavigationToolbarContextOwner {
         let webView: @MainActor (Tab, BrowserWindowState) -> WKWebView?
         let faviconService: @MainActor () -> any BrowserFaviconServicing
         let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
-        let activeWindow: @MainActor () -> BrowserWindowState?
+        let openURLInCurrentTab: @MainActor (URL, BrowserWindowState) -> Void
         let openNewTab: @MainActor (String, BrowserTabOpenContext) -> Void
         let openHistoryURLsInNewWindow: @MainActor ([URL]) -> Void
     }
@@ -41,6 +41,10 @@ final class BrowserNavigationToolbarContextOwner {
         SumiNavigationHistoryContext(
             faviconService: dependencies.faviconService(),
             faviconImageService: dependencies.faviconImageService(),
+            openURLInCurrentTab: { [weak self, weak windowState] url, _ in
+                guard let self, let windowState else { return }
+                self.dependencies.openURLInCurrentTab(url, windowState)
+            },
             openURLInNewTab: { [weak self, weak windowState] url, selected, sourceTab in
                 self?.openURLFromNavigationHistory(
                     url: url,
@@ -59,9 +63,9 @@ final class BrowserNavigationToolbarContextOwner {
         sourceTab: Tab?,
         windowState: BrowserWindowState?
     ) {
-        let targetWindowState = windowState ?? dependencies.activeWindow()
+        guard let targetWindowState = windowState else { return }
         let context: BrowserTabOpenContext
-        if selected, let targetWindowState {
+        if selected {
             context = .foreground(
                 windowState: targetWindowState,
                 sourceTab: sourceTab,
@@ -71,7 +75,7 @@ final class BrowserNavigationToolbarContextOwner {
             context = .background(
                 windowState: targetWindowState,
                 sourceTab: sourceTab,
-                preferredSpaceId: targetWindowState?.currentSpaceId
+                preferredSpaceId: targetWindowState.currentSpaceId
             )
         }
 

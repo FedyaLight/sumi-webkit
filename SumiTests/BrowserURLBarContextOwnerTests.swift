@@ -64,6 +64,28 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         XCTAssertEqual(tabs.map(\.id), [source.id, opened.id, trailing.id])
     }
 
+    func testNavigationHistoryCurrentURLLoadsCurrentTabInBoundWindow() {
+        removePersistedWindowSession()
+        defer { removePersistedWindowSession() }
+
+        let harness = makeHarness()
+        let source = harness.browserManager.tabManager.createNewTab(
+            url: "https://source.example",
+            in: harness.primarySpace,
+            activate: false
+        )
+        harness.windowState.currentTabId = source.id
+        let targetURL = URL(string: "https://current.example/page")!
+
+        harness.browserManager
+            .navigationHistoryContext(for: harness.windowState)
+            .openURLInCurrentTab(targetURL, source)
+
+        XCTAssertEqual(source.url, targetURL)
+        XCTAssertEqual(harness.windowState.currentTabId, source.id)
+        XCTAssertEqual(harness.windowState.currentSpaceId, harness.primarySpace.id)
+    }
+
     func testURLBarContextReflectsFreshSnapshotState() {
         removePersistedWindowSession()
         defer { removePersistedWindowSession() }

@@ -117,8 +117,12 @@ extension BrowserURLBarContextOwner.Dependencies {
                 faviconImageService: {
                     dataServices.faviconImageService
                 },
-                activeWindow: { [weak browserManager] in
-                    browserManager?.windowRegistry?.activeWindow
+                openURLInCurrentTab: { [weak browserManager] url, windowState in
+                    browserManager?.historyNavigationOwner.openHistoryURL(
+                        url,
+                        in: windowState,
+                        preferredOpenMode: .currentTab
+                    )
                 },
                 openNewTab: { [weak browserManager] urlString, context in
                     browserManager?.openNewTab(url: urlString, context: context)

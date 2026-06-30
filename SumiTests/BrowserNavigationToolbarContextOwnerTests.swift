@@ -89,6 +89,54 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
         }
     }
 
+    func testNavigationHistoryCurrentURLUsesBoundWindowScopedAction() {
+        let windowState = BrowserWindowState()
+        let targetURL = URL(string: "https://current.example/path")!
+        var openedURL: URL?
+        weak var openedWindow: BrowserWindowState?
+        let owner = makeOwner(
+            openURLInCurrentTab: { url, windowState in
+                openedURL = url
+                openedWindow = windowState
+            }
+        )
+
+        owner
+            .navigationHistoryContext(for: windowState)
+            .openURLInCurrentTab(targetURL, nil)
+
+        XCTAssertEqual(openedURL, targetURL)
+        XCTAssertIdentical(openedWindow, windowState)
+    }
+
+    func testNavigationHistoryDeadBoundWindowDoesNotRetargetToAnotherWindow() {
+        var boundWindow: BrowserWindowState? = BrowserWindowState()
+        weak var releasedBoundWindow: BrowserWindowState?
+        releasedBoundWindow = boundWindow
+        let targetURL = URL(string: "https://stale.example/path")!
+        var openedCurrentURL: URL?
+        var openedNewTabURL: String?
+        let owner = makeOwner(
+            openURLInCurrentTab: { url, _ in
+                openedCurrentURL = url
+            },
+            openNewTab: { urlString, _ in
+                openedNewTabURL = urlString
+            }
+        )
+
+        let context = owner.navigationHistoryContext(for: boundWindow!)
+        boundWindow = nil
+
+        XCTAssertNil(releasedBoundWindow)
+
+        context.openURLInNewTab(targetURL, true, nil)
+        context.openURLInCurrentTab(targetURL, nil)
+
+        XCTAssertNil(openedNewTabURL)
+        XCTAssertNil(openedCurrentURL)
+    }
+
     func testNavigationHistoryNewWindowDelegatesURLs() {
         let windowState = BrowserWindowState()
         let urls = [
@@ -112,7 +160,7 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
     private func makeOwner(
         currentTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
         webView: @escaping @MainActor (Tab, BrowserWindowState) -> WKWebView? = { _, _ in nil },
-        activeWindow: @escaping @MainActor () -> BrowserWindowState? = { nil },
+        openURLInCurrentTab: @escaping @MainActor (URL, BrowserWindowState) -> Void = { _, _ in },
         openNewTab: @escaping @MainActor (String, BrowserTabOpenContext) -> Void = { _, _ in },
         openHistoryURLsInNewWindow: @escaping @MainActor ([URL]) -> Void = { _ in }
     ) -> BrowserNavigationToolbarContextOwner {
@@ -126,7 +174,7 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
                 faviconImageService: {
                     BrowserManagerDataServices.productionFaviconImageService
                 },
-                activeWindow: activeWindow,
+                openURLInCurrentTab: openURLInCurrentTab,
                 openNewTab: openNewTab,
                 openHistoryURLsInNewWindow: openHistoryURLsInNewWindow
             )

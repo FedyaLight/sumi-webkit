@@ -46,6 +46,7 @@ struct SumiNavigationHistoryMenuItem {
 struct SumiNavigationHistoryContext {
     let faviconService: any BrowserFaviconServicing
     let faviconImageService: any BrowserFaviconImageServicing
+    let openURLInCurrentTab: (URL, Tab?) -> Void
     let openURLInNewTab: (URL, Bool, Tab?) -> Void
     let openURLsInNewWindow: ([URL]) -> Void
 }
@@ -112,7 +113,7 @@ enum SumiNavigationHistoryMenuModel {
                let webView {
                 webView.go(to: backForwardItem)
             } else {
-                tab?.loadURL(url)
+                historyContext?.openURLInCurrentTab(url, tab)
             }
         case .newTab(let selected):
             historyContext?.openURLInNewTab(url, selected, tab)
@@ -211,15 +212,15 @@ final class SumiNavigationHistoryMenuDelegate: NSObject, NSMenuDelegate {
             menuItem.state = item.isCurrent ? .on : .off
             menuItem.isEnabled = item.url != nil
             menuItem.representedObject = item.id
-            let profile = tabProvider?()?.resolveProfile()
-            let partition = historyContext?.faviconService.partition(profile: profile)
-                ?? BrowserManagerDataServices.productionFaviconService.partition(profile: profile)
-            menuItem.image = SumiFaviconResolver.menuImage(
-                for: item.url,
-                partition: partition,
-                faviconImageService: historyContext?.faviconImageService
-                    ?? BrowserManagerDataServices.productionFaviconImageService
-            )
+            if let historyContext {
+                let profile = tabProvider?()?.resolveProfile()
+                let partition = historyContext.faviconService.partition(profile: profile)
+                menuItem.image = SumiFaviconResolver.menuImage(
+                    for: item.url,
+                    partition: partition,
+                    faviconImageService: historyContext.faviconImageService
+                )
+            }
             menu.addItem(menuItem)
         }
     }

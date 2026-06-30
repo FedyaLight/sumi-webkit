@@ -54,4 +54,52 @@ final class HistoryMenuModelTests: XCTestCase {
         XCTAssertEqual(forwardOrder.map(\.title), ["Current", "Next Forward", "Later Forward"])
         XCTAssertTrue(forwardOrder[0].isCurrent)
     }
+
+    func testURLOnlyCurrentTabNavigationUsesHistoryContext() {
+        let sourceTab = Tab(
+            url: URL(string: "https://source.example")!,
+            name: "Source",
+            loadsCachedFaviconOnInit: false
+        )
+        let targetURL = URL(string: "https://target.example/path")!
+        let item = SumiNavigationHistoryMenuItem(
+            url: targetURL,
+            title: "Target",
+            isCurrent: false
+        )
+        var openedURL: URL?
+        weak var openedSourceTab: Tab?
+        let context = makeHistoryContext(
+            openURLInCurrentTab: { url, tab in
+                openedURL = url
+                openedSourceTab = tab
+            }
+        )
+
+        SumiNavigationHistoryMenuModel.navigate(
+            to: item,
+            tab: sourceTab,
+            webView: nil,
+            historyContext: context,
+            event: nil
+        )
+
+        XCTAssertEqual(openedURL, targetURL)
+        XCTAssertIdentical(openedSourceTab, sourceTab)
+        XCTAssertEqual(sourceTab.url, URL(string: "https://source.example")!)
+    }
+
+    private func makeHistoryContext(
+        openURLInCurrentTab: @escaping (URL, Tab?) -> Void = { _, _ in },
+        openURLInNewTab: @escaping (URL, Bool, Tab?) -> Void = { _, _, _ in },
+        openURLsInNewWindow: @escaping ([URL]) -> Void = { _ in }
+    ) -> SumiNavigationHistoryContext {
+        SumiNavigationHistoryContext(
+            faviconService: BrowserManagerDataServices.productionFaviconService,
+            faviconImageService: BrowserManagerDataServices.productionFaviconImageService,
+            openURLInCurrentTab: openURLInCurrentTab,
+            openURLInNewTab: openURLInNewTab,
+            openURLsInNewWindow: openURLsInNewWindow
+        )
+    }
 }
