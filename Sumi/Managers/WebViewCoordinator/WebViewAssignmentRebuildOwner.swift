@@ -15,18 +15,22 @@ final class WebViewAssignmentRebuildOwner {
     typealias ContainerRemoval = (WKWebView) -> Void
     typealias ProtectedWebViewCheck = (WKWebView) -> Bool
     typealias ProtectedRebuildDeferral = (WKWebView, UUID, UUID?) -> Void
-    typealias PrimaryCandidateResolver = (UUID, BrowserManager?) -> (owner: TrackedWebViewOwner, webView: WKWebView)?
+    typealias PrimaryCandidateResolver = (UUID) -> (owner: TrackedWebViewOwner, webView: WKWebView)?
+    typealias LiveWindowIDs = () -> Set<UUID>?
+    typealias CompositorRefresh = (UUID) -> Void
     typealias TabActivationNotifier = (Tab, UUID) -> Void
 
     struct Runtime {
         let webViewRegistry: WindowWebViewRegistry
-        let browserManager: BrowserManager?
+        let initialDocumentWarmupRuntime: InitialDocumentWarmupRuntime?
         let registerTrackedWebView: RegisterTrackedWebView
         let unregisterTrackedWebViewSlot: UnregisterTrackedWebViewSlot
         let removeFromContainers: ContainerRemoval
         let isWebViewProtectedFromCompositorMutation: ProtectedWebViewCheck
         let deferProtectedRebuild: ProtectedRebuildDeferral
         let primaryCandidate: PrimaryCandidateResolver
+        let liveWindowIDs: LiveWindowIDs
+        let refreshCompositor: CompositorRefresh
         let notifyTabActivatedIfCurrent: TabActivationNotifier
     }
 
@@ -40,7 +44,7 @@ final class WebViewAssignmentRebuildOwner {
         switch creationPlanningOwner.creationPlan(
             for: tab,
             in: windowId,
-            browserManager: runtime.browserManager,
+            initialDocumentWarmupRuntime: runtime.initialDocumentWarmupRuntime,
             existingWebView: runtime.webViewRegistry.webView(for: tab.id, in: windowId),
             windowWebViews: runtime.webViewRegistry.windowWebViews(for: tab.id)
         ) {
@@ -50,7 +54,10 @@ final class WebViewAssignmentRebuildOwner {
             adoptExistingPrimaryWebView(adoptedWebView, for: tab, in: windowId, runtime: runtime)
             return adoptedWebView
         case .deferForInitialDocumentWarmup(let deferral):
-            creationPlanningOwner.startInitialDocumentWarmupIfNeeded(deferral)
+            creationPlanningOwner.startInitialDocumentWarmupIfNeeded(
+                deferral,
+                runtime: runtime.initialDocumentWarmupRuntime
+            )
             return nil
         case .createPrimary:
             return createPrimaryWebView(for: tab, in: windowId, runtime: runtime)
@@ -66,10 +73,9 @@ final class WebViewAssignmentRebuildOwner {
 
     func refreshPrimaryTrackedWebView(
         for tab: Tab,
-        browserManager: BrowserManager?,
         runtime: Runtime
     ) {
-        guard let replacement = runtime.primaryCandidate(tab.id, browserManager) else {
+        guard let replacement = runtime.primaryCandidate(tab.id) else {
             tab.clearCurrentWebViewOwnership()
             return
         }
@@ -93,7 +99,7 @@ final class WebViewAssignmentRebuildOwner {
         if let primaryWindowId = tab.primaryWindowId {
             targetWindowIds.insert(primaryWindowId)
         }
-        if let liveWindowIds = tab.browserManager?.windowRegistry?.windows.keys {
+        if let liveWindowIds = runtime.liveWindowIDs() {
             targetWindowIds.formIntersection(liveWindowIds)
         }
 
@@ -178,10 +184,7 @@ final class WebViewAssignmentRebuildOwner {
         }
 
         for windowId in targetWindowIds {
-            guard let windowState = tab.browserManager?.windowRegistry?.windows[windowId] else {
-                continue
-            }
-            tab.browserManager?.refreshCompositor(for: windowState)
+            runtime.refreshCompositor(windowId)
         }
     }
 

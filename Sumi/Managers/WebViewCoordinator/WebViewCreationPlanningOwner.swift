@@ -10,7 +10,13 @@ import WebKit
 
 enum InitialDocumentWarmupDeferral {
     case waitForInFlight
-    case start(profileId: UUID, browserManager: BrowserManager, windowId: UUID)
+    case start(profileId: UUID, windowId: UUID)
+}
+
+struct InitialDocumentWarmupRuntime {
+    let needsInitialDocumentExtensionContextLoad: @MainActor (UUID) -> Bool
+    let ensureInitialDocumentExtensionContextsLoaded: @MainActor (UUID) async -> Void
+    let refreshCompositorForWindow: @MainActor (UUID) -> Void
 }
 
 @MainActor
@@ -21,12 +27,12 @@ private struct InitialDocumentWarmupGate {
     mutating func deferralIfNeeded(
         for tab: Tab,
         in windowId: UUID,
-        browserManager coordinatorBrowserManager: BrowserManager?
+        runtime: InitialDocumentWarmupRuntime?
     ) -> InitialDocumentWarmupDeferral? {
         guard tab.isEphemeral == false,
               Self.isWarmupURL(tab.url),
               let profileId = tab.resolveProfile()?.id ?? tab.profileId,
-              let browserManager = tab.browserManager ?? coordinatorBrowserManager
+              let runtime
         else {
             return nil
         }
@@ -36,8 +42,7 @@ private struct InitialDocumentWarmupGate {
         }
 
         guard attemptedProfileIds.contains(profileId) == false,
-              browserManager.extensionsModule
-                .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
+              runtime.needsInitialDocumentExtensionContextLoad(profileId)
         else {
             return nil
         }
@@ -46,7 +51,6 @@ private struct InitialDocumentWarmupGate {
         inFlightProfileIds.insert(profileId)
         return .start(
             profileId: profileId,
-            browserManager: browserManager,
             windowId: windowId
         )
     }
@@ -76,7 +80,7 @@ final class WebViewCreationPlanningOwner {
     func creationPlan(
         for tab: Tab,
         in windowId: UUID,
-        browserManager coordinatorBrowserManager: BrowserManager?,
+        initialDocumentWarmupRuntime: InitialDocumentWarmupRuntime?,
         existingWebView: WKWebView?,
         windowWebViews: [UUID: WKWebView]
     ) -> NormalTabWebViewCreationPlan {
@@ -95,7 +99,7 @@ final class WebViewCreationPlanningOwner {
         if let deferral = initialDocumentWarmupGate.deferralIfNeeded(
             for: tab,
             in: windowId,
-            browserManager: coordinatorBrowserManager
+            runtime: initialDocumentWarmupRuntime
         ) {
             return .deferForInitialDocumentWarmup(deferral)
         }
@@ -116,23 +120,22 @@ final class WebViewCreationPlanningOwner {
     }
 
     func startInitialDocumentWarmupIfNeeded(
-        _ deferral: InitialDocumentWarmupDeferral
+        _ deferral: InitialDocumentWarmupDeferral,
+        runtime: InitialDocumentWarmupRuntime?
     ) {
-        guard case let .start(profileId, browserManager, windowId) = deferral else {
+        guard case let .start(profileId, windowId) = deferral else {
             return
         }
-        Task { @MainActor [weak self, weak browserManager] in
-            await browserManager?.extensionsModule
-                .ensureInitialDocumentExtensionContextsLoadedIfNeeded(
-                    profileId: profileId
-                )
+        guard let runtime else {
+            assertionFailure("Initial document warmup start requires a runtime")
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            await runtime.ensureInitialDocumentExtensionContextsLoaded(profileId)
             guard let self else { return }
             self.initialDocumentWarmupGate.finish(profileId: profileId)
-
-            guard let browserManager,
-                  let windowState = browserManager.windowRegistry?.windows[windowId]
-            else { return }
-            browserManager.refreshCompositor(for: windowState)
+            runtime.refreshCompositorForWindow(windowId)
         }
     }
 

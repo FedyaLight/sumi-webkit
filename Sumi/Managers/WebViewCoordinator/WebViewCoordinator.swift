@@ -399,7 +399,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         webViewAssignmentRebuildOwner.getOrCreateWebView(
             for: tab,
             in: windowId,
-            runtime: assignmentRebuildRuntime()
+            runtime: assignmentRebuildRuntime(
+                browserManager: tab.browserManager ?? browserManager
+            )
         )
     }
 
@@ -561,7 +563,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             for: tab,
             preferredPrimaryWindowId: preferredPrimaryWindowId,
             load: url,
-            runtime: assignmentRebuildRuntime()
+            runtime: assignmentRebuildRuntime(
+                browserManager: tab.browserManager ?? browserManager
+            )
         )
     }
 
@@ -1106,8 +1110,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     ) {
         webViewAssignmentRebuildOwner.refreshPrimaryTrackedWebView(
             for: tab,
-            browserManager: browserManager,
-            runtime: assignmentRebuildRuntime()
+            runtime: assignmentRebuildRuntime(browserManager: browserManager)
         )
     }
 
@@ -1124,10 +1127,14 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         )
     }
 
-    private func assignmentRebuildRuntime() -> WebViewAssignmentRebuildOwner.Runtime {
+    private func assignmentRebuildRuntime(
+        browserManager: BrowserManager?
+    ) -> WebViewAssignmentRebuildOwner.Runtime {
         WebViewAssignmentRebuildOwner.Runtime(
             webViewRegistry: webViewRegistry,
-            browserManager: browserManager,
+            initialDocumentWarmupRuntime: initialDocumentWarmupRuntime(
+                browserManager: browserManager
+            ),
             registerTrackedWebView: { [self] webView, tabId, windowId in
                 registerTrackedWebView(webView, for: tabId, in: windowId)
             },
@@ -1153,14 +1160,51 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                     reason: "rebuildLiveWebViews"
                 )
             },
-            primaryCandidate: { [self] tabId, browserManager in
+            primaryCandidate: { [self] tabId in
                 preferredPrimaryWebViewCandidate(
                     for: tabId,
                     browserManager: browserManager
                 )
             },
+            liveWindowIDs: {
+                guard let windows = browserManager?.windowRegistry?.windows else {
+                    return nil
+                }
+                return Set(windows.keys)
+            },
+            refreshCompositor: { windowId in
+                guard let windowState = browserManager?.windowRegistry?.windows[windowId] else {
+                    return
+                }
+                browserManager?.refreshCompositor(for: windowState)
+            },
             notifyTabActivatedIfCurrent: { [self] tab, windowId in
                 notifyTabActivatedIfCurrent(tab, in: windowId)
+            }
+        )
+    }
+
+    private func initialDocumentWarmupRuntime(
+        browserManager: BrowserManager?
+    ) -> InitialDocumentWarmupRuntime? {
+        guard let browserManager else { return nil }
+
+        return InitialDocumentWarmupRuntime(
+            needsInitialDocumentExtensionContextLoad: { [weak browserManager] profileId in
+                browserManager?.extensionsModule
+                    .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId) == true
+            },
+            ensureInitialDocumentExtensionContextsLoaded: { [weak browserManager] profileId in
+                await browserManager?.extensionsModule
+                    .ensureInitialDocumentExtensionContextsLoadedIfNeeded(
+                        profileId: profileId
+                    )
+            },
+            refreshCompositorForWindow: { [weak browserManager] windowId in
+                guard let browserManager,
+                      let windowState = browserManager.windowRegistry?.windows[windowId]
+                else { return }
+                browserManager.refreshCompositor(for: windowState)
             }
         )
     }
