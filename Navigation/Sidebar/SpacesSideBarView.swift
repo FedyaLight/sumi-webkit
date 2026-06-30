@@ -33,7 +33,7 @@ struct SpacesSideBarView: View {
     @EnvironmentObject private var dragState: SidebarDragState
 
     @State private var isSidebarHovered: Bool = false
-    @State private var transitionCoordinator = SpaceSidebarTransitionCoordinator()
+    @State private var runtimeOwner = SpacesSidebarRuntimeOwner()
     @ObservedObject private var nowPlayingController: SumiNativeNowPlayingController
     @ObservedObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @ObservedObject private var updaterService = SumiUpdaterService.shared
@@ -64,18 +64,22 @@ struct SpacesSideBarView: View {
     }
 
     private var transitionState: SpaceSidebarTransitionState {
-        transitionCoordinator.transitionState
+        runtimeOwner.transitionState
     }
 
     private var transitionSnapshot: SpaceSidebarTransitionSnapshot? {
-        transitionCoordinator.transitionSnapshot
+        runtimeOwner.transitionSnapshot
     }
 
     var body: some View {
         sidebarContent
             .contentShape(Rectangle())
             .onDisappear {
-                cancelLocalSpaceTransitionIfNeeded(cancelTheme: true)
+                runtimeOwner.cancelLocalSpaceTransitionIfNeeded(
+                    spaces: availableSpaces,
+                    dependencies: runtimeDependencies,
+                    cancelTheme: true
+                )
                 scrollHoverCoordinator.reset()
             }
             .onHover { state in
@@ -107,7 +111,10 @@ struct SpacesSideBarView: View {
     private var mainSidebarContent: some View {
         _ = browserContext.tabStructuralRevision()
         let spaces = availableSpaces
-        let visualSpaceId = visualSelectedSpaceId(in: spaces)
+        let visualSpaceId = runtimeOwner.visualSelectedSpaceId(
+            spaces: spaces,
+            dependencies: runtimeDependencies
+        )
 
         return VStack(spacing: 8) {
             SidebarHeader(browserContext: browserContext.headerContext(windowState))
@@ -212,10 +219,11 @@ struct SpacesSideBarView: View {
                                 progress: transitionState.progress,
                                 transitionIdentity: transitionState.transitionIdentity
                             ) { progress, transitionIdentity in
-                                handleTransitionProgressFrame(
+                                runtimeOwner.handleTransitionProgressFrame(
                                     progress,
                                     transitionIdentity: transitionIdentity,
-                                    spaces: spaces
+                                    spaces: spaces,
+                                    dependencies: runtimeDependencies
                                 )
                             }
                         )
@@ -226,26 +234,48 @@ struct SpacesSideBarView: View {
                                     && (transitionState.phase == .idle || transitionState.phase == .interactive)
                                     && sidebarInteractionState.allowsSidebarSwipeCapture
                             ) { event in
-                                handleSwipeEvent(event, spaces: spaces)
+                                runtimeOwner.handleSwipeEvent(
+                                    event,
+                                    spaces: spaces,
+                                    dependencies: runtimeDependencies
+                                )
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                         }
                 }
                 .clipped()
                 .onAppear {
-                    handleSpacesCollectionChange(spaces)
-                    refreshCommittedSidebarDragGeometryIfInteractive(spaces: spaces)
+                    runtimeOwner.handleSpacesCollectionChange(
+                        spaces: spaces,
+                        dependencies: runtimeDependencies
+                    )
+                    runtimeOwner.refreshCommittedSidebarDragGeometryIfInteractive(
+                        spaces: spaces,
+                        dependencies: runtimeDependencies
+                    )
                 }
                 .onChange(of: spaces.map(\.id)) { _, _ in
-                    handleSpacesCollectionChange(spaces)
-                    refreshCommittedSidebarDragGeometryIfInteractive(spaces: spaces)
+                    runtimeOwner.handleSpacesCollectionChange(
+                        spaces: spaces,
+                        dependencies: runtimeDependencies
+                    )
+                    runtimeOwner.refreshCommittedSidebarDragGeometryIfInteractive(
+                        spaces: spaces,
+                        dependencies: runtimeDependencies
+                    )
                 }
-                .onChange(of: committedSpaceId(in: spaces)) { _, _ in
-                    handleCommittedSpaceChange(spaces)
+                .onChange(of: runtimeOwner.committedSpaceId(spaces: spaces, dependencies: runtimeDependencies)) { _, _ in
+                    runtimeOwner.handleCommittedSpaceChange(
+                        spaces: spaces,
+                        dependencies: runtimeDependencies
+                    )
                 }
                 .onChange(of: allowsSidebarInteractiveWork) { _, allowsInteractiveWork in
                     if allowsInteractiveWork {
-                        refreshCommittedSidebarDragGeometry(spaces: spaces)
+                        runtimeOwner.refreshCommittedSidebarDragGeometry(
+                            spaces: spaces,
+                            dependencies: runtimeDependencies
+                        )
                     }
                 }
             }
@@ -266,16 +296,8 @@ struct SpacesSideBarView: View {
         sidebarPresentationContext.allowsInteractiveWork
     }
 
-    private func transitionContext(spaces: [Space]) -> SpaceSidebarTransitionCoordinator.Context {
-        let windowState = windowState
-        let browserContext = browserContext
-        return SpaceSidebarTransitionCoordinator.Context(
-            spaces: spaces,
-            currentSpaces: {
-                windowState.isIncognito
-                    ? windowState.ephemeralSpaces
-                    : browserContext.tabManager.spaces
-            },
+    private var runtimeDependencies: SpacesSidebarRuntimeOwner.Dependencies {
+        SpacesSidebarRuntimeOwner.Dependencies(
             windowState: windowState,
             browserContext: browserContext,
             dragState: dragState,
@@ -486,42 +508,38 @@ struct SpacesSideBarView: View {
     }
 
     private func sourceOpacity(for travelProgress: Double) -> Double {
-        transitionCoordinator.sourceOpacity(for: travelProgress)
+        runtimeOwner.sourceOpacity(for: travelProgress)
     }
 
     private func destinationOpacity(for travelProgress: Double) -> Double {
-        transitionCoordinator.destinationOpacity(for: travelProgress)
+        runtimeOwner.destinationOpacity(for: travelProgress)
     }
 
     private func sourceOffsetX(width: CGFloat) -> CGFloat {
-        transitionCoordinator.sourceOffsetX(width: width)
+        runtimeOwner.sourceOffsetX(width: width)
     }
 
     private func destinationOffsetX(width: CGFloat) -> CGFloat {
-        transitionCoordinator.destinationOffsetX(width: width)
+        runtimeOwner.destinationOffsetX(width: width)
     }
 
     private func committedSpaceId(in spaces: [Space]) -> UUID? {
-        transitionCoordinator.committedSpaceId(in: transitionContext(spaces: spaces))
-    }
-
-    private func visualSelectedSpaceId(in spaces: [Space]) -> UUID? {
-        transitionCoordinator.visualSelectedSpaceId(in: transitionContext(spaces: spaces))
+        runtimeOwner.committedSpaceId(spaces: spaces, dependencies: runtimeDependencies)
     }
 
     private func usesSharedPinnedGrid(
         sourceSpace: Space,
         destinationSpace: Space
     ) -> Bool {
-        transitionCoordinator.usesSharedPinnedGrid(
+        runtimeOwner.usesSharedPinnedGrid(
             sourceSpace: sourceSpace,
             destinationSpace: destinationSpace,
-            context: transitionContext(spaces: availableSpaces)
+            dependencies: runtimeDependencies
         )
     }
 
     private func space(for id: UUID?, in spaces: [Space]) -> Space? {
-        transitionCoordinator.space(for: id, in: transitionContext(spaces: spaces))
+        runtimeOwner.space(for: id, spaces: spaces, dependencies: runtimeDependencies)
     }
 
     private func handlePendingSplitGroupFocusRequest(
@@ -546,77 +564,18 @@ struct SpacesSideBarView: View {
         switchSpace(to: targetSpace, spaces: spaces)
     }
 
-    private func handleSpacesCollectionChange(_ spaces: [Space]) {
-        transitionCoordinator.handleSpacesCollectionChange(transitionContext(spaces: spaces))
-    }
-
-    private func handleCommittedSpaceChange(_ spaces: [Space]) {
-        transitionCoordinator.handleCommittedSpaceChange(transitionContext(spaces: spaces))
-    }
-
-    private func handleTransitionProgressFrame(
-        _ progress: Double,
-        transitionIdentity: SpaceTransitionIdentity?,
-        spaces: [Space]
-    ) {
-        transitionCoordinator.handleTransitionProgressFrame(
-            progress,
-            transitionIdentity: transitionIdentity,
-            context: transitionContext(spaces: spaces)
-        )
-    }
-
-    private func handleSwipeEvent(
-        _ event: SpaceSwipeGestureEvent,
-        spaces: [Space]
-    ) {
-        transitionCoordinator.handleSwipeEvent(
-            event,
-            context: transitionContext(spaces: spaces)
-        )
-    }
-
-    private func settleInteractiveSpaceTransition(commit: Bool) {
-        transitionCoordinator.settleInteractiveSpaceTransition(
-            commit: commit,
-            context: transitionContext(spaces: availableSpaces)
-        )
-    }
-
     private func switchSpace(
         to targetSpace: Space,
         spaces: [Space]
     ) {
-        transitionCoordinator.switchSpace(
+        runtimeOwner.switchSpace(
             to: targetSpace,
-            context: transitionContext(spaces: spaces)
-        )
-    }
-
-    private func cancelPendingSpaceTransition() {
-        transitionCoordinator.cancelPendingSpaceTransition()
-    }
-
-    private func cancelLocalSpaceTransitionIfNeeded(cancelTheme: Bool) {
-        transitionCoordinator.cancelLocalSpaceTransitionIfNeeded(
-            context: transitionContext(spaces: availableSpaces),
-            cancelTheme: cancelTheme
+            spaces: spaces,
+            dependencies: runtimeDependencies
         )
     }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private func refreshCommittedSidebarDragGeometryIfInteractive(spaces: [Space]) {
-        transitionCoordinator.refreshCommittedSidebarDragGeometryIfInteractive(
-            context: transitionContext(spaces: spaces)
-        )
-    }
-
-    private func refreshCommittedSidebarDragGeometry(spaces: [Space]) {
-        transitionCoordinator.refreshCommittedSidebarDragGeometry(
-            context: transitionContext(spaces: spaces)
-        )
-    }
 
     private var emptyStateView: some View {
         VStack(spacing: 16) {
@@ -821,9 +780,10 @@ struct SpacesSideBarView: View {
     }
 
     private func resolvedPageProfileId(for space: Space?) -> UUID? {
-        transitionCoordinator.resolvedPageProfileId(
+        runtimeOwner.resolvedPageProfileId(
             for: space,
-            context: transitionContext(spaces: availableSpaces)
+            spaces: availableSpaces,
+            dependencies: runtimeDependencies
         )
     }
 
