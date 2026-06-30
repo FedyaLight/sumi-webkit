@@ -1,31 +1,23 @@
-import OSLog
 import WebKit
 
 @MainActor
 final class BrowserWebViewRoutingService {
     typealias TabLookup = @MainActor (UUID) -> Tab?
-    typealias WebViewCoordinatorLookup = @MainActor () -> WebViewCoordinator?
-
-    private static let log = Logger.sumi(category: "WebViewRoutingService")
+    typealias WebViewCoordinatorProvider = @MainActor () -> WebViewCoordinator
 
     private let tabLookup: TabLookup
-    private let coordinatorLookup: WebViewCoordinatorLookup
+    private let coordinatorProvider: WebViewCoordinatorProvider
 
     init(
         tabLookup: @escaping TabLookup,
-        coordinatorLookup: @escaping WebViewCoordinatorLookup
+        coordinatorProvider: @escaping WebViewCoordinatorProvider
     ) {
         self.tabLookup = tabLookup
-        self.coordinatorLookup = coordinatorLookup
+        self.coordinatorProvider = coordinatorProvider
     }
 
     func webView(for tabId: UUID, in windowId: UUID) -> WKWebView? {
-        guard let coordinator = resolvedCoordinator(
-            for: "webView",
-            tabId: tabId,
-            windowId: windowId
-        ) else { return nil }
-        return coordinator.getWebView(for: tabId, in: windowId)
+        coordinatorProvider().getWebView(for: tabId, in: windowId)
     }
 
     func windowOwnedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
@@ -35,10 +27,7 @@ final class BrowserWebViewRoutingService {
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
         guard let tab = tabLookup(tabId) else { return }
         guard ExtensionUtils.isExtensionOwnedURL(tab.url) == false else { return }
-        guard let coordinator = resolvedCoordinator(
-            for: "syncTabAcrossWindows",
-            tabId: tabId
-        ) else { return }
+        let coordinator = coordinatorProvider()
         coordinator.syncTab(
             tab,
             to: tab.url,
@@ -48,43 +37,17 @@ final class BrowserWebViewRoutingService {
 
     func reloadTabAcrossWindows(_ tabId: UUID) {
         guard let tab = tabLookup(tabId) else { return }
-        guard let coordinator = resolvedCoordinator(
-            for: "reloadTabAcrossWindows",
-            tabId: tabId
-        ) else { return }
+        let coordinator = coordinatorProvider()
         coordinator.reloadTab(tab)
     }
 
     func reloadTab(_ tabId: UUID, in windowId: UUID) {
         guard let tab = tabLookup(tabId) else { return }
-        guard let coordinator = resolvedCoordinator(
-            for: "reloadTab",
-            tabId: tabId,
-            windowId: windowId
-        ) else { return }
+        let coordinator = coordinatorProvider()
         coordinator.reloadTab(tab, in: windowId)
     }
 
     func setMuteState(_ muted: Bool, for tabId: UUID) {
-        guard let coordinator = resolvedCoordinator(
-            for: "setMuteState",
-            tabId: tabId
-        ) else { return }
-        coordinator.setMuteState(muted, for: tabId)
-    }
-
-    private func resolvedCoordinator(
-        for operation: String,
-        tabId: UUID,
-        windowId: UUID? = nil
-    ) -> WebViewCoordinator? {
-        guard let coordinator = coordinatorLookup() else {
-            let windowDescription = windowId?.uuidString ?? "none"
-            Self.log.error(
-                "Dropping \(operation, privacy: .public) because WebViewCoordinator is nil. tab=\(tabId.uuidString, privacy: .public) window=\(windowDescription, privacy: .public)"
-            )
-            return nil
-        }
-        return coordinator
+        coordinatorProvider().setMuteState(muted, for: tabId)
     }
 }

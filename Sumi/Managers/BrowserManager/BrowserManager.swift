@@ -223,8 +223,13 @@ class BrowserManager: ObservableObject {
         tabLookup: { [weak self] tabId in
             self?.tabManager.tab(for: tabId)
         },
-        coordinatorLookup: { [weak self] in
-            self?.webViewCoordinator
+        coordinatorProvider: { [weak self] in
+            guard let self else {
+                preconditionFailure(
+                    "BrowserManager was released before WebView routing resolved its coordinator."
+                )
+            }
+            return self.requireWebViewCoordinator()
         }
     )
     lazy var windowSessionService = WindowSessionService(

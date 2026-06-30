@@ -5,21 +5,26 @@ import XCTest
 
 @MainActor
 final class BrowserWebViewRoutingServiceTests: XCTestCase {
-    func testNilCoordinatorReturnsNilAndDropsRoutingOperations() throws {
-        let tab = Tab(
-            url: try XCTUnwrap(URL(string: "https://example.com/page")),
-            loadsCachedFaviconOnInit: false
-        )
+    func testMissingTabDoesNotResolveCoordinatorForTabBackedOperations() throws {
+        let coordinator = RecordingWebViewCoordinator()
+        var coordinatorReadCount = 0
         let service = BrowserWebViewRoutingService(
-            tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            coordinatorLookup: { nil }
+            tabLookup: { _ in nil },
+            coordinatorProvider: {
+                coordinatorReadCount += 1
+                return coordinator
+            }
         )
+        let tabId = UUID()
 
-        XCTAssertNil(service.webView(for: tab.id, in: UUID()))
-        service.syncTabAcrossWindows(tab.id)
-        service.reloadTabAcrossWindows(tab.id)
-        service.reloadTab(tab.id, in: UUID())
-        service.setMuteState(true, for: tab.id)
+        service.syncTabAcrossWindows(tabId)
+        service.reloadTabAcrossWindows(tabId)
+        service.reloadTab(tabId, in: UUID())
+
+        XCTAssertEqual(coordinatorReadCount, 0)
+        XCTAssertTrue(coordinator.syncCalls.isEmpty)
+        XCTAssertTrue(coordinator.reloadCalls.isEmpty)
+        XCTAssertTrue(coordinator.windowReloadCalls.isEmpty)
     }
 
     func testCoordinatorCallsStillDelegateWhenCoordinatorIsPresent() throws {
@@ -35,7 +40,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         let reloadWindowId = UUID()
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            coordinatorLookup: { coordinator }
+            coordinatorProvider: { coordinator }
         )
 
         let webView = service.webView(for: tab.id, in: windowId)
@@ -76,7 +81,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         coordinator.webViewToReturn = trackedWebView
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            coordinatorLookup: { coordinator }
+            coordinatorProvider: { coordinator }
         )
 
         XCTAssertIdentical(service.windowOwnedWebView(for: tab, in: UUID()), trackedWebView)
@@ -92,7 +97,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         let coordinator = RecordingWebViewCoordinator()
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            coordinatorLookup: { coordinator }
+            coordinatorProvider: { coordinator }
         )
 
         XCTAssertNil(service.windowOwnedWebView(for: tab, in: UUID()))
@@ -108,7 +113,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         let coordinator = RecordingWebViewCoordinator()
         let service = BrowserWebViewRoutingService(
             tabLookup: { tabId in tabId == tab.id ? tab : nil },
-            coordinatorLookup: { coordinator }
+            coordinatorProvider: { coordinator }
         )
 
         XCTAssertNil(service.windowOwnedWebView(for: tab, in: UUID()))
