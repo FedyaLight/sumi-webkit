@@ -34,6 +34,11 @@ struct SpacesSideBarView: View {
 
     @State private var isSidebarHovered: Bool = false
     @State private var runtimeOwner = SpacesSidebarRuntimeOwner()
+    @ObservedObject private var tabManager: TabManager
+    @ObservedObject private var profileManager: ProfileManager
+    @ObservedObject private var liveFolderManager: SumiLiveFolderManager
+    @ObservedObject private var splitManager: SplitViewManager
+    @ObservedObject private var downloadManager: DownloadManager
     @ObservedObject private var nowPlayingController: SumiNativeNowPlayingController
     @ObservedObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
     @ObservedObject private var updaterService = SumiUpdaterService.shared
@@ -45,6 +50,11 @@ struct SpacesSideBarView: View {
         nowPlayingController: SumiNativeNowPlayingController
     ) {
         self.browserContext = browserContext
+        self._tabManager = ObservedObject(wrappedValue: browserContext.tabManager)
+        self._profileManager = ObservedObject(wrappedValue: browserContext.profileManager)
+        self._liveFolderManager = ObservedObject(wrappedValue: browserContext.liveFolderManager)
+        self._splitManager = ObservedObject(wrappedValue: browserContext.splitManager)
+        self._downloadManager = ObservedObject(wrappedValue: browserContext.downloadManager)
         self.nowPlayingController = nowPlayingController
         self._extensionSurfaceStore = ObservedObject(
             wrappedValue: browserContext.extensionSurfaceStore

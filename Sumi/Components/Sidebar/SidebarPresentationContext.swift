@@ -1,8 +1,18 @@
+import Combine
 import SwiftUI
 
 @MainActor
+struct SidebarHostActions {
+    let updateSidebarWidth: (CGFloat, BrowserWindowState, Bool) -> Void
+    let persistWindowSession: (BrowserWindowState) -> Void
+    let dismissWorkspaceThemePickerIfNeededCommitting: () -> Void
+}
+
+@MainActor
 struct SidebarHostEnvironmentContext {
-    let browserManager: BrowserManager
+    let browserContext: SidebarBrowserContext
+    let hostActions: SidebarHostActions
+    let structuralInvalidation: AnyPublisher<Void, Never>
     let windowState: BrowserWindowState
     let windowRegistry: WindowRegistry
     let sumiSettings: SumiSettingsService
@@ -116,7 +126,7 @@ extension EnvironmentValues {
 extension View {
     func sidebarHostEnvironment(_ context: SidebarHostEnvironmentContext) -> some View {
         self
-            .environmentObject(context.browserManager.extensionSurfaceStore)
+            .environmentObject(context.browserContext.extensionSurfaceStore)
             .environmentObject(context.nowPlayingController)
             .environment(context.windowState)
             .environment(context.windowRegistry)

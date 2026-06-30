@@ -1,3 +1,4 @@
+import Combine
 import CoreGraphics
 import XCTest
 
@@ -5,6 +6,30 @@ import XCTest
 
 @MainActor
 final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
+    func testSidebarStructuralInvalidationTracksProfileRuntimeState() {
+        let browserManager = BrowserManager()
+        let context = WindowViewBrowserContext(browserManager: browserManager)
+        var invalidationCount = 0
+        let cancellable = context.sidebarStructuralInvalidation.sink {
+            invalidationCount += 1
+        }
+        let initialInvalidationCount = invalidationCount
+
+        browserManager.isTransitioningProfile = true
+        XCTAssertEqual(invalidationCount, initialInvalidationCount + 1)
+
+        browserManager.isTransitioningProfile = false
+        XCTAssertEqual(invalidationCount, initialInvalidationCount + 2)
+
+        browserManager.currentProfile = Profile(name: "Sidebar Runtime")
+        XCTAssertEqual(invalidationCount, initialInvalidationCount + 3)
+
+        browserManager.tabStructuralRevision &+= 1
+        XCTAssertEqual(invalidationCount, initialInvalidationCount + 4)
+
+        cancellable.cancel()
+    }
+
     func testSidebarColumnHostedRootCarriesInjectedDragState() throws {
         let nowPlayingController = SumiNativeNowPlayingController()
         let browserManager = BrowserManager(nowPlayingController: nowPlayingController)
@@ -18,7 +43,13 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         }
 
         let root = SidebarColumnHostedRoot.view(
-            browserManager: browserManager,
+            browserContext: SidebarBrowserContext.live(browserManager: browserManager),
+            hostActions: SidebarHostActions(
+                updateSidebarWidth: { _, _, _ in },
+                persistWindowSession: { _ in },
+                dismissWorkspaceThemePickerIfNeededCommitting: {}
+            ),
+            structuralInvalidation: Empty().eraseToAnyPublisher(),
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: SumiSettingsService(userDefaults: settingsDefaults),
@@ -34,6 +65,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertTrue(root.environmentContext.sidebarDragState.locationTracker === dragState.locationTracker)
         XCTAssertFalse(root.environmentContext.sidebarDragState === SidebarDragState.shared)
         XCTAssertTrue(root.environmentContext.nowPlayingController === nowPlayingController)
+        XCTAssertTrue(root.environmentContext.browserContext.extensionSurfaceStore === browserManager.extensionSurfaceStore)
         XCTAssertEqual(root.presentationContext, .docked(sidebarWidth: 280))
     }
 }

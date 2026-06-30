@@ -77,7 +77,9 @@ struct WindowView: View {
                             resolvedThemeContext: resolvedThemeContext,
                             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
                             windowChromeSize: windowChromeSize,
-                            browserManager: browserContext.browserManagerForUnmigratedChildren,
+                            browserContext: browserContext.sidebarBrowserContext,
+                            hostActions: browserContext.sidebarHostActions,
+                            structuralInvalidation: browserContext.sidebarStructuralInvalidation,
                             sidebarDragState: sidebarDragState
                         )
                             .environmentObject(hoverSidebarManager)
@@ -327,7 +329,9 @@ struct WindowView: View {
         let layoutWidth = presentationContext.sidebarWidth * layoutProgress
 
         SidebarColumnRepresentable(
-            browserManager: browserContext.browserManagerForUnmigratedChildren,
+            browserContext: browserContext.sidebarBrowserContext,
+            hostActions: browserContext.sidebarHostActions,
+            structuralInvalidation: browserContext.sidebarStructuralInvalidation,
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,

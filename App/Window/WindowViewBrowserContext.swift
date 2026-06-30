@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 @MainActor
@@ -22,6 +23,33 @@ final class WindowViewBrowserContext {
 
     var floatingBarBrowserContext: FloatingBarBrowserContext {
         browserManager.floatingBarBrowserContext
+    }
+
+    var sidebarBrowserContext: SidebarBrowserContext {
+        SidebarBrowserContext.live(browserManager: browserManager)
+    }
+
+    var sidebarHostActions: SidebarHostActions {
+        SidebarHostActions(
+            updateSidebarWidth: { [weak browserManager] width, windowState, persist in
+                browserManager?.updateSidebarWidth(width, for: windowState, persist: persist)
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.persistWindowSession(for: windowState)
+            },
+            dismissWorkspaceThemePickerIfNeededCommitting: { [weak browserManager] in
+                browserManager?.dismissWorkspaceThemePickerIfNeededCommitting()
+            }
+        )
+    }
+
+    var sidebarStructuralInvalidation: AnyPublisher<Void, Never> {
+        Publishers.MergeMany(
+            browserManager.$tabStructuralRevision.map { _ in () }.eraseToAnyPublisher(),
+            browserManager.$currentProfile.map { _ in () }.eraseToAnyPublisher(),
+            browserManager.$isTransitioningProfile.map { _ in () }.eraseToAnyPublisher()
+        )
+        .eraseToAnyPublisher()
     }
 
     var nativeModalPresentation: BrowserNativeModalPresentation? {

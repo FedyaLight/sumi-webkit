@@ -5,6 +5,7 @@
 //
 
 import AppKit
+import Combine
 import SwiftUI
 
 enum SidebarHoverOverlayTransientPinningPolicy {
@@ -70,7 +71,9 @@ struct SidebarHoverOverlayView: View {
     let resolvedThemeContext: ResolvedThemeContext
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     let windowChromeSize: CGSize
-    let browserManager: BrowserManager
+    let browserContext: SidebarBrowserContext
+    let hostActions: SidebarHostActions
+    let structuralInvalidation: AnyPublisher<Void, Never>
     @ObservedObject private var dragState: SidebarDragState
 
     @EnvironmentObject var hoverManager: HoverSidebarManager
@@ -83,13 +86,17 @@ struct SidebarHoverOverlayView: View {
         resolvedThemeContext: ResolvedThemeContext,
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
         windowChromeSize: CGSize,
-        browserManager: BrowserManager,
+        browserContext: SidebarBrowserContext,
+        hostActions: SidebarHostActions,
+        structuralInvalidation: AnyPublisher<Void, Never>,
         sidebarDragState: SidebarDragState
     ) {
         self.resolvedThemeContext = resolvedThemeContext
         self.chromeBackgroundResolvedThemeContext = chromeBackgroundResolvedThemeContext
         self.windowChromeSize = windowChromeSize
-        self.browserManager = browserManager
+        self.browserContext = browserContext
+        self.hostActions = hostActions
+        self.structuralInvalidation = structuralInvalidation
         self._dragState = ObservedObject(wrappedValue: sidebarDragState)
     }
 
@@ -206,7 +213,9 @@ struct SidebarHoverOverlayView: View {
 
     private var collapsedOverlayHost: some View {
         CollapsedSidebarOverlayHost(
-            browserManager: browserManager,
+            browserContext: browserContext,
+            hostActions: hostActions,
+            structuralInvalidation: structuralInvalidation,
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,

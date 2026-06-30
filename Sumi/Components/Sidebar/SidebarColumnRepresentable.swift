@@ -1,16 +1,17 @@
 import AppKit
+import Combine
 import SwiftUI
 
 struct SidebarColumnHostedRootView: View {
     let environmentContext: SidebarHostEnvironmentContext
     let presentationContext: SidebarPresentationContext
+    @State private var structuralInvalidationGeneration: UInt = 0
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     var body: some View {
+        let _ = structuralInvalidationGeneration
         SpacesSideBarView(
-            browserContext: SidebarBrowserContext.live(
-                browserManager: environmentContext.browserManager
-            ),
+            browserContext: environmentContext.browserContext,
             nowPlayingController: environmentContext.nowPlayingController
         )
             .frame(width: presentationContext.sidebarWidth, alignment: .leading)
@@ -20,14 +21,14 @@ struct SidebarColumnHostedRootView: View {
                     SidebarResizeView(
                         sidebarPosition: presentationContext.sidebarPosition,
                         onResize: { width, windowState, persist in
-                            environmentContext.browserManager.updateSidebarWidth(
+                            environmentContext.hostActions.updateSidebarWidth(
                                 width,
-                                for: windowState,
-                                persist: persist
+                                windowState,
+                                persist
                             )
                         },
                         onEndResize: { windowState in
-                            environmentContext.browserManager.persistWindowSession(for: windowState)
+                            environmentContext.hostActions.persistWindowSession(windowState)
                         }
                     )
                         .frame(maxHeight: .infinity)
@@ -52,6 +53,9 @@ struct SidebarColumnHostedRootView: View {
             )
             .sidebarHostEnvironment(environmentContext)
             .environment(\.sidebarPresentationContext, presentationContext)
+            .onReceive(environmentContext.structuralInvalidation) { _ in
+                structuralInvalidationGeneration &+= 1
+            }
             // `NSHostingController` roots do not inherit `ContentView`’s `.ignoresSafeArea`; without this,
             // macOS reserves a title-bar safe area above the sidebar chrome when using `fullSizeContentView`.
             .ignoresSafeArea(.container, edges: .top)
@@ -68,7 +72,6 @@ struct SidebarColumnHostedRootView: View {
                 gradientFieldSize: resolvedGradientFieldSize,
                 viewport: sidebarGradientViewport
             )
-            .environmentObject(environmentContext.browserManager)
             .environment(environmentContext.windowState)
             .environment(\.sumiSettings, environmentContext.sumiSettings)
             .environment(\.resolvedThemeContext, environmentContext.chromeBackgroundResolvedThemeContext)
@@ -142,7 +145,9 @@ struct SidebarColumnHostedRootView: View {
 enum SidebarColumnHostedRoot {
     @MainActor
     static func view(
-        browserManager: BrowserManager,
+        browserContext: SidebarBrowserContext,
+        hostActions: SidebarHostActions,
+        structuralInvalidation: AnyPublisher<Void, Never>,
         windowState: BrowserWindowState,
         windowRegistry: WindowRegistry,
         sumiSettings: SumiSettingsService,
@@ -155,7 +160,9 @@ enum SidebarColumnHostedRoot {
     ) -> SidebarColumnHostedRootView {
         SidebarColumnHostedRootView(
             environmentContext: SidebarHostEnvironmentContext(
-                browserManager: browserManager,
+                browserContext: browserContext,
+                hostActions: hostActions,
+                structuralInvalidation: structuralInvalidation,
                 windowState: windowState,
                 windowRegistry: windowRegistry,
                 sumiSettings: sumiSettings,
@@ -171,7 +178,9 @@ enum SidebarColumnHostedRoot {
 }
 
 struct SidebarColumnRepresentable: NSViewControllerRepresentable {
-    @ObservedObject var browserManager: BrowserManager
+    var browserContext: SidebarBrowserContext
+    var hostActions: SidebarHostActions
+    var structuralInvalidation: AnyPublisher<Void, Never>
     var windowState: BrowserWindowState
     var windowRegistry: WindowRegistry
     var sumiSettings: SumiSettingsService
@@ -188,7 +197,9 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
 
     func updateNSViewController(_ controller: SidebarColumnViewController, context: Context) {
         let root = SidebarColumnHostedRoot.view(
-            browserManager: browserManager,
+            browserContext: browserContext,
+            hostActions: hostActions,
+            structuralInvalidation: structuralInvalidation,
             windowState: windowState,
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
@@ -205,8 +216,8 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             contextMenuController: windowState.sidebarContextMenuController,
             capturesOverlayBackgroundPointerEvents: presentationContext.capturesOverlayBackgroundPointerEvents,
             isCollapsedOverlayHitTestingEnabled: presentationContext.mode == .collapsedVisible,
-            onPointerDown: { [weak browserManager] in
-                browserManager?.dismissWorkspaceThemePickerIfNeededCommitting()
+            onPointerDown: {
+                hostActions.dismissWorkspaceThemePickerIfNeededCommitting()
             }
         )
     }
