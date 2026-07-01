@@ -135,6 +135,13 @@ extension BrowserURLBarContextOwner.Dependencies {
                 },
                 goForward: { [weak browserManager] windowState in
                     browserManager?.goForward(in: windowState)
+                },
+                reload: { [weak browserManager] tab, windowState in
+                    browserManager?.refreshWindowScopedPage(
+                        tab: tab,
+                        in: windowState,
+                        reason: "NavigationToolbar.reload"
+                    )
                 }
             )
         )

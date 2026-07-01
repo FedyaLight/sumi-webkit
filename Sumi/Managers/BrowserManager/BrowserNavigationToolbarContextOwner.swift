@@ -13,6 +13,7 @@ final class BrowserNavigationToolbarContextOwner {
         let openHistoryURLsInNewWindow: @MainActor ([URL]) -> Void
         let goBack: @MainActor (BrowserWindowState) -> Void
         let goForward: @MainActor (BrowserWindowState) -> Void
+        let reload: @MainActor (Tab, BrowserWindowState) -> Void
     }
 
     private let dependencies: Dependencies
@@ -41,6 +42,10 @@ final class BrowserNavigationToolbarContextOwner {
             goForward: { [weak self, weak windowState] in
                 guard let self, let windowState else { return }
                 self.dependencies.goForward(windowState)
+            },
+            reload: { [weak self, weak windowState] tab in
+                guard let self, let windowState else { return }
+                self.dependencies.reload(tab, windowState)
             }
         )
     }

@@ -178,6 +178,25 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
         XCTAssertIdentical(forwardWindow, windowState)
     }
 
+    func testToolbarReloadActionUsesBoundWindow() {
+        let windowState = BrowserWindowState()
+        let tab = makeTab("https://reload.example")
+        var reloadedTabId: UUID?
+        var reloadedWindowId: UUID?
+        let owner = makeOwner(
+            reload: { tab, windowState in
+                reloadedTabId = tab.id
+                reloadedWindowId = windowState.id
+            }
+        )
+
+        let context = owner.navigationToolbarContext(for: windowState)
+        context.reload(tab)
+
+        XCTAssertEqual(reloadedTabId, tab.id)
+        XCTAssertEqual(reloadedWindowId, windowState.id)
+    }
+
     private func makeOwner(
         currentTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
         webView: @escaping @MainActor (Tab, BrowserWindowState) -> WKWebView? = { _, _ in nil },
@@ -185,7 +204,8 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
         openNewTab: @escaping @MainActor (String, BrowserTabOpenContext) -> Void = { _, _ in },
         openHistoryURLsInNewWindow: @escaping @MainActor ([URL]) -> Void = { _ in },
         goBack: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
-        goForward: @escaping @MainActor (BrowserWindowState) -> Void = { _ in }
+        goForward: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
+        reload: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in }
     ) -> BrowserNavigationToolbarContextOwner {
         BrowserNavigationToolbarContextOwner(
             dependencies: BrowserNavigationToolbarContextOwner.Dependencies(
@@ -201,7 +221,8 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
                 openNewTab: openNewTab,
                 openHistoryURLsInNewWindow: openHistoryURLsInNewWindow,
                 goBack: goBack,
-                goForward: goForward
+                goForward: goForward,
+                reload: reload
             )
         )
     }

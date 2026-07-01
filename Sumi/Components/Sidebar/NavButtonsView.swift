@@ -46,6 +46,7 @@ class ObservableTabWrapper: ObservableObject {
 
     func setWebViewProvider(_ provider: @escaping (Tab) -> WKWebView?) {
         webViewProvider = provider
+        refreshNavigationState()
     }
 
     func activeWebView() -> WKWebView? {
@@ -54,17 +55,10 @@ class ObservableTabWrapper: ObservableObject {
     }
 
     private func refreshNavigationState() {
-        // Tab already maintains canGoBack/canGoForward in sync with the
-        // underlying WKWebView via TabNavigationStateController (and posts
-        // .sumiTabNavigationStateDidChange only on real change). Reading the
-        // cached Tab values avoids a KVO round-trip into WebKit on every
-        // navigation notification while staying accurate in every case the
-        // notification covers.
-        canGoBack = tab?.canGoBack ?? false
-        canGoForward = tab?.canGoForward ?? false
-
         let webView = activeWebView()
-        isLoading = (tab?.loadingState.isLoading ?? false) || (webView?.isLoading ?? false)
+        canGoBack = webView?.canGoBack ?? false
+        canGoForward = webView?.canGoForward ?? false
+        isLoading = webView?.isLoading ?? false
         canReload = tab.map { !$0.representsSumiEmptySurface && !$0.representsSumiNativeSurface } ?? false
     }
 }
@@ -76,6 +70,7 @@ struct NavigationToolbarBrowserContext {
     let historyContext: SumiNavigationHistoryContext
     let goBack: () -> Void
     let goForward: () -> Void
+    let reload: (Tab) -> Void
 }
 
 struct NavButtonsView: View {
@@ -172,7 +167,7 @@ struct NavButtonsView: View {
         if tabWrapper.isLoading {
             tab.stopLoading(on: activeWebView())
         } else {
-            tab.refresh()
+            browserContext.reload(tab)
         }
     }
 }

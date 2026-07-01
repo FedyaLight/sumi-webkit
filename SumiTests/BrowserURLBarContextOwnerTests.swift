@@ -1,3 +1,4 @@
+import WebKit
 import XCTest
 
 @testable import Sumi
@@ -111,6 +112,31 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         XCTAssertNil(context.bookmarkEditorPresentationRequest)
     }
 
+    func testNavigationToolbarReloadUsesWindowScopedRefreshPath() {
+        removePersistedWindowSession()
+        defer { removePersistedWindowSession() }
+
+        let harness = makeHarness()
+        let tab = harness.browserManager.tabManager.createNewTab(
+            url: "https://reload.example",
+            in: harness.primarySpace,
+            activate: false
+        )
+        harness.windowState.currentTabId = tab.id
+        harness.browserManager.webViewCoordinator?.setWebView(
+            WKWebView(),
+            for: tab.id,
+            in: harness.windowState.id
+        )
+
+        harness.browserManager
+            .navigationToolbarContext(for: harness.windowState)
+            .reload(tab)
+
+        XCTAssertTrue(tab.loadingState.isLoading)
+    }
+
+
     private func makeHarness() -> Harness {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
@@ -121,6 +147,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager.spaces = [primarySpace]
         browserManager.tabManager.currentSpace = primarySpace
 

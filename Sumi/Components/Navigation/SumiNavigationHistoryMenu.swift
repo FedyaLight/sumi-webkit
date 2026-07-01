@@ -11,6 +11,7 @@ struct SumiNavigationHistoryMenuItem {
     let url: URL?
     let title: String
     let backForwardItem: WKBackForwardListItem?
+    let sourceWebViewObjectID: ObjectIdentifier?
     let isCurrent: Bool
 
     init(
@@ -18,17 +19,23 @@ struct SumiNavigationHistoryMenuItem {
         url: URL?,
         title: String,
         backForwardItem: WKBackForwardListItem? = nil,
+        sourceWebViewObjectID: ObjectIdentifier? = nil,
         isCurrent: Bool
     ) {
         self.id = id
         self.url = url
         self.title = title
         self.backForwardItem = backForwardItem
+        self.sourceWebViewObjectID = sourceWebViewObjectID
         self.isCurrent = isCurrent
     }
 
     @MainActor
-    init(backForwardItem: WKBackForwardListItem, isCurrent: Bool) {
+    init(
+        backForwardItem: WKBackForwardListItem,
+        sourceWebView: WKWebView,
+        isCurrent: Bool
+    ) {
         self.init(
             url: backForwardItem.url,
             title: NavigationHistoryDisplayTitle.resolve(
@@ -37,6 +44,7 @@ struct SumiNavigationHistoryMenuItem {
                 url: backForwardItem.url
             ),
             backForwardItem: backForwardItem,
+            sourceWebViewObjectID: ObjectIdentifier(sourceWebView),
             isCurrent: isCurrent
         )
     }
@@ -60,12 +68,27 @@ enum SumiNavigationHistoryMenuModel {
     ) -> [SumiNavigationHistoryMenuItem] {
         guard let current = currentItem(tab: tab, webView: webView) else { return [] }
 
-        let backItems = webView?.backForwardList.backList.map {
-            SumiNavigationHistoryMenuItem(backForwardItem: $0, isCurrent: false)
-        } ?? []
-        let forwardItems = webView?.backForwardList.forwardList.map {
-            SumiNavigationHistoryMenuItem(backForwardItem: $0, isCurrent: false)
-        } ?? []
+        let backItems: [SumiNavigationHistoryMenuItem]
+        let forwardItems: [SumiNavigationHistoryMenuItem]
+        if let webView {
+            backItems = webView.backForwardList.backList.map {
+                SumiNavigationHistoryMenuItem(
+                    backForwardItem: $0,
+                    sourceWebView: webView,
+                    isCurrent: false
+                )
+            }
+            forwardItems = webView.backForwardList.forwardList.map {
+                SumiNavigationHistoryMenuItem(
+                    backForwardItem: $0,
+                    sourceWebView: webView,
+                    isCurrent: false
+                )
+            }
+        } else {
+            backItems = []
+            forwardItems = []
+        }
 
         return orderedItems(
             current: current,
@@ -110,7 +133,9 @@ enum SumiNavigationHistoryMenuModel {
             guard !item.isCurrent else { return }
 
             if let backForwardItem = item.backForwardItem,
-               let webView {
+               let webView,
+               item.sourceWebViewObjectID == ObjectIdentifier(webView),
+               backForwardItemBelongsToWebView(backForwardItem, webView) {
                 SumiWebViewNavigator.go(to: backForwardItem, on: webView)
             } else {
                 historyContext?.openURLInCurrentTab(url, tab)
@@ -120,6 +145,17 @@ enum SumiNavigationHistoryMenuModel {
         case .newWindow:
             historyContext?.openURLsInNewWindow([url])
         }
+    }
+
+    @MainActor
+    private static func backForwardItemBelongsToWebView(
+        _ item: WKBackForwardListItem,
+        _ webView: WKWebView
+    ) -> Bool {
+        let list = webView.backForwardList
+        return list.currentItem === item
+            || list.backList.contains { $0 === item }
+            || list.forwardList.contains { $0 === item }
     }
 
     @discardableResult
@@ -155,9 +191,11 @@ enum SumiNavigationHistoryMenuModel {
         tab: Tab?,
         webView: WKWebView?
     ) -> SumiNavigationHistoryMenuItem? {
-        if let currentBackForwardItem = webView?.backForwardList.currentItem {
+        if let webView,
+           let currentBackForwardItem = webView.backForwardList.currentItem {
             return SumiNavigationHistoryMenuItem(
                 backForwardItem: currentBackForwardItem,
+                sourceWebView: webView,
                 isCurrent: true
             )
         }
