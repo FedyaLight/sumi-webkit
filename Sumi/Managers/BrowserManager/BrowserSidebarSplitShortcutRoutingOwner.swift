@@ -324,7 +324,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         guard let currentSpaceId = windowState.currentSpaceId,
               let currentSpace = dependencies.space(currentSpaceId)
         else {
-            return tabManager.tabs.first
+            return nil
         }
         return tabManager.tabs(in: currentSpace).first
     }
