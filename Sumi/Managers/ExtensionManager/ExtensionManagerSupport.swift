@@ -109,6 +109,7 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
     case tabUnavailable
     case tabWebViewUnavailable
     case tabUnavailableUntilReload
+    case tabWindowUnavailable
 
     var domain: String {
         switch self {
@@ -118,7 +119,8 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
             return "ExtensionMiniWindowAdapter"
         case .tabUnavailable,
              .tabWebViewUnavailable,
-             .tabUnavailableUntilReload:
+             .tabUnavailableUntilReload,
+             .tabWindowUnavailable:
             return "ExtensionTabAdapter"
         }
     }
@@ -135,6 +137,8 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
             return 2
         case .tabUnavailableUntilReload:
             return 3
+        case .tabWindowUnavailable:
+            return 4
         }
     }
 
@@ -150,6 +154,8 @@ enum ExtensionBridgeAdapterCallbackError: LocalizedError, Equatable, Sendable {
             return "No live web view is available for this tab"
         case .tabUnavailableUntilReload:
             return "Tab is not available to extensions until it is reloaded or navigates to a new document"
+        case .tabWindowUnavailable:
+            return "No browser window is available for this tab"
         }
     }
 

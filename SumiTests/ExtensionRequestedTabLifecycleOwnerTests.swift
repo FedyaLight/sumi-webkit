@@ -92,6 +92,67 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
         XCTAssertEqual(targetSpace?.id, harness.spaceB.id)
     }
 
+    func testExtensionTargetSpaceWithoutWindowDoesNotFallbackToGlobalCurrentSpace() throws {
+        let harness = try makeProfileRoutingHarness()
+
+        let targetSpace = harness.browserManager.extensionTargetSpace(
+            for: nil as BrowserWindowState?
+        )
+
+        XCTAssertNil(targetSpace)
+    }
+
+    func testExtensionTargetSpaceForTabWithoutSpaceDoesNotFallbackToGlobalCurrentSpace() throws {
+        let harness = try makeProfileRoutingHarness()
+        let tab = Tab(
+            url: URL(string: "https://example.com/no-space")!,
+            name: "No Space"
+        )
+
+        let targetSpace = harness.browserManager.extensionTargetSpace(for: tab)
+
+        XCTAssertNil(targetSpace)
+    }
+
+    func testPopupCurrentTabDoesNotFallbackToGlobalTabManagerCurrentTab() throws {
+        let harness = try makeProfileRoutingHarness()
+        let tab = harness.browserManager.tabManager.createNewTab(
+            url: "https://example.com/current",
+            in: harness.spaceA,
+            activate: true
+        )
+
+        XCTAssertEqual(harness.browserManager.tabManager.currentTab?.id, tab.id)
+        XCTAssertNil(harness.browserManager.currentExtensionTabForPopup())
+    }
+
+    func testPreferredExtensionWindowStateResolvesTransientTabFromDisplayedSpace() throws {
+        let harness = try makeProfileRoutingHarness()
+        let windowRegistry = WindowRegistry()
+        harness.browserManager.windowRegistry = windowRegistry
+        let windowState = BrowserWindowState()
+        windowState.currentProfileId = harness.profileA.id
+        windowState.currentSpaceId = harness.spaceA.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+
+        let tab = harness.browserManager.tabManager.createTransientExtensionTab(
+            url: "safari-web-extension://extension-id/popup.html",
+            in: harness.spaceA,
+            webExtensionContextOverride: nil
+        )
+
+        XCTAssertTrue(harness.browserManager.tabManager.isTransientExtensionTab(tab))
+        XCTAssertFalse(
+            harness.browserManager.tabManager.tabsBySpace[harness.spaceA.id]?.contains { $0.id == tab.id }
+                ?? false
+        )
+        XCTAssertEqual(
+            harness.browserManager.preferredExtensionWindowState(containing: tab)?.id,
+            windowState.id
+        )
+    }
+
     func testExtensionTargetSpaceUsesWindowProfileBeforeCurrentSpaceFallback() throws {
         let harness = try makeProfileRoutingHarness()
         let windowState = BrowserWindowState()
@@ -113,6 +174,7 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
     private struct ProfileRoutingHarness {
         let manager: ExtensionManager
         let browserManager: BrowserManager
+        let profileA: Profile
         let profileB: Profile
         let spaceA: Space
         let spaceB: Space
@@ -139,6 +201,7 @@ final class ExtensionRequestedTabLifecycleOwnerTests: XCTestCase {
         return ProfileRoutingHarness(
             manager: manager,
             browserManager: browserManager,
+            profileA: profileA,
             profileB: profileB,
             spaceA: spaceA,
             spaceB: spaceB

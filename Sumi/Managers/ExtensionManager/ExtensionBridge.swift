@@ -23,7 +23,6 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
     func currentExtensionTabForPopup() -> Tab?
     func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab]
     func extensionSpace(for spaceId: UUID?) -> Space?
-    var currentExtensionSpace: Space? { get }
     func extensionTargetSpace(for windowState: BrowserWindowState?) -> Space?
     func extensionTargetSpace(for tab: Tab) -> Space?
     func extensionTargetSpace(matchingProfile profileId: UUID) -> Space?
@@ -51,7 +50,7 @@ protocol ExtensionBrowserBridgeContext: AnyObject {
     func promoteTransientExtensionTab(_ tab: Tab) -> Bool
     func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool
     func isPinnedExtensionTab(_ tab: Tab) -> Bool
-    func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState?)
+    func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState)
     func materializeVisibleExtensionTabWebViewIfNeeded(
         _ tab: Tab,
         in windowState: BrowserWindowState
@@ -145,7 +144,7 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
     }
 
     func currentExtensionTabForPopup() -> Tab? {
-        currentTabForActiveWindow() ?? tabManager.currentTab
+        currentTabForActiveWindow()
     }
 
     func tabsForExtensionWindow(_ windowState: BrowserWindowState) -> [Tab] {
@@ -160,29 +159,25 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
         return tabManager.spaces.first { $0.id == spaceId }
     }
 
-    var currentExtensionSpace: Space? {
-        tabManager.currentSpace
-    }
-
     func extensionTargetSpace(for windowState: BrowserWindowState?) -> Space? {
-        if let windowState {
-            if let currentSpaceId = windowState.currentSpaceId,
-               let currentSpace = extensionSpace(for: currentSpaceId),
-               windowState.currentProfileId.map({ currentSpace.profileId == $0 }) ?? true {
-                return currentSpace
-            }
+        guard let windowState else { return nil }
 
-            if let profileId = windowState.currentProfileId,
-               let profileSpace = tabManager.spaces.first(where: { $0.profileId == profileId }) {
-                return profileSpace
-            }
+        if let currentSpaceId = windowState.currentSpaceId,
+           let currentSpace = extensionSpace(for: currentSpaceId),
+           windowState.currentProfileId.map({ currentSpace.profileId == $0 }) ?? true {
+            return currentSpace
         }
 
-        return currentExtensionSpace
+        if let profileId = windowState.currentProfileId,
+           let profileSpace = tabManager.spaces.first(where: { $0.profileId == profileId }) {
+            return profileSpace
+        }
+
+        return nil
     }
 
     func extensionTargetSpace(for tab: Tab) -> Space? {
-        tab.spaceId.flatMap(extensionSpace(for:)) ?? currentExtensionSpace
+        tab.spaceId.flatMap(extensionSpace(for:))
     }
 
     func extensionTargetSpace(matchingProfile profileId: UUID) -> Space? {
@@ -199,14 +194,35 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
             return containing
         }
 
+        if let spaceId = tab.spaceId,
+           let displayingSpaceWindow = extensionWindowState(displayingSpaceId: spaceId) {
+            return displayingSpaceWindow
+        }
+
         if let activeWindow = activeExtensionWindowState,
            tabsForExtensionWindow(activeWindow).contains(where: { $0.id == tab.id }) {
             return activeWindow
         }
 
-        return windowRegistry?.windows.values.first { windowState in
+        return windowRegistry?.allWindows.sorted { $0.id.uuidString < $1.id.uuidString }.first { windowState in
             tabsForExtensionWindow(windowState).contains(where: { $0.id == tab.id })
         }
+    }
+
+    private func extensionWindowState(displayingSpaceId spaceId: UUID) -> BrowserWindowState? {
+        let activeWindow = activeExtensionWindowState
+        if let activeWindow,
+           activeWindow.currentSpaceId == spaceId {
+            return activeWindow
+        }
+        let activeWindowId = activeWindow?.id
+
+        return windowRegistry?.allWindows
+            .sorted { $0.id.uuidString < $1.id.uuidString }
+            .first { windowState in
+                windowState.id != activeWindowId
+                    && windowState.currentSpaceId == spaceId
+            }
     }
 
     func setActiveExtensionWindow(_ windowState: BrowserWindowState) {
@@ -277,9 +293,11 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
             return false
         }
 
-        let targetSpace = tab.spaceId.flatMap { spaceId in
+        guard let targetSpace = tab.spaceId.flatMap({ spaceId in
             tabManager.spaces.first(where: { $0.id == spaceId })
-        } ?? tabManager.currentSpace
+        }) else {
+            return false
+        }
 
         return tabManager.promoteTransientExtensionTab(
             tab,
@@ -296,12 +314,8 @@ extension BrowserManager: ExtensionBrowserBridgeContext {
         tab.isPinned || tabManager.pinnedTabs.contains(where: { $0.id == tab.id })
     }
 
-    func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState?) {
-        if let windowState {
-            selectTab(tab, in: windowState)
-        } else {
-            selectTab(tab)
-        }
+    func selectExtensionTab(_ tab: Tab, in windowState: BrowserWindowState) {
+        selectTab(tab, in: windowState)
     }
 
     func materializeVisibleExtensionTabWebViewIfNeeded(

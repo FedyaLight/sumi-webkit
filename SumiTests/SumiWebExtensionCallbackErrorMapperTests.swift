@@ -108,6 +108,12 @@ final class SumiWebExtensionCallbackErrorMapperTests: XCTestCase {
                 3,
                 "Tab is not available to extensions until it is reloaded or navigates to a new document"
             ),
+            (
+                .tabWindowUnavailable,
+                "ExtensionTabAdapter",
+                4,
+                "No browser window is available for this tab"
+            ),
         ]
 
         for (callbackError, domain, code, message) in cases {

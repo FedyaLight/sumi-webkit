@@ -158,8 +158,17 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
             return
         }
 
+        guard let windowState = resolvedWindowState() else {
+            ExtensionBridgeCallbackSupport.complete(
+                completionHandler,
+                api: .tabAdapterCompletion,
+                error: ExtensionBridgeAdapterCallbackError.tabWindowUnavailable.nsError()
+            )
+            return
+        }
+
         promoteTransientExtensionTabIfNeeded(tab)
-        browserContext.selectExtensionTab(tab, in: resolvedWindowState())
+        browserContext.selectExtensionTab(tab, in: windowState)
         ExtensionBridgeCallbackSupport.complete(completionHandler, api: .tabAdapterCompletion, error: nil)
     }
 

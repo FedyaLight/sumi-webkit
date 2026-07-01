@@ -816,6 +816,83 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         )
     }
 
+    func testExtensionTabAdapterActivateWithoutWindowContextReturnsError() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Activation Error Profile")
+        let browserConfiguration = BrowserConfiguration()
+        let manager = makeManager(
+            context: container.mainContext,
+            profile: profile,
+            browserConfiguration: browserConfiguration
+        ).manager
+        _ = manager.requestExtensionRuntime(
+            reason: .attach,
+            allowWithoutEnabledExtensions: true
+        )
+        _ = manager.ensureExtensionController(for: profile.id)
+        manager.extensionsLoaded = true
+        manager.tabOpenNotificationGeneration = 11
+
+        let browserManager = makeBrowserManager(profile: profile)
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        browserManager.tabManager = TabManager(
+            runtimeContext: .live(browserManager: browserManager),
+            context: container.mainContext,
+            loadPersistedState: false
+        )
+        let visibleSpace = browserManager.tabManager.createSpace(
+            name: "Visible",
+            profileId: profile.id
+        )
+        let hiddenSpace = browserManager.tabManager.createSpace(
+            name: "Hidden",
+            profileId: profile.id
+        )
+        let selectedTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/selected",
+            in: visibleSpace,
+            activate: true
+        )
+        let targetTab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/hidden",
+            in: hiddenSpace,
+            activate: false
+        )
+        targetTab.profileId = profile.id
+        targetTab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
+
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+        let windowState = BrowserWindowState()
+        windowState.currentProfileId = profile.id
+        windowState.currentSpaceId = visibleSpace.id
+        windowState.currentTabId = selectedTab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        manager.attach(browserManager: browserManager)
+
+        let extensionContext = try await makeLoadedExtensionContext(
+            manager: manager,
+            profile: profile
+        )
+        let adapter = try XCTUnwrap(manager.stableAdapter(for: targetTab))
+        let activation = expectation(description: "hidden extension tab activation rejected")
+        var activationError: NSError?
+        adapter.activate(for: extensionContext) { error in
+            activationError = error as NSError?
+            activation.fulfill()
+        }
+        await fulfillment(of: [activation], timeout: 1.0)
+
+        XCTAssertNotNil(activationError)
+        XCTAssertEqual(
+            activationError?.localizedDescription,
+            "No browser window is available for this tab"
+        )
+        XCTAssertEqual(windowState.currentTabId, selectedTab.id)
+        XCTAssertEqual(browserManager.tabManager.currentTab?.id, selectedTab.id)
+    }
+
     func testExtensionRequestedSafariURLUsesNativeWebKitContext() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Extension Page Profile")
