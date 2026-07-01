@@ -37,11 +37,7 @@ final class ShellSelectionService {
             return current
         }
 
-        if let currentSpace = space(for: windowState.currentSpaceId, tabStore: tabStore) {
-            return preferredTabForSpace(currentSpace, in: windowState, tabStore: tabStore)
-        }
-
-        return preferredTabForWindow(windowState, tabStore: tabStore)
+        return nil
     }
 
     func selectionTargetForSpaceActivation(
@@ -241,7 +237,7 @@ final class ShellSelectionService {
             return false
         }
 
-        return tabBelongsToDisplayedContext(tab, in: windowState)
+        return isSelectableTab(tab) && tabBelongsToDisplayedContext(tab, in: windowState)
     }
 
     func tabBelongsToDisplayedContext(

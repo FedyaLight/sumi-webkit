@@ -196,7 +196,7 @@ final class WindowSessionServiceTests: XCTestCase {
         )
     }
 
-    func testBrowserManagerSuppressesGlobalCurrentTabFallbackDuringInitialSessionResolution() {
+    func testBrowserManagerCurrentTabRequiresCommittedWindowSelection() {
         let browserManager = BrowserManager()
         let space = Space(id: UUID(), name: "Primary")
         browserManager.tabManager.spaces = [space]
@@ -214,7 +214,15 @@ final class WindowSessionServiceTests: XCTestCase {
 
         windowState.isAwaitingInitialSessionResolution = false
 
-        XCTAssertEqual(browserManager.currentTab(for: windowState)?.id, fallbackTab.id)
+        XCTAssertNil(browserManager.currentTab(for: windowState))
+        XCTAssertEqual(
+            browserManager.shellSelectionService.preferredTabForSpace(
+                space,
+                in: windowState,
+                tabStore: browserManager.tabManager.runtimeStore
+            )?.id,
+            fallbackTab.id
+        )
     }
 
     func testSetupWindowStateRestoresEmptyStateFloatingBarDraft() throws {

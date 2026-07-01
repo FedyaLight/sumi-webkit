@@ -10,7 +10,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         XCTAssertTrue(tab.representsSumiEmptySurface)
     }
 
-    func testCurrentTabRejectsLegacyPinnedSelection() {
+    func testCurrentTabRejectsLegacyPinnedSelectionWithoutRepairFallback() {
         let service = ShellSelectionService { _ in [] }
         let space = Space(name: "Personal")
         let legacyPinned = Tab(url: URL(string: "https://legacy.example")!, name: "Legacy", spaceId: space.id, index: 0)
@@ -28,8 +28,34 @@ final class ShellSelectionServiceTests: XCTestCase {
         windowState.currentSpaceId = space.id
         windowState.currentTabId = legacyPinned.id
 
-        let resolved = service.currentTab(for: windowState, tabStore: store)
-        XCTAssertEqual(resolved?.id, regular.id)
+        XCTAssertNil(service.currentTab(for: windowState, tabStore: store))
+        XCTAssertEqual(
+            service.preferredTabForSpace(space, in: windowState, tabStore: store)?.id,
+            regular.id
+        )
+        XCTAssertFalse(service.hasValidCurrentSelection(in: windowState, tabStore: store))
+    }
+
+    func testCurrentTabDoesNotRepairStaleSelectionToPreferredSpaceTab() {
+        let service = ShellSelectionService { _ in [] }
+        let space = Space(name: "Personal")
+        let preferred = Tab(url: URL(string: "https://preferred.example")!, name: "Preferred", spaceId: space.id, index: 0)
+        space.activeTabId = preferred.id
+        let store = FakeShellSelectionTabStore(
+            spaces: [space],
+            allTabs: [preferred],
+            tabsBySpace: [space.id: [preferred]]
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = UUID()
+
+        XCTAssertNil(service.currentTab(for: windowState, tabStore: store))
+        XCTAssertEqual(
+            service.preferredTabForSpace(space, in: windowState, tabStore: store)?.id,
+            preferred.id
+        )
     }
 
     func testPreferredTabForSpaceSkipsLegacyPinnedActiveTabId() {
