@@ -17,6 +17,7 @@ final class BrowserURLBarContextOwner {
         let currentProfile: @MainActor () -> Profile?
         let siteControlsSnapshot: @MainActor (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot
         let focusFloatingBar: @MainActor (BrowserWindowState, String, Bool) -> Void
+        let reloadPage: @MainActor (Tab, BrowserWindowState, String) -> Void
         let closeURLBarHubPopover: @MainActor (BrowserWindowState) -> Void
         let presentURLBarHubPopover: @MainActor (BrowserWindowState, URLBarHubBrowserContext) -> Void
         let toggleURLBarHubPopover: @MainActor (BrowserWindowState, URLBarHubBrowserContext) -> Void
@@ -58,6 +59,7 @@ final class BrowserURLBarContextOwner {
             currentProfile: dependencies.currentProfile,
             siteControlsSnapshot: dependencies.siteControlsSnapshot,
             focusFloatingBar: dependencies.focusFloatingBar,
+            reloadPage: dependencies.reloadPage,
             closeURLBarHubPopover: dependencies.closeURLBarHubPopover,
             presentURLBarHubPopover: { [weak self] windowState in
                 guard let self else { return }
@@ -215,6 +217,13 @@ extension BrowserURLBarContextOwner.Dependencies {
                     in: windowState,
                     prefill: prefill,
                     navigateCurrentTab: navigateCurrentTab
+                )
+            },
+            reloadPage: { [weak browserManager] tab, windowState, reason in
+                browserManager?.refreshWindowScopedPage(
+                    tab: tab,
+                    in: windowState,
+                    reason: reason
                 )
             },
             closeURLBarHubPopover: { [weak browserManager] windowState in

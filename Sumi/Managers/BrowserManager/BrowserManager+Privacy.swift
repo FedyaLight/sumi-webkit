@@ -27,6 +27,16 @@ extension BrowserManager {
             },
             webViewLookup: { [weak self] tab, windowId in
                 self?.windowOwnedWebView(for: tab, in: windowId)
+            },
+            reloadWindowScopedPage: { [weak self] tab, windowId, reason in
+                guard let self,
+                      let windowState = self.windowRegistry?.windows[windowId]
+                else { return }
+                self.refreshWindowScopedPage(
+                    tab: tab,
+                    in: windowState,
+                    reason: reason
+                )
             }
         )
     }

@@ -446,6 +446,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             faviconInvalidator: { _, _ in }
         )
         let activeWindowId = UUID()
+        var reloadRequests: [(tab: Tab, windowId: UUID, reason: String)] = []
         privacyService.hardReloadCurrentPage(
             using: BrowserPrivacyService.Context(
                 currentDataStore: {
@@ -455,9 +456,19 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 activeWindowId: { activeWindowId },
                 webViewLookup: { candidateTab, windowId in
                     candidateTab === tab && windowId == activeWindowId ? originalWebView : nil
+                },
+                reloadWindowScopedPage: { requestTab, windowId, reason in
+                    reloadRequests.append((requestTab, windowId, reason))
+                    requestTab.refresh()
                 }
             )
         )
+
+        XCTAssertEqual(reloadRequests.count, 1)
+        let reloadRequest = try XCTUnwrap(reloadRequests.first)
+        XCTAssertTrue(reloadRequest.tab === tab)
+        XCTAssertEqual(reloadRequest.windowId, activeWindowId)
+        XCTAssertEqual(reloadRequest.reason, "BrowserPrivacyService.hardReload")
 
         let replacementWebView = try XCTUnwrap(tab.existingWebView)
         XCTAssertNotIdentical(replacementWebView, originalWebView)

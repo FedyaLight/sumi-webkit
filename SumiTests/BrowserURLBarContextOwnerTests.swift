@@ -136,6 +136,32 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         XCTAssertTrue(tab.loadingState.isLoading)
     }
 
+    func testURLBarReloadPageUsesWindowScopedRefreshPath() {
+        removePersistedWindowSession()
+        defer { removePersistedWindowSession() }
+
+        let harness = makeHarness()
+        let tab = harness.browserManager.tabManager.createNewTab(
+            url: "https://urlbar-reload.example",
+            in: harness.primarySpace,
+            activate: false
+        )
+        harness.windowState.currentTabId = tab.id
+        harness.browserManager.webViewCoordinator?.setWebView(
+            WKWebView(),
+            for: tab.id,
+            in: harness.windowState.id
+        )
+
+        harness.browserManager.urlBarBrowserContext.reloadPage(
+            tab,
+            harness.windowState,
+            "BrowserURLBarContextOwnerTests.reload"
+        )
+
+        XCTAssertTrue(tab.loadingState.isLoading)
+    }
+
 
     private func makeHarness() -> Harness {
         let browserManager = BrowserManager()

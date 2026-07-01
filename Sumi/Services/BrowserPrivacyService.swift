@@ -7,6 +7,7 @@ final class BrowserPrivacyService {
         let currentTab: @MainActor () -> Tab?
         let activeWindowId: @MainActor () -> UUID?
         let webViewLookup: @MainActor (Tab, UUID) -> WKWebView?
+        let reloadWindowScopedPage: @MainActor (Tab, UUID, String) -> Void
     }
 
     private let cleanupService: any SumiWebsiteDataCleanupServicing
@@ -44,7 +45,12 @@ final class BrowserPrivacyService {
         else { return }
 
         if let webView = context.webViewLookup(currentTab, activeWindowId) {
-            reloadFromOrigin(currentTab, webView: webView)
+            reloadFromOrigin(
+                currentTab,
+                webView: webView,
+                windowID: activeWindowId,
+                context: context
+            )
         }
 
         Task { @MainActor in
@@ -58,10 +64,19 @@ final class BrowserPrivacyService {
         }
     }
 
-    private func reloadFromOrigin(_ tab: Tab, webView: WKWebView) {
+    private func reloadFromOrigin(
+        _ tab: Tab,
+        webView: WKWebView,
+        windowID: UUID,
+        context: Context
+    ) {
         let targetURL = webView.url ?? tab.url
         if tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) {
-            tab.refresh()
+            context.reloadWindowScopedPage(
+                tab,
+                windowID,
+                "BrowserPrivacyService.hardReload"
+            )
             return
         }
         tab.performMainFrameNavigationAfterHydrationIfNeeded(

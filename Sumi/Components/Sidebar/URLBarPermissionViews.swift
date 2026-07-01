@@ -158,7 +158,11 @@ extension URLBarView {
                 guard let tab,
                       browserContext.webView(tab, windowState) != nil
                 else { return false }
-                tab.refresh()
+                browserContext.reloadPage(
+                    tab,
+                    windowState,
+                    "URLBarPermission.reloadPage"
+                )
                 tab.updateAutoplayReloadRequirementForCurrentSite()
                 return true
             },
