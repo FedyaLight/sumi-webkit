@@ -7,7 +7,7 @@ Last updated: 2026-07-02
 - Starting score: 78/100.
 - Target score: at least 84/100.
 - Evidence baseline: `docs/refactor/modernization-audit.md`, `docs/architecture.md`, `xcodebuild -list -project Sumi.xcodeproj`.
-- Current score estimate: 82/100 after adding CI architecture guardrails, persistence and WebView runtime boundary checks, and clearer shell runtime dependency ownership.
+- Current score estimate: 83/100 after adding CI architecture guardrails, persistence/WebView/sidebar boundary checks, and clearer shell runtime dependency ownership.
 
 ## Assumptions
 
@@ -27,8 +27,9 @@ Last updated: 2026-07-02
 | 5 | Guard WebView runtime context attachment ownership. | `scripts/check_webview_runtime_context_boundary.sh`, `scripts/check_architecture_guardrails.sh` | Low | `scripts/check_webview_runtime_context_boundary.sh`; `scripts/check_architecture_guardrails.sh` |
 | 6 | Reduce BrowserManager responsibility by extracting or tightening one cohesive planning boundary. | `Sumi/Managers/BrowserManager*`, related owner tests | Medium | Focused `SumiTests/Browser*OwnerTests` for the touched owner |
 | 7 | Clarify one WebKit capability/runtime ownership path. | `Sumi/Components/WebView*`, `Sumi/Models/Tab*`, WebView owner tests | Medium | Focused WebView or tab runtime tests for the touched path |
-| 8 | Narrow one sidebar/chrome state projection where it reduces dependency width. | `Sumi/Components/Sidebar/*`, `Navigation/Sidebar/*`, sidebar tests | Medium | Focused sidebar/chrome tests for the touched path |
-| 9 | Add broader project guardrails only after the first slices show stable ownership boundaries. | `.github/workflows/*`, `scripts/*`, `SumiTests/*` | Medium | Script plus targeted Xcode tests |
+| 8 | Guard against direct BrowserManager SwiftUI environment coupling in sidebar/chrome UI. | `scripts/check_sidebar_browser_manager_boundary.sh`, `scripts/check_architecture_guardrails.sh` | Low | `scripts/check_sidebar_browser_manager_boundary.sh`; `scripts/check_architecture_guardrails.sh` |
+| 9 | Narrow one sidebar/chrome state projection where it reduces dependency width. | `Sumi/Components/Sidebar/*`, `Navigation/Sidebar/*`, sidebar tests | Medium | Focused sidebar/chrome tests for the touched path |
+| 10 | Add broader project guardrails only after the first slices show stable ownership boundaries. | `.github/workflows/*`, `scripts/*`, `SumiTests/*` | Medium | Script plus targeted Xcode tests |
 
 ## Stop Conditions
 
@@ -46,9 +47,10 @@ Last updated: 2026-07-02
 | Startup persistence boundary | Complete | Added a production scan that fails if SwiftData container, configuration, or schema construction moves outside `SumiStartupPersistence`. Wired it into the aggregate guardrail. | `scripts/check_startup_persistence_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed. | Tests can still use in-memory containers directly; this slice only protects production runtime paths. | 80/100 |
 | Shell runtime ownership | Complete | Moved required WebView coordinator, window registry, and shell content factory checks into `BrowserShellRuntime`; `BrowserManager` remains the public facade. | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -derivedDataPath .build/DerivedData-architecture-modernization-night -only-testing:SumiTests/BrowserManagerRuntimeWiringTests` passed. | Precondition text changed for missing bindings; no runtime behavior change is intended. | 81/100 |
 | WebView runtime boundary | Complete | Added a production scan that keeps WebView runtime context attach/detach calls inside `WebViewCoordinator` declarations and BrowserManager shell binding. Wired it into the aggregate guardrail. | `scripts/check_webview_runtime_context_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed. | The guard protects ownership placement, not semantic correctness of each runtime context. | 82/100 |
+| Sidebar environment boundary | Complete | Added a production UI scan that prevents direct `BrowserManager` SwiftUI environment injection and preserves projection/context ownership for sidebar/chrome views. Wired it into the aggregate guardrail. | `scripts/check_sidebar_browser_manager_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed. | The guard blocks broad environment coupling; it does not reduce existing projected context width. | 83/100 |
 
 ## Before/After Estimate
 
 - Before: 78/100.
-- After current slice estimate: 82/100.
+- After current slice estimate: 83/100.
 - Target after planned slices: 84/100 or higher.
