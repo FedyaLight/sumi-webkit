@@ -177,10 +177,10 @@ extension BrowserZoomCommandOwner.Dependencies {
                 browserManager?.windowRegistry?.activeWindow
             },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageTab(for: windowState)
+                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
             },
             activePageWebView: { [weak browserManager] windowState in
-                browserManager?.activePageWebView(for: windowState)
+                browserManager?.activePageRoutingOwner.activePageWebView(for: windowState)
             },
             tab: { [weak browserManager] tabId in
                 browserManager?.tabManager.tab(for: tabId)
@@ -206,4 +206,25 @@ extension BrowserZoomCommandOwner.Dependencies {
             }
         )
     }
+}
+
+enum ZoomPopoverSource {
+    case toolbar
+    case menu
+
+    var autoCloseInterval: TimeInterval? {
+        switch self {
+        case .toolbar:
+            return nil
+        case .menu:
+            return 2
+        }
+    }
+}
+
+struct ZoomPopoverRequest: Equatable, Identifiable {
+    let id = UUID()
+    let windowId: UUID
+    let tabId: UUID
+    let source: ZoomPopoverSource
 }

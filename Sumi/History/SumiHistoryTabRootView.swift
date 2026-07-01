@@ -66,7 +66,7 @@ struct SumiHistoryTabRootView: View {
     }
 
     private var nativeSurfaceHoverUpdatesEnabled: Bool {
-        _ = nativeModalInvalidationGeneration
+        let _ = nativeModalInvalidationGeneration
         return scrollHoverCoordinator.hoverUpdatesEnabled
             && !browserContext.isNativeModalPresented(windowState?.id)
     }

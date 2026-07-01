@@ -68,12 +68,12 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
         await Task.yield()
 
         let requestTask = Task {
-            await browserManager.permissionCoordinator.requestPermission(
+            await browserManager.permissionRuntime.permissionCoordinator.requestPermission(
                 sumiPermissionIntegrationContext([.camera])
             )
         }
         let query = await sumiPermissionIntegrationWaitForActiveQuery(
-            browserManager.permissionCoordinator
+            browserManager.permissionRuntime.permissionCoordinator
         )
 
         await waitUntil {
@@ -88,7 +88,7 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
             }
         }
 
-        await browserManager.permissionCoordinator.dismiss(query.id)
+        await browserManager.permissionRuntime.permissionCoordinator.dismiss(query.id)
         _ = await requestTask.value
     }
 

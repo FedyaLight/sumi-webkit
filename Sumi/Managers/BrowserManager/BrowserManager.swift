@@ -38,9 +38,6 @@ class BrowserManager: ObservableObject {
     var tabManager: TabManager
     var profileManager: ProfileManager
     var downloadManager: DownloadManager
-    let downloadsPopoverPresenter: DownloadsPopoverPresenter
-    let urlBarHubPopoverPresenter: URLBarHubPopoverPresenter
-    let workspaceThemePickerPopoverPresenter: WorkspaceThemePickerPopoverPresenter
     var authenticationManager: AuthenticationManager
     var historyManager: HistoryManager
     var bookmarkManager: SumiBookmarkManager
@@ -67,14 +64,11 @@ class BrowserManager: ObservableObject {
             tabSuspensionService.rebuildProactiveTimers(reason: "settings-attached")
             backgroundMediaOptimizationService.scheduleReconcile(reason: "settings-attached")
             reconcileStartupSessionIfPossible()
-            scheduleAutomaticBrowsingDataCleanup(reason: "settings-attached")
+            automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(reason: "settings-attached")
         }
     }
     weak var keyboardShortcutManager: KeyboardShortcutManager?
     let sumiProfileRouter = SumiProfileRouter()
-    let profileMaintenanceService = SumiProfileMaintenanceService()
-    let windowShellService = BrowserWindowShellService()
-    let workspaceAppearanceService = WorkspaceAppearanceService()
     let liveFolderManager = SumiLiveFolderManager()
     private let permissionSiteSettingsRoutingOwner = BrowserPermissionSiteSettingsRoutingOwner()
     lazy var sidebarCommandService = BrowserSidebarCommandService(browserManager: self)
@@ -125,7 +119,7 @@ class BrowserManager: ObservableObject {
                         latestSystemBlockedEvent: nil
                     )
                 }
-                return await self.permissionCoordinator.stateSnapshot()
+                return await self.permissionRuntime.permissionCoordinator.stateSnapshot()
             },
             windowForPermissionPageId: { [weak self] pageId in
                 guard let self else { return nil }
@@ -175,6 +169,45 @@ class BrowserManager: ObservableObject {
         dependencies: .live(browserManager: self)
     )
     private lazy var sidebarActionOwner = BrowserSidebarActionOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var windowShellCommandOwner = BrowserWindowShellCommandOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var pagePrivacyCommandOwner = BrowserPagePrivacyCommandOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var webViewCloseRouter = BrowserWebViewCloseRouter(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var chromePopoverRoutingOwner = BrowserChromePopoverRoutingOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var profileMaintenanceOwner = BrowserProfileMaintenanceOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var automaticDataCleanupOwner = BrowserAutomaticDataCleanupOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var windowScopedNavigationOwner = BrowserWindowScopedNavigationOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var workspaceThemeTransitionOwner = BrowserWorkspaceThemeTransitionOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var workspaceThemeEditorOwner = BrowserWorkspaceThemeEditorOwner(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var toastPresenter = BrowserToastPresenter(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var appCommandRouter = BrowserAppCommandRouter(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var shortcutActionRouter = BrowserShortcutActionRouter(
+        dependencies: .live(browserManager: self)
+    )
+    lazy var extensionBridgeAdapter = BrowserExtensionBridgeAdapter(
         dependencies: .live(browserManager: self)
     )
     private let shellRuntime = BrowserShellRuntime()
@@ -295,11 +328,18 @@ class BrowserManager: ObservableObject {
                 guard let self else { return nil }
                 return self.windowSessionService.makeWindowSessionSnapshot(
                     for: windowState,
-                    runtime: self.makeWindowSessionRuntime()
+                    runtime: WindowSessionRuntimeFactory.make(for: self)
                 )
             },
             windowDisplayTitle: { [weak self] windowState in
-                self?.windowDisplayTitle(for: windowState) ?? ""
+                guard let self else { return "" }
+                if let currentTab = self.currentTab(for: windowState) {
+                    return currentTab.name
+                }
+                if let currentSpace = self.space(for: windowState.currentSpaceId) {
+                    return currentSpace.name
+                }
+                return "Window"
             },
             recentlyClosedManager: { [weak self, recentlyClosedManager = self.recentlyClosedManager] in
                 self?.recentlyClosedManager ?? recentlyClosedManager
@@ -421,9 +461,6 @@ class BrowserManager: ObservableObject {
         )
         // settingsManager will be injected from SumiApp
         self.downloadManager = DownloadManager()
-        self.downloadsPopoverPresenter = DownloadsPopoverPresenter()
-        self.urlBarHubPopoverPresenter = URLBarHubPopoverPresenter()
-        self.workspaceThemePickerPopoverPresenter = WorkspaceThemePickerPopoverPresenter()
         self.authenticationManager = AuthenticationManager()
         // Initialize managers with current profile context for isolation
         self.historyManager = HistoryManager(
@@ -561,7 +598,7 @@ class BrowserManager: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.scheduleAutomaticBrowsingDataCleanup(
+                self?.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
                     reason: "retention-setting-changed",
                     force: true,
                     delayNanoseconds: 0
@@ -623,13 +660,19 @@ class BrowserManager: ObservableObject {
 
     /// Called when TabManager finishes loading initial data from persistence
     private func handleTabManagerDataLoaded() {
-        windowSessionService.handleTabManagerDataLoaded(runtime: makeWindowSessionRuntime())
+        windowSessionService.handleTabManagerDataLoaded(runtime: WindowSessionRuntimeFactory.make(for: self))
         liveFolderManager.startAfterTabRestore()
         reconcileStartupSessionIfPossible()
     }
 
     private func beginProtectionRestoreForStartupIfNeeded() {
         startupProtectionRuntime.beginProtectionRestoreForStartupIfNeeded()
+    }
+
+    func reconcileStartupSessionIfPossible() {
+        startupSessionRestoreOwner.reconcileIfReady(
+            dependencies: .live(browserManager: self)
+        )
     }
 
     #if DEBUG
@@ -750,7 +793,7 @@ class BrowserManager: ObservableObject {
             findManager.showFindBar(for: nil, in: nil)
             return
         }
-        findManager.showFindBar(for: activePageTab(for: windowState), in: windowState.id)
+        findManager.showFindBar(for: activePageRoutingOwner.activePageTab(for: windowState), in: windowState.id)
     }
 
     func updateFindManagerCurrentTab() {
@@ -758,7 +801,7 @@ class BrowserManager: ObservableObject {
             findManager.updateCurrentTab(nil, in: nil)
             return
         }
-        findManager.updateCurrentTab(activePageTab(for: windowState), in: windowState.id)
+        findManager.updateCurrentTab(activePageRoutingOwner.activePageTab(for: windowState), in: windowState.id)
     }
 
     typealias TabOpenContext = BrowserTabOpenContext
@@ -809,7 +852,7 @@ class BrowserManager: ObservableObject {
     /// Opens Sumi settings as a normal browser tab (one per space), optionally focusing a pane.
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState? = nil) {
         guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }
-        openNativeBrowserSurface(
+        nativeSurfaceRoutingOwner.openNativeBrowserSurface(
             .settings,
             url: permissionSiteSettingsRoutingOwner.settingsSurfaceURL(for: pane),
             in: windowState
@@ -823,7 +866,7 @@ class BrowserManager: ObservableObject {
         guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }
         let targetTab = tab ?? currentTab(for: windowState)
 
-        openNativeBrowserSurface(
+        nativeSurfaceRoutingOwner.openNativeBrowserSurface(
             .settings,
             url: permissionSiteSettingsRoutingOwner.privacySiteSettingsSurfaceURL(focusing: targetTab),
             in: windowState
@@ -832,7 +875,7 @@ class BrowserManager: ObservableObject {
 
     func duplicateCurrentTab() {
         guard let activeWindow = windowRegistry?.activeWindow,
-              let currentTab = currentTabForActiveWindow() else {
+              let currentTab = activePageRoutingOwner.currentTabForActiveWindow() else {
             return
         }
         duplicateTab(currentTab, in: activeWindow)
@@ -1119,8 +1162,6 @@ class BrowserManager: ObservableObject {
 
 extension BrowserManager: SumiProfileRoutingSupport {}
 
-extension BrowserManager: BrowserAppTerminationHandling {}
-
 extension BrowserManager {
     func handleWindowVisibilityChanged(_ windowState: BrowserWindowState) {
         windowSessionActivationOwner.handleWindowVisibilityChanged(windowState)
@@ -1159,18 +1200,6 @@ extension BrowserManager {
 
     func setMuteState(_ muted: Bool, for tabId: UUID) {
         webViewRoutingService.setMuteState(muted, for: tabId)
-    }
-}
-
-extension BrowserManager: BrowserMouseButtonCommandRouting, BrowserTabCommandRouting,
-    WindowCommandRouting, BrowserWindowLifecycleHandling, ExternalURLHandling,
-    BrowserPersistenceHandling {
-    func flushRuntimeStatePersistenceAwaitingResult() async -> Int {
-        await tabManager.flushRuntimeStatePersistenceAwaitingResult()
-    }
-
-    func persistFullReconcileAwaitingResult(reason: String) async -> Bool {
-        await tabManager.persistFullReconcileAwaitingResult(reason: reason)
     }
 }
 

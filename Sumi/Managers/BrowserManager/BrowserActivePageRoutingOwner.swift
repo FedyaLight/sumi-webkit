@@ -274,7 +274,7 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                 browserManager?.windowOwnedWebView(for: tab, in: windowId)
             },
             refreshActivePage: { [weak browserManager] tab, windowState in
-                browserManager?.refreshWindowScopedPage(
+                browserManager?.windowScopedNavigationOwner.refreshWindowScopedPage(
                     tab: tab,
                     in: windowState,
                     reason: "BrowserActivePage.refresh"
@@ -312,7 +312,7 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                 )
             },
             presentCopyToast: { [weak browserManager] windowState in
-                browserManager?.presentToast(.init(kind: .copyURL), in: windowState)
+                browserManager?.toastPresenter.presentToast(.init(kind: .copyURL), in: windowState)
             },
             writeURLToPasteboard: { urlString in
                 NSPasteboard.general.clearContents()

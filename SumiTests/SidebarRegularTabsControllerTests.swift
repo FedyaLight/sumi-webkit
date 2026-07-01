@@ -172,7 +172,7 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
 
     private func makeTab(spaceId: UUID, index: Int = 0) -> Tab {
         Tab(
-            url: URL(string: "https://example.com/\(index)") ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: "https://example.com/\(index)")!,
             name: "Example \(index)",
             favicon: "globe",
             spaceId: spaceId,

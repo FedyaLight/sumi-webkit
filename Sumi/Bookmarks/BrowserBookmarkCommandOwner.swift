@@ -59,7 +59,7 @@ final class BrowserBookmarkCommandOwner {
         let openHistoryURL: @MainActor @Sendable (
             URL,
             BrowserWindowState,
-            BrowserManager.HistoryOpenMode
+            HistoryOpenMode
         ) -> Void
         let openHistoryURLsInNewWindow: @MainActor @Sendable ([URL]) -> Void
         let windowIds: @MainActor @Sendable () -> [UUID]
@@ -142,7 +142,7 @@ final class BrowserBookmarkCommandOwner {
     func openBookmarkURL(
         _ url: URL,
         in windowState: BrowserWindowState,
-        preferredOpenMode: BrowserManager.HistoryOpenMode
+        preferredOpenMode: HistoryOpenMode
     ) {
         dependencies.openHistoryURL(url, windowState, preferredOpenMode)
     }
@@ -381,7 +381,7 @@ extension BrowserBookmarkCommandOwner.Dependencies {
         Self(
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageTab(for: windowState)
+                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
             },
             bookmarkManager: { [weak browserManager] in browserManager?.bookmarkManager },
             bookmarkEditorPresentationRequest: { [weak browserManager] in
@@ -391,7 +391,7 @@ extension BrowserBookmarkCommandOwner.Dependencies {
                 browserManager?.bookmarkEditorPresentationRequest = request
             },
             openNativeBrowserSurface: { [weak browserManager] kind, url, windowState, preferredSpaceId in
-                browserManager?.openNativeBrowserSurface(
+                browserManager?.nativeSurfaceRoutingOwner.openNativeBrowserSurface(
                     kind,
                     url: url,
                     in: windowState,
@@ -399,20 +399,20 @@ extension BrowserBookmarkCommandOwner.Dependencies {
                 )
             },
             openHistoryURL: { [weak browserManager] url, windowState, preferredOpenMode in
-                browserManager?.openHistoryURL(
+                browserManager?.historyNavigationOwner.openHistoryURL(
                     url,
                     in: windowState,
                     preferredOpenMode: preferredOpenMode
                 )
             },
             openHistoryURLsInNewWindow: { [weak browserManager] urls in
-                browserManager?.openHistoryURLsInNewWindow(urls)
+                browserManager?.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
             },
             windowIds: { [weak browserManager] in
                 browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.createNewWindow()
+                browserManager?.windowShellCommandOwner.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIDs in
                 await browserManager?.windowRegistry?.awaitNextRegisteredWindow(

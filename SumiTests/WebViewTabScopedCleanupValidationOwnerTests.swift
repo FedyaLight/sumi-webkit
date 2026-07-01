@@ -105,7 +105,7 @@ final class WebViewScopedCleanupValidationTests: XCTestCase {
 
     private func makeTab(urlString: String = "https://example.com") -> Tab {
         Tab(
-            url: URL(string: urlString) ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: urlString)!,
             loadsCachedFaviconOnInit: false
         )
     }

@@ -193,7 +193,7 @@ struct SumiExtensionsSettingsPane: View {
                         extensionRecord.id
                     )
                 } else {
-                    _ = try await extensionsModule.enableExtension(
+                    let _ = try await extensionsModule.enableExtension(
                         extensionRecord.id
                     )
                 }

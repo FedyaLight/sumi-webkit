@@ -210,7 +210,7 @@ struct ProfilesSettingsView: View {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, isProfileNameAvailable(trimmed) else { return }
 
-        _ = profileManager.createProfile(
+        let _ = profileManager.createProfile(
             name: trimmed,
             icon: SumiProfileIcon.storedValue(icon)
         )

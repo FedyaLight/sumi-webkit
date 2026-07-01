@@ -41,7 +41,6 @@ protocol ShortcutActionRouting: AnyObject {
     func toggleMuteCurrentTabInActiveWindow()
     func showGradientEditor()
 }
-
 @MainActor
 protocol KeyboardShortcutChromeRouting: AnyObject {
     var isFindBarVisibleForShortcutRouting: Bool { get }
@@ -166,31 +165,5 @@ final class ShortcutActionDispatcher {
             object: nil,
             userInfo: ["action": action]
         )
-    }
-}
-
-extension BrowserManager: ShortcutActionRouting, KeyboardShortcutChromeRouting {
-    func focusFloatingBarForActiveWindow(prefill: String, navigateCurrentTab: Bool) {
-        focusFloatingBarForActiveWindow(
-            prefill: prefill,
-            navigateCurrentTab: navigateCurrentTab,
-            presentationReason: .keyboard
-        )
-    }
-
-    var isFindBarVisibleForShortcutRouting: Bool {
-        findManager.isFindBarVisible
-    }
-
-    func hideFindBarForShortcutRouting() {
-        findManager.hideFindBar()
-    }
-
-    func isNativeModalPresentedForShortcutRouting(in window: NSWindow) -> Bool {
-        isNativeModalPresented(in: window)
-    }
-
-    func dismissFloatingBarForShortcutRouting(in windowState: BrowserWindowState, preserveDraft: Bool) {
-        dismissFloatingBar(in: windowState, preserveDraft: preserveDraft)
     }
 }

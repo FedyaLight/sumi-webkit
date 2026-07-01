@@ -369,7 +369,7 @@ private struct SumiBookmarkEntityRow: View {
     let delete: () -> Void
     let copyLink: () -> Void
     let showInFolder: () -> Void
-    let openMode: (BrowserManager.HistoryOpenMode) -> Void
+    let openMode: (HistoryOpenMode) -> Void
     let newFolder: () -> Void
     let searchActive: Bool
     let faviconPartition: SumiFaviconPartition

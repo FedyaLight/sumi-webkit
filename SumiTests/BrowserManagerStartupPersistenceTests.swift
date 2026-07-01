@@ -24,7 +24,7 @@ final class BrowserManagerStartupPersistenceTests: XCTestCase {
         )
         let key = permissionKey(profilePartitionId: browserManager.currentProfile!.id.uuidString)
 
-        try await browserManager.permissionCoordinator.setSiteDecision(
+        try await browserManager.permissionRuntime.permissionCoordinator.setSiteDecision(
             for: key,
             state: .deny,
             source: .user,

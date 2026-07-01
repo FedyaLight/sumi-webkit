@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class HistoryManagerDependencyInjectionTests: XCTestCase {
-    private let referenceDate = ISO8601DateFormatter().date(from: "2026-06-01T12:00:00Z") ?? preconditionFailure("Invalid reference date")
+    private let referenceDate = ISO8601DateFormatter().date(from: "2026-06-01T12:00:00Z")!
 
     func testDeletingDomainUsesInjectedFaviconCleanerAndVisitedLinkStore() async throws {
         let harness = try makeHarness()

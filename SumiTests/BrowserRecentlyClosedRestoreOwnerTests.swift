@@ -22,8 +22,8 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
         let restored = try XCTUnwrap(harness.tabManager.tabs(in: harness.currentProfileSpace).first)
         XCTAssertEqual(restored.url, tabState.url)
         XCTAssertEqual(restored.name, "Closed")
-        XCTAssertTrue(restored.restoredCanGoBack)
-        XCTAssertFalse(restored.restoredCanGoForward)
+        XCTAssertEqual(restored.restoredCanGoBack, true)
+        XCTAssertEqual(restored.restoredCanGoForward, false)
         XCTAssertTrue(harness.tabManager.tabs(in: harness.fallbackSpace).isEmpty)
         XCTAssertEqual(harness.tabManager.currentTab?.id, restored.id)
     }

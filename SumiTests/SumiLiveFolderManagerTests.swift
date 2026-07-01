@@ -104,13 +104,13 @@ private final class LiveFolderURLProtocolStub: URLProtocol {
     }
 
     override func startLoading() {
-        let responseURL = request.url ?? URL(string: "https://example.test") ?? preconditionFailure("Invalid test URL")
+        let responseURL = request.url ?? URL(string: "https://example.test")!
         let response = HTTPURLResponse(
             url: responseURL,
             statusCode: 200,
             httpVersion: nil,
             headerFields: ["Content-Type": "text/html"]
-        ) ?? preconditionFailure("Invalid test response")
+        )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(
             self,
@@ -158,7 +158,7 @@ private final class LiveFolderRuntimeSpy {
                 ))
             },
             profile: { _, _ in nil },
-            folderIds: { nil }
+            folderIds: { [] }
         )
     }
 }

@@ -156,7 +156,7 @@ extension BrowserKeyboardShortcutCommandOwner.Dependencies {
                 browserManager?.createNewTab()
             },
             openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                browserManager?.openNewTabOrFloatingBar(in: windowState)
+                browserManager?.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
             },
             tabsForDisplay: { [weak browserManager] windowState in
                 browserManager?.tabsForDisplay(in: windowState) ?? []
@@ -195,10 +195,10 @@ extension BrowserKeyboardShortcutCommandOwner.Dependencies {
                 browserManager?.persistWindowSession(for: windowState)
             },
             activePageTab: { [weak browserManager] in
-                browserManager?.activePageTabForActiveWindow()
+                browserManager?.activePageRoutingOwner.activePageTabForActiveWindow()
             },
             activePageWebView: { [weak browserManager] in
-                browserManager?.activePageWebViewForActiveWindow()
+                browserManager?.activePageRoutingOwner.activePageWebViewForActiveWindow()
             },
             webView: { [weak browserManager] tabId, windowId in
                 browserManager?.getWebView(for: tabId, in: windowId)

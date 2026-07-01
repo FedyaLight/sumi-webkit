@@ -107,7 +107,7 @@ extension BrowserWindowLifecycleOwner.Dependencies {
                 browserManager?.setupWindowState(windowState)
             },
             handleWindowWillClose: { [weak browserManager] windowId in
-                browserManager?.handleWindowWillClose(windowId)
+                browserManager?.windowHistorySessionOwner.handleWindowWillClose(windowId)
             },
             notifyWindowClosedIfLoaded: { [weak browserManager] windowId in
                 browserManager?.extensionsModule.notifyWindowClosedIfLoaded(windowId)
@@ -131,7 +131,7 @@ extension BrowserWindowLifecycleOwner.Dependencies {
                 browserManager?.windowRegistry?.windows[windowId]
             },
             closeIncognitoWindow: { [weak browserManager] windowState in
-                await browserManager?.closeIncognitoWindow(windowState)
+                await browserManager?.windowShellCommandOwner.closeIncognitoWindow(windowState)
             },
             setActiveWindowState: { [weak browserManager] windowState in
                 browserManager?.setActiveWindowState(windowState)
@@ -143,7 +143,11 @@ extension BrowserWindowLifecycleOwner.Dependencies {
                 browserManager?.windowSessionService.prepareForAllWindowsClosed()
             },
             performAllWindowsClosedSiteDataCleanup: { [weak browserManager] in
-                await browserManager?.performAllWindowsClosedSiteDataCleanup()
+                guard let browserManager else { return }
+                await browserManager.dataServices.siteDataPolicyEnforcementService
+                    .performAllWindowsClosedCleanup(
+                        profiles: browserManager.profileManager.profiles
+                    )
             },
             cleanupWindowAfterRuntimeDeallocation: { [webViewCoordinator] windowId in
                 webViewCoordinator.removeCompositorContainerView(for: windowId)

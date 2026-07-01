@@ -38,7 +38,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         let context = owner.context
 
         XCTAssertIdentical(context.bookmarkManager, browserManager.bookmarkManager)
-        XCTAssertIdentical(context.extensionSurfaceStore, browserManager.extensionSurfaceStore)
+        XCTAssertIdentical(context.extensionSurfaceStore, browserManager.extensionsModule.surfaceStore)
         XCTAssertIdentical(context.permission.popupStore, browserManager.permissionRuntime.blockedPopupStore)
         XCTAssertIdentical(
             context.permissionDependencies.blockedPopupStore,

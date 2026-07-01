@@ -1944,7 +1944,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         let targetURL = URL(string: "https://destination.example/page")!
 
@@ -2003,7 +2003,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         tab.shortcutPinRole = .essential
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -2048,7 +2048,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         tab.setClickModifierFlags([.option])
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -2075,7 +2075,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         tab.shortcutPinRole = .essential
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -2101,7 +2101,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
@@ -2125,7 +2125,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager = try makePopupBrowserManager()
         browserManager.sumiSettings = settings
         let tab = Tab(url: URL(string: "https://source.example/page")!)
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.sumiSettings = settings
         tab.setClickModifierFlags([.command])
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
@@ -2440,7 +2440,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
     private func makePopupModuleRegistry() -> SumiModuleRegistry {
         let suiteName = UUID().uuidString
-        let userDefaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
+        let userDefaults = UserDefaults(suiteName: suiteName)!
         addTeardownBlock {
             userDefaults.removePersistentDomain(forName: suiteName)
         }

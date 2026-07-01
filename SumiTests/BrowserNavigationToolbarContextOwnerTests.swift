@@ -125,7 +125,7 @@ final class NavigationToolbarContextOwnerTests: XCTestCase {
             }
         )
 
-        let context = owner.navigationHistoryContext(for: boundWindow ?? preconditionFailure("Expected bound window"))
+        let context = owner.navigationHistoryContext(for: boundWindow!)
         boundWindow = nil
 
         XCTAssertNil(releasedBoundWindow)
@@ -229,7 +229,7 @@ final class NavigationToolbarContextOwnerTests: XCTestCase {
 
     private func makeTab(_ url: String) -> Tab {
         Tab(
-            url: URL(string: url) ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: url)!,
             name: url,
             loadsCachedFaviconOnInit: false
         )

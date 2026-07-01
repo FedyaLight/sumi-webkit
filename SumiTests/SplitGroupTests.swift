@@ -198,7 +198,7 @@ final class SplitGroupTests: XCTestCase {
             [.splitGroup(group.id)]
         )
 
-        harness.browserManager.restoreShortcutSplitMember(
+        harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
             groupedTopLevelPin.id,
             from: group,
             in: harness.windowState
@@ -802,7 +802,7 @@ final class SplitGroupTests: XCTestCase {
         ))
         harness.tabManager.upsertSplitGroup(group)
 
-        harness.browserManager.restoreShortcutSplitMember(
+        harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
             liveEssential.id,
             from: group,
             in: harness.windowState
@@ -856,7 +856,7 @@ final class SplitGroupTests: XCTestCase {
         ))
         harness.tabManager.upsertSplitGroup(group)
 
-        harness.browserManager.restoreShortcutSplitMember(
+        harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
             liveEssential.id,
             from: group,
             in: harness.windowState
@@ -927,7 +927,7 @@ final class SplitGroupTests: XCTestCase {
         ))
         harness.tabManager.upsertSplitGroup(group)
 
-        harness.browserManager.restoreShortcutSplitMember(
+        harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
             liveEssential.id,
             from: group,
             in: harness.windowState,
@@ -2733,7 +2733,11 @@ final class SplitGroupTests: XCTestCase {
         let group = try XCTUnwrap(harness.tabManager.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(group.tabIds.first { $0 != current.id })
 
-        harness.browserManager.dismissFloatingBar(in: harness.windowState, preserveDraft: true)
+        harness.browserManager.floatingBarRoutingOwner.dismissFloatingBar(
+            in: harness.windowState,
+            preserveDraft: true,
+            cancelEmptySplitPlaceholder: true
+        )
 
         XCTAssertNil(harness.tabManager.tab(for: placeholderId))
         XCTAssertNil(harness.tabManager.splitGroup(containing: current.id))
@@ -2803,7 +2807,7 @@ final class SplitGroupTests: XCTestCase {
         let placeholderGroup = try XCTUnwrap(harness.tabManager.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(placeholderGroup.tabIds.first { $0 != current.id })
 
-        harness.browserManager.openFloatingBarSuggestion(
+        harness.browserManager.floatingBarRoutingOwner.openFloatingBarSuggestion(
             SearchManager.SearchSuggestion(text: existing.name, type: .tab(existing)),
             in: harness.windowState
         )

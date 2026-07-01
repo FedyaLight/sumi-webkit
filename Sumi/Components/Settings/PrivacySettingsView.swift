@@ -196,7 +196,7 @@ private struct AdblockProtectionSettingsView: View {
         isApplying = true
         Task {
             do {
-                _ = try await coordinator.applySelectedLevel()
+                let _ = try await coordinator.applySelectedLevel()
                 await MainActor.run {
                     isApplying = false
                 }
@@ -213,7 +213,7 @@ private struct AdblockProtectionSettingsView: View {
         isUpdatingBundles = true
         Task {
             do {
-                _ = try await coordinator.updatePreparedBundlesManually()
+                let _ = try await coordinator.updatePreparedBundlesManually()
                 await MainActor.run {
                     isUpdatingBundles = false
                 }

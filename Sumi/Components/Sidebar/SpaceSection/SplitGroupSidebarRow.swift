@@ -369,7 +369,7 @@ struct SplitGroupSidebarRow: View {
 
         onSegmentActionAnimationStart(item)
         withAnimation(SidebarDropMotion.contentLayout) {
-            _ = departingItemIds.insert(item.id)
+            let _ = departingItemIds.insert(item.id)
             if shouldCollapseRowAfterRemoving(item, from: rowItems) {
                 isCollapsingRow = true
             }

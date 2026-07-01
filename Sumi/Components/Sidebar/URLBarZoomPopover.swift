@@ -58,7 +58,7 @@ extension URLBarView {
     }
 
     func shouldShowZoomButton(for tab: Tab) -> Bool {
-        _ = browserContext.zoom.stateRevision
+        let _ = browserContext.zoom.stateRevision
         return URLBarZoomButtonVisibility.shouldShow(
             hasURL: isZoomButtonURLAvailable(for: tab),
             isEditing: windowState.isFloatingBarVisible,
@@ -72,7 +72,7 @@ extension URLBarView {
     }
 
     func zoomButtonImageName(for tab: Tab) -> String {
-        _ = browserContext.zoom.stateRevision
+        let _ = browserContext.zoom.stateRevision
         return browserContext.zoom.manager.getZoomLevel(for: tab.id) < 1.0 ? "ZoomOut" : "ZoomIn"
     }
 
@@ -161,7 +161,7 @@ private struct URLBarZoomPopoverView: View {
 
     var body: some View {
         let tabId = currentTab.id
-        _ = zoomRevision
+        let _ = zoomRevision
 
         HStack(spacing: 0) {
             Text(zoomManager.getZoomPercentageDisplay(for: tabId))

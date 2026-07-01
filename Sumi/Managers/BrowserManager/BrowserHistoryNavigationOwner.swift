@@ -108,7 +108,7 @@ final class BrowserHistoryNavigationOwner {
     func openHistoryURL(
         _ url: URL,
         in windowState: BrowserWindowState,
-        preferredOpenMode: BrowserManager.HistoryOpenMode
+        preferredOpenMode: HistoryOpenMode
     ) {
         switch preferredOpenMode {
         case .currentTab:
@@ -241,16 +241,16 @@ extension BrowserHistoryNavigationOwner.Dependencies {
         Self(
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageTab(for: windowState)
+                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
             },
             activePageWebView: { [weak browserManager] windowState in
-                browserManager?.activePageWebView(for: windowState)
+                browserManager?.activePageRoutingOwner.activePageWebView(for: windowState)
             },
             webView: { [weak browserManager] tabId, windowId in
                 browserManager?.webViewCoordinator?.getWebView(for: tabId, in: windowId)
             },
             openNativeBrowserSurface: { [weak browserManager] kind, url, windowState, preferredSpaceId in
-                browserManager?.openNativeBrowserSurface(
+                browserManager?.nativeSurfaceRoutingOwner.openNativeBrowserSurface(
                     kind,
                     url: url,
                     in: windowState,
@@ -261,7 +261,7 @@ extension BrowserHistoryNavigationOwner.Dependencies {
                 browserManager?.tabLifecycleService.opening.openNewTab(url: url, context: context)
             },
             loadCurrentPageURL: { [weak browserManager] tab, windowState, url in
-                browserManager?.loadWindowScopedPage(
+                browserManager?.windowScopedNavigationOwner.loadWindowScopedPage(
                     url,
                     tab: tab,
                     in: windowState,
@@ -272,7 +272,7 @@ extension BrowserHistoryNavigationOwner.Dependencies {
                 browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.createNewWindow()
+                browserManager?.windowShellCommandOwner.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIDs in
                 await browserManager?.windowRegistry?.awaitNextRegisteredWindow(
@@ -296,4 +296,10 @@ extension BrowserHistoryNavigationOwner.Dependencies {
             }
         )
     }
+}
+
+enum HistoryOpenMode {
+    case currentTab
+    case newTab
+    case newWindow
 }

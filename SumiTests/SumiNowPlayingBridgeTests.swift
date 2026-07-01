@@ -212,7 +212,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
 
     private func makeTab(_ url: String) -> Tab {
         Tab(
-            url: URL(string: url) ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: url)!,
             loadsCachedFaviconOnInit: false
         )
     }

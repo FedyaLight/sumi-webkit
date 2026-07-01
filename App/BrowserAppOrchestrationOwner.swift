@@ -37,12 +37,12 @@ final class BrowserAppOrchestrationOwner {
         let nowPlayingController = dependencies.nowPlayingController
 
         appDelegate.windowRegistry = windowRegistry
-        appDelegate.mouseButtonRouter = browserManager
-        appDelegate.tabCommandRouter = browserManager
-        appDelegate.windowRouter = browserManager
-        appDelegate.externalURLHandler = browserManager
-        appDelegate.persistenceHandler = browserManager
-        appDelegate.terminationHandler = browserManager
+        appDelegate.mouseButtonRouter = browserManager.appCommandRouter
+        appDelegate.tabCommandRouter = browserManager.appCommandRouter
+        appDelegate.windowRouter = browserManager.appCommandRouter
+        appDelegate.externalURLHandler = browserManager.appCommandRouter
+        appDelegate.persistenceHandler = browserManager.appCommandRouter
+        appDelegate.terminationHandler = browserManager.appCommandRouter
         let applicationLifecycleController = BrowserApplicationLifecycleController(
             dependencies: .live(browserManager: browserManager)
         )
@@ -67,8 +67,8 @@ final class BrowserAppOrchestrationOwner {
 
         dependencies.startUpdater()
         keyboardShortcutManager.attach(
-            actionRouter: browserManager,
-            chromeRouter: browserManager,
+            actionRouter: browserManager.shortcutActionRouter,
+            chromeRouter: browserManager.shortcutActionRouter,
             windowRegistry: windowRegistry
         )
 
@@ -81,7 +81,7 @@ final class BrowserAppOrchestrationOwner {
         )
 
         Task { @MainActor [browserManager] in
-            await browserManager.runAutomaticPermissionCleanupIfNeeded(
+            await browserManager.automaticDataCleanupOwner.runAutomaticPermissionCleanupIfNeeded(
                 for: browserManager.currentProfile
             )
         }

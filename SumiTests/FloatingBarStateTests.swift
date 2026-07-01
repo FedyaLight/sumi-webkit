@@ -13,10 +13,11 @@ final class FloatingBarStateTests: XCTestCase {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()
 
-        browserManager.focusFloatingBar(
+        browserManager.floatingBarRoutingOwner.focusFloatingBar(
             in: windowState,
             prefill: "https://example.com",
-            navigateCurrentTab: true
+            navigateCurrentTab: true,
+            presentationReason: .keyboard
         )
 
         XCTAssertTrue(windowState.isFloatingBarVisible)
@@ -24,17 +25,21 @@ final class FloatingBarStateTests: XCTestCase {
         XCTAssertEqual(windowState.floatingBarDraftText, "https://example.com")
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
 
-        browserManager.updateFloatingBarDraft(in: windowState, text: "swift")
+        browserManager.floatingBarRoutingOwner.updateFloatingBarDraft(in: windowState, text: "swift")
         XCTAssertEqual(windowState.floatingBarDraftText, "swift")
         XCTAssertTrue(windowState.floatingBarDraftNavigatesCurrentTab)
 
-        browserManager.showNewTabFloatingBar(in: windowState)
+        browserManager.floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)
         XCTAssertTrue(windowState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .emptySpace)
         XCTAssertEqual(windowState.floatingBarDraftText, "")
         XCTAssertFalse(windowState.floatingBarDraftNavigatesCurrentTab)
 
-        browserManager.dismissFloatingBar(in: windowState, preserveDraft: false)
+        browserManager.floatingBarRoutingOwner.dismissFloatingBar(
+            in: windowState,
+            preserveDraft: false,
+            cancelEmptySplitPlaceholder: true
+        )
         XCTAssertFalse(windowState.isFloatingBarVisible)
         XCTAssertEqual(windowState.floatingBarPresentationReason, .none)
         XCTAssertEqual(windowState.floatingBarDraftText, "")
@@ -53,13 +58,14 @@ final class FloatingBarStateTests: XCTestCase {
             context: .foreground(windowState: windowState)
         )
 
-        browserManager.focusFloatingBar(
+        browserManager.floatingBarRoutingOwner.focusFloatingBar(
             in: windowState,
             prefill: currentTab.url.absoluteString,
-            navigateCurrentTab: true
+            navigateCurrentTab: true,
+            presentationReason: .keyboard
         )
 
-        browserManager.commitFloatingBarSuggestion(
+        browserManager.floatingBarRoutingOwner.commitFloatingBarSuggestion(
             SearchManager.SearchSuggestion(text: "https://example.com/replaced", type: .url),
             in: windowState
         )
@@ -82,8 +88,8 @@ final class FloatingBarStateTests: XCTestCase {
             context: .foreground(windowState: windowState)
         )
 
-        browserManager.showNewTabFloatingBar(in: windowState)
-        browserManager.commitFloatingBarSuggestion(
+        browserManager.floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)
+        browserManager.floatingBarRoutingOwner.commitFloatingBarSuggestion(
             SearchManager.SearchSuggestion(text: "https://example.com/new", type: .url),
             in: windowState
         )
@@ -99,14 +105,15 @@ final class FloatingBarStateTests: XCTestCase {
         }
 
         let (browserManager, windowRegistry, windowState, _) = makeHarness()
-        browserManager.focusFloatingBar(
+        browserManager.floatingBarRoutingOwner.focusFloatingBar(
             in: windowState,
             prefill: "https://example.com",
-            navigateCurrentTab: true
+            navigateCurrentTab: true,
+            presentationReason: .keyboard
         )
 
         withExtendedLifetime(windowRegistry) {
-            browserManager.dismissFloatingBarForActiveWindow(preserveDraft: true)
+            browserManager.floatingBarRoutingOwner.dismissFloatingBarForActiveWindow(preserveDraft: true)
         }
 
         XCTAssertFalse(windowState.isFloatingBarVisible)

@@ -30,13 +30,13 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
     func testOpenBookmarksTabCreatesAndReusesManagerTabInCurrentSpace() throws {
         let harness = try makeHarness()
 
-        harness.browserManager.openBookmarksTab(selecting: "first", in: harness.windowState)
+        harness.browserManager.bookmarkCommandOwner.openBookmarksTab(selecting: "first", in: harness.windowState)
         let firstBookmarksTab = try XCTUnwrap(
             harness.browserManager.tabManager.tabs(in: harness.space).first(where: \.representsSumiBookmarksSurface)
         )
         XCTAssertEqual(SumiSurface.bookmarksSelectedFolderID(from: firstBookmarksTab.url), "first")
 
-        harness.browserManager.openBookmarksTab(selecting: "second", in: harness.windowState)
+        harness.browserManager.bookmarkCommandOwner.openBookmarksTab(selecting: "second", in: harness.windowState)
 
         let bookmarksTabs = harness.browserManager.tabManager.tabs(in: harness.space)
             .filter(\.representsSumiBookmarksSurface)
@@ -68,7 +68,7 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         )
         let revisionBeforeBatch = harness.browserManager.bookmarkManager.revision
 
-        let result = try harness.browserManager.bookmarkTabs(
+        let result = try harness.browserManager.bookmarkCommandOwner.bookmarkTabs(
             [duplicate, fresh, unsupported],
             folderTitle: "Saved Tabs",
             parentID: nil
@@ -138,7 +138,7 @@ final class SumiBookmarksSurfaceTests: XCTestCase {
         browserManager: BrowserManager
     ) -> Tab {
         let tab = Tab(url: url, name: name)
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         return tab
     }
 }

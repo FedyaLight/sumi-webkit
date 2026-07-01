@@ -90,7 +90,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
     func testPermissionSurfaceOwnerUsesNarrowContextWithoutTab() throws {
         let tabId = UUID()
         let profile = Profile(
-            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") ?? preconditionFailure("Invalid UUID literal"),
+            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
             name: "Permission Context",
             icon: "person"
         )
@@ -200,7 +200,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         if let browserManager {
-            tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+            tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         }
         return tab
     }

@@ -75,28 +75,22 @@ enum StartupWindowRestorationPlanner {
     }
 }
 
-@MainActor
-extension BrowserManager {
-    func reconcileStartupSessionIfPossible() {
-        startupSessionRestoreOwner.reconcileIfReady(
-            dependencies: .init(
-                hasLoadedInitialTabData: { [weak self] in
-                    self?.tabManager.hasLoadedInitialData ?? false
-                },
-                startupMode: { [weak self] in
-                    self?.sumiSettings?.startupMode
-                },
-                startupWindow: { [weak self] in
-                    self?.startupPolicyOwner.firstRegularWindowForStartupPolicy
-                },
-                applyStartupPolicy: { [weak self] mode in
-                    self?.startupPolicyOwner.applyStartupPolicy(mode)
-                }
-            )
+extension SumiStartupSessionCoordinator.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        Self(
+            hasLoadedInitialTabData: { [weak browserManager] in
+                browserManager?.tabManager.hasLoadedInitialData ?? false
+            },
+            startupMode: { [weak browserManager] in
+                browserManager?.sumiSettings?.startupMode
+            },
+            startupWindow: { [weak browserManager] in
+                browserManager?.startupPolicyOwner.firstRegularWindowForStartupPolicy
+            },
+            applyStartupPolicy: { [weak browserManager] mode in
+                browserManager?.startupPolicyOwner.applyStartupPolicy(mode)
+            }
         )
-    }
-
-    func applyStartupPolicy(_ mode: SumiStartupMode) {
-        startupPolicyOwner.applyStartupPolicy(mode)
     }
 }

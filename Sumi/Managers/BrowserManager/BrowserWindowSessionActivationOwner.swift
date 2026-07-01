@@ -100,24 +100,25 @@ final class BrowserWindowSessionActivationOwner {
     }
 }
 
-extension BrowserManager {
-    func makeWindowSessionRuntime() -> WindowSessionRuntime {
+@MainActor
+enum WindowSessionRuntimeFactory {
+    static func make(for browserManager: BrowserManager) -> WindowSessionRuntime {
         WindowSessionRuntime(
-            currentProfile: { [weak self] in
-                self?.currentProfile
+            currentProfile: { [weak browserManager] in
+                browserManager?.currentProfile
             },
-            tabManager: tabManager,
-            windowRegistry: { [weak self] in
-                self?.windowRegistry
+            tabManager: browserManager.tabManager,
+            windowRegistry: { [weak browserManager] in
+                browserManager?.windowRegistry
             },
-            splitManager: splitManager,
-            glanceManager: glanceManager,
-            shellSelectionService: shellSelectionService,
-            hasValidCurrentSelection: { [weak self] windowState in
-                self?.hasValidCurrentSelection(in: windowState) ?? false
+            splitManager: browserManager.splitManager,
+            glanceManager: browserManager.glanceManager,
+            shellSelectionService: browserManager.shellSelectionService,
+            hasValidCurrentSelection: { [weak browserManager] windowState in
+                browserManager?.hasValidCurrentSelection(in: windowState) ?? false
             },
-            applyTabSelection: { [weak self] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
-                self?.applyTabSelection(
+            applyTabSelection: { [weak browserManager] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
+                browserManager?.applyTabSelection(
                     tab,
                     in: windowState,
                     updateSpaceFromTab: updateSpaceFromTab,
@@ -126,26 +127,32 @@ extension BrowserManager {
                     persistSelection: persistSelection
                 )
             },
-            showEmptyState: { [weak self] windowState in
-                self?.showEmptyState(in: windowState)
+            showEmptyState: { [weak browserManager] windowState in
+                browserManager?.showEmptyState(in: windowState)
             },
-            sanitizeFloatingBarState: { [weak self] windowState in
-                self?.sanitizeFloatingBarState(in: windowState)
+            sanitizeFloatingBarState: { [weak browserManager] windowState in
+                browserManager?.floatingBarRoutingOwner.sanitizeFloatingBarState(in: windowState)
             },
-            syncShortcutSelectionState: { [weak self] windowState in
-                self?.syncShortcutSelectionState(for: windowState)
+            syncShortcutSelectionState: { [weak browserManager] windowState in
+                browserManager?.syncShortcutSelectionState(for: windowState)
             },
-            commitWorkspaceTheme: { [weak self] theme, windowState in
-                self?.commitWorkspaceTheme(theme, for: windowState)
+            commitWorkspaceTheme: { [weak browserManager] theme, windowState in
+                browserManager?.workspaceThemeTransitionOwner.commitWorkspaceTheme(
+                    theme,
+                    for: windowState
+                )
             },
-            space: { [weak self] spaceId in
-                self?.space(for: spaceId)
+            space: { [weak browserManager] spaceId in
+                browserManager?.space(for: spaceId)
             },
-            syncSidebarPresentationState: { [weak self] windowState in
-                self?.syncSidebarPresentationState(from: windowState)
+            syncSidebarPresentationState: { [weak browserManager] windowState in
+                browserManager?.syncSidebarPresentationState(from: windowState)
             },
-            focusSplitGroup: { [weak self] group, windowState in
-                self?.focusSplitGroup(group, in: windowState)
+            focusSplitGroup: { [weak browserManager] group, windowState in
+                browserManager?.sidebarCommandService.splitShortcutRouting.focusSplitGroup(
+                    group,
+                    in: windowState
+                )
             }
         )
     }
@@ -162,7 +169,7 @@ extension BrowserWindowSessionActivationOwner.Dependencies {
         return Self(
             windowSessionService: windowSessionService,
             runtime: { [weak browserManager] in
-                browserManager?.makeWindowSessionRuntime()
+                browserManager.map { WindowSessionRuntimeFactory.make(for: $0) }
             },
             refreshSplitPublishedState: { [weak browserManager] windowId in
                 browserManager?.splitManager.refreshPublishedState(for: windowId)
@@ -197,7 +204,7 @@ extension BrowserWindowSessionActivationOwner.Dependencies {
                 permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
             },
             refreshLastSessionWindowsStore: { [weak browserManager] in
-                browserManager?.refreshLastSessionWindowsStore(excludingWindowID: nil)
+                browserManager?.windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: nil)
             }
         )
     }

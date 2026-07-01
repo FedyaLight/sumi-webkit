@@ -109,7 +109,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
 
     private func makeZoomManager(function: String = #function) -> ZoomManager {
         let suiteName = "BrowserZoomCommandOwnerTests.\(function).\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
+        let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock {
             defaults.removePersistentDomain(forName: suiteName)
@@ -147,7 +147,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
 
     private func makeTab(url: String, profileId: UUID?) -> Tab {
         let tab = Tab(
-            url: URL(string: url) ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: url)!,
             name: "Test",
             loadsCachedFaviconOnInit: false
         )

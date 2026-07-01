@@ -7,7 +7,7 @@ extension WindowViewBrowserRuntime {
         WindowViewBrowserRuntime(
             splitManager: browserManager.splitManager,
             findManager: browserManager.findManager,
-            floatingBarBrowserContext: browserManager.floatingBarBrowserContext,
+            floatingBarBrowserContext: browserManager.floatingBarBrowserContextOwner.context,
             sidebarBrowserContext: SidebarBrowserContext.live(browserManager: browserManager),
             sidebarHostActions: sidebarHostActions(browserManager: browserManager),
             sidebarStructuralInvalidation: sidebarStructuralInvalidation(browserManager: browserManager),
@@ -19,7 +19,7 @@ extension WindowViewBrowserRuntime {
                 browserManager?.tabManager.currentSpace != nil
             },
             showGradientEditor: { [weak browserManager] source in
-                browserManager?.showGradientEditor(source: source)
+                browserManager?.workspaceThemeEditorOwner.showGradientEditor(source: source)
             },
             currentProfileID: { [weak browserManager] in
                 browserManager?.currentProfile?.id
@@ -35,10 +35,10 @@ extension WindowViewBrowserRuntime {
                 )
             },
             websiteViewBrowserContext: { [browserManager] sidebarDragState in
-                browserManager.websiteViewBrowserContext(sidebarDragState: sidebarDragState)
+                WebsiteViewContextFactory.websiteViewBrowserContext(for: browserManager, sidebarDragState: sidebarDragState)
             },
             websiteNativeSurfaceRootBuilders: { [browserManager] in
-                browserManager.websiteNativeSurfaceRootBuilders
+                WebsiteViewContextFactory.nativeSurfaceRootBuilders(for: browserManager)
             },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.currentTab(for: windowState)
@@ -48,13 +48,13 @@ extension WindowViewBrowserRuntime {
                 return browserManager?.space(for: spaceId)?.workspaceTheme
             },
             isNativeModalPresented: { [weak browserManager] windowId in
-                browserManager?.isNativeModalPresented(in: windowId) ?? false
+                browserManager?.nativeDialogPresentationOwner.isNativeModalPresented(in: windowId) ?? false
             },
             nativeModalPresentationBindingDismissed: { [weak browserManager] windowId in
-                browserManager?.nativeModalPresentationBindingDismissed(for: windowId)
+                browserManager?.nativeDialogPresentationOwner.nativeModalPresentationBindingDismissed(for: windowId)
             },
             dismissNativeModalPresentation: { [weak browserManager] in
-                browserManager?.dismissNativeModalPresentation()
+                browserManager?.nativeDialogPresentationOwner.dismissNativeModalPresentation()
             },
             findCurrentTabId: { [weak browserManager] in
                 browserManager?.findManager.currentTab?.id
@@ -71,7 +71,7 @@ extension WindowViewBrowserRuntime {
                 browserManager?.persistWindowSession(for: windowState)
             },
             dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
-                browserManager?.dismissThemePickerCommittingIfNeeded()
+                browserManager?.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()
             }
         )
     }
@@ -100,7 +100,7 @@ extension WindowViewBrowserRuntime {
                     activeCleanupDependencies(browserManager: browserManager)
                 },
                 dismissNativeModalPresentation: { [weak browserManager] in
-                    browserManager?.dismissNativeModalPresentation()
+                    browserManager?.nativeDialogPresentationOwner.dismissNativeModalPresentation()
                 }
             )
         }

@@ -171,7 +171,7 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
             webViewConfigurationOverride: configuration
         )
         tab.profileId = profile.id
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)
         webView.owningTab = tab

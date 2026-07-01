@@ -38,7 +38,7 @@ enum BrowserWebViewRuntimeFactory {
                 requireBrowserManager(
                     browserManager,
                     operation: "handle unprotected WebKit close"
-                ).handleNormalWebViewDidClose(webView)
+                ).webViewCloseRouter.handleNormalWebViewDidClose(webView)
             },
             refreshCompositor: { [weak browserManager] windowState in
                 requireBrowserManager(

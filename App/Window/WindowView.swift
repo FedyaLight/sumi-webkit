@@ -486,7 +486,7 @@ struct WindowView: View {
     private var globalColorScheme: ColorScheme {
         switch sumiSettings.windowSchemeMode {
         case .auto:
-            _ = effectiveAppearanceRevision
+            let _ = effectiveAppearanceRevision
             return ColorScheme(effectiveAppearance: appKitGlobalAppearance)
         case .light:
             return .light

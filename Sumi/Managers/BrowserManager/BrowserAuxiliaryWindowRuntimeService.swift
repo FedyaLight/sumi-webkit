@@ -43,10 +43,10 @@ enum BrowserAuxiliaryWindowRuntimeService {
                 )
             },
             popupPermissionBridge: { [weak browserManager] in
-                browserManager?.popupPermissionBridge
+                browserManager?.permissionRuntime.popupPermissionBridge
             },
             filePickerPermissionBridge: { [weak browserManager] in
-                browserManager?.filePickerPermissionBridge
+                browserManager?.permissionRuntime.filePickerPermissionBridge
             }
         )
     }

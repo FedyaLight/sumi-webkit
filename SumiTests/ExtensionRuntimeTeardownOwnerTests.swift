@@ -144,7 +144,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
-            extensionPreferences: UserDefaults(suiteName: UUID().uuidString) ?? preconditionFailure("Unable to create test user defaults")
+            extensionPreferences: UserDefaults(suiteName: UUID().uuidString)!
         )
         return (container, manager)
     }

@@ -12,7 +12,7 @@ final class TabExtensionRuntimeState {
     /// Whether every enabled content-script extension context was loaded when `didOpenTab` last ran.
     var openNotifiedContextReadiness: TabExtensionContextReadiness = .notNotified
     var lastReportedURL: URL?
-    var lastReportedLoading: TabExtensionLoadingReport = .notReported
+    fileprivate var lastReportedLoading: TabExtensionLoadingReport = .notReported
     var lastReportedTitle: String?
     var didReportOpenForGeneration: UInt64 = 0
     var eligibleGeneration: UInt64 = 0

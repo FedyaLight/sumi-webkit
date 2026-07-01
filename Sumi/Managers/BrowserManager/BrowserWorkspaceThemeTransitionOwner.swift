@@ -1,23 +1,37 @@
 import SwiftUI
 
+/// Applies workspace themes to windows and drives interactive space-transition
+/// theming through `WorkspaceThemeCoordinator`.
 @MainActor
-extension BrowserManager {
+final class BrowserWorkspaceThemeTransitionOwner {
+    struct Dependencies {
+        let workspaceThemeCoordinator: @MainActor () -> WorkspaceThemeCoordinator?
+        let activeWindowId: @MainActor () -> UUID?
+        let allWindows: @MainActor () -> [BrowserWindowState]
+    }
+
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
+    }
+
     func updateWorkspaceTheme(
         for windowState: BrowserWindowState,
         to newTheme: WorkspaceTheme,
         animate: Bool
     ) {
         guard !windowState.isIncognito else { return }
-        workspaceThemeCoordinator.update(
+        dependencies.workspaceThemeCoordinator()?.update(
             for: windowState,
             to: newTheme,
             animate: animate,
-            isActiveWindow: windowRegistry?.activeWindow?.id == windowState.id
+            isActiveWindow: dependencies.activeWindowId() == windowState.id
         )
     }
 
     func commitWorkspaceTheme(_ workspaceTheme: WorkspaceTheme, for windowState: BrowserWindowState) {
-        workspaceThemeCoordinator.restore(workspaceTheme, in: windowState)
+        dependencies.workspaceThemeCoordinator()?.restore(workspaceTheme, in: windowState)
     }
 
     @discardableResult
@@ -28,7 +42,7 @@ extension BrowserManager {
         initialProgress: Double = 0,
         in windowState: BrowserWindowState
     ) -> SpaceTransitionIdentity? {
-        workspaceThemeCoordinator.beginInteractiveTransition(
+        dependencies.workspaceThemeCoordinator()?.beginInteractiveTransition(
             from: sourceSpace,
             to: destinationSpace,
             identity: identity,
@@ -42,7 +56,7 @@ extension BrowserManager {
         identity: SpaceTransitionIdentity? = nil,
         in windowState: BrowserWindowState
     ) {
-        workspaceThemeCoordinator.updateInteractiveTransition(
+        dependencies.workspaceThemeCoordinator()?.updateInteractiveTransition(
             progress: progress,
             identity: identity,
             in: windowState
@@ -53,7 +67,10 @@ extension BrowserManager {
         identity: SpaceTransitionIdentity? = nil,
         in windowState: BrowserWindowState
     ) {
-        workspaceThemeCoordinator.cancelInteractiveTransition(in: windowState, identity: identity)
+        dependencies.workspaceThemeCoordinator()?.cancelInteractiveTransition(
+            in: windowState,
+            identity: identity
+        )
     }
 
     func finishInteractiveSpaceTransition(
@@ -61,7 +78,7 @@ extension BrowserManager {
         in windowState: BrowserWindowState,
         identity: SpaceTransitionIdentity? = nil
     ) {
-        workspaceThemeCoordinator.finishInteractiveTransition(
+        dependencies.workspaceThemeCoordinator()?.finishInteractiveTransition(
             to: destinationSpace.workspaceTheme,
             in: windowState,
             identity: identity
@@ -74,9 +91,7 @@ extension BrowserManager {
         for space: Space,
         animate: Bool
     ) {
-        guard let windowRegistry else { return }
-
-        for (_, windowState) in windowRegistry.windows {
+        for windowState in dependencies.allWindows() {
             guard !windowState.isIncognito else { continue }
             if windowState.currentSpaceId == space.id {
                 guard !windowState.isInteractiveSpaceTransition else { continue }
@@ -87,5 +102,23 @@ extension BrowserManager {
                 )
             }
         }
+    }
+}
+
+extension BrowserWorkspaceThemeTransitionOwner.Dependencies {
+    @MainActor
+    static func live(browserManager: BrowserManager) -> Self {
+        Self(
+            workspaceThemeCoordinator: { [weak browserManager] in
+                browserManager?.workspaceThemeCoordinator
+            },
+            activeWindowId: { [weak browserManager] in
+                browserManager?.windowRegistry?.activeWindow?.id
+            },
+            allWindows: { [weak browserManager] in
+                guard let windowRegistry = browserManager?.windowRegistry else { return [] }
+                return Array(windowRegistry.windows.values)
+            }
+        )
     }
 }

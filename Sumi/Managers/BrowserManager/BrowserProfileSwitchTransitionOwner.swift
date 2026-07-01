@@ -6,16 +6,6 @@ protocol BrowserProfileSwitchTransitionHost: AnyObject {
     var currentProfile: Profile? { get set }
     var isTransitioningProfile: Bool { get set }
     var windowRegistry: WindowRegistry? { get }
-
-    func showProfileSwitchToast(to profile: Profile, in windowState: BrowserWindowState?)
-    func runAutomaticPermissionCleanupIfNeeded(
-        for profile: Profile?
-    ) async -> SumiPermissionCleanupResult?
-    func scheduleAutomaticBrowsingDataCleanup(
-        reason: String,
-        force: Bool,
-        delayNanoseconds: UInt64?
-    )
 }
 
 @MainActor
@@ -27,6 +17,9 @@ final class BrowserProfileSwitchTransitionOwner {
         let faviconService: any BrowserFaviconServicing
         let historyManager: HistoryManager
         let tabManager: TabManager
+        let showProfileSwitchToast: @MainActor (Profile, BrowserWindowState?) -> Void
+        let runAutomaticPermissionCleanupIfNeeded: @MainActor (Profile?) async -> Void
+        let scheduleAutomaticBrowsingDataCleanup: @MainActor (String) -> Void
     }
 
     actor ProfileOps {
@@ -84,9 +77,9 @@ final class BrowserProfileSwitchTransitionOwner {
             }
 
             if context.shouldProvideFeedback {
-                host.showProfileSwitchToast(
-                    to: profile,
-                    in: targetWindowState
+                dependencies.showProfileSwitchToast(
+                    profile,
+                    targetWindowState
                 )
                 NSHapticFeedbackManager.defaultPerformer.perform(
                     .generic,
@@ -104,12 +97,8 @@ final class BrowserProfileSwitchTransitionOwner {
         }
 
         guard shouldRunCleanup else { return }
-        _ = await host.runAutomaticPermissionCleanupIfNeeded(for: profile)
-        host.scheduleAutomaticBrowsingDataCleanup(
-            reason: "profile-switch",
-            force: false,
-            delayNanoseconds: nil
-        )
+        await dependencies.runAutomaticPermissionCleanupIfNeeded(profile)
+        dependencies.scheduleAutomaticBrowsingDataCleanup("profile-switch")
     }
 
     private func canApplyProfileSwitch(
@@ -166,7 +155,22 @@ extension BrowserProfileSwitchTransitionOwner.Dependencies {
             extensionsModule: browserManager.extensionsModule,
             faviconService: browserManager.dataServices.faviconService,
             historyManager: browserManager.historyManager,
-            tabManager: browserManager.tabManager
+            tabManager: browserManager.tabManager,
+            showProfileSwitchToast: { [weak browserManager] profile, windowState in
+                browserManager?.toastPresenter.showProfileSwitchToast(
+                    to: profile,
+                    in: windowState
+                )
+            },
+            runAutomaticPermissionCleanupIfNeeded: { [weak browserManager] profile in
+                _ = await browserManager?.automaticDataCleanupOwner
+                    .runAutomaticPermissionCleanupIfNeeded(for: profile)
+            },
+            scheduleAutomaticBrowsingDataCleanup: { [weak browserManager] reason in
+                browserManager?.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
+                    reason: reason
+                )
+            }
         )
     }
 }

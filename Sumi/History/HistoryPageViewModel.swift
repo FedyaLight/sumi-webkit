@@ -12,7 +12,7 @@ struct HistoryPageBrowserContext {
     let nativeModalPresentationUpdates: AnyPublisher<Void, Never>
     let isNativeModalPresented: (UUID?) -> Bool
     let currentTab: (BrowserWindowState) -> Tab?
-    let openHistoryURL: (URL, BrowserWindowState, BrowserManager.HistoryOpenMode) -> Void
+    let openHistoryURL: (URL, BrowserWindowState, HistoryOpenMode) -> Void
     let openHistoryURLsInNewTabs: ([URL], BrowserWindowState) -> Void
     let presentBrowsingDataSheet: (BrowserWindowState?) -> Void
     let scheduleRuntimeStatePersistence: (Tab) -> Void
@@ -153,7 +153,7 @@ final class HistoryPageViewModel: ObservableObject {
         scheduleSnapshotRebuild()
     }
 
-    func open(_ item: HistoryListItem, mode: BrowserManager.HistoryOpenMode) {
+    func open(_ item: HistoryListItem, mode: HistoryOpenMode) {
         guard let windowState else { return }
         browserContext.openHistoryURL(item.url, windowState, mode)
     }
@@ -162,7 +162,7 @@ final class HistoryPageViewModel: ObservableObject {
         _ item: HistoryListItem,
         modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
     ) {
-        let mode: BrowserManager.HistoryOpenMode = modifiers.contains(.command)
+        let mode: HistoryOpenMode = modifiers.contains(.command)
             ? .newTab
             : .currentTab
         open(item, mode: mode)

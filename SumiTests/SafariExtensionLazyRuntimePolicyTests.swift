@@ -248,7 +248,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
 
     private func makeScopedModuleRegistry() -> SumiModuleRegistry {
         let suiteName = UUID().uuidString
-        let userDefaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
+        let userDefaults = UserDefaults(suiteName: suiteName)!
         addTeardownBlock {
             userDefaults.removePersistentDomain(forName: suiteName)
         }

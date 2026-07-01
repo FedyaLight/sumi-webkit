@@ -15,7 +15,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.closeTab(tab, in: harness.windowState)
         XCTAssertTrue(harness.browserManager.tabManager.tabs(in: harness.space).isEmpty)
 
-        harness.browserManager.undoCloseTab()
+        harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
 
         let restored = harness.browserManager.tabManager.tabs(in: harness.space).first
         XCTAssertEqual(restored?.url, URL(string: "https://regular.example")!)
@@ -42,7 +42,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.closeTab(liveTab, in: harness.windowState)
         XCTAssertNil(harness.browserManager.tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
 
-        harness.browserManager.undoCloseTab()
+        harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
 
         let restored = try XCTUnwrap(
             harness.browserManager.tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id)
@@ -71,7 +71,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabManager.removeShortcutPin(pin)
         XCTAssertNil(harness.browserManager.tabManager.shortcutPin(by: pin.id))
 
-        harness.browserManager.undoCloseTab()
+        harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
 
         let restoredPin = try XCTUnwrap(harness.browserManager.tabManager.shortcutPin(by: pin.id))
         XCTAssertEqual(restoredPin.role, .spacePinned)
@@ -95,7 +95,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         harness.browserManager.tabManager.removeShortcutPin(inserted)
         XCTAssertTrue(harness.browserManager.tabManager.essentialPins(for: harness.profile.id).isEmpty)
 
-        harness.browserManager.undoCloseTab()
+        harness.browserManager.recentlyClosedRestoreOwner.reopenMostRecentClosedItem()
 
         let restoredPin = try XCTUnwrap(harness.browserManager.tabManager.shortcutPin(by: inserted.id))
         XCTAssertEqual(restoredPin.role, .essential)

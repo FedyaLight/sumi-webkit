@@ -412,13 +412,13 @@ private struct SumiBoostHeaderMenu: View {
 
 private struct SumiBoostPanelDragRegion: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
-        _ = context
+        let _ = context
         return SumiBoostPanelDragView()
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        _ = nsView
-        _ = context
+        let _ = nsView
+        let _ = context
     }
 }
 

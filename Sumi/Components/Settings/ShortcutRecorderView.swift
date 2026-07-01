@@ -179,7 +179,7 @@ struct ShortcutRecorderView: View {
         }
 
         if event.keyCode == 0x33 { // Delete/Backspace
-            _ = onClear()
+            let _ = onClear()
             cancelRecording()
             return
         }

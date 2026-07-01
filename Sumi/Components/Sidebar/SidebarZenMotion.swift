@@ -274,7 +274,7 @@ enum SidebarRowStagedReveal {
         withoutAnimation update: () -> Void
     ) {
         SidebarMotionTransaction.withoutAnimation {
-            _ = set.insert(id)
+            let _ = set.insert(id)
             update()
         }
     }

@@ -228,7 +228,7 @@ struct URLBarBookmarkEditorView: View {
         do {
             switch state.mode {
             case .add:
-                _ = try bookmarkManager.createBookmark(
+                let _ = try bookmarkManager.createBookmark(
                     url: url,
                     title: title,
                     folderID: folderID
@@ -237,7 +237,7 @@ struct URLBarBookmarkEditorView: View {
                 guard let bookmarkID = state.bookmarkID else {
                     throw SumiBookmarkError.missingBookmark
                 }
-                _ = try bookmarkManager.updateBookmark(
+                let _ = try bookmarkManager.updateBookmark(
                     id: bookmarkID,
                     title: title,
                     url: url,

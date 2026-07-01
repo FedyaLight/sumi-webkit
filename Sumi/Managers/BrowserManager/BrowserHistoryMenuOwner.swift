@@ -47,7 +47,7 @@ extension BrowserHistoryMenuOwner.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             requestCollapsedSidebarOverlayDismissal: { [weak browserManager] in
-                browserManager?.requestCollapsedSidebarOverlayDismissal()
+                browserManager?.nativeDialogPresentationOwner.requestCollapsedSidebarOverlayDismissal()
             },
             confirmClearAllHistory: {
                 let alert = NSAlert()
@@ -65,7 +65,7 @@ extension BrowserHistoryMenuOwner.Dependencies {
                 browserManager?.windowRegistry.map { Set($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
-                browserManager?.createNewWindow()
+                browserManager?.windowShellCommandOwner.createNewWindow()
             },
             awaitNextRegisteredWindow: { [weak browserManager] existingWindowIds in
                 await browserManager?.windowRegistry?.awaitNextRegisteredWindow(
@@ -77,7 +77,7 @@ extension BrowserHistoryMenuOwner.Dependencies {
                 browserManager.windowSessionService.applyWindowSessionSnapshot(
                     snapshot,
                     to: windowState,
-                    runtime: browserManager.makeWindowSessionRuntime()
+                    runtime: WindowSessionRuntimeFactory.make(for: browserManager)
                 )
             },
             bringWindowToFront: { windowState in

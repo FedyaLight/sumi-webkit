@@ -41,7 +41,7 @@ extension BrowserSidebarChromeCommandOwner.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             showGradientEditor: { [weak browserManager] source in
-                browserManager?.showGradientEditor(source: source)
+                browserManager?.workspaceThemeEditorOwner.showGradientEditor(source: source)
             },
             toggleSidebar: { [weak browserManager] windowState in
                 browserManager?.toggleSidebar(for: windowState)
@@ -50,10 +50,10 @@ extension BrowserSidebarChromeCommandOwner.Dependencies {
                 browserManager?.openSettingsTab(selecting: .appearance, in: windowState)
             },
             closeDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.closeDownloadsPopover(in: windowState)
+                browserManager?.chromePopoverRoutingOwner.closeDownloadsPopover(in: windowState)
             },
             toggleDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.toggleDownloadsPopover(in: windowState)
+                browserManager?.chromePopoverRoutingOwner.toggleDownloadsPopover(in: windowState)
             }
         )
     }

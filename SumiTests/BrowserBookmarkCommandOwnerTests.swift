@@ -173,7 +173,7 @@ private final class BrowserBookmarkCommandOwnerHarness {
     struct OpenedHistoryURL {
         var url: URL
         var windowID: UUID
-        var mode: BrowserManager.HistoryOpenMode
+        var mode: HistoryOpenMode
     }
 
     let bookmarkManager: SumiBookmarkManager

@@ -14,10 +14,10 @@ final class ExtensionControllerIdentifierOwner {
     nonisolated private static let controllerIdentifierKey =
         "\(SumiAppIdentity.bundleIdentifier).WKWebExtensionController.Identifier"
     #if DEBUG
-        nonisolated private static let testControllerIdentifiersDefaultsKey =
+        nonisolated private static let testControllerIdentifiersDefaultsKeyBase =
             "\(SumiAppIdentity.bundleIdentifier).tests.WKWebExtensionController.Identifiers"
         nonisolated private static var testControllerIdentifiersDefaultsKey: String {
-            "\(testControllerIdentifiersDefaultsKey).\(ProcessInfo.processInfo.processIdentifier)"
+            "\(testControllerIdentifiersDefaultsKeyBase).\(ProcessInfo.processInfo.processIdentifier)"
         }
         nonisolated private static let installTestControllerCleanupAtExit: Void = {
             removeInactiveTestWebExtensionControllerStorage()
@@ -87,7 +87,7 @@ final class ExtensionControllerIdentifierOwner {
 
         nonisolated private static func removeInactiveTestWebExtensionControllerStorage() {
             let defaults = UserDefaults.standard
-            let prefix = "\(testControllerIdentifiersDefaultsKey)."
+            let prefix = "\(testControllerIdentifiersDefaultsKeyBase)."
             let processKey = testControllerIdentifiersDefaultsKey
             for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
                 guard key != processKey,

@@ -48,7 +48,10 @@ enum BrowserGlanceRuntimeService {
                 browserManager?.splitManager.visibleTabIds(for: windowId).count ?? 0
             },
             dismissFloatingBarIfVisible: { [weak browserManager] windowId in
-                browserManager?.dismissFloatingBarIfVisible(in: windowId) ?? false
+                browserManager?.floatingBarRoutingOwner.dismissFloatingBarIfVisible(
+                    in: windowId,
+                    preserveDraft: true
+                ) ?? false
             },
             isFindBarVisible: { [weak browserManager] in
                 browserManager?.findManager.isFindBarVisible ?? false
@@ -141,7 +144,7 @@ enum BrowserGlanceRuntimeService {
             spaceId: targetSpace?.id,
             index: 0
         )
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.profileId = sourceProfile?.id ?? targetSpace?.profileId ?? browserManager.currentProfile?.id
         return tab
     }

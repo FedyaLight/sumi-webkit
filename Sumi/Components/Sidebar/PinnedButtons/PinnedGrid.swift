@@ -63,7 +63,7 @@ struct PinnedGrid: View {
     }
 
     var body: some View {
-        _ = browserContext.tabStructuralRevision()
+        let _ = browserContext.tabStructuralRevision()
         let shouldReduceMotion = reduceMotion || sumiSettings.shouldReduceChromeMotion
 
         let pinnedTabsConfiguration: PinnedTabsConfiguration = .large
@@ -364,7 +364,7 @@ struct PinnedGrid: View {
     }
 
     private func duplicateAsRegularTab(_ pin: ShortcutPin) {
-        _ = browserContext.commands.openForegroundTab(
+        let _ = browserContext.commands.openForegroundTab(
             pin.launchURL.absoluteString,
             windowState,
             windowState.currentSpaceId
@@ -465,7 +465,7 @@ struct PinnedGrid: View {
         ).count
 
         mutateContentLayout {
-            _ = browserContext.tabManager.moveShortcutPin(
+            let _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -480,7 +480,7 @@ struct PinnedGrid: View {
         let targetIndex = browserContext.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutateContentLayout {
-            _ = browserContext.tabManager.moveShortcutPin(
+            let _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -494,7 +494,7 @@ struct PinnedGrid: View {
     private func resetShortcutPin(_ pin: ShortcutPin) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
-        _ = browserContext.tabManager.resetShortcutPinToLaunchURL(
+        let _ = browserContext.tabManager.resetShortcutPinToLaunchURL(
             pin,
             in: windowState,
             preserveCurrentPage: preserveCurrentPage

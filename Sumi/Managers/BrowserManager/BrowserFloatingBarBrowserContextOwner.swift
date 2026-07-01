@@ -64,10 +64,14 @@ extension BrowserFloatingBarBrowserContextOwner.Dependencies {
                 searchManager.updateProfileContext()
             },
             updateDraft: { [weak browserManager] windowState, text in
-                browserManager?.updateFloatingBarDraft(in: windowState, text: text)
+                browserManager?.floatingBarRoutingOwner.updateFloatingBarDraft(in: windowState, text: text)
             },
             dismiss: { [weak browserManager] windowState, preserveDraft in
-                browserManager?.dismissFloatingBar(in: windowState, preserveDraft: preserveDraft)
+                browserManager?.floatingBarRoutingOwner.dismissFloatingBar(
+                    in: windowState,
+                    preserveDraft: preserveDraft,
+                    cancelEmptySplitPlaceholder: true
+                )
             },
             deleteHistoryEntry: { [weak browserManager] entry in
                 guard let browserManager else { return }
@@ -76,16 +80,16 @@ extension BrowserFloatingBarBrowserContextOwner.Dependencies {
                 )
             },
             commitNavigatesCurrentTab: { [weak browserManager] windowState in
-                browserManager?.floatingBarCommitNavigatesCurrentTab(in: windowState) ?? false
+                browserManager?.floatingBarRoutingOwner.floatingBarCommitNavigatesCurrentTab(in: windowState) ?? false
             },
             commitNavigation: { [weak browserManager] urlString, windowState in
-                browserManager?.commitFloatingBarNavigation(
+                browserManager?.floatingBarRoutingOwner.commitFloatingBarNavigation(
                     to: urlString,
                     in: windowState
                 )
             },
             commitSuggestion: { [weak browserManager] suggestion, windowState in
-                browserManager?.commitFloatingBarSuggestion(
+                browserManager?.floatingBarRoutingOwner.commitFloatingBarSuggestion(
                     suggestion,
                     in: windowState
                 )

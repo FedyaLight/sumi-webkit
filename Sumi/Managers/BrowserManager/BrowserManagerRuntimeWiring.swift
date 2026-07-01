@@ -50,13 +50,13 @@ enum BrowserManagerRuntimeWiring {
         AuthenticationManagerRuntime(
             presentBasicAuthSheet: { [weak browserManager] session, tab in
                 guard let browserManager else { return false }
-                return browserManager.presentBasicAuthSheet(
+                return browserManager.nativeDialogPresentationOwner.presentBasicAuthSheet(
                     session,
                     in: browserManager.windowState(containing: tab)
                 )
             },
             dismissNativeModalPresentation: { [weak browserManager] in
-                browserManager?.dismissNativeModalPresentation()
+                browserManager?.nativeDialogPresentationOwner.dismissNativeModalPresentation()
             }
         )
     }
@@ -143,10 +143,10 @@ enum BrowserManagerRuntimeWiring {
                 )
             },
             applyBoostAwareZoom: { [weak browserManager] tab, webView in
-                browserManager?.applyBoostAwareZoom(for: tab, webView: webView)
+                browserManager?.zoomCommandOwner.applyBoostAwareZoom(for: tab, webView: webView)
             },
             openWebInspector: { [weak browserManager] tab, windowState in
-                browserManager?.openWebInspector(for: tab, in: windowState)
+                browserManager?.activePageRoutingOwner.openWebInspector(for: tab, in: windowState)
             }
         )
     }
@@ -209,7 +209,7 @@ extension SplitViewRuntime {
                 browserManager?.schedulePersistWindowSession(for: windowState)
             },
             focusFloatingBar: { [weak browserManager] windowState, reason in
-                browserManager?.focusFloatingBar(
+                browserManager?.floatingBarRoutingOwner.focusFloatingBar(
                     in: windowState,
                     prefill: "",
                     navigateCurrentTab: true,
@@ -283,7 +283,7 @@ extension TabManagerRuntimeContext {
                 browserManager?.recentlyClosedManager.captureDeletedShortcutLauncher(pin)
             },
             presentTabClosureToast: { [weak browserManager] tabCount in
-                browserManager?.presentTabClosureToast(tabCount: tabCount)
+                browserManager?.toastPresenter.presentTabClosureToast(tabCount: tabCount)
             },
             validateWindowStates: { [weak browserManager] in
                 browserManager?.validateWindowStates()
@@ -292,10 +292,10 @@ extension TabManagerRuntimeContext {
                 browserManager?.persistWindowSession(for: windowState)
             },
             syncWorkspaceThemeAcrossWindows: { [weak browserManager] space, animate in
-                browserManager?.syncWorkspaceThemeAcrossWindows(for: space, animate: animate)
+                browserManager?.workspaceThemeTransitionOwner.syncWorkspaceThemeAcrossWindows(for: space, animate: animate)
             },
             closeAuxiliaryMiniWindow: { [weak browserManager] tab, reason in
-                browserManager?.closeAuxiliaryMiniWindow(for: tab, reason: reason)
+                browserManager?.webViewCloseRouter.closeAuxiliaryMiniWindow(for: tab, reason: reason)
             },
             isLiveFolder: { [weak browserManager] folderId in
                 browserManager?.liveFolderManager.isLiveFolder(folderId) == true
@@ -354,7 +354,7 @@ extension TabManagerWebViewLifecycleService {
             },
             prepareTab: { [weak browserManager] tab in
                 guard let browserManager else { return }
-                tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+                tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
             }
         )
     }
@@ -502,7 +502,7 @@ extension SumiScriptsManagerRuntime {
         _ browserManager: BrowserManager
     ) {
         if browserManager.tabManager.isAuxiliaryMiniWindowTab(tab) {
-            browserManager.closeAuxiliaryMiniWindow(for: tab, reason: .extensionRequestedClose)
+            browserManager.webViewCloseRouter.closeAuxiliaryMiniWindow(for: tab, reason: .extensionRequestedClose)
             return
         }
 
@@ -590,7 +590,7 @@ extension UserScriptInjectorRuntime {
                 browserManager?.downloadManager
             },
             notificationPermissionBridge: { [weak browserManager] in
-                browserManager?.notificationPermissionBridge
+                browserManager?.permissionRuntime.notificationPermissionBridge
             },
             notificationTabContext: { [weak browserManager] webViewId, webView in
                 browserManager?.tabManager.tab(for: webViewId)?

@@ -119,7 +119,7 @@ struct SpacesSideBarView: View {
     }
 
     private var mainSidebarContent: some View {
-        _ = browserContext.tabStructuralRevision()
+        let _ = browserContext.tabStructuralRevision()
         let spaces = availableSpaces
         let visualSpaceId = runtimeOwner.visualSelectedSpaceId(
             spaces: spaces,

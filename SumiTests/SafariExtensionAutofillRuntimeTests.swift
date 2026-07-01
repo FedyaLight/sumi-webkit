@@ -225,7 +225,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         browserManager.profileManager.profiles = [profile]
 
         let tab = makeTab(profileId: profile.id, url: URL(string: "about:blank")!)
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
             surface: .extensionOptions

@@ -96,7 +96,7 @@ extension BrowserURLBarHubContextOwner.Dependencies {
         let dataServices = browserManager.dataServices
         let boostsModule = browserManager.boostsModule
         let extensionsModule = browserManager.extensionsModule
-        let extensionSurfaceStore = browserManager.extensionSurfaceStore
+        let extensionSurfaceStore = browserManager.extensionsModule.surfaceStore
         let protectionCoordinator = browserManager.protectionCoordinator
         let webViewRoutingService = browserManager.webViewRoutingService
         return Self(
@@ -202,10 +202,10 @@ extension BrowserURLBarHubContextOwner.Dependencies {
                 )
             },
             presentSharingServicePicker: { [weak browserManager] items, source in
-                browserManager?.presentSharingServicePicker(items, source: source)
+                browserManager?.nativeDialogPresentationOwner.presentSharingServicePicker(items, source: source)
             },
             clearBookmarkEditorPresentationRequest: { [weak browserManager] request in
-                browserManager?.clearBookmarkEditorPresentationRequest(request)
+                browserManager?.bookmarkCommandOwner.clearBookmarkEditorPresentationRequest(request)
             }
         )
     }

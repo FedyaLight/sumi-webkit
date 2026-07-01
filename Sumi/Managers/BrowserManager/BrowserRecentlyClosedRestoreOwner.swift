@@ -313,13 +313,13 @@ extension BrowserRecentlyClosedRestoreOwner.Dependencies {
                 browserManager?.lastSessionWindowsStore ?? lastSessionWindowsStore
             },
             currentRegularWindowSnapshots: { [weak browserManager] excludedWindowId in
-                browserManager?.currentRegularWindowSnapshots(excludingWindowID: excludedWindowId) ?? []
+                browserManager?.windowHistorySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludedWindowId) ?? []
             },
             refreshLastSessionWindowsStore: { [weak browserManager] excludedWindowId in
-                browserManager?.refreshLastSessionWindowsStore(excludingWindowID: excludedWindowId)
+                browserManager?.windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludedWindowId)
             },
             reopenWindow: { [weak browserManager] snapshot in
-                await browserManager?.reopenWindow(from: snapshot)
+                await browserManager?.historyMenuOwner.reopenWindow(from: snapshot)
             },
             mergeSnapshotForLastSessionRestore: { [weak browserManager] snapshot in
                 browserManager?.tabManager.mergeSnapshotForLastSessionRestore(snapshot)

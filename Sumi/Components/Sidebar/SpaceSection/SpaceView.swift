@@ -117,7 +117,7 @@ struct SpaceView: View {
     }
 
     var body: some View {
-        _ = browserContext.tabStructuralRevision()
+        let _ = browserContext.tabStructuralRevision()
 
         return VStack(spacing: 4) {
             SpaceTitle(
@@ -184,7 +184,7 @@ extension SpaceView {
         SidebarMotionTransaction.withoutAnimation {
             update()
             shortcutRestoreGaps.removeAll { $0.id == existingGap.id }
-            _ = shortcutRestoreAppearingGapIds.remove(existingGap.id)
+            let _ = shortcutRestoreAppearingGapIds.remove(existingGap.id)
         }
     }
 

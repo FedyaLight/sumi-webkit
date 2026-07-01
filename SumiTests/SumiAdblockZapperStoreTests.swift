@@ -119,7 +119,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
 
     private func makeDefaults() -> UserDefaults {
         let suiteName = "SumiAdblockZapperStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
+        let defaults = UserDefaults(suiteName: suiteName)!
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
     }

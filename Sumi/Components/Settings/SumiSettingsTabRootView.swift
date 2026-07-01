@@ -330,7 +330,7 @@ struct SumiSettingsTabRootView: View {
                 profileManager: browserManager.profileManager,
                 tabManager: browserManager.tabManager,
                 deleteProfile: { profile in
-                    browserManager.deleteProfile(profile)
+                    browserManager.profileMaintenanceOwner.deleteProfile(profile)
                 }
             )
         case .shortcuts:
@@ -345,7 +345,7 @@ struct SumiSettingsTabRootView: View {
             SumiDataRecoverySettingsPane(
                 actions: SumiDataRecoveryActions(
                     importBookmarksFromMenu: {
-                        browserManager.importBookmarksFromMenu()
+                        browserManager.bookmarkCommandOwner.importBookmarksFromMenu()
                     },
                     exportBrowser2ZenDocument: {
                         try SumiTransferExportService()

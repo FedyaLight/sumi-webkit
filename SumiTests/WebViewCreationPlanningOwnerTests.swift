@@ -48,8 +48,8 @@ final class WebViewCreationPlanningOwnerTests: XCTestCase {
         let owner = WebViewCreationPlanningOwner()
         let tab = makeWarmupTab()
         let targetWindowId = UUID()
-        let stableRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000001") ?? preconditionFailure("Invalid UUID literal")
-        let laterRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000002") ?? preconditionFailure("Invalid UUID literal")
+        let stableRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let laterRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         tab.primaryWindowId = laterRegistryWindowId
 
         let plan = owner.creationPlan(

@@ -295,19 +295,19 @@ extension BrowserWindowSpaceStateOwner.Dependencies {
             windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
             selectionService: selectionService,
             sanitizeFloatingBarState: { [weak browserManager] windowState in
-                browserManager?.sanitizeFloatingBarState(in: windowState)
+                browserManager?.floatingBarRoutingOwner.sanitizeFloatingBarState(in: windowState)
             },
             syncShortcutSelectionState: { [weak browserManager] windowState in
                 browserManager?.syncShortcutSelectionState(for: windowState)
             },
             updateWorkspaceTheme: { [weak browserManager] windowState, theme, animate in
-                browserManager?.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
+                browserManager?.workspaceThemeTransitionOwner.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
             },
             commitWorkspaceTheme: { [weak browserManager] theme, windowState in
-                browserManager?.commitWorkspaceTheme(theme, for: windowState)
+                browserManager?.workspaceThemeTransitionOwner.commitWorkspaceTheme(theme, for: windowState)
             },
             finishInteractiveSpaceTransition: { [weak browserManager] space, windowState, identity in
-                browserManager?.finishInteractiveSpaceTransition(
+                browserManager?.workspaceThemeTransitionOwner.finishInteractiveSpaceTransition(
                     to: space,
                     in: windowState,
                     identity: identity

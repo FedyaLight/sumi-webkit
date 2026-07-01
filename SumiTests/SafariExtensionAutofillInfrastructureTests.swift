@@ -101,7 +101,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             name: "Private"
         )
         tab.profileId = profile.id
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let result = SafariExtensionAutofillInfrastructureClassifier.classifyTab(
             tab: tab,
@@ -152,7 +152,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             name: "Loaded"
         )
         tab.profileId = profile.id
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
         _ = manager.stableAdapter(for: tab)
 
@@ -218,7 +218,7 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             name: "Ready"
         )
         tab.profileId = profile.id
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         tab.extensionPageRuntimeOwner.eligibleGeneration = manager.tabOpenNotificationGeneration
 
         let webView = FocusableWKWebView(frame: .zero, configuration: configuration)

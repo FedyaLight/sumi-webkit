@@ -27,12 +27,12 @@ struct SumiHistoryCommands: Commands {
     }
 
     private var historyMenuFaviconPartition: SumiFaviconPartition {
-        _ = menuFaviconInvalidator.revision
+        let _ = menuFaviconInvalidator.revision
         return browserContext.faviconPartition
     }
 
     private var recentVisitedItems: [HistoryListItem] {
-        _ = historyManager.revision
+        let _ = historyManager.revision
         return historyManager.recentVisitedItems(maxCount: 12)
     }
 

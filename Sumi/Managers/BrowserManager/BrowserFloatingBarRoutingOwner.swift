@@ -227,7 +227,7 @@ extension BrowserFloatingBarRoutingOwner.Dependencies {
             windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
             settings: { [weak browserManager] in browserManager?.sumiSettings },
             activePageTab: { [weak browserManager] windowState in
-                browserManager?.activePageTab(for: windowState)
+                browserManager?.activePageRoutingOwner.activePageTab(for: windowState)
             },
             hasValidCurrentSelection: { [weak browserManager] windowState in
                 browserManager?.hasValidCurrentSelection(in: windowState) ?? false
@@ -245,21 +245,21 @@ extension BrowserFloatingBarRoutingOwner.Dependencies {
                 browserManager?.selectTab(tab, in: windowState)
             },
             loadCurrentPageURL: { [weak browserManager] tab, windowState, urlString in
-                browserManager?.loadFloatingBarCurrentPage(
+                browserManager?.windowScopedNavigationOwner.loadFloatingBarCurrentPage(
                     urlString,
                     tab: tab,
                     in: windowState
                 )
             },
             navigateCurrentPage: { [weak browserManager] tab, windowState, input in
-                browserManager?.navigateFloatingBarCurrentPage(
+                browserManager?.windowScopedNavigationOwner.navigateFloatingBarCurrentPage(
                     input,
                     tab: tab,
                     in: windowState
                 )
             },
             dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
-                browserManager?.dismissThemePickerDiscardingIfNeeded()
+                browserManager?.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
             },
             persistWindowSession: { [weak browserManager] windowState in
                 browserManager?.persistWindowSession(for: windowState)

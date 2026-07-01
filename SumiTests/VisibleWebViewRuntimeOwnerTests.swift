@@ -158,7 +158,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
 
     private func makeWebTab(urlString: String = "https://example.com") -> Tab {
         Tab(
-            url: URL(string: urlString) ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: urlString)!,
             loadsCachedFaviconOnInit: false
         )
     }

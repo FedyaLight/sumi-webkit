@@ -332,7 +332,7 @@ private struct SumiScriptsToolbarControl: View {
             SumiScriptsPopupView(
                 manager: manager,
                 currentURL: currentTab?.url,
-                webView: currentTab.map(browserContext.webView)
+                webView: currentTab.flatMap(browserContext.webView)
             )
         }
     }

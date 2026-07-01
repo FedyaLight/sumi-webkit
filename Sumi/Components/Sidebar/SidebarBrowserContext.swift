@@ -78,7 +78,7 @@ struct SidebarBrowserContext {
             liveFolderManager: browserManager.liveFolderManager,
             splitManager: browserManager.splitManager,
             downloadManager: browserManager.downloadManager,
-            downloadsPopoverPresenter: browserManager.downloadsPopoverPresenter,
+            downloadsPopoverPresenter: browserManager.chromePopoverRoutingOwner.downloadsPopoverPresenter,
             glanceManager: browserManager.glanceManager,
             extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
             regularTabs: SidebarRegularTabsController.live(
@@ -111,7 +111,7 @@ struct SidebarBrowserContext {
                     )
                 },
                 showGradientEditorForSpace: { [weak browserManager] space, source in
-                    browserManager?.showGradientEditor(for: space, source: source)
+                    browserManager?.workspaceThemeEditorOwner.showGradientEditor(for: space, source: source)
                 },
                 confirmDeleteSpace: { [weak browserManager] space, windowState in
                     guard let browserManager else { return }
@@ -122,11 +122,11 @@ struct SidebarBrowserContext {
                     )
                 },
                 presentSharingServicePicker: { [weak browserManager] items, source in
-                    browserManager?.presentSharingServicePicker(items, source: source)
+                    browserManager?.nativeDialogPresentationOwner.presentSharingServicePicker(items, source: source)
                 }
             ),
             headerContext: { windowState in
-                browserManager.sidebarHeaderBrowserContext(for: windowState)
+                browserManager.urlBarContextOwner.sidebarHeaderContext(for: windowState)
             },
             tabStructuralRevision: { [weak browserManager] in
                 browserManager?.tabStructuralRevision ?? 0

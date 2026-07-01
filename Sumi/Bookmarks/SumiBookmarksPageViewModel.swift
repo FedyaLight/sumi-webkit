@@ -12,7 +12,7 @@ struct BookmarksPageBrowserContext {
     let currentTab: (BrowserWindowState) -> Tab?
     let openHistoryURLsInNewTabs: ([URL], BrowserWindowState) -> Void
     let openHistoryURLsInNewWindow: ([URL]) -> Void
-    let openBookmarkURL: (URL, BrowserWindowState, BrowserManager.HistoryOpenMode) -> Void
+    let openBookmarkURL: (URL, BrowserWindowState, HistoryOpenMode) -> Void
     let importBookmarksFromMenu: () -> Void
     let exportBookmarksFromMenu: () -> Void
     let scheduleRuntimeStatePersistence: (Tab) -> Void
@@ -131,11 +131,11 @@ final class SumiBookmarksPageViewModel: ObservableObject {
             selectFolder(entity.id)
             return
         }
-        let mode: BrowserManager.HistoryOpenMode = modifiers.contains(.command) ? .newTab : .currentTab
+        let mode: HistoryOpenMode = modifiers.contains(.command) ? .newTab : .currentTab
         open(entity, mode: mode)
     }
 
-    func open(_ entity: SumiBookmarkEntity, mode: BrowserManager.HistoryOpenMode) {
+    func open(_ entity: SumiBookmarkEntity, mode: HistoryOpenMode) {
         guard let windowState else { return }
 
         if entity.isFolder {

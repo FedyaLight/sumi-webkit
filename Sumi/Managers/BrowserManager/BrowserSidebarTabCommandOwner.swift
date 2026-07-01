@@ -76,7 +76,7 @@ extension BrowserSidebarTabCommandOwner.Dependencies {
                 )
             },
             openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                browserManager?.openNewTabOrFloatingBar(in: windowState)
+                browserManager?.floatingBarRoutingOwner.openNewTabOrFloatingBar(in: windowState)
             },
             duplicateTab: { [weak browserManager] tab, windowState in
                 browserManager?.duplicateTab(tab, in: windowState)

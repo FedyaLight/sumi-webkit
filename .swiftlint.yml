@@ -1,6 +1,12 @@
 strict: true
 baseline: .swiftlint-baseline.json
 
+# `_ = value` no longer compiles inside SwiftUI result builders (Swift 6 rejects
+# bare expression statements there); those sites must use `let _ = value`, which
+# this rule would auto-"fix" back into a compile error.
+disabled_rules:
+  - redundant_discardable_let
+
 included:
   - App
   - FloatingBar

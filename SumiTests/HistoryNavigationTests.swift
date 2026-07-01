@@ -8,7 +8,7 @@ final class HistoryNavigationTests: XCTestCase {
     func testOpenHistoryTabCreatesSelectedHistorySurface() {
         let (browserManager, _, windowState, space) = makeHarness()
 
-        browserManager.openHistoryTab(in: windowState)
+        browserManager.historyNavigationOwner.openHistoryTab(in: windowState)
 
         let historyTabs = browserManager.tabManager.tabs(in: space).filter(\.representsSumiHistorySurface)
         XCTAssertEqual(historyTabs.count, 1)
@@ -37,12 +37,12 @@ final class HistoryNavigationTests: XCTestCase {
     func testOpenHistoryTabReusesExistingHistorySurface() throws {
         let (browserManager, _, windowState, space) = makeHarness()
 
-        browserManager.openHistoryTab(in: windowState)
+        browserManager.historyNavigationOwner.openHistoryTab(in: windowState)
         let firstHistoryTab = try XCTUnwrap(
             browserManager.tabManager.tabs(in: space).first(where: \.representsSumiHistorySurface)
         )
 
-        browserManager.openHistoryTab(selecting: .older, in: windowState)
+        browserManager.historyNavigationOwner.openHistoryTab(selecting: .older, in: windowState)
 
         let historyTabs = browserManager.tabManager.tabs(in: space).filter(\.representsSumiHistorySurface)
         XCTAssertEqual(historyTabs.count, 1)
@@ -166,7 +166,7 @@ final class HistoryNavigationTests: XCTestCase {
 
     private func makeTab(_ url: String) -> Tab {
         Tab(
-            url: URL(string: url) ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: url)!,
             name: url,
             loadsCachedFaviconOnInit: false
         )

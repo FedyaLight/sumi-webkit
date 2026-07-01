@@ -240,7 +240,7 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
 
     private func makeTab(_ urlString: String) -> Tab {
         Tab(
-            url: URL(string: urlString) ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: urlString)!,
             name: urlString,
             loadsCachedFaviconOnInit: false
         )

@@ -124,7 +124,7 @@ final class TabProfileResolutionOwnerTests: XCTestCase {
 
     private func makeRuntimeTab(in browserManager: BrowserManager) -> Tab {
         let tab = Tab(loadsCachedFaviconOnInit: false)
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         return tab
     }
 }

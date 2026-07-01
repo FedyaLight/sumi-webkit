@@ -343,7 +343,7 @@ final class SumiImportApplier {
             uniquingKeysWith: { first, _ in first }
         )
 
-        let tabBrowserRuntime = browserManager.makeTabBrowserRuntime()
+        let tabBrowserRuntime = TabBrowserRuntimeFactory.make(for: browserManager)
         var tabsBySpace: [UUID: [Tab]] = [:]
         let tabRecordsBySpace = Dictionary(grouping: data.regularTabs, by: \.spaceId)
         for space in spaces {

@@ -670,7 +670,7 @@ extension SpaceView {
     }
 
     private func duplicateShortcutPin(_ pin: ShortcutPin) {
-        _ = browserContext.commands.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
+        let _ = browserContext.commands.openForegroundTab(pin.launchURL.absoluteString, windowState, space.id)
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
@@ -681,7 +681,7 @@ extension SpaceView {
         ).count
 
         mutatePinnedContent {
-            _ = browserContext.tabManager.moveShortcutPin(
+            let _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -696,7 +696,7 @@ extension SpaceView {
         let targetIndex = browserContext.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutatePinnedContent {
-            _ = browserContext.tabManager.moveShortcutPin(
+            let _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -710,7 +710,7 @@ extension SpaceView {
     private func resetShortcutPin(_ pin: ShortcutPin) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
-        _ = browserContext.tabManager.resetShortcutPinToLaunchURL(
+        let _ = browserContext.tabManager.resetShortcutPinToLaunchURL(
             pin,
             in: windowState,
             preserveCurrentPage: preserveCurrentPage

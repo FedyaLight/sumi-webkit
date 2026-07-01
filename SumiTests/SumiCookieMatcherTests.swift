@@ -94,7 +94,7 @@ final class SumiCookieMatcherTests: XCTestCase {
         if isSecure {
             properties[.secure] = "TRUE"
         }
-        return HTTPCookie(properties: properties) ?? preconditionFailure("Invalid cookie properties")
+        return HTTPCookie(properties: properties)!
     }
 
     private static func matchedNames(_ cookies: [HTTPCookie], matching url: URL) -> [String] {

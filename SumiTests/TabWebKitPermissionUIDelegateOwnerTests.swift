@@ -31,7 +31,7 @@ final class TabWebKitPermissionUIDelegateOwnerTests: XCTestCase {
             url: URL(string: "https://files.example/page")!,
             loadsCachedFaviconOnInit: false
         )
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let webView = WKWebView()
 
         let context = try XCTUnwrap(tab.filePickerPermissionTabContext(for: webView))

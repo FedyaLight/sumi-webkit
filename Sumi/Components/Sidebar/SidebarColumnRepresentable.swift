@@ -9,7 +9,7 @@ struct SidebarColumnHostedRootView: View {
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     var body: some View {
-        _ = structuralInvalidationGeneration
+        let _ = structuralInvalidationGeneration
         SpacesSideBarView(
             browserContext: environmentContext.browserContext,
             nowPlayingController: environmentContext.nowPlayingController

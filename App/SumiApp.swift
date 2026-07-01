@@ -156,7 +156,7 @@ struct SumiApp: App {
         initialWorkspaceTheme: WorkspaceTheme?
     ) -> some View {
         ContentView(
-            windowLifecycleHandler: dependencies.browserManager,
+            windowLifecycleHandler: dependencies.browserManager.appCommandRouter,
             browserContext: .live(browserManager: dependencies.browserManager),
             windowState: windowState,
             initialWorkspaceTheme: initialWorkspaceTheme
@@ -164,7 +164,7 @@ struct SumiApp: App {
             .ignoresSafeArea(.all)
             .writingToolsBehavior(.disabled)
             .environmentObject(dependencies.browserManager.glanceManager)
-            .environmentObject(dependencies.browserManager.extensionSurfaceStore)
+            .environmentObject(dependencies.browserManager.extensionsModule.surfaceStore)
             .environmentObject(dependencies.nowPlayingController)
             .environment(dependencies.windowRegistry)
             .environment(dependencies.webViewCoordinator)

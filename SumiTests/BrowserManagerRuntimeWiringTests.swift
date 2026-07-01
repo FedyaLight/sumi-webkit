@@ -195,7 +195,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
         detachedTab.spaceId = space.id
-        detachedTab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        detachedTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         let targetURL = URL(string: "https://detached-target.example")!
         detachedTab.openContextMenuURLInForegroundTab(targetURL)
@@ -463,15 +463,15 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             externalSchemeSessionStore: externalSchemeSessionStore
         )
 
-        XCTAssertIdentical(browserManager.permissionIndicatorEventStore, indicatorEventStore)
-        XCTAssertIdentical(browserManager.permissionRecentActivityStore, recentActivityStore)
-        XCTAssertIdentical(browserManager.permissionSiteActivityStore, siteActivityStore)
-        XCTAssertIdentical(browserManager.permissionCleanupService, cleanupService)
-        XCTAssertIdentical(browserManager.blockedPopupStore, blockedPopupStore)
-        XCTAssertIdentical(browserManager.externalSchemeSessionStore, externalSchemeSessionStore)
-        XCTAssertIdentical(browserManager.permissionBridges.permissionIndicatorEventStore, indicatorEventStore)
-        XCTAssertIdentical(browserManager.permissionBridges.blockedPopupStore, blockedPopupStore)
-        XCTAssertIdentical(browserManager.permissionBridges.externalSchemeSessionStore, externalSchemeSessionStore)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionIndicatorEventStore, indicatorEventStore)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionRecentActivityStore, recentActivityStore)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionSiteActivityStore, siteActivityStore)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionCleanupService, cleanupService)
+        XCTAssertIdentical(browserManager.permissionRuntime.blockedPopupStore, blockedPopupStore)
+        XCTAssertIdentical(browserManager.permissionRuntime.externalSchemeSessionStore, externalSchemeSessionStore)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionBridges.permissionIndicatorEventStore, indicatorEventStore)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionBridges.blockedPopupStore, blockedPopupStore)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionBridges.externalSchemeSessionStore, externalSchemeSessionStore)
     }
 
     func testBrowserManagerPermissionFacadesRouteThroughScopedBridgeRegistry() throws {
@@ -481,17 +481,17 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             ),
             permissionSiteActivityStore: try makeSiteActivityStore()
         )
-        let registry = browserManager.permissionBridges
+        let registry = browserManager.permissionRuntime.permissionBridges
 
         XCTAssertIdentical(browserManager.permissionRuntime.permissionBridges, registry)
-        XCTAssertIdentical(browserManager.webKitPermissionBridge, registry.webKitPermissionBridge)
-        XCTAssertIdentical(browserManager.webKitGeolocationBridge, registry.webKitGeolocationBridge)
-        XCTAssertIdentical(browserManager.notificationPermissionBridge, registry.notificationPermissionBridge)
-        XCTAssertIdentical(browserManager.filePickerPermissionBridge, registry.filePickerPermissionBridge)
-        XCTAssertIdentical(browserManager.storageAccessPermissionBridge, registry.storageAccessPermissionBridge)
-        XCTAssertIdentical(browserManager.popupPermissionBridge, registry.popupPermissionBridge)
-        XCTAssertIdentical(browserManager.externalSchemePermissionBridge, registry.externalSchemePermissionBridge)
-        XCTAssertIdentical(browserManager.permissionLifecycleController, registry.permissionLifecycleController)
+        XCTAssertIdentical(browserManager.permissionRuntime.webKitPermissionBridge, registry.webKitPermissionBridge)
+        XCTAssertIdentical(browserManager.permissionRuntime.webKitGeolocationBridge, registry.webKitGeolocationBridge)
+        XCTAssertIdentical(browserManager.permissionRuntime.notificationPermissionBridge, registry.notificationPermissionBridge)
+        XCTAssertIdentical(browserManager.permissionRuntime.filePickerPermissionBridge, registry.filePickerPermissionBridge)
+        XCTAssertIdentical(browserManager.permissionRuntime.storageAccessPermissionBridge, registry.storageAccessPermissionBridge)
+        XCTAssertIdentical(browserManager.permissionRuntime.popupPermissionBridge, registry.popupPermissionBridge)
+        XCTAssertIdentical(browserManager.permissionRuntime.externalSchemePermissionBridge, registry.externalSchemePermissionBridge)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionLifecycleController, registry.permissionLifecycleController)
     }
 
     func testPermissionBridgeOverridesAreScopedToRegistry() throws {
@@ -524,9 +524,9 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             )
         )
 
-        XCTAssertIdentical(browserManager.permissionBridges.popupPermissionBridge, popupBridge)
-        XCTAssertIdentical(browserManager.popupPermissionBridge, popupBridge)
-        XCTAssertIdentical(browserManager.permissionBridges.blockedPopupStore, blockedPopupStore)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionBridges.popupPermissionBridge, popupBridge)
+        XCTAssertIdentical(browserManager.permissionRuntime.popupPermissionBridge, popupBridge)
+        XCTAssertIdentical(browserManager.permissionRuntime.permissionBridges.blockedPopupStore, blockedPopupStore)
     }
 
     func testWebViewCoordinatorWiringUsesInjectedBrowsingDataCleanupService() throws {
@@ -653,16 +653,21 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             url: URL(string: "https://example.com/path")!,
             loadsCachedFaviconOnInit: false
         )
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         XCTAssertIdentical(tab.faviconService as AnyObject, faviconService)
         XCTAssertIdentical(tab.visitedLinkStore as AnyObject, visitedLinkStore)
 
-        browserManager.enforceSiteDataPolicyAfterNavigation(for: tab)
+        browserManager.dataServices.siteDataPolicyEnforcementService.enforceBlockStorageIfNeeded(
+            for: tab.url,
+            profile: tab.resolveProfile()
+        )
 
         XCTAssertEqual(siteDataPolicyService.enforcedURLs, [tab.url])
         XCTAssertEqual(siteDataPolicyService.enforcedProfileIds, [initialProfile.id])
 
-        await browserManager.performAllWindowsClosedSiteDataCleanup()
+        await browserManager.dataServices.siteDataPolicyEnforcementService.performAllWindowsClosedCleanup(
+            profiles: browserManager.profileManager.profiles
+        )
 
         XCTAssertEqual(
             siteDataPolicyService.closedCleanupProfileIds,
@@ -684,7 +689,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(automaticCleanupService.schedules[0].currentProfileId, initialProfile.id)
         XCTAssertEqual(automaticCleanupService.schedules[0].reason, "settings-attached")
 
-        browserManager.scheduleAutomaticBrowsingDataCleanup(
+        browserManager.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
             reason: "unit-test",
             force: true,
             delayNanoseconds: 0
@@ -729,11 +734,11 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let initialProfile = try XCTUnwrap(browserManager.currentProfile)
 
         let historyViewModel = HistoryPageViewModel(
-            browserContext: browserManager.historyPageBrowserContext,
+            browserContext: WebsiteViewContextFactory.historyPageBrowserContext(for: browserManager),
             windowState: nil
         )
         let bookmarksViewModel = SumiBookmarksPageViewModel(
-            browserContext: browserManager.bookmarksPageBrowserContext,
+            browserContext: WebsiteViewContextFactory.bookmarksPageBrowserContext(for: browserManager),
             windowState: nil
         )
 
@@ -798,7 +803,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             url: URL(string: "https://example.com/video")!,
             loadsCachedFaviconOnInit: false
         )
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         tab.applyAudioState(.unmuted(isPlayingAudio: true))
 

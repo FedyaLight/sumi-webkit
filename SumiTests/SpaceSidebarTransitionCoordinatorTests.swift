@@ -133,19 +133,19 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
     }
 
     func testCommittedSpaceChangeCancelsScheduledCompletion() async throws {
-        let windowState = BrowserWindowState(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000D4") ?? preconditionFailure("Invalid UUID literal"))
+        let windowState = BrowserWindowState(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000D4")!)
         let source = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A1") ?? preconditionFailure("Invalid UUID literal"),
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!,
             name: "Source",
             workspaceTheme: WorkspaceTheme(gradientTheme: .default)
         )
         let scheduledDestination = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2") ?? preconditionFailure("Invalid UUID literal"),
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!,
             name: "Scheduled",
             workspaceTheme: WorkspaceTheme(gradientTheme: .incognito)
         )
         let directDestination = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C3") ?? preconditionFailure("Invalid UUID literal"),
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C3")!,
             name: "Direct",
             workspaceTheme: WorkspaceTheme(
                 gradientTheme: WorkspaceGradientTheme(
@@ -210,24 +210,24 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
     }
 
     func testCommittedSpaceChangeKeepsCancelledDestinationGeometryFromPromoting() async throws {
-        let windowState = BrowserWindowState(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000D5") ?? preconditionFailure("Invalid UUID literal"))
-        let sourceProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000000E5") ?? preconditionFailure("Invalid UUID literal")
-        let scheduledProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000000F5") ?? preconditionFailure("Invalid UUID literal")
-        let directProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000001F5") ?? preconditionFailure("Invalid UUID literal")
+        let windowState = BrowserWindowState(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000D5")!)
+        let sourceProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000000E5")!
+        let scheduledProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000000F5")!
+        let directProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000001F5")!
         let source = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A5") ?? preconditionFailure("Invalid UUID literal"),
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A5")!,
             name: "Source",
             workspaceTheme: WorkspaceTheme(gradientTheme: .default),
             profileId: sourceProfileId
         )
         let scheduledDestination = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B5") ?? preconditionFailure("Invalid UUID literal"),
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B5")!,
             name: "Scheduled",
             workspaceTheme: WorkspaceTheme(gradientTheme: .incognito),
             profileId: scheduledProfileId
         )
         let directDestination = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C5") ?? preconditionFailure("Invalid UUID literal"),
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C5")!,
             name: "Direct",
             workspaceTheme: WorkspaceTheme(
                 gradientTheme: WorkspaceGradientTheme(

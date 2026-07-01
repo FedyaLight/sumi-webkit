@@ -34,7 +34,7 @@ extension BrowserTabSelectionOwner {
                 browserManager?.space(for: spaceId)
             },
             updateWorkspaceTheme: { [weak browserManager] windowState, theme, animate in
-                browserManager?.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
+                browserManager?.workspaceThemeTransitionOwner.updateWorkspaceTheme(for: windowState, to: theme, animate: animate)
             },
             applySettingsSurfaceNavigation: { [weak browserManager] url in
                 browserManager?.sumiSettings?.applyNavigationFromSettingsSurfaceURL(url)
@@ -61,7 +61,7 @@ extension BrowserTabSelectionOwner {
                 }
             },
             dismissFloatingBarAfterSelection: { [weak browserManager] windowState in
-                browserManager?.dismissFloatingBarAfterSelection(in: windowState)
+                browserManager?.floatingBarRoutingOwner.dismissFloatingBarAfterSelection(in: windowState)
             },
             updateFindManagerCurrentTab: { [weak browserManager] in
                 browserManager?.updateFindManagerCurrentTab()
@@ -94,7 +94,7 @@ extension BrowserTabSelectionOwner {
                 browserManager?.updateProfileRuntimeStates(activeWindowState: windowState)
             },
             showNewTabFloatingBar: { [weak browserManager] windowState in
-                browserManager?.showNewTabFloatingBar(in: windowState)
+                browserManager?.floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)
             }
         )
     }

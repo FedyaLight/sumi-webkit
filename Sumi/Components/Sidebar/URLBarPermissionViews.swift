@@ -111,7 +111,7 @@ extension URLBarView {
     func performPermissionRuntimeAction(
         _ actionKind: SumiPermissionRuntimeControl.Action.Kind
     ) async {
-        _ = await permissionRuntimeControlsModel.perform(actionKind)
+        let _ = await permissionRuntimeControlsModel.perform(actionKind)
         if let currentTab {
             refreshPermissionIndicator(for: currentTab)
         }

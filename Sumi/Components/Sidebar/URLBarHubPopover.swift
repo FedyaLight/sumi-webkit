@@ -113,7 +113,7 @@ struct URLBarHubPopover: View {
     }
 
     private var snapshot: SiteControlsSnapshot {
-        _ = refreshNonce
+        let _ = refreshNonce
         return browserContext.siteControlsSnapshot(
             currentTab?.url,
             activeProfile,
@@ -133,12 +133,12 @@ struct URLBarHubPopover: View {
     }
 
     private var currentSiteBoosts: [SumiBoost] {
-        _ = refreshNonce
+        let _ = refreshNonce
         return browserContext.changedBoosts(currentTab?.url, activeProfile?.id)
     }
 
     private var currentActiveBoostId: UUID? {
-        _ = refreshNonce
+        let _ = refreshNonce
         return browserContext.activeBoostId(currentTab?.url, activeProfile?.id)
     }
 
@@ -541,8 +541,8 @@ struct URLBarHubPopover: View {
     }
 
     private var isCurrentPageBookmarked: Bool {
-        _ = refreshNonce
-        _ = bookmarkManager.revision
+        let _ = refreshNonce
+        let _ = bookmarkManager.revision
         guard let currentTab else { return false }
         return bookmarkManager.isBookmarked(currentTab.url)
     }
@@ -785,7 +785,7 @@ struct URLBarHubPopover: View {
     private func resetAction(
         for row: SiteControlsSettingRowModel
     ) -> (() -> Void)? {
-        _ = row
+        let _ = row
         return nil
     }
 

@@ -220,7 +220,7 @@ extension BrowserStartupPolicyOwner.Dependencies {
                 browserManager?.showEmptyState(in: windowState)
             },
             currentRegularWindowSnapshots: { [weak browserManager] excludingWindowId in
-                browserManager?.currentRegularWindowSnapshots(excludingWindowID: excludingWindowId) ?? []
+                browserManager?.windowHistorySessionOwner.currentRegularWindowSnapshots(excludingWindowID: excludingWindowId) ?? []
             },
             currentTabSnapshot: { [weak browserManager] in
                 guard let browserManager else {
@@ -233,14 +233,14 @@ extension BrowserStartupPolicyOwner.Dependencies {
                 browserManager.windowSessionService.applyWindowSessionSnapshot(
                     snapshot,
                     to: windowState,
-                    runtime: browserManager.makeWindowSessionRuntime()
+                    runtime: WindowSessionRuntimeFactory.make(for: browserManager)
                 )
             },
             reopenWindow: { [weak browserManager] snapshot in
-                await browserManager?.reopenWindow(from: snapshot)
+                await browserManager?.historyMenuOwner.reopenWindow(from: snapshot)
             },
             refreshLastSessionWindowsStore: { [weak browserManager] excludingWindowId in
-                browserManager?.refreshLastSessionWindowsStore(excludingWindowID: excludingWindowId)
+                browserManager?.windowHistorySessionOwner.refreshLastSessionWindowsStore(excludingWindowID: excludingWindowId)
             }
         )
     }

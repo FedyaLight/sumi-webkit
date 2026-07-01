@@ -1,8 +1,10 @@
 import AppKit
 
+/// Modal alert shown when a browser-extension action cannot be routed
+/// (extension missing, disabled, or unsupported on this macOS build).
 @MainActor
-extension BrowserManager {
-    func showBrowserExtensionsUnavailableAlert(
+enum BrowserExtensionUnavailableAlert {
+    static func present(
         extensionName: String? = nil,
         informativeText: String? = nil
     ) {

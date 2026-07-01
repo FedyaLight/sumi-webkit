@@ -8,14 +8,14 @@ private let permissionCleanupServiceFixedDate = Date(timeIntervalSince1970: 1_80
 final class SumiPermissionCleanupServiceTests: XCTestCase {
     func testStoreFailureReturnsFailedInsteadOfCompleted() async {
         let profile = Profile(
-            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") ?? preconditionFailure("Invalid UUID literal"),
+            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
             name: "Profile",
             icon: "person"
         )
         let service = SumiPermissionCleanupService(
             store: FailingCleanupPermissionStore(),
             recentActivityStore: SumiPermissionRecentActivityStore(),
-            userDefaults: UserDefaults(suiteName: "SumiPermissionCleanupServiceTests") ?? preconditionFailure("Unable to create test user defaults"),
+            userDefaults: UserDefaults(suiteName: "SumiPermissionCleanupServiceTests")!,
             now: { permissionCleanupServiceFixedDate }
         )
 

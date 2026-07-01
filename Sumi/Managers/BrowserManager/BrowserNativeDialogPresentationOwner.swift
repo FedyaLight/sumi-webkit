@@ -291,13 +291,13 @@ extension BrowserNativeDialogPresentationOwner.Dependencies {
                 )
             },
             dismissFloatingBarForActiveWindow: { [weak browserManager] preserveDraft in
-                browserManager?.dismissFloatingBarForActiveWindow(preserveDraft: preserveDraft)
+                browserManager?.floatingBarRoutingOwner.dismissFloatingBarForActiveWindow(preserveDraft: preserveDraft)
             },
             dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
-                browserManager?.dismissThemePickerDiscardingIfNeeded()
+                browserManager?.workspaceThemeEditorOwner.dismissThemePickerDiscardingIfNeeded()
             },
             dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
-                browserManager?.dismissThemePickerCommittingIfNeeded()
+                browserManager?.workspaceThemeEditorOwner.dismissThemePickerCommittingIfNeeded()
             },
             terminateApplication: {
                 NSApplication.shared.terminate(nil)

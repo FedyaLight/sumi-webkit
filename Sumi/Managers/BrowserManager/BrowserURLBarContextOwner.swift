@@ -99,7 +99,7 @@ extension BrowserURLBarContextOwner.Dependencies {
         let extensionsModule = browserManager.extensionsModule
         let userscriptsModule = browserManager.userscriptsModule
         let protectionCoordinator = browserManager.protectionCoordinator
-        let urlBarHubPopoverPresenter = browserManager.urlBarHubPopoverPresenter
+        let urlBarHubPopoverPresenter = browserManager.chromePopoverRoutingOwner.urlBarHubPopoverPresenter
         let webViewRoutingService = browserManager.webViewRoutingService
         let zoomManager = browserManager.zoomManager
         let permissionContextOwner = BrowserURLBarPermissionContextOwner(
@@ -130,16 +130,16 @@ extension BrowserURLBarContextOwner.Dependencies {
                     browserManager?.openNewTab(url: urlString, context: context)
                 },
                 openHistoryURLsInNewWindow: { [weak browserManager] urls in
-                    browserManager?.openHistoryURLsInNewWindow(urls)
+                    browserManager?.historyNavigationOwner.openHistoryURLsInNewWindow(urls)
                 },
                 goBack: { [weak browserManager] windowState in
-                    browserManager?.goBack(in: windowState)
+                    browserManager?.historyNavigationOwner.goBack(in: windowState)
                 },
                 goForward: { [weak browserManager] windowState in
-                    browserManager?.goForward(in: windowState)
+                    browserManager?.historyNavigationOwner.goForward(in: windowState)
                 },
                 reload: { [weak browserManager] tab, windowState in
-                    browserManager?.refreshWindowScopedPage(
+                    browserManager?.windowScopedNavigationOwner.refreshWindowScopedPage(
                         tab: tab,
                         in: windowState,
                         reason: "NavigationToolbar.reload"
@@ -214,39 +214,40 @@ extension BrowserURLBarContextOwner.Dependencies {
             },
             siteControlsSnapshot: siteControlsSnapshot,
             focusFloatingBar: { [weak browserManager] windowState, prefill, navigateCurrentTab in
-                browserManager?.focusFloatingBar(
+                browserManager?.floatingBarRoutingOwner.focusFloatingBar(
                     in: windowState,
                     prefill: prefill,
-                    navigateCurrentTab: navigateCurrentTab
+                    navigateCurrentTab: navigateCurrentTab,
+                    presentationReason: .keyboard
                 )
             },
             reloadPage: { [weak browserManager] tab, windowState, reason in
-                browserManager?.refreshWindowScopedPage(
+                browserManager?.windowScopedNavigationOwner.refreshWindowScopedPage(
                     tab: tab,
                     in: windowState,
                     reason: reason
                 )
             },
             closeURLBarHubPopover: { [weak browserManager] windowState in
-                browserManager?.urlBarHubPopoverPresenter.close(in: windowState)
+                browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.close(in: windowState)
             },
             presentURLBarHubPopover: { [weak browserManager] windowState, context in
-                browserManager?.urlBarHubPopoverPresenter.present(
+                browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.present(
                     in: windowState,
                     browserContext: context
                 )
             },
             toggleURLBarHubPopover: { [weak browserManager] windowState, context in
-                browserManager?.urlBarHubPopoverPresenter.toggle(
+                browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.toggle(
                     in: windowState,
                     browserContext: context
                 )
             },
             isURLBarHubPopoverPresented: { [weak browserManager] windowState in
-                browserManager?.urlBarHubPopoverPresenter.isPresented(in: windowState) ?? false
+                browserManager?.chromePopoverRoutingOwner.urlBarHubPopoverPresenter.isPresented(in: windowState) ?? false
             },
             presentToast: { [weak browserManager] toast, windowState in
-                browserManager?.presentToast(toast, in: windowState)
+                browserManager?.toastPresenter.presentToast(toast, in: windowState)
             },
             toggleSidebar: { [weak browserManager] windowState in
                 browserManager?.toggleSidebar(for: windowState)
@@ -322,16 +323,16 @@ private extension BrowserURLBarContextOwner {
             stateRevision: browserManager?.zoomStateRevision ?? 0,
             popoverRequest: browserManager?.zoomPopoverRequest,
             resetCurrentTab: { [weak browserManager] windowState in
-                browserManager?.resetZoomCurrentTab(in: windowState)
+                browserManager?.zoomCommandOwner.resetZoomCurrentTab(in: windowState)
             },
             zoomOutCurrentTab: { [weak browserManager] windowState in
-                browserManager?.zoomOutCurrentTab(in: windowState)
+                browserManager?.zoomCommandOwner.zoomOutCurrentTab(in: windowState)
             },
             zoomInCurrentTab: { [weak browserManager] windowState in
-                browserManager?.zoomInCurrentTab(in: windowState)
+                browserManager?.zoomCommandOwner.zoomInCurrentTab(in: windowState)
             },
             requestPopover: { [weak browserManager] tab, windowState, source in
-                browserManager?.requestZoomPopover(for: tab, in: windowState, source: source)
+                browserManager?.zoomCommandOwner.requestZoomPopover(for: tab, in: windowState, source: source)
             }
         )
     }

@@ -34,20 +34,3 @@ enum SumiNativeBrowserSurfaceKind {
         tab.faviconIsTemplateGlobePlaceholder = false
     }
 }
-
-@MainActor
-extension BrowserManager {
-    func openNativeBrowserSurface(
-        _ kind: SumiNativeBrowserSurfaceKind,
-        url: URL,
-        in windowState: BrowserWindowState,
-        preferredSpaceId: UUID? = nil
-    ) {
-        nativeSurfaceRoutingOwner.openNativeBrowserSurface(
-            kind,
-            url: url,
-            in: windowState,
-            preferredSpaceId: preferredSpaceId
-        )
-    }
-}

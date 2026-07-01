@@ -197,7 +197,7 @@ struct SafariExtensionImportCandidatesSection: View {
                     statusMessage = "Enabled \(record.displayName). Reload pages to apply content blocker changes."
                     onStatus(statusMessage ?? "")
                 } else {
-                    _ = try await extensionsModule
+                    let _ = try await extensionsModule
                         .setSafariContentBlockerEnabled(
                             false,
                             bundleIdentifier: candidate.extensionBundleIdentifier

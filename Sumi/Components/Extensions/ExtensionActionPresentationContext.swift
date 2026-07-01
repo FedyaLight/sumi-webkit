@@ -55,8 +55,8 @@ struct ExtensionActionBrowserContext {
                 guard let browserManager, let windowState else { return }
                 browserManager.openSettingsTab(selecting: tab, in: windowState)
             },
-            showExtensionUnavailableAlert: { [weak browserManager] extensionName, message in
-                browserManager?.showBrowserExtensionsUnavailableAlert(
+            showExtensionUnavailableAlert: { extensionName, message in
+                BrowserExtensionUnavailableAlert.present(
                     extensionName: extensionName,
                     informativeText: message
                 )

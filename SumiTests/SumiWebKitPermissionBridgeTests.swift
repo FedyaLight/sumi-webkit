@@ -577,7 +577,7 @@ final class SumiWebKitPermissionBridgeTests: XCTestCase {
             url: URL(string: "https://top.example/path")!,
             loadsCachedFaviconOnInit: false
         )
-        tab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        tab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let webView = WKWebView()
         let expectation = XCTestExpectation(description: "legacy media delegate decision")
         var decisions: [Bool] = []

@@ -396,8 +396,8 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             spaceId: source.id,
             index: 1
         )
-        first.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
-        second.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        first.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
+        second.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         browserManager.tabManager.spaces = [source, destination]
         browserManager.tabManager.addTab(first)
@@ -431,7 +431,7 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             spaceId: source.id,
             index: 0
         )
-        unloadedTab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        unloadedTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
 
         browserManager.tabManager.spaces = [source, destination]
         browserManager.tabManager.addTab(unloadedTab)

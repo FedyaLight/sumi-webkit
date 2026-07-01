@@ -56,7 +56,7 @@ final class FloatingBarBrowserContextOwnerTests: XCTestCase {
         HistoryListItem(
             id: visitID?.description ?? domain,
             visitID: visitID,
-            url: URL(string: "https://\(domain)/page") ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: "https://\(domain)/page")!,
             title: "Example",
             domain: domain,
             siteDomain: siteDomain,

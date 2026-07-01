@@ -66,7 +66,7 @@ extension BrowserSpaceTransitionRoutingOwner.Dependencies {
                 )
             },
             beginInteractiveSpaceTransition: { [weak browserManager] source, destination, identity, windowState in
-                browserManager?.beginInteractiveSpaceTransition(
+                browserManager?.workspaceThemeTransitionOwner.beginInteractiveSpaceTransition(
                     from: source,
                     to: destination,
                     identity: identity,
@@ -74,14 +74,14 @@ extension BrowserSpaceTransitionRoutingOwner.Dependencies {
                 )
             },
             updateInteractiveSpaceTransition: { [weak browserManager] progress, identity, windowState in
-                browserManager?.updateInteractiveSpaceTransition(
+                browserManager?.workspaceThemeTransitionOwner.updateInteractiveSpaceTransition(
                     progress: progress,
                     identity: identity,
                     in: windowState
                 )
             },
             cancelInteractiveSpaceTransition: { [weak browserManager] identity, windowState in
-                browserManager?.cancelInteractiveSpaceTransition(identity: identity, in: windowState)
+                browserManager?.workspaceThemeTransitionOwner.cancelInteractiveSpaceTransition(identity: identity, in: windowState)
             }
         )
     }

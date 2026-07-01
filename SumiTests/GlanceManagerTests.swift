@@ -106,7 +106,7 @@ final class GlanceManagerTests: XCTestCase {
         let previewTab = session.previewTab
         let webView = try await waitForPreviewWebView(in: session)
 
-        XCTAssertTrue(browserManager.handleWebViewDidClose(webView))
+        XCTAssertTrue(browserManager.webViewCloseRouter.handleWebViewDidClose(webView))
 
         XCTAssertNil(browserManager.glanceManager.currentSession)
         XCTAssertEqual(browserManager.glanceManager.phase, .idle)
@@ -126,7 +126,7 @@ final class GlanceManagerTests: XCTestCase {
             in: sourceWindow.id
         )
 
-        XCTAssertTrue(browserManager.handleWebViewDidClose(webView))
+        XCTAssertTrue(browserManager.webViewCloseRouter.handleWebViewDidClose(webView))
 
         XCTAssertNil(browserManager.tabManager.tab(for: sourceTab.id))
         XCTAssertNil(browserManager.webViewCoordinator?.getWebView(
@@ -149,7 +149,7 @@ final class GlanceManagerTests: XCTestCase {
             in: staleOwnerWindowID
         )
 
-        XCTAssertTrue(browserManager.handleWebViewDidClose(webView))
+        XCTAssertTrue(browserManager.webViewCloseRouter.handleWebViewDidClose(webView))
 
         XCTAssertNotNil(browserManager.tabManager.tab(for: sourceTab.id))
         XCTAssertEqual(visibleWindow.currentTabId, sourceTab.id)
@@ -313,7 +313,7 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertFalse(suggestedTabs.contains { $0.id == previewTab.id })
         XCTAssertFalse(suggestedTabs.contains { $0.id == placeholderId })
 
-        browserManager.commitFloatingBarSuggestion(
+        browserManager.floatingBarRoutingOwner.commitFloatingBarSuggestion(
             SearchManager.SearchSuggestion(text: sourceTab.name, type: .tab(sourceTab)),
             in: sourceWindow
         )
@@ -344,7 +344,7 @@ final class GlanceManagerTests: XCTestCase {
             url: URL(string: "https://destination.example/page")!,
             name: "Destination"
         )
-        previewTab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        previewTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let session = GlanceSession(
             targetURL: previewTab.url,
             windowId: windowState.id,
@@ -395,7 +395,7 @@ final class GlanceManagerTests: XCTestCase {
         let sourceTab = makeSourceTab(in: browserManager)
         let targetURL = URL(string: "https://destination.example/page")!
         let previewTab = Tab(url: targetURL, name: "Destination")
-        previewTab.attachBrowserRuntime(browserManager.makeTabBrowserRuntime())
+        previewTab.attachBrowserRuntime(TabBrowserRuntimeFactory.make(for: browserManager))
         let session = GlanceSession(
             targetURL: targetURL,
             windowId: UUID(),

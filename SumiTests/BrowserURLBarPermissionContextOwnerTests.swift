@@ -91,7 +91,7 @@ final class BrowserURLBarPermissionContextOwnerTests: XCTestCase {
     func testBrowserURLBarContextFacadeUsesPermissionOwnerRuntimeStores() throws {
         let harness = try makeHarness()
 
-        let context = harness.browserManager.urlBarBrowserContext
+        let context = harness.browserManager.urlBarContextOwner.urlBarContext
 
         XCTAssertIdentical(context.permission.popupStore, harness.blockedPopupStore)
         XCTAssertIdentical(context.permission.externalSchemeStore, harness.externalSchemeStore)

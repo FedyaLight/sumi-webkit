@@ -35,12 +35,12 @@ struct SumiBookmarksCommands: Commands {
     }
 
     private var bookmarkMenuSnapshot: SumiBookmarksSnapshot {
-        _ = bookmarkManager.revision
+        let _ = bookmarkManager.revision
         return snapshotStore.snapshot
     }
 
     private var bookmarkMenuFaviconPartition: SumiFaviconPartition {
-        _ = menuFaviconInvalidator.revision
+        let _ = menuFaviconInvalidator.revision
         return browserContext.faviconPartition
     }
 

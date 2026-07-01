@@ -71,7 +71,7 @@ extension BrowserURLBarPermissionContextOwner.Dependencies {
                 permissionRuntime
             },
             siteActivityRevision: { [weak browserManager] in
-                browserManager?.permissionSiteActivityStore.revision ?? 0
+                browserManager?.permissionRuntime.permissionSiteActivityStore.revision ?? 0
             },
             updateIndicator: { [weak browserManager] viewModel, tab, windowState in
                 guard let browserManager else { return }

@@ -6,7 +6,7 @@ import WebKit
 @MainActor
 extension ExtensionManager {
     func attach(browserManager: BrowserManager) {
-        browserBridgeContext = browserManager
+        browserBridgeContext = browserManager.extensionBridgeAdapter
         runtime = .live(browserManager: browserManager)
 
         if runtime.activeWindowState() == nil,

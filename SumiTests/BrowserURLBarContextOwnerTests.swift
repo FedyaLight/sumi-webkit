@@ -18,7 +18,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         harness.windowState.currentTabId = source.id
         let targetURL = URL(string: "https://selected.example/page")!
 
-        harness.browserManager
+        harness.browserManager.urlBarContextOwner
             .navigationHistoryContext(for: harness.windowState)
             .openURLInNewTab(targetURL, true, source)
 
@@ -51,7 +51,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         harness.windowState.currentTabId = source.id
         let targetURL = URL(string: "https://background.example/page")!
 
-        harness.browserManager
+        harness.browserManager.urlBarContextOwner
             .navigationHistoryContext(for: harness.windowState)
             .openURLInNewTab(targetURL, false, source)
 
@@ -78,7 +78,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         harness.windowState.currentTabId = source.id
         let targetURL = URL(string: "https://current.example/page")!
 
-        harness.browserManager
+        harness.browserManager.urlBarContextOwner
             .navigationHistoryContext(for: harness.windowState)
             .openURLInCurrentTab(targetURL, source)
 
@@ -100,14 +100,14 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         harness.browserManager.zoomStateRevision = 41
         harness.browserManager.bookmarkEditorPresentationRequest = request
 
-        var context = harness.browserManager.urlBarBrowserContext
+        var context = harness.browserManager.urlBarContextOwner.urlBarContext
         XCTAssertEqual(context.zoom.stateRevision, 41)
         XCTAssertEqual(context.bookmarkEditorPresentationRequest, request)
 
         harness.browserManager.zoomStateRevision = 42
         harness.browserManager.bookmarkEditorPresentationRequest = nil
 
-        context = harness.browserManager.urlBarBrowserContext
+        context = harness.browserManager.urlBarContextOwner.urlBarContext
         XCTAssertEqual(context.zoom.stateRevision, 42)
         XCTAssertNil(context.bookmarkEditorPresentationRequest)
     }
@@ -129,7 +129,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             in: harness.windowState.id
         )
 
-        harness.browserManager
+        harness.browserManager.urlBarContextOwner
             .navigationToolbarContext(for: harness.windowState)
             .reload(tab)
 
@@ -153,7 +153,7 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
             in: harness.windowState.id
         )
 
-        harness.browserManager.urlBarBrowserContext.reloadPage(
+        harness.browserManager.urlBarContextOwner.urlBarContext.reloadPage(
             tab,
             harness.windowState,
             "BrowserURLBarContextOwnerTests.reload"

@@ -750,7 +750,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(registry.isEnabled(.extensions))
         XCTAssertEqual(probe.managerCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
-        XCTAssertTrue(browserManager.extensionSurfaceStore.installedExtensions.isEmpty)
+        XCTAssertTrue(browserManager.extensionsModule.surfaceStore.installedExtensions.isEmpty)
     }
 
     func testTabNormalWebViewCreationWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() async throws {

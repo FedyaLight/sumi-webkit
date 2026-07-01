@@ -64,7 +64,7 @@ final class BrowserShutdownCleanupOwnerTests: XCTestCase {
 
     private func makeTab(_ name: String) -> Tab {
         Tab(
-            url: URL(string: "https://\(name.lowercased()).example") ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: "https://\(name.lowercased()).example")!,
             name: name,
             loadsCachedFaviconOnInit: false
         )

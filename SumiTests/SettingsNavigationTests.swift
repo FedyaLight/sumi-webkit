@@ -358,13 +358,14 @@ final class SettingsNavigationTests: XCTestCase {
         browserManager.selectTab(existing, in: windowState, loadPolicy: .deferred)
         settings.currentSettingsTab = .general
         settings.extensionsSettingsSubPane = .userScripts
-        browserManager.focusFloatingBar(
+        browserManager.floatingBarRoutingOwner.focusFloatingBar(
             in: windowState,
             prefill: existing.url.absoluteString,
-            navigateCurrentTab: true
+            navigateCurrentTab: true,
+            presentationReason: .keyboard
         )
 
-        browserManager.commitFloatingBarSuggestion(
+        browserManager.floatingBarRoutingOwner.commitFloatingBarSuggestion(
             SearchManager.SearchSuggestion(
                 text: "sumi://settings?pane=extensions",
                 type: .url

@@ -14,10 +14,22 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertTrue(firstSetup)
         XCTAssertFalse(secondSetup)
         XCTAssertIdentical(harness.appDelegate.windowRegistry, harness.windowRegistry)
-        XCTAssertIdentical(harness.appDelegate.mouseButtonRouter, harness.browserManager)
-        XCTAssertIdentical(harness.appDelegate.tabCommandRouter, harness.browserManager)
-        XCTAssertIdentical(harness.appDelegate.windowRouter, harness.browserManager)
-        XCTAssertIdentical(harness.appDelegate.terminationHandler as AnyObject?, harness.browserManager)
+        XCTAssertIdentical(
+            harness.appDelegate.mouseButtonRouter,
+            harness.browserManager.appCommandRouter
+        )
+        XCTAssertIdentical(
+            harness.appDelegate.tabCommandRouter,
+            harness.browserManager.appCommandRouter
+        )
+        XCTAssertIdentical(
+            harness.appDelegate.windowRouter,
+            harness.browserManager.appCommandRouter
+        )
+        XCTAssertIdentical(
+            harness.appDelegate.terminationHandler as AnyObject?,
+            harness.browserManager.appCommandRouter
+        )
         XCTAssertNotNil(harness.appDelegate.appLifecycleHandler)
         XCTAssertNotIdentical(harness.appDelegate.appLifecycleHandler as AnyObject?, harness.browserManager)
         XCTAssertIdentical(harness.appDelegate.settingsHandler, harness.settingsManager)

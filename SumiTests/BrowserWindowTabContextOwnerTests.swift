@@ -110,7 +110,7 @@ final class BrowserWindowTabContextOwnerTests: XCTestCase {
 
     private func makeTab(_ urlString: String, spaceId: UUID? = nil) -> Tab {
         Tab(
-            url: URL(string: urlString) ?? preconditionFailure("Invalid test URL"),
+            url: URL(string: urlString)!,
             name: urlString,
             spaceId: spaceId,
             loadsCachedFaviconOnInit: false
