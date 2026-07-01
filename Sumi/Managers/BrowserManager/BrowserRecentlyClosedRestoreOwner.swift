@@ -87,9 +87,11 @@ final class BrowserRecentlyClosedRestoreOwner {
     private func reopenClosedTab(_ tabState: RecentlyClosedTabState) {
         let tabManager = dependencies.tabManager()
         let targetWindow = dependencies.activeWindow()
-        let targetSpace = tabState.sourceSpaceId.flatMap { dependencies.space($0) }
-            ?? targetWindow?.currentSpaceId.flatMap { dependencies.space($0) }
-            ?? tabManager.currentSpace
+        let targetSpace = restoredSpace(
+            sourceSpaceId: tabState.sourceSpaceId,
+            sourceProfileId: tabState.profileId,
+            fallbackWindow: targetWindow
+        )
 
         let restoredTab = tabManager.createNewTab(
             url: (tabState.currentURL ?? tabState.url).absoluteString,
@@ -250,11 +252,58 @@ final class BrowserRecentlyClosedRestoreOwner {
            tabManager.spaces.contains(where: { $0.id == spaceId }) {
             return spaceId
         }
-        if let spaceId = tabManager.currentSpace?.id,
-           tabManager.spaces.contains(where: { $0.id == spaceId }) {
-            return spaceId
+        if let profileId = fallbackWindow?.currentProfileId,
+           let profileSpaceId = firstSpaceId(for: profileId, tabManager: tabManager) {
+            return profileSpaceId
+        }
+        if let profileId = dependencies.currentProfile()?.id,
+           let profileSpaceId = firstSpaceId(for: profileId, tabManager: tabManager) {
+            return profileSpaceId
         }
         return tabManager.spaces.first?.id
+    }
+
+    private func restoredSpace(
+        sourceSpaceId: UUID?,
+        sourceProfileId: UUID?,
+        fallbackWindow: BrowserWindowState?
+    ) -> Space? {
+        let tabManager = dependencies.tabManager()
+        if let sourceSpaceId,
+           let sourceSpace = dependencies.space(sourceSpaceId) {
+            return sourceSpace
+        }
+        if let spaceId = fallbackWindow?.currentSpaceId,
+           let windowSpace = dependencies.space(spaceId) {
+            return windowSpace
+        }
+        if let sourceProfileId,
+           let profileSpace = firstSpace(for: sourceProfileId, tabManager: tabManager) {
+            return profileSpace
+        }
+        if let profileId = fallbackWindow?.currentProfileId,
+           let profileSpace = firstSpace(for: profileId, tabManager: tabManager) {
+            return profileSpace
+        }
+        if let profileId = dependencies.currentProfile()?.id,
+           let profileSpace = firstSpace(for: profileId, tabManager: tabManager) {
+            return profileSpace
+        }
+        return tabManager.spaces.first
+    }
+
+    private func firstSpaceId(
+        for profileId: UUID,
+        tabManager: TabManager
+    ) -> UUID? {
+        firstSpace(for: profileId, tabManager: tabManager)?.id
+    }
+
+    private func firstSpace(
+        for profileId: UUID,
+        tabManager: TabManager
+    ) -> Space? {
+        tabManager.spaces.first(where: { $0.profileId == profileId })
     }
 }
 

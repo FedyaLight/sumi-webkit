@@ -4,6 +4,58 @@ import XCTest
 
 @MainActor
 final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
+    func testReopenClosedTabUsesCurrentProfileSpaceInsteadOfGlobalCurrentSpace() throws {
+        let harness = try makeRestoreHarness()
+        let tabState = RecentlyClosedTabState(
+            id: UUID(),
+            title: "Closed",
+            url: URL(string: "https://closed.example")!,
+            sourceSpaceId: nil,
+            currentURL: nil,
+            canGoBack: true,
+            canGoForward: false,
+            profileId: nil
+        )
+
+        harness.owner.reopenRecentlyClosedItem(.tab(tabState))
+
+        let restored = try XCTUnwrap(harness.tabManager.tabs(in: harness.currentProfileSpace).first)
+        XCTAssertEqual(restored.url, tabState.url)
+        XCTAssertEqual(restored.name, "Closed")
+        XCTAssertEqual(restored.restoredCanGoBack, true)
+        XCTAssertEqual(restored.restoredCanGoForward, false)
+        XCTAssertTrue(harness.tabManager.tabs(in: harness.fallbackSpace).isEmpty)
+        XCTAssertEqual(harness.tabManager.currentTab?.id, restored.id)
+    }
+
+    func testRestoreSpacePinnedShortcutLauncherUsesCurrentProfileSpaceInsteadOfGlobalCurrentSpace()
+        throws {
+        let harness = try makeRestoreHarness()
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: nil,
+            index: 0,
+            launchURL: URL(string: "https://shortcut.example")!,
+            title: "Shortcut"
+        )
+        let pinState = RecentlyClosedShortcutPinState(pin: pin)
+
+        harness.owner.reopenRecentlyClosedItem(
+            .shortcutLauncher(
+                RecentlyClosedShortcutLauncherState(id: UUID(), pin: pinState)
+            )
+        )
+
+        let restoredPin = try XCTUnwrap(harness.tabManager.shortcutPin(by: pinState.id))
+        XCTAssertEqual(restoredPin.spaceId, harness.currentProfileSpace.id)
+        XCTAssertEqual(
+            harness.tabManager.spacePinnedPins(for: harness.currentProfileSpace.id).map(\.id),
+            [pinState.id]
+        )
+        XCTAssertTrue(harness.tabManager.spacePinnedPins(for: harness.fallbackSpace.id).isEmpty)
+    }
+
     func testReopenAllWindowsFromLastSessionUsesStartupArchiveMergesTabSnapshotSkipsExistingSessionAndRefreshesStore() async throws {
         let store = try makeLastSessionWindowsStore()
         let browserManager = BrowserManager()
@@ -84,6 +136,56 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
         return LastSessionWindowsStore(userDefaults: userDefaults)
     }
 
+    private func makeRestoreHarness() throws -> RestoreHarness {
+        let store = try makeLastSessionWindowsStore()
+        let browserManager = BrowserManager()
+        let recentlyClosedManager = RecentlyClosedManager()
+        let startupRestore = FakeRecentlyClosedStartupRestoreProvider(
+            canOfferRestoreShortcut: false,
+            windowSnapshots: [],
+            tabSnapshot: nil
+        )
+        let fallbackProfile = Profile(name: "Fallback")
+        let currentProfile = Profile(name: "Current")
+        let fallbackSpace = Space(name: "Fallback", profileId: fallbackProfile.id)
+        let currentProfileSpace = Space(name: "Current", profileId: currentProfile.id)
+
+        browserManager.profileManager.profiles = [fallbackProfile, currentProfile]
+        browserManager.currentProfile = currentProfile
+        browserManager.tabManager.spaces = [fallbackSpace, currentProfileSpace]
+        browserManager.tabManager.setTabs([], for: fallbackSpace.id)
+        browserManager.tabManager.setTabs([], for: currentProfileSpace.id)
+        browserManager.tabManager.currentSpace = fallbackSpace
+
+        let owner = BrowserRecentlyClosedRestoreOwner(
+            dependencies: BrowserRecentlyClosedRestoreOwner.Dependencies(
+                recentlyClosedManager: { recentlyClosedManager },
+                startupRestore: startupRestore,
+                lastSessionWindowsStore: { store },
+                currentRegularWindowSnapshots: { _ in [] },
+                refreshLastSessionWindowsStore: { _ in },
+                reopenWindow: { _ in },
+                mergeSnapshotForLastSessionRestore: { _ in },
+                activeWindow: { nil },
+                windowState: { _ in nil },
+                tabManager: { browserManager.tabManager },
+                profileManager: { browserManager.profileManager },
+                currentProfile: { browserManager.currentProfile },
+                space: { spaceId in
+                    browserManager.tabManager.spaces.first { $0.id == spaceId }
+                },
+                selectTab: { _, _ in }
+            )
+        )
+
+        return RestoreHarness(
+            owner: owner,
+            tabManager: browserManager.tabManager,
+            fallbackSpace: fallbackSpace,
+            currentProfileSpace: currentProfileSpace
+        )
+    }
+
     private func makeWindowSession(
         currentTabId: UUID? = nil
     ) -> WindowSessionSnapshot {
@@ -114,6 +216,14 @@ private enum Event: Equatable {
     case mergeTabSnapshot
     case reopen
     case refresh(UUID?)
+}
+
+@MainActor
+private struct RestoreHarness {
+    let owner: BrowserRecentlyClosedRestoreOwner
+    let tabManager: TabManager
+    let fallbackSpace: Space
+    let currentProfileSpace: Space
 }
 
 @MainActor
