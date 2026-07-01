@@ -94,7 +94,8 @@ final class BrowserTabOpeningOwner {
             return openNewTab(context: .foreground(windowState: activeWindow))
         }
 
-        return dependencies.tabManager().createNewTab()
+        let tabManager = dependencies.tabManager()
+        return tabManager.createNewTab(in: tabManager.spaces.first)
     }
 
     @discardableResult
@@ -208,12 +209,12 @@ final class BrowserTabOpeningOwner {
 
     func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
         let tabManager = dependencies.tabManager()
-        let targetSpace =
-            windowState.currentSpaceId.flatMap { id in
-                tabManager.spaces.first(where: { $0.id == id })
-            }
-            ?? tab.spaceId.flatMap { id in tabManager.spaces.first(where: { $0.id == id }) }
-            ?? tabManager.currentSpace
+        let targetSpace = resolvedTabOpenSpace(
+            for: .background(
+                windowState: windowState,
+                sourceTab: tab
+            )
+        )
         let insertIndex = tabManager.regularChildInsertionIndex(
             openedFrom: tab,
             in: targetSpace
@@ -313,7 +314,7 @@ final class BrowserTabOpeningOwner {
             return sourceProfileSpace
         }
 
-        return tabManager.currentSpace ?? tabManager.spaces.first
+        return tabManager.spaces.first
     }
 
     func prepareBackgroundTabIfNeeded(

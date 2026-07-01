@@ -63,23 +63,61 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         XCTAssertEqual(harness.windowState.currentTabId, duplicated?.id)
     }
 
+    func testCreateNewTabWithoutActiveWindowUsesFirstSpaceInsteadOfGlobalCurrentSpace() {
+        let harness = makeHarness()
+        harness.windowRegistry.activeWindowId = nil
+        harness.browserManager.tabManager.currentSpace = harness.secondarySpace
+
+        let opened = harness.browserManager.tabOpeningOwner.createNewTab()
+
+        XCTAssertEqual(opened.spaceId, harness.primarySpace.id)
+        XCTAssertEqual(harness.browserManager.tabManager.currentTab?.id, opened.id)
+    }
+
+    func testContextlessBackgroundOpenUsesFirstSpaceInsteadOfGlobalCurrentSpace() {
+        let harness = makeHarness()
+        harness.windowRegistry.activeWindowId = nil
+        harness.browserManager.tabManager.currentSpace = harness.secondarySpace
+
+        let opened = harness.browserManager.openNewTab(context: .background())
+
+        XCTAssertEqual(opened.spaceId, harness.primarySpace.id)
+    }
+
+    func testDuplicateFallsBackToWindowProfileSpaceInsteadOfGlobalCurrentSpace() {
+        let harness = makeHarness()
+        harness.windowState.currentSpaceId = nil
+        harness.windowState.currentProfileId = harness.primaryProfile.id
+        harness.browserManager.tabManager.currentSpace = harness.secondarySpace
+
+        let source = Tab(name: "Detached Source")
+
+        harness.browserManager.duplicateTab(source, in: harness.windowState)
+
+        let duplicated = harness.browserManager.tabManager.tabs(in: harness.primarySpace).first
+        XCTAssertEqual(duplicated?.name, "Detached Source")
+        XCTAssertEqual(duplicated?.spaceId, harness.primarySpace.id)
+        XCTAssertTrue(harness.browserManager.tabManager.tabs(in: harness.secondarySpace).isEmpty)
+    }
+
     private func makeHarness() -> Harness {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()
-        let profile = Profile(name: "Primary")
-        let primarySpace = Space(name: "Primary", profileId: profile.id)
-        let secondarySpace = Space(name: "Secondary", profileId: profile.id)
+        let primaryProfile = Profile(name: "Primary")
+        let primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
+        let secondarySpace = Space(name: "Secondary", profileId: primaryProfile.id)
         let windowState = BrowserWindowState()
 
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
+        browserManager.profileManager.profiles = [primaryProfile]
+        browserManager.currentProfile = primaryProfile
         browserManager.windowRegistry = windowRegistry
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.tabManager.spaces = [primarySpace, secondarySpace]
         browserManager.tabManager.currentSpace = primarySpace
 
         windowState.tabManager = browserManager.tabManager
         windowState.currentSpaceId = primarySpace.id
-        windowState.currentProfileId = profile.id
+        windowState.currentProfileId = primaryProfile.id
 
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
@@ -88,6 +126,7 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
             browserManager: browserManager,
             windowRegistry: windowRegistry,
             windowState: windowState,
+            primaryProfile: primaryProfile,
             primarySpace: primarySpace,
             secondarySpace: secondarySpace
         )
@@ -99,6 +138,7 @@ private struct Harness {
     let browserManager: BrowserManager
     let windowRegistry: WindowRegistry
     let windowState: BrowserWindowState
+    let primaryProfile: Profile
     let primarySpace: Space
     let secondarySpace: Space
 }
