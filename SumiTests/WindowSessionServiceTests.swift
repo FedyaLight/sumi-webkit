@@ -80,6 +80,40 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentSpaceId, primarySpace.id)
     }
 
+    func testSetupWindowStateWithoutStoredSessionSelectsResolvedSpaceTabInsteadOfGlobalCurrentTab() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let primaryProfile = Profile(name: "Primary")
+        let windowSpace = Space(name: "Window", profileId: primaryProfile.id)
+        let globalSpace = Space(name: "Global", profileId: primaryProfile.id)
+        tabManager.spaces = [windowSpace, globalSpace]
+
+        let windowTab = tabManager.createNewTab(
+            url: "https://window.example",
+            in: windowSpace,
+            activate: false
+        )
+        let globalTab = tabManager.createNewTab(
+            url: "https://global.example",
+            in: globalSpace,
+            activate: true
+        )
+        tabManager.currentSpace = globalSpace
+        tabManager.currentTab = globalTab
+
+        let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+        let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        delegate.currentProfile = primaryProfile
+        let windowState = BrowserWindowState()
+
+        service.setupWindowState(windowState, runtime: delegate.runtime)
+
+        XCTAssertEqual(windowState.currentSpaceId, windowSpace.id)
+        XCTAssertEqual(windowState.currentTabId, windowTab.id)
+        XCTAssertEqual(tabManager.currentTab?.id, globalTab.id)
+    }
+
     func testHandleTabManagerDataLoadedRepairsStaleWindowSpaceFromCurrentProfileInsteadOfGlobalCurrentSpace()
         throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)

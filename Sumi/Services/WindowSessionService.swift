@@ -438,7 +438,6 @@ final class WindowSessionService {
                 for: windowState,
                 runtime: runtime
             )
-            windowState.currentTabId = runtime.tabManager.currentTab?.id
         }
 
         if restored && !runtime.tabManager.hasLoadedInitialData {
