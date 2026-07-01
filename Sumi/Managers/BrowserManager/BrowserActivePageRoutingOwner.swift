@@ -8,6 +8,7 @@ final class BrowserActivePageRoutingOwner {
         let activeWindow: @MainActor () -> BrowserWindowState?
         let currentTab: @MainActor (BrowserWindowState) -> Tab?
         let activePreviewTab: @MainActor (BrowserWindowState) -> Tab?
+        let activePreviewWebView: @MainActor (BrowserWindowState) -> WKWebView?
         let activeSessionURL: @MainActor (BrowserWindowState) -> URL?
         let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
         let refreshActivePage: @MainActor (Tab, BrowserWindowState) -> Void
@@ -47,7 +48,7 @@ final class BrowserActivePageRoutingOwner {
     func activePageWebView(for windowState: BrowserWindowState) -> WKWebView? {
         if let previewTab = dependencies.activePreviewTab(windowState) {
             return dependencies.windowOwnedWebView(previewTab, windowState.id)
-                ?? previewTab.currentWebView
+                ?? dependencies.activePreviewWebView(windowState)
         }
 
         guard let tab = dependencies.currentTab(windowState) else { return nil }
@@ -260,6 +261,9 @@ extension BrowserActivePageRoutingOwner.Dependencies {
             },
             activePreviewTab: { [weak browserManager] windowState in
                 browserManager?.glanceManager.activePreviewTab(for: windowState)
+            },
+            activePreviewWebView: { [weak browserManager] windowState in
+                browserManager?.glanceManager.activePreviewWebView(for: windowState)
             },
             activeSessionURL: { [weak browserManager] windowState in
                 browserManager?.glanceManager.activeSession(for: windowState)?.currentURL

@@ -50,7 +50,8 @@ final class GlanceManager: ObservableObject {
         beginSession(
             url,
             sourceTab: tab,
-            windowId: windowId,
+            windowState: windowState,
+            fallbackWindowId: windowId,
             originRectInWindow: originRectInWindow
                 ?? tab?.glanceOriginRectInWindow()
                 ?? GlanceManager.fallbackOriginRect(in: windowState?.window),
@@ -116,7 +117,8 @@ final class GlanceManager: ObservableObject {
         beginSession(
             snapshot.currentURL ?? snapshot.targetURL,
             sourceTab: sourceTab,
-            windowId: windowState.id,
+            windowState: windowState,
+            fallbackWindowId: windowState.id,
             originRectInWindow: snapshot.originRectInWindow?.cgRect
                 ?? GlanceManager.fallbackOriginRect(in: windowState.window),
             initialTitle: snapshot.title,
@@ -248,6 +250,10 @@ final class GlanceManager: ObservableObject {
         activeSession(for: windowState)?.previewTab
     }
 
+    func activePreviewWebView(for windowState: BrowserWindowState) -> WKWebView? {
+        activeSession(for: windowState)?.previewTab.existingWebView
+    }
+
     func activeSession(for windowState: BrowserWindowState) -> GlanceSession? {
         guard isPreviewActive else { return nil }
         return presentedSession(for: windowState)
@@ -321,7 +327,8 @@ final class GlanceManager: ObservableObject {
     private func beginSession(
         _ url: URL,
         sourceTab tab: Tab?,
-        windowId: UUID,
+        windowState: BrowserWindowState?,
+        fallbackWindowId: UUID,
         originRectInWindow originRect: CGRect,
         initialTitle: String? = nil,
         persistsWindowSession: Bool
@@ -332,7 +339,8 @@ final class GlanceManager: ObservableObject {
             finishCurrentSession(preservesPreviewWebView: false, persistsWindowSession: false)
         }
 
-        let previewTab = runtime.makePreviewTab(url, tab)
+        let previewTab = runtime.makePreviewTab(url, tab, windowState)
+        let windowId = windowState?.id ?? fallbackWindowId
         let session = GlanceSession(
             targetURL: url,
             windowId: windowId,

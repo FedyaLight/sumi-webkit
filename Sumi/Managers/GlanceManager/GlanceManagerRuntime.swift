@@ -18,7 +18,7 @@ extension GlanceManager {
         let hideFindBar: @MainActor () -> Void
         let updateFindManagerCurrentTab: @MainActor () -> Void
         let persistWindowSession: @MainActor (BrowserWindowState) -> Void
-        let makePreviewTab: @MainActor (URL, Tab?) -> Tab
+        let makePreviewTab: @MainActor (URL, Tab?, BrowserWindowState?) -> Tab
         let adoptPreviewTab: @MainActor (Tab, Tab?, BrowserWindowState?) -> Tab
         let selectPromotedTab: @MainActor (Tab, BrowserWindowState) -> Void
         let selectPromotedTabInActiveWindow: @MainActor (Tab) -> Void

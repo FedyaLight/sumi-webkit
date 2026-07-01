@@ -415,7 +415,7 @@ enum BrowserManagerRuntimeWiring {
             persistWindowSession: { [weak browserManager] windowState in
                 browserManager?.persistWindowSession(for: windowState)
             },
-            makePreviewTab: { [weak browserManager] url, sourceTab in
+            makePreviewTab: { [weak browserManager] url, sourceTab, windowState in
                 guard let browserManager else {
                     return Tab(
                         url: url,
@@ -427,6 +427,7 @@ enum BrowserManagerRuntimeWiring {
                 return makeGlancePreviewTab(
                     for: url,
                     sourceTab: sourceTab,
+                    windowState: windowState,
                     browserManager: browserManager
                 )
             },
@@ -473,12 +474,15 @@ enum BrowserManagerRuntimeWiring {
     private static func makeGlancePreviewTab(
         for url: URL,
         sourceTab: Tab?,
+        windowState: BrowserWindowState?,
         browserManager: BrowserManager
     ) -> Tab {
         let sourceProfile = sourceTab?.resolveProfile()
-        let targetSpace = sourceTab?.spaceId.flatMap { spaceId in
-            browserManager.tabManager.spaces.first(where: { $0.id == spaceId })
-        } ?? browserManager.tabManager.currentSpace
+        let targetSpace = glanceTargetSpace(
+            sourceTab: sourceTab,
+            windowState: windowState,
+            browserManager: browserManager
+        )
 
         let tab = Tab(
             url: url,
@@ -503,7 +507,6 @@ enum BrowserManagerRuntimeWiring {
         ?? sourceTab?.spaceId.flatMap { spaceId in
             browserManager.tabManager.spaces.first(where: { $0.id == spaceId })
         }
-        ?? browserManager.tabManager.currentSpace
     }
 
     private static func matchingBoostLivePages(

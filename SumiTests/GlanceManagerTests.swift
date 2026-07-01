@@ -39,6 +39,25 @@ final class GlanceManagerTests: XCTestCase {
         XCTAssertNil(firstPreviewTab.existingWebView)
     }
 
+    func testPresentationWithoutSourceUsesActiveWindowSpaceInsteadOfGlobalCurrentSpace() throws {
+        let browserManager = BrowserManager()
+        let windowSpace = browserManager.tabManager.createSpace(name: "Window Space")
+        let globalSpace = browserManager.tabManager.createSpace(name: "Global Space")
+        browserManager.tabManager.currentSpace = globalSpace
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = windowSpace.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        browserManager.windowRegistry = windowRegistry
+        let url = try XCTUnwrap(URL(string: "https://destination.example/page"))
+
+        browserManager.glanceManager.presentExternalURL(url, from: nil)
+
+        let session = try XCTUnwrap(browserManager.glanceManager.currentSession)
+        XCTAssertEqual(session.previewTab.spaceId, windowSpace.id)
+    }
+
     func testDismissCleansPreviewAndReturnsIdle() async throws {
         let browserManager = BrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
@@ -495,8 +514,9 @@ final class GlanceManagerTests: XCTestCase {
                 persistWindowSession: { windowState in
                     persistedWindowIds.append(windowState.id)
                 },
-                makePreviewTab: { url, _ in
-                    Tab(url: url, name: url.host ?? "Glance")
+                makePreviewTab: { url, _, restoredWindowState in
+                    XCTAssertIdentical(restoredWindowState, windowState)
+                    return Tab(url: url, name: url.host ?? "Glance")
                 }
             )
         )
@@ -571,7 +591,7 @@ final class GlanceManagerTests: XCTestCase {
         currentTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
         restoreSourceSelection: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in },
         persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
-        makePreviewTab: @escaping @MainActor (URL, Tab?) -> Tab = { url, _ in
+        makePreviewTab: @escaping @MainActor (URL, Tab?, BrowserWindowState?) -> Tab = { url, _, _ in
             Tab(url: url, name: url.host ?? "Glance")
         }
     ) -> GlanceManager.Runtime {

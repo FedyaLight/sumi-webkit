@@ -78,18 +78,31 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         XCTAssertNil(owner.activePageWebView(for: windowState))
     }
 
-    func testActivePageWebViewUsesActivePreviewCurrentWebView() throws {
+    func testActivePageWebViewUsesExplicitActivePreviewWebView() throws {
         let windowState = BrowserWindowState()
         let currentTab = makeTab("https://current.example")
         let previewWebView = WKWebView(frame: .zero)
         let previewTab = makeTab("https://preview.example")
-        previewTab.replaceUntrackedWebView(previewWebView)
+        let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
+        harness.currentTabsByWindowId[windowState.id] = currentTab
+        harness.previewTabsByWindowId[windowState.id] = previewTab
+        harness.previewWebViewsByWindowId[windowState.id] = previewWebView
+        let owner = harness.makeOwner()
+
+        XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), previewWebView)
+    }
+
+    func testActivePageWebViewDoesNotReadPreviewTabCurrentWebViewDirectly() {
+        let windowState = BrowserWindowState()
+        let currentTab = makeTab("https://current.example")
+        let previewTab = makeTab("https://preview.example")
+        previewTab.replaceUntrackedWebView(WKWebView(frame: .zero))
         let harness = BrowserActivePageRoutingOwnerHarness(activeWindow: windowState)
         harness.currentTabsByWindowId[windowState.id] = currentTab
         harness.previewTabsByWindowId[windowState.id] = previewTab
         let owner = harness.makeOwner()
 
-        XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), previewWebView)
+        XCTAssertNil(owner.activePageWebView(for: windowState))
     }
 
     func testActivePageWebViewDoesNotUseTabAssignedWebViewForAnotherWindow() {
@@ -265,6 +278,7 @@ private final class BrowserActivePageRoutingOwnerHarness {
     var activeWindow: BrowserWindowState?
     var currentTabsByWindowId: [UUID: Tab] = [:]
     var previewTabsByWindowId: [UUID: Tab] = [:]
+    var previewWebViewsByWindowId: [UUID: WKWebView] = [:]
     var sessionURLsByWindowId: [UUID: URL] = [:]
     var webViewsByKey: [String: WKWebView] = [:]
     var spaces: Set<UUID> = []
@@ -290,6 +304,9 @@ private final class BrowserActivePageRoutingOwnerHarness {
                 },
                 activePreviewTab: { [weak self] windowState in
                     self?.previewTabsByWindowId[windowState.id]
+                },
+                activePreviewWebView: { [weak self] windowState in
+                    self?.previewWebViewsByWindowId[windowState.id]
                 },
                 activeSessionURL: { [weak self] windowState in
                     self?.sessionURLsByWindowId[windowState.id]
