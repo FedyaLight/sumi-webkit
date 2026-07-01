@@ -22,6 +22,33 @@ final class BrowserShellRuntime {
         retainedWindowRegistry
     }
 
+    func requireWebViewCoordinator() -> WebViewCoordinator {
+        guard let retainedWebViewCoordinator else {
+            preconditionFailure(
+                "BrowserShellRuntime.webViewCoordinator is nil. Bind it before WebView operations."
+            )
+        }
+        return retainedWebViewCoordinator
+    }
+
+    func requireWindowRegistry() -> WindowRegistry {
+        guard let retainedWindowRegistry else {
+            preconditionFailure(
+                "BrowserShellRuntime.windowRegistry is nil. Bind it before window operations."
+            )
+        }
+        return retainedWindowRegistry
+    }
+
+    func requireWindowShellContentViewFactory() -> BrowserWindowShellService.ContentViewFactory {
+        guard let windowShellContentViewFactory else {
+            preconditionFailure(
+                "BrowserShellRuntime.windowShellContentViewFactory is nil. Bind it before creating browser windows."
+            )
+        }
+        return windowShellContentViewFactory
+    }
+
     func attach(dependencies: Dependencies) {
         self.dependencies = dependencies
         applyWebViewCoordinatorBinding(oldValue: nil, newValue: retainedWebViewCoordinator)

@@ -245,12 +245,7 @@ class BrowserManager: ObservableObject {
 
     /// Use for cleanup and cross-window operations; fails fast if the coordinator was not wired (e.g. tests forgot to assign `webViewCoordinator`).
     func requireWebViewCoordinator() -> WebViewCoordinator {
-        guard let webViewCoordinator else {
-            preconditionFailure(
-                "BrowserManager.webViewCoordinator is nil. Assign it from SumiApp.setupApplicationLifecycle (or in unit tests) before WebView operations."
-            )
-        }
-        return webViewCoordinator
+        shellRuntime.requireWebViewCoordinator()
     }
 
     var windowRegistry: WindowRegistry? {
@@ -259,12 +254,7 @@ class BrowserManager: ObservableObject {
     }
 
     func requireWindowRegistry() -> WindowRegistry {
-        guard let windowRegistry else {
-            preconditionFailure(
-                "BrowserManager.windowRegistry is nil. Assign it from SumiApp.setupApplicationLifecycle (or in unit tests) before window operations."
-            )
-        }
-        return windowRegistry
+        shellRuntime.requireWindowRegistry()
     }
 
     /// App-shell owned factory for AppKit-created browser windows.
@@ -274,12 +264,7 @@ class BrowserManager: ObservableObject {
     }
 
     func requireWindowShellContentViewFactory() -> BrowserWindowShellService.ContentViewFactory {
-        guard let windowShellContentViewFactory else {
-            preconditionFailure(
-                "BrowserManager.windowShellContentViewFactory is nil. Assign it from SumiApp.setupApplicationLifecycle before creating browser windows."
-            )
-        }
-        return windowShellContentViewFactory
+        shellRuntime.requireWindowShellContentViewFactory()
     }
 
     private lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
