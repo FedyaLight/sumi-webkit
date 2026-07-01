@@ -72,10 +72,21 @@ final class WindowWebViewRegistry {
         }
     }
 
-    func trackedWebView(with identifier: ObjectIdentifier) -> WKWebView? {
-        guard let owner = webViewOwnersByIdentifier[identifier],
-              let webView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID],
+    func trackedOwner(with identifier: ObjectIdentifier) -> TrackedWebViewOwner? {
+        guard let owner = webViewOwnersByIdentifier[identifier] else { return nil }
+        guard let webView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID],
               ObjectIdentifier(webView) == identifier
+        else {
+            webViewOwnersByIdentifier.removeValue(forKey: identifier)
+            assertTrackingConsistency("trackedOwner.identifier.stale")
+            return nil
+        }
+        return owner
+    }
+
+    func trackedWebView(with identifier: ObjectIdentifier) -> WKWebView? {
+        guard let owner = trackedOwner(with: identifier),
+              let webView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID]
         else {
             return nil
         }
@@ -91,16 +102,7 @@ final class WindowWebViewRegistry {
     }
 
     func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
-        let webViewID = ObjectIdentifier(webView)
-        guard let owner = webViewOwnersByIdentifier[webViewID] else { return nil }
-        guard let trackedWebView = webViewsByTabAndWindow[owner.tabID]?[owner.windowID],
-              trackedWebView === webView
-        else {
-            webViewOwnersByIdentifier.removeValue(forKey: webViewID)
-            assertTrackingConsistency("trackedOwner.stale")
-            return nil
-        }
-        return owner
+        trackedOwner(with: ObjectIdentifier(webView))
     }
 
     func setWebView(_ webView: WKWebView, for owner: TrackedWebViewOwner) {

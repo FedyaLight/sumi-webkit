@@ -11,12 +11,16 @@ import WebKit
 @MainActor
 struct WebViewDeferredProtectedCommandExecutionOwner {
     typealias WebViewResolver = (ObjectIdentifier) -> WKWebView?
+    typealias TrackedOwnerResolver = (ObjectIdentifier) -> TrackedWebViewOwner?
+    typealias TabWebViewCleanupValidator = (ObjectIdentifier, UUID) -> Bool
     typealias TabResolver = (UUID) -> Tab?
     typealias CommandExecutor = (DeferredWebViewCommand) -> Bool
     typealias CleanupSuppressionFinisher = ([ObjectIdentifier]) -> Void
 
     struct ValidationContext {
         let resolveWebView: WebViewResolver
+        let resolveTrackedOwner: TrackedOwnerResolver
+        let canCleanUpTabWebView: TabWebViewCleanupValidator
         let resolveTab: TabResolver
         let hasTabManager: () -> Bool
         let hasCleanupWindowTarget: (UUID) -> Bool
@@ -158,8 +162,11 @@ struct WebViewDeferredProtectedCommandExecutionOwner {
             return context.resolveWebView(webViewID) != nil
         case .removeAllWebViews(let tabID):
             return context.resolveTab(tabID) != nil
-        case .removeTrackedWebView(let webViewID, _, _):
-            return context.resolveWebView(webViewID) != nil
+        case .removeTrackedWebView(let webViewID, let tabID, let windowID):
+            return context.resolveTrackedOwner(webViewID) == TrackedWebViewOwner(
+                tabID: tabID,
+                windowID: windowID
+            )
         case .closeWebViewFromWebKit(let webViewID):
             return context.resolveWebView(webViewID) != nil
         case .cleanupWindow(let windowID):
@@ -173,10 +180,10 @@ struct WebViewDeferredProtectedCommandExecutionOwner {
         case .evictHiddenWebViews(let windowID):
             return context.hasTabManager()
                 && context.hasWindow(windowID)
-        case .cleanupTabWebView(let webViewID, _):
-            return context.resolveWebView(webViewID) != nil
-        case .performFallbackWebViewCleanup(let webViewID, _):
-            return context.resolveWebView(webViewID) != nil
+        case .cleanupTabWebView(let webViewID, let tabID):
+            return context.canCleanUpTabWebView(webViewID, tabID)
+        case .performFallbackWebViewCleanup(let webViewID, let tabID):
+            return context.canCleanUpTabWebView(webViewID, tabID)
         }
     }
 

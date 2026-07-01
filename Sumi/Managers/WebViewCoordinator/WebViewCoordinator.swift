@@ -44,6 +44,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private let trackedCleanupExecutionOwner = WebViewTrackedCleanupExecutionOwner()
 
     @ObservationIgnored
+    private let tabScopedCleanupValidationOwner = WebViewTabScopedCleanupValidationOwner()
+
+    @ObservationIgnored
     private let cleanupScopeOwner = WebViewCleanupScopeOwner()
 
     @ObservationIgnored
@@ -721,6 +724,16 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             resolveWebView: { [self] webViewID in
                 resolveWebView(with: webViewID)
             },
+            resolveTrackedOwner: { [self] webViewID in
+                webViewRegistry.trackedOwner(with: webViewID)
+            },
+            canCleanUpTabWebView: { [self] webViewID, tabID in
+                tabScopedCleanupValidationOwner.canCleanUpTabScopedWebView(
+                    with: webViewID,
+                    tabID: tabID,
+                    context: tabScopedCleanupValidationContext(runtimeContext)
+                )
+            },
             resolveTab: { [self] tabID in
                 resolvedTab(with: tabID, runtimeContext: runtimeContext)
             },
@@ -1006,6 +1019,27 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
 
         return nil
+    }
+
+    private func tabScopedCleanupValidationContext(
+        _ runtimeContext: WebViewCoordinatorBrowserRuntimeContext
+    ) -> WebViewTabScopedCleanupValidationOwner.Context {
+        WebViewTabScopedCleanupValidationOwner.Context(
+            trackedOwner: { [self] webViewID in
+                webViewRegistry.trackedOwner(with: webViewID)
+            },
+            resolveWebView: { [self] webViewID in
+                resolveWebView(with: webViewID)
+            },
+            resolveTab: { [self] tabID in
+                resolvedTab(with: tabID, runtimeContext: runtimeContext)
+            },
+            allTabs: {
+                runtimeContext.regularTabs()
+                    + runtimeContext.pinnedTabs()
+                    + runtimeContext.allWindows().flatMap(\.ephemeralTabs)
+            }
+        )
     }
 
     private func visibleTabIDSet(in windowId: UUID) -> Set<UUID> {
