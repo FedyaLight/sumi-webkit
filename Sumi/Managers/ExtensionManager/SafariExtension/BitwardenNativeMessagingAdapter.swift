@@ -757,29 +757,3 @@ private extension LAContext {
         return true
     }
 }
-
-#if DEBUG
-@MainActor
-enum BitwardenNativeMessagingManualProbe {
-    static func probeInstalledDesktopProxy(
-        launcher: SumiHostApplicationLaunching = SumiNSWorkspaceHostApplicationLauncher()
-    ) async -> String {
-        guard BitwardenDesktopProxyPathResolver.isHostApplicationInstalled(launcher: launcher) else {
-            return BitwardenDesktopTransportOutcome.desktopAppNotInstalled.rawValue
-        }
-        guard let proxyURL = BitwardenDesktopProxyPathResolver.proxyExecutableURL(launcher: launcher) else {
-            return BitwardenDesktopTransportOutcome.desktopAppNotInstalled.rawValue
-        }
-        let transport = BitwardenDesktopProxyProcessTransport()
-        do {
-            try await transport.start(proxyExecutableURL: proxyURL, handshakeTimeout: .seconds(5))
-            transport.shutdown()
-            return BitwardenDesktopTransportOutcome.realDesktopHandshakeSucceeded.rawValue
-        } catch let error as BitwardenDesktopProxyTransportError {
-            return BitwardenDesktopProxyTransportErrorMapper.outcome(for: error).rawValue
-        } catch {
-            return BitwardenDesktopTransportOutcome.desktopTransportUnavailable.rawValue
-        }
-    }
-}
-#endif

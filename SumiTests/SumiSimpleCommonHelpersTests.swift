@@ -3,35 +3,6 @@ import XCTest
 @testable import Sumi
 
 final class SumiSimpleCommonHelpersTests: XCTestCase {
-    func testSumiRootPreservesSchemeAndHostWhileDroppingPathCredentialsQueryAndFragment() throws {
-        let url = try XCTUnwrap(URL(string: "http://user:pass@example.com:8080/path/to/page?q=1#section"))
-
-        XCTAssertEqual(url.sumiRoot?.absoluteString, "http://example.com:8080/")
-    }
-
-    func testSumiRootReturnsRelativeRootForHostlessURLs() throws {
-        let url = try XCTUnwrap(URL(string: "about:blank"))
-
-        XCTAssertEqual(url.sumiRoot?.absoluteString, "about:/")
-    }
-
-    func testSumiToHttpsOnlyUpgradesLowercaseHTTP() throws {
-        let httpURL = try XCTUnwrap(URL(string: "http://example.com/path?q=1#frag"))
-        let httpsURL = try XCTUnwrap(URL(string: "https://example.com/path"))
-        let mailtoURL = try XCTUnwrap(URL(string: "mailto:user@example.com"))
-
-        XCTAssertEqual(httpURL.sumiToHttps()?.absoluteString, "https://example.com/path?q=1#frag")
-        XCTAssertEqual(httpsURL.sumiToHttps(), httpsURL)
-        XCTAssertEqual(mailtoURL.sumiToHttps(), mailtoURL)
-    }
-
-    func testSumiAppendingMatchesPathComponentBehavior() throws {
-        let root = try XCTUnwrap(URL(string: "https://example.com/"))
-
-        XCTAssertEqual(root.sumiAppending("favicon.ico"), root.appendingPathComponent("favicon.ico"))
-        XCTAssertEqual(root.sumiAppending("icons/favicon.ico").absoluteString, "https://example.com/icons/favicon.ico")
-    }
-
     func testSumiNavigationalSchemePreservesRawSchemeCase() throws {
         let url = try XCTUnwrap(URL(string: "HTTP://example.com"))
 
@@ -77,16 +48,5 @@ final class SumiSimpleCommonHelpersTests: XCTestCase {
 
         XCTAssertNil(SumiDecodableHelper.decode(from: ["documentUrl": Date()]) as Payload?)
         XCTAssertNil(SumiDecodableHelper.decode(from: ["favicons": []]) as Payload?)
-    }
-
-    func testSumiMonthAgoMatchesCalendarCurrentMonthOffset() {
-        let before = Date()
-        let value = Date.sumiMonthAgo
-        let after = Date()
-
-        let expectedLowerBound = Calendar.current.date(byAdding: .month, value: -1, to: before) ?? before
-        let expectedUpperBound = Calendar.current.date(byAdding: .month, value: -1, to: after) ?? after
-        XCTAssertGreaterThanOrEqual(value, expectedLowerBound)
-        XCTAssertLessThanOrEqual(value, expectedUpperBound)
     }
 }

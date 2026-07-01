@@ -71,20 +71,6 @@ final class SafariExtensionPermissionLifecycleDiagnosticsTests: XCTestCase {
         XCTAssertFalse(json.contains("00000000-0000-0000-0000-000000000002"))
     }
 
-    func testMessageRouteKindsDistinguishWebExtensionDirections() {
-        XCTAssertEqual(
-            Set(SafariExtensionMessageRouteKind.allCases),
-            [
-                .popupToBackground,
-                .webpageToBackgroundExternal,
-                .backgroundToTabsSendMessage,
-                .contentScriptToBackground,
-                .nativeMessagingSend,
-                .nativeMessagingConnect,
-            ]
-        )
-    }
-
     func testReloadRebuildSnapshotDoesNotRequireFullURL() throws {
         let snapshot = SafariExtensionReloadRebuildSnapshot(
             triggerReason: "ExtensionManager.siteAccessPolicyChanged",

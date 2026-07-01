@@ -483,6 +483,3 @@ enum SumiNativeMessagingConnection {
         }
     }
 }
-
-// Legacy launcher protocol name used by existing tests.
-typealias SafariHostApplicationLaunching = SumiHostApplicationLaunching

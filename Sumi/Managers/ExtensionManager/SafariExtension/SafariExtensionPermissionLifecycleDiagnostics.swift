@@ -51,25 +51,6 @@ enum SafariExtensionDidOpenTabTiming: String, Codable, Sendable {
     case unknown
 }
 
-enum SafariExtensionMessageRouteKind: String, Codable, CaseIterable, Sendable {
-    case popupToBackground
-    case webpageToBackgroundExternal
-    case backgroundToTabsSendMessage
-    case contentScriptToBackground
-    case nativeMessagingSend
-    case nativeMessagingConnect
-}
-
-enum SafariExtensionMessageDeliveryCategory: String, Codable, Sendable {
-    case observed
-    case targetTabMissing
-    case controllerProfileMismatch
-    case senderTabMissing
-    case nativePathUnknown
-    case error
-    case unknown
-}
-
 enum SafariExtensionRebuildAction: String, Codable, Sendable {
     case boundedReload
     case destructiveRebuild

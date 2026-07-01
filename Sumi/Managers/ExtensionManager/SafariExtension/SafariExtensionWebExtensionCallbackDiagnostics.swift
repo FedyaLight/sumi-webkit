@@ -41,13 +41,6 @@ enum SafariExtensionWebExtensionCallbackDiagnosticBucket: String, Codable, CaseI
     case unknownNeedsStackTrace
 }
 
-struct SafariExtensionWebExtensionCallbackDiagnosticSnapshot: Codable, Equatable, Sendable {
-    let recordedAt: Date
-    let bucketCounts: [String: Int]
-    let lastBuckets: [String]
-    let lastAPIs: [String]
-}
-
 @MainActor
 enum SafariExtensionWebExtensionCallbackDiagnostics {
     private static var bucketCounts: [SafariExtensionWebExtensionCallbackDiagnosticBucket: Int] = [:]
@@ -121,17 +114,6 @@ enum SafariExtensionWebExtensionCallbackDiagnostics {
                 note: "nilSuccessValue"
             )
         }
-    }
-
-    static func snapshot() -> SafariExtensionWebExtensionCallbackDiagnosticSnapshot {
-        SafariExtensionWebExtensionCallbackDiagnosticSnapshot(
-            recordedAt: Date(),
-            bucketCounts: Dictionary(
-                uniqueKeysWithValues: bucketCounts.map { ($0.key.rawValue, $0.value) }
-            ),
-            lastBuckets: recentBuckets.map(\.rawValue),
-            lastAPIs: recentAPIs.map(\.rawValue)
-        )
     }
 
     private static func failureBucket(

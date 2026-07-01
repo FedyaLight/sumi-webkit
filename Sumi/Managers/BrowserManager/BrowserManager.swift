@@ -701,7 +701,6 @@ class BrowserManager: ObservableObject {
         findManager.updateCurrentTab(activePageTab(for: windowState), in: windowState.id)
     }
 
-    typealias TabOpenActivationPolicy = BrowserTabOpenActivationPolicy
     typealias TabOpenContext = BrowserTabOpenContext
 
     // MARK: - Tab Management (delegates to TabManager)
