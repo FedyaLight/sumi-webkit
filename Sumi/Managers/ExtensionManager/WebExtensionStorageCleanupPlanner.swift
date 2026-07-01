@@ -224,6 +224,4 @@ extension ExtensionManager {
     typealias WebExtensionStorageCleanupMode = WebExtensionStorageCleanupPlanner.CleanupMode
     typealias WebExtensionStorageSnapshot = WebExtensionStorageCleanupPlanner.StorageSnapshot
     typealias WebExtensionStoreCapabilitySnapshot = WebExtensionStorageCleanupPlanner.StoreCapabilitySnapshot
-    typealias WebExtensionCleanupErrorDiagnostic = WebExtensionStorageCleanupPlanner.ErrorDiagnostic
-    typealias WebExtensionCleanupErrorClassification = WebExtensionStorageCleanupPlanner.ErrorClassification
 }

@@ -149,14 +149,6 @@ final class WebExtensionStorageCleanupOwner {
             .pruneEmptyOrStateOnlyDirectory(for: extensionId)
     }
 
-    func storageDirectory(
-        for extensionId: String,
-        profileId: UUID? = nil
-    ) -> URL? {
-        storageCleanupStore(profileId: profileId)
-            .directory(for: extensionId)
-    }
-
     @discardableResult
     func ensureStorageDirectoryExists(
         for extensionId: String,
@@ -183,7 +175,7 @@ final class WebExtensionStorageCleanupOwner {
         for extensionId: String,
         preCleanupSnapshot: ExtensionManager.WebExtensionStorageSnapshot,
         postCleanupSnapshot: ExtensionManager.WebExtensionStorageSnapshot
-    ) -> ExtensionManager.WebExtensionCleanupErrorClassification {
+    ) -> WebExtensionStorageCleanupPlanner.ErrorClassification {
         WebExtensionStorageCleanupPlanner.shared.classifyCleanupErrors(
             errors,
             extensionId: extensionId,
@@ -210,28 +202,6 @@ final class WebExtensionStorageCleanupOwner {
 
         manager.extensionRuntimeTrace(message)
     }
-
-    func makeCleanupErrorDiagnostic(
-        _ error: Error
-    ) -> ExtensionManager.WebExtensionCleanupErrorDiagnostic {
-        WebExtensionStorageCleanupPlanner.shared.makeErrorDiagnostic(error)
-    }
-
-    func isBenignMissingOptionalStoreError(
-        _ diagnostic: ExtensionManager.WebExtensionCleanupErrorDiagnostic,
-        extensionId: String,
-        preCleanupSnapshot: ExtensionManager.WebExtensionStorageSnapshot,
-        postCleanupSnapshot: ExtensionManager.WebExtensionStorageSnapshot,
-        hasNonOptionalFailureSignals: Bool
-    ) -> Bool {
-        WebExtensionStorageCleanupPlanner.shared.isBenignMissingOptionalStoreError(
-            diagnostic,
-            extensionId: extensionId,
-            preCleanupSnapshot: preCleanupSnapshot,
-            postCleanupSnapshot: postCleanupSnapshot,
-            hasNonOptionalFailureSignals: hasNonOptionalFailureSignals
-        )
-    }
 }
 
 @available(macOS 15.5, *)
@@ -250,20 +220,6 @@ extension ExtensionManager {
     }
 
     @discardableResult
-    func pruneEmptyOrStateOnlyWebExtensionStorageDirectory(for extensionId: String) -> Bool {
-        WebExtensionStorageCleanupOwner(manager: self)
-            .pruneEmptyOrStateOnlyStorageDirectory(for: extensionId)
-    }
-
-    func webExtensionStorageDirectory(
-        for extensionId: String,
-        profileId: UUID? = nil
-    ) -> URL? {
-        WebExtensionStorageCleanupOwner(manager: self)
-            .storageDirectory(for: extensionId, profileId: profileId)
-    }
-
-    @discardableResult
     func ensureWebExtensionStorageDirectoryExists(
         for extensionId: String,
         profileId: UUID? = nil
@@ -279,28 +235,6 @@ extension ExtensionManager {
             .storageSnapshot(for: extensionId)
     }
 
-    func webExtensionStoreCapabilitySnapshot(
-        for manifest: [String: Any]
-    ) -> WebExtensionStoreCapabilitySnapshot {
-        WebExtensionStorageCleanupOwner(manager: self)
-            .storeCapabilitySnapshot(for: manifest)
-    }
-
-    func classifyWebExtensionDataCleanupErrors(
-        _ errors: [Error],
-        for extensionId: String,
-        preCleanupSnapshot: WebExtensionStorageSnapshot,
-        postCleanupSnapshot: WebExtensionStorageSnapshot
-    ) -> WebExtensionCleanupErrorClassification {
-        WebExtensionStorageCleanupOwner(manager: self)
-            .classifyCleanupErrors(
-                errors,
-                for: extensionId,
-                preCleanupSnapshot: preCleanupSnapshot,
-                postCleanupSnapshot: postCleanupSnapshot
-            )
-    }
-
     func traceWebExtensionStoreLifecycle(
         phase: String,
         extensionId: String,
@@ -311,30 +245,6 @@ extension ExtensionManager {
                 phase: phase,
                 extensionId: extensionId,
                 manifest: manifest
-            )
-    }
-
-    func makeWebExtensionCleanupErrorDiagnostic(
-        _ error: Error
-    ) -> WebExtensionCleanupErrorDiagnostic {
-        WebExtensionStorageCleanupOwner(manager: self)
-            .makeCleanupErrorDiagnostic(error)
-    }
-
-    func isBenignMissingOptionalWebExtensionStoreError(
-        _ diagnostic: WebExtensionCleanupErrorDiagnostic,
-        extensionId: String,
-        preCleanupSnapshot: WebExtensionStorageSnapshot,
-        postCleanupSnapshot: WebExtensionStorageSnapshot,
-        hasNonOptionalFailureSignals: Bool
-    ) -> Bool {
-        WebExtensionStorageCleanupOwner(manager: self)
-            .isBenignMissingOptionalStoreError(
-                diagnostic,
-                extensionId: extensionId,
-                preCleanupSnapshot: preCleanupSnapshot,
-                postCleanupSnapshot: postCleanupSnapshot,
-                hasNonOptionalFailureSignals: hasNonOptionalFailureSignals
             )
     }
 }

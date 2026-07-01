@@ -336,7 +336,7 @@ Evidence base:
 | Page-world EC bridge injection | `SumiExternallyConnectableUserScript` | **Removed in Cycle 11** — normal tabs no longer inject compat bridge scripts |
 | Externally-connectable native relay (legacy) | `ExtensionManager+ExternallyConnectableNativeMessaging` | **Deleted in Cycle 13** — no active registration or runtime dependency |
 | Architecture doc wording | `docs/architecture.md` | Current architecture wording is Safari-native; no Chrome MV3 cleanup remains |
-| Stale test guards | `SumiPerformanceModularRegressionTests`, `NativeMessagingProcessSessionTests` | Assert old `ChromeMV3*` symbols absent (good) |
+| Stale test guards | `SumiPerformanceModularRegressionTests` | Assert old `ChromeMV3*` symbols absent (good) |
 
 No production `ChromeMV3NativeMessagingInternalRuntime` or CRX installer found.
 
@@ -464,8 +464,8 @@ Clean-import audits: `scripts/check_safari_extension_clean_import.sh`.
 
 | Component | Status |
 |-----------|--------|
-| `SafariExtensionNativeMessagingHost` | **Added** — public WebKit delegate bridge; host bundle resolve + `NSWorkspace` wake |
-| `SafariExtensionNativeMessagingResolver` | **Added** — maps extension context / `applicationIdentifier` → host `.app` bundle ID |
+| `SumiNativeMessagingRelay` | **Added** — public WebKit delegate bridge; host bundle resolve + `NSWorkspace` wake |
+| `SumiNativeMessagingAppResolver` | **Added** — maps extension context / `applicationIdentifier` → host `.app` bundle ID |
 | `NativeMessagingHandler` | **Extended** — retains `WKWebExtension.MessagePort`, sanitized port diagnostics |
 | Delegate wiring | **Wired** — `sendMessage` / `connectUsing` in `ExtensionManager+ControllerDelegate` |
 
@@ -491,7 +491,7 @@ Clean-import audits: `scripts/check_safari_extension_clean_import.sh`.
 | Action icon / popup | macOS 15.4+ | Yes | Implemented | `ExtensionActionVisibilityTests` | All |
 | Permission delegate | macOS 15.4+ | Yes | Partial | — | All |
 | `runtime.sendMessage` / `connect` | WebKit extension runtime | Yes | Unverified on targets | — | Bitwarden, 1Password, Proton |
-| Native app messaging (Safari / WebKit delegate) | `sendMessage` / `connectUsing` | macOS 15.4+ | **Implemented — Sumi relay resolves host, wakes via `NSWorkspace`, returns `companionAppProtocolUnknown` until companion IPC is documented** | `SumiNativeMessagingRelayTests`, `SafariExtensionNativeMessagingHostTests` | Bitwarden, 1Password, Proton |
+| Native app messaging (Safari / WebKit delegate) | `sendMessage` / `connectUsing` | macOS 15.4+ | **Implemented — Sumi relay resolves host, wakes via `NSWorkspace`, returns `companionAppProtocolUnknown` until companion IPC is documented** | `SumiNativeMessagingRelayTests`, `SumiNativeMessagingRelayHostResolutionTests` | Bitwarden, 1Password, Proton |
 | Externally-connectable page bridge NM | Custom JS shim | N/A | **Removed (Cycle 11)** | `scripts/check_safari_extension_clean_import.sh` | N/A |
 | Content scripts / autofill | WebKit | Yes | **Enable path tab reconcile (Cycle 5)** | `SafariExtensionCompatibilityReportTests` | All PMs |
 | `storage.local` / `storage.sync` | WebKit | Yes | Assumed via WebKit stores | Store lifecycle traces | PMs |
@@ -748,17 +748,16 @@ cookie domain counts only, popup lifecycle phase).
 
 ### Cycle 4 (2026-06-10)
 
-- **`SafariExtensionNativeMessagingHost`:** resolves host `.app` bundle ID from
+- **`SumiNativeMessagingRelay`:** resolves host `.app` bundle ID from
   `applicationIdentifier` + Safari import metadata; wakes host via `NSWorkspace.openApplication`.
-- **`SafariExtensionNativeMessagingResolver`:** alias table for PM host IDs
+- **`SumiNativeMessagingAppResolver`:** alias table for PM host IDs
   (`com.8bit.bitwarden` → `com.bitwarden.desktop`, `me.proton.pass.nm` → `me.proton.pass.catalyst`);
   empty identifier falls back to containing app from imported appex path.
 - **Delegate wired:** `ExtensionManager+ControllerDelegate` `sendMessage` / `connectUsing` call host
   bridge; `NativeMessagingHandler` retains `WKWebExtension.MessagePort`.
 - **Diagnostics:** sanitized buckets only (`extensionId`, direction, host bundle ID, outcome,
   error domain/code) — never message bodies.
-- **Tests:** `SafariExtensionNativeMessagingHostTests`, updated `NativeMessagingProcessSessionTests`
-  and modular regression guards.
+- **Tests:** `SumiNativeMessagingRelayHostResolutionTests` and modular regression guards.
 - **Blocker for Cycle 5:** public host IPC relay for PM unlock/autofill; manual E2E after import.
 
 ### Cycle 5 (2026-06-10)

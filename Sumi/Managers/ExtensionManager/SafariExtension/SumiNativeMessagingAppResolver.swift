@@ -21,14 +21,6 @@ struct SumiNativeMessagingAppResolution: Sendable, Equatable {
 }
 
 enum SumiNativeMessagingAppResolver {
-    static var knownCompanionAliasBundleIdentifiers: Set<String> {
-        SumiCompanionAppIdentityMetadata.knownPublicHostBundleIdentifiers
-    }
-
-    static var hostApplicationIdentifierAliases: [String: String] {
-        SumiCompanionAppIdentityMetadata.publicHostBundleIdentifierAliases
-    }
-
     static func resolve(
         requestedApplicationIdentifier: String?,
         extensionId: String?,
@@ -75,38 +67,5 @@ enum SumiNativeMessagingAppResolver {
         case .appGroupsMetadata:
             return .appGroupsMetadata
         }
-    }
-}
-
-// MARK: - Legacy resolver surface
-
-enum SafariExtensionNativeMessagingResolver {
-    static let hostApplicationIdentifierAliases = SumiNativeMessagingAppResolver
-        .hostApplicationIdentifierAliases
-
-    static func resolveHostApplicationBundleIdentifier(
-        requestedApplicationIdentifier: String?,
-        extensionId: String?,
-        installedExtensions: [InstalledExtension],
-        importStore: SafariExtensionImportStore
-    ) -> String? {
-        SumiNativeMessagingAppResolver.resolve(
-            requestedApplicationIdentifier: requestedApplicationIdentifier,
-            extensionId: extensionId,
-            installedExtensions: installedExtensions,
-            importStore: importStore
-        )?.hostBundleIdentifier
-    }
-
-    static func normalizedHostBundleIdentifier(_ identifier: String) -> String {
-        SumiNativeMessagingAppResolver.normalizedHostBundleIdentifier(identifier)
-    }
-
-    static func containingApplicationBundleIdentifier(forAppexPath path: String) -> String? {
-        SumiNativeMessagingAppResolver.containingApplicationBundleIdentifier(forAppexPath: path)
-    }
-
-    static func appexBundleIdentifier(at path: String) -> String? {
-        SumiNativeMessagingAppResolver.appexBundleIdentifier(at: path)
     }
 }

@@ -108,34 +108,3 @@ final class KeychainProtonPassSafariCompanionStore: ProtonPassSafariCompanionSto
         return "\(profile):\(extensionId)"
     }
 }
-
-final class InMemoryProtonPassSafariCompanionStore: ProtonPassSafariCompanionStore {
-    private var states: [String: ProtonPassSafariCompanionState] = [:]
-    var shouldFail = false
-
-    func loadState(
-        profileId: UUID?,
-        extensionId: String
-    ) throws -> ProtonPassSafariCompanionState? {
-        if shouldFail { throw CompanionApplicationMessageError.secureStoreFailure }
-        return states[key(profileId: profileId, extensionId: extensionId)]
-    }
-
-    func saveState(
-        _ state: ProtonPassSafariCompanionState,
-        profileId: UUID?,
-        extensionId: String
-    ) throws {
-        if shouldFail { throw CompanionApplicationMessageError.secureStoreFailure }
-        states[key(profileId: profileId, extensionId: extensionId)] = state
-    }
-
-    func clearState(profileId: UUID?, extensionId: String) throws {
-        if shouldFail { throw CompanionApplicationMessageError.secureStoreFailure }
-        states.removeValue(forKey: key(profileId: profileId, extensionId: extensionId))
-    }
-
-    private func key(profileId: UUID?, extensionId: String) -> String {
-        "\(profileId?.uuidString.lowercased() ?? "profileless"):\(extensionId)"
-    }
-}

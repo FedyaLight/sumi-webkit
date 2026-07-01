@@ -250,10 +250,6 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
         let nsError = try XCTUnwrap(handshakeError as NSError?)
         XCTAssertEqual(nsError.code, SumiNativeMessagingRelay.ErrorCode.relayTimeout.rawValue)
-        XCTAssertEqual(
-            BitwardenDesktopProxyTransportErrorMapper.capability(for: .timeout),
-            .timeout
-        )
     }
 
     func testPortDisconnectHandledSafely() async {

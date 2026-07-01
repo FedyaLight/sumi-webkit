@@ -4,7 +4,7 @@ import XCTest
 
 @available(macOS 15.5, *)
 @MainActor
-final class SafariExtensionNativeMessagingHostTests: XCTestCase {
+final class SumiNativeMessagingRelayHostResolutionTests: XCTestCase {
     private final class MockHostLauncher: SumiHostApplicationLaunching {
         var bundleURLs: [String: URL] = [:]
         var openedBundleIdentifiers: [String] = []
@@ -24,19 +24,19 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
 
     func testResolverNormalizesKnownHostAliases() {
         XCTAssertEqual(
-            SafariExtensionNativeMessagingResolver.normalizedHostBundleIdentifier(
+            SumiNativeMessagingAppResolver.normalizedHostBundleIdentifier(
                 "com.8bit.bitwarden"
             ),
             "com.bitwarden.desktop"
         )
         XCTAssertEqual(
-            SafariExtensionNativeMessagingResolver.normalizedHostBundleIdentifier(
+            SumiNativeMessagingAppResolver.normalizedHostBundleIdentifier(
                 "me.proton.pass.nm"
             ),
             "me.proton.pass.catalyst"
         )
         XCTAssertEqual(
-            SafariExtensionNativeMessagingResolver.normalizedHostBundleIdentifier(
+            SumiNativeMessagingAppResolver.normalizedHostBundleIdentifier(
                 "com.bitwarden.desktop"
             ),
             "com.bitwarden.desktop"
@@ -54,12 +54,12 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
             sourceBundlePath: appexPath
         )
 
-        let hostID = SafariExtensionNativeMessagingResolver.resolveHostApplicationBundleIdentifier(
+        let hostID = SumiNativeMessagingAppResolver.resolve(
             requestedApplicationIdentifier: "com.bitwarden.desktop",
             extensionId: installed.id,
             installedExtensions: [installed],
             importStore: importStore
-        )
+        )?.hostBundleIdentifier
 
         XCTAssertEqual(hostID, "com.bitwarden.desktop")
     }
@@ -75,12 +75,12 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
             sourceBundlePath: appexPath
         )
 
-        let hostID = SafariExtensionNativeMessagingResolver.resolveHostApplicationBundleIdentifier(
+        let hostID = SumiNativeMessagingAppResolver.resolve(
             requestedApplicationIdentifier: "",
             extensionId: installed.id,
             installedExtensions: [installed],
             importStore: importStore
-        )
+        )?.hostBundleIdentifier
 
         XCTAssertEqual(hostID, "com.1password.safari")
     }
@@ -102,7 +102,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
             fileURLWithPath: "/Applications/ExamplePasswordManager.app"
         )
         var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
-        let host = SafariExtensionNativeMessagingHost(
+        let host = SumiNativeMessagingRelay(
             importStore: importStore,
             launcher: launcher,
             extensionsModuleEnabled: { true },
@@ -118,10 +118,10 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
         XCTAssertNil(reply.value)
         let error = try XCTUnwrap(reply.error as NSError?)
-        XCTAssertEqual(error.domain, SafariExtensionNativeMessagingHost.errorDomain)
+        XCTAssertEqual(error.domain, SumiNativeMessagingRelay.errorDomain)
         XCTAssertEqual(
             error.code,
-            SafariExtensionNativeMessagingHost.ErrorCode.companionAppProtocolUnknown.rawValue
+            SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
         )
         XCTAssertTrue(
             diagnostics.contains {
@@ -144,7 +144,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
             sourceBundlePath: appexPath
         )
         let launcher = MockHostLauncher()
-        let host = SafariExtensionNativeMessagingHost(
+        let host = SumiNativeMessagingRelay(
             importStore: importStore,
             launcher: launcher,
             extensionsModuleEnabled: { true },
@@ -161,7 +161,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
         let error = try XCTUnwrap(reply.error as NSError?)
         XCTAssertEqual(
             error.code,
-            SafariExtensionNativeMessagingHost.ErrorCode.hostNotFound.rawValue
+            SumiNativeMessagingRelay.ErrorCode.hostNotFound.rawValue
         )
     }
 
@@ -173,12 +173,12 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
             sourceKind: .directory
         )
 
-        let hostID = SafariExtensionNativeMessagingResolver.resolveHostApplicationBundleIdentifier(
+        let hostID = SumiNativeMessagingAppResolver.resolve(
             requestedApplicationIdentifier: nil,
             extensionId: installed.id,
             installedExtensions: [installed],
             importStore: importStore
-        )
+        )?.hostBundleIdentifier
 
         XCTAssertNil(hostID)
     }
@@ -186,7 +186,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
     // MARK: - Helpers
 
     private func sendMessageReply(
-        host: SafariExtensionNativeMessagingHost,
+        host: SumiNativeMessagingRelay,
         installed: InstalledExtension,
         applicationIdentifier: String
     ) async -> (value: Any?, error: (any Error)?) {
@@ -288,7 +288,7 @@ final class SafariExtensionNativeMessagingHostTests: XCTestCase {
     }
 
     private func makeDefaults() -> UserDefaults {
-        let suiteName = "SafariExtensionNativeMessagingHostTests.\(UUID().uuidString)"
+        let suiteName = "SumiNativeMessagingRelayHostResolutionTests.\(UUID().uuidString)"
         return UserDefaults(suiteName: suiteName)!
     }
 

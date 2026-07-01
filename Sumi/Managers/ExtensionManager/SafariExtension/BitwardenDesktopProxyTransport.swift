@@ -353,24 +353,6 @@ enum BitwardenDesktopProxyTransportErrorMapper {
         return NSError(domain: relayError.domain, code: relayError.code, userInfo: userInfo)
     }
 
-    static func capability(for error: BitwardenDesktopProxyTransportError)
-        -> SumiNativeMessagingAdapterCapability {
-        switch error {
-        case .appNotInstalled, .proxyBinaryMissing:
-            return .appNotInstalled
-        case .desktopNotRunning:
-            return .adapterUnavailable
-        case .desktopIntegrationDisabled, .processLaunchFailed, .permissionDenied:
-            return .desktopIntegrationDisabled
-        case .timeout:
-            return .timeout
-        case .malformedReply, .protocolMismatch:
-            return .adapterUnavailable
-        case .portDisconnected:
-            return .portDisconnected
-        }
-    }
-
     static func outcome(for error: BitwardenDesktopProxyTransportError)
         -> BitwardenDesktopTransportOutcome {
         switch error {

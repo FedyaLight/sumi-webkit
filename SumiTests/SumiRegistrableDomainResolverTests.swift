@@ -38,50 +38,38 @@ final class SumiSiteNormalizerRegistrableDomainTests: XCTestCase {
     private let normalizer = SumiSiteNormalizer()
 
     func testNormalizerLowercasesAndUsesRegistrableDomain() {
-        XCTAssertEqual(normalizer.normalizedHost(fromRawHost: " WWW.Example.COM. "), "example.com")
+        XCTAssertEqual(normalizer.siteDomain(fromRawDomain: " WWW.Example.COM. "), "example.com")
     }
 
     func testNormalizerFallsBackToNormalizedHostWhenRegistrableDomainIsNil() {
-        XCTAssertEqual(normalizer.normalizedHost(fromRawHost: " localhost. "), "localhost")
-        XCTAssertEqual(normalizer.normalizedHost(fromRawHost: "127.0.0.1"), "127.0.0.1")
+        XCTAssertEqual(normalizer.siteDomain(fromRawDomain: " localhost. "), "localhost")
+        XCTAssertEqual(normalizer.siteDomain(fromRawDomain: "127.0.0.1"), "127.0.0.1")
     }
 
-    func testIdentityStripsQueryAndFragmentButPreservesPath() throws {
-        let identity = try XCTUnwrap(
-            normalizer.identity(for: URL(string: "https://Example.COM/path?utm=1#section"))
-        )
+    func testNormalizedURLStripsQueryAndFragmentButPreservesPath() throws {
+        let url = try XCTUnwrap(URL(string: "https://Example.COM/path?utm=1#section"))
 
-        XCTAssertEqual(identity.normalizedURL.absoluteString, "https://example.com/path")
-        XCTAssertEqual(identity.host, "example.com")
-        XCTAssertEqual(identity.displayDomain, "example.com")
-        XCTAssertEqual(identity.siteDomain, "example.com")
+        XCTAssertEqual(normalizer.normalizedURL(for: url)?.absoluteString, "https://example.com/path")
+        XCTAssertEqual(normalizer.host(for: url), "example.com")
+        XCTAssertEqual(normalizer.siteDomain(for: url), "example.com")
     }
 
-    func testIdentityNormalizesHTTPAndHTTPSCasing() throws {
-        let http = try XCTUnwrap(
-            normalizer.identity(for: URL(string: "HTTP://WWW.Example.COM:80/Path?one=1"))
-        )
-        let https = try XCTUnwrap(
-            normalizer.identity(for: URL(string: "HTTPS://WWW.Example.COM:443/Path#two"))
-        )
+    func testNormalizedURLNormalizesHTTPAndHTTPSCasing() throws {
+        let http = try XCTUnwrap(URL(string: "HTTP://WWW.Example.COM:80/Path?one=1"))
+        let https = try XCTUnwrap(URL(string: "HTTPS://WWW.Example.COM:443/Path#two"))
 
-        XCTAssertEqual(http.normalizedURL.absoluteString, "http://www.example.com/Path")
-        XCTAssertEqual(https.normalizedURL.absoluteString, "https://www.example.com/Path")
-        XCTAssertEqual(http.host, "www.example.com")
-        XCTAssertEqual(https.host, "www.example.com")
-        XCTAssertEqual(http.displayDomain, "example.com")
-        XCTAssertEqual(https.displayDomain, "example.com")
-        XCTAssertEqual(http.siteDomain, "example.com")
-        XCTAssertEqual(https.siteDomain, "example.com")
+        XCTAssertEqual(normalizer.normalizedURL(for: http)?.absoluteString, "http://www.example.com/Path")
+        XCTAssertEqual(normalizer.normalizedURL(for: https)?.absoluteString, "https://www.example.com/Path")
+        XCTAssertEqual(normalizer.host(for: http), "www.example.com")
+        XCTAssertEqual(normalizer.host(for: https), "www.example.com")
+        XCTAssertEqual(normalizer.siteDomain(for: http), "example.com")
+        XCTAssertEqual(normalizer.siteDomain(for: https), "example.com")
     }
 
-    func testIdentityUsesPublicSuffixRegistrableDomain() throws {
-        let identity = try XCTUnwrap(
-            normalizer.identity(for: URL(string: "https://news.bbc.co.uk/story?ref=home"))
-        )
+    func testSiteDomainUsesPublicSuffixRegistrableDomain() throws {
+        let url = try XCTUnwrap(URL(string: "https://news.bbc.co.uk/story?ref=home"))
 
-        XCTAssertEqual(identity.host, "news.bbc.co.uk")
-        XCTAssertEqual(identity.displayDomain, "news.bbc.co.uk")
-        XCTAssertEqual(identity.siteDomain, "bbc.co.uk")
+        XCTAssertEqual(normalizer.host(for: url), "news.bbc.co.uk")
+        XCTAssertEqual(normalizer.siteDomain(for: url), "bbc.co.uk")
     }
 }

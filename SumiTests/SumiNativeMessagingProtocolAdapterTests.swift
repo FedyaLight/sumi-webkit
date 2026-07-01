@@ -129,14 +129,6 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
             error.code,
             SumiNativeMessagingRelay.ErrorCode.companionAppProtocolUnknown.rawValue
         )
-        XCTAssertEqual(
-            SumiNativeMessagingAdapterTransport.capability(
-                for: nil,
-                adapterAvailable: false,
-                relayErrorCode: .companionAppProtocolUnknown
-            ),
-            .adapterUnavailable
-        )
     }
 
     // 4. Adapter unavailable does not launch app repeatedly
@@ -216,10 +208,6 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
 
         let error = try XCTUnwrap(reply.error as NSError?)
         XCTAssertEqual(error.code, SumiNativeMessagingRelay.ErrorCode.relayTimeout.rawValue)
-        XCTAssertEqual(
-            SumiNativeMessagingAdapterTransport.mapRelayError(error),
-            .timeout
-        )
     }
 
     // 6. Adapter disconnect cleans sessions

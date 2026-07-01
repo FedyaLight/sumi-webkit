@@ -1,32 +1,10 @@
 import Foundation
 
-struct SumiSiteIdentity: Equatable, Hashable, Sendable {
-    let normalizedURL: URL
-    let host: String
-    let displayDomain: String
-    let siteDomain: String
-}
-
 struct SumiSiteNormalizer: Sendable {
     private let registrableDomainResolver: any SumiRegistrableDomainResolving
 
     init(registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()) {
         self.registrableDomainResolver = registrableDomainResolver
-    }
-
-    func identity(for url: URL?) -> SumiSiteIdentity? {
-        guard let url,
-              let host = host(for: url),
-              let normalizedURL = normalizedURL(for: url, host: host)
-        else {
-            return nil
-        }
-        return SumiSiteIdentity(
-            normalizedURL: normalizedURL,
-            host: host,
-            displayDomain: displayDomain(forHost: host),
-            siteDomain: siteDomain(forHost: host)
-        )
     }
 
     func normalizedURL(for url: URL?) -> URL? {
@@ -49,14 +27,6 @@ struct SumiSiteNormalizer: Sendable {
         return host.isEmpty ? nil : host
     }
 
-    func displayDomain(for url: URL?) -> String? {
-        host(for: url).map(displayDomain(forHost:))
-    }
-
-    func displayDomain(fromRawHost rawHost: String) -> String? {
-        host(fromRawHost: rawHost).map(displayDomain(forHost:))
-    }
-
     func siteDomain(for url: URL?) -> String? {
         host(for: url).map(siteDomain(forHost:))
     }
@@ -67,10 +37,6 @@ struct SumiSiteNormalizer: Sendable {
 
     func normalizedHost(for url: URL?) -> String? {
         siteDomain(for: url)
-    }
-
-    func normalizedHost(fromRawHost rawHost: String) -> String? {
-        siteDomain(fromRawDomain: rawHost)
     }
 
     private func normalizedURL(for url: URL, host: String) -> URL? {
@@ -96,10 +62,6 @@ struct SumiSiteNormalizer: Sendable {
     private func rawHost(for url: URL?) -> String? {
         guard let url else { return nil }
         return url.host(percentEncoded: false) ?? url.host
-    }
-
-    private func displayDomain(forHost host: String) -> String {
-        host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 
     private func siteDomain(forHost host: String) -> String {
