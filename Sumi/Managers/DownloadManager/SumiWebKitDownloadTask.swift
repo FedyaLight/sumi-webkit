@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import Navigation
 import UniformTypeIdentifiers
 import WebKit
 

@@ -50,7 +50,7 @@ extension BrowserSidebarSpaceTransitionRoutingOwner.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
-                browserManager?.sidebarSplitShortcutRoutingOwner.completePendingSplitGroupFocusIfReady(
+                browserManager?.sidebarCommandService.splitShortcutRouting.completePendingSplitGroupFocusIfReady(
                     in: windowState,
                     spaceId: spaceId
                 )

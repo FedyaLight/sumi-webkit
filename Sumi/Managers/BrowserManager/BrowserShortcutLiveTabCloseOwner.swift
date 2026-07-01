@@ -103,7 +103,7 @@ final class BrowserShortcutLiveTabCloseOwner {
 extension BrowserShortcutLiveTabCloseOwner.Dependencies {
     @MainActor
     static func live(browserManager: BrowserManager) -> Self {
-        let fallbackPlanner = browserManager.tabCloseFallbackPlanner
+        let tabLifecycleService = browserManager.tabLifecycleService
         return Self(
             tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
                 browserManager?.tabManager ?? tabManager
@@ -112,7 +112,7 @@ extension BrowserShortcutLiveTabCloseOwner.Dependencies {
                 [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
                 browserManager?.recentlyClosedManager ?? recentlyClosedManager
             },
-            fallbackPlanner: { fallbackPlanner },
+            fallbackPlanner: { tabLifecycleService.closeFallbackPlanner },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
             },
@@ -127,7 +127,7 @@ extension BrowserShortcutLiveTabCloseOwner.Dependencies {
             },
             restoreShortcutSplitMember: {
                 [weak browserManager] itemId, group, windowState, preserveLiveInstance in
-                browserManager?.sidebarSplitShortcutRoutingOwner.restoreShortcutSplitMember(
+                browserManager?.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
                     itemId,
                     from: group,
                     in: windowState,
@@ -135,7 +135,7 @@ extension BrowserShortcutLiveTabCloseOwner.Dependencies {
                 )
             },
             unloadShortcutHostedSplitGroup: { [weak browserManager] group, windowState in
-                browserManager?.sidebarSplitShortcutRoutingOwner.unloadShortcutHostedSplitGroup(group, in: windowState)
+                browserManager?.sidebarCommandService.splitShortcutRouting.unloadShortcutHostedSplitGroup(group, in: windowState)
             }
         )
     }

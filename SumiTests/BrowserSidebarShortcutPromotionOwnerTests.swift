@@ -59,7 +59,7 @@ final class BrowserSidebarShortcutPromotionOwnerTests: XCTestCase {
         )
         harness.browserManager.tabManager.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
 
-        harness.browserManager.sidebarShortcutPromotionOwner.pinShortcutGlobally(
+        harness.browserManager.sidebarCommandService.shortcutPromotion.pinShortcutGlobally(
             sourcePin,
             in: harness.windowState,
             spaceId: harness.space.id,
@@ -95,7 +95,7 @@ final class BrowserSidebarShortcutPromotionOwnerTests: XCTestCase {
         harness.browserManager.tabManager.setSpacePinnedShortcuts([sourcePin], for: harness.space.id)
         harness.browserManager.tabManager.setPinnedTabs([existingEssential], for: harness.profile.id)
 
-        harness.browserManager.sidebarShortcutPromotionOwner.pinShortcutGlobally(
+        harness.browserManager.sidebarCommandService.shortcutPromotion.pinShortcutGlobally(
             sourcePin,
             in: harness.windowState,
             spaceId: harness.space.id,

@@ -11,12 +11,7 @@ struct TabManagerRuntimeContext {
     private let windowsProvider: () -> [(UUID, BrowserWindowState)]
     private let windowStatesProvider: () -> [BrowserWindowState]
     private let updateTabVisibilityHandler: () -> Void
-    private let materializeVisibleTabWebViewIfNeededHandler: (Tab, BrowserWindowState) -> Void
-    private let loadTabHandler: (Tab) -> Void
-    private let unloadTabHandler: (Tab) -> Void
-    private let requireRemoveAllWebViewsHandler: (Tab, Bool) -> Void
-    private let windowIDsTrackingWebViewsProvider: (UUID) -> [UUID]
-    private let rebuildLiveWebViewsHandler: (Tab, UUID?, URL?) -> Void
+    let webViewLifecycle: TabManagerWebViewLifecycleService
     private let handleTabClosureHandler: (UUID) -> Void
     private let visibleSplitTabIdsProvider: (UUID) -> [UUID]
     private let isTabVisibleInSplitProvider: (UUID, UUID) -> Bool
@@ -33,7 +28,6 @@ struct TabManagerRuntimeContext {
     private let closeAuxiliaryMiniWindowHandler: (Tab, AuxiliaryWindowCloseReason) -> Void
     private let isLiveFolderProvider: (UUID) -> Bool
     private let deleteLiveFolderStateHandler: (Set<UUID>) -> Void
-    private let prepareTabHandler: (Tab) -> Void
 
     init(
         currentProfileId: @escaping () -> UUID? = { nil },
@@ -45,12 +39,7 @@ struct TabManagerRuntimeContext {
         windows: @escaping () -> [(UUID, BrowserWindowState)] = { [] },
         windowStates: @escaping () -> [BrowserWindowState] = { [] },
         updateTabVisibility: @escaping () -> Void = {},
-        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in },
-        loadTab: @escaping (Tab) -> Void = { _ in },
-        unloadTab: @escaping (Tab) -> Void = { _ in },
-        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void,
-        windowIDsTrackingWebViews: @escaping (UUID) -> [UUID] = { _ in [] },
-        rebuildLiveWebViews: @escaping (Tab, UUID?, URL?) -> Void = { _, _, _ in },
+        webViewLifecycle: TabManagerWebViewLifecycleService = .inactive,
         handleTabClosure: @escaping (UUID) -> Void = { _ in },
         visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
         isTabVisibleInSplit: @escaping (UUID, UUID) -> Bool = { _, _ in false },
@@ -66,8 +55,7 @@ struct TabManagerRuntimeContext {
         syncWorkspaceThemeAcrossWindows: @escaping (Space, Bool) -> Void = { _, _ in },
         closeAuxiliaryMiniWindow: @escaping (Tab, AuxiliaryWindowCloseReason) -> Void = { _, _ in },
         isLiveFolder: @escaping (UUID) -> Bool = { _ in false },
-        deleteLiveFolderState: @escaping (Set<UUID>) -> Void = { _ in },
-        prepareTab: @escaping (Tab) -> Void = { _ in }
+        deleteLiveFolderState: @escaping (Set<UUID>) -> Void = { _ in }
     ) {
         self.currentProfileIdProvider = currentProfileId
         self.defaultProfileIdProvider = defaultProfileId
@@ -78,12 +66,7 @@ struct TabManagerRuntimeContext {
         self.windowsProvider = windows
         self.windowStatesProvider = windowStates
         self.updateTabVisibilityHandler = updateTabVisibility
-        self.materializeVisibleTabWebViewIfNeededHandler = materializeVisibleTabWebViewIfNeeded
-        self.loadTabHandler = loadTab
-        self.unloadTabHandler = unloadTab
-        self.requireRemoveAllWebViewsHandler = requireRemoveAllWebViews
-        self.windowIDsTrackingWebViewsProvider = windowIDsTrackingWebViews
-        self.rebuildLiveWebViewsHandler = rebuildLiveWebViews
+        self.webViewLifecycle = webViewLifecycle
         self.handleTabClosureHandler = handleTabClosure
         self.visibleSplitTabIdsProvider = visibleSplitTabIds
         self.isTabVisibleInSplitProvider = isTabVisibleInSplit
@@ -100,7 +83,6 @@ struct TabManagerRuntimeContext {
         self.closeAuxiliaryMiniWindowHandler = closeAuxiliaryMiniWindow
         self.isLiveFolderProvider = isLiveFolder
         self.deleteLiveFolderStateHandler = deleteLiveFolderState
-        self.prepareTabHandler = prepareTab
     }
 
     var currentProfileId: UUID? { currentProfileIdProvider() }
@@ -133,31 +115,6 @@ struct TabManagerRuntimeContext {
 
     func updateTabVisibility() {
         updateTabVisibilityHandler()
-    }
-
-    func materializeVisibleTabWebViewIfNeeded(_ tab: Tab, in windowState: BrowserWindowState) {
-        materializeVisibleTabWebViewIfNeededHandler(tab, windowState)
-    }
-
-    func loadTab(_ tab: Tab) {
-        loadTabHandler(tab)
-    }
-
-    func unloadTab(_ tab: Tab) {
-        unloadTabHandler(tab)
-    }
-
-    func requireRemoveAllWebViews(for tab: Tab, closeActiveFullscreenMedia: Bool) {
-        requireRemoveAllWebViewsHandler(tab, closeActiveFullscreenMedia)
-    }
-
-    func windowIDsTrackingWebViews(for tabId: UUID) -> [UUID] {
-        windowIDsTrackingWebViewsProvider(tabId)
-    }
-
-    @available(macOS 15.5, *)
-    func rebuildLiveWebViews(for tab: Tab, preferredPrimaryWindowId: UUID?, load url: URL?) {
-        rebuildLiveWebViewsHandler(tab, preferredPrimaryWindowId, url)
     }
 
     func handleTabClosure(_ tabId: UUID) {
@@ -224,7 +181,4 @@ struct TabManagerRuntimeContext {
         deleteLiveFolderStateHandler(folderIds)
     }
 
-    func prepareTab(_ tab: Tab) {
-        prepareTabHandler(tab)
-    }
 }

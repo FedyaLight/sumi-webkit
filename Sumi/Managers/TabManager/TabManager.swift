@@ -457,7 +457,7 @@ class TabManager: ObservableObject {
     }
 
     func prepareTabForRuntime(_ tab: Tab) {
-        runtimeContext?.prepareTab(tab)
+        runtimeContext?.webViewLifecycle.prepareTab(tab)
         if tab.sumiSettings == nil {
             tab.sumiSettings = sumiSettings ?? runtimeContext?.settings
         }
@@ -717,8 +717,8 @@ class TabManager: ObservableObject {
             captureRecentlyClosedTab(tab, spaceId: removedSpaceId)
 
             // Force unload the tab from compositor before removing
-            runtimeContext.unloadTab(tab)
-            runtimeContext.requireRemoveAllWebViews(
+            runtimeContext.webViewLifecycle.unloadTab(tab)
+            runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
                 for: tab,
                 closeActiveFullscreenMedia: true
             )

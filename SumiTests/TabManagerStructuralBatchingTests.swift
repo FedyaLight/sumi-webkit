@@ -414,8 +414,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         tabManager.attachRuntimeContext(
             TabManagerRuntimeContext(
                 currentProfileId: { currentProfileId },
-                defaultProfileId: { firstProfileId },
-                requireRemoveAllWebViews: { _, _ in }
+                defaultProfileId: { firstProfileId }
             )
         )
 
@@ -440,8 +439,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         tabManager.attachRuntimeContext(
             TabManagerRuntimeContext(
                 currentProfileId: { currentProfileId },
-                defaultProfileId: { defaultProfileId },
-                requireRemoveAllWebViews: { _, _ in }
+                defaultProfileId: { defaultProfileId }
             )
         )
 
@@ -518,8 +516,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
                 currentProfileId: { globalProfileId },
                 windowState: { id in
                     id == windowState.id ? windowState : nil
-                },
-                requireRemoveAllWebViews: { _, _ in }
+                }
             )
         )
 
@@ -848,7 +845,6 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
                 windowState: { statesById[$0] },
                 windows: { windowStates.map { ($0.id, $0) } },
                 windowStates: { windowStates },
-                requireRemoveAllWebViews: { _, _ in },
                 validateWindowStates: {
                     validationRecorder.count += 1
                 },
@@ -865,11 +861,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
-        tabManager.attachRuntimeContext(
-            TabManagerRuntimeContext(
-                requireRemoveAllWebViews: { _, _ in }
-            )
-        )
+        tabManager.attachRuntimeContext(TabManagerRuntimeContext())
         return tabManager
     }
 }

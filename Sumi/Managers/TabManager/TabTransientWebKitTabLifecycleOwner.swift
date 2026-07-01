@@ -164,8 +164,8 @@ final class TabTransientWebKitTabLifecycleOwner {
         if notifyExtensionClose {
             runtimeContext.notifyTabClosedIfLoaded(tab)
         }
-        runtimeContext.unloadTab(tab)
-        runtimeContext.requireRemoveAllWebViews(
+        runtimeContext.webViewLifecycle.unloadTab(tab)
+        runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
             for: tab,
             closeActiveFullscreenMedia: true
         )

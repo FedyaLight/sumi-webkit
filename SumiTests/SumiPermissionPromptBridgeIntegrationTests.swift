@@ -282,6 +282,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         SumiWebKitMediaCaptureTabContext(
             tabId: "tab-a",
             pageId: "tab-a:1",
+            surface: .normalTab,
             profilePartitionId: "profile-a",
             isEphemeralProfile: false,
             committedURL: URL(string: "https://example.com"),
@@ -300,6 +301,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         SumiWebKitGeolocationTabContext(
             tabId: "tab-a",
             pageId: "tab-a:1",
+            surface: .normalTab,
             profilePartitionId: "profile-a",
             isEphemeralProfile: false,
             committedURL: URL(string: "https://example.com"),
@@ -326,6 +328,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         SumiWebNotificationTabContext(
             tabId: "tab-a",
             pageId: "tab-a:1",
+            surface: .normalTab,
             profilePartitionId: "profile-a",
             isEphemeralProfile: false,
             committedURL: URL(string: "https://example.com/page"),
@@ -349,6 +352,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         SumiStorageAccessTabContext(
             tabId: "tab-a",
             pageId: "tab-a:1",
+            surface: .normalTab,
             profilePartitionId: "profile-a",
             isEphemeralProfile: false,
             committedURL: URL(string: "https://rp.example"),
@@ -378,6 +382,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         SumiExternalSchemePermissionTabContext(
             tabId: "tab-a",
             pageId: "tab-a:1",
+            surface: .normalTab,
             profilePartitionId: "profile-a",
             isEphemeralProfile: false,
             committedURL: URL(string: "https://request.example/page"),

@@ -68,7 +68,7 @@ final class BrowserTabOpeningOwnerTests: XCTestCase {
         harness.windowRegistry.activeWindowId = nil
         harness.browserManager.tabManager.currentSpace = harness.secondarySpace
 
-        let opened = harness.browserManager.tabOpeningOwner.createNewTab()
+        let opened = harness.browserManager.tabLifecycleService.opening.createNewTab()
 
         XCTAssertEqual(opened.spaceId, harness.primarySpace.id)
         XCTAssertEqual(harness.browserManager.tabManager.currentTab?.id, opened.id)

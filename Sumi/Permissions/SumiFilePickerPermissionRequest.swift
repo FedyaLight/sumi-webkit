@@ -92,7 +92,7 @@ struct SumiFilePickerPermissionTabContext: Sendable {
     init(
         tabId: String,
         pageId: String,
-        surface: SumiPermissionSecurityContext.Surface = .normalTab,
+        surface: SumiPermissionSecurityContext.Surface,
         profilePartitionId: String,
         isEphemeralProfile: Bool,
         committedURL: URL?,

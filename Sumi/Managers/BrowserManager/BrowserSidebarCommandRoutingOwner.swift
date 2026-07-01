@@ -101,57 +101,57 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             canCreateFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarFolderCommandOwner.canCreateFolderInCurrentSpace(in: windowState) ?? false
+                browserManager?.sidebarCommandService.folderCommand.canCreateFolderInCurrentSpace(in: windowState) ?? false
             },
             showGradientEditor: { [weak browserManager] source in
-                browserManager?.sidebarChromeCommandOwner.showGradientEditor(source: source)
+                browserManager?.sidebarCommandService.chromeCommand.showGradientEditor(source: source)
             },
             toggleSidebar: { [weak browserManager] windowState in
-                browserManager?.sidebarChromeCommandOwner.toggleSidebar(in: windowState)
+                browserManager?.sidebarCommandService.chromeCommand.toggleSidebar(in: windowState)
             },
             openAppearanceSettings: { [weak browserManager] windowState in
-                browserManager?.sidebarChromeCommandOwner.openAppearanceSettings(in: windowState)
+                browserManager?.sidebarCommandService.chromeCommand.openAppearanceSettings(in: windowState)
             },
             closeDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.sidebarChromeCommandOwner.closeDownloadsPopover(in: windowState)
+                browserManager?.sidebarCommandService.chromeCommand.closeDownloadsPopover(in: windowState)
             },
             requestUserTabActivation: { [weak browserManager] tab, windowState in
-                browserManager?.sidebarTabCommandOwner.requestUserTabActivation(tab, in: windowState)
+                browserManager?.sidebarCommandService.tabCommand.requestUserTabActivation(tab, in: windowState)
             },
             closeTab: { [weak browserManager] tab, windowState in
-                browserManager?.sidebarTabCommandOwner.closeTab(tab, in: windowState)
+                browserManager?.sidebarCommandService.tabCommand.closeTab(tab, in: windowState)
             },
             moveTabUp: { [weak browserManager] tabId in
-                browserManager?.sidebarTabCommandOwner.moveTabUp(tabId)
+                browserManager?.sidebarCommandService.tabCommand.moveTabUp(tabId)
             },
             moveTabDown: { [weak browserManager] tabId in
-                browserManager?.sidebarTabCommandOwner.moveTabDown(tabId)
+                browserManager?.sidebarCommandService.tabCommand.moveTabDown(tabId)
             },
             focusSplitGroup: { [weak browserManager] group, windowState in
-                browserManager?.sidebarSplitShortcutRoutingOwner.focusSplitGroup(group, in: windowState)
+                browserManager?.sidebarCommandService.splitShortcutRouting.focusSplitGroup(group, in: windowState)
             },
             restoreShortcutSplitMember: { [weak browserManager] memberId, group, windowState in
-                browserManager?.sidebarSplitShortcutRoutingOwner.restoreShortcutSplitMember(
+                browserManager?.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
                     memberId,
                     from: group,
                     in: windowState
                 )
             },
             openForegroundTab: { [weak browserManager] url, windowState, preferredSpaceId in
-                browserManager?.sidebarTabCommandOwner.openForegroundTab(
+                browserManager?.sidebarCommandService.tabCommand.openForegroundTab(
                     url,
                     in: windowState,
                     preferredSpaceId: preferredSpaceId
                 )
             },
             openNewTabOrFloatingBar: { [weak browserManager] windowState in
-                browserManager?.sidebarTabCommandOwner.openNewTabOrFloatingBar(in: windowState)
+                browserManager?.sidebarCommandService.tabCommand.openNewTabOrFloatingBar(in: windowState)
             },
             duplicateTab: { [weak browserManager] tab, windowState in
-                browserManager?.sidebarTabCommandOwner.duplicateTab(tab, in: windowState)
+                browserManager?.sidebarCommandService.tabCommand.duplicateTab(tab, in: windowState)
             },
             pinShortcutGlobally: { [weak browserManager] pin, windowState, spaceId, liveTab in
-                browserManager?.sidebarShortcutPromotionOwner.pinShortcutGlobally(
+                browserManager?.sidebarCommandService.shortcutPromotion.pinShortcutGlobally(
                     pin,
                     in: windowState,
                     spaceId: spaceId,
@@ -159,21 +159,21 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
                 )
             },
             toggleDownloadsPopover: { [weak browserManager] windowState in
-                browserManager?.sidebarChromeCommandOwner.toggleDownloadsPopover(in: windowState)
+                browserManager?.sidebarCommandService.chromeCommand.toggleDownloadsPopover(in: windowState)
             },
             createFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarFolderCommandOwner.createFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarCommandService.folderCommand.createFolderInCurrentSpace(in: windowState)
             },
             createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarFolderCommandOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
+                browserManager?.sidebarCommandService.folderCommand.createRSSLiveFolderInCurrentSpace(in: windowState)
             },
             createGitHubPullRequestsLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarFolderCommandOwner.createGitHubPullRequestsLiveFolderInCurrentSpace(
+                browserManager?.sidebarCommandService.folderCommand.createGitHubPullRequestsLiveFolderInCurrentSpace(
                     in: windowState
                 )
             },
             createGitHubIssuesLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarFolderCommandOwner.createGitHubIssuesLiveFolderInCurrentSpace(
+                browserManager?.sidebarCommandService.folderCommand.createGitHubIssuesLiveFolderInCurrentSpace(
                     in: windowState
                 )
             }

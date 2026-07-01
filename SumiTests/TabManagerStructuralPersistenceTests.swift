@@ -1076,11 +1076,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
 
     private func makeTabManager(context: ModelContext) -> TabManager {
         let tabManager = TabManager(context: context, loadPersistedState: false)
-        tabManager.attachRuntimeContext(
-            TabManagerRuntimeContext(
-                requireRemoveAllWebViews: { _, _ in }
-            )
-        )
+        tabManager.attachRuntimeContext(TabManagerRuntimeContext())
         return tabManager
     }
 

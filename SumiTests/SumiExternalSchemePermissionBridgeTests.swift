@@ -403,6 +403,25 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertEqual(context.request.permissionTypes, [.externalScheme("mailto")])
     }
 
+    func testSecurityContextPropagatesGlanceSurfaceFromTabContext() throws {
+        let bridge = SumiExternalSchemePermissionBridge(
+            coordinator: ExternalSchemeFakePermissionCoordinator(
+                decision: externalCoordinatorDecision(.promptRequired, reason: "ask")
+            ),
+            appResolver: ExternalSchemeFakeResolver(handlerSchemes: ["mailto"]),
+            now: { externalFixedDate }
+        )
+        let context = bridge.securityContext(
+            for: externalRequest(
+                targetURL: URL(string: "mailto:test@example.com")!,
+                userActivation: .none
+            ),
+            tabContext: externalTabContext(surface: .glance)
+        )
+
+        XCTAssertEqual(context.surface, .glance)
+    }
+
     func testDuplicateBackgroundAttemptsRecordOneSeriesAndAbuseHook() async {
         let resolver = ExternalSchemeFakeResolver(handlerSchemes: ["mailto"])
         var events: [SumiExternalSchemePermissionEvent] = []
@@ -652,6 +671,7 @@ private func externalRequest(
 private func externalTabContext(
     tabId: String = "tab-a",
     pageId: String = "tab-a:1",
+    surface: SumiPermissionSecurityContext.Surface = .normalTab,
     profilePartitionId: String = "profile-a",
     isEphemeralProfile: Bool = false,
     committedURL: URL? = URL(string: "https://top.example"),
@@ -662,6 +682,7 @@ private func externalTabContext(
     SumiExternalSchemePermissionTabContext(
         tabId: tabId,
         pageId: pageId,
+        surface: surface,
         profilePartitionId: profilePartitionId,
         isEphemeralProfile: isEphemeralProfile,
         committedURL: committedURL,

@@ -83,36 +83,13 @@ class BrowserManager: ObservableObject {
     let workspaceAppearanceService = WorkspaceAppearanceService()
     let liveFolderManager = SumiLiveFolderManager()
     private let permissionSiteSettingsRoutingOwner = BrowserPermissionSiteSettingsRoutingOwner()
-    private let tabSelectionOwner = BrowserTabSelectionOwner()
-    lazy var sidebarEditorPresentationOwner = BrowserSidebarEditorPresentationOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var sidebarChromeCommandOwner = BrowserSidebarChromeCommandOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var sidebarShortcutPromotionOwner = BrowserSidebarShortcutPromotionOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var sidebarFolderCommandOwner = BrowserSidebarFolderCommandOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var sidebarTabCommandOwner = BrowserSidebarTabCommandOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var sidebarSplitShortcutRoutingOwner = BrowserSidebarSplitShortcutRoutingOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var sidebarSpaceTransitionRoutingOwner = BrowserSidebarSpaceTransitionRoutingOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var sidebarCommandRoutingOwner = BrowserSidebarCommandRoutingOwner(
-        dependencies: .live(browserManager: self)
-    )
+    lazy var sidebarCommandService = BrowserSidebarCommandService(browserManager: self)
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
         guard let self else { return [] }
         return self.splitManager.visibleTabIds(for: windowId)
     }
+    lazy var tabLifecycleService = BrowserTabLifecycleService(browserManager: self)
     private lazy var windowTabContextOwner = BrowserWindowTabContextOwner(
         dependencies: BrowserWindowTabContextOwner.Dependencies(
             selectionService: { [weak self] in
@@ -138,18 +115,6 @@ class BrowserManager: ObservableObject {
         )
     )
     private lazy var windowSpaceStateOwner = BrowserWindowSpaceStateOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var tabCloseFallbackPlanner = BrowserTabCloseFallbackPlanner(
-        selectionService: shellSelectionService
-    )
-    lazy var shortcutLiveTabCloseOwner = BrowserShortcutLiveTabCloseOwner(
-        dependencies: .live(browserManager: self)
-    )
-    private lazy var tabCloseOrchestrationOwner = BrowserTabCloseOrchestrationOwner(
-        dependencies: .live(browserManager: self)
-    )
-    lazy var tabOpeningOwner = BrowserTabOpeningOwner(
         dependencies: .live(browserManager: self)
     )
     lazy var nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
@@ -643,7 +608,7 @@ class BrowserManager: ObservableObject {
     }
 
     func prepareBackgroundTabAfterStartupProtectionRestore(_ tab: Tab) {
-        tabOpeningOwner.prepareBackgroundTabIfNeeded(tab, in: nil)
+        tabLifecycleService.opening.prepareBackgroundTabIfNeeded(tab, in: nil)
     }
 
     enum ProfileSwitchContext {
@@ -747,12 +712,12 @@ class BrowserManager: ObservableObject {
 
     // MARK: - Tab Management (delegates to TabManager)
     func createNewTab() {
-        tabOpeningOwner.createNewTab()
+        tabLifecycleService.opening.createNewTab()
     }
 
     /// Create a new tab and set it as active in the specified window
     func createNewTab(in windowState: BrowserWindowState, url: String = SumiSurface.emptyTabURL.absoluteString) {
-        tabOpeningOwner.createNewTab(in: windowState, url: url)
+        tabLifecycleService.opening.createNewTab(in: windowState, url: url)
     }
 
     @discardableResult
@@ -760,7 +725,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         url: String = SumiSurface.emptyTabURL.absoluteString
     ) -> Tab {
-        tabOpeningOwner.createNewTabAfterSidebarInsertion(in: windowState, url: url)
+        tabLifecycleService.opening.createNewTabAfterSidebarInsertion(in: windowState, url: url)
     }
 
     @discardableResult
@@ -768,11 +733,11 @@ class BrowserManager: ObservableObject {
         url: String = SumiSurface.emptyTabURL.absoluteString,
         context: TabOpenContext
     ) -> Tab {
-        tabOpeningOwner.openNewTab(url: url, context: context)
+        tabLifecycleService.opening.openNewTab(url: url, context: context)
     }
 
     func resolvedTabOpenSpace(for context: TabOpenContext) -> Space? {
-        tabOpeningOwner.resolvedTabOpenSpace(for: context)
+        tabLifecycleService.opening.resolvedTabOpenSpace(for: context)
     }
 
     @discardableResult
@@ -781,7 +746,7 @@ class BrowserManager: ObservableObject {
         webViewConfigurationOverride: WKWebViewConfiguration? = nil,
         activate: Bool = true
     ) -> Tab? {
-        tabOpeningOwner.createPopupTab(
+        tabLifecycleService.opening.createPopupTab(
             from: sourceTab,
             webViewConfigurationOverride: webViewConfigurationOverride,
             activate: activate
@@ -821,19 +786,19 @@ class BrowserManager: ObservableObject {
     }
 
     func duplicateTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        tabOpeningOwner.duplicateTab(tab, in: windowState)
+        tabLifecycleService.opening.duplicateTab(tab, in: windowState)
     }
 
     func closeCurrentTab() {
-        tabCloseOrchestrationOwner.closeCurrentTab()
+        tabLifecycleService.closeOrchestration.closeCurrentTab()
     }
 
     func closeCurrentTab(in windowState: BrowserWindowState) {
-        tabCloseOrchestrationOwner.closeCurrentTab(in: windowState)
+        tabLifecycleService.closeOrchestration.closeCurrentTab(in: windowState)
     }
 
     func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {
-        tabCloseOrchestrationOwner.closeTab(tab, in: windowState)
+        tabLifecycleService.closeOrchestration.closeTab(tab, in: windowState)
     }
     isolated deinit {
         permissionRuntime.cancelPermissionEventObservation()
@@ -893,7 +858,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy = .immediate
     ) {
-        tabSelectionOwner.selectTab(
+        tabLifecycleService.selection.selectTab(
             tab,
             in: windowState,
             loadPolicy: loadPolicy,
@@ -906,7 +871,7 @@ class BrowserManager: ObservableObject {
         in windowState: BrowserWindowState,
         loadPolicy: TabSelectionLoadPolicy = .immediate
     ) {
-        tabSelectionOwner.requestUserTabActivation(
+        tabLifecycleService.selection.requestUserTabActivation(
             tab,
             in: windowState,
             loadPolicy: loadPolicy,
@@ -942,7 +907,7 @@ class BrowserManager: ObservableObject {
         persistSelection: Bool = true,
         loadPolicy: TabSelectionLoadPolicy
     ) {
-        tabSelectionOwner.applyTabSelection(
+        tabLifecycleService.selection.applyTabSelection(
             tab,
             in: windowState,
             updateSpaceFromTab: updateSpaceFromTab,
@@ -958,7 +923,7 @@ class BrowserManager: ObservableObject {
         _ tab: Tab,
         in windowState: BrowserWindowState
     ) {
-        tabSelectionOwner.materializeVisibleTabWebViewIfNeeded(
+        tabLifecycleService.selection.materializeVisibleTabWebViewIfNeeded(
             tab,
             in: windowState,
             actions: tabSelectionActions
@@ -1081,14 +1046,14 @@ class BrowserManager: ObservableObject {
     }
 
     func syncShortcutSelectionState(for windowState: BrowserWindowState) {
-        tabSelectionOwner.syncShortcutSelectionState(
+        tabLifecycleService.selection.syncShortcutSelectionState(
             for: windowState,
             actions: tabSelectionActions
         )
     }
 
     func showEmptyState(in windowState: BrowserWindowState) {
-        tabSelectionOwner.showEmptyState(
+        tabLifecycleService.selection.showEmptyState(
             in: windowState,
             actions: tabSelectionActions
         )

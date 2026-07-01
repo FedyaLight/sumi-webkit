@@ -121,6 +121,7 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
         SumiWebNotificationTabContext(
             tabId: "tab-a",
             pageId: "tab-a:1",
+            surface: .normalTab,
             profilePartitionId: "profile-a",
             isEphemeralProfile: false,
             committedURL: URL(string: "https://example.com/page"),

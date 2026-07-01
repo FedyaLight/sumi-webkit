@@ -700,34 +700,7 @@ extension TabManagerRuntimeContext {
             updateTabVisibility: { [weak browserManager] in
                 browserManager?.compositorManager.updateTabVisibility()
             },
-            materializeVisibleTabWebViewIfNeeded: { [weak browserManager] tab, windowState in
-                browserManager?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
-            },
-            loadTab: { [weak browserManager] tab in
-                browserManager?.compositorManager.loadTab(tab)
-            },
-            unloadTab: { [weak browserManager] tab in
-                browserManager?.compositorManager.unloadTab(tab)
-            },
-            requireRemoveAllWebViews: { [weak browserManager] tab, closeActiveFullscreenMedia in
-                guard let browserManager else { return }
-                browserManager.requireWebViewCoordinator().removeAllWebViews(
-                    for: tab,
-                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
-                )
-            },
-            windowIDsTrackingWebViews: { [weak browserManager] tabId in
-                browserManager?.webViewCoordinator?.windowIDs(for: tabId) ?? []
-            },
-            rebuildLiveWebViews: { [weak browserManager] tab, preferredPrimaryWindowId, url in
-                if #available(macOS 15.5, *) {
-                    browserManager?.webViewCoordinator?.rebuildLiveWebViews(
-                        for: tab,
-                        preferredPrimaryWindowId: preferredPrimaryWindowId,
-                        load: url
-                    )
-                }
-            },
+            webViewLifecycle: .live(browserManager: browserManager),
             handleTabClosure: { [weak browserManager] tabId in
                 browserManager?.splitManager.handleTabClosure(tabId)
             },
@@ -784,6 +757,41 @@ extension TabManagerRuntimeContext {
             },
             deleteLiveFolderState: { [weak browserManager] folderIds in
                 browserManager?.liveFolderManager.deleteState(forFolderIds: folderIds)
+            }
+        )
+    }
+}
+
+extension TabManagerWebViewLifecycleService {
+    static func live(browserManager: BrowserManager) -> TabManagerWebViewLifecycleService {
+        TabManagerWebViewLifecycleService(
+            materializeVisibleTabWebViewIfNeeded: { [weak browserManager] tab, windowState in
+                browserManager?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
+            },
+            loadTab: { [weak browserManager] tab in
+                browserManager?.compositorManager.loadTab(tab)
+            },
+            unloadTab: { [weak browserManager] tab in
+                browserManager?.compositorManager.unloadTab(tab)
+            },
+            requireRemoveAllWebViews: { [weak browserManager] tab, closeActiveFullscreenMedia in
+                guard let browserManager else { return }
+                browserManager.requireWebViewCoordinator().removeAllWebViews(
+                    for: tab,
+                    closeActiveFullscreenMedia: closeActiveFullscreenMedia
+                )
+            },
+            windowIDsTrackingWebViews: { [weak browserManager] tabId in
+                browserManager?.webViewCoordinator?.windowIDs(for: tabId) ?? []
+            },
+            rebuildLiveWebViews: { [weak browserManager] tab, preferredPrimaryWindowId, url in
+                if #available(macOS 15.5, *) {
+                    browserManager?.webViewCoordinator?.rebuildLiveWebViews(
+                        for: tab,
+                        preferredPrimaryWindowId: preferredPrimaryWindowId,
+                        load: url
+                    )
+                }
             },
             prepareTab: { [weak browserManager] tab in
                 guard let browserManager else { return }

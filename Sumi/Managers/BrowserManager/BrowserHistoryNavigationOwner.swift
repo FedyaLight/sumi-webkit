@@ -258,7 +258,7 @@ extension BrowserHistoryNavigationOwner.Dependencies {
                 )
             },
             openNewTab: { [weak browserManager] url, context in
-                browserManager?.tabOpeningOwner.openNewTab(url: url, context: context)
+                browserManager?.tabLifecycleService.opening.openNewTab(url: url, context: context)
             },
             loadCurrentPageURL: { [weak browserManager] tab, windowState, url in
                 browserManager?.loadWindowScopedPage(

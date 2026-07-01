@@ -221,9 +221,9 @@ final class BrowserFloatingBarRoutingOwner {
 extension BrowserFloatingBarRoutingOwner.Dependencies {
     @MainActor
     static func live(browserManager: BrowserManager) -> Self {
-        let tabOpeningOwner = browserManager.tabOpeningOwner
+        let tabLifecycleService = browserManager.tabLifecycleService
         return Self(
-            tabOpeningOwner: { tabOpeningOwner },
+            tabOpeningOwner: { tabLifecycleService.opening },
             windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
             settings: { [weak browserManager] in browserManager?.sumiSettings },
             activePageTab: { [weak browserManager] windowState in

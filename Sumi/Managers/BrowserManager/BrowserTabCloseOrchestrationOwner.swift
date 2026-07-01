@@ -109,8 +109,7 @@ final class BrowserTabCloseOrchestrationOwner {
 extension BrowserTabCloseOrchestrationOwner.Dependencies {
     @MainActor
     static func live(browserManager: BrowserManager) -> Self {
-        let fallbackPlanner = browserManager.tabCloseFallbackPlanner
-        let shortcutLiveTabCloseOwner = browserManager.shortcutLiveTabCloseOwner
+        let tabLifecycleService = browserManager.tabLifecycleService
         return Self(
             activeWindow: { [weak browserManager] in browserManager?.windowRegistry?.activeWindow },
             currentTab: { [weak browserManager] windowState in
@@ -120,8 +119,8 @@ extension BrowserTabCloseOrchestrationOwner.Dependencies {
             tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
                 browserManager?.tabManager ?? tabManager
             },
-            fallbackPlanner: { fallbackPlanner },
-            shortcutLiveTabCloseOwner: { shortcutLiveTabCloseOwner },
+            fallbackPlanner: { tabLifecycleService.closeFallbackPlanner },
+            shortcutLiveTabCloseOwner: { tabLifecycleService.shortcutLiveTabClose },
             selectTab: { [weak browserManager] tab, windowState in
                 browserManager?.selectTab(tab, in: windowState)
             },

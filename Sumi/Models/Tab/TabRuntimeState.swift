@@ -6,6 +6,7 @@ import WebKit
 
 @MainActor
 struct TabBrowserRuntime {
+    var browserActionService: TabBrowserActionService
     var webViewRoutingRuntime: TabWebViewRoutingRuntime
     var persistenceRuntimeCallbacks: TabRuntimePersistenceCallbacks
     var mediaRuntimeCallbacks: TabMediaRuntimeCallbacks
@@ -32,21 +33,9 @@ struct TabBrowserRuntime {
     var dataServices: () -> TabDependencyDataServices?
     var currentProfileUpdates: () -> AnyPublisher<Profile?, Never>?
     var settings: () -> SumiSettingsService?
-    var hasBrowserRuntime: () -> Bool
-    var webPageMenuAppearance: (Tab, NSAppearance?) -> NSAppearance?
-    var canBookmark: (Tab) -> Bool
-    var requestBookmarkEditorFromMenu: () -> Void
-    var canStartContextMenuDownload: () -> Bool
-    var startContextMenuDownload: (WKWebView, URLRequest) -> Void
-    var openURLInForegroundTab: (URL, Tab) -> Void
-    var openURLsInNewWindow: ([URL]) -> Void
-    var notificationPermissionBridge: () -> SumiNotificationPermissionBridge?
-    var shortcutLaunchURL: (UUID) -> URL?
-    var reconcileExtensionRuntimeOnUserGesture: (Tab, String) -> Void
-    var isCurrentTab: (Tab) -> Bool
-    var activate: (Tab) -> Void
 
     static let inactive = Self(
+        browserActionService: .inactive,
         webViewRoutingRuntime: .inactive,
         persistenceRuntimeCallbacks: .inactive,
         mediaRuntimeCallbacks: .inactive,
@@ -72,7 +61,27 @@ struct TabBrowserRuntime {
         webViewConfigurationContext: { .empty },
         dataServices: { nil },
         currentProfileUpdates: { nil },
-        settings: { nil },
+        settings: { nil }
+    )
+}
+
+@MainActor
+struct TabBrowserActionService {
+    var hasBrowserRuntime: () -> Bool
+    var webPageMenuAppearance: (Tab, NSAppearance?) -> NSAppearance?
+    var canBookmark: (Tab) -> Bool
+    var requestBookmarkEditorFromMenu: () -> Void
+    var canStartContextMenuDownload: () -> Bool
+    var startContextMenuDownload: (WKWebView, URLRequest) -> Void
+    var openURLInForegroundTab: (URL, Tab) -> Void
+    var openURLsInNewWindow: ([URL]) -> Void
+    var notificationPermissionBridge: () -> SumiNotificationPermissionBridge?
+    var shortcutLaunchURL: (UUID) -> URL?
+    var reconcileExtensionRuntimeOnUserGesture: (Tab, String) -> Void
+    var isCurrentTab: (Tab) -> Bool
+    var activate: (Tab) -> Void
+
+    static let inactive = Self(
         hasBrowserRuntime: { false },
         webPageMenuAppearance: { _, fallback in fallback },
         canBookmark: { _ in false },

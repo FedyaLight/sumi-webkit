@@ -17,8 +17,8 @@ extension TabManager {
                 for tab in liveShortcutTabs {
                     cancelRuntimeStatePersistence(for: tab.id)
                     tab.performComprehensiveWebViewCleanup()
-                    runtimeContext.unloadTab(tab)
-                    runtimeContext.requireRemoveAllWebViews(
+                    runtimeContext.webViewLifecycle.unloadTab(tab)
+                    runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )
@@ -32,8 +32,8 @@ extension TabManager {
                 let regularTabs = regularTabCollectionOwner.tabs(in: space)
                 for tab in regularTabs {
                     cancelRuntimeStatePersistence(for: tab.id)
-                    runtimeContext.unloadTab(tab)
-                    runtimeContext.requireRemoveAllWebViews(
+                    runtimeContext.webViewLifecycle.unloadTab(tab)
+                    runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )

@@ -80,6 +80,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     lazy var webKitPermissionUIDelegateOwner = TabWebKitPermissionUIDelegateOwner(tab: self)
     lazy var scriptMessageRuntimeOwner = TabScriptMessageRuntimeOwner(tab: self)
     private var browserRuntime = TabBrowserRuntime.inactive
+    private var browserActionService = TabBrowserActionService.inactive
     private let dependencyStateOwner: TabDependencyStateOwner
 
     // MARK: - Pin State
@@ -396,43 +397,43 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     var hasBrowserRuntime: Bool {
-        browserRuntime.hasBrowserRuntime()
+        browserActionService.hasBrowserRuntime()
     }
 
     func webPageMenuAppearance(fallback: NSAppearance?) -> NSAppearance? {
-        browserRuntime.webPageMenuAppearance(self, fallback)
+        browserActionService.webPageMenuAppearance(self, fallback)
     }
 
     func canBookmarkFromWebPageMenu() -> Bool {
-        browserRuntime.canBookmark(self)
+        browserActionService.canBookmark(self)
     }
 
     func requestBookmarkEditorFromWebPageMenu() {
-        browserRuntime.requestBookmarkEditorFromMenu()
+        browserActionService.requestBookmarkEditorFromMenu()
     }
 
     func canStartContextMenuDownload() -> Bool {
-        browserRuntime.canStartContextMenuDownload()
+        browserActionService.canStartContextMenuDownload()
     }
 
     func startContextMenuDownload(using request: URLRequest, in webView: WKWebView) {
-        browserRuntime.startContextMenuDownload(webView, request)
+        browserActionService.startContextMenuDownload(webView, request)
     }
 
     func openContextMenuURLInForegroundTab(_ url: URL) {
-        browserRuntime.openURLInForegroundTab(url, self)
+        browserActionService.openURLInForegroundTab(url, self)
     }
 
     func openContextMenuURLsInNewWindow(_ urls: [URL]) {
-        browserRuntime.openURLsInNewWindow(urls)
+        browserActionService.openURLsInNewWindow(urls)
     }
 
     func notificationPermissionBridgeForRuntime() -> SumiNotificationPermissionBridge? {
-        browserRuntime.notificationPermissionBridge()
+        browserActionService.notificationPermissionBridge()
     }
 
     func shortcutLaunchURL(for shortcutPinId: UUID) -> URL? {
-        browserRuntime.shortcutLaunchURL(shortcutPinId)
+        browserActionService.shortcutLaunchURL(shortcutPinId)
     }
 
     func makeWebViewConfigurationContext() -> TabWebViewConfigurationContext {
@@ -441,6 +442,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func attachBrowserRuntime(_ runtime: TabBrowserRuntime) {
         browserRuntime = runtime
+        browserActionService = runtime.browserActionService
         webViewRoutingRuntime = runtime.webViewRoutingRuntime
         persistenceRuntimeCallbacks = runtime.persistenceRuntimeCallbacks
         mediaRuntimeCallbacks = runtime.mediaRuntimeCallbacks
@@ -468,6 +470,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
             self?.browserRuntime.dataServices()
         }
         sumiSettings = runtime.settings()
+    }
+
+    func attachBrowserActionService(_ service: TabBrowserActionService) {
+        browserActionService = service
     }
 
     func detachBrowserRuntime() {
@@ -524,7 +530,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
              .middleMouseDown(let event),
              .keyDown(let event):
             recordWebViewInteraction(event)
-            browserRuntime.reconcileExtensionRuntimeOnUserGesture(
+            browserActionService.reconcileExtensionRuntimeOnUserGesture(
                 self,
                 "Tab.recordWebViewInteraction"
             )
@@ -558,7 +564,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     var isCurrentTab: Bool {
-        browserRuntime.isCurrentTab(self)
+        browserActionService.isCurrentTab(self)
     }
 
     var isLoading: Bool {
@@ -757,7 +763,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     }
 
     func activate() {
-        browserRuntime.activate(self)
+        browserActionService.activate(self)
     }
 }
 

@@ -82,7 +82,7 @@ struct SidebarBrowserContext {
             extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { [weak browserManager] pin, windowState, themeContext, source in
-                    browserManager?.sidebarEditorPresentationOwner.showShortcutEditor(
+                    browserManager?.sidebarCommandService.editorPresentation.showShortcutEditor(
                         for: pin,
                         in: windowState,
                         themeContext: themeContext,
@@ -90,7 +90,7 @@ struct SidebarBrowserContext {
                     )
                 },
                 showFolderEditor: { [weak browserManager] folder, windowState, themeContext, source in
-                    browserManager?.sidebarEditorPresentationOwner.showFolderEditor(
+                    browserManager?.sidebarCommandService.editorPresentation.showFolderEditor(
                         for: folder,
                         in: windowState,
                         themeContext: themeContext,
@@ -98,7 +98,7 @@ struct SidebarBrowserContext {
                     )
                 },
                 showSpaceEditor: { [weak browserManager] space, windowState, themeContext, source in
-                    browserManager?.sidebarEditorPresentationOwner.showSpaceEditor(
+                    browserManager?.sidebarCommandService.editorPresentation.showSpaceEditor(
                         for: space,
                         in: windowState,
                         themeContext: themeContext,
@@ -173,8 +173,8 @@ struct SidebarBrowserContext {
                     windowState: windowState
                 )
             },
-            spaceTransitions: browserManager.sidebarSpaceTransitionRoutingOwner.makeActions(),
-            commands: browserManager.sidebarCommandRoutingOwner.makeActions()
+            spaceTransitions: browserManager.sidebarCommandService.makeSpaceTransitionActions(),
+            commands: browserManager.sidebarCommandService.makeCommandActions()
         )
     }
 }

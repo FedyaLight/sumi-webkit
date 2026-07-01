@@ -1572,9 +1572,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         return TabManager(
-            runtimeContext: TabManagerRuntimeContext(
-                requireRemoveAllWebViews: { _, _ in }
-            ),
+            runtimeContext: TabManagerRuntimeContext(),
             context: container.mainContext,
             loadPersistedState: false
         )

@@ -3,11 +3,11 @@ import Foundation
 @MainActor
 extension BrowserManager {
     func focusSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState) {
-        sidebarSplitShortcutRoutingOwner.focusSplitGroup(group, in: windowState)
+        sidebarCommandService.splitShortcutRouting.focusSplitGroup(group, in: windowState)
     }
 
     func completePendingSplitGroupFocusIfReady(in windowState: BrowserWindowState, spaceId: UUID) {
-        sidebarSplitShortcutRoutingOwner.completePendingSplitGroupFocusIfReady(
+        sidebarCommandService.splitShortcutRouting.completePendingSplitGroupFocusIfReady(
             in: windowState,
             spaceId: spaceId
         )
@@ -19,7 +19,7 @@ extension BrowserManager {
         in windowState: BrowserWindowState,
         preserveLiveInstance: Bool = true
     ) {
-        sidebarSplitShortcutRoutingOwner.restoreShortcutSplitMember(
+        sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
             itemId,
             from: group,
             in: windowState,
@@ -28,6 +28,6 @@ extension BrowserManager {
     }
 
     func unloadShortcutHostedSplitGroup(_ group: SplitGroup, in windowState: BrowserWindowState) {
-        sidebarSplitShortcutRoutingOwner.unloadShortcutHostedSplitGroup(group, in: windowState)
+        sidebarCommandService.splitShortcutRouting.unloadShortcutHostedSplitGroup(group, in: windowState)
     }
 }

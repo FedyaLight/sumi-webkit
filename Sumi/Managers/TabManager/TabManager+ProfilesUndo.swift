@@ -215,14 +215,14 @@ extension TabManager {
         guard tab.profileId != profileId else { return }
 
         let targetURL = tab.existingWebView?.url ?? tab.url
-        let trackedWindowIds = runtimeContext?.windowIDsTrackingWebViews(for: tab.id) ?? []
+        let trackedWindowIds = runtimeContext?.webViewLifecycle.windowIDsTrackingWebViews(for: tab.id) ?? []
         let hasTrackedWebViews = trackedWindowIds.isEmpty == false || tab.primaryWindowId != nil
         let hasUntrackedWebView = tab.existingWebView != nil && !hasTrackedWebViews
 
         if hasTrackedWebViews,
            #available(macOS 15.5, *) {
             tab.profileId = profileId
-            runtimeContext?.rebuildLiveWebViews(
+            runtimeContext?.webViewLifecycle.rebuildLiveWebViews(
                 for: tab,
                 preferredPrimaryWindowId: tab.primaryWindowId,
                 load: targetURL
@@ -316,8 +316,8 @@ extension TabManager {
         guard let tab = removed else { return }
 
         let runtimeContext = requireRuntimeContext()
-        runtimeContext.unloadTab(tab)
-        runtimeContext.requireRemoveAllWebViews(
+        runtimeContext.webViewLifecycle.unloadTab(tab)
+        runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
             for: tab,
             closeActiveFullscreenMedia: true
         )

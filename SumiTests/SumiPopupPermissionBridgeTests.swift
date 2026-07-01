@@ -222,6 +222,19 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(context.request.displayDomain, "spoofed.example")
     }
 
+    func testSecurityContextPropagatesGlanceSurfaceFromTabContext() {
+        let bridge = SumiPopupPermissionBridge(
+            coordinator: PopupFakePermissionCoordinator(decision: popupCoordinatorDecision(.promptRequired, reason: "ask")),
+            now: { popupFixedDate }
+        )
+        let context = bridge.securityContext(
+            for: popupRequest(userActivation: .directWebKit),
+            tabContext: tabContext(surface: .glance)
+        )
+
+        XCTAssertEqual(context.surface, .glance)
+    }
+
     func testInvalidOrMissingTrustedOriginFailsClosedAndRecordsBlockedState() async {
         let bridge = SumiPopupPermissionBridge(
             coordinator: PopupFakePermissionCoordinator(decision: popupCoordinatorDecision(.granted, reason: "unused")),
@@ -339,6 +352,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
     private func tabContext(
         tabId: String = "tab-a",
         pageId: String = "tab-a:1",
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String = "profile-a",
         isEphemeralProfile: Bool = false,
         committedURL: URL? = URL(string: "https://top.example"),
@@ -349,6 +363,7 @@ final class SumiPopupPermissionBridgeTests: XCTestCase {
         SumiPopupPermissionTabContext(
             tabId: tabId,
             pageId: pageId,
+            surface: surface,
             profilePartitionId: profilePartitionId,
             isEphemeralProfile: isEphemeralProfile,
             committedURL: committedURL,

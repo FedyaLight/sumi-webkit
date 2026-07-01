@@ -337,7 +337,7 @@ extension BrowserWindowSpaceStateOwner.Dependencies {
                 browserManager?.persistWindowSession(for: windowState)
             },
             completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in
-                browserManager?.sidebarSplitShortcutRoutingOwner.completePendingSplitGroupFocusIfReady(
+                browserManager?.sidebarCommandService.splitShortcutRouting.completePendingSplitGroupFocusIfReady(
                     in: windowState,
                     spaceId: spaceId
                 )

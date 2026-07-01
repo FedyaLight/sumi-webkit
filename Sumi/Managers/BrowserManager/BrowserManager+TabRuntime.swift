@@ -8,6 +8,7 @@ import WebKit
 extension BrowserManager {
     func makeTabBrowserRuntime() -> TabBrowserRuntime {
         TabBrowserRuntime(
+            browserActionService: makeTabBrowserActionService(),
             webViewRoutingRuntime: .live(webViewRoutingService: webViewRoutingService),
             persistenceRuntimeCallbacks: .live(tabManager: tabManager),
             mediaRuntimeCallbacks: .live(
@@ -289,7 +290,12 @@ extension BrowserManager {
             },
             settings: { [weak self] in
                 self?.sumiSettings
-            },
+            }
+        )
+    }
+
+    private func makeTabBrowserActionService() -> TabBrowserActionService {
+        TabBrowserActionService(
             hasBrowserRuntime: { [weak self] in
                 self != nil
             },

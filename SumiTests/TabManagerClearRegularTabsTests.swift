@@ -363,8 +363,10 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
                 currentProfileId: currentProfileId,
                 windowState: windowState,
                 windows: windows,
-                materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
-                requireRemoveAllWebViews: requireRemoveAllWebViews,
+                webViewLifecycle: TabManagerWebViewLifecycleService(
+                    materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
+                    requireRemoveAllWebViews: requireRemoveAllWebViews
+                ),
                 visibleSplitTabIds: visibleSplitTabIds
             )
         )

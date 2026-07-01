@@ -524,7 +524,7 @@ extension TabManager {
             }
         }
         windowState.removeFromRegularTabHistory(originalTab.id)
-        runtimeContext?.materializeVisibleTabWebViewIfNeeded(liveTab, in: windowState)
+        runtimeContext?.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(liveTab, in: windowState)
     }
 
     @discardableResult
@@ -592,7 +592,7 @@ extension TabManager {
             }
             notifyTransientShortcutStateChanged()
             tab.performComprehensiveWebViewCleanup()
-            runtimeContext?.unloadTab(tab)
+            runtimeContext?.webViewLifecycle.unloadTab(tab)
             detach(tab)
             NotificationCenter.default.post(
                 name: .sumiTabLifecycleDidChange,
