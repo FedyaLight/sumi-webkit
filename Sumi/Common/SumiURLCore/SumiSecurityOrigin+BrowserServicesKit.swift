@@ -34,10 +34,6 @@ extension SumiNavigationFrameInfo {
 }
 
 extension SumiSecurityOrigin {
-    init(navigationFrame frame: FrameInfo) {
-        self = SumiNavigationFrameInfo(navigationFrame: frame).securityOrigin
-    }
-
     @MainActor
     init(webKitSecurityOrigin origin: WKSecurityOrigin) {
         self.init(protocol: origin.`protocol`, host: origin.host, port: origin.port)

@@ -142,33 +142,6 @@ enum SumiNativeMessagingCapabilityPolicy {
 
 @MainActor
 enum SumiNativeMessagingAdapterTransport {
-    static let defaultOneShotTimeout: Duration = SumiNativeMessagingConnection.defaultReplyTimeout
-
-    static func relayErrorCode(for capability: SumiNativeMessagingAdapterCapability)
-        -> SumiNativeMessagingRelay.ErrorCode {
-        switch capability {
-        case .adapterAvailable:
-            return .companionAppProtocolUnknown
-        case .adapterUnavailable, .desktopIntegrationDisabled, .protocolVersionUnsupported,
-             .userActionRequired:
-            return .companionAppProtocolUnknown
-        case .appNotInstalled:
-            return .hostNotFound
-        case .nativeHostManifestMissing:
-            return .nativeHostManifestMissing
-        case .nativeHostExecutableMissing:
-            return .nativeHostExecutableMissing
-        case .permissionDenied:
-            return .nativeHostPermissionDenied
-        case .unsupportedHostKind:
-            return .nativeHostUnsupportedKind
-        case .timeout:
-            return .relayTimeout
-        case .portDisconnected:
-            return .relayCancelled
-        }
-    }
-
     static func capability(
         for evaluation: SumiCompanionAppResolverResult?,
         adapterAvailable: Bool,

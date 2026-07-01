@@ -330,14 +330,6 @@ actor AdblockUpdateManifestStore {
         }
     }
 
-    func beginStaging() throws -> URL {
-        let stagingRoot = rootDirectory.appendingPathComponent("Staging", isDirectory: true)
-        try fileManager.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
-        let stagingURL = stagingRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: true)
-        return stagingURL
-    }
-
     func commit(
         manifest: AdblockCompiledGenerationManifest,
         stagedCompiledShardURLs: [String: URL]

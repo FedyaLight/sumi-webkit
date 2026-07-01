@@ -80,9 +80,6 @@ struct FloatingBarFaviconContainer<Content: View>: View {
         .background(background)
     }
 
-    private var iconShape: RoundedRectangle {
-        FloatingBarSuggestionMetrics.controlShape
-    }
 }
 
 extension FloatingBarSuggestionMetrics {

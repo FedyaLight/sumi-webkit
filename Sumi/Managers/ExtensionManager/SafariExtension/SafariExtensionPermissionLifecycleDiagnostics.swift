@@ -181,32 +181,6 @@ struct SafariExtensionTabBindingSnapshot: Codable, Equatable, Sendable {
     let firstCommitHost: String?
 }
 
-struct SafariExtensionContentScriptEligibilitySnapshot: Codable, Equatable, Sendable {
-    let host: String?
-    let manifestMatchPresent: Bool
-    let allFramesExpected: Bool?
-    let frameBucket: String?
-    let denyReason: String?
-}
-
-struct SafariExtensionExternallyConnectableSnapshot: Codable, Equatable, Sendable {
-    let host: String?
-    let manifestMatchPresent: Bool
-    let nativeWebKitExternalPathObserved: Bool?
-    let senderOriginHost: String?
-    let senderTabBucket: String?
-    let senderFrameBucket: String?
-    let missingRegistrationReason: String?
-}
-
-struct SafariExtensionMessageRouteSnapshot: Codable, Equatable, Sendable {
-    let route: SafariExtensionMessageRouteKind
-    let deliveryCategory: SafariExtensionMessageDeliveryCategory
-    let senderOriginHost: String?
-    let targetTabBucket: String?
-    let controllerProfileMatched: Bool?
-}
-
 struct SafariExtensionReloadRebuildSnapshot: Codable, Equatable, Sendable {
     let triggerReason: String
     let profileBucket: String?
@@ -254,18 +228,6 @@ enum SafariExtensionPermissionLifecycleDiagnostics {
 
     static func logTabBinding(_ snapshot: SafariExtensionTabBindingSnapshot) {
         log("tabBinding", snapshot)
-    }
-
-    static func logContentScriptEligibility(_ snapshot: SafariExtensionContentScriptEligibilitySnapshot) {
-        log("contentScript", snapshot)
-    }
-
-    static func logExternallyConnectable(_ snapshot: SafariExtensionExternallyConnectableSnapshot) {
-        log("externallyConnectable", snapshot)
-    }
-
-    static func logMessageRoute(_ snapshot: SafariExtensionMessageRouteSnapshot) {
-        log("messageRoute", snapshot)
     }
 
     static func logReloadRebuild(_ snapshot: SafariExtensionReloadRebuildSnapshot) {

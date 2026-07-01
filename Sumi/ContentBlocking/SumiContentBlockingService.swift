@@ -342,13 +342,6 @@ final class SumiContentBlockingService {
         }
     }
 
-    func validateRuleLists(
-        _ definitions: [SumiContentRuleListDefinition]
-    ) async throws {
-        let update = try await ruleListMaterializer.updateEvent(for: definitions)
-        cleanupTransientCompiledRuleLists(from: update)
-    }
-
     func prepareRuleListUpdate(
         ruleLists definitions: [SumiContentRuleListDefinition],
         retainEncodedRuleListsInPreparedPolicy: Bool = true
@@ -620,18 +613,6 @@ final class SumiContentBlockingService {
         compiledRuleListCleanupOwner.cleanupOrphanedCompiledRuleLists(
             replacing: previousRules,
             with: activeRules,
-            forgetCachedRuleLists: { [ruleListMaterializer] identifiers in
-                ruleListMaterializer.forgetCachedCompiledRuleLists(withIdentifiers: identifiers)
-            }
-        )
-    }
-
-    private func cleanupTransientCompiledRuleLists(
-        from update: SumiContentBlockerRulesUpdate
-    ) {
-        compiledRuleListCleanupOwner.cleanupTransientCompiledRuleLists(
-            from: update,
-            activeRules: latestUpdate?.rules ?? [],
             forgetCachedRuleLists: { [ruleListMaterializer] identifiers in
                 ruleListMaterializer.forgetCachedCompiledRuleLists(withIdentifiers: identifiers)
             }

@@ -122,14 +122,6 @@ final class SumiProtectionStartupRestoreDiagnostics: @unchecked Sendable {
         }
     }
 
-    func resetForTests() {
-        lock.withLock {
-            activeToken = nil
-            state = MutableState()
-            lastSnapshotStorage = nil
-        }
-    }
-
     func recordManifest(_ manifest: AdblockCompiledGenerationManifest?) {
         guard let manifest else { return }
         mutateActiveState {

@@ -143,25 +143,6 @@ final class SumiCompiledContentRuleListCleanupOwner {
     }
 
     @discardableResult
-    func cleanupTransientCompiledRuleLists(
-        from update: SumiContentBlockerRulesUpdate,
-        activeRules: [SumiContentBlockerRules],
-        forgetCachedRuleLists: ([String]) -> Void
-    ) -> Task<Void, Never>? {
-        let activeIdentifiers = Set(activeRules.map(\.storeIdentifier))
-        let transientIdentifiers = update.rules
-            .map(\.storeIdentifier)
-            .filter { !activeIdentifiers.contains($0) }
-
-        catalog.forgetIdentifiers(transientIdentifiers)
-        forgetCachedRuleLists(Self.uniqueSortedIdentifiers(transientIdentifiers))
-        return removeCompiledRuleListsFromStore(
-            withIdentifiers: transientIdentifiers,
-            reason: "SumiContentBlockingService transient compiled rule-list cleanup"
-        )
-    }
-
-    @discardableResult
     func removeCompiledRuleListsFromStore(
         withIdentifiers identifiers: [String],
         reason: String

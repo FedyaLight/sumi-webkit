@@ -171,26 +171,6 @@ final class SumiBoostStore: ObservableObject {
         return entry.boosts[index]
     }
 
-    func setActiveBoost(
-        _ boostId: UUID?,
-        for url: URL?,
-        profileId: UUID?,
-        isEphemeral: Bool
-    ) {
-        guard let key = SumiBoostURLPolicy.key(for: url, profileId: profileId) else { return }
-        loadIfNeeded()
-        guard var entry = entries[key] else { return }
-        if let boostId, entry.boosts.contains(where: { $0.id == boostId }) {
-            entry.activeBoostId = boostId
-        } else {
-            entry.activeBoostId = nil
-        }
-        entry.isEphemeral = entry.isEphemeral || isEphemeral
-        entries[key] = entry
-        persistIfNeeded(isEphemeral: entry.isEphemeral)
-        notifyChanged()
-    }
-
     func toggleActiveBoost(
         _ boost: SumiBoost,
         isEphemeral: Bool
