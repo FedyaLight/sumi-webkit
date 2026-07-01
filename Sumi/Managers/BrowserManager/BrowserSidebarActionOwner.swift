@@ -16,9 +16,12 @@ final class BrowserSidebarActionOwner {
 
     func spaceForSidebarActions(in windowState: BrowserWindowState) -> Space? {
         let tabManager = dependencies.tabManager()
-        return windowState.currentSpaceId
-            .flatMap { spaceId in tabManager.spaces.first(where: { $0.id == spaceId }) }
-            ?? tabManager.currentSpace
+        if let windowSpaceId = windowState.currentSpaceId,
+           let windowSpace = tabManager.spaces.first(where: { $0.id == windowSpaceId }) {
+            return windowSpace
+        }
+
+        return nil
     }
 
     func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
