@@ -7,7 +7,7 @@ Last updated: 2026-07-02
 - Starting score: 78/100.
 - Target score: at least 84/100.
 - Evidence baseline: `docs/refactor/modernization-audit.md`, `docs/architecture.md`, `xcodebuild -list -project Sumi.xcodeproj`.
-- Current score estimate: 79/100 after adding a single architecture guardrail entry point and CI workflow.
+- Current score estimate: 80/100 after adding CI architecture guardrails and a production SwiftData container boundary check.
 
 ## Assumptions
 
@@ -21,11 +21,12 @@ Last updated: 2026-07-02
 | Rank | Slice | Expected files | Risk | Verification |
 | --- | --- | --- | --- | --- |
 | 1 | Aggregate architecture boundary scripts and run them in CI. | `scripts/check_architecture_guardrails.sh`, `.github/workflows/architecture-guardrails.yml` | Low | `scripts/check_architecture_guardrails.sh` |
-| 2 | Strengthen SwiftData startup schema guardrails without changing store shape. | `Sumi/Services/SumiStartupPersistence.swift`, `SumiTests/SumiStartupPersistenceTests.swift` | Medium | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -only-testing:SumiTests/SumiStartupPersistenceTests` |
-| 3 | Reduce BrowserManager responsibility by extracting or tightening one cohesive planning boundary. | `Sumi/Managers/BrowserManager*`, related owner tests | Medium | Focused `SumiTests/Browser*OwnerTests` for the touched owner |
-| 4 | Clarify one WebKit capability/runtime ownership path. | `Sumi/Components/WebView*`, `Sumi/Models/Tab*`, WebView owner tests | Medium | Focused WebView or tab runtime tests for the touched path |
-| 5 | Narrow one sidebar/chrome state projection where it reduces dependency width. | `Sumi/Components/Sidebar/*`, `Navigation/Sidebar/*`, sidebar tests | Medium | Focused sidebar/chrome tests for the touched path |
-| 6 | Add broader project guardrails only after the first slices show stable ownership boundaries. | `.github/workflows/*`, `scripts/*`, `SumiTests/*` | Medium | Script plus targeted Xcode tests |
+| 2 | Guard production SwiftData container construction behind `SumiStartupPersistence`. | `scripts/check_startup_persistence_boundary.sh`, `scripts/check_architecture_guardrails.sh` | Low | `scripts/check_startup_persistence_boundary.sh`; `scripts/check_architecture_guardrails.sh` |
+| 3 | Strengthen SwiftData startup schema guardrails without changing store shape. | `Sumi/Services/SumiStartupPersistence.swift`, `SumiTests/SumiStartupPersistenceTests.swift` | Medium | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -only-testing:SumiTests/SumiStartupPersistenceTests` |
+| 4 | Reduce BrowserManager responsibility by extracting or tightening one cohesive planning boundary. | `Sumi/Managers/BrowserManager*`, related owner tests | Medium | Focused `SumiTests/Browser*OwnerTests` for the touched owner |
+| 5 | Clarify one WebKit capability/runtime ownership path. | `Sumi/Components/WebView*`, `Sumi/Models/Tab*`, WebView owner tests | Medium | Focused WebView or tab runtime tests for the touched path |
+| 6 | Narrow one sidebar/chrome state projection where it reduces dependency width. | `Sumi/Components/Sidebar/*`, `Navigation/Sidebar/*`, sidebar tests | Medium | Focused sidebar/chrome tests for the touched path |
+| 7 | Add broader project guardrails only after the first slices show stable ownership boundaries. | `.github/workflows/*`, `scripts/*`, `SumiTests/*` | Medium | Script plus targeted Xcode tests |
 
 ## Stop Conditions
 
@@ -40,9 +41,10 @@ Last updated: 2026-07-02
 | --- | --- | --- | --- | --- | --- |
 | Initial discovery | Complete | Confirmed `Sumi`, `SumiTests`, and `SumiUITests` targets plus shared schemes. No repo-local `AGENTS.md` was found. | `xcodebuild -list -project Sumi.xcodeproj` passed. | Subagent zone reports are still being collected. | 78/100 |
 | Architecture guardrail CI | Complete | Added one local script that runs existing boundary scripts and a GitHub Actions workflow for PR/main protection. | `scripts/check_architecture_guardrails.sh` passed. | GitHub Actions runner execution is unverified until pushed. | 79/100 |
+| Startup persistence boundary | Complete | Added a production scan that fails if SwiftData container, configuration, or schema construction moves outside `SumiStartupPersistence`. Wired it into the aggregate guardrail. | `scripts/check_startup_persistence_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed. | Tests can still use in-memory containers directly; this slice only protects production runtime paths. | 80/100 |
 
 ## Before/After Estimate
 
 - Before: 78/100.
-- After current slice estimate: 79/100.
+- After current slice estimate: 80/100.
 - Target after planned slices: 84/100 or higher.
