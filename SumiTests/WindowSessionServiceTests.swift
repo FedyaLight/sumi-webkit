@@ -59,6 +59,83 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertTrue(delegate.committedThemes.isEmpty)
     }
 
+    func testSetupWindowStateWithoutStoredSessionUsesFirstCurrentProfileSpaceInsteadOfGlobalCurrentSpace() throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let primaryProfile = Profile(name: "Primary")
+        let primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
+        let secondarySpace = Space(name: "Secondary", profileId: primaryProfile.id)
+        tabManager.spaces = [primarySpace, secondarySpace]
+        tabManager.currentSpace = secondarySpace
+
+        let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+        let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        delegate.currentProfile = primaryProfile
+        let windowState = BrowserWindowState()
+
+        service.setupWindowState(windowState, runtime: delegate.runtime)
+
+        XCTAssertEqual(windowState.currentProfileId, primaryProfile.id)
+        XCTAssertEqual(windowState.currentSpaceId, primarySpace.id)
+    }
+
+    func testHandleTabManagerDataLoadedRepairsStaleWindowSpaceFromCurrentProfileInsteadOfGlobalCurrentSpace()
+        throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let primaryProfile = Profile(name: "Primary")
+        let secondaryProfile = Profile(name: "Secondary")
+        let primarySpace = Space(name: "Primary", profileId: primaryProfile.id)
+        let secondarySpace = Space(name: "Secondary", profileId: secondaryProfile.id)
+        tabManager.spaces = [primarySpace, secondarySpace]
+        tabManager.currentSpace = secondarySpace
+
+        let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+        let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
+        windowState.currentSpaceId = UUID()
+        delegate.currentProfile = primaryProfile
+        delegate.windowRegistry = windowRegistry
+        windowRegistry.register(windowState)
+
+        service.handleTabManagerDataLoaded(runtime: delegate.runtime)
+
+        XCTAssertEqual(windowState.currentProfileId, primaryProfile.id)
+        XCTAssertEqual(windowState.currentSpaceId, primarySpace.id)
+    }
+
+    func testHandleTabManagerDataLoadedUsesCurrentProfileWhenPersistedProfileIsStale()
+        throws {
+        let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
+        let staleProfileId = UUID()
+        let fallbackProfile = Profile(name: "Fallback")
+        let currentProfile = Profile(name: "Current")
+        let fallbackSpace = Space(name: "Fallback", profileId: fallbackProfile.id)
+        let currentProfileSpace = Space(name: "Current", profileId: currentProfile.id)
+        tabManager.spaces = [fallbackSpace, currentProfileSpace]
+        tabManager.currentSpace = fallbackSpace
+
+        let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: sessionKey) }
+        let service = WindowSessionService(lastWindowSessionKey: sessionKey)
+        let delegate = TestWindowSessionDelegate(tabManager: tabManager)
+        let windowRegistry = WindowRegistry()
+        let windowState = BrowserWindowState(awaitsInitialSessionResolution: true)
+        windowState.currentSpaceId = UUID()
+        windowState.currentProfileId = staleProfileId
+        delegate.currentProfile = currentProfile
+        delegate.windowRegistry = windowRegistry
+        windowRegistry.register(windowState)
+
+        service.handleTabManagerDataLoaded(runtime: delegate.runtime)
+
+        XCTAssertEqual(windowState.currentProfileId, currentProfile.id)
+        XCTAssertEqual(windowState.currentSpaceId, currentProfileSpace.id)
+    }
+
     func testWindowSessionBootstrapClassifiesCorruptStoredSnapshot() throws {
         let suiteName = "WindowSessionCorruptSnapshotTests-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

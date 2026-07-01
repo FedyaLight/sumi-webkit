@@ -369,8 +369,10 @@ final class WindowSessionService {
         for (_, windowState) in windowRegistry.windows {
             if windowState.currentSpaceId == nil
                 || runtime.tabManager.spaces.first(where: { $0.id == windowState.currentSpaceId }) == nil {
-                windowState.currentSpaceId = runtime.tabManager.currentSpace?.id
-                    ?? runtime.tabManager.spaces.first?.id
+                windowState.currentSpaceId = resolvedFallbackSpaceId(
+                    for: windowState,
+                    runtime: runtime
+                )
             }
 
             if let shortcutPinId = windowState.currentShortcutPinId,
@@ -432,7 +434,10 @@ final class WindowSessionService {
         let restored = restoreWindowSession(into: windowState, runtime: runtime)
         if !restored {
             windowState.currentProfileId = runtime.currentProfile?.id
-            windowState.currentSpaceId = runtime.tabManager.currentSpace?.id
+            windowState.currentSpaceId = resolvedFallbackSpaceId(
+                for: windowState,
+                runtime: runtime
+            )
             windowState.currentTabId = runtime.tabManager.currentTab?.id
         }
 
@@ -446,6 +451,36 @@ final class WindowSessionService {
         }
 
         finalizeWindowStateRestore(windowState, runtime: runtime, source: "setupWindowState")
+    }
+
+    private func resolvedFallbackSpaceId(
+        for windowState: BrowserWindowState,
+        runtime: WindowSessionRuntime
+    ) -> UUID? {
+        if let windowSpaceId = windowState.currentSpaceId,
+           runtime.tabManager.spaces.contains(where: { $0.id == windowSpaceId }) {
+            return windowSpaceId
+        }
+
+        // Do not repair one window from process-global currentSpace; use deterministic live profile ownership.
+        if let profileId = windowState.currentProfileId,
+           let profileSpaceId = firstSpaceId(for: profileId, runtime: runtime) {
+            return profileSpaceId
+        }
+
+        if let profileId = runtime.currentProfile?.id,
+           let profileSpaceId = firstSpaceId(for: profileId, runtime: runtime) {
+            return profileSpaceId
+        }
+
+        return runtime.tabManager.spaces.first?.id
+    }
+
+    private func firstSpaceId(
+        for profileId: UUID,
+        runtime: WindowSessionRuntime
+    ) -> UUID? {
+        runtime.tabManager.spaces.first(where: { $0.profileId == profileId })?.id
     }
 
     func applyWindowSessionSnapshot(
