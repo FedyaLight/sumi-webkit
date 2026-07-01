@@ -59,6 +59,12 @@ class WindowRegistry {
     @ObservationIgnored
     var onAllWindowsClosed: (() -> Void)?
 
+    @ObservationIgnored
+    var keyAppKitWindowProvider: () -> NSWindow? = { NSApp.keyWindow }
+
+    @ObservationIgnored
+    var mainAppKitWindowProvider: () -> NSWindow? = { NSApp.mainWindow }
+
     private static let defaultWindowRegistrationTimeoutNanoseconds: UInt64 = 2_000_000_000
 
     /// Register a new window
@@ -105,12 +111,15 @@ class WindowRegistry {
             onAllWindowsClosed?()
         }
 
-        // If this was the active window, switch to another
+        // AppKit focus/key-window state owns active-window selection. Closing
+        // the active window may only promote a surviving window AppKit already
+        // reports as key/main; otherwise wait for the next didBecomeKey signal.
         if activeWindowId == id {
-            let fallbackWindow = windows.values.first
-            activeWindowId = fallbackWindow?.id
-            if let fallbackWindow {
-                onActiveWindowChange?(fallbackWindow)
+            if let focusedWindow = focusedRegisteredWindow() {
+                activeWindowId = focusedWindow.id
+                onActiveWindowChange?(focusedWindow)
+            } else {
+                activeWindowId = nil
             }
         }
 
@@ -145,6 +154,15 @@ class WindowRegistry {
 
     func notifyWindowVisibilityChanged(_ window: BrowserWindowState) {
         onWindowVisibilityChange?(window)
+    }
+
+    private func focusedRegisteredWindow() -> BrowserWindowState? {
+        for appKitWindow in [keyAppKitWindowProvider(), mainAppKitWindowProvider()].compactMap({ $0 }) {
+            if let windowState = windowState(containing: appKitWindow) {
+                return windowState
+            }
+        }
+        return nil
     }
 
     /// Get all windows as an array

@@ -78,22 +78,50 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertTrue(registry.windows.isEmpty)
     }
 
-    func testUnregisterActiveWindowFallsBackAndNotifiesActiveWindowChange() {
+    func testUnregisterActiveWindowClearsActiveWithoutPromotingAnotherWindow() {
         let registry = WindowRegistry()
         let closingWindow = BrowserWindowState()
-        let fallbackWindow = BrowserWindowState()
+        let survivingWindow = BrowserWindowState()
         var activatedWindowIds: [UUID] = []
 
         registry.register(closingWindow)
-        registry.register(fallbackWindow)
+        registry.register(survivingWindow)
         registry.setActive(closingWindow)
         registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
 
         registry.unregister(closingWindow.id)
 
-        XCTAssertEqual(registry.activeWindowId, fallbackWindow.id)
-        XCTAssertIdentical(registry.activeWindow, fallbackWindow)
-        XCTAssertEqual(activatedWindowIds, [fallbackWindow.id])
+        XCTAssertNil(registry.activeWindowId)
+        XCTAssertNil(registry.activeWindow)
+        XCTAssertTrue(registry.windows.keys.contains(survivingWindow.id))
+        XCTAssertTrue(activatedWindowIds.isEmpty)
+    }
+
+    func testUnregisterActiveWindowPromotesFocusedRegisteredAppKitWindow() {
+        let registry = WindowRegistry()
+        let closingWindow = BrowserWindowState()
+        let survivingWindow = BrowserWindowState()
+        let survivingAppKitWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        var activatedWindowIds: [UUID] = []
+
+        survivingWindow.window = survivingAppKitWindow
+        registry.keyAppKitWindowProvider = { survivingAppKitWindow }
+        registry.mainAppKitWindowProvider = { nil }
+        registry.register(closingWindow)
+        registry.register(survivingWindow)
+        registry.setActive(closingWindow)
+        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+
+        registry.unregister(closingWindow.id)
+
+        XCTAssertEqual(registry.activeWindowId, survivingWindow.id)
+        XCTAssertIdentical(registry.activeWindow, survivingWindow)
+        XCTAssertEqual(activatedWindowIds, [survivingWindow.id])
     }
 
     func testSetActiveBeforeRegisterReplacesPreviousActiveWhenRegistered() {
