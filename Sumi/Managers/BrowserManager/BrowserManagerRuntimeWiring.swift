@@ -570,9 +570,6 @@ enum BrowserManagerRuntimeWiring {
                 selectedIDs.insert(current.id)
             }
         }
-        if let current = browserManager.tabManager.currentTab {
-            selectedIDs.insert(current.id)
-        }
         return selectedIDs
     }
 

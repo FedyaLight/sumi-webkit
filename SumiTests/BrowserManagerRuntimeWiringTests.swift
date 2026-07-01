@@ -68,6 +68,45 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, activeTab.id)
     }
 
+    func testTabSuspensionSelectedTabsDoNotUseGlobalCurrentTabFallback() throws {
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        let windowRegistry = WindowRegistry()
+        browserManager.windowRegistry = windowRegistry
+
+        let selectedSpace = browserManager.tabManager.currentSpace
+            ?? browserManager.tabManager.createSpace(name: "Selected")
+        let selectedTab = browserManager.tabManager.createNewTab(
+            url: "https://selected.example",
+            in: selectedSpace,
+            activate: true
+        )
+        let staleSpace = browserManager.tabManager.createSpace(name: "Stale")
+        let staleGlobalTab = browserManager.tabManager.createNewTab(
+            url: "https://stale.example",
+            in: staleSpace,
+            activate: false
+        )
+
+        let windowState = BrowserWindowState()
+        windowState.tabManager = browserManager.tabManager
+        windowState.currentSpaceId = selectedSpace.id
+        windowState.currentTabId = selectedTab.id
+        windowRegistry.register(windowState)
+        windowRegistry.setActive(windowState)
+        browserManager.tabManager.currentTab = staleGlobalTab
+
+        let context = browserManager.tabSuspensionService.suspensionEvaluationContext(
+            policy: TabSuspensionPolicy(memoryMode: .balanced)
+        )
+
+        XCTAssertEqual(context.selectedTabIDs, [selectedTab.id])
+        XCTAssertFalse(context.selectedTabIDs.contains(staleGlobalTab.id))
+    }
+
     private func compositorManagerCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
         let windowRegistry = WindowRegistry()
         browserManager.windowRegistry = windowRegistry
