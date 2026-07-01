@@ -129,8 +129,7 @@ extension TabManager {
     ) {
         guard resolution.source == .globalFallback,
               let resolvedProfileId = resolution.profileId,
-              let visibleProfileId = context?.windowState?.currentProfileId
-                ?? runtimeContext?.activeWindowState?.currentProfileId,
+              let visibleProfileId = context?.windowState?.currentProfileId,
               visibleProfileId != resolvedProfileId else {
             return
         }
@@ -355,9 +354,7 @@ extension TabManager {
                 openTargetFolder: openTargetFolder
             ) else { return nil }
 
-            if let windowId = windowIdDisplaying(tabId: tab.id) {
-                convertTabToShortcutLiveInstance(tab, pin: insertedPin, in: windowId)
-            } else {
+            if !convertSelectedTabToShortcutLiveInstances(tab, pin: insertedPin) {
                 removeTab(tab.id)
             }
             scheduleStructuralPersistence()

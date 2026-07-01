@@ -5,8 +5,6 @@ struct TabManagerRuntimeContext {
     private let currentProfileIdProvider: () -> UUID?
     private let defaultProfileIdProvider: () -> UUID?
     private let settingsProvider: () -> SumiSettingsService?
-    private let activeWindowIdProvider: () -> UUID?
-    private let activeWindowStateProvider: () -> BrowserWindowState?
     private let profileExistsHandler: (UUID) -> Bool
     private let profileProvider: (UUID) -> Profile?
     private let windowStateProvider: (UUID) -> BrowserWindowState?
@@ -40,8 +38,6 @@ struct TabManagerRuntimeContext {
         currentProfileId: @escaping () -> UUID? = { nil },
         defaultProfileId: @escaping () -> UUID? = { nil },
         settings: @escaping () -> SumiSettingsService? = { nil },
-        activeWindowId: @escaping () -> UUID? = { nil },
-        activeWindowState: @escaping () -> BrowserWindowState? = { nil },
         profileExists: @escaping (UUID) -> Bool = { _ in true },
         profile: @escaping (UUID) -> Profile? = { _ in nil },
         windowState: @escaping (UUID) -> BrowserWindowState? = { _ in nil },
@@ -74,8 +70,6 @@ struct TabManagerRuntimeContext {
         self.currentProfileIdProvider = currentProfileId
         self.defaultProfileIdProvider = defaultProfileId
         self.settingsProvider = settings
-        self.activeWindowIdProvider = activeWindowId
-        self.activeWindowStateProvider = activeWindowState
         self.profileExistsHandler = profileExists
         self.profileProvider = profile
         self.windowStateProvider = windowState
@@ -109,8 +103,6 @@ struct TabManagerRuntimeContext {
     var currentProfileId: UUID? { currentProfileIdProvider() }
     var defaultProfileId: UUID? { defaultProfileIdProvider() }
     var settings: SumiSettingsService? { settingsProvider() }
-    var activeWindowId: UUID? { activeWindowIdProvider() }
-    var activeWindowState: BrowserWindowState? { activeWindowStateProvider() }
 
     func profileExists(_ profileId: UUID) -> Bool {
         profileExistsHandler(profileId)

@@ -140,10 +140,9 @@ class TabManager: ObservableObject {
             }
     }
 
-    func selectionTabsForCurrentContext() -> [Tab] {
+    func selectionTabsForCurrentContext(in windowId: UUID? = nil) -> [Tab] {
         let regularTabs = tabs
-        let activeWindowId = runtimeContext?.activeWindowId
-        let activeLauncherTab = activeWindowId
+        let activeLauncherTab = windowId
             .flatMap { activeShortcutTab(for: $0) }
             .flatMap { liveTab -> Tab? in
                 guard liveTab.shortcutPinRole != .essential else { return nil }

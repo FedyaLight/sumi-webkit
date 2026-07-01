@@ -93,15 +93,21 @@ extension TabManager {
 
 // MARK: - Profile Change Handling
 extension TabManager {
-    func handleProfileSwitch() {
+    func handleProfileSwitch(contextWindowId: UUID? = nil) {
         if let pendingSpaceId = pendingSpaceActivation {
             pendingSpaceActivation = nil
             if let target = spaces.first(where: { $0.id == pendingSpaceId }) {
-                setActiveSpace(target)
+                setActiveSpace(target, contextWindowId: contextWindowId)
             }
         }
 
-        let visible = selectionTabsForCurrentContext()
+        let visible = selectionTabsForCurrentContext(in: contextWindowId)
+        if contextWindowId == nil,
+           shouldPreserveContextlessShortcutLiveTab(currentTab) {
+            runtimeContext?.updateTabVisibility()
+            return
+        }
+
         if currentTab == nil || !(visible.contains { $0.id == currentTab!.id }) {
             currentTab = visible.first
             runtimeContext?.updateTabVisibility()
@@ -109,6 +115,18 @@ extension TabManager {
         } else {
             runtimeContext?.updateTabVisibility()
         }
+    }
+
+    private func shouldPreserveContextlessShortcutLiveTab(_ tab: Tab?) -> Bool {
+        guard let tab,
+              tab.isShortcutLiveInstance,
+              tab.shortcutPinRole != .essential,
+              let shortcutPinId = tab.shortcutPinId,
+              shortcutPin(by: shortcutPinId) != nil
+        else {
+            return false
+        }
+        return true
     }
 }
 

@@ -116,7 +116,11 @@ extension TabManager {
         }
     }
 
-    func setActiveSpace(_ space: Space, preferredTab: Tab? = nil) {
+    func setActiveSpace(
+        _ space: Space,
+        preferredTab: Tab? = nil,
+        contextWindowId: UUID? = nil
+    ) {
         guard spaces.contains(where: { $0.id == space.id }) else { return }
 
         if space.profileId == nil {
@@ -143,7 +147,7 @@ extension TabManager {
 
         let projection = launcherProjection(
             for: space.id,
-            in: runtimeContext?.activeWindowId
+            in: contextWindowId
         )
         let regularTabs = projection.regularTabs
         let persistedPins = spacePinnedPins(for: space.id)

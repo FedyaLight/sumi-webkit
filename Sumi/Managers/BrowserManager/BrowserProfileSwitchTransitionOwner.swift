@@ -151,7 +151,7 @@ final class BrowserProfileSwitchTransitionOwner {
         )
         dependencies.extensionsModule.switchProfileIfLoaded(profile)
         dependencies.historyManager.switchProfile(profile.id)
-        dependencies.tabManager.handleProfileSwitch()
+        dependencies.tabManager.handleProfileSwitch(contextWindowId: windowState?.id)
     }
 }
 

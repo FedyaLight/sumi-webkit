@@ -23,9 +23,11 @@ extension TabManager {
                 context: context
             )
 
-            if tab.id == currentTab?.id, let windowId = runtimeContext?.activeWindowId {
-                convertTabToShortcutLiveInstance(tab, pin: insertedPin, in: windowId)
-            } else {
+            if !convertSelectedTabToShortcutLiveInstances(
+                tab,
+                pin: insertedPin,
+                preferredWindowId: context?.windowState?.id
+            ) {
                 removeTab(tab.id)
             }
             scheduleStructuralPersistence()
@@ -411,6 +413,54 @@ extension TabManager {
     }
 
     @discardableResult
+    func convertSelectedTabToShortcutLiveInstances(
+        _ tab: Tab,
+        pin: ShortcutPin,
+        preferredWindowId: UUID? = nil
+    ) -> Bool {
+        let selectedWindowIds = windowIdsSelecting(
+            tabId: tab.id,
+            preferredWindowId: preferredWindowId
+        )
+        guard let firstWindowId = selectedWindowIds.first else { return false }
+
+        convertTabToShortcutLiveInstance(tab, pin: pin, in: firstWindowId)
+
+        for windowId in selectedWindowIds.dropFirst() {
+            replaceDisplayedTabWithShortcutLiveInstance(tab, pin: pin, in: windowId)
+        }
+        return true
+    }
+
+    private func replaceDisplayedTabWithShortcutLiveInstance(
+        _ originalTab: Tab,
+        pin: ShortcutPin,
+        in windowId: UUID
+    ) {
+        guard let windowState = runtimeContext?.windowState(for: windowId) else { return }
+        let liveTab = activateShortcutPin(
+            pin,
+            in: windowId,
+            currentSpaceId: windowState.currentSpaceId
+        )
+
+        if windowState.currentTabId == originalTab.id {
+            windowState.currentTabId = liveTab.id
+        }
+        windowState.currentShortcutPinId = pin.id
+        windowState.currentShortcutPinRole = pin.role
+        windowState.isShowingEmptyState = false
+        if let spaceId = pin.spaceId {
+            windowState.currentSpaceId = spaceId
+            if windowState.activeTabForSpace[spaceId] == originalTab.id {
+                windowState.activeTabForSpace[spaceId] = tabsBySpace[spaceId]?.first?.id
+            }
+        }
+        windowState.removeFromRegularTabHistory(originalTab.id)
+        runtimeContext?.materializeVisibleTabWebViewIfNeeded(liveTab, in: windowState)
+    }
+
+    @discardableResult
     func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
         withStructuralUpdateTransaction {
             if let existing = transientShortcutTabsByWindow[windowId]?[pin.id] {
@@ -476,8 +526,47 @@ extension TabManager {
         foldersBySpace.first(where: { $0.value.contains(where: { $0.id == folderId }) })?.key
     }
 
-    func windowIdDisplaying(tabId: UUID) -> UUID? {
-        guard let runtimeContext else { return nil }
+    func windowIdDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> UUID? {
+        windowIdsDisplaying(tabId: tabId, preferredWindowId: preferredWindowId).first
+    }
+
+    func windowIdsSelecting(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
+        guard let runtimeContext else { return [] }
+
+        func windowSelectsTab(_ windowState: BrowserWindowState) -> Bool {
+            windowState.currentTabId == tabId
+        }
+
+        var orderedWindowIds: [UUID] = []
+
+        if let primaryWindowId = tab(for: tabId)?.primaryWindowId,
+           let primaryWindow = runtimeContext.windowState(for: primaryWindowId),
+           windowSelectsTab(primaryWindow) {
+            orderedWindowIds.append(primaryWindowId)
+        }
+
+        if let preferredWindowId,
+           let preferredWindow = runtimeContext.windowState(for: preferredWindowId),
+           windowSelectsTab(preferredWindow),
+           !orderedWindowIds.contains(preferredWindowId) {
+            orderedWindowIds.append(preferredWindowId)
+        }
+
+        var matchedWindowIds: [UUID] = []
+        runtimeContext.forEachWindow { windowId, windowState in
+            if !orderedWindowIds.contains(windowId),
+               windowSelectsTab(windowState) {
+                matchedWindowIds.append(windowId)
+            }
+        }
+        orderedWindowIds.append(
+            contentsOf: matchedWindowIds.sorted { $0.uuidString < $1.uuidString }
+        )
+        return orderedWindowIds
+    }
+
+    func windowIdsDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
+        guard let runtimeContext else { return [] }
 
         func windowDisplaysTab(_ windowId: UUID, _ windowState: BrowserWindowState) -> Bool {
             if windowState.currentTabId == tabId {
@@ -487,19 +576,37 @@ extension TabManager {
             return runtimeContext.visibleSplitTabIds(for: windowId).contains(tabId)
         }
 
-        if let activeWindowId = runtimeContext.activeWindowId,
-           let activeWindow = runtimeContext.windowState(for: activeWindowId),
-           windowDisplaysTab(activeWindowId, activeWindow) {
-            return activeWindowId
+        var orderedWindowIds: [UUID] = []
+
+        if let preferredWindowId,
+           let preferredWindow = runtimeContext.windowState(for: preferredWindowId),
+           windowDisplaysTab(preferredWindowId, preferredWindow) {
+            orderedWindowIds.append(preferredWindowId)
         }
 
-        var matchedWindowId: UUID?
+        if let primaryWindowId = tab(for: tabId)?.primaryWindowId,
+           let primaryWindow = runtimeContext.windowState(for: primaryWindowId),
+           windowDisplaysTab(primaryWindowId, primaryWindow),
+           !orderedWindowIds.contains(primaryWindowId) {
+            orderedWindowIds.append(primaryWindowId)
+        }
+
+        var matchedWindowIds: [UUID] = []
         runtimeContext.forEachWindow { windowId, windowState in
-            if matchedWindowId == nil, windowDisplaysTab(windowId, windowState) {
-                matchedWindowId = windowId
+            if !orderedWindowIds.contains(windowId),
+               windowDisplaysTab(windowId, windowState) {
+                matchedWindowIds.append(windowId)
             }
         }
-        return matchedWindowId
+        orderedWindowIds.append(
+            contentsOf: matchedWindowIds.sorted { $0.uuidString < $1.uuidString }
+        )
+        return orderedWindowIds
+    }
+
+    func windowStateDisplaying(tabId: UUID) -> BrowserWindowState? {
+        guard let windowId = windowIdDisplaying(tabId: tabId) else { return nil }
+        return runtimeContext?.windowState(for: windowId)
     }
 
     func removeFromCurrentContainer(_ tab: Tab) {

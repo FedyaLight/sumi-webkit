@@ -681,12 +681,6 @@ extension TabManagerRuntimeContext {
             settings: { [weak browserManager] in
                 browserManager?.sumiSettings
             },
-            activeWindowId: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow?.id
-            },
-            activeWindowState: { [weak browserManager] in
-                browserManager?.windowRegistry?.activeWindow
-            },
             profileExists: { [weak browserManager] profileId in
                 guard let browserManager else { return true }
                 return browserManager.profileManager.profiles.contains { $0.id == profileId }

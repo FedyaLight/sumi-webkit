@@ -25,8 +25,8 @@ final class TabRegularLifecycleOwner {
 
             // Load the tab in compositor if it's the current tab.
             if tab.id == tabManager.currentTab?.id {
-                if let activeWindow = tabManager.runtimeContext?.activeWindowState {
-                    tabManager.runtimeContext?.materializeVisibleTabWebViewIfNeeded(tab, in: activeWindow)
+                if let windowState = tabManager.windowStateDisplaying(tabId: tab.id) {
+                    tabManager.runtimeContext?.materializeVisibleTabWebViewIfNeeded(tab, in: windowState)
                 } else {
                     tabManager.runtimeContext?.loadTab(tab)
                 }
