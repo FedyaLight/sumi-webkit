@@ -135,19 +135,19 @@ final class HistoryBoundedQueryTests: XCTestCase {
     func testSitePagePaginationUsesDomainOrderAndCounts() async throws {
         let harness = try makeHarness()
         try await recordVisit(
-            url: URL(string: "https://b.example/one")!,
+            url: URL(string: "https://beta.example.org/one")!,
             title: "B",
             at: date("2026-04-23T10:00:00Z"),
             harness: harness
         )
         try await recordVisit(
-            url: URL(string: "https://a.example/one")!,
+            url: URL(string: "https://alpha.example.com/one")!,
             title: "A",
             at: date("2026-04-23T09:00:00Z"),
             harness: harness
         )
         try await recordVisit(
-            url: URL(string: "https://www.a.example/two")!,
+            url: URL(string: "https://www.example.com/two")!,
             title: "A Two",
             at: date("2026-04-23T08:00:00Z"),
             harness: harness
@@ -166,9 +166,9 @@ final class HistoryBoundedQueryTests: XCTestCase {
             offset: firstPage.nextOffset
         )
 
-        XCTAssertEqual(firstPage.sites.map(\.domain), ["a.example"])
+        XCTAssertEqual(firstPage.sites.map(\.domain), ["example.com"])
         XCTAssertEqual(firstPage.sites.first?.visitCount, 2)
-        XCTAssertEqual(secondPage.sites.map(\.domain), ["b.example"])
+        XCTAssertEqual(secondPage.sites.map(\.domain), ["example.org"])
     }
 
     func testSitePagePaginationMergesLegacySiteDomainFallbacks() async throws {
@@ -314,6 +314,47 @@ final class HistoryBoundedQueryTests: XCTestCase {
         XCTAssertTrue(otherStore.addedURLs.isEmpty)
     }
 
+    func testHistoryAndCleanupDomainConsumersShareSiteIdentity() async throws {
+        let harness = try makeHarness()
+        try await recordVisit(
+            url: URL(string: "https://www.bbc.co.uk/news?utm=1#top")!,
+            title: "BBC",
+            at: date("2026-04-23T10:00:00Z"),
+            harness: harness
+        )
+        try await recordVisit(
+            url: URL(string: "https://sport.bbc.co.uk/football?tab=live")!,
+            title: "BBC Sport",
+            at: date("2026-04-23T11:00:00Z"),
+            harness: harness
+        )
+
+        let historyDomains = try await harness.store.domains(
+            matching: .rangeFilter(.all),
+            profileId: harness.profileID,
+            referenceDate: referenceDate,
+            calendar: harness.calendar
+        )
+        let domainInventory = SumiBrowsingDataDomainInventory(
+            websiteDataCleanupService: FakeBrowsingDataCleanupService()
+        )
+
+        XCTAssertEqual(historyDomains, Set(["bbc.co.uk"]))
+        XCTAssertEqual(
+            domainInventory.normalizeDomains([" WWW.BBC.CO.UK. ", ".sport.bbc.co.uk"]),
+            historyDomains
+        )
+
+        let deletedCount = try await harness.store.deleteVisits(
+            matching: .domainFilter(["WWW.BBC.CO.UK."]),
+            profileId: harness.profileID,
+            referenceDate: referenceDate,
+            calendar: harness.calendar
+        )
+
+        XCTAssertEqual(deletedCount, 2)
+    }
+
     private func makeHarness() throws -> (
         container: ModelContainer,
         store: HistoryStore,
@@ -412,5 +453,68 @@ private final class FakeVisitedLinkStore: NSObject {
     func removeAll() {
         removeAllCallCount += 1
         addedURLs.removeAll()
+    }
+}
+
+@MainActor
+private final class FakeBrowsingDataCleanupService: SumiWebsiteDataCleanupServicing {
+    func fetchCookies(in dataStore: WKWebsiteDataStore) async -> [HTTPCookie] {
+        []
+    }
+
+    func fetchWebsiteDataRecords(
+        ofTypes dataTypes: Set<String>,
+        in dataStore: WKWebsiteDataStore
+    ) async -> [WKWebsiteDataRecord] {
+        []
+    }
+
+    func fetchSiteDataEntries(
+        forDomain domain: String,
+        ofTypes dataTypes: Set<String>,
+        in dataStore: WKWebsiteDataStore
+    ) async -> [SumiSiteDataEntry] {
+        []
+    }
+
+    func removeCookies(
+        _ selection: SumiCookieRemovalSelection,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func removeWebsiteData(
+        ofTypes dataTypes: Set<String>,
+        modifiedSince date: Date,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func removeWebsiteDataForDomain(
+        _ domain: String,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func removeWebsiteDataForExactHost(
+        _ host: String,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func removeWebsiteDataForDomains(
+        _ domains: Set<String>,
+        ofTypes dataTypes: Set<String>,
+        includingCookies: Bool,
+        in dataStore: WKWebsiteDataStore
+    ) async {}
+
+    func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async {}
+
+    func removePersistentDataStore(forIdentifier identifier: UUID) async -> Bool {
+        true
+    }
+
+    func prunePersistentDataStores(keeping identifiersToKeep: Set<UUID>) async -> [UUID] {
+        []
     }
 }

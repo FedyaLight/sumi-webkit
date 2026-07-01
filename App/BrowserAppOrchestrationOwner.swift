@@ -16,6 +16,7 @@ final class BrowserAppOrchestrationOwner {
     }
 
     private let windowLifecycleOwner: BrowserWindowLifecycleOwner
+    private var applicationLifecycleController: BrowserApplicationLifecycleController?
     private var didSetup = false
 
     init(windowLifecycleOwner: BrowserWindowLifecycleOwner = BrowserWindowLifecycleOwner()) {
@@ -41,8 +42,12 @@ final class BrowserAppOrchestrationOwner {
         appDelegate.windowRouter = browserManager
         appDelegate.externalURLHandler = browserManager
         appDelegate.persistenceHandler = browserManager
-        appDelegate.updateHandler = browserManager
-        appDelegate.appLifecycleHandler = browserManager
+        appDelegate.terminationHandler = browserManager
+        let applicationLifecycleController = BrowserApplicationLifecycleController(
+            dependencies: .live(browserManager: browserManager)
+        )
+        self.applicationLifecycleController = applicationLifecycleController
+        appDelegate.appLifecycleHandler = applicationLifecycleController
         appDelegate.settingsHandler = settingsManager
         appDelegate.shortcutManager = keyboardShortcutManager
         appDelegate.fallbackPersistenceSave = dependencies.fallbackPersistenceSave

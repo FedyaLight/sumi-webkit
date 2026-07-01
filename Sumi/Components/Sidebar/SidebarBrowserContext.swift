@@ -55,6 +55,7 @@ struct SidebarBrowserContext {
     let downloadsPopoverPresenter: DownloadsPopoverPresenter
     let glanceManager: GlanceManager
     let extensionSurfaceStore: BrowserExtensionSurfaceStore
+    let regularTabs: any SidebarRegularTabsControlling
     let presentationActions: SidebarBrowserPresentationActions
     let headerContext: (BrowserWindowState) -> SidebarHeaderBrowserContext
     let tabStructuralRevision: () -> UInt
@@ -80,6 +81,10 @@ struct SidebarBrowserContext {
             downloadsPopoverPresenter: browserManager.downloadsPopoverPresenter,
             glanceManager: browserManager.glanceManager,
             extensionSurfaceStore: browserManager.extensionsModule.surfaceStore,
+            regularTabs: SidebarRegularTabsController.live(
+                tabManager: browserManager.tabManager,
+                liveFolderManager: browserManager.liveFolderManager
+            ),
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { [weak browserManager] pin, windowState, themeContext, source in
                     browserManager?.sidebarCommandService.editorPresentation.showShortcutEditor(

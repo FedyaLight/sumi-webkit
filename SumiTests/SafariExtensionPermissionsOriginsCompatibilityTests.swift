@@ -110,6 +110,14 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         )
     }
 
+    func testPrivateUserScriptSPIWrapperRejectsNonExtensionAssociatedURL() {
+        let pageURL = URL(string: "https://example.com/extension-frame")!
+        let script = SafariExtensionPermissionsOriginsCompatibility
+            .makePreludeUserScript(associatedURL: pageURL)
+
+        XCTAssertNil(script)
+    }
+
     func testPermissionsContainsLocationHrefWithPortRendersOverlay() async throws {
         SafariExtensionLiveWebKitTestLease.holdForProcess()
         let server = try await AutofillPagesHTTPServer.start()
@@ -136,6 +144,11 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
             scratchDirectory: scratchDirectory
         )
         _ = try await manager.enableExtension(installed.id)
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
         let extensionContext = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )

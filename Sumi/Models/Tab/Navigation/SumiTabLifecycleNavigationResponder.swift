@@ -169,7 +169,7 @@ final class SumiTabLifecycleNavigationResponder:
             tab.url = newURL
             tab.lifecycleNavigationRuntime.loadZoomForTab(tab.id)
             tab.refreshFaviconExtensionCache()
-            tab.lifecycleNavigationRuntime.applyAdblockZapperRulesAfterNavigation(webView, newURL)
+            tab.lifecycleNavigationRuntime.applyAdblockZapperRulesAfterNavigation(webView, newURL, tab)
         }
 
         tab.updateNavigationState()

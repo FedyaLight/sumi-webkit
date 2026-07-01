@@ -27,7 +27,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         super.tearDown()
     }
 
-    func testDefaultAllowGrantsOptionalHostPatterns() async throws {
+    func testDefaultAskDoesNotGrantOptionalHostPatterns() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Site Access")
         let manager = ExtensionManager(
@@ -51,11 +51,41 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertTrue(context.webExtension.optionalPermissionMatchPatterns.contains(matchPattern))
         XCTAssertEqual(
             context.permissionStatus(for: matchPattern),
-            .grantedExplicitly
+            .unknown
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             context.hasAccess(to: URL(string: "https://account.proton.me/u/0")!)
         )
+    }
+
+    func testExplicitDefaultAllowGrantsDeclaredHostPatterns() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Explicit Default Allow Site Access")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+
+        let installed = try await installExtension(
+            manager: manager,
+            name: "ExplicitAllowHostAccess"
+        )
+        _ = try await manager.enableExtension(installed.id)
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+
+        let context = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+        let matchPattern = try XCTUnwrap(
+            WKWebExtension.MatchPattern(string: "https://account.proton.me/*")
+        )
+
+        XCTAssertEqual(context.permissionStatus(for: matchPattern), .grantedExplicitly)
+        XCTAssertTrue(context.hasAccess(to: URL(string: "https://account.proton.me/u/0")!))
     }
 
     func testDefaultDenyDeniesDeclaredHostPatterns() async throws {
@@ -157,14 +187,14 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
 
         surfaceStore.refreshSiteAccessPolicies(profileId: profile.id)
         await waitForSurfaceStoreDefaultAccess(
-            .allow,
+            .ask,
             extensionId: installed.id,
             surfaceStore: surfaceStore
         )
 
         XCTAssertEqual(
             surfaceStore.siteAccessPoliciesByExtensionID[installed.id]?.defaultAccess,
-            .allow
+            .ask
         )
 
         manager.setDefaultSiteAccess(
@@ -222,7 +252,9 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertFalse(
             manager.isGrantedPermissionStatus(contextA.permissionStatus(for: matchPattern))
         )
-        XCTAssertEqual(contextB.permissionStatus(for: matchPattern), .grantedExplicitly)
+        XCTAssertFalse(
+            manager.isGrantedPermissionStatus(contextB.permissionStatus(for: matchPattern))
+        )
     }
 
     func testNativeMessagingPermissionGrantIsProfileScopedAndUsesSDKPermission()
@@ -268,7 +300,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
     }
 
-    func testConfiguredAskOverridesDefaultAllow() async throws {
+    func testConfiguredAskOverridesExplicitDefaultAllow() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Configured Ask")
         let manager = ExtensionManager(
@@ -281,6 +313,11 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             name: "ConfiguredAsk"
         )
         _ = try await manager.enableExtension(installed.id)
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
         let context = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
@@ -525,7 +562,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertEqual(context.permissionStatus(for: matchPattern), .grantedExplicitly)
     }
 
-    func testDefaultAllowMakesBroadHostGrantVisibleToPermissionsContains()
+    func testDefaultAskKeepsBroadHostGrantHiddenFromPermissionsContains()
         async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Broad Host API Visibility")
@@ -543,13 +580,13 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )
 
-        XCTAssertTrue(context.hasRequestedOptionalAccessToAllHosts)
+        XCTAssertFalse(context.hasRequestedOptionalAccessToAllHosts)
 
         let results = try await permissionsContainsResults(in: context)
-        XCTAssertTrue(try XCTUnwrap(results["allHosts"]))
-        XCTAssertTrue(try XCTUnwrap(results["account"]))
-        XCTAssertTrue(try XCTUnwrap(results["pass"]))
-        XCTAssertTrue(try XCTUnwrap(results["protonWildcard"]))
+        XCTAssertFalse(try XCTUnwrap(results["allHosts"]))
+        XCTAssertFalse(try XCTUnwrap(results["account"]))
+        XCTAssertFalse(try XCTUnwrap(results["pass"]))
+        XCTAssertFalse(try XCTUnwrap(results["protonWildcard"]))
     }
 
     func testConfiguredAllSitesAllowMakesBroadHostGrantVisibleToPermissionsContains()
@@ -660,6 +697,11 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
         let extensionId = "live-proton-pass-site-access"
 
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: extensionId,
+            profileId: profile.id
+        )
         manager.applyConfiguredSiteAccessPolicy(
             to: extensionContext,
             extensionId: extensionId,

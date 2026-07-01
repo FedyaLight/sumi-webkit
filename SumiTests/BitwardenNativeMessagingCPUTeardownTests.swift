@@ -111,7 +111,7 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
             extensionsModuleEnabled: { true }
         )
         let port = MockNativeMessagingPort()
-        port.applicationIdentifier = "com.8bit.bitwarden"
+        port.applicationIdentifier = "com.bitwarden.desktop"
 
         let connectResult = await connectReply(
             relay: relay,

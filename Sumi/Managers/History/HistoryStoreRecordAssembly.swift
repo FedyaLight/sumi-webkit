@@ -136,7 +136,11 @@ enum HistoryStoreRecordAssembly {
                 || (visit.siteDomain.map(query.matches) ?? false)
         case .domainFilter(let domains):
             guard !domains.isEmpty else { return true }
-            return domains.contains(visit.siteDomain ?? visit.domain)
+            let normalizedDomains = HistoryDomainResolver.siteDomains(for: domains)
+            let visitDomain = visit.siteDomain
+                ?? HistoryDomainResolver.siteDomain(forDomain: visit.domain)
+                ?? visit.domain
+            return normalizedDomains.contains(visitDomain)
         case .visits(let identifiers):
             guard !identifiers.isEmpty else { return false }
             return Set(identifiers).contains(
@@ -201,7 +205,9 @@ enum HistoryStoreRecordAssembly {
     }
 
     static func effectiveSiteDomain(for entry: EntrySnapshot) -> String {
-        entry.siteDomain ?? entry.domain
+        entry.siteDomain
+            ?? HistoryDomainResolver.siteDomain(forDomain: entry.domain)
+            ?? entry.domain
     }
 
     static func siteMatches(_ site: HistorySiteRecord, query: SearchTextQuery) -> Bool {

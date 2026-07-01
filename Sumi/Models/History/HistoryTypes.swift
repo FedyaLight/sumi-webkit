@@ -225,6 +225,11 @@ enum HistoryQuery: Equatable, Hashable {
     case dateFilter(Date)
     case timeRange(start: Date, end: Date)
     case visits([VisitIdentifier])
+
+    var normalizingDomainFilter: HistoryQuery {
+        guard case .domainFilter(let domains) = self else { return self }
+        return .domainFilter(HistoryDomainResolver.siteDomains(for: domains))
+    }
 }
 
 struct HistoryListPage: Equatable {
@@ -324,23 +329,23 @@ struct LastSessionWindowSnapshot: Identifiable, Codable, Equatable, Hashable {
 }
 
 enum HistoryDomainResolver {
+    private static let siteNormalizer = SumiSiteNormalizer()
+
     static func normalizedDomain(for url: URL) -> String {
-        url.host(percentEncoded: false)?.lowercased() ?? url.host?.lowercased()
+        siteNormalizer.host(for: url)
             ?? url.absoluteString.lowercased()
     }
 
     static func siteDomain(for url: URL) -> String? {
-        let host = normalizedDomain(for: url)
-        guard host.contains(".") else { return host }
-        let components = host.split(separator: ".")
-        guard components.count >= 2 else { return host }
-        if host.hasPrefix("www."), components.count == 3 {
-            return components.dropFirst().joined(separator: ".")
-        }
-        if components.count > 2 {
-            return components.suffix(2).joined(separator: ".")
-        }
-        return host
+        siteNormalizer.siteDomain(for: url)
+    }
+
+    static func siteDomain(forDomain domain: String) -> String? {
+        siteNormalizer.siteDomain(fromRawDomain: domain)
+    }
+
+    static func siteDomains(for domains: Set<String>) -> Set<String> {
+        Set(domains.compactMap(siteDomain(forDomain:)))
     }
 }
 

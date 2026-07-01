@@ -28,16 +28,6 @@ enum SumiWebExtensionCallbackErrorMapper {
         userInfo[underlyingDomainUserInfoKey] = nsError.domain
         userInfo[underlyingCodeUserInfoKey] = nsError.code
 
-        if let diagnostic = nsError.userInfo["SumiNativeMessagingDiagnostic"] {
-            userInfo["SumiNativeMessagingDiagnostic"] = diagnostic
-        }
-        if let host = nsError.userInfo["SumiNativeMessagingHostBundleIdentifier"] {
-            userInfo["SumiNativeMessagingHostBundleIdentifier"] = host
-        }
-        if let bucket = nsError.userInfo["SumiNativeMessagingResolverBucket"] {
-            userInfo["SumiNativeMessagingResolverBucket"] = bucket
-        }
-
         return NSError(
             domain: webExtensionContextErrorDomain,
             code: 1,

@@ -627,6 +627,68 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         XCTAssertEqual(error.code, SumiNativeMessagingRelay.ErrorCode.policyDenied.rawValue)
     }
 
+    func testPolicyDeniesProductAliasBeforeAdapterRoute() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.bitwarden.desktop",
+            appexBundleID: "com.bitwarden.desktop.safari"
+        )
+        let installed = makeInstalledExtension(id: "ext-bitwarden", sourceBundlePath: appexPath)
+        let launcher = MockHostLauncher()
+        launcher.bundleURLs["com.bitwarden.desktop"] = URL(
+            fileURLWithPath: "/Applications/Bitwarden.app"
+        )
+        let adapter = SumiNativeMessagingFakePublicAdapter(
+            supportedHosts: ["com.bitwarden.desktop"]
+        )
+        let relay = makeRelay(launcher: launcher, adapters: [adapter])
+
+        let reply = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.8bit.bitwarden"
+        )
+
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
+        XCTAssertEqual(adapter.oneShotRequestCount, 0)
+        let error = try XCTUnwrap(reply.error as NSError?)
+        XCTAssertEqual(error.code, SumiNativeMessagingRelay.ErrorCode.policyDenied.rawValue)
+        XCTAssertNil(error.userInfo["SumiNativeMessagingHostBundleIdentifier"])
+        XCTAssertNil(error.userInfo["SumiNativeMessagingResolverBucket"])
+        XCTAssertNil(error.userInfo["SumiNativeMessagingDiagnostic"])
+    }
+
+    func testNativeMessagingErrorsDoNotExposeResolvedHostMetadata() async throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.secret.host",
+            appexBundleID: "com.secret.host.extension"
+        )
+        let installed = makeInstalledExtension(id: "ext-secret", sourceBundlePath: appexPath)
+        let relay = SumiNativeMessagingRelay(
+            launcher: MockHostLauncher(),
+            extensionsModuleEnabled: { true }
+        )
+
+        let reply = await sendMessageReply(
+            relay: relay,
+            installed: installed,
+            applicationIdentifier: "com.secret.host"
+        )
+
+        let error = try XCTUnwrap(reply.error as NSError?)
+        XCTAssertEqual(error.code, SumiNativeMessagingRelay.ErrorCode.hostNotFound.rawValue)
+        XCTAssertNil(error.userInfo["SumiNativeMessagingHostBundleIdentifier"])
+        XCTAssertNil(error.userInfo["SumiNativeMessagingResolverBucket"])
+        XCTAssertNil(error.userInfo["SumiNativeMessagingDiagnostic"])
+        XCTAssertFalse(String(describing: error.userInfo).contains("com.secret.host"))
+
+        let callbackError = SumiWebExtensionCallbackErrorMapper
+            .webExtensionCallbackError(from: error)
+        XCTAssertNil(callbackError.userInfo["SumiNativeMessagingHostBundleIdentifier"])
+        XCTAssertNil(callbackError.userInfo["SumiNativeMessagingResolverBucket"])
+        XCTAssertNil(callbackError.userInfo["SumiNativeMessagingDiagnostic"])
+        XCTAssertFalse(String(describing: callbackError.userInfo).contains("com.secret.host"))
+    }
+
     func testResolverAliasTable() {
         XCTAssertEqual(
             SumiNativeMessagingAppResolver.normalizedHostBundleIdentifier("com.8bit.bitwarden"),

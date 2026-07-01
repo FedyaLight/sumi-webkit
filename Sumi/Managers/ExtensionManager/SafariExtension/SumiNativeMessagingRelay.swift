@@ -657,15 +657,6 @@ final class SumiNativeMessagingRelay {
         }
 
         var userInfo: [String: Any] = [NSLocalizedDescriptionKey: message]
-        if let diagnostic {
-            userInfo["SumiNativeMessagingDiagnostic"] = diagnostic.outcome.rawValue
-            if let hostBundleIdentifier = diagnostic.hostBundleIdentifier {
-                userInfo["SumiNativeMessagingHostBundleIdentifier"] = hostBundleIdentifier
-            }
-            if let resolverBucket = diagnostic.resolverBucket {
-                userInfo["SumiNativeMessagingResolverBucket"] = resolverBucket.rawValue
-            }
-        }
         return NSError(domain: errorDomain, code: code.rawValue, userInfo: userInfo)
     }
 

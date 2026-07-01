@@ -126,6 +126,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         uniqueWebViews(Array(webViewRegistry.windowWebViews(for: tab.id).values))
     }
 
+    func suspensionLiveWebViews(for tab: Tab) -> [WKWebView] {
+        allKnownWebViews(for: tab)
+    }
+
     private func allKnownWebViews(for tab: Tab) -> [WKWebView] {
         var seen = Set<ObjectIdentifier>()
         var result: [WKWebView] = []
@@ -147,6 +151,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         }
         appendUnique(tab.assignedWebView)
         appendUnique(tab.existingWebView)
+        appendUnique(tab.parkedWebView)
         return result
     }
 

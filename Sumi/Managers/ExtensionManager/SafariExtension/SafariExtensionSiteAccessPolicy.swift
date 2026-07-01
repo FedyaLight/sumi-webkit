@@ -81,7 +81,7 @@ struct SafariExtensionSiteAccessPolicy: Codable, Equatable {
         SafariExtensionSiteAccessPolicy(
             profileId: profileId.uuidString.lowercased(),
             extensionId: extensionId,
-            defaultAccess: .allow,
+            defaultAccess: .ask,
             siteRules: normalizedRules(seededRules),
             privateAccessAllowed: false,
             hasRequestedOptionalAccessToAllHosts: false,

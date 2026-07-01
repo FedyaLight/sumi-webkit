@@ -56,18 +56,15 @@ struct SumiSiteDataEntry: Identifiable, Hashable, Sendable {
 }
 
 enum SumiWebsiteDataDomain {
+    private static let siteNormalizer = SumiSiteNormalizer()
+
     static func normalized(_ value: String) -> String {
-        let trimmedValue = value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let withoutLeadingDot = trimmedValue.hasPrefix(".")
-            ? String(trimmedValue.dropFirst())
-            : trimmedValue
-        return withoutLeadingDot.lowercased()
+        siteNormalizer.host(fromRawHost: value) ?? ""
     }
 
     static func belongs(_ value: String, to domain: String) -> Bool {
         let normalizedValue = normalized(value)
-        let normalizedDomain = normalized(domain)
+        let normalizedDomain = siteNormalizer.siteDomain(fromRawDomain: domain) ?? ""
         guard !normalizedValue.isEmpty, !normalizedDomain.isEmpty else {
             return false
         }

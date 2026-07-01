@@ -48,10 +48,26 @@ locally edited slice). `CHECKSUMS.sha256` is tracked so this verification works
 after a clean checkout. If `url_predictor` is upgraded, re-run bootstrap and
 regenerate `CHECKSUMS.sha256` from the freshly unpacked files.
 
+Upstream tests
+--------------
+
+The DDG test files checked in under this directory are upstream reference
+material, not Sumi coverage. They are quarantined in place so the source
+snapshot remains auditable without implying that Sumi's Xcode schemes execute
+those tests.
+
+Sumi's active test gates are the shared `Sumi` and `SumiSmoke` schemes, which
+run `SumiTests` and `SumiUITests` respectively. See `UPSTREAM_TESTS.md` for the
+full boundary and run the guard below when changing DDG packages, schemes, or
+test wiring:
+
+    bash scripts/check_ddg_vendor_test_boundary.sh
+
 Upgrading
 ---------
 
 Because the snapshot is vendored (not a git submodule), an upstream re-sync is a
 manual copy. The `BrowserServicesKit` Swift sources have no local divergence, so
 they rebase cleanly. After any re-sync, regenerate `CHECKSUMS.sha256` and confirm
-the five linked products still resolve.
+the five linked products still resolve. If upstream tests are refreshed, keep
+their quarantine markers and rerun the boundary guard.

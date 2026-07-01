@@ -13,55 +13,133 @@ final class SumiAdblockZapperStore {
     static let shared = SumiAdblockZapperStore()
 
     private enum DefaultsKey {
-        static let statesByHost = "settings.adblock.zapper.statesByHost.v1"
+        static let statesByPersistentProfileAndHost = "settings.adblock.zapper.statesByPersistentProfileAndHost.v1"
+    }
+
+    private struct Scope {
+        static let persistentPrefix = "persistent:"
+        static let ephemeralPrefix = "ephemeral:"
+
+        let storageKey: String
+        let isEphemeral: Bool
+
+        init?(
+            profilePartitionId: String,
+            isEphemeralProfile: Bool
+        ) {
+            let normalizedProfileId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
+            guard !normalizedProfileId.isEmpty else { return nil }
+
+            self.storageKey = "\(isEphemeralProfile ? Self.ephemeralPrefix : Self.persistentPrefix)\(normalizedProfileId)"
+            self.isEphemeral = isEphemeralProfile
+        }
     }
 
     private let userDefaults: UserDefaults
-    private var statesByHost: [String: State]
+    private var statesByScopeAndHost: [String: [String: State]]
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
-        self.statesByHost = Self.loadStates(from: userDefaults)
+        self.statesByScopeAndHost = Self.loadPersistentStates(from: userDefaults)
     }
 
-    func state(forHost host: String) -> State {
-        statesByHost[normalizedHost(host)] ?? .empty
+    func state(
+        forHost host: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) -> State {
+        guard let scope = Scope(
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        ) else {
+            return .empty
+        }
+
+        let normalizedHost = normalizedHost(host)
+        guard !normalizedHost.isEmpty else { return .empty }
+        return statesByScopeAndHost[scope.storageKey]?[normalizedHost] ?? .empty
     }
 
-    func setRules(_ rules: [String], forHost host: String) {
-        updateState(forHost: host) { state in
+    func setRules(
+        _ rules: [String],
+        forHost host: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) {
+        updateState(
+            forHost: host,
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        ) { state in
             state.rules = Self.normalizedRules(rules)
         }
     }
 
-    func appendRule(_ rule: String, forHost host: String) {
+    func appendRule(
+        _ rule: String,
+        forHost host: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) {
         let normalizedRule = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedRule.isEmpty else { return }
-        updateState(forHost: host) { state in
+        updateState(
+            forHost: host,
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        ) { state in
             guard !state.rules.contains(normalizedRule) else { return }
             state.rules.append(normalizedRule)
         }
     }
 
-    func setEnabled(_ isEnabled: Bool, forHost host: String) {
-        updateState(forHost: host) { state in
+    func setEnabled(
+        _ isEnabled: Bool,
+        forHost host: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool
+    ) {
+        updateState(
+            forHost: host,
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        ) { state in
             state.disabled = !isEnabled
         }
     }
 
     private func updateState(
         forHost host: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool,
         mutate: (inout State) -> Void
     ) {
+        guard let scope = Scope(
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        ) else {
+            return
+        }
+
         let normalizedHost = normalizedHost(host)
-        var state = statesByHost[normalizedHost] ?? .empty
+        guard !normalizedHost.isEmpty else { return }
+
+        var hostStates = statesByScopeAndHost[scope.storageKey] ?? [:]
+        var state = hostStates[normalizedHost] ?? .empty
         mutate(&state)
         if state == .empty {
-            statesByHost.removeValue(forKey: normalizedHost)
+            hostStates.removeValue(forKey: normalizedHost)
         } else {
-            statesByHost[normalizedHost] = state
+            hostStates[normalizedHost] = state
         }
-        saveStates()
+        if hostStates.isEmpty {
+            statesByScopeAndHost.removeValue(forKey: scope.storageKey)
+        } else {
+            statesByScopeAndHost[scope.storageKey] = hostStates
+        }
+        if !scope.isEphemeral {
+            savePersistentStates()
+        }
     }
 
     private func normalizedHost(_ host: String) -> String {
@@ -70,16 +148,25 @@ final class SumiAdblockZapperStore {
             .lowercased()
     }
 
-    private func saveStates() {
-        guard let data = try? JSONEncoder().encode(statesByHost) else { return }
-        userDefaults.set(data, forKey: DefaultsKey.statesByHost)
+    private func savePersistentStates() {
+        let persistentStates = statesByScopeAndHost.filter { scopeKey, _ in
+            scopeKey.hasPrefix(Scope.persistentPrefix)
+        }
+        guard !persistentStates.isEmpty else {
+            userDefaults.removeObject(forKey: DefaultsKey.statesByPersistentProfileAndHost)
+            return
+        }
+        guard let data = try? JSONEncoder().encode(persistentStates) else { return }
+        userDefaults.set(data, forKey: DefaultsKey.statesByPersistentProfileAndHost)
     }
 
-    private static func loadStates(from userDefaults: UserDefaults) -> [String: State] {
-        guard let data = userDefaults.data(forKey: DefaultsKey.statesByHost),
-              let decoded = try? JSONDecoder().decode([String: State].self, from: data)
+    private static func loadPersistentStates(from userDefaults: UserDefaults) -> [String: [String: State]] {
+        guard let data = userDefaults.data(forKey: DefaultsKey.statesByPersistentProfileAndHost),
+              let decoded = try? JSONDecoder().decode([String: [String: State]].self, from: data)
         else { return [:] }
-        return decoded
+        return decoded.filter { scopeKey, _ in
+            scopeKey.hasPrefix(Scope.persistentPrefix)
+        }
     }
 
     private static func normalizedRules(_ rules: [String]) -> [String] {
@@ -103,10 +190,16 @@ enum SumiAdblockZapperInjector {
     static func applySavedRules(
         to webView: WKWebView,
         host: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool,
         store: SumiAdblockZapperStore? = nil
     ) {
         let store = store ?? .shared
-        let state = store.state(forHost: host)
+        let state = store.state(
+            forHost: host,
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        )
         let rules = state.disabled ? [] : state.rules
         webView.evaluateJavaScript(applyRulesScript(rules: rules)) { _, _ in }
     }
@@ -118,6 +211,8 @@ enum SumiAdblockZapperInjector {
     static func activateElementPicker(
         in webView: WKWebView,
         host: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool,
         store: SumiAdblockZapperStore? = nil
     ) async -> Bool {
         let store = store ?? .shared
@@ -126,6 +221,8 @@ enum SumiAdblockZapperInjector {
         let handler = SumiAdblockZapperMessageHandler(
             name: handlerName,
             host: host,
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile,
             webView: webView,
             userContentController: userContentController,
             store: store
@@ -562,6 +659,8 @@ enum SumiAdblockZapperInjector {
 private final class SumiAdblockZapperMessageHandler: NSObject, WKScriptMessageHandler {
     private let name: String
     private let host: String
+    private let profilePartitionId: String
+    private let isEphemeralProfile: Bool
     private weak var webView: WKWebView?
     private weak var userContentController: WKUserContentController?
     private let store: SumiAdblockZapperStore
@@ -570,12 +669,16 @@ private final class SumiAdblockZapperMessageHandler: NSObject, WKScriptMessageHa
     init(
         name: String,
         host: String,
+        profilePartitionId: String,
+        isEphemeralProfile: Bool,
         webView: WKWebView,
         userContentController: WKUserContentController,
         store: SumiAdblockZapperStore
     ) {
         self.name = name
         self.host = host
+        self.profilePartitionId = profilePartitionId
+        self.isEphemeralProfile = isEphemeralProfile
         self.webView = webView
         self.userContentController = userContentController
         self.store = store
@@ -633,11 +736,18 @@ private final class SumiAdblockZapperMessageHandler: NSObject, WKScriptMessageHa
               let selector
         else { return }
 
-        store.appendRule(selector, forHost: host)
+        store.appendRule(
+            selector,
+            forHost: host,
+            profilePartitionId: profilePartitionId,
+            isEphemeralProfile: isEphemeralProfile
+        )
         if let webView {
             SumiAdblockZapperInjector.applySavedRules(
                 to: webView,
                 host: host,
+                profilePartitionId: profilePartitionId,
+                isEphemeralProfile: isEphemeralProfile,
                 store: store
             )
         }

@@ -503,6 +503,10 @@ private final class TestSidebarBrowserContextHarness {
             downloadsPopoverPresenter: downloadsPopoverPresenter,
             glanceManager: glanceManager,
             extensionSurfaceStore: extensionSurfaceStore,
+            regularTabs: SidebarRegularTabsController.live(
+                tabManager: tabManager,
+                liveFolderManager: liveFolderManager
+            ),
             presentationActions: SidebarBrowserPresentationActions(
                 showShortcutEditor: { _, _, _, _ in },
                 showFolderEditor: { _, _, _, _ in },

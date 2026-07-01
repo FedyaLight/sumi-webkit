@@ -31,6 +31,11 @@ final class SafariExtensionInlineOverlayRuntimeTests: XCTestCase {
             scratchDirectory: makeScratchDirectory()
         )
         _ = try await manager.enableExtension(installed.id)
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
         let extensionContext = try XCTUnwrap(
             manager.getExtensionContext(for: installed.id, profileId: profile.id)
         )

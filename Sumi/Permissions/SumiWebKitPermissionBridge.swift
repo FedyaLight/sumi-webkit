@@ -43,7 +43,7 @@ enum SumiWebKitPermissionPendingCoordinatorRace {
         ) -> SumiPermissionCoordinatorDecision
     ) async -> SumiPermissionCoordinatorDecision {
         if shouldWaitForPromptUI,
-           context.surface == .normalTab {
+           context.canPresentPromptUI {
             return await coordinator.requestPermission(context)
         }
 

@@ -1,7 +1,7 @@
 import Foundation
 import URLPredictor
 
-protocol SumiRegistrableDomainResolving {
+protocol SumiRegistrableDomainResolving: Sendable {
     func registrableDomain(forHost host: String?) -> String?
 }
 

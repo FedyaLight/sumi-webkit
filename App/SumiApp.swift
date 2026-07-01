@@ -19,8 +19,8 @@ struct SumiApp: App {
     @State private var appOrchestrationOwner = BrowserAppOrchestrationOwner()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
-    // NOTE: `BrowserManager` remains the central app coordinator; incremental refactors move
-    // capabilities behind protocols and `@Environment` (see `WebViewCoordinator`, `WindowRegistry`).
+    // Root runtime facade retained for SwiftUI observation. App lifecycle and platform callbacks
+    // are routed through dedicated controllers and narrow protocols before reaching browser services.
     @StateObject private var browserManager: BrowserManager
     @StateObject private var nowPlayingController: SumiNativeNowPlayingController
 
@@ -62,14 +62,8 @@ struct SumiApp: App {
 
     /// Configures application-level dependencies and callbacks when the first window appears.
     ///
-    /// This function sets up the following connections:
-    /// - AppDelegate ↔ BrowserManager: For app termination cleanup and menu routing
-    /// - WindowRegistry callbacks: Register, close, and activate window state
-    /// - Keyboard shortcut manager: Enable global keyboard shortcuts
-    ///
-    /// Cross-cutting wiring (documented technical debt, not alternate product paths):
-    /// - `BrowserManager` holds the shared `WebViewCoordinator` and `WindowRegistry` until DI is wider.
-    /// Follow-up: narrow `BrowserManager` by moving window/session setup into dedicated services.
+    /// This function wires AppKit callbacks, window registry callbacks, shared WebKit services,
+    /// settings, and keyboard shortcuts into their browser runtime services.
     private func setupApplicationLifecycle() {
         appOrchestrationOwner.setupIfNeeded(
             dependencies: BrowserAppOrchestrationOwner.Dependencies(

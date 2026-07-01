@@ -17,6 +17,25 @@ final class WebViewCoordinatorTrackedWebViewsTests: XCTestCase {
         XCTAssertTrue(coordinator.trackedLiveWebViews(for: tab).isEmpty)
     }
 
+    func testSuspensionLiveWebViewsIncludesCurrentAndParkedUntrackedWebViews() throws {
+        let coordinator = WebViewCoordinator()
+        let parkedWebView = WKWebView(frame: .zero)
+        let tab = Tab(
+            url: try XCTUnwrap(URL(string: "https://example.com")),
+            existingWebView: parkedWebView,
+            loadsCachedFaviconOnInit: false
+        )
+        let currentWebView = WKWebView(frame: .zero)
+        tab.replaceUntrackedWebView(currentWebView)
+
+        let liveWebViews = coordinator.suspensionLiveWebViews(for: tab)
+
+        XCTAssertEqual(liveWebViews.count, 2)
+        XCTAssertTrue(liveWebViews.contains { $0 === currentWebView })
+        XCTAssertTrue(liveWebViews.contains { $0 === parkedWebView })
+        XCTAssertTrue(coordinator.trackedLiveWebViews(for: tab).isEmpty)
+    }
+
     func testTrackedLiveWebViewsReturnsOnlyCoordinatorRegisteredWebViews() throws {
         let coordinator = WebViewCoordinator()
         let tab = Tab(

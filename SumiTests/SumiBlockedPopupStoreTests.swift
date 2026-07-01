@@ -19,10 +19,35 @@ final class SumiBlockedPopupStoreTests: XCTestCase {
         XCTAssertEqual(stored.pageId, "tab-a:1")
         XCTAssertEqual(stored.requestingOrigin.identity, "https://popup.example")
         XCTAssertEqual(stored.topOrigin.identity, "https://top.example")
-        XCTAssertEqual(stored.targetURL, URL(string: "https://popup.example/window"))
-        XCTAssertEqual(stored.sourceURL, URL(string: "https://top.example/source"))
+        XCTAssertEqual(stored.targetURLSummary?.origin.identity, "https://popup.example")
+        XCTAssertEqual(stored.targetURLSummary?.displayDomain, "popup.example")
+        XCTAssertEqual(stored.sourceURLSummary?.origin.identity, "https://top.example")
+        XCTAssertEqual(stored.sourceURLSummary?.displayDomain, "top.example")
         XCTAssertEqual(stored.reason, .blockedByDefault)
         XCTAssertEqual(store.records(forPageId: "tab-a:1"), [stored])
+    }
+
+    func testBlockedPopupRecordRedactsTargetAndSourceURLSecrets() {
+        let store = SumiBlockedPopupStore()
+        let popup = blockedPopup(
+            id: "popup-a",
+            targetURL: URL(string: "https://user:password@popup.example/window?token=secret#fragment"),
+            sourceURL: URL(string: "https://top.example/source?session=secret#source-fragment")
+        )
+
+        let stored = store.record(popup)
+
+        XCTAssertEqual(stored.targetURLSummary?.origin.identity, "https://popup.example")
+        XCTAssertEqual(stored.sourceURLSummary?.origin.identity, "https://top.example")
+
+        let retainedDescription = String(describing: stored)
+        XCTAssertFalse(retainedDescription.contains("user"))
+        XCTAssertFalse(retainedDescription.contains("password"))
+        XCTAssertFalse(retainedDescription.contains("window"))
+        XCTAssertFalse(retainedDescription.contains("token"))
+        XCTAssertFalse(retainedDescription.contains("secret"))
+        XCTAssertFalse(retainedDescription.contains("fragment"))
+        XCTAssertFalse(retainedDescription.contains("source?"))
     }
 
     func testDuplicateBlockedPopupIncrementsAttemptCountInsteadOfAppending() {

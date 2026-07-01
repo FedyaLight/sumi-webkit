@@ -11,12 +11,6 @@ import SwiftUI
 import WebKit
 
 @MainActor
-protocol BrowserAppLifecycleHandling: AnyObject {
-    func handleApplicationWillResignActive()
-    func handleApplicationDidBecomeActive()
-}
-
-@MainActor
 class BrowserManager: ObservableObject {
     static let lastWindowSessionKey = "sumi.windowSession.last.v3"
     @Published var zoomStateRevision: Int = 0
@@ -1066,15 +1060,9 @@ class BrowserManager: ObservableObject {
 
 extension BrowserManager: SumiProfileRoutingSupport {}
 
-extension BrowserManager: BrowserAppLifecycleHandling {
-    func handleApplicationWillResignActive() {
-        windowSessionActivationOwner.handleApplicationWillResignActive()
-    }
+extension BrowserManager: BrowserAppTerminationHandling {}
 
-    func handleApplicationDidBecomeActive() {
-        windowSessionActivationOwner.handleApplicationDidBecomeActive()
-    }
-
+extension BrowserManager {
     func handleWindowVisibilityChanged(_ windowState: BrowserWindowState) {
         windowSessionActivationOwner.handleWindowVisibilityChanged(windowState)
     }

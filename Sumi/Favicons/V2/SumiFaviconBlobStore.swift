@@ -34,6 +34,7 @@ struct SumiFaviconAliasAssociationResult: Sendable {
 // Sendable by construction: every metadata and private-payload mutation is isolated to `queue`.
 final class SumiFaviconBlobStore: @unchecked Sendable {
     private static let log = Logger.sumi(category: "FaviconBlobStore")
+    private static let siteNormalizer = SumiSiteNormalizer()
 
     private struct Metadata: Codable {
         var schemaVersion = 2
@@ -128,7 +129,7 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         partition: SumiFaviconPartition,
         now: Date = Date()
     ) -> SumiStoredFaviconSelection? {
-        queue.sync {
+        return queue.sync {
             let metadata = loadMetadataIfNeeded(for: partition)
 
             let keys = pageLookupKeys(for: pageURL, metadata: metadata)
@@ -149,7 +150,7 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         blobID: String,
         partition: SumiFaviconPartition
     ) -> Data? {
-        queue.sync {
+        return queue.sync {
             let metadata = loadMetadataIfNeeded(for: partition)
             guard let blob = metadata.blobs[blobID] else { return nil }
             if partition.isPrivate {
@@ -415,8 +416,9 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         domain: String,
         partition: SumiFaviconPartition? = nil
     ) -> [SumiFaviconInvalidation] {
-        queue.sync {
-            let normalizedDomain = domain.lowercased()
+        guard let normalizedDomain = Self.normalizedSiteDomain(domain) else { return [] }
+
+        return queue.sync {
             let partitions = partition.map { [$0] } ?? Array(loadedOrDiscoverablePartitions())
             var invalidations = [SumiFaviconInvalidation]()
 
@@ -461,9 +463,10 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
     }
 
     func burnAfterHistoryClear(savedLogins: Set<String>, bookmarkHosts: Set<String>) -> [SumiFaviconInvalidation] {
-        queue.sync {
-            let preservedHosts = Set(savedLogins.map { $0.lowercased() })
-                .union(bookmarkHosts.map { $0.lowercased() })
+        let preservedHosts = Self.normalizedHosts(savedLogins)
+            .union(Self.normalizedHosts(bookmarkHosts))
+
+        return queue.sync {
             var invalidations = [SumiFaviconInvalidation]()
             for partition in loadedOrDiscoverablePartitions() {
                 var metadata = loadMetadataIfNeeded(for: partition)
@@ -493,10 +496,11 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         savedLogins: Set<String>,
         bookmarkHosts: Set<String>
     ) -> [SumiFaviconInvalidation] {
-        let normalizedDomains = Set(domains.map { $0.lowercased() })
-        let preservedHosts = Set(remainingHistoryHosts.map { $0.lowercased() })
-            .union(savedLogins.map { $0.lowercased() })
-            .union(bookmarkHosts.map { $0.lowercased() })
+        let normalizedDomains = Set(domains.compactMap(Self.normalizedSiteDomain))
+        guard !normalizedDomains.isEmpty else { return [] }
+        let preservedHosts = Self.normalizedHosts(remainingHistoryHosts)
+            .union(Self.normalizedHosts(savedLogins))
+            .union(Self.normalizedHosts(bookmarkHosts))
 
         return queue.sync {
             var invalidations = [SumiFaviconInvalidation]()
@@ -745,18 +749,31 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
 
     private func hosts(for key: String, mapping: PageMapping) -> Set<String> {
         var result = Set<String>()
-        if let host = URL(string: key)?.host?.lowercased(), !host.isEmpty {
+        if let url = URL(string: key),
+           let host = Self.normalizedHost(for: url) {
             result.insert(host)
         }
-        if let host = mapping.pageURL.host?.lowercased(), !host.isEmpty {
+        if let host = Self.normalizedHost(for: mapping.pageURL) {
             result.insert(host)
         }
         if let siteKey = mapping.siteKey,
-           let host = URL(string: siteKey)?.host?.lowercased(),
-           !host.isEmpty {
+           let url = URL(string: siteKey),
+           let host = Self.normalizedHost(for: url) {
             result.insert(host)
         }
         return result
+    }
+
+    private static func normalizedHosts(_ hosts: Set<String>) -> Set<String> {
+        Set(hosts.compactMap(siteNormalizer.host(fromRawHost:)))
+    }
+
+    private static func normalizedHost(for url: URL) -> String? {
+        siteNormalizer.host(for: url)
+    }
+
+    private static func normalizedSiteDomain(_ domain: String) -> String? {
+        siteNormalizer.siteDomain(fromRawDomain: domain)
     }
 
     private func domainMatches(host: String, domain: String) -> Bool {

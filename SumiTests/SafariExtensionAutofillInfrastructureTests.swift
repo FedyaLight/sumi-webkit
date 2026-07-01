@@ -31,6 +31,11 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         let installed = try await installProbeExtension(manager: manager)
         _ = try await manager.enableExtension(installed.id)
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -54,6 +59,11 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
         )
         let installed = try await installProbeExtension(manager: manager)
         _ = try await manager.enableExtension(installed.id)
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
         let loadedContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -123,6 +133,11 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
 
         let installed = try await installProbeExtension(manager: manager)
         _ = try await manager.enableExtension(installed.id)
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
         let loadedExtensionContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id
@@ -178,6 +193,11 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
 
         let installed = try await installProbeExtension(manager: manager)
         _ = try await manager.enableExtension(installed.id)
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
         let loadedExtensionContext = try await manager.ensureExtensionLoaded(
             extensionId: installed.id,
             profileId: profile.id

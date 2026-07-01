@@ -34,12 +34,14 @@ struct SumiFaviconPartition: Hashable, Codable, Sendable {
 
 enum SumiFaviconCanonicalURL {
     static func pageURL(_ url: URL) -> URL {
-        guard var components = URLComponents(url: url.absoluteURL, resolvingAgainstBaseURL: false) else {
+        let identityURL = SumiSiteNormalizer().normalizedURL(for: url.absoluteURL) ?? url.absoluteURL
+        guard var components = URLComponents(url: identityURL, resolvingAgainstBaseURL: false) else {
             return url.absoluteURL
         }
 
         components.scheme = components.scheme?.lowercased()
         components.host = components.host?.lowercased()
+        components.query = nil
         components.fragment = nil
 
         if components.scheme == "http" || components.scheme == "https" {

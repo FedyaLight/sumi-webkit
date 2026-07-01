@@ -104,7 +104,7 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         XCTAssertNotEqual(identity?.isContainingApp, true)
     }
 
-    func testNativeMessagingPolicyAllowsPublicAliasForMatchingContainingApp() throws {
+    func testNativeMessagingPolicyDeniesPublicAliasUntilGenericIdentityMatches() throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.bitwarden.desktop",
             appexBundleID: "com.bitwarden.desktop.safari"
@@ -122,7 +122,31 @@ final class SumiCompanionAppResolverTests: XCTestCase {
         )
 
         if case .failure(let denial) = result {
-            XCTFail("Expected matching public alias to be allowed, got \(denial)")
+            XCTAssertEqual(denial, .arbitraryNativeMessagingDenied)
+        } else {
+            XCTFail("Expected product alias metadata to be denied by generic policy")
+        }
+    }
+
+    func testNativeMessagingPolicyAllowsExactContainingAppIdentifier() throws {
+        let appexPath = try makeFixtureApp(
+            appBundleID: "com.bitwarden.desktop",
+            appexBundleID: "com.bitwarden.desktop.safari"
+        )
+        let installed = makeInstalledExtension(id: "ext-bw", sourceBundlePath: appexPath)
+
+        let result = SumiNativeMessagingRelayPolicy.evaluate(
+            SumiNativeMessagingRelayPolicyContext(
+                extensionsModuleEnabled: true,
+                extensionId: installed.id,
+                installedExtension: installed,
+                isPrivateBrowsing: false,
+                requestedApplicationIdentifier: "com.bitwarden.desktop"
+            )
+        )
+
+        if case .failure(let denial) = result {
+            XCTFail("Expected exact containing app identifier to be allowed, got \(denial)")
         }
     }
 

@@ -27,7 +27,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     weak var windowRouter: (any WindowCommandRouting)?
     weak var externalURLHandler: (any ExternalURLHandling)?
     weak var persistenceHandler: (any BrowserPersistenceHandling)?
-    weak var updateHandler: BrowserManager?
+    weak var terminationHandler: (any BrowserAppTerminationHandling)?
     weak var appLifecycleHandler: (any BrowserAppLifecycleHandling)?
     weak var settingsHandler: SumiSettingsService?
     var shortcutManager: KeyboardShortcutManager?
@@ -182,8 +182,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     /// Confirms user-initiated quits when enabled, then schedules best-effort persistence.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        updateHandler?.dismissFloatingBarForActiveWindow(preserveDraft: true)
-        updateHandler?.dismissWorkspaceThemePickerIfNeededCommitting()
+        terminationHandler?.dismissFloatingBarForActiveWindow(preserveDraft: true)
+        terminationHandler?.dismissWorkspaceThemePickerIfNeededCommitting()
         NotificationCenter.default.post(
             name: .sumiShouldHideCollapsedSidebarOverlay,
             object: sender
@@ -220,15 +220,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     private var shouldAskBeforeQuit: Bool {
-        settingsHandler?.askBeforeQuit ?? updateHandler?.sumiSettings?.askBeforeQuit ?? false
+        settingsHandler?.askBeforeQuit ?? false
     }
 
     private func setAskBeforeQuit(_ value: Bool) {
-        if let settingsHandler {
-            settingsHandler.askBeforeQuit = value
-        } else {
-            updateHandler?.sumiSettings?.askBeforeQuit = value
-        }
+        settingsHandler?.askBeforeQuit = value
     }
 
     private func quitConfirmationWindow() -> NSWindow? {
@@ -296,7 +292,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         shouldTerminate: Bool
     ) {
         let persistenceHandlerSnapshot = self.persistenceHandler
-        let updateHandlerSnapshot = self.updateHandler
+        let terminationHandlerSnapshot = self.terminationHandler
         let fallbackPersistenceSaveSnapshot = self.fallbackPersistenceSave
 
         DispatchQueue.main.async {
@@ -358,7 +354,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     )
                 }
 
-                await updateHandlerSnapshot?.performSiteDataPolicyAllWindowsClosedCleanup()
+                await terminationHandlerSnapshot?.performSiteDataPolicyAllWindowsClosedCleanup()
                 persistenceHandler.cleanupAllTabs()
                 AppDelegate.log.info("Cleanup completed; WKWebView processes terminated")
             }

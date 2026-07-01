@@ -40,7 +40,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         withExtendedLifetime(webView) { /* no-op */ }
     }
 
-    func testMediaAutoPromptDoesNotDenyBeforePromptPresenterCatchesUp() async {
+    func testMediaBackgroundPromptFailsClosedWithoutWaitingForPresenter() async {
         let coordinator = makeCoordinator(
             systemStates: [.camera: .authorized],
             store: PromptBridgePermissionStore()
@@ -63,16 +63,14 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
             expectation.fulfill()
         }
 
-        let query = await waitForActiveQuery(coordinator, pageId: "tab-a:1")
-        XCTAssertTrue(decisions.isEmpty)
-        await coordinator.approveOnce(query.id)
-
         await fulfillment(of: [expectation], timeout: 2)
-        XCTAssertEqual(decisions, [.grant])
+        XCTAssertEqual(decisions, [.deny])
+        let activeQuery = await coordinator.activeQuery(forPageId: "tab-a:1")
+        XCTAssertNil(activeQuery)
         withExtendedLifetime(webView) { /* no-op */ }
     }
 
-    func testGeolocationAutoPromptDoesNotDenyBeforePromptPresenterCatchesUp() async {
+    func testGeolocationBackgroundPromptFailsClosedWithoutWaitingForPresenter() async {
         let coordinator = makeCoordinator(
             systemStates: [.geolocation: .authorized],
             store: PromptBridgePermissionStore()
@@ -100,12 +98,10 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
             expectation.fulfill()
         }
 
-        let query = await waitForActiveQuery(coordinator, pageId: "tab-a:1")
-        XCTAssertTrue(decisions.isEmpty)
-        await coordinator.approveOnce(query.id)
-
         await fulfillment(of: [expectation], timeout: 2)
-        XCTAssertEqual(decisions, [.grant])
+        XCTAssertEqual(decisions, [.deny])
+        let activeQuery = await coordinator.activeQuery(forPageId: "tab-a:1")
+        XCTAssertNil(activeQuery)
         withExtendedLifetime(webView) { /* no-op */ }
         withExtendedLifetime(provider) { /* no-op */ }
     }
@@ -134,7 +130,7 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
         XCTAssertEqual(result, .default)
     }
 
-    func testNotificationAutoPromptDoesNotResolveBeforePromptPresenterCatchesUp() async {
+    func testNotificationBackgroundPromptResolvesDefaultWithoutWaitingForPresenter() async {
         let coordinator = makeCoordinator(
             systemStates: [.notifications: .authorized],
             store: PromptBridgePermissionStore()
@@ -151,12 +147,11 @@ final class SumiPermissionPromptBridgeIntegrationTests: XCTestCase {
                 tabContext: notificationTabContext(isActiveTab: false, isVisibleTab: false)
             )
         }
-        let query = await waitForActiveQuery(coordinator, pageId: "tab-a:1")
-        XCTAssertFalse(task.isCancelled)
-        await coordinator.approveOnce(query.id)
 
         let result = await task.value
-        XCTAssertEqual(result, .granted)
+        XCTAssertEqual(result, .default)
+        let activeQuery = await coordinator.activeQuery(forPageId: "tab-a:1")
+        XCTAssertNil(activeQuery)
     }
 
     func testStorageAccessPromptRequiredWaitsForUserSettlementAndDeniesOnDismiss() async {

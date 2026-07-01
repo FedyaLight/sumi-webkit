@@ -27,6 +27,18 @@ struct URLBarHubProtectionSection: View {
         plan.siteHost ?? currentTab?.url.host?.lowercased()
     }
 
+    private var zapperProfile: Profile? {
+        currentTab?.resolveProfile()
+    }
+
+    private var zapperProfilePartitionId: String? {
+        zapperProfile?.id.uuidString
+    }
+
+    private var isEphemeralZapperProfile: Bool {
+        zapperProfile?.isEphemeral == true
+    }
+
     private var displayHost: String {
         guard let host else { return "This site" }
         return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
@@ -252,9 +264,16 @@ struct URLBarHubProtectionSection: View {
         Binding(
             get: { areSavedRulesEnabled },
             set: { isEnabled in
-                guard let host else { return }
+                guard let host,
+                      let zapperProfilePartitionId
+                else { return }
                 areSavedRulesEnabled = isEnabled
-                SumiAdblockZapperStore.shared.setEnabled(isEnabled, forHost: host)
+                SumiAdblockZapperStore.shared.setEnabled(
+                    isEnabled,
+                    forHost: host,
+                    profilePartitionId: zapperProfilePartitionId,
+                    isEphemeralProfile: isEphemeralZapperProfile
+                )
                 applySavedRulesToCurrentWebView()
             }
         )
@@ -262,8 +281,19 @@ struct URLBarHubProtectionSection: View {
 
     private func loadState() {
         guard let host else { return }
-        let zapperState = SumiAdblockZapperStore.shared.state(forHost: host)
         isSiteEnabled = plan.sitePolicyAllowsProtection && plan.effectiveLevel != .off
+        guard let zapperProfilePartitionId else {
+            areSavedRulesEnabled = true
+            savedRules = []
+            draftRules = []
+            errorMessage = nil
+            return
+        }
+        let zapperState = SumiAdblockZapperStore.shared.state(
+            forHost: host,
+            profilePartitionId: zapperProfilePartitionId,
+            isEphemeralProfile: isEphemeralZapperProfile
+        )
         areSavedRulesEnabled = !zapperState.disabled
         savedRules = zapperState.rules
         draftRules = zapperState.rules
@@ -275,21 +305,36 @@ struct URLBarHubProtectionSection: View {
     }
 
     private func saveRules() {
-        guard let host else { return }
-        SumiAdblockZapperStore.shared.setRules(normalizedDraftRules, forHost: host)
+        guard let host,
+              let zapperProfilePartitionId
+        else { return }
+        SumiAdblockZapperStore.shared.setRules(
+            normalizedDraftRules,
+            forHost: host,
+            profilePartitionId: zapperProfilePartitionId,
+            isEphemeralProfile: isEphemeralZapperProfile
+        )
         loadState()
         applySavedRulesToCurrentWebView()
     }
 
     private func clearRules() {
-        guard let host else { return }
-        SumiAdblockZapperStore.shared.setRules([], forHost: host)
+        guard let host,
+              let zapperProfilePartitionId
+        else { return }
+        SumiAdblockZapperStore.shared.setRules(
+            [],
+            forHost: host,
+            profilePartitionId: zapperProfilePartitionId,
+            isEphemeralProfile: isEphemeralZapperProfile
+        )
         loadState()
         applySavedRulesToCurrentWebView()
     }
 
     private func activateElementZapper() {
         guard let host,
+              let zapperProfilePartitionId,
               let webView = webViewProvider()
         else { return }
         isActivatingZapper = true
@@ -298,7 +343,9 @@ struct URLBarHubProtectionSection: View {
         Task { @MainActor in
             let didActivate = await SumiAdblockZapperInjector.activateElementPicker(
                 in: webView,
-                host: host
+                host: host,
+                profilePartitionId: zapperProfilePartitionId,
+                isEphemeralProfile: isEphemeralZapperProfile
             )
             isActivatingZapper = false
             if didActivate {
@@ -311,11 +358,14 @@ struct URLBarHubProtectionSection: View {
 
     private func applySavedRulesToCurrentWebView() {
         guard let host,
+              let zapperProfilePartitionId,
               let webView = webViewProvider()
         else { return }
         SumiAdblockZapperInjector.applySavedRules(
             to: webView,
-            host: host
+            host: host,
+            profilePartitionId: zapperProfilePartitionId,
+            isEphemeralProfile: isEphemeralZapperProfile
         )
     }
 }

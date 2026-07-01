@@ -327,7 +327,7 @@ final class SumiNotificationPermissionBridge {
         source: SumiNotificationBridgeSource
     ) async -> SumiPermissionCoordinatorDecision {
         if pendingStrategy.waitsForPromptUI,
-           context.surface == .normalTab {
+           context.canPresentPromptUI {
             return await coordinator.requestPermission(context)
         }
 
@@ -473,11 +473,15 @@ final class SumiNotificationPermissionBridge {
         tabContext: SumiWebNotificationTabContext,
         extra: [String: String] = [:]
     ) -> [String: String] {
+        let topOrigin = SumiPermissionOrigin(
+            url: tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL
+        )
         var userInfo = [
             "source": source.rawValue,
             "requestId": request.id,
             "requestingOrigin": request.requestingOrigin.identity,
-            "topURL": (tabContext.committedURL ?? tabContext.mainFrameURL ?? tabContext.visibleURL)?.absoluteString ?? "",
+            "topOrigin": topOrigin.identity,
+            "topDisplayDomain": topOrigin.displayDomain,
             "tabId": tabContext.tabId,
             "pageId": tabContext.pageId,
             "profilePartitionId": tabContext.profilePartitionId,

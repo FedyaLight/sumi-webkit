@@ -71,11 +71,10 @@ enum PinnedTileAccentResolver {
             return true
         }
         guard let host = normalizedHost(for: launchURL) else { return false }
-        return host == updatedDomain.lowercased()
+        return host == SumiSiteNormalizer().host(fromRawHost: updatedDomain)
     }
 
     private static func normalizedHost(for launchURL: URL?) -> String? {
-        guard let host = launchURL?.host?.lowercased(), !host.isEmpty else { return nil }
-        return host
+        SumiSiteNormalizer().host(for: launchURL)
     }
 }

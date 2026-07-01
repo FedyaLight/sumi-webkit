@@ -43,3 +43,10 @@ protocol BrowserPersistenceHandling: AnyObject {
     func flushRuntimeStatePersistenceAwaitingResult() async -> Int
     func persistFullReconcileAwaitingResult(reason: String) async -> Bool
 }
+
+@MainActor
+protocol BrowserAppTerminationHandling: AnyObject {
+    func dismissFloatingBarForActiveWindow(preserveDraft: Bool)
+    func dismissWorkspaceThemePickerIfNeededCommitting()
+    func performSiteDataPolicyAllWindowsClosedCleanup() async
+}

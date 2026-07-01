@@ -253,7 +253,7 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         let relay = SumiNativeMessagingRelay(
             launcher: launcher,
             adapterRegistry: SumiNativeMessagingAdapterRegistry(
-                adapters: [SlowOneShotAdapter(sleepDuration: .milliseconds(300))]
+                adapters: [SlowOneShotAdapter(sleepDuration: .milliseconds(50))]
             ),
             launchPolicy: SumiCompanionAppLaunchPolicy(),
             loopGuard: SumiNativeMessagingRelayLoopGuard(),

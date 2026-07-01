@@ -28,6 +28,145 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertFalse(browserManager.userscriptsModule.hasLoadedRuntime)
     }
 
+    func testTabRuntimeCompositionServiceAttachesResourceRuntimesAndHandlesStructuralChanges() async throws {
+        let structuralChanges = PassthroughSubject<Void, Never>()
+        let coordinator = WebViewCoordinator()
+        let visibleWindowID = UUID()
+        let selectedTabID = UUID()
+        let visibleTabID = UUID()
+        let tab = Tab(
+            url: URL(string: "https://example.com/runtime-composition")!,
+            loadsCachedFaviconOnInit: false
+        )
+        let previousTab = Tab(
+            url: URL(string: "https://example.com/previous")!,
+            loadsCachedFaviconOnInit: false
+        )
+
+        var attachedTabSuspensionRuntime: TabSuspensionRuntime?
+        var attachedBackgroundMediaRuntime: SumiBackgroundMediaOptimizationRuntime?
+        var tabStructuralRevisionCount = 0
+        var tabSuspensionReconcileReasons: [String] = []
+        var backgroundMediaReconcileReasons: [String] = []
+        var refreshedLazyRestoreContexts: [TabSuspensionEvaluationContext] = []
+        var activatedTabs: [(new: UUID, previous: UUID?)] = []
+        let structuralChangeHandled = expectation(description: "structural change handled")
+
+        let dependencies = BrowserTabRuntimeCompositionService.Dependencies(
+            attachTabSuspensionRuntime: { runtime in
+                attachedTabSuspensionRuntime = runtime
+            },
+            attachBackgroundMediaOptimizationRuntime: { runtime in
+                attachedBackgroundMediaRuntime = runtime
+            },
+            tabStructuralChanges: structuralChanges.eraseToAnyPublisher(),
+            incrementTabStructuralRevision: {
+                tabStructuralRevisionCount += 1
+                structuralChangeHandled.fulfill()
+            },
+            scheduleTabSuspensionReconcile: { reason in
+                tabSuspensionReconcileReasons.append(reason)
+            },
+            scheduleBackgroundMediaReconcile: { reason in
+                backgroundMediaReconcileReasons.append(reason)
+            },
+            webViewCoordinator: {
+                coordinator
+            },
+            memoryMode: {
+                .custom
+            },
+            customDeactivationDelay: {
+                42
+            },
+            tabEnergySaverActive: {
+                false
+            },
+            backgroundMediaEnergySaverActive: {
+                true
+            },
+            allKnownTabs: {
+                [tab]
+            },
+            selectedTabIDs: {
+                [selectedTabID]
+            },
+            tabSuspensionVisibleTabIDsByWindow: {
+                [visibleWindowID: [visibleTabID]]
+            },
+            backgroundMediaVisibleTabIDsByWindow: {
+                [visibleWindowID: [visibleTabID]]
+            },
+            refreshLazyRestoreQueue: { context in
+                refreshedLazyRestoreContexts.append(context)
+            },
+            notifyTabActivatedIfLoaded: { newTab, previousTab in
+                activatedTabs.append((newTab.id, previousTab?.id))
+            }
+        )
+
+        let cancellable = BrowserTabRuntimeCompositionService.attach(
+            dependencies: dependencies
+        )
+        defer {
+            cancellable.cancel()
+        }
+
+        let tabSuspensionRuntime = try XCTUnwrap(attachedTabSuspensionRuntime)
+        XCTAssertIdentical(tabSuspensionRuntime.webViewCoordinator(), coordinator)
+        XCTAssertEqual(tabSuspensionRuntime.memoryMode(), .custom)
+        XCTAssertEqual(tabSuspensionRuntime.customDeactivationDelay(), 42)
+        XCTAssertFalse(tabSuspensionRuntime.energySaverActive())
+        XCTAssertEqual(tabSuspensionRuntime.allKnownTabs().map(\.id), [tab.id])
+        XCTAssertEqual(tabSuspensionRuntime.selectedTabIDs(), [selectedTabID])
+        XCTAssertEqual(
+            tabSuspensionRuntime.visibleTabIDsByWindow(),
+            [visibleWindowID: [visibleTabID]]
+        )
+
+        let lazyRestoreContext = TabSuspensionEvaluationContext(
+            visibleTabIDs: [visibleTabID],
+            selectedTabIDs: [selectedTabID],
+            policy: TabSuspensionPolicy(memoryMode: .balanced)
+        )
+        tabSuspensionRuntime.refreshLazyRestoreQueue(lazyRestoreContext)
+        XCTAssertEqual(refreshedLazyRestoreContexts, [lazyRestoreContext])
+
+        let backgroundMediaRuntime = try XCTUnwrap(attachedBackgroundMediaRuntime)
+        XCTAssertIdentical(backgroundMediaRuntime.webViewCoordinator(), coordinator)
+        XCTAssertTrue(backgroundMediaRuntime.energySaverActive())
+        XCTAssertEqual(backgroundMediaRuntime.allKnownTabs().map(\.id), [tab.id])
+        XCTAssertEqual(
+            backgroundMediaRuntime.visibleTabIDsByWindow(),
+            [visibleWindowID: [visibleTabID]]
+        )
+
+        let runtimeNotifications = BrowserTabRuntimeCompositionService.runtimeNotifications(
+            dependencies: dependencies
+        )
+        runtimeNotifications.tabActivated(tab, previousTab)
+        runtimeNotifications.tabSelectionChanged("tab-selection")
+
+        XCTAssertEqual(activatedTabs.count, 1)
+        XCTAssertEqual(activatedTabs[0].new, tab.id)
+        XCTAssertEqual(activatedTabs[0].previous, previousTab.id)
+        XCTAssertEqual(tabSuspensionReconcileReasons, ["tab-selection"])
+        XCTAssertEqual(backgroundMediaReconcileReasons, ["tab-selection"])
+
+        structuralChanges.send()
+        await fulfillment(of: [structuralChangeHandled], timeout: 1)
+
+        XCTAssertEqual(tabStructuralRevisionCount, 1)
+        XCTAssertEqual(
+            tabSuspensionReconcileReasons,
+            ["tab-selection", "tab-structure-changed"]
+        )
+        XCTAssertEqual(
+            backgroundMediaReconcileReasons,
+            ["tab-selection", "tab-structure-changed"]
+        )
+    }
+
     func testDetachedRuntimeTabContextMenuForegroundOpenDoesNotUseActiveWindow() throws {
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(

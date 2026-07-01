@@ -19,9 +19,11 @@ enum SafariExtensionPermissionsOriginsCompatibility {
     private static let privateUserScriptSelector = NSSelectorFromString(
         "_initWithSource:injectionTime:forMainFrameOnly:includeMatchPatternStrings:excludeMatchPatternStrings:associatedURL:contentWorld:"
     )
+    private static let associatedUserScriptFactory =
+        AssociatedUserScriptFactory(selector: privateUserScriptSelector)
 
     static var isPrivateUserScriptSPIAvailable: Bool {
-        WKUserScript.instancesRespond(to: privateUserScriptSelector)
+        associatedUserScriptFactory.isAvailable
     }
 
     static func installPrelude(
@@ -42,45 +44,72 @@ enum SafariExtensionPermissionsOriginsCompatibility {
     }
 
     static func makePreludeUserScript(associatedURL: URL) -> WKUserScript? {
-        guard isPrivateUserScriptSPIAvailable,
-              let method = class_getInstanceMethod(
-                  WKUserScript.self,
-                  privateUserScriptSelector
-              ),
-              let rawObject = class_createInstance(WKUserScript.self, 0) as AnyObject?
-        else {
+        guard isExtensionAssociatedURL(associatedURL) else {
             return nil
         }
 
-        typealias Initializer = @convention(c) (
-            AnyObject,
-            Selector,
-            NSString,
-            Int,
-            Bool,
-            NSArray,
-            NSArray,
-            NSURL,
-            WKContentWorld?
-        ) -> AnyObject?
-
-        let initializer = unsafeBitCast(
-            method_getImplementation(method),
-            to: Initializer.self
+        return associatedUserScriptFactory.makeUserScript(
+            source: preludeSource,
+            associatedURL: associatedURL,
+            includeMatchPatternStrings: includeMatchPatternStrings(for: associatedURL)
         )
-        let initialized = initializer(
-            rawObject,
-            privateUserScriptSelector,
-            preludeSource as NSString,
-            WKUserScriptInjectionTime.atDocumentStart.rawValue,
-            false,
-            includeMatchPatternStrings(for: associatedURL) as NSArray,
-            [] as NSArray,
-            associatedURL as NSURL,
-            nil
-        )
+    }
 
-        return initialized as? WKUserScript
+    private static func isExtensionAssociatedURL(_ url: URL) -> Bool {
+        let scheme = url.scheme?.lowercased()
+        return scheme == "webkit-extension" || scheme == "safari-web-extension"
+    }
+
+    private struct AssociatedUserScriptFactory {
+        let selector: Selector
+
+        var isAvailable: Bool {
+            WKUserScript.instancesRespond(to: selector)
+                && class_getInstanceMethod(WKUserScript.self, selector) != nil
+        }
+
+        func makeUserScript(
+            source: String,
+            associatedURL: URL,
+            includeMatchPatternStrings: [String]
+        ) -> WKUserScript? {
+            guard isAvailable,
+                  let method = class_getInstanceMethod(WKUserScript.self, selector),
+                  let rawObject = class_createInstance(WKUserScript.self, 0) as AnyObject?
+            else {
+                return nil
+            }
+
+            typealias Initializer = @convention(c) (
+                AnyObject,
+                Selector,
+                NSString,
+                Int,
+                Bool,
+                NSArray,
+                NSArray,
+                NSURL,
+                WKContentWorld?
+            ) -> AnyObject?
+
+            let initializer = unsafeBitCast(
+                method_getImplementation(method),
+                to: Initializer.self
+            )
+            let initialized = initializer(
+                rawObject,
+                selector,
+                source as NSString,
+                WKUserScriptInjectionTime.atDocumentStart.rawValue,
+                false,
+                includeMatchPatternStrings as NSArray,
+                [] as NSArray,
+                associatedURL as NSURL,
+                nil
+            )
+
+            return initialized as? WKUserScript
+        }
     }
 
     static func normalizedOriginsForWebKitPermissionsAPI(

@@ -507,7 +507,7 @@ final class TabSuspensionService {
             return false
         }
 
-        let liveWebViews = coordinator.trackedLiveWebViews(for: tab)
+        let liveWebViews = coordinator.suspensionLiveWebViews(for: tab)
         guard suspensionEligibility(
             for: tab,
             liveWebViews: liveWebViews,
@@ -710,7 +710,7 @@ final class TabSuspensionService {
         guard let coordinator = runtime.webViewCoordinator() else { return false }
         return suspensionEligibility(
             for: tab,
-            liveWebViews: coordinator.trackedLiveWebViews(for: tab),
+            liveWebViews: coordinator.suspensionLiveWebViews(for: tab),
             context: context
         ).isEligible
     }
@@ -782,7 +782,7 @@ final class TabSuspensionService {
         guard let coordinator = runtime.webViewCoordinator(),
               suspensionEligibility(
                   for: tab,
-                  liveWebViews: coordinator.trackedLiveWebViews(for: tab),
+                  liveWebViews: coordinator.suspensionLiveWebViews(for: tab),
                   context: context
               ).isEligible
         else {
@@ -867,7 +867,7 @@ final class TabSuspensionService {
                         return nil
                     }
                 } else {
-                    let webViews = coordinator.trackedLiveWebViews(for: tab)
+                    let webViews = coordinator.suspensionLiveWebViews(for: tab)
                     eligibility = suspensionEligibility(
                         for: tab,
                         liveWebViews: webViews,

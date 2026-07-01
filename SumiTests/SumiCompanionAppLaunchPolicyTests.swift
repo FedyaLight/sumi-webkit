@@ -84,7 +84,7 @@ final class SumiCompanionAppLaunchPolicyTests: XCTestCase {
         )
 
         let firstPort = MockNativeMessagingPort()
-        firstPort.applicationIdentifier = "com.8bit.bitwarden"
+        firstPort.applicationIdentifier = "com.bitwarden.desktop"
         _ = await connectReply(relay: relay, port: firstPort, installed: installed)
 
         loopGuard.recordSupportedAdapterLaunchAttempt(
@@ -105,7 +105,7 @@ final class SumiCompanionAppLaunchPolicyTests: XCTestCase {
         )
 
         let secondPort = MockNativeMessagingPort()
-        secondPort.applicationIdentifier = "com.8bit.bitwarden"
+        secondPort.applicationIdentifier = "com.bitwarden.desktop"
         let second = await connectReply(relay: relay, port: secondPort, installed: installed)
 
         XCTAssertNil(second.error)

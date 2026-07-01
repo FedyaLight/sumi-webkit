@@ -68,7 +68,7 @@ enum SumiNativeMessagingRelayPolicy {
             }
         }
 
-        if isArbitraryNativeMessagingRequest(
+        if isUnauthorizedNativeMessagingRequest(
             requestedApplicationIdentifier: context.requestedApplicationIdentifier,
             installed: installed
         ) {
@@ -79,7 +79,8 @@ enum SumiNativeMessagingRelayPolicy {
     }
 
     /// Reject open-ended native messaging to bundle IDs unrelated to the imported Safari extension.
-    private static func isArbitraryNativeMessagingRequest(
+    /// Public compatibility aliases are diagnostics metadata, not authorization input.
+    private static func isUnauthorizedNativeMessagingRequest(
         requestedApplicationIdentifier: String?,
         installed: InstalledExtension
     ) -> Bool {
@@ -95,18 +96,17 @@ enum SumiNativeMessagingRelayPolicy {
             return false
         }
 
-        let normalized = SumiNativeMessagingAppResolver.normalizedHostBundleIdentifier(requested)
         if let containing = SumiNativeMessagingAppResolver.containingApplicationBundleIdentifier(
             forAppexPath: installed.sourceBundlePath
         ),
-            normalized == containing {
+            requested == containing {
             return false
         }
 
         if let appexBundleID = SumiNativeMessagingAppResolver.appexBundleIdentifier(
             at: installed.sourceBundlePath
         ),
-            normalized == appexBundleID {
+            requested == appexBundleID {
             return false
         }
 

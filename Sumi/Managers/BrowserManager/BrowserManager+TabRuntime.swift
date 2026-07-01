@@ -566,11 +566,17 @@ extension TabLifecycleNavigationRuntime {
                 )
             },
             loadZoomForTab: loadZoomForTab,
-            applyAdblockZapperRulesAfterNavigation: { webView, url in
+            applyAdblockZapperRulesAfterNavigation: { webView, url, tab in
                 if let policy = adBlockingModule()?.effectivePolicy(for: url),
                    let host = policy.host,
-                   policy.isEnabled {
-                    SumiAdblockZapperInjector.applySavedRules(to: webView, host: host)
+                   policy.isEnabled,
+                   let profile = tab.resolveProfile() {
+                    SumiAdblockZapperInjector.applySavedRules(
+                        to: webView,
+                        host: host,
+                        profilePartitionId: profile.id.uuidString,
+                        isEphemeralProfile: profile.isEphemeral
+                    )
                 } else {
                     SumiAdblockZapperInjector.clearAppliedRules(to: webView)
                 }

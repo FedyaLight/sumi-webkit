@@ -246,7 +246,7 @@ struct TabLifecycleNavigationRuntime {
     var prepareExtensionRuntimeBeforeCommit: (Tab, URL, String) -> Void
     var markExtensionEligibleAfterCommit: (Tab, String) -> Void
     var loadZoomForTab: (UUID) -> Void
-    var applyAdblockZapperRulesAfterNavigation: (WKWebView, URL) -> Void
+    var applyAdblockZapperRulesAfterNavigation: (WKWebView, URL, Tab) -> Void
     var enforceSiteDataPolicyAfterNavigation: (Tab) -> Void
     var resolveAuthenticationChallenge: (
         _ challenge: URLAuthenticationChallenge,
@@ -261,7 +261,7 @@ struct TabLifecycleNavigationRuntime {
         prepareExtensionRuntimeBeforeCommit: { _, _, _ in },
         markExtensionEligibleAfterCommit: { _, _ in },
         loadZoomForTab: { _ in },
-        applyAdblockZapperRulesAfterNavigation: { _, _ in },
+        applyAdblockZapperRulesAfterNavigation: { _, _, _ in },
         enforceSiteDataPolicyAfterNavigation: { _ in },
         resolveAuthenticationChallenge: { _, _ in .next },
         isPreparingForDestructiveDataCleanupNavigation: { _ in false },

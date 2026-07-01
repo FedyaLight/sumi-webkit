@@ -1876,6 +1876,13 @@ final class SumiFaviconV2URLNormalizationRegressionTests: XCTestCase {
         XCTAssertTrue(FaviconsTabExtension.documentURL(documentURL, matches: currentURL))
     }
 
+    func testCanonicalPageKeyIgnoresQueryAndFragmentIdentity() throws {
+        let first = try XCTUnwrap(URL(string: "HTTPS://Example.COM:443/path?one=1#top"))
+        let second = try XCTUnwrap(URL(string: "https://example.com/path?two=2#bottom"))
+
+        XCTAssertEqual(SumiFaviconCanonicalURL.pageURL(first).absoluteString, "https://example.com/path")
+        XCTAssertEqual(SumiFaviconCanonicalURL.pageKey(for: first), SumiFaviconCanonicalURL.pageKey(for: second))
+    }
 }
 
 private enum SumiFaviconTestImages {

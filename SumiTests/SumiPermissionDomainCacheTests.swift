@@ -105,7 +105,7 @@ final class SumiPermissionDomainCacheTests: XCTestCase {
     }
 }
 
-private final class CountingRegistrableDomainResolver: SumiRegistrableDomainResolving {
+private final class CountingRegistrableDomainResolver: SumiRegistrableDomainResolving, @unchecked Sendable {
     private(set) var callCount = 0
     private(set) var hosts: [String] = []
 

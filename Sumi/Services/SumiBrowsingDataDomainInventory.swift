@@ -50,7 +50,7 @@ final class SumiBrowsingDataDomainInventory {
     func normalizeDomains(_ domains: Set<String>) -> Set<String> {
         Set(
             domains
-                .map(normalizedBrowsingDataDomain)
+                .map(siteDomain)
                 .filter { !$0.isEmpty }
         )
     }
@@ -85,19 +85,6 @@ final class SumiBrowsingDataDomainInventory {
     }
 
     private func siteDomain(for domain: String) -> String {
-        let normalizedDomain = normalizedBrowsingDataDomain(domain)
-        guard !normalizedDomain.isEmpty else { return "" }
-        guard let url = URL(string: "https://\(normalizedDomain)") else {
-            return normalizedDomain
-        }
-        return HistoryDomainResolver.siteDomain(for: url) ?? normalizedDomain
-    }
-
-    private func normalizedBrowsingDataDomain(_ domain: String) -> String {
-        let trimmed = domain.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.hasPrefix(".") {
-            return String(trimmed.dropFirst()).lowercased()
-        }
-        return trimmed.lowercased()
+        HistoryDomainResolver.siteDomain(forDomain: domain) ?? ""
     }
 }

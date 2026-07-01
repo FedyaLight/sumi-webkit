@@ -430,7 +430,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         let reply = await sendMessageReply(
             relay: relay,
             installed: installed,
-            applicationIdentifier: "com.8bit.bitwarden"
+            applicationIdentifier: "com.bitwarden.desktop"
         )
 
         let error = try XCTUnwrap(reply.error as NSError?)
@@ -482,7 +482,7 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
     }
 
-    func testRelaySelectsBitwardenAdapterForAllPublicIdentifiers() async throws {
+    func testRelaySelectsBitwardenAdapterForAuthorizedContainingAppIdentifier() async throws {
         let appexPath = try makeFixtureApp(
             appBundleID: "com.bitwarden.desktop",
             appexBundleID: "com.bitwarden.desktop.safari"
@@ -494,39 +494,31 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             handshakeTimeout: .milliseconds(200)
         )
 
-        for applicationIdentifier in BitwardenNativeMessagingIdentifiers.publicApplicationIdentifiers {
-            var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
-            let relay = SumiNativeMessagingRelay(
-                launcher: launcher,
-                adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
-                launchPolicy: SumiCompanionAppLaunchPolicy(),
-                loopGuard: SumiNativeMessagingRelayLoopGuard(),
-                extensionsModuleEnabled: { true },
-                logDiagnostic: { diagnostics.append($0) }
-            )
-            let port = MockNativeMessagingPort()
-            port.applicationIdentifier = applicationIdentifier
+        var diagnostics: [SafariExtensionNativeMessagingDiagnostic] = []
+        let relay = SumiNativeMessagingRelay(
+            launcher: launcher,
+            adapterRegistry: SumiNativeMessagingAdapterRegistry(adapters: [adapter]),
+            launchPolicy: SumiCompanionAppLaunchPolicy(),
+            loopGuard: SumiNativeMessagingRelayLoopGuard(),
+            extensionsModuleEnabled: { true },
+            logDiagnostic: { diagnostics.append($0) }
+        )
+        let port = MockNativeMessagingPort()
+        port.applicationIdentifier = "com.bitwarden.desktop"
 
-            let connectResult = await connectReply(
-                relay: relay,
-                port: port,
-                installed: installed
-            )
+        let connectResult = await connectReply(
+            relay: relay,
+            port: port,
+            installed: installed
+        )
 
-            XCTAssertNil(
-                connectResult.error,
-                "Expected connect success for \(applicationIdentifier)"
-            )
-            XCTAssertTrue(
-                diagnostics.contains { $0.adapterSelected == true },
-                "Expected adapterSelected=true for \(applicationIdentifier)"
-            )
-            XCTAssertTrue(
-                diagnostics.contains {
-                    $0.adapterIdentifier == BitwardenNativeMessagingIdentifiers.protocolIdentifier
-                }
-            )
-        }
+        XCTAssertNil(connectResult.error)
+        XCTAssertTrue(diagnostics.contains { $0.adapterSelected == true })
+        XCTAssertTrue(
+            diagnostics.contains {
+                $0.adapterIdentifier == BitwardenNativeMessagingIdentifiers.protocolIdentifier
+            }
+        )
     }
 
     func testContainingAppLegacyBundleSelectsBitwardenAdapterWithoutExplicitAppId() async throws {
@@ -589,14 +581,14 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
 
         let port = MockNativeMessagingPort()
-        port.applicationIdentifier = "com.8bit.bitwarden"
+        port.applicationIdentifier = "com.bitwarden.desktop"
         let connectResult = await connectReply(relay: relay, port: port, installed: installed)
         XCTAssertNil(connectResult.error)
 
         let reply = await sendMessageReply(
             relay: relay,
             installed: installed,
-            applicationIdentifier: "com.8bit.bitwarden",
+            applicationIdentifier: "com.bitwarden.desktop",
             message: [
                 "command": "getBiometricsStatus",
                 "messageId": 1,

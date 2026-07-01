@@ -127,6 +127,7 @@ actor HistoryStore {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> HistoryVisitPage {
+        let query = query.normalizingDomainFilter
         guard limit > 0 else {
             return HistoryVisitPage(records: [], nextOffset: max(0, offset), hasMore: false)
         }
@@ -259,6 +260,7 @@ actor HistoryStore {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> Int {
+        let query = query.normalizingDomainFilter
         switch query {
         case .rangeFilter, .dateFilter, .timeRange:
             let ctx = ModelContext(container)
@@ -290,7 +292,7 @@ actor HistoryStore {
         calendar: Calendar
     ) throws -> Set<String> {
         if case .domainFilter(let domains) = query {
-            return domains
+            return HistoryDomainResolver.siteDomains(for: domains)
         }
 
         let records = try fetchVisitRecordsForExplicitAction(
@@ -306,6 +308,7 @@ actor HistoryStore {
         forSiteDomains siteDomains: Set<String>,
         profileId: UUID?
     ) throws -> Set<String> {
+        let siteDomains = HistoryDomainResolver.siteDomains(for: siteDomains)
         guard !siteDomains.isEmpty else { return [] }
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
@@ -322,8 +325,14 @@ actor HistoryStore {
             guard !entries.isEmpty else { break }
             rawOffset += entries.count
 
-            for entry in entries where siteDomains.contains(entry.siteDomain ?? entry.domain) {
-                if let host = URL(string: entry.urlString)?.host {
+            for entry in entries {
+                let entrySiteDomain = entry.siteDomain
+                    ?? HistoryDomainResolver.siteDomain(forDomain: entry.domain)
+                    ?? entry.domain
+                guard siteDomains.contains(entrySiteDomain) else { continue }
+                if let url = URL(string: entry.urlString) {
+                    let host = HistoryDomainResolver.normalizedDomain(for: url)
+                    guard !host.isEmpty else { continue }
                     hosts.insert(host)
                 }
             }
@@ -338,6 +347,7 @@ actor HistoryStore {
         referenceDate: Date,
         calendar: Calendar
     ) throws -> [HistoryVisitRecord] {
+        let query = query.normalizingDomainFilter
         let ctx = ModelContext(container)
         ctx.autosaveEnabled = false
         var rawOffset = 0

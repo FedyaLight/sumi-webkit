@@ -1,6 +1,32 @@
 import Combine
 import Foundation
 
+struct SumiBlockedPopupURLSummary: Equatable, Sendable {
+    let origin: SumiPermissionOrigin
+    let displayDomain: String
+    let registrableDomain: String?
+
+    init?(
+        url: URL?,
+        registrableDomainResolver: any SumiRegistrableDomainResolving = SumiRegistrableDomainResolver()
+    ) {
+        guard let url else { return nil }
+
+        let origin = SumiPermissionOrigin(url: url)
+        self.origin = origin
+        self.displayDomain = origin.displayDomain
+        self.registrableDomain = registrableDomainResolver.registrableDomain(forHost: origin.host)
+    }
+
+    var duplicateIdentity: String {
+        [
+            origin.identity,
+            displayDomain,
+            registrableDomain ?? "",
+        ].joined(separator: "|")
+    }
+}
+
 struct SumiBlockedPopupRecord: Identifiable, Equatable, Sendable {
     enum Reason: String, Codable, Equatable, Sendable {
         case blockedByDefault
@@ -16,8 +42,8 @@ struct SumiBlockedPopupRecord: Identifiable, Equatable, Sendable {
     let pageId: String
     let requestingOrigin: SumiPermissionOrigin
     let topOrigin: SumiPermissionOrigin
-    let targetURL: URL?
-    let sourceURL: URL?
+    let targetURLSummary: SumiBlockedPopupURLSummary?
+    let sourceURLSummary: SumiBlockedPopupURLSummary?
     var lastBlockedAt: Date
     let reason: Reason
     let profilePartitionId: String
@@ -43,8 +69,8 @@ struct SumiBlockedPopupRecord: Identifiable, Equatable, Sendable {
         self.pageId = pageId
         self.requestingOrigin = requestingOrigin
         self.topOrigin = topOrigin
-        self.targetURL = targetURL
-        self.sourceURL = sourceURL
+        self.targetURLSummary = SumiBlockedPopupURLSummary(url: targetURL)
+        self.sourceURLSummary = SumiBlockedPopupURLSummary(url: sourceURL)
         self.lastBlockedAt = lastBlockedAt
         self.reason = reason
         self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
@@ -59,8 +85,8 @@ struct SumiBlockedPopupRecord: Identifiable, Equatable, Sendable {
             isEphemeralProfile ? "ephemeral" : "persistent",
             requestingOrigin.identity,
             topOrigin.identity,
-            targetURL?.absoluteString ?? "<nil>",
-            sourceURL?.absoluteString ?? "<nil>",
+            targetURLSummary?.duplicateIdentity ?? "<nil>",
+            sourceURLSummary?.duplicateIdentity ?? "<nil>",
             reason.rawValue,
         ].joined(separator: "|")
     }

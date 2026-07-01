@@ -26,6 +26,10 @@ struct SumiPermissionSecurityContext: Equatable, Sendable {
     let navigationOrPageGeneration: String?
     let now: Date
 
+    var canPresentPromptUI: Bool {
+        surface == .normalTab && isActiveTab && isVisibleTab
+    }
+
     init(
         request: SumiPermissionRequest,
         requestingOrigin: SumiPermissionOrigin,

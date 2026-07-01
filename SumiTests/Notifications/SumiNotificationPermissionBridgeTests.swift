@@ -10,10 +10,13 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
             mode: .immediate(decision(.granted, systemState: .authorized))
         )
         let bridge = makeBridge(coordinator: coordinator, service: service)
+        let tabContext = tabContext(
+            committedURL: URL(string: "https://example.com/private/path?token=secret#fragment")
+        )
 
         let result = await bridge.postUserscriptNotification(
             request: notificationRequest(),
-            tabContext: tabContext(),
+            tabContext: tabContext,
             scriptId: "script-a",
             title: "Title",
             body: "Body",
@@ -30,6 +33,10 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         let lastPayload = await service.lastPayload()
         XCTAssertEqual(postedCount, 1)
         XCTAssertEqual(lastPayload?.tag, "tag")
+        XCTAssertNil(lastPayload?.userInfo["topURL"])
+        XCTAssertEqual(lastPayload?.userInfo["topOrigin"], "https://example.com")
+        XCTAssertEqual(lastPayload?.userInfo["topDisplayDomain"], "example.com")
+        XCTAssertFalse(String(describing: lastPayload?.userInfo).contains("token=secret"))
     }
 
     func testSystemBlockedDoesNotPostNotification() async {
@@ -232,7 +239,10 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
     }
 
     private func tabContext(
-        surface: SumiPermissionSecurityContext.Surface = .normalTab
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
+        committedURL: URL? = URL(string: "https://example.com/page"),
+        visibleURL: URL? = URL(string: "https://example.com/page"),
+        mainFrameURL: URL? = URL(string: "https://example.com/page")
     ) -> SumiWebNotificationTabContext {
         SumiWebNotificationTabContext(
             tabId: "tab-a",
@@ -240,9 +250,9 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
             surface: surface,
             profilePartitionId: "profile-a",
             isEphemeralProfile: false,
-            committedURL: URL(string: "https://example.com/page"),
-            visibleURL: URL(string: "https://example.com/page"),
-            mainFrameURL: URL(string: "https://example.com/page"),
+            committedURL: committedURL,
+            visibleURL: visibleURL,
+            mainFrameURL: mainFrameURL,
             isActiveTab: true,
             isVisibleTab: true,
             navigationOrPageGeneration: "1"

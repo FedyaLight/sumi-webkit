@@ -375,7 +375,7 @@ private struct ExtensionCatalogRow: View {
     }
 
     private func syncSiteAccessState() {
-        defaultSiteAccess = siteAccessPolicy?.defaultAccess ?? .allow
+        defaultSiteAccess = siteAccessPolicy?.defaultAccess ?? .ask
         privateAccessAllowed = siteAccessPolicy?.privateAccessAllowed ?? false
     }
 }

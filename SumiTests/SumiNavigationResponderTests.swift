@@ -2926,7 +2926,7 @@ private final class RecordingTabLifecycleNavigationRuntime {
             loadZoomForTab: { [weak self] tabId in
                 self?.zoomTabIds.append(tabId)
             },
-            applyAdblockZapperRulesAfterNavigation: { [weak self] webView, url in
+            applyAdblockZapperRulesAfterNavigation: { [weak self] webView, url, _ in
                 self?.adblockWebViewIds.append(ObjectIdentifier(webView))
                 self?.adblockURLs.append(url)
             },

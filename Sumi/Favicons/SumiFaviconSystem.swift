@@ -123,7 +123,8 @@ final class SumiFaviconSystem {
     }
 
     func syncShortcutPins(_ pins: [ShortcutPin]) {
-        let hosts = Set(pins.compactMap { $0.launchURL.host?.lowercased() })
+        let normalizer = SumiSiteNormalizer()
+        let hosts = Set(pins.compactMap { normalizer.host(for: $0.launchURL) })
         bookmarkHosts.formUnion(hosts)
         for pin in pins {
             service.scheduleColdFetch(
@@ -138,7 +139,8 @@ final class SumiFaviconSystem {
         _ bookmarks: [SumiBookmark],
         partition: SumiFaviconPartition = .regular(nil)
     ) {
-        let hosts = Set(bookmarks.compactMap { $0.url.host?.lowercased() })
+        let normalizer = SumiSiteNormalizer()
+        let hosts = Set(bookmarks.compactMap { normalizer.host(for: $0.url) })
         bookmarkHosts.formUnion(hosts)
         for bookmark in bookmarks {
             service.scheduleColdFetch(
