@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class HistoryManagerDependencyInjectionTests: XCTestCase {
-    private let referenceDate = ISO8601DateFormatter().date(from: "2026-06-01T12:00:00Z")!
+    private let referenceDate = ISO8601DateFormatter().date(from: "2026-06-01T12:00:00Z") ?? preconditionFailure("Invalid reference date")
 
     func testDeletingDomainUsesInjectedFaviconCleanerAndVisitedLinkStore() async throws {
         let harness = try makeHarness()
@@ -69,14 +69,16 @@ final class HistoryManagerDependencyInjectionTests: XCTestCase {
         XCTAssertEqual(replaceCall?.urls, [])
     }
 
-    private func makeHarness() throws -> (
-        container: ModelContainer,
-        store: HistoryStore,
-        historyManager: HistoryManager,
-        profileID: UUID,
-        faviconCleaner: FakeHistoryFaviconCleaner,
-        visitedLinkStore: FakeHistoryVisitedLinkStore
-    ) {
+    private struct HistoryDependencyHarness {
+        let container: ModelContainer
+        let store: HistoryStore
+        let historyManager: HistoryManager
+        let profileID: UUID
+        let faviconCleaner: FakeHistoryFaviconCleaner
+        let visitedLinkStore: FakeHistoryVisitedLinkStore
+    }
+
+    private func makeHarness() throws -> HistoryDependencyHarness {
         let container = try ModelContainer(
             for: Schema([HistoryEntryEntity.self, HistoryVisitEntity.self]),
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
@@ -94,13 +96,13 @@ final class HistoryManagerDependencyInjectionTests: XCTestCase {
             )
         )
 
-        return (
-            container,
-            store,
-            historyManager,
-            profileID,
-            faviconCleaner,
-            visitedLinkStore
+        return HistoryDependencyHarness(
+            container: container,
+            store: store,
+            historyManager: historyManager,
+            profileID: profileID,
+            faviconCleaner: faviconCleaner,
+            visitedLinkStore: visitedLinkStore
         )
     }
 

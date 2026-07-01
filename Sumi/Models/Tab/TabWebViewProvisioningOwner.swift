@@ -97,7 +97,7 @@ final class TabWebViewProvisioningOwner {
             RuntimeDiagnostics.emit(
                 "[Tab] Unable to create normal WebView during \(reason); profile is unresolved."
             )
-            context.deferWebViewCreationUntilProfileAvailable()
+            context.deferWebViewUntilProfileAvailable()
             return nil
         }
 
@@ -110,7 +110,7 @@ final class TabWebViewProvisioningOwner {
         }
 
         let configurationContext = context.configurationContext()
-        configurationContext.prepareWebViewConfigurationForExtensionRuntime(
+        configurationContext.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profile.id,
             "\(reason).configuration"
@@ -122,11 +122,11 @@ final class TabWebViewProvisioningOwner {
         return webView
     }
 
-    func registerNormalTabWithExtensionRuntimeIfNeeded(
+    func registerTabWithExtensionRuntimeIfNeeded(
         context: TabNormalWebViewRuntimeContext,
         reason: String
     ) {
-        context.registerNormalTabWithExtensionRuntimeIfNeeded(reason)
+        context.registerTabWithExtensionRuntimeIfNeeded(reason)
     }
 
     func applyWebViewConfigurationOverride(
@@ -156,7 +156,7 @@ final class TabWebViewProvisioningOwner {
     private func normalTabWebViewConfiguration(
         context: TabNormalWebViewRuntimeContext,
         profile: Profile,
-        reason: String
+        reason _: String
     ) -> WKWebViewConfiguration? {
         let currentURL = context.currentURL()
         return context.configurationRuntime.normalTabWebViewConfiguration(
@@ -166,5 +166,4 @@ final class TabWebViewProvisioningOwner {
             context.configurationContext()
         )
     }
-
 }

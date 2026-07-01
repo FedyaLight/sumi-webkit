@@ -24,7 +24,7 @@ final class TabNavigationCommandOwner {
     func loadURL(
         _ newURL: URL,
         for tab: Tab,
-        resolvedWebView: @escaping WebViewResolver,
+        resolvedWebView: WebViewResolver,
         reason: String,
         rebuildConfigurationPolicy: Bool = true
     ) {

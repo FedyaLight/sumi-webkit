@@ -107,8 +107,8 @@ extension Tab {
         ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(webView, currentURL: url, reason: reason)
     }
 
-    func registerNormalTabWithExtensionRuntimeIfNeeded(reason: String) {
-        webViewProvisioningOwner.registerNormalTabWithExtensionRuntimeIfNeeded(
+    func registerTabWithExtensionRuntimeIfNeeded(reason: String) {
+        webViewProvisioningOwner.registerTabWithExtensionRuntimeIfNeeded(
             context: normalWebViewRuntimeContext(),
             reason: reason
         )

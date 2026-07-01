@@ -294,7 +294,7 @@ final class SumiTabLifecycleNavigationResponder:
         allowCurrentWebViewURLFallback: Bool
     ) -> Bool {
         guard tab?.lifecycleNavigationRuntime
-            .isPreparingForDestructiveDataCleanupNavigation(webView) == true
+            .isPreparingForDataCleanupNavigation(webView) == true
         else {
             return false
         }

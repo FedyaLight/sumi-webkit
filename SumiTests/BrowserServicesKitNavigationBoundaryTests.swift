@@ -1,6 +1,6 @@
 import XCTest
 
-final class BrowserServicesKitNavigationBoundaryTests: XCTestCase {
+final class ServicesKitNavigationBoundaryTests: XCTestCase {
     func testNavigationImportsStayInBrowserServicesKitAdapters() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

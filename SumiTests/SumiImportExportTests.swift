@@ -525,9 +525,9 @@ final class SumiImportExportTests: XCTestCase {
         let compressedSize = output.withUnsafeMutableBytes { outPtr in
             payload.withUnsafeBytes { inPtr in
                 compression_encode_buffer(
-                    outPtr.bindMemory(to: UInt8.self).baseAddress!,
+                    outPtr.bindMemory(to: UInt8.self).baseAddress ?? preconditionFailure("Missing buffer base address"),
                     outputCapacity,
-                    inPtr.bindMemory(to: UInt8.self).baseAddress!,
+                    inPtr.bindMemory(to: UInt8.self).baseAddress ?? preconditionFailure("Missing buffer base address"),
                     payload.count,
                     nil,
                     COMPRESSION_LZ4_RAW

@@ -20,7 +20,7 @@ extension BrowserManager {
         delayNanoseconds: UInt64? = nil
     ) {
         guard let sumiSettings else { return }
-        dataServices.automaticBrowsingDataCleanupService.scheduleIfNeeded(
+        let request = SumiBrowsingDataCleanupScheduleRequest(
             retentionPeriod: sumiSettings.browsingDataRetentionPeriod,
             historyManager: historyManager,
             profiles: profileManager.profiles,
@@ -29,5 +29,6 @@ extension BrowserManager {
             reason: reason,
             delayNanoseconds: delayNanoseconds
         )
+        dataServices.automaticBrowsingDataCleanupService.scheduleIfNeeded(request)
     }
 }

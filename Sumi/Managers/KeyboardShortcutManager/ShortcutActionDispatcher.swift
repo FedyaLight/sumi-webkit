@@ -65,8 +65,7 @@ final class ShortcutActionDispatcher {
         case .refresh:
             actionRouter.refreshCurrentTabInActiveWindow()
         case .clearCookiesAndRefresh:
-            actionRouter.clearCurrentPageCookies()
-            actionRouter.refreshCurrentTabInActiveWindow()
+            clearCookiesAndRefresh(using: actionRouter)
         case .newTab:
             actionRouter.openNewTabSurfaceInActiveWindow()
         case .closeTab:
@@ -78,8 +77,7 @@ final class ShortcutActionDispatcher {
         case .previousTab:
             actionRouter.selectPreviousTabInActiveWindow()
         case .goToTab1, .goToTab2, .goToTab3, .goToTab4, .goToTab5, .goToTab6, .goToTab7, .goToTab8:
-            let tabIndex = Int(action.rawValue.components(separatedBy: "_").last ?? "0") ?? 1
-            actionRouter.selectTabByIndexInActiveWindow(tabIndex - 1)
+            selectIndexedTab(for: action, using: actionRouter)
         case .goToLastTab:
             actionRouter.selectLastTabInActiveWindow()
         case .duplicateTab:
@@ -115,11 +113,7 @@ final class ShortcutActionDispatcher {
         case .expandAllFolders:
             actionRouter.expandAllFoldersInSidebar()
         case .focusAddressBar:
-            let currentURL = actionRouter.activePageURLForActiveWindow()?.absoluteString ?? ""
-            actionRouter.focusFloatingBarForActiveWindow(
-                prefill: currentURL,
-                navigateCurrentTab: true
-            )
+            focusAddressBar(using: actionRouter)
         case .findInPage:
             actionRouter.showFindBar()
         case .zoomIn:
@@ -143,6 +137,27 @@ final class ShortcutActionDispatcher {
         }
 
         postShortcutExecuted(action)
+    }
+
+    private func selectIndexedTab(
+        for action: ShortcutAction,
+        using actionRouter: any ShortcutActionRouting
+    ) {
+        let tabIndex = Int(action.rawValue.components(separatedBy: "_").last ?? "0") ?? 1
+        actionRouter.selectTabByIndexInActiveWindow(tabIndex - 1)
+    }
+
+    private func clearCookiesAndRefresh(using actionRouter: any ShortcutActionRouting) {
+        actionRouter.clearCurrentPageCookies()
+        actionRouter.refreshCurrentTabInActiveWindow()
+    }
+
+    private func focusAddressBar(using actionRouter: any ShortcutActionRouting) {
+        let currentURL = actionRouter.activePageURLForActiveWindow()?.absoluteString ?? ""
+        actionRouter.focusFloatingBarForActiveWindow(
+            prefill: currentURL,
+            navigateCurrentTab: true
+        )
     }
 
     private func postShortcutExecuted(_ action: ShortcutAction) {

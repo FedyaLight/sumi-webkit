@@ -38,8 +38,8 @@ struct SumiScriptsManagerRuntime {
 
     static let inactive = Self(
         injectorRuntime: { .inactive },
-        openTab: { _, _, _ in },
-        closeTab: { _, _ in }
+        openTab: { _, _, _ in /* No-op. */ },
+        closeTab: { _, _ in /* No-op. */ }
     )
 }
 

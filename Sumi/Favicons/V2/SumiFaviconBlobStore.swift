@@ -129,7 +129,7 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         partition: SumiFaviconPartition,
         now: Date = Date()
     ) -> SumiStoredFaviconSelection? {
-        return queue.sync {
+        queue.sync {
             let metadata = loadMetadataIfNeeded(for: partition)
 
             let keys = pageLookupKeys(for: pageURL, metadata: metadata)
@@ -150,7 +150,7 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
         blobID: String,
         partition: SumiFaviconPartition
     ) -> Data? {
-        return queue.sync {
+        queue.sync {
             let metadata = loadMetadataIfNeeded(for: partition)
             guard let blob = metadata.blobs[blobID] else { return nil }
             if partition.isPrivate {

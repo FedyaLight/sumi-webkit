@@ -82,12 +82,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                 requestedAttachmentURL = requestedURL
                 return attachmentState
             },
-            safariContentBlockerDesiredAttachmentState: { _ in attachmentState },
+            safariBlockerDesiredAttachmentState: { _ in attachmentState },
             enabledSafariContentBlockingServices: { requestedURL, requestedProfileId in
                 requestedServiceLookup = (requestedURL, requestedProfileId)
                 return [SumiContentBlockingService(policy: .disabled)]
             },
-            prepareWebViewConfigurationForExtensionRuntime: { _, _, _ in }
+            prepareWebViewConfigForExtensionRuntime: { _, _, _ in /* No-op. */ }
         )
         let reloadPolicyStateOwner = TabReloadPolicyStateOwner()
 
@@ -440,13 +440,13 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
         XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
 
-        let cleanupService = BrowserConfigurationFakeWebsiteDataCleanupService()
+        let cleanupService = FakeWebsiteDataCleanupService()
         let privacyService = BrowserPrivacyService(
             cleanupService: cleanupService,
-            faviconInvalidator: { _, _ in }
+            faviconInvalidator: { _, _ in /* No-op. */ }
         )
         let activeWindowId = UUID()
-        var reloadRequests: [(tab: Tab, windowId: UUID, reason: String)] = []
+        var reloadRequests: [BrowserConfigurationReloadRequest] = []
         privacyService.hardReloadCurrentPage(
             using: BrowserPrivacyService.Context(
                 currentDataStore: {
@@ -458,7 +458,11 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
                     candidateTab === tab && windowId == activeWindowId ? originalWebView : nil
                 },
                 reloadWindowScopedPage: { requestTab, windowId, reason in
-                    reloadRequests.append((requestTab, windowId, reason))
+                    reloadRequests.append(BrowserConfigurationReloadRequest(
+                        tab: requestTab,
+                        windowId: windowId,
+                        reason: reason
+                    ))
                     requestTab.refresh()
                 }
             )
@@ -466,7 +470,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         XCTAssertEqual(reloadRequests.count, 1)
         let reloadRequest = try XCTUnwrap(reloadRequests.first)
-        XCTAssertTrue(reloadRequest.tab === tab)
+        XCTAssertIdentical(reloadRequest.tab, tab)
         XCTAssertEqual(reloadRequest.windowId, activeWindowId)
         XCTAssertEqual(reloadRequest.reason, "BrowserPrivacyService.hardReload")
 
@@ -512,7 +516,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             false,
             bundleIdentifier: harness.installedContentBlocker.extensionBundleIdentifier
         )
-        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+        let desiredState = tab.safariBlockerDesiredAttachmentState(for: tab.url)
 
         XCTAssertEqual(disabledRecord?.isEnabled, false)
         XCTAssertFalse(desiredState.isEnabled)
@@ -552,7 +556,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         let updatedRecord = try await harness.extensionsModule.enableSafariContentBlocker(
             from: updatedContentBlocker.candidate
         )
-        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+        let desiredState = tab.safariBlockerDesiredAttachmentState(for: tab.url)
 
         XCTAssertEqual(
             updatedRecord.resourceFingerprint,
@@ -585,7 +589,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
 
         harness.extensionsModule.setEnabled(false)
-        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+        let desiredState = tab.safariBlockerDesiredAttachmentState(for: tab.url)
 
         XCTAssertFalse(harness.extensionsModule.isEnabled)
         XCTAssertFalse(desiredState.isEnabled)
@@ -615,7 +619,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
 
         harness.extensionsModule.setEnabled(true)
-        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+        let desiredState = tab.safariBlockerDesiredAttachmentState(for: tab.url)
 
         XCTAssertTrue(harness.extensionsModule.isEnabled)
         XCTAssertTrue(desiredState.isEnabled)
@@ -659,14 +663,14 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
 
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.inherit, for: tab.url)
-        let desiredState = tab.safariContentBlockerDesiredAttachmentState(for: tab.url)
+        let desiredState = tab.safariBlockerDesiredAttachmentState(for: tab.url)
 
         XCTAssertTrue(desiredState.isEnabled)
         XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
         XCTAssertTrue(tab.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: tab.url))
     }
 
-    func testSafariContentBlockerEffectiveAttachmentIgnoresHostWhenRuleListsMatch() throws {
+    func testSafariContentBlockerEffectiveAttachmentIgnoresHostWhenRuleListsMatch() {
         let firstHost = SumiSafariContentBlockerAttachmentState(
             siteHost: "first.example",
             isEnabledForSite: true,
@@ -695,7 +699,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(firstHost.hasSameEffectiveWebViewAttachment(as: secondHost))
         XCTAssertFalse(firstHost.hasSameEffectiveWebViewAttachment(as: disabledHost))
         XCTAssertFalse(firstHost.hasSameEffectiveWebViewAttachment(as: updatedRules))
-        XCTAssertTrue(disabledHost.effectiveWebViewContentBlockerRuleIdentities.isEmpty)
+        XCTAssertTrue(disabledHost.effectiveWebViewRuleIdentities.isEmpty)
     }
 
     func testBrowserManagerStartupWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() {
@@ -1609,6 +1613,12 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
     }
 }
 
+private struct BrowserConfigurationReloadRequest {
+    let tab: Tab
+    let windowId: UUID
+    let reason: String
+}
+
 private final class NormalTabUserscriptsRuntimeProbe {
     var managerCount = 0
     var storeCount = 0
@@ -1619,66 +1629,66 @@ private final class NormalTabExtensionsRuntimeProbe {
     var managerCount = 0
 }
 
-private final class BrowserConfigurationFakeWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
-    func fetchCookies(in dataStore: WKWebsiteDataStore) async -> [HTTPCookie] {
+private final class FakeWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {
+    func fetchCookies(in _: WKWebsiteDataStore) async -> [HTTPCookie] {
         []
     }
 
     func fetchWebsiteDataRecords(
-        ofTypes dataTypes: Set<String>,
-        in dataStore: WKWebsiteDataStore
+        ofTypes _: Set<String>,
+        in _: WKWebsiteDataStore
     ) async -> [WKWebsiteDataRecord] {
         []
     }
 
     func fetchSiteDataEntries(
-        forDomain domain: String,
-        ofTypes dataTypes: Set<String>,
-        in dataStore: WKWebsiteDataStore
+        forDomain _: String,
+        ofTypes _: Set<String>,
+        in _: WKWebsiteDataStore
     ) async -> [SumiSiteDataEntry] {
         []
     }
 
     func removeCookies(
-        _ selection: SumiCookieRemovalSelection,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        _ _: SumiCookieRemovalSelection,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
     func removeWebsiteData(
-        ofTypes dataTypes: Set<String>,
-        modifiedSince date: Date,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        ofTypes _: Set<String>,
+        modifiedSince _: Date,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
     func removeWebsiteDataForDomain(
-        _ domain: String,
-        includingCookies: Bool,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        _ _: String,
+        includingCookies _: Bool,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
     func removeWebsiteDataForExactHost(
-        _ host: String,
-        ofTypes dataTypes: Set<String>,
-        includingCookies: Bool,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        _ _: String,
+        ofTypes _: Set<String>,
+        includingCookies _: Bool,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
     func removeWebsiteDataForDomains(
-        _ domains: Set<String>,
-        ofTypes dataTypes: Set<String>,
-        includingCookies: Bool,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        _ _: Set<String>,
+        ofTypes _: Set<String>,
+        includingCookies _: Bool,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
-    func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async {}
+    func clearAllProfileWebsiteData(in _: WKWebsiteDataStore) async { /* No-op. */ }
 
     @discardableResult
-    func removePersistentDataStore(forIdentifier identifier: UUID) async -> Bool {
+    func removePersistentDataStore(forIdentifier _: UUID) async -> Bool {
         false
     }
 
     @discardableResult
-    func prunePersistentDataStores(keeping identifiersToKeep: Set<UUID>) async -> [UUID] {
+    func prunePersistentDataStores(keeping _: Set<UUID>) async -> [UUID] {
         []
     }
 }

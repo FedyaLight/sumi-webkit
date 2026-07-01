@@ -19,8 +19,8 @@ final class SumiBoostsModule: ObservableObject {
         static let empty = Runtime(
             windowOwnedWebView: { _, _ in nil },
             matchingLivePages: { _, _ in [] },
-            applyBoostAwareZoom: { _, _ in },
-            openWebInspector: { _, _ in }
+            applyBoostAwareZoom: { _, _ in /* No-op. */ },
+            openWebInspector: { _, _ in /* No-op. */ }
         )
     }
 

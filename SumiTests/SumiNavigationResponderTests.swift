@@ -2177,13 +2177,13 @@ final class SumiNavigationResponderTests: XCTestCase {
                 evaluatedContexts.append(context)
                 return SumiPopupPermissionResult(action: .allow)
             },
-            evaluatePopupPermissionSynchronouslyForWebKitFallback: { _, _ in nil },
+            evaluatePopupPermissionForWebKitFallback: { _, _ in nil },
             openExtensionExternalTab: { _, _ in false },
             presentWebPopup: { _, _, _, _, _ in nil },
-            applyVisitedLinkStoreToPopupConfiguration: { _, _ in },
+            applyVisitedLinksToPopupConfiguration: { _, _ in /* No-op. */ },
             createPopupTab: { _, _ in nil },
             windowStateContainingTab: { _ in nil },
-            selectTab: { _, _ in }
+            selectTab: { _, _ in /* No-op. */ }
         )
         let responder = SumiPopupHandlingNavigationResponder(tab: tab)
         let adapter = SumiNavigationResponderAdapter(target: responder)
@@ -2440,7 +2440,7 @@ final class SumiNavigationResponderTests: XCTestCase {
 
     private func makePopupModuleRegistry() -> SumiModuleRegistry {
         let suiteName = UUID().uuidString
-        let userDefaults = UserDefaults(suiteName: suiteName)!
+        let userDefaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         addTeardownBlock {
             userDefaults.removePersistentDomain(forName: suiteName)
         }
@@ -2939,7 +2939,7 @@ private final class RecordingTabLifecycleNavigationRuntime {
                 authTabIds.append(tab.id)
                 return authDisposition
             },
-            isPreparingForDestructiveDataCleanupNavigation: { [weak self] webView in
+            isPreparingForDataCleanupNavigation: { [weak self] webView in
                 self?.cleanupCheckWebViewIds.append(ObjectIdentifier(webView))
                 return self?.isPreparingForDestructiveCleanup == true
             },

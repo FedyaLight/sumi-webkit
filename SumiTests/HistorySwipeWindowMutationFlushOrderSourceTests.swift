@@ -3,7 +3,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class HistorySwipeWindowMutationFlushOwnerTests: XCTestCase {
+final class SwipeWindowMutationFlushOwnerTests: XCTestCase {
     func testFlushOwnerPreparesVisibleWebViewsBeforeRefreshingCompositor() {
         let owner = HistorySwipeWindowMutationFlushOwner()
         let windowState = BrowserWindowState()

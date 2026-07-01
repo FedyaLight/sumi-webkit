@@ -13,7 +13,7 @@ struct VisibleWebViewPreparationRuntime {
     let currentTabId: (BrowserWindowState) -> UUID?
     let splitVisibleTabIds: (UUID) -> [UUID]
     let resolveTab: (UUID, BrowserWindowState) -> Tab?
-    let canMaterializeNormalTabWebViewDuringStartup: (Tab) -> Bool
+    let canMaterializeWebViewDuringStartup: (Tab) -> Bool
     let markTabAccessed: (UUID) -> Void
     let evictHiddenWebViews: (UUID, Set<UUID>) -> Void
     let scheduleTabSuspensionReconcile: (String) -> Void

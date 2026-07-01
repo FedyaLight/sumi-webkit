@@ -9,7 +9,7 @@ extension BrowserManager {
             )
     }
 
-    func performSiteDataPolicyAllWindowsClosedCleanup() async {
+    func performAllWindowsClosedSiteDataCleanup() async {
         await dataServices.siteDataPolicyEnforcementService
             .performAllWindowsClosedCleanup(profiles: profileManager.profiles)
     }

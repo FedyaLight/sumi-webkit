@@ -1,10 +1,10 @@
 import Foundation
 
 extension Tab {
-    func safariContentBlockerDesiredAttachmentState(
+    func safariBlockerDesiredAttachmentState(
         for targetURL: URL?
     ) -> SumiSafariContentBlockerAttachmentState {
-        reloadPolicyStateOwner.safariContentBlockerDesiredAttachmentState(
+        reloadPolicyStateOwner.safariBlockerDesiredAttachmentState(
             for: targetURL,
             runtime: reloadPolicyRuntime
         )
@@ -237,11 +237,10 @@ extension Tab {
             webViewConfigurationOverride: webViewConfigurationOverride,
             isPopupHost: isPopupHost,
             profile: resolveProfile(),
-            replacementContext: configurationPolicyWebViewReplacementContextOwner.makeContext(for: self),
+            replacementContext: webViewReplacementContextOwner.makeContext(for: self),
             publishNavigationStateChangeIfNeeded: { didChange in
                 self.publishNavigationStateChangeIfNeeded(didChange)
             }
         )
     }
-
 }

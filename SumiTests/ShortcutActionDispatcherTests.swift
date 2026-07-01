@@ -69,7 +69,8 @@ final class ShortcutActionDispatcherTests: XCTestCase {
             [RecordingShortcutActionRouter.FocusRequest(
                 prefill: "https://example.com/path",
                 navigateCurrentTab: true
-            )]
+            ),
+            ]
         )
     }
 }

@@ -325,7 +325,6 @@ extension AnyTransition {
     static var sidebarRowListItem: AnyTransition {
         .identity
     }
-
 }
 
 extension View {

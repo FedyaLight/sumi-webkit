@@ -66,7 +66,7 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         XCTAssertIdentical(try XCTUnwrap(owner.activePageWebView(for: windowState)), coordinatorWebView)
     }
 
-    func testActivePageWebViewDoesNotUseUntrackedTabCurrentWebView() throws {
+    func testActivePageWebViewDoesNotUseUntrackedTabCurrentWebView() {
         let windowState = BrowserWindowState()
         let tabWebView = WKWebView(frame: .zero)
         let tab = makeTab("https://tab.example")
@@ -118,7 +118,7 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
         XCTAssertNil(owner.activePageWebView(for: requestedWindow))
     }
 
-    func testActivePageWebViewDoesNotUseWindowAssignedTabWebViewWithoutCoordinatorTracking() throws {
+    func testActivePageWebViewDoesNotUseWindowAssignedTabWebViewWithoutCoordinatorTracking() {
         let windowState = BrowserWindowState()
         let tabWebView = WKWebView(frame: .zero)
         let tab = makeTab("https://tab.example")
@@ -240,7 +240,7 @@ final class BrowserActivePageRoutingOwnerTests: XCTestCase {
 
     private func makeTab(_ urlString: String) -> Tab {
         Tab(
-            url: URL(string: urlString)!,
+            url: URL(string: urlString) ?? preconditionFailure("Invalid test URL"),
             name: urlString,
             loadsCachedFaviconOnInit: false
         )

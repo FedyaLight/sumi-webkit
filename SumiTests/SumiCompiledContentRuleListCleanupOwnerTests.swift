@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SumiCompiledContentRuleListCleanupOwnerTests: XCTestCase {
+final class ContentRuleListCleanupOwnerTests: XCTestCase {
     func testOrphanedCleanupForgetsCachedIdentifiersAndRemovesStoreOrphans() async {
         let compiler = FakeContentRuleListCompiler()
         let catalog = FakeCompiledContentRuleListCatalog(
@@ -66,16 +66,16 @@ private final class FakeCompiledContentRuleListCatalog: SumiCompiledContentRuleL
     }
 
     func cachedIdentifiersToForget(
-        replacing previousRules: [SumiContentBlockerRules],
-        with activeRules: [SumiContentBlockerRules]
+        replacing _: [SumiContentBlockerRules],
+        with _: [SumiContentBlockerRules]
     ) -> [String] {
         cachedLookupCallCount += 1
         return cachedIdentifiersResult
     }
 
     func orphanedIdentifiers(
-        replacing previousRules: [SumiContentBlockerRules],
-        with activeRules: [SumiContentBlockerRules]
+        replacing _: [SumiContentBlockerRules],
+        with _: [SumiContentBlockerRules]
     ) -> [String] {
         orphanedLookupCallCount += 1
         return orphanedIdentifiersResult
@@ -96,17 +96,17 @@ private final class FakeContentRuleListCompiler: SumiContentRuleListCompiling, @
         self.failingRemovalIdentifiers = failingRemovalIdentifiers
     }
 
-    func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
+    func lookUpContentRuleList(forIdentifier _: String) async -> WKContentRuleList? {
         nil
     }
 
-    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool {
+    func canLookUpContentRuleList(forIdentifier _: String) async -> Bool {
         false
     }
 
     func compileContentRuleList(
-        forIdentifier identifier: String,
-        encodedContentRuleList: String
+        forIdentifier _: String,
+        encodedContentRuleList _: String
     ) async throws -> WKContentRuleList {
         throw FakeContentRuleListCompilerError.unimplemented
     }

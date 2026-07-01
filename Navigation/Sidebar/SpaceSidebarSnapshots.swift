@@ -254,7 +254,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             pinnedItems: pinnedItemsSnapshot(
                 projection: projection,
                 browserContext: browserContext,
-                windowState: windowState,
+                windowState: windowState
             ),
             regularItems: regularTabs,
             regularTabs: regularTabs,
@@ -338,12 +338,27 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         )
     }
 
+    private struct FolderSnapshotContext {
+        let childFoldersByParentId: [UUID: [TabFolder]]
+        let folderPinsByFolderId: [UUID: [ShortcutPin]]
+        let liveTabsByPinId: [UUID: Tab]
+        let browserContext: SidebarBrowserContext
+        let windowState: BrowserWindowState
+    }
+
     private static func pinnedItemsSnapshot(
         projection: TabManager.SpaceLauncherProjection?,
         browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState
     ) -> [SpacePinnedItemSnapshot] {
         guard let projection else { return [] }
+        let folderContext = FolderSnapshotContext(
+            childFoldersByParentId: projection.childFolders,
+            folderPinsByFolderId: projection.folderPins,
+            liveTabsByPinId: projection.liveTabsByPinId,
+            browserContext: browserContext,
+            windowState: windowState
+        )
 
         return (
             projection.topLevelFolders.map { folder in
@@ -352,11 +367,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     SpacePinnedItemSnapshot.folder(
                         folderSnapshot(
                             for: folder,
-                            childFoldersByParentId: projection.childFolders,
-                            folderPinsByFolderId: projection.folderPins,
-                            liveTabsByPinId: projection.liveTabsByPinId,
-                            browserContext: browserContext,
-                            windowState: windowState,
+                            context: folderContext,
                             visitedFolderIds: []
                         )
                     )
@@ -457,20 +468,16 @@ enum SpaceSidebarTransitionSnapshotBuilder {
 
     private static func folderSnapshot(
         for folder: TabFolder,
-        childFoldersByParentId: [UUID: [TabFolder]],
-        folderPinsByFolderId: [UUID: [ShortcutPin]],
-        liveTabsByPinId: [UUID: Tab],
-        browserContext: SidebarBrowserContext,
-        windowState: BrowserWindowState,
+        context: FolderSnapshotContext,
         visitedFolderIds: Set<UUID>
     ) -> SpaceFolderSnapshot {
         var nextVisited = visitedFolderIds
         nextVisited.insert(folder.id)
-        let directChildFolders = (childFoldersByParentId[folder.id] ?? [])
+        let directChildFolders = (context.childFoldersByParentId[folder.id] ?? [])
             .filter { nextVisited.contains($0.id) == false }
-        let directShortcutPins = folderPinsByFolderId[folder.id] ?? []
+        let directShortcutPins = context.folderPinsByFolderId[folder.id] ?? []
 
-        let projectionState = windowState.sidebarFolderProjection(for: folder.id)
+        let projectionState = context.windowState.sidebarFolderProjection(for: folder.id)
 
         let childSnapshots: [SpacePinnedItemSnapshot]
         let hasActiveSelection: Bool
@@ -479,32 +486,28 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             childSnapshots = folderBodyChildSnapshots(
                 childFolders: directChildFolders,
                 shortcutPins: directShortcutPins,
-                childFoldersByParentId: childFoldersByParentId,
-                folderPinsByFolderId: folderPinsByFolderId,
-                liveTabsByPinId: liveTabsByPinId,
-                browserContext: browserContext,
-                windowState: windowState,
+                context: context,
                 visitedFolderIds: nextVisited
             )
             hasActiveSelection = projectionState.hasActiveProjection || childSnapshots.containsActiveSelection
         } else {
-            let livePins = directShortcutPins.filter { liveTabsByPinId[$0.id] != nil }
+            let livePins = directShortcutPins.filter { context.liveTabsByPinId[$0.id] != nil }
             childSnapshots = livePins.map { pin in
                 SpacePinnedItemSnapshot.shortcut(
                     shortcutSnapshot(
                         for: pin,
-                        liveTab: liveTabsByPinId[pin.id],
-                        browserContext: browserContext,
-                        windowState: windowState
+                        liveTab: context.liveTabsByPinId[pin.id],
+                        browserContext: context.browserContext,
+                        windowState: context.windowState
                     )
                 )
             }
             hasActiveSelection = projectionState.hasActiveProjection || doesFolderContainActiveSelection(
                 folderId: folder.id,
-                childFoldersByParentId: childFoldersByParentId,
-                folderPinsByFolderId: folderPinsByFolderId,
-                liveTabsByPinId: liveTabsByPinId,
-                windowState: windowState
+                childFoldersByParentId: context.childFoldersByParentId,
+                folderPinsByFolderId: context.folderPinsByFolderId,
+                liveTabsByPinId: context.liveTabsByPinId,
+                windowState: context.windowState
             )
         }
 
@@ -514,7 +517,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         )
         let collapsedProjectedChildSnapshots = collapsedProjectedShortcutPins(
             directShortcutPins,
-            liveTabsByPinId: liveTabsByPinId,
+            liveTabsByPinId: context.liveTabsByPinId,
             projectionState: projectionState
         ).compactMap { childSnapshotsById[$0.id] }
         let bodyChildren = folder.isOpen ? childSnapshots : collapsedProjectedChildSnapshots
@@ -532,11 +535,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     private static func folderBodyChildSnapshots(
         childFolders: [TabFolder],
         shortcutPins: [ShortcutPin],
-        childFoldersByParentId: [UUID: [TabFolder]],
-        folderPinsByFolderId: [UUID: [ShortcutPin]],
-        liveTabsByPinId: [UUID: Tab],
-        browserContext: SidebarBrowserContext,
-        windowState: BrowserWindowState,
+        context: FolderSnapshotContext,
         visitedFolderIds: Set<UUID>
     ) -> [SpacePinnedItemSnapshot] {
         (
@@ -547,11 +546,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     SpacePinnedItemSnapshot.folder(
                         folderSnapshot(
                             for: childFolder,
-                            childFoldersByParentId: childFoldersByParentId,
-                            folderPinsByFolderId: folderPinsByFolderId,
-                            liveTabsByPinId: liveTabsByPinId,
-                            browserContext: browserContext,
-                            windowState: windowState,
+                            context: context,
                             visitedFolderIds: visitedFolderIds
                         )
                     )
@@ -564,9 +559,9 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                     SpacePinnedItemSnapshot.shortcut(
                         shortcutSnapshot(
                             for: pin,
-                            liveTab: liveTabsByPinId[pin.id],
-                            browserContext: browserContext,
-                            windowState: windowState
+                            liveTab: context.liveTabsByPinId[pin.id],
+                            browserContext: context.browserContext,
+                            windowState: context.windowState
                         )
                     )
                 )

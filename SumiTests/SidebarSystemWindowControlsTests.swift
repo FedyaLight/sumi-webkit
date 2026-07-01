@@ -257,5 +257,4 @@ final class SidebarSystemWindowControlsTests: XCTestCase {
 
         return nil
     }
-
 }

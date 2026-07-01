@@ -75,10 +75,10 @@ struct SidebarBottomBar: View {
                             createRSSLiveFolderInCurrentSpace()
                         }
                         Button("GitHub Pull Requests", systemImage: "chevron.left.forwardslash.chevron.right") {
-                            createGitHubPullRequestsLiveFolderInCurrentSpace()
+                            createGitHubPRFolderInCurrentSpace()
                         }
                         Button("GitHub Issues", systemImage: "exclamationmark.circle") {
-                            createGitHubIssuesLiveFolderInCurrentSpace()
+                            createGitHubIssuesFolderInCurrentSpace()
                         }
                     }
                 } label: {
@@ -130,7 +130,7 @@ struct SidebarBottomBar: View {
                             title: "GitHub Pull Requests",
                             systemImage: "chevron.left.forwardslash.chevron.right",
                             classification: .structuralMutation,
-                            onAction: createGitHubPullRequestsLiveFolderInCurrentSpace
+                            onAction: createGitHubPRFolderInCurrentSpace
                         )
                     ),
                     .action(
@@ -138,7 +138,7 @@ struct SidebarBottomBar: View {
                             title: "GitHub Issues",
                             systemImage: "exclamationmark.circle",
                             classification: .structuralMutation,
-                            onAction: createGitHubIssuesLiveFolderInCurrentSpace
+                            onAction: createGitHubIssuesFolderInCurrentSpace
                         )
                     ),
                 ]
@@ -154,11 +154,11 @@ struct SidebarBottomBar: View {
         browserContext.commands.createRSSLiveFolderInCurrentSpace(windowState)
     }
 
-    private func createGitHubPullRequestsLiveFolderInCurrentSpace() {
-        browserContext.commands.createGitHubPullRequestsLiveFolderInCurrentSpace(windowState)
+    private func createGitHubPRFolderInCurrentSpace() {
+        browserContext.commands.createGitHubPRFolderInCurrentSpace(windowState)
     }
 
-    private func createGitHubIssuesLiveFolderInCurrentSpace() {
-        browserContext.commands.createGitHubIssuesLiveFolderInCurrentSpace(windowState)
+    private func createGitHubIssuesFolderInCurrentSpace() {
+        browserContext.commands.createGitHubIssuesFolderInCurrentSpace(windowState)
     }
 }

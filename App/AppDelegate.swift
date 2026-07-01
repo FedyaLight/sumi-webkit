@@ -183,7 +183,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// Confirms user-initiated quits when enabled, then schedules best-effort persistence.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         terminationHandler?.dismissFloatingBarForActiveWindow(preserveDraft: true)
-        terminationHandler?.dismissWorkspaceThemePickerIfNeededCommitting()
+        terminationHandler?.dismissThemePickerCommittingIfNeeded()
         NotificationCenter.default.post(
             name: .sumiShouldHideCollapsedSidebarOverlay,
             object: sender
@@ -354,7 +354,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                     )
                 }
 
-                await terminationHandlerSnapshot?.performSiteDataPolicyAllWindowsClosedCleanup()
+                await terminationHandlerSnapshot?.performAllWindowsClosedSiteDataCleanup()
                 persistenceHandler.cleanupAllTabs()
                 AppDelegate.log.info("Cleanup completed; WKWebView processes terminated")
             }

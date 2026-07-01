@@ -79,7 +79,7 @@ private final class TabSuspensionHarness {
     init(attachImmediately: Bool = true) {
         service = TabSuspensionService(
             memoryMonitor: nil,
-            timerSleep: { _ in }
+            timerSleep: { _ in /* No-op. */ }
         )
         if attachImmediately {
             attach()

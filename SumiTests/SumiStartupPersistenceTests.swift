@@ -105,5 +105,4 @@ final class SumiStartupPersistenceTests: XCTestCase {
         XCTAssertEqual(openAttempts, 1)
         XCTAssertEqual(resetAttempts, 0)
     }
-
 }

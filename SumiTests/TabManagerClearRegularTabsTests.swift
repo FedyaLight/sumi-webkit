@@ -241,7 +241,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             windowState: { windowsById[$0] },
             windows: { windowsById.map { ($0.key, $0.value) } },
             visibleSplitTabIds: { windowId in
-                windowId == splitOnlyWindow.id ? [splitOnlyWindow.currentTabId, actionWindow.currentTabId].compactMap { $0 } : []
+                windowId == splitOnlyWindow.id ? [splitOnlyWindow.currentTabId, actionWindow.currentTabId].compactMap(\.self) : []
             }
         )
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
@@ -350,8 +350,8 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         windowState: @escaping (UUID) -> BrowserWindowState? = { _ in nil },
         windows: @escaping () -> [(UUID, BrowserWindowState)] = { [] },
         visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
-        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in },
-        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in }
+        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
+        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in /* No-op. */ }
     ) throws -> TabManager {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,

@@ -69,7 +69,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         )
         tab.webViewCleanupRuntime = TabWebViewCleanupRuntime(
             deferProtectedWebViewCleanup: { candidateWebView, tabId, reason in
-                XCTAssertTrue(candidateWebView === webView)
+                XCTAssertIdentical(candidateWebView, webView)
                 deferredTabIds.append(tabId)
                 deferredReasons.append(reason)
                 return false
@@ -102,16 +102,16 @@ final class TabRuntimeRoutingTests: XCTestCase {
         var registeredTabIds: [UUID] = []
         var registrationReasons: [String] = []
         tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
-            registerNormalTabWithExtensionRuntimeIfNeeded: { registeredTab, reason in
+            registerTabWithExtensionRuntimeIfNeeded: { registeredTab, reason in
                 registeredTabIds.append(registeredTab.id)
                 registrationReasons.append(reason)
             },
-            prepareWebViewForExtensionRuntime: { _, _, _ in },
-            ensureInitialDocumentExtensionContextsLoadedIfNeeded: { _ in }
+            prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
+            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ }
         )
 
         tab.normalWebViewRuntimeContext()
-            .registerNormalTabWithExtensionRuntimeIfNeeded("test.registration")
+            .registerTabWithExtensionRuntimeIfNeeded("test.registration")
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(registeredTabIds, [tab.id])
@@ -126,13 +126,13 @@ final class TabRuntimeRoutingTests: XCTestCase {
         var preparedURLs: [URL?] = []
         var preparedReasons: [String] = []
         tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
-            registerNormalTabWithExtensionRuntimeIfNeeded: { _, _ in },
+            registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
             prepareWebViewForExtensionRuntime: { webView, currentURL, reason in
                 preparedWebViews.append(webView)
                 preparedURLs.append(currentURL)
                 preparedReasons.append(reason)
             },
-            ensureInitialDocumentExtensionContextsLoadedIfNeeded: { _ in }
+            ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ }
         )
 
         tab.ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(
@@ -243,7 +243,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
 
         XCTAssertTrue(tab.hasBrowserRuntime)
         let resolvedAppearance = try XCTUnwrap(tab.webPageMenuAppearance(fallback: fallbackAppearance))
-        XCTAssertTrue(resolvedAppearance === fallbackAppearance)
+        XCTAssertIdentical(resolvedAppearance, fallbackAppearance)
         XCTAssertTrue(tab.canBookmarkFromWebPageMenu())
         tab.requestBookmarkEditorFromWebPageMenu()
         XCTAssertTrue(tab.canStartContextMenuDownload())
@@ -392,8 +392,8 @@ final class TabRuntimeRoutingTests: XCTestCase {
         let windowId = UUID()
         let runtime = TabHistorySwipeRuntime.live(
             webViewCoordinator: { coordinator },
-            cancelWindowMutationsAfterHistorySwipe: { _ in },
-            flushWindowMutationsAfterHistorySwipe: { _ in }
+            cancelWindowMutationsAfterHistorySwipe: { _ in /* No-op. */ },
+            flushWindowMutationsAfterHistorySwipe: { _ in /* No-op. */ }
         )
 
         XCTAssertNil(runtime.windowIDContaining(webView))
@@ -431,7 +431,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(
-            tab.safariContentBlockerDesiredAttachmentState(for: pageURL),
+            tab.safariBlockerDesiredAttachmentState(for: pageURL),
             safariState
         )
         XCTAssertEqual(
@@ -440,7 +440,7 @@ final class TabRuntimeRoutingTests: XCTestCase {
         )
     }
 
-    func testNavigateToURLUsesInjectedSearchTemplateWithoutBrowserManager() throws {
+    func testNavigateToURLUsesInjectedSearchTemplateWithoutBrowserManager() {
         let webView = WKWebView()
         let tab = Tab(existingWebView: webView, loadsCachedFaviconOnInit: false)
         tab.navigationCommandRuntime = TabNavigationCommandRuntime(

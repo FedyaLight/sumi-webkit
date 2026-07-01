@@ -39,8 +39,8 @@ extension Tab {
             },
             currentPermissionPageId: { self.currentPermissionPageId() },
             profilePartitionId: { self.resolveProfile()?.id.uuidString },
-            invalidateCurrentPermissionPageForWebViewReplacement: { reason in
-                self.invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
+            invalidatePermissionPageForReplacement: { reason in
+                self.invalidatePermissionPageForReplacement(reason: reason)
             },
             unbindAudioState: { webView in
                 self.unbindAudioState(from: webView)

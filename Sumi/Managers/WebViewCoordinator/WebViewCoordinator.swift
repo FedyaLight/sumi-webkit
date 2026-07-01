@@ -59,7 +59,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private var browserRuntimeContext: WebViewCoordinatorBrowserRuntimeContext?
 
     @ObservationIgnored
-    private var initialDocumentRuntimeContext: WebViewCoordinatorInitialDocumentRuntimeContext?
+    private var initialDocumentRuntimeContext: InitialDocumentWebViewRuntimeContext?
 
     @ObservationIgnored
     private var shutdownRuntimeContext: WebViewCoordinatorShutdownRuntimeContext?
@@ -155,7 +155,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         return result
     }
 
-    func isPreparingForDestructiveDataCleanupNavigation(on webView: WKWebView) -> Bool {
+    func isPreparingForDataCleanupNavigation(on webView: WKWebView) -> Bool {
         destructiveCleanupPreparationOwner.isSuppressingNavigation(on: webView)
     }
 
@@ -282,7 +282,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     func attachInitialDocumentRuntimeContext(
-        _ context: WebViewCoordinatorInitialDocumentRuntimeContext
+        _ context: InitialDocumentWebViewRuntimeContext
     ) {
         initialDocumentRuntimeContext = context
     }
@@ -1028,13 +1028,14 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private func requireBrowserRuntimeContext() -> WebViewCoordinatorBrowserRuntimeContext {
         guard let browserRuntimeContext else {
             preconditionFailure(
-                "WebViewCoordinator browser runtime context is nil. Attach it via BrowserManager.webViewCoordinator before runtime-dependent WebView operations."
+                "WebViewCoordinator browser runtime context is nil. "
+                    + "Attach it via BrowserManager.webViewCoordinator before runtime-dependent WebView operations."
             )
         }
         return browserRuntimeContext
     }
 
-    private func requireInitialDocumentRuntimeContext() -> WebViewCoordinatorInitialDocumentRuntimeContext {
+    private func requireInitialDocumentRuntimeContext() -> InitialDocumentWebViewRuntimeContext {
         guard let initialDocumentRuntimeContext else {
             preconditionFailure(
                 "WebViewCoordinator initial document runtime context is nil. Attach it via BrowserManager.webViewCoordinator before rebuilding WebViews."
@@ -1069,7 +1070,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             currentTabId: context.currentTabId,
             splitVisibleTabIds: context.splitVisibleTabIds,
             resolveTab: context.resolveTab,
-            canMaterializeNormalTabWebViewDuringStartup: context.canMaterializeNormalTabWebViewDuringStartup,
+            canMaterializeWebViewDuringStartup: context.canMaterializeWebViewDuringStartup,
             markTabAccessed: context.markTabAccessed,
             evictHiddenWebViews: { [weak self] windowId, visibleTabIDs in
                 guard let self else { return }
@@ -1205,8 +1206,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             primaryCandidate: { [self] tabId in
                 preferredPrimaryWebViewCandidate(for: tabId)
             },
-            liveWindowIDs: {
-                return Set(runtimeContext.allWindows().map(\.id))
+            liveWindowSelection: {
+                .liveWindows(Set(runtimeContext.allWindows().map(\.id)))
             },
             refreshCompositor: { windowId in
                 guard let windowState = runtimeContext.window(windowId) else {
@@ -1231,8 +1232,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             needsInitialDocumentExtensionContextLoad: { profileId in
                 runtimeContext.needsInitialDocumentExtensionContextLoad(profileId)
             },
-            ensureInitialDocumentExtensionContextsLoaded: { profileId in
-                await runtimeContext.ensureInitialDocumentExtensionContextsLoaded(profileId)
+            ensureInitialExtensionContextsLoaded: { profileId in
+                await runtimeContext.ensureInitialExtensionContextsLoaded(profileId)
             },
             refreshCompositorForWindow: { windowId in
                 runtimeContext.refreshCompositorForWindow(windowId)

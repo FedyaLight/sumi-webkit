@@ -19,7 +19,7 @@ extension BrowserTabOpeningOwner.Dependencies {
                 browserManager?.windowState(containing: tab)
             },
             canMaterializeBackgroundTab: { [weak browserManager] tab in
-                browserManager?.canMaterializeNormalTabWebViewDuringStartup(tab) ?? true
+                browserManager?.canMaterializeWebViewDuringStartup(tab) ?? true
             },
             deferBackgroundTabUntilStartupReady: { [weak browserManager] tab in
                 browserManager?.deferBackgroundTabUntilStartupReady(tab)

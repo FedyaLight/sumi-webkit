@@ -17,9 +17,9 @@ struct SumiExtensionsModuleRuntime {
 
     static let inactive = SumiExtensionsModuleRuntime(
         currentProfile: { nil },
-        attachManager: { _ in },
+        attachManager: { _ in /* No-op. */ },
         liveTabs: { [] },
-        invalidateTabStructuralRevision: {}
+        invalidateTabStructuralRevision: { /* No-op. */ }
     )
 }
 
@@ -102,7 +102,7 @@ final class SumiExtensionsModule {
         if let cachedManager {
             runtime.attachManager(cachedManager)
         }
-        ensureActionSurfaceMetadataLoadedIfNeeded()
+        ensureActionMetadataLoadedIfNeeded()
     }
 
     func setEnabled(_ isEnabled: Bool) {
@@ -148,7 +148,7 @@ final class SumiExtensionsModule {
     }
 
     @discardableResult
-    func ensureActionSurfaceMetadataLoadedIfNeeded() -> Bool {
+    func ensureActionMetadataLoadedIfNeeded() -> Bool {
         guard isEnabled, context != nil else { return false }
 
         if cachedManager != nil {
@@ -166,12 +166,12 @@ final class SumiExtensionsModule {
         managerIfNeededForNormalTabRuntime()?.normalTabUserScripts() ?? []
     }
 
-    func prepareWebViewConfigurationForExtensionRuntime(
+    func prepareWebViewConfigForExtensionRuntime(
         _ configuration: WKWebViewConfiguration,
         profileId: UUID? = nil,
         reason: String
     ) {
-        managerIfNeededForNormalTabRuntime()?.prepareWebViewConfigurationForExtensionRuntime(
+        managerIfNeededForNormalTabRuntime()?.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profileId,
             reason: reason
@@ -275,10 +275,10 @@ final class SumiExtensionsModule {
             .ensureContentScriptContextsLoaded(for: profileId)
     }
 
-    func ensureInitialDocumentExtensionContextsLoadedIfNeeded(profileId: UUID) async {
+    func ensureInitialExtensionContextsIfNeeded(profileId: UUID) async {
         guard isEnabled else { return }
         await managerIfNeededForNormalTabRuntime()?
-            .ensureInitialDocumentExtensionContextsLoaded(for: profileId)
+            .ensureInitialExtensionContextsLoaded(for: profileId)
     }
 
     func needsInitialDocumentExtensionContextLoadIfNeeded(profileId: UUID) -> Bool {

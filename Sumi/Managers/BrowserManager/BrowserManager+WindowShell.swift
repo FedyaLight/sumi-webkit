@@ -28,7 +28,7 @@ extension BrowserManager {
     }
 
     private func makeWindowShellContext() -> BrowserWindowShellService.Context {
-        return BrowserWindowShellService.Context(
+        BrowserWindowShellService.Context(
             windowRegistry: requireWindowRegistry(),
             webViewCoordinator: requireWebViewCoordinator(),
             permissionLifecycleController: permissionLifecycleController,

@@ -269,7 +269,7 @@ extension BrowserHistoryNavigationOwner.Dependencies {
                 )
             },
             windowIds: { [weak browserManager] in
-                browserManager?.windowRegistry?.windows.keys.map { $0 } ?? []
+                browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
                 browserManager?.createNewWindow()

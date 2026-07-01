@@ -152,9 +152,9 @@ struct AuxiliaryWindowRuntime {
         currentSpace: { nil },
         windowContainingTab: { _ in nil },
         createMiniWindowTab: { _, _, _, _ in nil },
-        removeMiniWindowTab: { _ in },
-        notifyTabClosedIfLoaded: { _ in },
-        registerExtensionCreatedTabIfLoaded: { _, _ in },
+        removeMiniWindowTab: { _ in /* No-op. */ },
+        notifyTabClosedIfLoaded: { _ in /* No-op. */ },
+        registerExtensionCreatedTabIfLoaded: { _, _ in /* No-op. */ },
         popupPermissionBridge: { nil },
         filePickerPermissionBridge: { nil }
     )
@@ -424,7 +424,7 @@ final class AuxiliaryWindowManager {
             ?? runtime.currentProfileID()
 
         if let profileId {
-            await extensionManager.ensureInitialDocumentExtensionContextsLoaded(
+            await extensionManager.ensureInitialExtensionContextsLoaded(
                 for: profileId
             )
         }
@@ -462,7 +462,7 @@ final class AuxiliaryWindowManager {
 
         let webViewConfiguration = (tabWebExtensionContextOverride ?? extensionContext).webViewConfiguration
             ?? WKWebViewConfiguration()
-        extensionManager.prepareWebViewConfigurationForExtensionRuntime(
+        extensionManager.prepareWebViewConfigForExtensionRuntime(
             webViewConfiguration,
             profileId: profileId,
             reason: "AuxiliaryWindowManager.presentExtensionPopupWindow.webView"
@@ -589,6 +589,8 @@ final class AuxiliaryWindowManager {
         tabContext: SumiFilePickerPermissionTabContext,
         webView: WKWebView?,
         currentPageId: @escaping @MainActor () -> String?,
+        // WebKit uses nil here to report open-panel cancellation.
+        // swiftlint:disable:next discouraged_optional_collection
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) -> Bool {
         guard let bridge = runtime.filePickerPermissionBridge() else {

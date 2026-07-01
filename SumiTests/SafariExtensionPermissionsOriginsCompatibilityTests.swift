@@ -158,7 +158,7 @@ final class SafariExtensionPermissionsOriginsCompatibilityTests: XCTestCase {
         let configuration = browserConfiguration.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigurationForExtensionRuntime(
+        manager.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionPermissionsOriginsCompatibilityTests"

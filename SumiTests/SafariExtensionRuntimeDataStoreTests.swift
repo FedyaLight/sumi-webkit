@@ -55,7 +55,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         let configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigurationForExtensionRuntime(
+        manager.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionRuntimeDataStoreTests"
@@ -100,7 +100,7 @@ final class SafariExtensionRuntimeDataStoreTests: XCTestCase {
         XCTAssertFalse(configuration.websiteDataStore.isPersistent)
         XCTAssertIdentical(configuration.websiteDataStore, ephemeralProfile.dataStore)
 
-        manager.prepareWebViewConfigurationForExtensionRuntime(
+        manager.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: ephemeralProfile.id,
             reason: "SafariExtensionRuntimeDataStoreTests.ephemeral"

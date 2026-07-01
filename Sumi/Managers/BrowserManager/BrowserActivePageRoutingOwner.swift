@@ -237,7 +237,9 @@ final class BrowserActivePageRoutingOwner {
     private func showWebInspectorAlert() {
         let alert = NSAlert()
         alert.messageText = "Open Web Inspector"
-        alert.informativeText = "To open the Web Inspector:\n\n1. Right-click on the page and select 'Inspect Element'\n\nOr enable the Develop menu in Safari Settings → Advanced, then use Develop → [Your App]"
+        alert.informativeText = "To open the Web Inspector:\n\n"
+            + "1. Right-click on the page and select 'Inspect Element'\n\n"
+            + "Or enable the Develop menu in Safari Settings → Advanced, then use Develop → [Your App]"
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()

@@ -116,7 +116,7 @@ enum TabWebViewCleanupOwner {
         let removeAllWebViews: (_ closeActiveFullscreenMedia: Bool) -> Bool
         let currentPermissionPageId: () -> String
         let profilePartitionId: () -> String?
-        let invalidateCurrentPermissionPageForWebViewReplacement: (String) -> Void
+        let invalidatePermissionPageForReplacement: (String) -> Void
         let unbindAudioState: (WKWebView) -> Void
         let removeNavigationStateObservers: (WKWebView) -> Void
         let removeNavigationDelegateBundle: (WKWebView) -> Void
@@ -180,7 +180,7 @@ enum TabWebViewCleanupOwner {
 
     @MainActor
     static func unloadWebView(context: Context) {
-        context.invalidateCurrentPermissionPageForWebViewReplacement("normal-tab-webview-unload")
+        context.invalidatePermissionPageForReplacement("normal-tab-webview-unload")
 
         let removedTrackedWebViews = context.removeAllWebViews(true)
 

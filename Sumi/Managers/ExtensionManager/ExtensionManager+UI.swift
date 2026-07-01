@@ -553,7 +553,7 @@ extension ExtensionManager {
         value as? [String] ?? []
     }
 
-    func prepareWebViewConfigurationForExtensionRuntime(
+    func prepareWebViewConfigForExtensionRuntime(
         _ configuration: WKWebViewConfiguration,
         profileId: UUID? = nil,
         reason: String = #function
@@ -852,5 +852,4 @@ extension ExtensionManager {
             completionHandler: completionHandler
         )
     }
-
 }

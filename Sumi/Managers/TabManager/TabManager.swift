@@ -72,30 +72,47 @@ class TabManager: ObservableObject {
     )
     private lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: TabTransientWebKitTabLifecycleOwner.Dependencies(
-            settings: { [unowned self] in self.sumiSettings ?? self.runtimeContext?.settings },
-            runtimeContext: { [unowned self] in self.runtimeContext },
-            membershipOwner: { [unowned self] in self.tabCollectionMembershipOwner },
-            regularTabCollectionOwner: { [unowned self] in self.regularTabCollectionOwner },
-            attach: { [unowned self] tab in self.attach(tab) },
-            detach: { [unowned self] tab in self.detach(tab) },
-            targetSpace: { [unowned self] space in
-                self.resolvedTargetSpace(preferred: space)
+            settings: { [weak self] in self?.sumiSettings ?? self?.runtimeContext?.settings },
+            runtimeContext: { [weak self] in self?.runtimeContext },
+            membershipOwner: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.tabCollectionMembershipOwner
             },
-            spaceForID: { [unowned self] spaceId in
-                self.spaces.first { $0.id == spaceId }
+            regularTabCollectionOwner: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.regularTabCollectionOwner
             },
-            backfillTargetSpaceProfileIfNeeded: { [unowned self] space, profileId in
-                self.backfillTargetSpaceProfileIfNeeded(space, profileId: profileId)
+            attach: { [weak self] tab in self?.attach(tab) },
+            detach: { [weak self] tab in self?.detach(tab) },
+            targetSpace: { [weak self] space in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.resolvedTargetSpace(preferred: space)
             },
-            insertRegularTab: { [unowned self] tab, spaceId, insertionIndex in
-                self.regularTabLifecycleOwner.insertRegularTab(tab, in: spaceId, at: insertionIndex)
+            spaceForID: { [weak self] spaceId in
+                self?.spaces.first { $0.id == spaceId }
             },
-            scheduleStructuralPersistence: { [unowned self] in self.scheduleStructuralPersistence() },
-            setActiveTab: { [unowned self] tab in self.setActiveTab(tab) },
-            tabForID: { [unowned self] id in self.tab(for: id) },
-            faviconService: { [unowned self] in self.faviconService },
-            faviconImageService: { [unowned self] in self.faviconImageService },
-            visitedLinkStore: { [unowned self] in self.visitedLinkStore }
+            backfillTargetSpaceProfileIfNeeded: { [weak self] space, profileId in
+                guard let self else { return false }
+                return self.backfillTargetSpaceProfileIfNeeded(space, profileId: profileId)
+            },
+            insertRegularTab: { [weak self] tab, spaceId, insertionIndex in
+                self?.regularTabLifecycleOwner.insertRegularTab(tab, in: spaceId, at: insertionIndex)
+            },
+            scheduleStructuralPersistence: { [weak self] in self?.scheduleStructuralPersistence() },
+            setActiveTab: { [weak self] tab in self?.setActiveTab(tab) },
+            tabForID: { [weak self] id in self?.tab(for: id) },
+            faviconService: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.faviconService
+            },
+            faviconImageService: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.faviconImageService
+            },
+            visitedLinkStore: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.visitedLinkStore
+            }
         )
     )
     /// Emitted when tab structure changes without a corresponding `@Published` update (e.g. transient shortcut live tabs). Not used for persistence completion—`scheduleStructuralPersistence()` does not send this.

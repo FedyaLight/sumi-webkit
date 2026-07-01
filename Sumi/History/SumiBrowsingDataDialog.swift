@@ -198,7 +198,7 @@ private struct SumiBrowsingDataSheetBackground: View {
 struct SumiBrowsingDataDialogContext {
     let cleanupService: SumiBrowsingDataCleanupService
     let profileSnapshot: () -> [Profile]
-    let activeCleanupDependencies: () -> SumiBrowsingDataDialogCleanupDependencies?
+    let activeCleanupDependencies: () -> BrowsingDataDialogCleanupDependencies?
     let dismissNativeModalPresentation: () -> Void
 
     var regularProfileCount: Int {
@@ -207,7 +207,7 @@ struct SumiBrowsingDataDialogContext {
 }
 
 @MainActor
-struct SumiBrowsingDataDialogCleanupDependencies {
+struct BrowsingDataDialogCleanupDependencies {
     let historyManager: HistoryManager
     let profiles: [Profile]
     let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing

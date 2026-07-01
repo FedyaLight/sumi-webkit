@@ -22,7 +22,7 @@ final class TabNavigationTransactionOwner {
         ) -> Bool
         let cancelWindowMutationsAfterHistorySwipe: @MainActor (UUID) -> Void
         let flushWindowMutationsAfterHistorySwipe: @MainActor (UUID) -> Void
-        let updateNavigationStateIfCurrentWebViewExists: @MainActor () -> Void
+        let updateNavStateIfCurrentWebViewExists: @MainActor () -> Void
         let scheduleRuntimeStatePersistence: @MainActor () -> Void
         let syncAcrossWindows: @MainActor (WKWebView) -> Void
     }
@@ -32,7 +32,7 @@ final class TabNavigationTransactionOwner {
     private var pendingBackForwardNavigationContext: TabBackForwardNavigationContext?
     private var pendingBackForwardSettleTask: Task<Void, Never>?
     var pendingMainFrameNavigationKind: TabMainFrameNavigationKind?
-    var isFreezingNavigationStateDuringBackForwardGesture = false
+    var isFreezingNavDuringBackForwardGesture = false
 
     func cancelPendingMainFrameNavigation() {
         cancelPendingPreparedLoad()
@@ -41,7 +41,7 @@ final class TabNavigationTransactionOwner {
 
     func perform(
         on webView: WKWebView,
-        performLoad: @escaping @MainActor (WKWebView) -> Void
+        performLoad: @MainActor (WKWebView) -> Void
     ) {
         cancelPendingMainFrameNavigation()
 
@@ -80,7 +80,7 @@ final class TabNavigationTransactionOwner {
         pendingBackForwardSettleTask = nil
         pendingMainFrameNavigationKind = nil
         pendingBackForwardNavigationContext = nil
-        isFreezingNavigationStateDuringBackForwardGesture = false
+        isFreezingNavDuringBackForwardGesture = false
     }
 
     func markRegularMainFrameNavigation(
@@ -89,7 +89,7 @@ final class TabNavigationTransactionOwner {
     ) {
         cancelPendingPreparedLoad()
 
-        let wasFreezingNavigationState = isFreezingNavigationStateDuringBackForwardGesture
+        let wasFreezingNavigationState = isFreezingNavDuringBackForwardGesture
         let protectedWebView = webView ?? environment.currentWebView()
         let settledWindowId = protectedWebView.flatMap(environment.windowIDContaining)
 
@@ -97,7 +97,7 @@ final class TabNavigationTransactionOwner {
         pendingBackForwardSettleTask = nil
         pendingMainFrameNavigationKind = .load
         pendingBackForwardNavigationContext = nil
-        isFreezingNavigationStateDuringBackForwardGesture = false
+        isFreezingNavDuringBackForwardGesture = false
 
         if wasFreezingNavigationState {
             let wasCancelled = environment.finishHistorySwipeProtection(
@@ -115,7 +115,7 @@ final class TabNavigationTransactionOwner {
         }
 
         if wasFreezingNavigationState {
-            environment.updateNavigationStateIfCurrentWebViewExists()
+            environment.updateNavStateIfCurrentWebViewExists()
         }
     }
 
@@ -134,7 +134,7 @@ final class TabNavigationTransactionOwner {
             originHistoryURL: originHistoryItem?.url,
             originHistoryItem: originHistoryItem
         )
-        isFreezingNavigationStateDuringBackForwardGesture = true
+        isFreezingNavDuringBackForwardGesture = true
 
         environment.beginHistorySwipeProtection(
             environment.tabId,
@@ -157,7 +157,7 @@ final class TabNavigationTransactionOwner {
         using webView: WKWebView?,
         environment: HistorySwipeEnvironment
     ) {
-        let wasFreezingNavigationState = isFreezingNavigationStateDuringBackForwardGesture
+        let wasFreezingNavigationState = isFreezingNavDuringBackForwardGesture
         let resolvedWebView = webView ?? environment.currentWebView()
         let settledWindowId = resolvedWebView.flatMap(environment.windowIDContaining)
 
@@ -165,7 +165,7 @@ final class TabNavigationTransactionOwner {
         pendingBackForwardSettleTask = nil
         pendingMainFrameNavigationKind = nil
         pendingBackForwardNavigationContext = nil
-        isFreezingNavigationStateDuringBackForwardGesture = false
+        isFreezingNavDuringBackForwardGesture = false
 
         let wasCancelled = environment.finishHistorySwipeProtection(
             environment.tabId,
@@ -181,7 +181,7 @@ final class TabNavigationTransactionOwner {
         )
 
         if wasFreezingNavigationState {
-            environment.updateNavigationStateIfCurrentWebViewExists()
+            environment.updateNavStateIfCurrentWebViewExists()
         }
     }
 

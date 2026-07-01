@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
@@ -41,7 +41,7 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
         actions.duplicateTab(tab, windowState)
         actions.toggleDownloadsPopover(windowState)
 
-        XCTAssertTrue(openedTab === returnedTab)
+        XCTAssertIdentical(openedTab, returnedTab)
         XCTAssertEqual(
             spy.events,
             [
@@ -83,8 +83,8 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
         actions.pinShortcutGlobally(pin, windowState, spaceId, liveTab)
         actions.createFolderInCurrentSpace(windowState)
         actions.createRSSLiveFolderInCurrentSpace(windowState)
-        actions.createGitHubPullRequestsLiveFolderInCurrentSpace(windowState)
-        actions.createGitHubIssuesLiveFolderInCurrentSpace(windowState)
+        actions.createGitHubPRFolderInCurrentSpace(windowState)
+        actions.createGitHubIssuesFolderInCurrentSpace(windowState)
 
         XCTAssertEqual(
             spy.events,
@@ -157,10 +157,10 @@ final class BrowserSidebarCommandRoutingOwnerTests: XCTestCase {
                 createRSSLiveFolderInCurrentSpace: { windowState in
                     spy.events.append(.createRSSLiveFolder(windowState.id))
                 },
-                createGitHubPullRequestsLiveFolderInCurrentSpace: { windowState in
+                createGitHubPRFolderInCurrentSpace: { windowState in
                     spy.events.append(.createGitHubPullRequestsLiveFolder(windowState.id))
                 },
-                createGitHubIssuesLiveFolderInCurrentSpace: { windowState in
+                createGitHubIssuesFolderInCurrentSpace: { windowState in
                     spy.events.append(.createGitHubIssuesLiveFolder(windowState.id))
                 }
             )

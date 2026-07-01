@@ -596,5 +596,4 @@ final class SumiCompanionAppResolverTests: XCTestCase {
     private func makeDefaults() -> UserDefaults {
         UserDefaults(suiteName: "SumiCompanionAppResolverTests.\(UUID().uuidString)")!
     }
-
 }

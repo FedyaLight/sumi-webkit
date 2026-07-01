@@ -139,13 +139,13 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
                 },
                 tab: { _ in nil },
                 resolvedNowPlayingWebView: { _, _ in nil },
-                selectTab: { _, _ in }
+                selectTab: { _, _ in /* No-op. */ }
             )
         )
 
         let candidates = context.candidateTabs()
 
-        XCTAssertEqual(candidates.map { $0.tab.id }, [playingTab.id, fallbackCurrentTab.id])
+        XCTAssertEqual(candidates.map(\.tab.id), [playingTab.id, fallbackCurrentTab.id])
         XCTAssertIdentical(candidates[0].windowState, regularWindow)
         XCTAssertIdentical(candidates[1].windowState, fallbackWindow)
     }
@@ -164,7 +164,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
                 mediaCandidateTabs: { _ in [sharedPlayingTab] },
                 tab: { _ in nil },
                 resolvedNowPlayingWebView: { _, _ in nil },
-                selectTab: { _, _ in }
+                selectTab: { _, _ in /* No-op. */ }
             )
         )
 
@@ -199,7 +199,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
                     tabId == lookupTab.id ? lookupTab : nil
                 },
                 resolvedNowPlayingWebView: { _, _ in nil },
-                selectTab: { _, _ in }
+                selectTab: { _, _ in /* No-op. */ }
             )
         )
 
@@ -212,7 +212,7 @@ final class SumiNativeNowPlayingRuntimeContextTests: XCTestCase {
 
     private func makeTab(_ url: String) -> Tab {
         Tab(
-            url: URL(string: url)!,
+            url: URL(string: url) ?? preconditionFailure("Invalid test URL"),
             loadsCachedFaviconOnInit: false
         )
     }

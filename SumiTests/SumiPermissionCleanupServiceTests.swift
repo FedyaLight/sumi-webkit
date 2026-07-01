@@ -7,11 +7,15 @@ private let permissionCleanupServiceFixedDate = Date(timeIntervalSince1970: 1_80
 @MainActor
 final class SumiPermissionCleanupServiceTests: XCTestCase {
     func testStoreFailureReturnsFailedInsteadOfCompleted() async {
-        let profile = Profile(id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!, name: "Profile", icon: "person")
+        let profile = Profile(
+            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") ?? preconditionFailure("Invalid UUID literal"),
+            name: "Profile",
+            icon: "person"
+        )
         let service = SumiPermissionCleanupService(
             store: FailingCleanupPermissionStore(),
             recentActivityStore: SumiPermissionRecentActivityStore(),
-            userDefaults: UserDefaults(suiteName: "SumiPermissionCleanupServiceTests")!,
+            userDefaults: UserDefaults(suiteName: "SumiPermissionCleanupServiceTests") ?? preconditionFailure("Unable to create test user defaults"),
             now: { permissionCleanupServiceFixedDate }
         )
 
@@ -33,17 +37,17 @@ private enum FailingCleanupPermissionStoreError: Error {
 }
 
 private actor FailingCleanupPermissionStore: SumiPermissionStore {
-    func getDecision(for _: SumiPermissionKey) async throws -> SumiPermissionStoreRecord? {
+    func getDecision(for _: SumiPermissionKey) async -> SumiPermissionStoreRecord? {
         nil
     }
 
-    func setDecision(for _: SumiPermissionKey, decision _: SumiPermissionDecision) async throws {}
+    func setDecision(for _: SumiPermissionKey, decision _: SumiPermissionDecision) async { /* No-op. */ }
 
-    func resetDecision(for _: SumiPermissionKey) async throws {}
+    func resetDecision(for _: SumiPermissionKey) async { /* No-op. */ }
 
     func listDecisions(profilePartitionId _: String) async throws -> [SumiPermissionStoreRecord] {
         throw FailingCleanupPermissionStoreError.listFailed
     }
 
-    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async throws {}
+    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async { /* No-op. */ }
 }

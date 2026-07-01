@@ -53,7 +53,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
                         && tab.currentWebViewIsIdentical(to: webView)
                 }
             } register: {
-                tab?.registerNormalTabWithExtensionRuntimeIfNeeded(
+                tab?.registerTabWithExtensionRuntimeIfNeeded(
                     reason: registrationReason
                 )
             } load: {
@@ -84,7 +84,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
             } isStillValid: {
                 tab != nil
             } register: {
-                tab?.registerNormalTabWithExtensionRuntimeIfNeeded(
+                tab?.registerTabWithExtensionRuntimeIfNeeded(
                     reason: registrationReason
                 )
             } load: {
@@ -117,7 +117,7 @@ enum NormalTabInitialDocumentRuntimeHandoff {
     ) async {
         if let profileId, let tab {
             await tab.normalWebViewExtensionRuntime
-                .ensureInitialDocumentExtensionContextsLoadedIfNeeded(profileId)
+                .ensureInitialExtensionContextsIfNeeded(profileId)
         }
     }
 }

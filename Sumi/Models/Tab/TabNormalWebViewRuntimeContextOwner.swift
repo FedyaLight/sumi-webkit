@@ -35,7 +35,7 @@ final class TabNormalWebViewRuntimeContextOwner {
             resolveProfile: { [weak tab] in
                 tab?.resolveProfile()
             },
-            deferWebViewCreationUntilProfileAvailable: { [weak tab] in
+            deferWebViewUntilProfileAvailable: { [weak tab] in
                 tab?.profileWebViewCreationGate.deferCreationUntilProfileAvailable()
             },
             beginSuspendedRestoreIfNeeded: { [weak tab] in
@@ -117,8 +117,8 @@ final class TabNormalWebViewRuntimeContextOwner {
                 prepareReusedOrExternallyCreatedWebView: { webView in
                     ownedWebViewPreparationOwner.prepareReusedOrExternallyCreatedWebView(webView)
                 },
-                applyOwnedTabWebViewNavigationPreferences: { webView in
-                    ownedWebViewPreparationOwner.applyOwnedTabWebViewNavigationPreferences(to: webView)
+                applyOwnedWebViewNavPreferences: { webView in
+                    ownedWebViewPreparationOwner.applyOwnedWebViewNavPreferences(to: webView)
                 }
             ),
             normalTabUserScriptsProvider: { [weak tab] targetURL in
@@ -140,9 +140,9 @@ final class TabNormalWebViewRuntimeContextOwner {
             applyCachedFaviconOrPlaceholder: { [weak tab] url in
                 tab?.applyCachedFaviconOrPlaceholder(for: url)
             },
-            registerNormalTabWithExtensionRuntimeIfNeeded: { [weak tab] reason in
+            registerTabWithExtensionRuntimeIfNeeded: { [weak tab] reason in
                 guard let tab else { return }
-                tab.normalWebViewExtensionRuntime.registerNormalTabWithExtensionRuntimeIfNeeded(
+                tab.normalWebViewExtensionRuntime.registerTabWithExtensionRuntimeIfNeeded(
                     tab,
                     reason
                 )

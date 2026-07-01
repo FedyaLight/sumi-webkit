@@ -72,11 +72,11 @@ struct FloatingBarInlineCompletionTextField: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         @Binding private var text: String
-        private var onBeginEditing: () -> Void = {}
+        private var onBeginEditing: () -> Void = { /* No-op. */ }
         private var onTab: () -> Bool = { false }
-        private var onReturn: () -> Void = {}
-        private var onMoveSelection: (Int) -> Void = { _ in }
-        private var onEscape: () -> Void = {}
+        private var onReturn: () -> Void = { /* No-op. */ }
+        private var onMoveSelection: (Int) -> Void = { _ in /* No-op. */ }
+        private var onEscape: () -> Void = { /* No-op. */ }
         private var onDeleteAtEmptySiteSearch: () -> Bool = { false }
 
         init(text: Binding<String>) {
@@ -159,7 +159,7 @@ final class FloatingBarInlineCompletionTextFieldView: NSView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init?(coder _: NSCoder) {
         nil
     }
 

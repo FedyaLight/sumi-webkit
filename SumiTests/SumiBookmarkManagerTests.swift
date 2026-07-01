@@ -499,7 +499,6 @@ final class SumiBookmarkManagerTests: XCTestCase {
             FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         )
     }
-
 }
 
 private struct BookmarkSaveNotificationSnapshot: Sendable {

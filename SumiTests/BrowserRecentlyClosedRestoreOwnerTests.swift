@@ -22,8 +22,8 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
         let restored = try XCTUnwrap(harness.tabManager.tabs(in: harness.currentProfileSpace).first)
         XCTAssertEqual(restored.url, tabState.url)
         XCTAssertEqual(restored.name, "Closed")
-        XCTAssertEqual(restored.restoredCanGoBack, true)
-        XCTAssertEqual(restored.restoredCanGoForward, false)
+        XCTAssertTrue(restored.restoredCanGoBack)
+        XCTAssertFalse(restored.restoredCanGoForward)
         XCTAssertTrue(harness.tabManager.tabs(in: harness.fallbackSpace).isEmpty)
         XCTAssertEqual(harness.tabManager.currentTab?.id, restored.id)
     }
@@ -157,11 +157,11 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
                 tabManager: { tabManager },
                 profileManager: { browserManager.profileManager },
                 space: { _ in nil },
-                selectTab: { _, _ in }
+                selectTab: { _, _ in /* No-op. */ }
             )
         )
 
-        XCTAssertTrue(owner.canOfferStartupLastSessionRestoreShortcut)
+        XCTAssertTrue(owner.canOfferStartupSessionRestoreShortcut)
         XCTAssertTrue(owner.canRestoreAnyLastSession)
 
         owner.reopenAllWindowsFromLastSession()
@@ -211,9 +211,9 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
                 startupRestore: startupRestore,
                 lastSessionWindowsStore: { store },
                 currentRegularWindowSnapshots: { _ in [] },
-                refreshLastSessionWindowsStore: { _ in },
-                reopenWindow: { _ in },
-                mergeSnapshotForLastSessionRestore: { _ in },
+                refreshLastSessionWindowsStore: { _ in /* No-op. */ },
+                reopenWindow: { _ in /* No-op. */ },
+                mergeSnapshotForLastSessionRestore: { _ in /* No-op. */ },
                 activeWindow: { nil },
                 windowState: { _ in nil },
                 tabManager: { browserManager.tabManager },
@@ -221,7 +221,7 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
                 space: { spaceId in
                     browserManager.tabManager.spaces.first { $0.id == spaceId }
                 },
-                selectTab: { _, _ in }
+                selectTab: { _, _ in /* No-op. */ }
             )
         )
 

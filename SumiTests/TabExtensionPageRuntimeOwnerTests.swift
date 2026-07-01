@@ -7,13 +7,13 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
     func testPrepareGenerationResetsReportedAndOpenNotificationState() {
         let owner = TabExtensionPageRuntimeOwner()
         owner.lastReportedURL = URL(string: "https://old.example")
-        owner.lastReportedLoadingComplete = true
+        XCTAssertTrue(owner.recordReportedLoadingCompleteIfChanged(true))
         owner.lastReportedTitle = "Old"
         owner.markEligible(for: 3)
         owner.noteCommittedMainDocumentNavigation(to: URL(string: "https://example.com")!)
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 7,
-            loadedContexts: false
+            contextReadiness: .missing
         )
         owner.markDidOpenTab(generation: 3)
 
@@ -21,13 +21,13 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
 
         XCTAssertEqual(owner.controllerGeneration, 4)
         XCTAssertNil(owner.lastReportedURL)
-        XCTAssertNil(owner.lastReportedLoadingComplete)
+        XCTAssertFalse(owner.hasReportedLoadingComplete)
         XCTAssertNil(owner.lastReportedTitle)
         XCTAssertEqual(owner.lastOpenNotificationGeneration, 0)
         XCTAssertEqual(owner.eligibleGeneration, 0)
         XCTAssertNil(owner.openNotifiedDocumentSequence)
-        XCTAssertNil(owner.openNotifiedExtensionContextBindingGeneration)
-        XCTAssertNil(owner.openNotifiedWithLoadedContexts)
+        XCTAssertNil(owner.openNotifiedContextBindingGeneration)
+        XCTAssertEqual(owner.openNotifiedContextReadiness, .notNotified)
         XCTAssertFalse(owner.didNotifyOpenToExtensions)
     }
 
@@ -61,13 +61,13 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
 
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 11,
-            loadedContexts: true
+            contextReadiness: .loaded
         )
         owner.markDidOpenTab(generation: 5)
 
         XCTAssertEqual(owner.openNotifiedDocumentSequence, owner.documentSequence)
-        XCTAssertEqual(owner.openNotifiedExtensionContextBindingGeneration, 11)
-        XCTAssertEqual(owner.openNotifiedWithLoadedContexts, true)
+        XCTAssertEqual(owner.openNotifiedContextBindingGeneration, 11)
+        XCTAssertEqual(owner.openNotifiedContextReadiness, .loaded)
         XCTAssertEqual(owner.lastOpenNotificationGeneration, 5)
         XCTAssertTrue(owner.didNotifyOpenToExtensions)
         XCTAssertTrue(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
@@ -85,15 +85,15 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         owner.noteCommittedMainDocumentNavigation(to: url)
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 11,
-            loadedContexts: false
+            contextReadiness: .missing
         )
 
         let snapshot = owner.documentBindingSnapshot()
         XCTAssertEqual(snapshot.documentSequence, 1)
         XCTAssertEqual(snapshot.committedMainDocumentURL, url)
         XCTAssertEqual(snapshot.openNotifiedDocumentSequence, 1)
-        XCTAssertEqual(snapshot.openNotifiedExtensionContextBindingGeneration, 11)
-        XCTAssertEqual(snapshot.openNotifiedWithLoadedContexts, false)
+        XCTAssertEqual(snapshot.openNotifiedContextBindingGeneration, 11)
+        XCTAssertEqual(snapshot.openNotifiedContextReadiness, .missing)
         XCTAssertEqual(owner.committedMainDocumentURLForCurrentPage(), url)
         XCTAssertTrue(owner.hasCommittedDocumentBinding())
         XCTAssertTrue(owner.hasDocumentBindingForLifecycleRebind())
@@ -105,7 +105,7 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
 
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 11,
-            loadedContexts: true
+            contextReadiness: .loaded
         )
 
         XCTAssertTrue(owner.shouldSkipPreCommitRebindForInitialDocument())
@@ -135,7 +135,7 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         owner.noteCommittedMainDocumentNavigation(to: URL(string: "https://example.com")!)
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 11,
-            loadedContexts: true
+            contextReadiness: .loaded
         )
 
         owner.resetDocumentBindingForContentScriptRebind()
@@ -143,8 +143,8 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         XCTAssertEqual(owner.documentSequence, 0)
         XCTAssertNil(owner.committedMainDocumentURL)
         XCTAssertNil(owner.openNotifiedDocumentSequence)
-        XCTAssertNil(owner.openNotifiedExtensionContextBindingGeneration)
-        XCTAssertNil(owner.openNotifiedWithLoadedContexts)
+        XCTAssertNil(owner.openNotifiedContextBindingGeneration)
+        XCTAssertEqual(owner.openNotifiedContextReadiness, .notNotified)
     }
 
     func testDidNotifyOpenSetterOnlyClearsGenerationForFalseCompatibilityWrite() {
@@ -177,7 +177,7 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
         owner.noteCommittedMainDocumentNavigation(to: URL(string: "https://example.com/one")!)
         owner.noteOpenNotification(
             extensionContextBindingGeneration: 1,
-            loadedContexts: true
+            contextReadiness: .loaded
         )
         owner.markDidOpenTab(generation: 9)
 
@@ -185,7 +185,7 @@ final class TabExtensionPageRuntimeOwnerTests: XCTestCase {
             generation: 9
         ))
 
-        owner.invalidateCurrentPageForWebViewReplacement()
+        owner.invalidatePageForWebViewReplacement()
 
         XCTAssertFalse(owner.hasOpenNotificationForCurrentDocumentWithLoadedContexts(
             generation: 9

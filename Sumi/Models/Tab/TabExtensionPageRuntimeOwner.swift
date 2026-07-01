@@ -8,14 +8,34 @@ final class TabExtensionRuntimeState {
     /// Document sequence when `didOpenTab` last succeeded; `nil` if never notified.
     var openNotifiedDocumentSequence: UInt64?
     /// Profile extension-context binding generation observed at the last pre-commit `didOpenTab`.
-    var openNotifiedExtensionContextBindingGeneration: UInt64?
+    var openNotifiedContextBindingGeneration: UInt64?
     /// Whether every enabled content-script extension context was loaded when `didOpenTab` last ran.
-    var openNotifiedWithLoadedContexts: Bool?
+    var openNotifiedContextReadiness: TabExtensionContextReadiness = .notNotified
     var lastReportedURL: URL?
-    var lastReportedLoadingComplete: Bool?
+    var lastReportedLoading: TabExtensionLoadingReport = .notReported
     var lastReportedTitle: String?
     var didReportOpenForGeneration: UInt64 = 0
     var eligibleGeneration: UInt64 = 0
+}
+
+enum TabExtensionContextReadiness: Equatable, Sendable {
+    case notNotified
+    case unknown
+    case loaded
+    case missing
+}
+
+private enum TabExtensionLoadingReport: Equatable {
+    case notReported
+    case reported(Bool)
+
+    var hasReported: Bool {
+        self != .notReported
+    }
+
+    func matches(_ isLoadingComplete: Bool) -> Bool {
+        self == .reported(isLoadingComplete)
+    }
 }
 
 struct TabExtensionPageIdentity: Equatable, Sendable {
@@ -28,8 +48,8 @@ struct TabExtensionDocumentBindingSnapshot: Equatable {
     let documentSequence: UInt64
     let committedMainDocumentURL: URL?
     let openNotifiedDocumentSequence: UInt64?
-    let openNotifiedExtensionContextBindingGeneration: UInt64?
-    let openNotifiedWithLoadedContexts: Bool?
+    let openNotifiedContextBindingGeneration: UInt64?
+    let openNotifiedContextReadiness: TabExtensionContextReadiness
 }
 
 @MainActor
@@ -69,14 +89,14 @@ final class TabExtensionPageRuntimeOwner {
         set { state.openNotifiedDocumentSequence = newValue }
     }
 
-    var openNotifiedExtensionContextBindingGeneration: UInt64? {
-        get { state.openNotifiedExtensionContextBindingGeneration }
-        set { state.openNotifiedExtensionContextBindingGeneration = newValue }
+    var openNotifiedContextBindingGeneration: UInt64? {
+        get { state.openNotifiedContextBindingGeneration }
+        set { state.openNotifiedContextBindingGeneration = newValue }
     }
 
-    var openNotifiedWithLoadedContexts: Bool? {
-        get { state.openNotifiedWithLoadedContexts }
-        set { state.openNotifiedWithLoadedContexts = newValue }
+    var openNotifiedContextReadiness: TabExtensionContextReadiness {
+        get { state.openNotifiedContextReadiness }
+        set { state.openNotifiedContextReadiness = newValue }
     }
 
     var lastReportedURL: URL? {
@@ -84,9 +104,8 @@ final class TabExtensionPageRuntimeOwner {
         set { state.lastReportedURL = newValue }
     }
 
-    var lastReportedLoadingComplete: Bool? {
-        get { state.lastReportedLoadingComplete }
-        set { state.lastReportedLoadingComplete = newValue }
+    var hasReportedLoadingComplete: Bool {
+        state.lastReportedLoading.hasReported
     }
 
     var lastReportedTitle: String? {
@@ -107,7 +126,7 @@ final class TabExtensionPageRuntimeOwner {
         guard state.controllerGeneration != generation else { return }
         state.controllerGeneration = generation
         state.lastReportedURL = nil
-        state.lastReportedLoadingComplete = nil
+        state.lastReportedLoading = .notReported
         state.lastReportedTitle = nil
         state.didReportOpenForGeneration = 0
         state.eligibleGeneration = 0
@@ -143,8 +162,8 @@ final class TabExtensionPageRuntimeOwner {
             documentSequence: state.documentSequence,
             committedMainDocumentURL: state.committedMainDocumentURL,
             openNotifiedDocumentSequence: state.openNotifiedDocumentSequence,
-            openNotifiedExtensionContextBindingGeneration: state.openNotifiedExtensionContextBindingGeneration,
-            openNotifiedWithLoadedContexts: state.openNotifiedWithLoadedContexts
+            openNotifiedContextBindingGeneration: state.openNotifiedContextBindingGeneration,
+            openNotifiedContextReadiness: state.openNotifiedContextReadiness
         )
     }
 
@@ -163,7 +182,7 @@ final class TabExtensionPageRuntimeOwner {
     func shouldSkipPreCommitRebindForInitialDocument() -> Bool {
         state.documentSequence == 0
             && state.openNotifiedDocumentSequence == 0
-            && state.openNotifiedWithLoadedContexts == true
+            && state.openNotifiedContextReadiness == .loaded
     }
 
     func recordReportedURLIfChanged(_ resolvedURL: URL?) -> Bool {
@@ -175,10 +194,10 @@ final class TabExtensionPageRuntimeOwner {
     }
 
     func recordReportedLoadingCompleteIfChanged(_ isLoadingComplete: Bool) -> Bool {
-        guard state.lastReportedLoadingComplete != isLoadingComplete else {
+        guard !state.lastReportedLoading.matches(isLoadingComplete) else {
             return false
         }
-        state.lastReportedLoadingComplete = isLoadingComplete
+        state.lastReportedLoading = .reported(isLoadingComplete)
         return true
     }
 
@@ -201,17 +220,17 @@ final class TabExtensionPageRuntimeOwner {
         clearOpenNotificationDocumentBinding()
     }
 
-    func invalidateCurrentPageForWebViewReplacement() {
+    func invalidatePageForWebViewReplacement() {
         state.documentSequence &+= 1
     }
 
     func noteOpenNotification(
         extensionContextBindingGeneration: UInt64?,
-        loadedContexts: Bool?
+        contextReadiness: TabExtensionContextReadiness
     ) {
         state.openNotifiedDocumentSequence = state.documentSequence
-        state.openNotifiedExtensionContextBindingGeneration = extensionContextBindingGeneration
-        state.openNotifiedWithLoadedContexts = loadedContexts
+        state.openNotifiedContextBindingGeneration = extensionContextBindingGeneration
+        state.openNotifiedContextReadiness = contextReadiness
     }
 
     func hasOpenNotificationForCurrentDocumentWithLoadedContexts(
@@ -219,7 +238,7 @@ final class TabExtensionPageRuntimeOwner {
     ) -> Bool {
         state.didReportOpenForGeneration == generation
             && state.openNotifiedDocumentSequence == state.documentSequence
-            && state.openNotifiedWithLoadedContexts == true
+            && state.openNotifiedContextReadiness == .loaded
     }
 
     func markDidOpenTab(generation: UInt64) {
@@ -248,7 +267,7 @@ final class TabExtensionPageRuntimeOwner {
 
     private func clearOpenNotificationDocumentBinding() {
         state.openNotifiedDocumentSequence = nil
-        state.openNotifiedExtensionContextBindingGeneration = nil
-        state.openNotifiedWithLoadedContexts = nil
+        state.openNotifiedContextBindingGeneration = nil
+        state.openNotifiedContextReadiness = .notNotified
     }
 }

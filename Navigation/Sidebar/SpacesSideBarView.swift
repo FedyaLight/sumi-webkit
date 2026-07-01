@@ -633,10 +633,10 @@ struct SpacesSideBarView: View {
                     { browserContext.commands.createRSSLiveFolderInCurrentSpace(windowState) }
                 },
                 newGitHubPullRequestsLiveFolder: newFolderAction.map { _ in
-                    { browserContext.commands.createGitHubPullRequestsLiveFolderInCurrentSpace(windowState) }
+                    { browserContext.commands.createGitHubPRFolderInCurrentSpace(windowState) }
                 },
                 newGitHubIssuesLiveFolder: newFolderAction.map { _ in
-                    { browserContext.commands.createGitHubIssuesLiveFolderInCurrentSpace(windowState) }
+                    { browserContext.commands.createGitHubIssuesFolderInCurrentSpace(windowState) }
                 },
                 changeTheme: changeThemeAction,
                 toggleCompactMode: {

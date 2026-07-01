@@ -96,7 +96,7 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
     /// content-script message. Chrome/Firefox route native messaging through that
     /// background context, and WebKit exposes `loadBackgroundContent` for the same
     /// app-owned preflight without opening the action popup.
-    func ensureInitialDocumentExtensionContextsLoaded(for profileId: UUID) async {
+    func ensureInitialExtensionContextsLoaded(for profileId: UUID) async {
         guard let manager else { return }
         guard manager.extensionsModuleEnabledForRuntimeBoundary() else { return }
         await ensureContentScriptContextsLoaded(for: profileId)
@@ -131,7 +131,7 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
                   manager.extensionLoadGeneration == extensionLoadGeneration
             else { return }
 
-            await self.ensureInitialDocumentExtensionContextsLoaded(for: profileId)
+            await self.ensureInitialExtensionContextsLoaded(for: profileId)
 
             guard Task.isCancelled == false,
                   manager.extensionLoadGeneration == extensionLoadGeneration

@@ -1,8 +1,8 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
-final class BrowserSidebarShortcutPromotionOwnerTests: XCTestCase {
+final class SidebarShortcutPromotionOwnerTests: XCTestCase {
     func testPinShortcutGloballyCopiesShortcutWithLiveShortcutTitle() throws {
         let spy = Spy()
         let owner = makeOwner(spy: spy)
@@ -178,10 +178,10 @@ final class BrowserSidebarShortcutPromotionOwnerTests: XCTestCase {
 }
 
 private final class Spy {
-    var events: [BrowserSidebarShortcutPromotionOwnerTests.Event] = []
+    var events: [SidebarShortcutPromotionOwnerTests.Event] = []
 }
 
-extension BrowserSidebarShortcutPromotionOwnerTests {
+extension SidebarShortcutPromotionOwnerTests {
     enum Event: Equatable {
         case copyShortcutPinToEssentials(UUID, String, UUID?, UUID?)
     }

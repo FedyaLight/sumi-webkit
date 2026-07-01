@@ -431,14 +431,10 @@ class BrowserManager: ObservableObject {
             profileId: initialProfile?.id,
             dependencies: resolvedDataServices.historyManagerDependencies
         )
-        self.bookmarkManager = SumiBookmarkManager(
-            faviconService: resolvedDataServices.faviconService
+        self.bookmarkManager = Self.makeBookmarkManager(
+            faviconService: resolvedDataServices.faviconService,
+            initialProfile: initialProfile
         )
-        if let initialProfile {
-            self.bookmarkManager.setFaviconPrefetchPartition(
-                resolvedDataServices.faviconService.partition(profile: initialProfile)
-            )
-        }
         self.recentlyClosedManager = RecentlyClosedManager()
         self.lastSessionWindowsStore = LastSessionWindowsStore()
         self.startupSessionRestoreOwner = BrowserStartupSessionRestoreOwner(
@@ -454,8 +450,8 @@ class BrowserManager: ObservableObject {
         self.dataServices = resolvedDataServices
         self.browsingDataCleanupService = resolvedDataServices.browsingDataCleanupService
         self.nativeNowPlayingController = nowPlayingController
-        self.permissionRuntime = BrowserManagerPermissionRuntime(
-            dependencies: .live(
+        self.permissionRuntime = Self.makePermissionRuntime(
+            PermissionRuntimeBootstrap(
                 startupPersistence: startupPersistence,
                 browserConfiguration: browserConfiguration,
                 systemPermissionService: systemPermissionService,
@@ -474,14 +470,78 @@ class BrowserManager: ObservableObject {
                 permissionBridgeOverrides: permissionBridgeOverrides
             )
         )
-        self.permissionRuntime.startPermissionEventObservation { [weak self] _ in
-            await self?.permissionSidebarPinningOwner.reconcile(reason: "permission-event")
-        }
+        startPermissionEventObservation()
         self.startupProtectionRuntime = BrowserStartupProtectionRuntime(
             dependencies: .live(browserManager: self)
         )
 
-        // Phase 2: wire dependencies and perform side effects (safe to use self)
+        finishInitializationWiring()
+    }
+
+    private static func makeBookmarkManager(
+        faviconService: any BrowserFaviconServicing,
+        initialProfile: Profile?
+    ) -> SumiBookmarkManager {
+        let bookmarkManager = SumiBookmarkManager(faviconService: faviconService)
+        if let initialProfile {
+            bookmarkManager.setFaviconPrefetchPartition(
+                faviconService.partition(profile: initialProfile)
+            )
+        }
+        return bookmarkManager
+    }
+
+    private struct PermissionRuntimeBootstrap {
+        let startupPersistence: BrowserManagerStartupPersistence
+        let browserConfiguration: BrowserConfiguration
+        let systemPermissionService: (any SumiSystemPermissionService)?
+        let permissionCoordinator: (any SumiPermissionCoordinating)?
+        let geolocationProvider: (any SumiGeolocationProviding)?
+        let notificationService: (any SumiNotificationServicing)?
+        let runtimePermissionController: (any SumiRuntimePermissionControlling)?
+        let filePickerPanelPresenter: (any SumiFilePickerPanelPresenting)?
+        let permissionIndicatorEventStore: SumiPermissionIndicatorEventStore?
+        let permissionRecentActivityStore: SumiPermissionRecentActivityStore?
+        let permissionSiteActivityStore: SumiPermissionSiteActivityStore
+        let permissionCleanupService: SumiPermissionCleanupService?
+        let blockedPopupStore: SumiBlockedPopupStore?
+        let externalAppResolver: any SumiExternalAppResolving
+        let externalSchemeSessionStore: SumiExternalSchemeSessionStore?
+        let permissionBridgeOverrides: BrowserPermissionBridgeRegistry.Overrides
+    }
+
+    private static func makePermissionRuntime(
+        _ bootstrap: PermissionRuntimeBootstrap
+    ) -> BrowserManagerPermissionRuntime {
+        BrowserManagerPermissionRuntime(
+            dependencies: BrowserManagerPermissionRuntime.Dependencies(
+                startupPersistence: bootstrap.startupPersistence,
+                browserConfiguration: bootstrap.browserConfiguration,
+                systemPermissionService: bootstrap.systemPermissionService,
+                permissionCoordinator: bootstrap.permissionCoordinator,
+                geolocationProvider: bootstrap.geolocationProvider,
+                notificationService: bootstrap.notificationService,
+                runtimePermissionController: bootstrap.runtimePermissionController,
+                filePickerPanelPresenter: bootstrap.filePickerPanelPresenter,
+                permissionIndicatorEventStore: bootstrap.permissionIndicatorEventStore,
+                permissionRecentActivityStore: bootstrap.permissionRecentActivityStore,
+                permissionSiteActivityStore: bootstrap.permissionSiteActivityStore,
+                permissionCleanupService: bootstrap.permissionCleanupService,
+                blockedPopupStore: bootstrap.blockedPopupStore,
+                externalAppResolver: bootstrap.externalAppResolver,
+                externalSchemeSessionStore: bootstrap.externalSchemeSessionStore,
+                permissionBridgeOverrides: bootstrap.permissionBridgeOverrides
+            )
+        )
+    }
+
+    private func startPermissionEventObservation() {
+        permissionRuntime.startPermissionEventObservation { [weak self] _ in
+            await self?.permissionSidebarPinningOwner.reconcile(reason: "permission-event")
+        }
+    }
+
+    private func finishInitializationWiring() {
         shellRuntime.attach(dependencies: shellRuntimeDependencies())
         structuralChangeCancellable = BrowserManagerRuntimeWiring.attach(to: self)
 
@@ -525,22 +585,22 @@ class BrowserManager: ObservableObject {
                 guard let self else { return }
                 guard let coordinator else { return }
                 coordinator.attachBrowserRuntimeContext(
-                    BrowserManagerWebViewCoordinatorRuntimeFactory.browserRuntimeContext(
+                    BrowserWebViewRuntimeFactory.browserRuntimeContext(
                         for: self
                     )
                 )
                 coordinator.attachInitialDocumentRuntimeContext(
-                    BrowserManagerWebViewCoordinatorRuntimeFactory.initialDocumentContext(
+                    BrowserWebViewRuntimeFactory.initialDocumentContext(
                         for: self
                     )
                 )
                 coordinator.attachShutdownRuntimeContext(
-                    BrowserManagerWebViewCoordinatorRuntimeFactory.shutdownContext(
+                    BrowserWebViewRuntimeFactory.shutdownContext(
                         for: self
                     )
                 )
                 coordinator.attachVisiblePreparationRuntimeContext(
-                    BrowserManagerWebViewCoordinatorRuntimeFactory.visiblePreparationContext(
+                    BrowserWebViewRuntimeFactory.visiblePreparationContext(
                         for: self
                     )
                 )
@@ -593,8 +653,8 @@ class BrowserManager: ObservableObject {
         startupProtectionRuntime.shouldDeferNormalTabMaterializationDuringStartup
     }
 
-    func canMaterializeNormalTabWebViewDuringStartup(_ tab: Tab) -> Bool {
-        startupProtectionRuntime.canMaterializeNormalTabWebViewDuringStartup(tab)
+    func canMaterializeWebViewDuringStartup(_ tab: Tab) -> Bool {
+        startupProtectionRuntime.canMaterializeWebViewDuringStartup(tab)
     }
 
     func deferBackgroundTabUntilStartupReady(_ tab: Tab) {
@@ -677,12 +737,12 @@ class BrowserManager: ObservableObject {
         sidebarActionOwner.createRSSLiveFolderInCurrentSpace(in: windowState)
     }
 
-    func createGitHubPullRequestsLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        sidebarActionOwner.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
+    func createGitHubPRFolderInCurrentSpace(in windowState: BrowserWindowState) {
+        sidebarActionOwner.createGitHubPRFolderInCurrentSpace(in: windowState)
     }
 
-    func createGitHubIssuesLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
-        sidebarActionOwner.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
+    func createGitHubIssuesFolderInCurrentSpace(in windowState: BrowserWindowState) {
+        sidebarActionOwner.createGitHubIssuesFolderInCurrentSpace(in: windowState)
     }
 
     func showFindBar() {
@@ -1112,7 +1172,6 @@ extension BrowserManager: BrowserMouseButtonCommandRouting, BrowserTabCommandRou
     func persistFullReconcileAwaitingResult(reason: String) async -> Bool {
         await tabManager.persistFullReconcileAwaitingResult(reason: reason)
     }
-
 }
 
 extension Array {

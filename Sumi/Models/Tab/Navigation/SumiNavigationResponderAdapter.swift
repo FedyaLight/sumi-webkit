@@ -9,7 +9,7 @@ final class SumiNavigationResponderAdapter: NavigationResponder {
         self.target = target
     }
 
-    func isAdapting<T: AnyObject>(_ targetType: T.Type) -> Bool {
+    func isAdapting<T: AnyObject>(_ _: T.Type) -> Bool {
         target is T
     }
 

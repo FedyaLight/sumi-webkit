@@ -59,8 +59,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     let webViewProvisioningOwner = TabWebViewProvisioningOwner()
     lazy var normalWebViewRuntimeContextOwner = TabNormalWebViewRuntimeContextOwner(tab: self)
     private let closeLifecycleOwner = TabCloseLifecycleOwner()
-    let configurationPolicyWebViewReplacementContextOwner =
-        TabConfigurationPolicyWebViewReplacementContextOwner()
+    let webViewReplacementContextOwner =
+        TabWebViewReplacementContextOwner()
     let navigationCommandOwner = TabNavigationCommandOwner()
     lazy var profileWebViewCreationGate = TabProfileWebViewCreationGate(
         dependencies: .live(
@@ -248,9 +248,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.installNavigationRuntime }
         set { navigationRuntime.installNavigationRuntime = newValue }
     }
-    var configurationPolicyWebViewReplacementRuntime: TabConfigurationPolicyWebViewReplacementRuntime {
-        get { navigationRuntime.configurationPolicyWebViewReplacementRuntime }
-        set { navigationRuntime.configurationPolicyWebViewReplacementRuntime = newValue }
+    var webViewReplacementRuntime: TabWebViewReplacementRuntime {
+        get { navigationRuntime.webViewReplacementRuntime }
+        set { navigationRuntime.webViewReplacementRuntime = newValue }
     }
     var navigationCommandRuntime: TabNavigationCommandRuntime {
         get { navigationRuntime.navigationCommandRuntime }
@@ -264,9 +264,9 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         get { navigationRuntime.reloadPolicyRuntime }
         set { navigationRuntime.reloadPolicyRuntime = newValue }
     }
-    var isFreezingNavigationStateDuringBackForwardGesture: Bool {
-        get { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture }
-        set { navigationTransactionOwner.isFreezingNavigationStateDuringBackForwardGesture = newValue }
+    var isFreezingNavDuringBackForwardGesture: Bool {
+        get { navigationTransactionOwner.isFreezingNavDuringBackForwardGesture }
+        set { navigationTransactionOwner.isFreezingNavDuringBackForwardGesture = newValue }
     }
     var lastMediaActivityAt: Date {
         get { mediaRuntime.lastMediaActivityAt }
@@ -464,8 +464,8 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         popupHandlingRuntime = runtime.popupHandlingRuntime
         installNavigationRuntime = runtime.installNavigationRuntime
         webKitUIRuntime = runtime.webKitUIRuntime
-        configurationPolicyWebViewReplacementRuntime =
-            runtime.configurationPolicyWebViewReplacementRuntime
+        webViewReplacementRuntime =
+            runtime.webViewReplacementRuntime
         dependencyStateOwner.attachDataServicesProvider { [weak self] in
             self?.browserRuntime.dataServices()
         }

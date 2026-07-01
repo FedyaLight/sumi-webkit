@@ -33,7 +33,7 @@ final class TabOwnedWebViewPreparationOwner {
         applyOwnedTabWebViewNavigationSetup(to: webView)
         applyOwnedTabWebViewOwnershipBaseline(to: webView)
         if applyNavigationPreferences {
-            applyOwnedTabWebViewNavigationPreferences(to: webView)
+            applyOwnedWebViewNavPreferences(to: webView)
         }
         if enableVisitedLinkRecording {
             dependencies.visitedLinkStore()?.enableVisitedLinkRecording(on: webView)
@@ -68,7 +68,7 @@ final class TabOwnedWebViewPreparationOwner {
         dependencies.applyRestoredNavigationState()
     }
 
-    func applyOwnedTabWebViewNavigationPreferences(to webView: WKWebView) {
+    func applyOwnedWebViewNavPreferences(to webView: WKWebView) {
         if RuntimeDiagnostics.isDeveloperInspectionEnabled {
             webView.isInspectable = true
         }

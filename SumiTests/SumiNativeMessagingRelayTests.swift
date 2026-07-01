@@ -901,5 +901,4 @@ final class SumiNativeMessagingRelayTests: XCTestCase {
         )
         try data.write(to: url)
     }
-
 }

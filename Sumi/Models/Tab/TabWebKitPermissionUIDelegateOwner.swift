@@ -13,6 +13,8 @@ final class TabWebKitPermissionUIDelegateOwner {
         _ webView: WKWebView,
         parameters: WKOpenPanelParameters,
         initiatedByFrame frame: WKFrameInfo,
+        // WebKit uses nil here to report open-panel cancellation.
+        // swiftlint:disable:next discouraged_optional_collection
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
         guard let permissionBridges = tab.permissionRuntime.permissionBridges(),

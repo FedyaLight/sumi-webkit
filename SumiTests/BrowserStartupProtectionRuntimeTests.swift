@@ -22,21 +22,21 @@ final class BrowserStartupProtectionRuntimeTests: XCTestCase {
         )
 
         XCTAssertTrue(runtime.shouldDeferNormalTabMaterializationDuringStartup)
-        XCTAssertFalse(runtime.canMaterializeNormalTabWebViewDuringStartup(normalTab))
-        XCTAssertTrue(runtime.canMaterializeNormalTabWebViewDuringStartup(emptyTab))
-        XCTAssertTrue(runtime.canMaterializeNormalTabWebViewDuringStartup(extensionTab))
+        XCTAssertFalse(runtime.canMaterializeWebViewDuringStartup(normalTab))
+        XCTAssertTrue(runtime.canMaterializeWebViewDuringStartup(emptyTab))
+        XCTAssertTrue(runtime.canMaterializeWebViewDuringStartup(extensionTab))
 
         runtime.finishStartupProtectionRestore()
 
         XCTAssertTrue(runtime.hasFinishedProtectionRestore)
         XCTAssertFalse(runtime.shouldDeferNormalTabMaterializationDuringStartup)
-        XCTAssertTrue(runtime.canMaterializeNormalTabWebViewDuringStartup(normalTab))
+        XCTAssertTrue(runtime.canMaterializeWebViewDuringStartup(normalTab))
 
         appliedLevel = .off
         let offRuntime = makeRuntime(appliedLevel: { appliedLevel })
 
         XCTAssertFalse(offRuntime.shouldDeferNormalTabMaterializationDuringStartup)
-        XCTAssertTrue(offRuntime.canMaterializeNormalTabWebViewDuringStartup(normalTab))
+        XCTAssertTrue(offRuntime.canMaterializeWebViewDuringStartup(normalTab))
     }
 
     func testFinishDrainsDeferredBackgroundTabsAndVisibleWindowHooksOnce() {

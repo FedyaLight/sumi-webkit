@@ -32,7 +32,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         let owner = TabNormalWebViewSetupOwner()
 
         XCTAssertTrue(
-            owner.shouldDelayInitialNormalTabRuntimeRegistration(
+            owner.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -41,7 +41,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         )
 
         XCTAssertTrue(
-            owner.shouldDelayInitialNormalTabRuntimeRegistration(
+            owner.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -55,7 +55,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         let url = try XCTUnwrap(URL(string: "https://example.com/start"))
 
         XCTAssertFalse(
-            owner.shouldDelayInitialNormalTabRuntimeRegistration(
+            owner.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: true,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -63,7 +63,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             )
         )
         XCTAssertFalse(
-            owner.shouldDelayInitialNormalTabRuntimeRegistration(
+            owner.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: true,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -71,7 +71,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             )
         )
         XCTAssertFalse(
-            owner.shouldDelayInitialNormalTabRuntimeRegistration(
+            owner.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: true,
@@ -84,7 +84,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
         let owner = TabNormalWebViewSetupOwner()
 
         XCTAssertFalse(
-            owner.shouldDelayInitialNormalTabRuntimeRegistration(
+            owner.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,
@@ -92,7 +92,7 @@ final class TabNormalWebViewSetupOwnerTests: XCTestCase {
             )
         )
         XCTAssertFalse(
-            owner.shouldDelayInitialNormalTabRuntimeRegistration(
+            owner.shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: false,
                 hasExistingWebView: false,
                 didCreateAuxiliaryOverrideWebView: false,

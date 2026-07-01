@@ -1279,5 +1279,4 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
     private func waitPastStructuralDebounce() async throws {
         try await Task.sleep(nanoseconds: 350_000_000)
     }
-
 }

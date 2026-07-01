@@ -14,12 +14,12 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
         XCTAssertTrue(firstSetup)
         XCTAssertFalse(secondSetup)
         XCTAssertIdentical(harness.appDelegate.windowRegistry, harness.windowRegistry)
-        XCTAssertTrue(harness.appDelegate.mouseButtonRouter === harness.browserManager)
-        XCTAssertTrue(harness.appDelegate.tabCommandRouter === harness.browserManager)
-        XCTAssertTrue(harness.appDelegate.windowRouter === harness.browserManager)
-        XCTAssertTrue((harness.appDelegate.terminationHandler as AnyObject?) === harness.browserManager)
+        XCTAssertIdentical(harness.appDelegate.mouseButtonRouter, harness.browserManager)
+        XCTAssertIdentical(harness.appDelegate.tabCommandRouter, harness.browserManager)
+        XCTAssertIdentical(harness.appDelegate.windowRouter, harness.browserManager)
+        XCTAssertIdentical(harness.appDelegate.terminationHandler as AnyObject?, harness.browserManager)
         XCTAssertNotNil(harness.appDelegate.appLifecycleHandler)
-        XCTAssertFalse((harness.appDelegate.appLifecycleHandler as AnyObject?) === harness.browserManager)
+        XCTAssertNotIdentical(harness.appDelegate.appLifecycleHandler as AnyObject?, harness.browserManager)
         XCTAssertIdentical(harness.appDelegate.settingsHandler, harness.settingsManager)
         XCTAssertIdentical(harness.appDelegate.shortcutManager, harness.keyboardShortcutManager)
         XCTAssertIdentical(harness.browserManager.webViewCoordinator, harness.webViewCoordinator)
@@ -69,7 +69,7 @@ final class BrowserAppOrchestrationOwnerTests: XCTestCase {
             keyboardShortcutManager: keyboardShortcutManager,
             nowPlayingController: nowPlayingController,
             windowShellContentViewFactory: factory,
-            fallbackPersistenceSave: {},
+            fallbackPersistenceSave: { /* No-op. */ },
             startUpdater: {
                 startUpdaterCallCount += 1
             }

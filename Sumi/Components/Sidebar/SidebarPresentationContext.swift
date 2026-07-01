@@ -5,7 +5,7 @@ import SwiftUI
 struct SidebarHostActions {
     let updateSidebarWidth: (CGFloat, BrowserWindowState, Bool) -> Void
     let persistWindowSession: (BrowserWindowState) -> Void
-    let dismissWorkspaceThemePickerIfNeededCommitting: () -> Void
+    let dismissThemePickerCommittingIfNeeded: () -> Void
 }
 
 @MainActor

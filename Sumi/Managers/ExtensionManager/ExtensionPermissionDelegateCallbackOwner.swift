@@ -353,7 +353,7 @@ final class ExtensionPermissionDelegateCallbackOwner {
         }
     }
 
-    private nonisolated static func extensionPermissionTarget(for url: URL) -> String {
+    nonisolated private static func extensionPermissionTarget(for url: URL) -> String {
         if let host = url.host, host.isEmpty == false {
             return host
         }

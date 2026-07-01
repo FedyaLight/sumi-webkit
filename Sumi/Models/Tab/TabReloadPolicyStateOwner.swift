@@ -8,19 +8,25 @@ struct TabReloadPolicyWebViewRebuildContext {
     let webViewConfigurationOverride: WKWebViewConfiguration?
     let isPopupHost: Bool
     let profile: Profile?
-    let replacementContext: TabConfigurationPolicyWebViewReplacementContext
+    let replacementContext: TabWebViewReplacementContext
     let publishNavigationStateChangeIfNeeded: (Bool) -> Void
 }
 
 @MainActor
-struct TabReloadPolicyProtectionDiagnosticsContext {
+enum AttachedRuleListSnapshot {
+    case deriveFromDiagnostics
+    case identifiers([String])
+}
+
+@MainActor
+struct ReloadProtectionDiagnosticsContext {
     let currentURL: URL
     let appliedState: SumiProtectionAttachmentState?
     let reloadRequired: Bool
     let reloadRequiredReason: String?
     let didManualReloadRebuildWebView: Bool
     let appliedAfterManualReload: Bool
-    let actualAttachedRuleListIdentifiers: [String]?
+    let actualAttachedRuleLists: AttachedRuleListSnapshot
     let contentBlockingAssetSummary: SumiNormalTabContentBlockingAssetSummary?
     let webViewRebuildDuration: TimeInterval?
     let urlHubSummaryDuration: TimeInterval?
@@ -31,7 +37,7 @@ struct TabReloadPolicyRuntime {
     let safariContentBlockerAttachmentState: (URL?) -> SumiSafariContentBlockerAttachmentState
     let protectionAttachmentState: (URL?) -> SumiProtectionAttachmentState
     let protectionSurfaceHost: (URL?) -> String?
-    let protectionCurrentTabDiagnostics: (TabReloadPolicyProtectionDiagnosticsContext) -> SumiProtectionCurrentTabDiagnostics?
+    let protectionCurrentTabDiagnostics: (ReloadProtectionDiagnosticsContext) -> SumiProtectionCurrentTabDiagnostics?
     let evaluateAutoplayPolicyChange: (SumiRuntimeAutoplayState, WKWebView) -> SumiRuntimePermissionOperationResult
 }
 
@@ -47,7 +53,7 @@ extension TabReloadPolicyRuntime {
 
 @MainActor
 final class TabReloadPolicyStateOwner {
-    private let webViewReplacementOwner: TabConfigurationPolicyWebViewReplacementOwner
+    private let webViewReplacementOwner: TabWebViewReplacementOwner
 
     var safariContentBlockerAppliedAttachmentState: SumiSafariContentBlockerAttachmentState?
     var protectionAppliedAttachmentState: SumiProtectionAttachmentState?
@@ -60,7 +66,7 @@ final class TabReloadPolicyStateOwner {
     var lastProtectionURLHubSummaryDuration: TimeInterval?
 
     init(
-        webViewReplacementOwner: TabConfigurationPolicyWebViewReplacementOwner = TabConfigurationPolicyWebViewReplacementOwner()
+        webViewReplacementOwner: TabWebViewReplacementOwner = TabWebViewReplacementOwner()
     ) {
         self.webViewReplacementOwner = webViewReplacementOwner
     }
@@ -77,7 +83,7 @@ final class TabReloadPolicyStateOwner {
         autoplayReloadRequirement != nil
     }
 
-    func safariContentBlockerDesiredAttachmentState(
+    func safariBlockerDesiredAttachmentState(
         for targetURL: URL?,
         runtime: TabReloadPolicyRuntime
     ) -> SumiSafariContentBlockerAttachmentState {
@@ -128,11 +134,11 @@ final class TabReloadPolicyStateOwner {
         existingWebView: WKWebView?,
         runtime: TabReloadPolicyRuntime
     ) -> Bool {
-        let changedState = safariContentBlockerDesiredAttachmentState(
+        let changedState = safariBlockerDesiredAttachmentState(
             for: changedURL,
             runtime: runtime
         )
-        let currentState = safariContentBlockerDesiredAttachmentState(
+        let currentState = safariBlockerDesiredAttachmentState(
             for: currentURL,
             runtime: runtime
         )
@@ -157,7 +163,7 @@ final class TabReloadPolicyStateOwner {
             return clearSafariContentBlockerReloadRequirement()
         }
 
-        let desiredState = safariContentBlockerDesiredAttachmentState(
+        let desiredState = safariBlockerDesiredAttachmentState(
             for: currentURL,
             runtime: runtime
         )
@@ -192,7 +198,7 @@ final class TabReloadPolicyStateOwner {
     ) -> Bool {
         guard let requirement = safariContentBlockerReloadRequirement else { return false }
 
-        let committedState = safariContentBlockerDesiredAttachmentState(
+        let committedState = safariBlockerDesiredAttachmentState(
             for: committedURL,
             runtime: runtime
         )
@@ -263,8 +269,14 @@ final class TabReloadPolicyStateOwner {
             .userContentController
             .sumiNormalTabUserContentController?
             .contentBlockingAssetSummary
+        let actualAttachedRuleLists: AttachedRuleListSnapshot
+        if let identifiers = contentBlockingSummary?.globalRuleListIdentifiers {
+            actualAttachedRuleLists = .identifiers(identifiers)
+        } else {
+            actualAttachedRuleLists = .deriveFromDiagnostics
+        }
         return runtime.protectionCurrentTabDiagnostics(
-            TabReloadPolicyProtectionDiagnosticsContext(
+            ReloadProtectionDiagnosticsContext(
                 currentURL: currentURL,
                 appliedState: protectionAppliedAttachmentState,
                 reloadRequired: isProtectionReloadRequired,
@@ -273,7 +285,7 @@ final class TabReloadPolicyStateOwner {
                 },
                 didManualReloadRebuildWebView: didManualReloadRebuildProtectionWebView,
                 appliedAfterManualReload: appliedProtectionAfterManualReload,
-                actualAttachedRuleListIdentifiers: contentBlockingSummary?.globalRuleListIdentifiers,
+                actualAttachedRuleLists: actualAttachedRuleLists,
                 contentBlockingAssetSummary: contentBlockingSummary,
                 webViewRebuildDuration: lastProtectionWebViewRebuildDuration,
                 urlHubSummaryDuration: lastProtectionURLHubSummaryDuration
@@ -315,7 +327,7 @@ final class TabReloadPolicyStateOwner {
               !isPopupHost
         else { return false }
 
-        let desiredState = safariContentBlockerDesiredAttachmentState(
+        let desiredState = safariBlockerDesiredAttachmentState(
             for: targetURL,
             runtime: runtime
         )
@@ -359,7 +371,7 @@ final class TabReloadPolicyStateOwner {
             isPopupHost: context.isPopupHost,
             runtime: runtime
         )
-        guard (requiresProtectionRebuild || requiresSafariContentBlockerRebuild),
+        guard requiresProtectionRebuild || requiresSafariContentBlockerRebuild,
               context.existingWebView() != nil
         else { return false }
 
@@ -541,7 +553,7 @@ final class TabReloadPolicyStateOwner {
     private func rebuildNormalWebViewForConfigurationPolicy(
         reason: String,
         context: TabReloadPolicyWebViewRebuildContext,
-        onTrackedWebViewRemovalFailure: () -> Void = {}
+        onTrackedWebViewRemovalFailure: () -> Void = { /* No-op. */ }
     ) -> Bool {
         webViewReplacementOwner.replaceNormalWebView(
             reason: reason,

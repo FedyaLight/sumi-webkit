@@ -158,7 +158,8 @@ final class TabTransientWebKitTabLifecycleOwner {
     private func unloadAndDetach(_ tab: Tab, notifyExtensionClose: Bool) {
         guard let runtimeContext = dependencies.runtimeContext() else {
             preconditionFailure(
-                "TabManager.runtimeContext is nil. Transient WebKit tab cleanup requires BrowserManagerRuntimeWiring.attach(to:) before destructive tab operations."
+                "TabManager.runtimeContext is nil. Transient WebKit tab cleanup requires "
+                    + "BrowserManagerRuntimeWiring.attach(to:) before destructive tab operations."
             )
         }
         if notifyExtensionClose {

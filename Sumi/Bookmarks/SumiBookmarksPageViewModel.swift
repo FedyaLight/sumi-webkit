@@ -42,7 +42,7 @@ final class SumiBookmarksPageViewModel: ObservableObject {
 
     init(
         browserContext: BookmarksPageBrowserContext,
-        windowState: BrowserWindowState?,
+        windowState: BrowserWindowState?
     ) {
         self.windowState = windowState
         self.browserContext = browserContext

@@ -62,7 +62,7 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
         let pageTab = Tab(url: URL(string: "https://example.com")!)
         windowState.floatingBarDraftNavigatesCurrentTab = true
         windowState.isFloatingBarVisible = true
-        var loadedPages: [(tabId: UUID, windowId: UUID, url: String)] = []
+        var loadedPages: [FloatingBarPageLoad] = []
         var newTabURLs: [String] = []
         let actions = makeActions(
             activePageTab: { _ in pageTab },
@@ -70,7 +70,11 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
                 newTabURLs.append(url)
             },
             loadCurrentPageURL: { tab, windowState, url in
-                loadedPages.append((tab.id, windowState.id, url))
+                loadedPages.append(FloatingBarPageLoad(
+                    tabId: tab.id,
+                    windowId: windowState.id,
+                    url: url
+                ))
             }
         )
 
@@ -92,7 +96,7 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
         let windowState = BrowserWindowState()
         let pageTab = Tab(url: URL(string: "https://example.com")!)
         windowState.floatingBarDraftNavigatesCurrentTab = true
-        var navigatedPages: [(tabId: UUID, windowId: UUID, input: String)] = []
+        var navigatedPages: [FloatingBarPageNavigation] = []
         var newTabURLs: [String] = []
         let actions = makeActions(
             activePageTab: { _ in pageTab },
@@ -100,7 +104,11 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
                 newTabURLs.append(url)
             },
             navigateCurrentPage: { tab, windowState, input in
-                navigatedPages.append((tab.id, windowState.id, input))
+                navigatedPages.append(FloatingBarPageNavigation(
+                    tabId: tab.id,
+                    windowId: windowState.id,
+                    input: input
+                ))
             }
         )
         let suggestion = SearchManager.SearchSuggestion(
@@ -183,9 +191,21 @@ final class FloatingBarNavigationOwnerTests: XCTestCase {
             loadCurrentPageURL: loadCurrentPageURL,
             navigateCurrentPage: navigateCurrentPage,
             applySettingsSurfaceNavigation: { _ in /* no-op */ },
-            dismissWorkspaceThemePickerIfNeededDiscarding: { /* no-op */ },
+            dismissThemePickerDiscardingIfNeeded: { /* no-op */ },
             persistWindowSession: persistWindowSession,
             schedulePersistWindowSession: { _ in /* no-op */ }
         )
     }
+}
+
+private struct FloatingBarPageLoad {
+    let tabId: UUID
+    let windowId: UUID
+    let url: String
+}
+
+private struct FloatingBarPageNavigation {
+    let tabId: UUID
+    let windowId: UUID
+    let input: String
 }

@@ -84,7 +84,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var isShowingEmptyState: Bool
     var floatingBarReason: FloatingBarPresentationReason?
     var activeTabsBySpace: [SpaceTabSelectionSnapshot]
-    var activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]?
+    var activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]
     var sidebarWidth: Double
     var savedSidebarWidth: Double
     var sidebarContentWidth: Double
@@ -92,7 +92,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
     var floatingBarDraft: FloatingBarDraftState
     var activeSplitGroupId: UUID? = nil
     var glanceSession: GlanceSessionSnapshot? = nil
-    var legacySplitSessionForMigration: LegacySplitSessionSnapshot? = nil
+    var legacySplitSessionForMigration: LegacySplitSessionSnapshot?
 
     private enum CodingKeys: String, CodingKey {
         case currentTabId
@@ -123,7 +123,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         isShowingEmptyState: Bool,
         floatingBarReason: FloatingBarPresentationReason?,
         activeTabsBySpace: [SpaceTabSelectionSnapshot],
-        activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot]?,
+        activeShortcutsBySpace: [SpaceShortcutSelectionSnapshot],
         sidebarWidth: Double,
         savedSidebarWidth: Double,
         sidebarContentWidth: Double,
@@ -164,7 +164,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         activeShortcutsBySpace = try container.decodeIfPresent(
             [SpaceShortcutSelectionSnapshot].self,
             forKey: .activeShortcutsBySpace
-        )
+        ) ?? []
         sidebarWidth = try container.decode(Double.self, forKey: .sidebarWidth)
         savedSidebarWidth = try container.decode(Double.self, forKey: .savedSidebarWidth)
         sidebarContentWidth = try container.decode(Double.self, forKey: .sidebarContentWidth)
@@ -188,7 +188,7 @@ struct WindowSessionSnapshot: Codable, Equatable, Hashable {
         try container.encode(isShowingEmptyState, forKey: .isShowingEmptyState)
         try container.encodeIfPresent(floatingBarReason, forKey: .floatingBarReason)
         try container.encode(activeTabsBySpace, forKey: .activeTabsBySpace)
-        try container.encodeIfPresent(activeShortcutsBySpace, forKey: .activeShortcutsBySpace)
+        try container.encode(activeShortcutsBySpace, forKey: .activeShortcutsBySpace)
         try container.encode(sidebarWidth, forKey: .sidebarWidth)
         try container.encode(savedSidebarWidth, forKey: .savedSidebarWidth)
         try container.encode(sidebarContentWidth, forKey: .sidebarContentWidth)

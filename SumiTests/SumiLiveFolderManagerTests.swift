@@ -6,6 +6,11 @@ import XCTest
 final class SumiLiveFolderManagerTests: XCTestCase {
     private var temporaryDirectories: [URL] = []
 
+    override func setUp() async throws {
+        try await super.setUp()
+        temporaryDirectories.removeAll()
+    }
+
     override func tearDown() async throws {
         for directory in temporaryDirectories {
             try? FileManager.default.removeItem(at: directory)
@@ -90,21 +95,22 @@ final class SumiLiveFolderManagerTests: XCTestCase {
 }
 
 private final class LiveFolderURLProtocolStub: URLProtocol {
-    override class func canInit(with request: URLRequest) -> Bool {
+    override static func canInit(with _: URLRequest) -> Bool {
         true
     }
 
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+    override static func canonicalRequest(for request: URLRequest) -> URLRequest {
         request
     }
 
     override func startLoading() {
+        let responseURL = request.url ?? URL(string: "https://example.test") ?? preconditionFailure("Invalid test URL")
         let response = HTTPURLResponse(
-            url: request.url ?? URL(string: "https://example.test")!,
+            url: responseURL,
             statusCode: 200,
             httpVersion: nil,
             headerFields: ["Content-Type": "text/html"]
-        )!
+        ) ?? preconditionFailure("Invalid test response")
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(
             self,
@@ -113,7 +119,7 @@ private final class LiveFolderURLProtocolStub: URLProtocol {
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {}
+    override func stopLoading() { /* No-op. */ }
 }
 
 @MainActor
@@ -123,7 +129,7 @@ private final class LiveFolderRuntimeSpy {
     let folderId = UUID()
     var createdFolders: [(spaceId: UUID, name: String)] = []
     var iconUpdates: [(folderId: UUID, icon: String)] = []
-    var openedTabs: [(urlString: String, windowState: BrowserWindowState, preferredSpaceId: UUID?)] = []
+    var openedTabs: [LiveFolderOpenedTab] = []
 
     func runtime() -> SumiLiveFolderRuntime {
         let spaceId = spaceId
@@ -143,18 +149,22 @@ private final class LiveFolderRuntimeSpy {
             updateFolderIcon: { [weak self] folderId, icon in
                 self?.iconUpdates.append((folderId: folderId, icon: icon))
             },
-            renameFolder: { _, _ in },
+            renameFolder: { _, _ in /* No-op. */ },
             openNewTab: { [weak self] urlString, windowState, preferredSpaceId in
-                self?.openedTabs.append(
-                    (
-                        urlString: urlString,
-                        windowState: windowState,
-                        preferredSpaceId: preferredSpaceId
-                    )
-                )
+                self?.openedTabs.append(LiveFolderOpenedTab(
+                    urlString: urlString,
+                    windowState: windowState,
+                    preferredSpaceId: preferredSpaceId
+                ))
             },
             profile: { _, _ in nil },
             folderIds: { nil }
         )
     }
+}
+
+private struct LiveFolderOpenedTab {
+    let urlString: String
+    let windowState: BrowserWindowState
+    let preferredSpaceId: UUID?
 }

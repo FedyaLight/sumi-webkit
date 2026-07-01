@@ -24,7 +24,7 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
     func testRefreshCompositorDefersDuringFrozenBackForwardNavigationUntilFlush() async {
         let windowState = BrowserWindowState()
         let tab = Tab()
-        tab.isFreezingNavigationStateDuringBackForwardGesture = true
+        tab.isFreezingNavDuringBackForwardGesture = true
         let owner = makeOwner(currentTab: { tab })
 
         owner.refreshCompositor(for: windowState)
@@ -110,7 +110,7 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
         currentTab: @escaping @MainActor () -> Tab? = { nil },
         performImmediateVisualHandoffIfPossible: @escaping @MainActor () -> Bool = { true },
         prepareVisibleWebViews: @escaping @MainActor () -> Bool = { false },
-        schedulePrepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Void = { _ in }
+        schedulePrepareVisibleWebViews: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ }
     ) -> BrowserWindowVisualMutationOwner {
         BrowserWindowVisualMutationOwner(
             dependencies: BrowserWindowVisualMutationOwner.Dependencies(

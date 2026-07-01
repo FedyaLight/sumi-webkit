@@ -48,8 +48,8 @@ final class WebViewCreationPlanningOwnerTests: XCTestCase {
         let owner = WebViewCreationPlanningOwner()
         let tab = makeWarmupTab()
         let targetWindowId = UUID()
-        let stableRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-        let laterRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let stableRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000001") ?? preconditionFailure("Invalid UUID literal")
+        let laterRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000002") ?? preconditionFailure("Invalid UUID literal")
         tab.primaryWindowId = laterRegistryWindowId
 
         let plan = owner.creationPlan(
@@ -121,7 +121,7 @@ final class WebViewCreationPlanningOwnerTests: XCTestCase {
 
         let runtime = makeWarmupRuntime(
             needsInitialDocumentExtensionContextLoad: { _ in true },
-            ensureInitialDocumentExtensionContextsLoaded: { profileId in
+            ensureInitialExtensionContextsLoaded: { profileId in
                 ensuredProfileIds.append(profileId)
                 ensureExpectation.fulfill()
             },
@@ -171,12 +171,12 @@ final class WebViewCreationPlanningOwnerTests: XCTestCase {
 
     private func makeWarmupRuntime(
         needsInitialDocumentExtensionContextLoad: @escaping @MainActor (UUID) -> Bool = { _ in false },
-        ensureInitialDocumentExtensionContextsLoaded: @escaping @MainActor (UUID) async -> Void = { _ in },
-        refreshCompositorForWindow: @escaping @MainActor (UUID) -> Void = { _ in }
+        ensureInitialExtensionContextsLoaded: @escaping @MainActor (UUID) async -> Void = { _ in /* No-op. */ },
+        refreshCompositorForWindow: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ }
     ) -> InitialDocumentWarmupRuntime {
         InitialDocumentWarmupRuntime(
             needsInitialDocumentExtensionContextLoad: needsInitialDocumentExtensionContextLoad,
-            ensureInitialDocumentExtensionContextsLoaded: ensureInitialDocumentExtensionContextsLoaded,
+            ensureInitialExtensionContextsLoaded: ensureInitialExtensionContextsLoaded,
             refreshCompositorForWindow: refreshCompositorForWindow
         )
     }

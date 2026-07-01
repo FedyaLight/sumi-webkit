@@ -12,7 +12,7 @@ final class BrowserShutdownCleanupOwnerTests: XCTestCase {
         var cleanedTabIds: [UUID] = []
         let owner = BrowserShutdownCleanupOwner(
             dependencies: BrowserShutdownCleanupOwner.Dependencies(
-                emitDiagnostic: { _ in },
+                emitDiagnostic: { _ in /* No-op. */ },
                 cancelNativeMessagingSessions: { reason in
                     events.append("native:\(reason)")
                 },
@@ -64,7 +64,7 @@ final class BrowserShutdownCleanupOwnerTests: XCTestCase {
 
     private func makeTab(_ name: String) -> Tab {
         Tab(
-            url: URL(string: "https://\(name.lowercased()).example")!,
+            url: URL(string: "https://\(name.lowercased()).example") ?? preconditionFailure("Invalid test URL"),
             name: name,
             loadsCachedFaviconOnInit: false
         )

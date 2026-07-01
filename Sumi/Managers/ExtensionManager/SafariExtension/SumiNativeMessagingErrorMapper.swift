@@ -29,7 +29,7 @@ enum SumiNativeMessagingErrorMapper {
     static func relayError(
         code: SumiNativeMessagingRelay.ErrorCode,
         description: String? = nil,
-        diagnostic: SafariExtensionNativeMessagingDiagnostic?,
+        diagnostic _: SafariExtensionNativeMessagingDiagnostic?,
         additionalUserInfo: [String: Any] = [:]
     ) -> NSError {
         let message: String

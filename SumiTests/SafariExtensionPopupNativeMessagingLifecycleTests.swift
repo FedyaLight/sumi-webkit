@@ -387,5 +387,4 @@ final class SafariExtensionPopupNativeMessagingLifecycleTests: XCTestCase {
         )
         try data.write(to: url)
     }
-
 }

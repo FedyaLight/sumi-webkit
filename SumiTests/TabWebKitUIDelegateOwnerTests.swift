@@ -55,7 +55,7 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
         let webView = WKWebView(frame: .zero)
         let frame = TabWebKitUIDelegateOwnerFrameInfoMock().frameInfo
         var didAlertComplete = false
-        var confirmDecision: Bool?
+        var confirmCompletion = (didComplete: false, decision: true)
         var didPromptComplete = false
         var promptDecision: String?
 
@@ -71,7 +71,7 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
             runJavaScriptConfirmPanelWithMessage: "confirm",
             initiatedByFrame: frame
         ) { decision in
-            confirmDecision = decision
+            confirmCompletion = (didComplete: true, decision: decision)
         }
         owner.webView(
             webView,
@@ -84,7 +84,8 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
         }
 
         XCTAssertTrue(didAlertComplete)
-        XCTAssertEqual(confirmDecision, false)
+        XCTAssertTrue(confirmCompletion.didComplete)
+        XCTAssertFalse(confirmCompletion.decision)
         XCTAssertTrue(didPromptComplete)
         XCTAssertNil(promptDecision)
     }
@@ -95,7 +96,7 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
 
         tab.configureNormalTabWebView(webView, reason: "TabWebKitUIDelegateOwnerTests")
 
-        XCTAssertTrue((webView.uiDelegate as? TabWebKitUIDelegateOwner) === tab.webKitUIDelegateOwner)
+        XCTAssertIdentical((webView.uiDelegate as? TabWebKitUIDelegateOwner), tab.webKitUIDelegateOwner)
     }
 
     func testWebViewDidCloseUsesInjectedRuntimeWithoutBrowserManager() {
@@ -107,7 +108,7 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
                 closedWebViewIds.append(ObjectIdentifier(webView))
                 return true
             },
-            saveDownloadedData: { _, _, _, _ in }
+            saveDownloadedData: { _, _, _, _ in /* No-op. */ }
         )
 
         tab.webKitUIDelegateOwner.webViewDidClose(webView)
@@ -122,11 +123,16 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
         let webView = WKWebView(frame: .zero)
         let data = Data("payload".utf8)
         let originatingURL = URL(string: "https://example.com/file.txt")!
-        var saved: [(Data, String, String?, URL)] = []
+        var saved: [SavedDataRequest] = []
         tab.webKitUIRuntime = TabWebKitUIRuntime(
             handleWebViewDidClose: { _ in false },
             saveDownloadedData: { data, suggestedFilename, mimeType, originatingURL in
-                saved.append((data, suggestedFilename, mimeType, originatingURL))
+                saved.append(SavedDataRequest(
+                    data: data,
+                    suggestedFilename: suggestedFilename,
+                    mimeType: mimeType,
+                    originatingURL: originatingURL
+                ))
             }
         )
 
@@ -140,11 +146,18 @@ final class TabWebKitUIDelegateOwnerTests: XCTestCase {
 
         XCTAssertFalse(tab.hasBrowserRuntime)
         XCTAssertEqual(saved.count, 1)
-        XCTAssertEqual(saved.first?.0, data)
-        XCTAssertEqual(saved.first?.1, "report.txt")
-        XCTAssertEqual(saved.first?.2, "text/plain")
-        XCTAssertEqual(saved.first?.3, originatingURL)
+        XCTAssertEqual(saved.first?.data, data)
+        XCTAssertEqual(saved.first?.suggestedFilename, "report.txt")
+        XCTAssertEqual(saved.first?.mimeType, "text/plain")
+        XCTAssertEqual(saved.first?.originatingURL, originatingURL)
     }
+}
+
+private struct SavedDataRequest {
+    let data: Data
+    let suggestedFilename: String
+    let mimeType: String?
+    let originatingURL: URL
 }
 
 private final class TabWebKitUIDelegateOwnerFrameInfoMock: NSObject {

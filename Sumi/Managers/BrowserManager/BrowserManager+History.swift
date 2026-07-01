@@ -8,8 +8,8 @@ extension BrowserManager {
         case newWindow
     }
 
-    var canOfferStartupLastSessionRestoreShortcut: Bool {
-        recentlyClosedRestoreOwner.canOfferStartupLastSessionRestoreShortcut
+    var canOfferStartupSessionRestoreShortcut: Bool {
+        recentlyClosedRestoreOwner.canOfferStartupSessionRestoreShortcut
     }
 
     var canRestoreAnyLastSession: Bool {

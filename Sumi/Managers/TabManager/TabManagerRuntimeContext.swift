@@ -38,24 +38,24 @@ struct TabManagerRuntimeContext {
         windowState: @escaping (UUID) -> BrowserWindowState? = { _ in nil },
         windows: @escaping () -> [(UUID, BrowserWindowState)] = { [] },
         windowStates: @escaping () -> [BrowserWindowState] = { [] },
-        updateTabVisibility: @escaping () -> Void = {},
+        updateTabVisibility: @escaping () -> Void = { /* No-op. */ },
         webViewLifecycle: TabManagerWebViewLifecycleService = .inactive,
-        handleTabClosure: @escaping (UUID) -> Void = { _ in },
+        handleTabClosure: @escaping (UUID) -> Void = { _ in /* No-op. */ },
         visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
         isTabVisibleInSplit: @escaping (UUID, UUID) -> Bool = { _, _ in false },
         isTabActiveInSplit: @escaping (UUID, UUID) -> Bool = { _, _ in false },
-        updateActiveSplitSide: @escaping (UUID, UUID) -> Void = { _, _ in },
-        notifyTabClosedIfLoaded: @escaping (Tab) -> Void = { _ in },
-        notifyTabActivatedIfLoaded: @escaping (Tab, Tab?) -> Void = { _, _ in },
-        captureClosedTab: @escaping (Tab, UUID?) -> Void = { _, _ in },
-        captureDeletedShortcutLauncher: @escaping (ShortcutPin) -> Void = { _ in },
-        presentTabClosureToast: @escaping (Int) -> Void = { _ in },
-        validateWindowStates: @escaping () -> Void = {},
-        persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in },
-        syncWorkspaceThemeAcrossWindows: @escaping (Space, Bool) -> Void = { _, _ in },
-        closeAuxiliaryMiniWindow: @escaping (Tab, AuxiliaryWindowCloseReason) -> Void = { _, _ in },
+        updateActiveSplitSide: @escaping (UUID, UUID) -> Void = { _, _ in /* No-op. */ },
+        notifyTabClosedIfLoaded: @escaping (Tab) -> Void = { _ in /* No-op. */ },
+        notifyTabActivatedIfLoaded: @escaping (Tab, Tab?) -> Void = { _, _ in /* No-op. */ },
+        captureClosedTab: @escaping (Tab, UUID?) -> Void = { _, _ in /* No-op. */ },
+        captureDeletedShortcutLauncher: @escaping (ShortcutPin) -> Void = { _ in /* No-op. */ },
+        presentTabClosureToast: @escaping (Int) -> Void = { _ in /* No-op. */ },
+        validateWindowStates: @escaping () -> Void = { /* No-op. */ },
+        persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in /* No-op. */ },
+        syncWorkspaceThemeAcrossWindows: @escaping (Space, Bool) -> Void = { _, _ in /* No-op. */ },
+        closeAuxiliaryMiniWindow: @escaping (Tab, AuxiliaryWindowCloseReason) -> Void = { _, _ in /* No-op. */ },
         isLiveFolder: @escaping (UUID) -> Bool = { _ in false },
-        deleteLiveFolderState: @escaping (Set<UUID>) -> Void = { _ in }
+        deleteLiveFolderState: @escaping (Set<UUID>) -> Void = { _ in /* No-op. */ }
     ) {
         self.currentProfileIdProvider = currentProfileId
         self.defaultProfileIdProvider = defaultProfileId
@@ -180,5 +180,4 @@ struct TabManagerRuntimeContext {
     func deleteLiveFolderState(forFolderIds folderIds: Set<UUID>) {
         deleteLiveFolderStateHandler(folderIds)
     }
-
 }

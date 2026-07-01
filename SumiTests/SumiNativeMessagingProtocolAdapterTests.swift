@@ -295,7 +295,7 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
         let first = SumiNativeMessagingRelay()
         let second = SumiNativeMessagingRelay()
 
-        XCTAssertFalse(first.diagnosticsAdapterRegistry === second.diagnosticsAdapterRegistry)
+        XCTAssertNotIdentical(first.diagnosticsAdapterRegistry, second.diagnosticsAdapterRegistry)
         XCTAssertEqual(
             first.diagnosticsAdapterRegistry.registeredProtocolIdentifiers,
             [BitwardenNativeMessagingIdentifiers.protocolIdentifier]
@@ -486,5 +486,4 @@ final class SumiNativeMessagingProtocolAdapterTests: XCTestCase {
         )
         try data.write(to: url)
     }
-
 }

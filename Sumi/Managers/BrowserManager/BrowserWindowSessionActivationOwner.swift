@@ -13,8 +13,8 @@ final class BrowserWindowSessionActivationOwner {
         let adoptProfileForWindowActivation: @MainActor (BrowserWindowState) -> Void
         let scheduleNativeNowPlayingRefresh: @MainActor (UInt64) -> Void
         let scheduleBackgroundMediaReconcile: @MainActor (String) -> Void
-        let pauseGeolocationForApplicationBackgroundIfNeeded: @MainActor () -> Void
-        let resumeGeolocationForApplicationForegroundIfNeeded: @MainActor () -> Void
+        let pauseGeolocationOnAppBackgroundIfNeeded: @MainActor () -> Void
+        let resumeGeolocationOnAppForegroundIfNeeded: @MainActor () -> Void
         let refreshLastSessionWindowsStore: @MainActor () -> Void
     }
 
@@ -72,12 +72,12 @@ final class BrowserWindowSessionActivationOwner {
 
     func handleApplicationWillResignActive() {
         dependencies.scheduleBackgroundMediaReconcile("app-will-resign-active")
-        dependencies.pauseGeolocationForApplicationBackgroundIfNeeded()
+        dependencies.pauseGeolocationOnAppBackgroundIfNeeded()
     }
 
     func handleApplicationDidBecomeActive() {
         dependencies.scheduleBackgroundMediaReconcile("app-did-become-active")
-        dependencies.resumeGeolocationForApplicationForegroundIfNeeded()
+        dependencies.resumeGeolocationOnAppForegroundIfNeeded()
     }
 
     func handleWindowVisibilityChanged(_ windowState: BrowserWindowState) {
@@ -190,11 +190,11 @@ extension BrowserWindowSessionActivationOwner.Dependencies {
             scheduleBackgroundMediaReconcile: { reason in
                 backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
             },
-            pauseGeolocationForApplicationBackgroundIfNeeded: {
-                permissionRuntime.pauseGeolocationForApplicationBackgroundIfNeeded()
+            pauseGeolocationOnAppBackgroundIfNeeded: {
+                permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
             },
-            resumeGeolocationForApplicationForegroundIfNeeded: {
-                permissionRuntime.resumeGeolocationForApplicationForegroundIfNeeded()
+            resumeGeolocationOnAppForegroundIfNeeded: {
+                permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
             },
             refreshLastSessionWindowsStore: { [weak browserManager] in
                 browserManager?.refreshLastSessionWindowsStore(excludingWindowID: nil)

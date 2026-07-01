@@ -4,7 +4,7 @@ import WebKit
 import XCTest
 
 @MainActor
-final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
+final class InitialDocumentRuntimeHandoffTests: XCTestCase {
     func testPerformRunsUserContentWarmupRegisterBeforeLoadInOrder() async {
         var events: [String] = []
 
@@ -80,7 +80,7 @@ final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
         )
     }
 
-    func testTabSetupInitialLoadWaitsForInitialUserContent() async throws {
+    func testTabSetupInitialLoadWaitsForInitialUserContent() async {
         let initialURL = URL(string: "about:blank")!
         let targetURL = URL(string: "https://example.com/deferred")!
         let controller = DelayedNormalTabUserContentController()
@@ -100,7 +100,7 @@ final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
             webView: webView,
             targetURL: targetURL,
             profileId: nil,
-            registrationReason: "NormalTabInitialDocumentRuntimeHandoffTests",
+            registrationReason: "InitialDocumentRuntimeHandoffTests",
             registrationGuard: .currentWebViewIdentity
         )
 
@@ -126,7 +126,7 @@ final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
         XCTAssertEqual(tab.url, targetURL)
     }
 
-    func testTabSetupInitialLoadWarmsInitialDocumentContextsThroughInjectedRuntime() async throws {
+    func testTabSetupInitialLoadWarmsInitialDocumentContextsThroughInjectedRuntime() async {
         let profileId = UUID()
         let targetURL = URL(string: "https://example.com/deferred")!
         let controller = DelayedNormalTabUserContentController()
@@ -144,9 +144,9 @@ final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
 
         var warmedProfileIds: [UUID] = []
         tab.normalWebViewExtensionRuntime = TabNormalWebViewExtensionRuntime(
-            registerNormalTabWithExtensionRuntimeIfNeeded: { _, _ in },
-            prepareWebViewForExtensionRuntime: { _, _, _ in },
-            ensureInitialDocumentExtensionContextsLoadedIfNeeded: { warmedProfileId in
+            registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
+            prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
+            ensureInitialExtensionContextsIfNeeded: { warmedProfileId in
                 warmedProfileIds.append(warmedProfileId)
             }
         )
@@ -156,7 +156,7 @@ final class NormalTabInitialDocumentRuntimeHandoffTests: XCTestCase {
             webView: webView,
             targetURL: targetURL,
             profileId: profileId,
-            registrationReason: "NormalTabInitialDocumentRuntimeHandoffTests",
+            registrationReason: "InitialDocumentRuntimeHandoffTests",
             registrationGuard: .currentWebViewIdentity
         )
 
@@ -216,5 +216,5 @@ private final class DelayedNormalTabUserContentController:
         continuation = nil
     }
 
-    func cleanUpBeforeClosing() {}
+    func cleanUpBeforeClosing() { /* No-op. */ }
 }

@@ -9,7 +9,7 @@ struct SidebarColumnHostedRootView: View {
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
     var body: some View {
-        let _ = structuralInvalidationGeneration
+        _ = structuralInvalidationGeneration
         SpacesSideBarView(
             browserContext: environmentContext.browserContext,
             nowPlayingController: environmentContext.nowPlayingController
@@ -145,33 +145,11 @@ struct SidebarColumnHostedRootView: View {
 enum SidebarColumnHostedRoot {
     @MainActor
     static func view(
-        browserContext: SidebarBrowserContext,
-        hostActions: SidebarHostActions,
-        structuralInvalidation: AnyPublisher<Void, Never>,
-        windowState: BrowserWindowState,
-        windowRegistry: WindowRegistry,
-        sumiSettings: SumiSettingsService,
-        nowPlayingController: SumiNativeNowPlayingController,
-        resolvedThemeContext: ResolvedThemeContext,
-        chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
-        windowChromeSize: CGSize,
-        sidebarDragState: SidebarDragState,
+        environmentContext: SidebarHostEnvironmentContext,
         presentationContext: SidebarPresentationContext
     ) -> SidebarColumnHostedRootView {
         SidebarColumnHostedRootView(
-            environmentContext: SidebarHostEnvironmentContext(
-                browserContext: browserContext,
-                hostActions: hostActions,
-                structuralInvalidation: structuralInvalidation,
-                windowState: windowState,
-                windowRegistry: windowRegistry,
-                sumiSettings: sumiSettings,
-                nowPlayingController: nowPlayingController,
-                resolvedThemeContext: resolvedThemeContext,
-                chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
-                windowChromeSize: windowChromeSize,
-                sidebarDragState: sidebarDragState
-            ),
+            environmentContext: environmentContext,
             presentationContext: presentationContext
         )
     }
@@ -191,12 +169,8 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var sidebarDragState: SidebarDragState
     var presentationContext: SidebarPresentationContext
 
-    func makeNSViewController(context: Context) -> SidebarColumnViewController {
-        SidebarColumnViewController(usesCollapsedOverlayRoot: presentationContext.isCollapsedOverlay)
-    }
-
-    func updateNSViewController(_ controller: SidebarColumnViewController, context: Context) {
-        let root = SidebarColumnHostedRoot.view(
+    private var environmentContext: SidebarHostEnvironmentContext {
+        SidebarHostEnvironmentContext(
             browserContext: browserContext,
             hostActions: hostActions,
             structuralInvalidation: structuralInvalidation,
@@ -207,7 +181,17 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
             windowChromeSize: windowChromeSize,
-            sidebarDragState: sidebarDragState,
+            sidebarDragState: sidebarDragState
+        )
+    }
+
+    func makeNSViewController(context: Context) -> SidebarColumnViewController {
+        SidebarColumnViewController(usesCollapsedOverlayRoot: presentationContext.isCollapsedOverlay)
+    }
+
+    func updateNSViewController(_ controller: SidebarColumnViewController, context: Context) {
+        let root = SidebarColumnHostedRoot.view(
+            environmentContext: environmentContext,
             presentationContext: presentationContext
         )
         controller.updateHostedSidebar(
@@ -217,7 +201,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             capturesOverlayBackgroundPointerEvents: presentationContext.capturesOverlayBackgroundPointerEvents,
             isCollapsedOverlayHitTestingEnabled: presentationContext.mode == .collapsedVisible,
             onPointerDown: {
-                hostActions.dismissWorkspaceThemePickerIfNeededCommitting()
+                hostActions.dismissThemePickerCommittingIfNeeded()
             }
         )
     }

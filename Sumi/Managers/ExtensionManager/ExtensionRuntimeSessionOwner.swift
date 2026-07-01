@@ -10,7 +10,7 @@ final class ExtensionRuntimeSessionOwner {
     var lastExtensionLoadErrors: [String: Error] = [:]
     var extensionRuntimeResidencyState = ExtensionRuntimeResidencyState()
     var runtimeState: ExtensionManager.ExtensionRuntimeState = .idle
-    var extensionRuntimeAllowsWithoutEnabledExtensions = false
+    var allowsRuntimeWithoutEnabledExtensions = false
     var runtimeInitializationTask: Task<Void, Never>?
     var loadedExtensionManifests: [String: [String: Any]] = [:]
     var runtimeMetricsByExtensionID:

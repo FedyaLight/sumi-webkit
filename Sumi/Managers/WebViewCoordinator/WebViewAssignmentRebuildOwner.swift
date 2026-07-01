@@ -16,9 +16,14 @@ final class WebViewAssignmentRebuildOwner {
     typealias ProtectedWebViewCheck = (WKWebView) -> Bool
     typealias ProtectedRebuildDeferral = (WKWebView, UUID, UUID?) -> Void
     typealias PrimaryCandidateResolver = (UUID) -> (owner: TrackedWebViewOwner, webView: WKWebView)?
-    typealias LiveWindowIDs = () -> Set<UUID>?
+    typealias LiveWindowSelectionProvider = () -> LiveWindowSelection
     typealias CompositorRefresh = (UUID) -> Void
     typealias TabActivationNotifier = (Tab, UUID) -> Void
+
+    enum LiveWindowSelection {
+        case allTrackedWindows
+        case liveWindows(Set<UUID>)
+    }
 
     struct Runtime {
         let webViewRegistry: WindowWebViewRegistry
@@ -29,7 +34,7 @@ final class WebViewAssignmentRebuildOwner {
         let isWebViewProtectedFromCompositorMutation: ProtectedWebViewCheck
         let deferProtectedRebuild: ProtectedRebuildDeferral
         let primaryCandidate: PrimaryCandidateResolver
-        let liveWindowIDs: LiveWindowIDs
+        let liveWindowSelection: LiveWindowSelectionProvider
         let refreshCompositor: CompositorRefresh
         let notifyTabActivatedIfCurrent: TabActivationNotifier
     }
@@ -97,7 +102,7 @@ final class WebViewAssignmentRebuildOwner {
         let trackedWindowIds = Set(runtime.webViewRegistry.windowIDs(for: tab.id))
         var targetWindowIds = trackedWindowIds
 
-        if let liveWindowIds = runtime.liveWindowIDs() {
+        if case .liveWindows(let liveWindowIds) = runtime.liveWindowSelection() {
             targetWindowIds.formIntersection(liveWindowIds)
         }
 

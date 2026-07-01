@@ -149,19 +149,23 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
             generation: pendingGeneration
         )
         repository.applyEssentialsLayoutMetrics(
-            spaceId: spaceId,
-            profileId: profileId,
-            frame: CGRect(x: 0, y: 0, width: 300, height: 140),
-            dropFrame: CGRect(x: 0, y: 0, width: 300, height: 180),
-            itemCount: 4,
-            columnCount: 2,
-            rowCount: 2,
-            itemSize: CGSize(width: 96, height: 48),
-            gridSpacing: 8,
-            canAcceptDrop: true,
-            visibleItemCount: 4,
-            visibleRowCount: 2,
-            maxDropRowCount: 3,
+            SidebarEssentialsLayoutUpdate(
+                spaceId: spaceId,
+                input: SidebarEssentialsLayoutMetricsInput(
+                    profileId: profileId,
+                    frame: CGRect(x: 0, y: 0, width: 300, height: 140),
+                    dropFrame: CGRect(x: 0, y: 0, width: 300, height: 180),
+                    itemCount: 4,
+                    columnCount: 2,
+                    rowCount: 2,
+                    itemSize: CGSize(width: 96, height: 48),
+                    gridSpacing: 8,
+                    canAcceptDrop: true,
+                    visibleItemCount: 4,
+                    visibleRowCount: 2,
+                    maxDropRowCount: 3
+                )
+            ),
             generation: pendingGeneration
         )
 
@@ -194,11 +198,14 @@ final class SidebarDragGeometryRepositoryTests: XCTestCase {
         let generation = repository.activeGeometryGeneration
 
         repository.applyTopLevelPinnedItemTarget(
-            itemId: itemId,
-            spaceId: spaceId,
-            topLevelIndex: 0,
-            frame: CGRect(x: 0, y: 50, width: 220, height: 36),
-            isActive: true,
+            SidebarTopLevelPinnedItemTargetUpdate(
+                metrics: SidebarTopLevelPinnedItemMetrics(
+                    itemId: itemId,
+                    spaceId: spaceId,
+                    topLevelIndex: 0,
+                    frame: CGRect(x: 0, y: 50, width: 220, height: 36)
+                )
+            ),
             generation: generation
         )
         repository.applyRegularListHitTarget(

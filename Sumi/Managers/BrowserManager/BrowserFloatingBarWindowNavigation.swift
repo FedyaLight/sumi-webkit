@@ -1,7 +1,7 @@
 import Foundation
 import WebKit
 
-private enum WindowScopedConfigurationPolicyPreparation {
+private enum WindowScopedConfigPreparation {
     case ready
     case rebuiltAndLoaded
 }
@@ -136,7 +136,7 @@ extension BrowserManager {
         targetURL: URL,
         in windowState: BrowserWindowState,
         reason: String
-    ) -> WindowScopedConfigurationPolicyPreparation? {
+    ) -> WindowScopedConfigPreparation? {
         guard tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) else {
             return .ready
         }

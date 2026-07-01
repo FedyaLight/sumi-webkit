@@ -594,8 +594,8 @@ final class GlanceManagerTests: XCTestCase {
     private func makeRuntime(
         tab: @escaping @MainActor (UUID) -> Tab? = { _ in nil },
         currentTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
-        restoreSourceSelection: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in },
-        persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
+        restoreSourceSelection: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
+        persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
         makePreviewTab: @escaping @MainActor (URL, Tab?, BrowserWindowState?) -> Tab = { url, _, _ in
             Tab(url: url, name: url.host ?? "Glance")
         }
@@ -615,14 +615,14 @@ final class GlanceManagerTests: XCTestCase {
             dismissFloatingBarIfVisible: { _ in false },
             isFindBarVisible: { false },
             findCurrentTabId: { nil },
-            hideFindBar: {},
-            updateFindManagerCurrentTab: {},
+            hideFindBar: { /* No-op. */ },
+            updateFindManagerCurrentTab: { /* No-op. */ },
             persistWindowSession: persistWindowSession,
             makePreviewTab: makePreviewTab,
             adoptPreviewTab: { previewTab, _, _ in previewTab },
-            selectPromotedTab: { _, _ in },
-            selectPromotedTabInActiveWindow: { _ in },
-            createSplitPlaceholder: { _ in },
+            selectPromotedTab: { _, _ in /* No-op. */ },
+            selectPromotedTabInActiveWindow: { _ in /* No-op. */ },
+            createSplitPlaceholder: { _ in /* No-op. */ },
             registerPromotedHost: { _, _, _, _ in false }
         )
     }

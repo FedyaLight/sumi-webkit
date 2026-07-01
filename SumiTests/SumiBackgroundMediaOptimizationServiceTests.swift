@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SumiBackgroundMediaOptimizationServiceTests: XCTestCase {
+final class BackgroundMediaOptimizationTests: XCTestCase {
     func testReconcileUsesInjectedRuntimeForHiddenSilentTabWithoutBrowserManager() {
         let harness = BackgroundMediaOptimizationHarness()
         let windowID = UUID()
@@ -145,14 +145,13 @@ final class SumiBackgroundMediaOptimizationServiceTests: XCTestCase {
             loadsCachedFaviconOnInit: false
         )
     }
-
 }
 
 @MainActor
 private final class BackgroundMediaOptimizationHarness {
     let service = SumiBackgroundMediaOptimizationService()
     let coordinator = WebViewCoordinator()
-    let recorder = BackgroundMediaOptimizationCommandRecorder()
+    let recorder = MediaOptimizationCommandRecorder()
     var tabs: [Tab] = []
     var visibleTabIDsByWindow: [UUID: Set<UUID>] = [:]
     var energySaverActive = false
@@ -194,13 +193,13 @@ private final class BackgroundMediaOptimizationHarness {
 }
 
 @MainActor
-private final class BackgroundMediaOptimizationCommandRecorder {
-    private(set) var commands: [RecordedBackgroundMediaOptimizationCommand] = []
+private final class MediaOptimizationCommandRecorder {
+    private(set) var commands: [RecordedMediaOptimizationCommand] = []
     var onRecord: (() -> Void)?
 
     func record(webView: WKWebView, source: String, arguments: [String: Any]) {
         commands.append(
-            RecordedBackgroundMediaOptimizationCommand(
+            RecordedMediaOptimizationCommand(
                 webView: webView,
                 source: source,
                 mode: (arguments["mode"] as? String)
@@ -213,7 +212,7 @@ private final class BackgroundMediaOptimizationCommandRecorder {
     }
 }
 
-private struct RecordedBackgroundMediaOptimizationCommand {
+private struct RecordedMediaOptimizationCommand {
     let webView: WKWebView
     let source: String
     let mode: SumiBackgroundMediaOptimizationMode?

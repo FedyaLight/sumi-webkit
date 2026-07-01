@@ -211,5 +211,4 @@ final class SumiBoostZapSession: NSObject, WKScriptMessageHandler {
         })();
         """
     }
-
 }

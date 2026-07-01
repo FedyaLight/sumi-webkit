@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 @MainActor
-enum BrowserManagerWebViewCoordinatorRuntimeFactory {
+enum BrowserWebViewRuntimeFactory {
     static func browserRuntimeContext(
         for browserManager: BrowserManager
     ) -> WebViewCoordinatorBrowserRuntimeContext {
@@ -66,17 +66,17 @@ enum BrowserManagerWebViewCoordinatorRuntimeFactory {
 
     static func initialDocumentContext(
         for browserManager: BrowserManager
-    ) -> WebViewCoordinatorInitialDocumentRuntimeContext {
-        WebViewCoordinatorInitialDocumentRuntimeContext(
+    ) -> InitialDocumentWebViewRuntimeContext {
+        InitialDocumentWebViewRuntimeContext(
             needsInitialDocumentExtensionContextLoad: { [weak browserManager] profileId in
                 guard let browserManager else { return false }
                 return browserManager.extensionsModule
                     .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
             },
-            ensureInitialDocumentExtensionContextsLoaded: { [weak browserManager] profileId in
+            ensureInitialExtensionContextsLoaded: { [weak browserManager] profileId in
                 guard let browserManager else { return }
                 await browserManager.extensionsModule
-                    .ensureInitialDocumentExtensionContextsLoadedIfNeeded(profileId: profileId)
+                    .ensureInitialExtensionContextsIfNeeded(profileId: profileId)
             },
             refreshCompositorForWindow: { [weak browserManager] windowId in
                 guard let browserManager = browserManager,
@@ -126,11 +126,11 @@ enum BrowserManagerWebViewCoordinatorRuntimeFactory {
                 return requireBrowserManager(browserManager, operation: "resolve visible tab")
                     .tabManager.tab(for: tabId)
             },
-            canMaterializeNormalTabWebViewDuringStartup: { [weak browserManager] tab in
+            canMaterializeWebViewDuringStartup: { [weak browserManager] tab in
                 requireBrowserManager(
                     browserManager,
                     operation: "check visible WebView startup materialization"
-                ).canMaterializeNormalTabWebViewDuringStartup(tab)
+                ).canMaterializeWebViewDuringStartup(tab)
             },
             markTabAccessed: { [weak browserManager] tabId in
                 requireBrowserManager(browserManager, operation: "mark visible tab accessed")

@@ -1,8 +1,8 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
-final class BrowserSidebarEditorPresentationOwnerTests: XCTestCase {
+final class SidebarEditorPresentationOwnerTests: XCTestCase {
     func testSpaceCommitAppliesChangedNameIconAndProfile() {
         let spy = Spy()
         let owner = makeOwner(spy: spy)
@@ -136,10 +136,10 @@ final class BrowserSidebarEditorPresentationOwnerTests: XCTestCase {
 }
 
 private final class Spy {
-    var events: [BrowserSidebarEditorPresentationOwnerTests.Event] = []
+    var events: [SidebarEditorPresentationOwnerTests.Event] = []
 }
 
-extension BrowserSidebarEditorPresentationOwnerTests {
+extension SidebarEditorPresentationOwnerTests {
     enum Event: Equatable {
         case renameSpace(UUID, String)
         case updateSpaceIcon(UUID, String)

@@ -28,7 +28,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
         await drainMainActorTasks()
 
         XCTAssertEqual(loadedWebViews.count, 1)
-        XCTAssertTrue(loadedWebViews.first === webView)
+        XCTAssertIdentical(loadedWebViews.first, webView)
     }
 
     func testCancelSuppressesPreparedNavigationLoad() async {
@@ -108,7 +108,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
 
         XCTAssertFalse(didLoad)
         XCTAssertEqual(owner.pendingMainFrameNavigationKind, .backForward)
-        XCTAssertTrue(owner.isFreezingNavigationStateDuringBackForwardGesture)
+        XCTAssertTrue(owner.isFreezingNavDuringBackForwardGesture)
     }
 
     func testBackForwardTrackingSetsAndClearsTransactionState() {
@@ -129,7 +129,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                     finishedProtection = true
                     return false
                 },
-                updateNavigationStateIfCurrentWebViewExists: {
+                updateNavStateIfCurrentWebViewExists: {
                     updatedNavigationState = true
                 }
             )
@@ -137,7 +137,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
 
         XCTAssertTrue(beganProtection)
         XCTAssertEqual(owner.pendingMainFrameNavigationKind, .backForward)
-        XCTAssertTrue(owner.isFreezingNavigationStateDuringBackForwardGesture)
+        XCTAssertTrue(owner.isFreezingNavDuringBackForwardGesture)
 
         owner.finishBackForwardNavigationTracking(
             using: webView,
@@ -147,7 +147,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                     finishedProtection = true
                     return false
                 },
-                updateNavigationStateIfCurrentWebViewExists: {
+                updateNavStateIfCurrentWebViewExists: {
                     updatedNavigationState = true
                 }
             )
@@ -155,7 +155,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
 
         XCTAssertTrue(finishedProtection)
         XCTAssertNil(owner.pendingMainFrameNavigationKind)
-        XCTAssertFalse(owner.isFreezingNavigationStateDuringBackForwardGesture)
+        XCTAssertFalse(owner.isFreezingNavDuringBackForwardGesture)
         XCTAssertTrue(updatedNavigationState)
     }
 
@@ -181,18 +181,18 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
                 flushWindowMutationsAfterHistorySwipe: { id in
                     events.append("flush-\(id)")
                 },
-                updateNavigationStateIfCurrentWebViewExists: {
+                updateNavStateIfCurrentWebViewExists: {
                     events.append("update-navigation")
                 }
             )
         )
 
         XCTAssertEqual(owner.pendingMainFrameNavigationKind, .load)
-        XCTAssertFalse(owner.isFreezingNavigationStateDuringBackForwardGesture)
+        XCTAssertFalse(owner.isFreezingNavDuringBackForwardGesture)
         XCTAssertEqual(events, [
             "finish-protection",
             "flush-\(windowId)",
-            "update-navigation"
+            "update-navigation",
         ])
     }
 
@@ -225,10 +225,10 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
         )
 
         XCTAssertNil(owner.pendingMainFrameNavigationKind)
-        XCTAssertFalse(owner.isFreezingNavigationStateDuringBackForwardGesture)
+        XCTAssertFalse(owner.isFreezingNavDuringBackForwardGesture)
         XCTAssertEqual(events, [
             "finish-protection",
-            "cancel-\(windowId)"
+            "cancel-\(windowId)",
         ])
     }
 
@@ -265,11 +265,11 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
         await waitForSettle { events.count == 3 }
 
         XCTAssertNil(owner.pendingMainFrameNavigationKind)
-        XCTAssertFalse(owner.isFreezingNavigationStateDuringBackForwardGesture)
+        XCTAssertFalse(owner.isFreezingNavDuringBackForwardGesture)
         XCTAssertEqual(events, [
             "finish-protection",
             "persist",
-            "sync"
+            "sync",
         ])
     }
 
@@ -304,7 +304,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
         await waitForSettle { events == ["finish-protection"] }
 
         XCTAssertNil(owner.pendingMainFrameNavigationKind)
-        XCTAssertFalse(owner.isFreezingNavigationStateDuringBackForwardGesture)
+        XCTAssertFalse(owner.isFreezingNavDuringBackForwardGesture)
         XCTAssertEqual(events, ["finish-protection"])
     }
 
@@ -368,18 +368,18 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
             WKWebView,
             URL?,
             WKBackForwardListItem?
-        ) -> Void = { _, _, _, _ in },
+        ) -> Void = { _, _, _, _ in /* No-op. */ },
         finishHistorySwipeProtection: @escaping @MainActor (
             UUID,
             WKWebView?,
             URL?,
             WKBackForwardListItem?
         ) -> Bool = { _, _, _, _ in false },
-        cancelWindowMutationsAfterHistorySwipe: @escaping @MainActor (UUID) -> Void = { _ in },
-        flushWindowMutationsAfterHistorySwipe: @escaping @MainActor (UUID) -> Void = { _ in },
-        updateNavigationStateIfCurrentWebViewExists: @escaping @MainActor () -> Void = {},
-        scheduleRuntimeStatePersistence: @escaping @MainActor () -> Void = {},
-        syncAcrossWindows: @escaping @MainActor (WKWebView) -> Void = { _ in }
+        cancelWindowMutationsAfterHistorySwipe: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
+        flushWindowMutationsAfterHistorySwipe: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
+        updateNavStateIfCurrentWebViewExists: @escaping @MainActor () -> Void = { /* No-op. */ },
+        scheduleRuntimeStatePersistence: @escaping @MainActor () -> Void = { /* No-op. */ },
+        syncAcrossWindows: @escaping @MainActor (WKWebView) -> Void = { _ in /* No-op. */ }
     ) -> TabNavigationTransactionOwner.HistorySwipeEnvironment {
         TabNavigationTransactionOwner.HistorySwipeEnvironment(
             tabId: tabId,
@@ -390,7 +390,7 @@ final class TabNavigationTransactionOwnerTests: XCTestCase {
             finishHistorySwipeProtection: finishHistorySwipeProtection,
             cancelWindowMutationsAfterHistorySwipe: cancelWindowMutationsAfterHistorySwipe,
             flushWindowMutationsAfterHistorySwipe: flushWindowMutationsAfterHistorySwipe,
-            updateNavigationStateIfCurrentWebViewExists: updateNavigationStateIfCurrentWebViewExists,
+            updateNavStateIfCurrentWebViewExists: updateNavStateIfCurrentWebViewExists,
             scheduleRuntimeStatePersistence: scheduleRuntimeStatePersistence,
             syncAcrossWindows: syncAcrossWindows
         )
@@ -406,7 +406,7 @@ private final class NavigationDelegateBox: NSObject, WKNavigationDelegate {
 
     func webView(
         _: WKWebView,
-        didFinish _: WKNavigation!
+        didFinish _: WKNavigation?
     ) {
         onFinish()
     }

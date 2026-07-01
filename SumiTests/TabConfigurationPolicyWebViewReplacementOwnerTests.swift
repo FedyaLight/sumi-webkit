@@ -1,11 +1,11 @@
+@testable import Sumi
 import WebKit
 import XCTest
-@testable import Sumi
 
 @MainActor
-final class TabConfigurationPolicyWebViewReplacementOwnerTests: XCTestCase {
+final class TabWebViewReplacementOwnerTests: XCTestCase {
     func testTrackedReplacementSetsAssignsAndRefreshesInOrder() {
-        let owner = TabConfigurationPolicyWebViewReplacementOwner()
+        let owner = TabWebViewReplacementOwner()
         let tabId = UUID()
         let windowId = UUID()
         let previousWebView = WKWebView()
@@ -16,18 +16,20 @@ final class TabConfigurationPolicyWebViewReplacementOwnerTests: XCTestCase {
             owner.replaceNormalWebView(
                 reason: "tracked-success",
                 context: makeContext(
-                    tabId: tabId,
-                    previousWebView: previousWebView,
-                    replacementWebView: replacementWebView,
-                    trackedWindowId: windowId,
-                    hasTrackedWebViews: true,
-                    removeTrackedWebViews: {
-                        events.append("remove")
-                        return true
-                    },
-                    record: { event in
-                        events.append(event)
-                    }
+                    ReplacementContextFixture(
+                        tabId: tabId,
+                        previousWebView: previousWebView,
+                        replacementWebView: replacementWebView,
+                        trackedWindowId: windowId,
+                        hasTrackedWebViews: true,
+                        removeTrackedWebViews: {
+                            events.append("remove")
+                            return true
+                        },
+                        record: { event in
+                            events.append(event)
+                        }
+                    )
                 )
             )
         )
@@ -46,7 +48,7 @@ final class TabConfigurationPolicyWebViewReplacementOwnerTests: XCTestCase {
     }
 
     func testTrackedRemovalFailureCallsFailureCallbackAndSkipsAssignment() {
-        let owner = TabConfigurationPolicyWebViewReplacementOwner()
+        let owner = TabWebViewReplacementOwner()
         let tabId = UUID()
         let windowId = UUID()
         let previousWebView = WKWebView()
@@ -57,18 +59,20 @@ final class TabConfigurationPolicyWebViewReplacementOwnerTests: XCTestCase {
             owner.replaceNormalWebView(
                 reason: "tracked-failure",
                 context: makeContext(
-                    tabId: tabId,
-                    previousWebView: previousWebView,
-                    replacementWebView: replacementWebView,
-                    trackedWindowId: windowId,
-                    hasTrackedWebViews: true,
-                    removeTrackedWebViews: {
-                        events.append("remove")
-                        return false
-                    },
-                    record: { event in
-                        events.append(event)
-                    }
+                    ReplacementContextFixture(
+                        tabId: tabId,
+                        previousWebView: previousWebView,
+                        replacementWebView: replacementWebView,
+                        trackedWindowId: windowId,
+                        hasTrackedWebViews: true,
+                        removeTrackedWebViews: {
+                            events.append("remove")
+                            return false
+                        },
+                        record: { event in
+                            events.append(event)
+                        }
+                    )
                 ),
                 onTrackedWebViewRemovalFailure: {
                     events.append("failure")
@@ -88,7 +92,7 @@ final class TabConfigurationPolicyWebViewReplacementOwnerTests: XCTestCase {
     }
 
     func testUntrackedReplacementCleansPreviousWebViewAndReplacesUntracked() {
-        let owner = TabConfigurationPolicyWebViewReplacementOwner()
+        let owner = TabWebViewReplacementOwner()
         let tabId = UUID()
         let previousWebView = WKWebView()
         let replacementWebView = WKWebView()
@@ -98,18 +102,20 @@ final class TabConfigurationPolicyWebViewReplacementOwnerTests: XCTestCase {
             owner.replaceNormalWebView(
                 reason: "untracked",
                 context: makeContext(
-                    tabId: tabId,
-                    previousWebView: previousWebView,
-                    replacementWebView: replacementWebView,
-                    trackedWindowId: nil,
-                    hasTrackedWebViews: false,
-                    removeTrackedWebViews: {
-                        events.append("remove")
-                        return false
-                    },
-                    record: { event in
-                        events.append(event)
-                    }
+                    ReplacementContextFixture(
+                        tabId: tabId,
+                        previousWebView: previousWebView,
+                        replacementWebView: replacementWebView,
+                        trackedWindowId: nil,
+                        hasTrackedWebViews: false,
+                        removeTrackedWebViews: {
+                            events.append("remove")
+                            return false
+                        },
+                        record: { event in
+                            events.append(event)
+                        }
+                    )
                 )
             )
         )
@@ -127,60 +133,62 @@ final class TabConfigurationPolicyWebViewReplacementOwnerTests: XCTestCase {
         )
     }
 
-    private func makeContext(
-        tabId: UUID,
-        previousWebView: WKWebView,
-        replacementWebView: WKWebView,
-        trackedWindowId: UUID?,
-        hasTrackedWebViews: Bool,
-        removeTrackedWebViews: @escaping () -> Bool,
-        record: @escaping (String) -> Void
-    ) -> TabConfigurationPolicyWebViewReplacementContext {
-        TabConfigurationPolicyWebViewReplacementContext(
-            tabId: tabId,
-            existingWebView: { previousWebView },
+    private struct ReplacementContextFixture {
+        let tabId: UUID
+        let previousWebView: WKWebView
+        let replacementWebView: WKWebView
+        let trackedWindowId: UUID?
+        let hasTrackedWebViews: Bool
+        let removeTrackedWebViews: () -> Bool
+        let record: (String) -> Void
+    }
+
+    private func makeContext(_ fixture: ReplacementContextFixture) -> TabWebViewReplacementContext {
+        TabWebViewReplacementContext(
+            tabId: fixture.tabId,
+            existingWebView: { fixture.previousWebView },
             primaryWindowId: nil,
             trackedWindowIdContainingWebView: { webView in
-                XCTAssertIdentical(webView, previousWebView)
-                return trackedWindowId
+                XCTAssertIdentical(webView, fixture.previousWebView)
+                return fixture.trackedWindowId
             },
             hasTrackedWebViews: { requestedTabId in
-                XCTAssertEqual(requestedTabId, tabId)
-                return hasTrackedWebViews
+                XCTAssertEqual(requestedTabId, fixture.tabId)
+                return fixture.hasTrackedWebViews
             },
             setTrackedWebView: { webView, requestedTabId, requestedWindowId in
-                XCTAssertIdentical(webView, replacementWebView)
-                XCTAssertEqual(requestedTabId, tabId)
-                XCTAssertEqual(Optional(requestedWindowId), trackedWindowId)
-                record("setTracked")
+                XCTAssertIdentical(webView, fixture.replacementWebView)
+                XCTAssertEqual(requestedTabId, fixture.tabId)
+                XCTAssertEqual(Optional(requestedWindowId), fixture.trackedWindowId)
+                fixture.record("setTracked")
             },
             makeNormalTabWebView: { reason in
-                record("make:\(reason)")
-                return replacementWebView
+                fixture.record("make:\(reason)")
+                return fixture.replacementWebView
             },
-            invalidateCurrentPermissionPageForWebViewReplacement: { reason in
-                record("invalidate:\(reason)")
+            invalidatePermissionPageForReplacement: { reason in
+                fixture.record("invalidate:\(reason)")
             },
-            removeTrackedWebViews: removeTrackedWebViews,
+            removeTrackedWebViews: fixture.removeTrackedWebViews,
             cleanupCloneWebView: { webView in
-                XCTAssertIdentical(webView, previousWebView)
-                record("cleanup")
+                XCTAssertIdentical(webView, fixture.previousWebView)
+                fixture.record("cleanup")
             },
             clearCurrentWebViewOwnership: {
-                record("clearCurrent")
+                fixture.record("clearCurrent")
             },
             replaceUntrackedWebView: { webView in
-                XCTAssertIdentical(webView, replacementWebView)
-                record("replaceUntracked")
+                XCTAssertIdentical(webView, fixture.replacementWebView)
+                fixture.record("replaceUntracked")
             },
             assignWebViewToWindow: { webView, requestedWindowId in
-                XCTAssertIdentical(webView, replacementWebView)
-                XCTAssertEqual(Optional(requestedWindowId), trackedWindowId)
-                record("assign")
+                XCTAssertIdentical(webView, fixture.replacementWebView)
+                XCTAssertEqual(Optional(requestedWindowId), fixture.trackedWindowId)
+                fixture.record("assign")
             },
             refreshWindowAfterWebViewReplacement: { requestedWindowId in
-                XCTAssertEqual(Optional(requestedWindowId), trackedWindowId)
-                record("refresh")
+                XCTAssertEqual(Optional(requestedWindowId), fixture.trackedWindowId)
+                fixture.record("refresh")
             }
         )
     }

@@ -291,14 +291,16 @@ final class ExtensionRequestedTabLifecycleOwner {
         }
 
         if let profileId = manager.resolvedProfileId(for: tab) {
+            let contextReadiness: TabExtensionContextReadiness =
+                manager.profileHasLoadedContentScriptContexts(profileId: profileId) ? .loaded : .missing
             tab.extensionPageRuntimeOwner.noteOpenNotification(
                 extensionContextBindingGeneration: manager.extensionContextBindingGeneration(for: profileId),
-                loadedContexts: manager.profileHasLoadedContentScriptContexts(profileId: profileId)
+                contextReadiness: contextReadiness
             )
         } else {
             tab.extensionPageRuntimeOwner.noteOpenNotification(
                 extensionContextBindingGeneration: nil,
-                loadedContexts: nil
+                contextReadiness: .unknown
             )
         }
         tab.extensionPageRuntimeOwner.markDidOpenTab(generation: generation)
@@ -353,7 +355,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         let targetWindow = [
             requestedWindowState,
             browserContext.activeExtensionWindowState,
-        ].compactMap { $0 }.first { windowState in
+        ].compactMap(\.self).first { windowState in
             contextProfileId.map { manager.windowMatchesProfile(windowState, profileId: $0) } ?? true
         }
         let targetSpace = requestedTargetSpace(
@@ -478,7 +480,7 @@ final class ExtensionRequestedTabLifecycleOwner {
                 else {
                     return
                 }
-                manager.prepareWebViewConfigurationForExtensionRuntime(
+                manager.prepareWebViewConfigForExtensionRuntime(
                     configuration,
                     profileId: profileId,
                     reason: "\(replacementReason).configuration"

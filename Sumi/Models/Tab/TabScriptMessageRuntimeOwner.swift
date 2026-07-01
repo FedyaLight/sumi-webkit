@@ -108,7 +108,7 @@ final class TabScriptMessageRuntimeOwner {
         modifierFlags: NSEvent.ModifierFlags
     ) -> Bool {
         guard tab.sumiSettings?.glanceEnabled ?? true else { return false }
-        guard modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else {
+        guard modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) else {
             return false
         }
         guard tab.isPinned || tab.shortcutPinRole == .essential else { return false }
@@ -229,7 +229,7 @@ private final class SumiLinkInteractionUserScript: NSObject, SumiUserScript, @Ma
 
     @MainActor
     func userContentController(
-        _ userContentController: WKUserContentController,
+        _ _: WKUserContentController,
         didReceive message: WKScriptMessage
     ) async -> (Any?, String?) {
         await TabScriptMessageBrokerDispatcher.handle(broker: broker, message: message)
@@ -333,7 +333,7 @@ private final class SumiTabSuspensionUserScript: NSObject, SumiUserScript, @Main
 
     @MainActor
     func userContentController(
-        _ userContentController: WKUserContentController,
+        _ _: WKUserContentController,
         didReceive message: WKScriptMessage
     ) async -> (Any?, String?) {
         await TabScriptMessageBrokerDispatcher.handle(broker: broker, message: message)
@@ -369,13 +369,12 @@ private final class SumiTabSuspensionSubfeature: NSObject, @MainActor SumiUserSc
     }
 }
 
-private struct SumiTabSuspensionPayload {
+private struct SumiTabSuspensionPayload: Sendable {
     let canBeSuspended: Bool
 
     static func decode(from params: Any) -> SumiTabSuspensionPayload? {
-        if let params = params as? SumiTabScriptMessageParams,
-           let canBeSuspended = params.canBeSuspended {
-            return SumiTabSuspensionPayload(canBeSuspended: canBeSuspended)
+        if let params = params as? SumiTabScriptMessageParams {
+            return params.suspensionPayload
         }
 
         guard let dictionary = params as? [String: Any],
@@ -446,7 +445,7 @@ private enum TabScriptMessageBrokerDispatcher {
 private struct SumiTabScriptMessageParams: Sendable {
     let href: String?
     let hasHref: Bool
-    let canBeSuspended: Bool?
+    let suspensionPayload: SumiTabSuspensionPayload?
 
     init(from params: Any) {
         if let params = params as? SumiTabScriptMessageParams {
@@ -456,10 +455,11 @@ private struct SumiTabScriptMessageParams: Sendable {
 
         let dictionary = params as? [String: Any] ?? [:]
         let hrefValue = dictionary["href"]
+        let canBeSuspended = dictionary["canBeSuspended"] as? Bool
 
         self.href = hrefValue as? String
         self.hasHref = dictionary.keys.contains("href")
-        self.canBeSuspended = dictionary["canBeSuspended"] as? Bool
+        self.suspensionPayload = canBeSuspended.map(SumiTabSuspensionPayload.init(canBeSuspended:))
     }
 }
 

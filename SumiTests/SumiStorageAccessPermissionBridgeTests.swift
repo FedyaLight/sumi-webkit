@@ -340,7 +340,6 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
             updatedAt: storageAccessBridgeFixedDate
         )
     }
-
 }
 
 private actor StorageAccessBridgePermissionStore: SumiPermissionStore {

@@ -71,7 +71,7 @@ protocol SumiCommandBookmarkRouting: AnyObject {
 #if DEBUG
 @MainActor
 protocol SumiCommandExtensionDiagnosticsRouting: AnyObject {
-    var extensionDiagnosticsAreEnabledForCommands: Bool { get }
+    var extensionDiagnosticsEnabledForCommands: Bool { get }
     func printSafariExtensionAcceptanceCheckToConsole()
     func printSafariExtensionNativeMessagingProbeToConsole()
     func printSafariExtensionDevDiagnosticsReportToConsole()
@@ -205,7 +205,7 @@ final class SumiCommandsBrowserContext {
 
 #if DEBUG
     var extensionsDiagnosticsAreEnabled: Bool {
-        extensionDiagnostics?.extensionDiagnosticsAreEnabledForCommands == true
+        extensionDiagnostics?.extensionDiagnosticsEnabledForCommands == true
     }
 #endif
 

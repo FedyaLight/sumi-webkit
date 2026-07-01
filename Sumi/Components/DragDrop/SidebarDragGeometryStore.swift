@@ -14,6 +14,21 @@ struct SidebarTopLevelPinnedItemMetrics: Equatable {
     var frame: CGRect
 }
 
+struct SidebarTopLevelPinnedItemTargetUpdate: Equatable {
+    let itemId: UUID
+    var metrics: SidebarTopLevelPinnedItemMetrics?
+
+    init(metrics: SidebarTopLevelPinnedItemMetrics) {
+        itemId = metrics.itemId
+        self.metrics = metrics
+    }
+
+    init(itemId: UUID) {
+        self.itemId = itemId
+        metrics = nil
+    }
+}
+
 struct SidebarFolderDropTargetMetrics: Equatable {
     let folderId: UUID
     var spaceId: UUID
@@ -26,11 +41,51 @@ struct SidebarFolderDropTargetMetrics: Equatable {
     var afterFrame: CGRect?
 }
 
+struct SidebarFolderDropTargetUpdate: Equatable {
+    let folderId: UUID
+    var region: SidebarFolderDragRegion
+    var metrics: SidebarFolderDropTargetMetrics?
+    var frame: CGRect?
+
+    init(
+        metrics: SidebarFolderDropTargetMetrics,
+        region: SidebarFolderDragRegion,
+        frame: CGRect
+    ) {
+        folderId = metrics.folderId
+        self.region = region
+        self.metrics = metrics
+        self.frame = frame
+    }
+
+    init(folderId: UUID, region: SidebarFolderDragRegion) {
+        self.folderId = folderId
+        self.region = region
+        metrics = nil
+        frame = nil
+    }
+}
+
 struct SidebarFolderChildDropTargetMetrics: Equatable {
     let childId: UUID
     var folderId: UUID
     var index: Int
     var frame: CGRect
+}
+
+struct SidebarFolderChildDropTargetUpdate: Equatable {
+    let childId: UUID
+    var metrics: SidebarFolderChildDropTargetMetrics?
+
+    init(metrics: SidebarFolderChildDropTargetMetrics) {
+        childId = metrics.childId
+        self.metrics = metrics
+    }
+
+    init(childId: UUID) {
+        self.childId = childId
+        metrics = nil
+    }
 }
 
 struct SidebarRegularListHitMetrics: Equatable {
@@ -108,6 +163,38 @@ struct SidebarEssentialsLayoutMetrics: Equatable {
 
     func containsDropLocation(_ location: CGPoint) -> Bool {
         dropHitFrame.contains(location)
+    }
+}
+
+struct SidebarEssentialsLayoutMetricsInput: Equatable {
+    var profileId: UUID?
+    var frame: CGRect
+    var dropFrame: CGRect
+    var dropSlotFrames: [SidebarEssentialsDropSlotMetrics] = []
+    var itemCount: Int
+    var columnCount: Int
+    var firstSyntheticRowSlot: Int?
+    var rowCount: Int
+    var itemSize: CGSize
+    var gridSpacing: CGFloat
+    var canAcceptDrop: Bool
+    var visibleItemCount: Int?
+    var visibleRowCount: Int?
+    var maxDropRowCount: Int?
+}
+
+struct SidebarEssentialsLayoutUpdate: Equatable {
+    let spaceId: UUID
+    var input: SidebarEssentialsLayoutMetricsInput?
+
+    init(spaceId: UUID, input: SidebarEssentialsLayoutMetricsInput) {
+        self.spaceId = spaceId
+        self.input = input
+    }
+
+    init(spaceId: UUID) {
+        self.spaceId = spaceId
+        input = nil
     }
 }
 

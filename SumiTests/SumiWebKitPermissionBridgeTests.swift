@@ -1024,15 +1024,15 @@ private actor FailingReadPermissionStore: SumiPermissionStore {
         throw FailingPermissionStoreError.readFailed
     }
 
-    func setDecision(for _: SumiPermissionKey, decision _: SumiPermissionDecision) async throws {}
+    func setDecision(for _: SumiPermissionKey, decision _: SumiPermissionDecision) async { /* No-op. */ }
 
-    func resetDecision(for _: SumiPermissionKey) async throws {}
+    func resetDecision(for _: SumiPermissionKey) async { /* No-op. */ }
 
-    func listDecisions(profilePartitionId _: String) async throws -> [SumiPermissionStoreRecord] {
+    func listDecisions(profilePartitionId _: String) async -> [SumiPermissionStoreRecord] {
         []
     }
 
-    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async throws {}
+    func recordLastUsed(for _: SumiPermissionKey, at _: Date) async { /* No-op. */ }
 }
 
 private func decision(

@@ -166,12 +166,11 @@ final class HistoryNavigationTests: XCTestCase {
 
     private func makeTab(_ url: String) -> Tab {
         Tab(
-            url: URL(string: url)!,
+            url: URL(string: url) ?? preconditionFailure("Invalid test URL"),
             name: url,
             loadsCachedFaviconOnInit: false
         )
     }
-
 }
 
 @MainActor
@@ -208,7 +207,7 @@ private final class HistoryNavigationOwnerHarness {
                 webView: { [weak self] _, windowId in
                     self?.webViewsByWindowId[windowId]
                 },
-                openNativeBrowserSurface: { _, _, _, _ in },
+                openNativeBrowserSurface: { _, _, _, _ in /* No-op. */ },
                 openNewTab: { _, _ in nil },
                 loadCurrentPageURL: { [weak self] tab, windowState, url in
                     self?.loadedCurrentPages.append(
@@ -216,11 +215,11 @@ private final class HistoryNavigationOwnerHarness {
                     )
                 },
                 windowIds: { [] },
-                createNewWindow: {},
+                createNewWindow: { /* No-op. */ },
                 awaitNextRegisteredWindow: { _ in nil },
-                scheduleRuntimeStatePersistence: { _ in },
-                schedulePrepareVisibleWebViews: { _ in },
-                refreshCompositor: { _ in },
+                scheduleRuntimeStatePersistence: { _ in /* No-op. */ },
+                schedulePrepareVisibleWebViews: { _ in /* No-op. */ },
+                refreshCompositor: { _ in /* No-op. */ },
                 navigateBack: { [weak self] webView in
                     self?.navigatedBackWebViewIDs.append(ObjectIdentifier(webView))
                 },
@@ -243,7 +242,7 @@ private final class HistoryNavigationRecordingWebView: WKWebView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 

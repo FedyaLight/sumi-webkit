@@ -84,7 +84,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         )
         tab.extensionPageRuntimeOwner.noteOpenNotification(
             extensionContextBindingGeneration: manager.extensionContextBindingGeneration(for: profileId),
-            loadedContexts: true
+            contextReadiness: .loaded
         )
         controller.didOpenTab(adapter)
         #if DEBUG
@@ -197,11 +197,11 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             return false
         }
 
-        if documentBinding.openNotifiedWithLoadedContexts == false {
+        if documentBinding.openNotifiedContextReadiness == .missing {
             return true
         }
 
-        if let openBinding = documentBinding.openNotifiedExtensionContextBindingGeneration,
+        if let openBinding = documentBinding.openNotifiedContextBindingGeneration,
            let profileId = manager.resolvedProfileId(for: tab),
            openBinding != manager.extensionContextBindingGeneration(for: profileId) {
             return true

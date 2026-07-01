@@ -1,8 +1,8 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
-final class BrowserSidebarSpaceTransitionRoutingOwnerTests: XCTestCase {
+final class BrowserSpaceTransitionRoutingOwnerTests: XCTestCase {
     func testActionsRouteSpaceSelectionCalls() {
         let spy = Spy()
         let owner = makeOwner(spy: spy)
@@ -67,9 +67,9 @@ final class BrowserSidebarSpaceTransitionRoutingOwnerTests: XCTestCase {
     private func makeOwner(
         spy: Spy,
         returnedIdentity: SpaceTransitionIdentity? = nil
-    ) -> BrowserSidebarSpaceTransitionRoutingOwner {
-        BrowserSidebarSpaceTransitionRoutingOwner(
-            dependencies: BrowserSidebarSpaceTransitionRoutingOwner.Dependencies(
+    ) -> BrowserSpaceTransitionRoutingOwner {
+        BrowserSpaceTransitionRoutingOwner(
+            dependencies: BrowserSpaceTransitionRoutingOwner.Dependencies(
                 completePendingSplitGroupFocusIfReady: { windowState, spaceId in
                     spy.events.append(.completePendingSplitGroupFocus(windowState.id, spaceId))
                 },
@@ -102,10 +102,10 @@ final class BrowserSidebarSpaceTransitionRoutingOwnerTests: XCTestCase {
 }
 
 private final class Spy {
-    var events: [BrowserSidebarSpaceTransitionRoutingOwnerTests.Event] = []
+    var events: [BrowserSpaceTransitionRoutingOwnerTests.Event] = []
 }
 
-extension BrowserSidebarSpaceTransitionRoutingOwnerTests {
+extension BrowserSpaceTransitionRoutingOwnerTests {
     enum Event: Equatable {
         case completePendingSplitGroupFocus(UUID, UUID)
         case setActiveSpace(UUID, UUID)

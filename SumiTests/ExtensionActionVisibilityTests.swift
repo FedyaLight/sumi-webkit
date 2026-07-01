@@ -36,5 +36,4 @@ final class ExtensionActionPlacementTests: XCTestCase {
             .sidebarGrid
         )
     }
-
 }

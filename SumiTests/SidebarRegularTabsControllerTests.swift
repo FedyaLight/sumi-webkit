@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class SidebarRegularTabsControllerTests: XCTestCase {
@@ -85,7 +85,7 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
         XCTAssertEqual(controller.spaces.map(\.id), [space.id, otherSpace.id])
         XCTAssertEqual(controller.tabs(in: space, windowState: windowState).map(\.id), [tab.id])
         XCTAssertTrue(controller.hasPersistedTabs(in: space))
-        XCTAssertTrue(controller.tab(for: tab.id) === tab)
+        XCTAssertIdentical(controller.tab(for: tab.id), tab)
         XCTAssertEqual(controller.splitGroup(containing: tab.id)?.id, group.id)
         XCTAssertEqual(controller.shortcutPin(by: pin.id)?.id, pin.id)
         XCTAssertEqual(controller.userFolders(for: space.id).map(\.id), [userFolder.id])
@@ -143,12 +143,12 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
                 folders: { _ in [] },
                 isLiveFolder: { _ in false },
                 canAddURLToEssentials: { _, _ in false },
-                clearRegularTabs: { _ in },
-                pinTabToSpace: { _, _ in },
-                pinTabToEssentials: { _, _ in },
-                closeAllTabsBelow: { _ in },
-                moveTab: { _, _ in },
-                moveTabToFolder: { _, _ in },
+                clearRegularTabs: { _ in /* No-op. */ },
+                pinTabToSpace: { _, _ in /* No-op. */ },
+                pinTabToEssentials: { _, _ in /* No-op. */ },
+                closeAllTabsBelow: { _ in /* No-op. */ },
+                moveTab: { _, _ in /* No-op. */ },
+                moveTabToFolder: { _, _ in /* No-op. */ },
                 assignTabToProfile: { _, _ in false }
             )
         )
@@ -172,7 +172,7 @@ final class SidebarRegularTabsControllerTests: XCTestCase {
 
     private func makeTab(spaceId: UUID, index: Int = 0) -> Tab {
         Tab(
-            url: URL(string: "https://example.com/\(index)")!,
+            url: URL(string: "https://example.com/\(index)") ?? preconditionFailure("Invalid test URL"),
             name: "Example \(index)",
             favicon: "globe",
             spaceId: spaceId,

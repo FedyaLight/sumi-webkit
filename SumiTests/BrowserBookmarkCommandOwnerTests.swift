@@ -6,6 +6,11 @@ import XCTest
 final class BrowserBookmarkCommandOwnerTests: XCTestCase {
     private var temporaryDirectories: [URL] = []
 
+    override func setUp() async throws {
+        try await super.setUp()
+        temporaryDirectories.removeAll()
+    }
+
     override func tearDown() async throws {
         for directory in temporaryDirectories {
             try? FileManager.default.removeItem(at: directory)
@@ -134,7 +139,7 @@ final class BrowserBookmarkCommandOwnerTests: XCTestCase {
             XCTAssertEqual(requestedSource.id, "safari-manual")
             XCTAssertEqual(requestedSource.fileURL, replacementURL)
             return [
-                .bookmark(name: "Manual", url: importedURL)
+                .bookmark(name: "Manual", url: importedURL),
             ]
         }
         presenter.importSelection = .source(source)
@@ -212,7 +217,7 @@ private final class BrowserBookmarkCommandOwnerHarness {
                 setBookmarkEditorPresentationRequest: { [weak self] request in
                     self?.bookmarkEditorPresentationRequest = request
                 },
-                openNativeBrowserSurface: { _, _, _, _ in },
+                openNativeBrowserSurface: { _, _, _, _ in /* No-op. */ },
                 openHistoryURL: { [weak self] url, windowState, mode in
                     self?.openedHistoryURLs.append(
                         OpenedHistoryURL(
@@ -272,8 +277,8 @@ private final class FakeBookmarkCommandPresenter: BrowserBookmarkCommandPresenti
     var alerts: [(title: String, message: String)] = []
 
     func promptBookmarkAllTabs(
-        defaultTitle: String,
-        folders: [SumiBookmarkFolder]
+        defaultTitle _: String,
+        folders _: [SumiBookmarkFolder]
     ) -> BrowserBookmarkAllTabsPrompt? {
         bookmarkAllTabsPrompt
     }
@@ -291,13 +296,13 @@ private final class FakeBookmarkCommandPresenter: BrowserBookmarkCommandPresenti
 
     func promptUnreadableSafariBookmarksReplacement(
         source: SumiBookmarkImportSource,
-        originalError: Error
+        originalError _: Error
     ) -> URL? {
         unreadableSafariPrompts.append(source)
         return unreadableSafariReplacementURL
     }
 
-    func promptExportDestination(defaultFileName: String) -> URL? {
+    func promptExportDestination(defaultFileName _: String) -> URL? {
         exportDestinationURL
     }
 

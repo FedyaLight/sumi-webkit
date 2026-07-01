@@ -30,7 +30,7 @@ extension Tab {
     }
 
     func updateNavigationState() {
-        guard !isFreezingNavigationStateDuringBackForwardGesture else { return }
+        guard !isFreezingNavDuringBackForwardGesture else { return }
         guard let webView = currentWebView else { return }
 
         let newCanGoBack = webView.canGoBack
@@ -147,7 +147,7 @@ extension Tab {
             flushWindowMutationsAfterHistorySwipe: { [weak self] windowId in
                 self?.historySwipeRuntime.flushWindowMutationsAfterHistorySwipe(windowId)
             },
-            updateNavigationStateIfCurrentWebViewExists: { [weak self] in
+            updateNavStateIfCurrentWebViewExists: { [weak self] in
                 guard let self, self.hasCurrentWebView else { return }
                 self.updateNavigationState()
             },

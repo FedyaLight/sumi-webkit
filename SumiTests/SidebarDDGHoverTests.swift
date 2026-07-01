@@ -23,7 +23,7 @@ final class SidebarDDGHoverTests: XCTestCase {
         )
     }
 
-    func testFloatingBarSuggestionHeightAdaptsBeforeZenScrollLimit() throws {
+    func testFloatingBarSuggestionHeightAdaptsBeforeZenScrollLimit() {
         XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsVisibleRowLimit, 5)
         XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 0), 0)
         XCTAssertEqual(FloatingBarLayoutPolicy.suggestionsHeight(for: 2), 104)

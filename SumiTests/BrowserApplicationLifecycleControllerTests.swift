@@ -3,14 +3,14 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class BrowserApplicationLifecycleControllerTests: XCTestCase {
+final class AppLifecycleControllerTests: XCTestCase {
     func testApplicationInactivePausesGeolocationAfterSchedulingMediaReconcile() {
         var events: [String] = []
         let controller = BrowserApplicationLifecycleController(
             dependencies: BrowserApplicationLifecycleController.Dependencies(
                 scheduleBackgroundMediaReconcile: { events.append("media:\($0)") },
-                pauseGeolocationForApplicationBackgroundIfNeeded: { events.append("pause") },
-                resumeGeolocationForApplicationForegroundIfNeeded: { events.append("resume") }
+                pauseGeolocationOnAppBackgroundIfNeeded: { events.append("pause") },
+                resumeGeolocationOnAppForegroundIfNeeded: { events.append("resume") }
             )
         )
 
@@ -24,8 +24,8 @@ final class BrowserApplicationLifecycleControllerTests: XCTestCase {
         let controller = BrowserApplicationLifecycleController(
             dependencies: BrowserApplicationLifecycleController.Dependencies(
                 scheduleBackgroundMediaReconcile: { events.append("media:\($0)") },
-                pauseGeolocationForApplicationBackgroundIfNeeded: { events.append("pause") },
-                resumeGeolocationForApplicationForegroundIfNeeded: { events.append("resume") }
+                pauseGeolocationOnAppBackgroundIfNeeded: { events.append("pause") },
+                resumeGeolocationOnAppForegroundIfNeeded: { events.append("resume") }
             )
         )
 

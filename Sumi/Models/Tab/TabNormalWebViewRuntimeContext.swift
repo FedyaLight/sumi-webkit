@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 @MainActor
-struct TabCreatedFocusableWebViewPreparationOptions {
+struct CreatedWebViewPreparationOptions {
     let enableVisitedLinkRecording: Bool
     let applyNavigationPreferences: Bool
     let installFaviconRuntime: Bool
@@ -63,11 +63,11 @@ struct TabNormalWebViewPreparationRuntime {
         FocusableWKWebView,
         URL?,
         String,
-        TabCreatedFocusableWebViewPreparationOptions
+        CreatedWebViewPreparationOptions
     ) -> Void
     let prepareAssignedWebView: (WKWebView) -> Void
     let prepareReusedOrExternallyCreatedWebView: (WKWebView) -> Void
-    let applyOwnedTabWebViewNavigationPreferences: (WKWebView) -> Void
+    let applyOwnedWebViewNavPreferences: (WKWebView) -> Void
 }
 
 @MainActor
@@ -79,7 +79,7 @@ struct TabNormalWebViewRuntimeContext {
     let parkedWebView: () -> WKWebView?
     let profileId: () -> UUID?
     let resolveProfile: () -> Profile?
-    let deferWebViewCreationUntilProfileAvailable: () -> Void
+    let deferWebViewUntilProfileAvailable: () -> Void
     let beginSuspendedRestoreIfNeeded: () -> Void
     let finishSuspendedRestoreIfNeeded: () -> Void
     let setupWebView: () -> Void
@@ -95,7 +95,7 @@ struct TabNormalWebViewRuntimeContext {
     let replaceNormalTabUserScripts: (WKUserContentController, URL?) async -> Void
     let loadMainFrameRequest: (WKWebView, URLRequest) -> Void
     let applyCachedFaviconOrPlaceholder: (URL) -> Void
-    let registerNormalTabWithExtensionRuntimeIfNeeded: (String) -> Void
+    let registerTabWithExtensionRuntimeIfNeeded: (String) -> Void
     let scheduleInitialDocumentRuntimeHandoff: (
         WKWebView?,
         URL,

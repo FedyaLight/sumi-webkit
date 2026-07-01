@@ -6,7 +6,12 @@
 import SwiftUI
 
 enum PinnedGridContextResolver {
-    static let unresolvedGeometrySpaceId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+    static let unresolvedGeometrySpaceId: UUID = {
+        guard let id = UUID(uuidString: "00000000-0000-0000-0000-000000000000") else {
+            preconditionFailure("Invalid unresolved pinned-grid geometry space id")
+        }
+        return id
+    }()
 
     static func contextMenuSpaceId(
         explicitSpaceId: UUID?,
@@ -58,7 +63,7 @@ struct PinnedGrid: View {
     }
 
     var body: some View {
-        let _ = browserContext.tabStructuralRevision()
+        _ = browserContext.tabStructuralRevision()
         let shouldReduceMotion = reduceMotion || sumiSettings.shouldReduceChromeMotion
 
         let pinnedTabsConfiguration: PinnedTabsConfiguration = .large

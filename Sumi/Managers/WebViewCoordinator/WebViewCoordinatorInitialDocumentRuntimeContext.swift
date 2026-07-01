@@ -1,8 +1,8 @@
 import Foundation
 
 @MainActor
-struct WebViewCoordinatorInitialDocumentRuntimeContext {
+struct InitialDocumentWebViewRuntimeContext {
     let needsInitialDocumentExtensionContextLoad: (UUID) -> Bool
-    let ensureInitialDocumentExtensionContextsLoaded: (UUID) async -> Void
+    let ensureInitialExtensionContextsLoaded: (UUID) async -> Void
     let refreshCompositorForWindow: (UUID) -> Void
 }

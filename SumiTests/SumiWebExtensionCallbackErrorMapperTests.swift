@@ -12,26 +12,30 @@ final class SumiWebExtensionCallbackErrorMapperTests: XCTestCase {
     }
 
     func testExtensionManagerCallbackErrorsPreserveLegacyNSErrorShape() {
-        let cases: [(ExtensionManagerCallbackError, Int, String)] = [
-            (.noPopupPopover, 1, "No popup popover is available"),
-            (.extensionIdentifierUnavailable, 2, "No extension identifier is available"),
-            (.extensionManagerUnavailable, 3, "Extension manager is unavailable"),
-            (.requestedTabBrowserManagerUnavailable, 3, "Browser manager is unavailable"),
-            (.browserManagerUnavailable, 4, "Browser manager is unavailable"),
-            (.newWindowUnavailable, 5, "Sumi could not resolve the new window"),
-            (.extensionExternalTabUnavailable, 6, "Sumi could not open the extension external tab"),
-            (.extensionPopupWindowUnavailable, 6, "Sumi could not open the extension popup window"),
-            (.optionsPageNotFound, 6, "No options page was found for this extension"),
-            (.privateWindowsUnsupported, 7, "Sumi does not support private extension windows without an isolated private extension runtime"),
-            (.optionsURLOutsideExtensionDirectory, 7, "Options URL outside extension directory"),
+        let cases: [ExtensionManagerCallbackErrorCase] = [
+            .init(callbackError: .noPopupPopover, code: 1, message: "No popup popover is available"),
+            .init(callbackError: .extensionIdentifierUnavailable, code: 2, message: "No extension identifier is available"),
+            .init(callbackError: .extensionManagerUnavailable, code: 3, message: "Extension manager is unavailable"),
+            .init(callbackError: .requestedTabBrowserManagerUnavailable, code: 3, message: "Browser manager is unavailable"),
+            .init(callbackError: .browserManagerUnavailable, code: 4, message: "Browser manager is unavailable"),
+            .init(callbackError: .newWindowUnavailable, code: 5, message: "Sumi could not resolve the new window"),
+            .init(callbackError: .extensionExternalTabUnavailable, code: 6, message: "Sumi could not open the extension external tab"),
+            .init(callbackError: .extensionPopupWindowUnavailable, code: 6, message: "Sumi could not open the extension popup window"),
+            .init(callbackError: .optionsPageNotFound, code: 6, message: "No options page was found for this extension"),
+            .init(
+                callbackError: .privateWindowsUnsupported,
+                code: 7,
+                message: "Sumi does not support private extension windows without an isolated private extension runtime"
+            ),
+            .init(callbackError: .optionsURLOutsideExtensionDirectory, code: 7, message: "Options URL outside extension directory"),
         ]
 
-        for (callbackError, code, message) in cases {
-            let error = callbackError.nsError()
+        for testCase in cases {
+            let error = testCase.callbackError.nsError()
 
             XCTAssertEqual(error.domain, ExtensionManagerCallbackError.domain)
-            XCTAssertEqual(error.code, code)
-            XCTAssertEqual(error.localizedDescription, message)
+            XCTAssertEqual(error.code, testCase.code)
+            XCTAssertEqual(error.localizedDescription, testCase.message)
         }
     }
 
@@ -47,81 +51,56 @@ final class SumiWebExtensionCallbackErrorMapperTests: XCTestCase {
     }
 
     func testExtensionBridgeAdapterErrorsPreserveLegacyNSErrorShape() {
-        let cases: [(ExtensionBridgeAdapterCallbackError, String, Int, String)] = [
-            (
-                .windowUnavailable(operation: .focus),
-                "ExtensionWindowAdapter",
-                1,
-                "Window is no longer available"
+        let cases: [ExtensionBridgeAdapterErrorCase] = [
+            .init(
+                callbackError: .windowUnavailable(operation: .focus),
+                domain: "ExtensionWindowAdapter",
+                code: 1,
+                message: "Window is no longer available"
             ),
-            (
-                .windowUnavailable(operation: .setWindowState),
-                "ExtensionWindowAdapter",
-                2,
-                "Window is no longer available"
+            .init(
+                callbackError: .windowUnavailable(operation: .setWindowState),
+                domain: "ExtensionWindowAdapter",
+                code: 2,
+                message: "Window is no longer available"
             ),
-            (
-                .windowUnavailable(operation: .setFrame),
-                "ExtensionWindowAdapter",
-                3,
-                "Window is no longer available"
+            .init(callbackError: .windowUnavailable(operation: .setFrame), domain: "ExtensionWindowAdapter", code: 3, message: "Window is no longer available"),
+            .init(callbackError: .windowUnavailable(operation: .close), domain: "ExtensionWindowAdapter", code: 4, message: "Window is no longer available"),
+            .init(
+                callbackError: .miniWindowUnavailable(operation: .close),
+                domain: "ExtensionMiniWindowAdapter",
+                code: 1,
+                message: "Mini-window is no longer available"
             ),
-            (
-                .windowUnavailable(operation: .close),
-                "ExtensionWindowAdapter",
-                4,
-                "Window is no longer available"
+            .init(
+                callbackError: .miniWindowUnavailable(operation: .setWindowState),
+                domain: "ExtensionMiniWindowAdapter",
+                code: 2,
+                message: "Mini-window is no longer available"
             ),
-            (
-                .miniWindowUnavailable(operation: .close),
-                "ExtensionMiniWindowAdapter",
-                1,
-                "Mini-window is no longer available"
+            .init(
+                callbackError: .miniWindowUnavailable(operation: .setFrame),
+                domain: "ExtensionMiniWindowAdapter",
+                code: 3,
+                message: "Mini-window is no longer available"
             ),
-            (
-                .miniWindowUnavailable(operation: .setWindowState),
-                "ExtensionMiniWindowAdapter",
-                2,
-                "Mini-window is no longer available"
+            .init(callbackError: .tabUnavailable, domain: "ExtensionTabAdapter", code: 1, message: "Tab is no longer available"),
+            .init(callbackError: .tabWebViewUnavailable, domain: "ExtensionTabAdapter", code: 2, message: "No live web view is available for this tab"),
+            .init(
+                callbackError: .tabUnavailableUntilReload,
+                domain: "ExtensionTabAdapter",
+                code: 3,
+                message: "Tab is not available to extensions until it is reloaded or navigates to a new document"
             ),
-            (
-                .miniWindowUnavailable(operation: .setFrame),
-                "ExtensionMiniWindowAdapter",
-                3,
-                "Mini-window is no longer available"
-            ),
-            (
-                .tabUnavailable,
-                "ExtensionTabAdapter",
-                1,
-                "Tab is no longer available"
-            ),
-            (
-                .tabWebViewUnavailable,
-                "ExtensionTabAdapter",
-                2,
-                "No live web view is available for this tab"
-            ),
-            (
-                .tabUnavailableUntilReload,
-                "ExtensionTabAdapter",
-                3,
-                "Tab is not available to extensions until it is reloaded or navigates to a new document"
-            ),
-            (
-                .tabWindowUnavailable,
-                "ExtensionTabAdapter",
-                4,
-                "No browser window is available for this tab"
-            ),
+            .init(callbackError: .tabWindowUnavailable, domain: "ExtensionTabAdapter", code: 4, message: "No browser window is available for this tab"),
         ]
 
-        for (callbackError, domain, code, message) in cases {
-            let error = callbackError.nsError()
+        for testCase in cases {
+            let error = testCase.callbackError.nsError()
 
-            XCTAssertEqual(error.domain, domain)
-            XCTAssertEqual(error.code, code)
-            XCTAssertEqual(error.localizedDescription, message)
+            XCTAssertEqual(error.domain, testCase.domain)
+            XCTAssertEqual(error.code, testCase.code)
+            XCTAssertEqual(error.localizedDescription, testCase.message)
         }
     }
 
@@ -287,4 +266,17 @@ final class SumiWebExtensionCallbackErrorMapperTests: XCTestCase {
             SumiWebExtensionCallbackErrorMapper.webExtensionContextErrorDomain
         )
     }
+}
+
+private struct ExtensionManagerCallbackErrorCase {
+    let callbackError: ExtensionManagerCallbackError
+    let code: Int
+    let message: String
+}
+
+private struct ExtensionBridgeAdapterErrorCase {
+    let callbackError: ExtensionBridgeAdapterCallbackError
+    let domain: String
+    let code: Int
+    let message: String
 }

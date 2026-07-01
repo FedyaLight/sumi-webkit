@@ -4,7 +4,7 @@ import XCTest
 
 @available(macOS 15.5, *)
 @MainActor
-final class SumiNativeMessagingRelayHostResolutionTests: XCTestCase {
+final class NativeMessagingRelayHostTests: XCTestCase {
     private final class MockHostLauncher: SumiHostApplicationLaunching {
         var bundleURLs: [String: URL] = [:]
         var openedBundleIdentifiers: [String] = []
@@ -288,8 +288,7 @@ final class SumiNativeMessagingRelayHostResolutionTests: XCTestCase {
     }
 
     private func makeDefaults() -> UserDefaults {
-        let suiteName = "SumiNativeMessagingRelayHostResolutionTests.\(UUID().uuidString)"
+        let suiteName = "NativeMessagingRelayHostTests.\(UUID().uuidString)"
         return UserDefaults(suiteName: suiteName)!
     }
-
 }

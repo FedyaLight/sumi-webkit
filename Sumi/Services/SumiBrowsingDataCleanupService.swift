@@ -359,7 +359,7 @@ final class SumiBrowsingDataCleanupService {
         )
 
         if categories.contains(.history) {
-            await localCleanupOwner.clearHistory(
+            await localCleanupOwner.clearHistory(SumiBrowsingHistoryCleanupRequest(
                 query: query,
                 range: range,
                 historyProfileId: historyProfileId,
@@ -368,7 +368,7 @@ final class SumiBrowsingDataCleanupService {
                 historyManager: historyManager,
                 referenceDate: referenceDate,
                 domains: domains
-            )
+            ))
         }
 
         await manualWebsiteDataCleanupOwner.prepareForDestructiveWebsiteDataCleanupIfNeeded(
@@ -420,7 +420,6 @@ final class SumiBrowsingDataCleanupService {
             domains: domains
         )
     }
-
 }
 
 @MainActor
@@ -457,24 +456,16 @@ final class SumiAutomaticBrowsingDataCleanupService {
         scheduledTask?.cancel()
     }
 
-    func scheduleIfNeeded(
-        retentionPeriod: SumiBrowsingDataRetentionPeriod,
-        historyManager: HistoryManager,
-        profiles: [Profile],
-        currentProfileId: UUID?,
-        force: Bool = false,
-        reason: String,
-        delayNanoseconds: UInt64? = nil
-    ) {
+    func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest) {
         scheduledTask?.cancel()
-        guard retentionPeriod.isEnabled else { return }
+        guard request.retentionPeriod.isEnabled else { return }
 
-        scheduledTask = Task { @MainActor [weak self, weak historyManager] in
-            let delay = delayNanoseconds ?? self?.defaultDelayNanoseconds ?? 0
+        scheduledTask = Task { @MainActor [weak self, weak historyManager = request.historyManager] in
+            let delay = request.delayNanoseconds ?? self?.defaultDelayNanoseconds ?? 0
             if delay > 0 {
                 try? await Task.sleep(nanoseconds: delay)
             }
-            var shouldForceRun = force
+            var shouldForceRun = request.force
             while !Task.isCancelled {
                 guard let self,
                       let historyManager
@@ -482,12 +473,12 @@ final class SumiAutomaticBrowsingDataCleanupService {
                     return
                 }
                 _ = await self.runIfNeeded(
-                    retentionPeriod: retentionPeriod,
+                    retentionPeriod: request.retentionPeriod,
                     historyManager: historyManager,
-                    profiles: profiles,
-                    currentProfileId: currentProfileId,
+                    profiles: request.profiles,
+                    currentProfileId: request.currentProfileId,
                     force: shouldForceRun,
-                    reason: reason
+                    reason: request.reason
                 )
                 shouldForceRun = false
                 try? await Task.sleep(nanoseconds: UInt64(self.runInterval * 1_000_000_000))

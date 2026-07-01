@@ -12,7 +12,7 @@ final class TabPermissionSurfaceOwner {
         let pageIdentity: @MainActor () -> TabExtensionPageIdentity
         let committedMainDocumentURL: @MainActor () -> URL?
         let isCurrentPage: @MainActor (_ pageId: String, _ pageGeneration: String) -> Bool
-        let invalidateCurrentPageForWebViewReplacement: @MainActor () -> Void
+        let invalidatePageForWebViewReplacement: @MainActor () -> Void
         let handlePermissionLifecycleEvent: @MainActor (SumiPermissionLifecycleEvent) -> Void
         let isActiveGlancePreviewSurface: @MainActor (WKWebView) -> Bool
     }
@@ -228,7 +228,7 @@ final class TabPermissionSurfaceOwner {
         )
     }
 
-    func invalidateCurrentPageForWebViewReplacement(reason: String) {
+    func invalidatePageForWebViewReplacement(reason: String) {
         let pageId = currentPageId()
         let tabId = context.tabId.uuidString.lowercased()
         context.handlePermissionLifecycleEvent(
@@ -239,16 +239,15 @@ final class TabPermissionSurfaceOwner {
                 reason: reason
             )
         )
-        context.invalidateCurrentPageForWebViewReplacement()
+        context.invalidatePageForWebViewReplacement()
     }
 
     private func isActiveGlancePreviewSurface(for webView: WKWebView) -> Bool {
         context.isActiveGlancePreviewSurface(webView)
     }
 
-    private func pageIdentity() -> (tabId: String, pageGeneration: String, pageId: String) {
-        let identity = context.pageIdentity()
-        return (identity.tabId, identity.pageGeneration, identity.pageId)
+    private func pageIdentity() -> TabExtensionPageIdentity {
+        context.pageIdentity()
     }
 
     private func committedExtensionRuntimeMainDocumentURL() -> URL? {
@@ -299,8 +298,8 @@ extension TabPermissionSurfaceOwner.Context {
                     pageGeneration: pageGeneration
                 )
             },
-            invalidateCurrentPageForWebViewReplacement: { [weak tab] in
-                tab?.extensionPageRuntimeOwner.invalidateCurrentPageForWebViewReplacement()
+            invalidatePageForWebViewReplacement: { [weak tab] in
+                tab?.extensionPageRuntimeOwner.invalidatePageForWebViewReplacement()
             },
             handlePermissionLifecycleEvent: { [weak tab] event in
                 tab?.permissionRuntime.handlePermissionLifecycleEvent(event)

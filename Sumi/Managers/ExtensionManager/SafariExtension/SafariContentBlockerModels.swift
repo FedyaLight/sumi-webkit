@@ -83,21 +83,33 @@ struct SumiSafariContentBlockerAttachmentState: Equatable, Sendable {
     init(
         siteHost: String?,
         isEnabledForSite: Bool,
+        enabledContentBlockerIds: [String]
+    ) {
+        self.init(
+            siteHost: siteHost,
+            isEnabledForSite: isEnabledForSite,
+            enabledContentBlockerIds: enabledContentBlockerIds,
+            enabledContentBlockerRuleIdentities: enabledContentBlockerIds
+        )
+    }
+
+    init(
+        siteHost: String?,
+        isEnabledForSite: Bool,
         enabledContentBlockerIds: [String],
-        enabledContentBlockerRuleIdentities: [String]? = nil
+        enabledContentBlockerRuleIdentities: [String]
     ) {
         self.siteHost = siteHost
         self.isEnabledForSite = isEnabledForSite
         self.enabledContentBlockerIds = enabledContentBlockerIds
-        self.enabledContentBlockerRuleIdentities =
-            enabledContentBlockerRuleIdentities ?? enabledContentBlockerIds
+        self.enabledContentBlockerRuleIdentities = enabledContentBlockerRuleIdentities
     }
 
     var isEnabled: Bool {
         isEnabledForSite && !enabledContentBlockerIds.isEmpty
     }
 
-    var effectiveWebViewContentBlockerRuleIdentities: [String] {
+    var effectiveWebViewRuleIdentities: [String] {
         guard isEnabledForSite else { return [] }
         let identities = enabledContentBlockerRuleIdentities.isEmpty
             ? enabledContentBlockerIds
@@ -108,7 +120,7 @@ struct SumiSafariContentBlockerAttachmentState: Equatable, Sendable {
     func hasSameEffectiveWebViewAttachment(
         as other: SumiSafariContentBlockerAttachmentState
     ) -> Bool {
-        effectiveWebViewContentBlockerRuleIdentities == other.effectiveWebViewContentBlockerRuleIdentities
+        effectiveWebViewRuleIdentities == other.effectiveWebViewRuleIdentities
     }
 
     static func disabled(siteHost: String?) -> SumiSafariContentBlockerAttachmentState {

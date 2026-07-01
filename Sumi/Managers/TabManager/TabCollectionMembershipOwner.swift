@@ -22,7 +22,7 @@ final class TabCollectionMembershipOwner {
     func allTabs() -> [Tab] {
         structuralLookupOwner.rebuildIfEmpty(with: structuralLookupSnapshot)
 
-        let normals = tabManager.tabsBySpace.values.flatMap { $0 }
+        let normals = tabManager.tabsBySpace.values.flatMap(\.self)
         return tabManager.transientShortcutTabsByWindow.values.flatMap(\.values)
             + Array(tabManager.transientExtensionTabsByID.values)
             + normals

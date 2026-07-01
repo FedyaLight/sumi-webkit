@@ -13,14 +13,14 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         let splitTab = makeWebTab(urlString: "https://example.com/split")
         let tabsById = [
             currentTab.id: currentTab,
-            splitTab.id: splitTab
+            splitTab.id: splitTab,
         ]
 
         windowState.currentTabId = currentTab.id
 
         var markedTabIds: [UUID] = []
         var createdPairs: [(tabId: UUID, windowId: UUID)] = []
-        var evictedVisibleTabIds: Set<UUID>?
+        var evictedVisibleTabIds = Set<UUID>()
         var suspensionReasons: [String] = []
         var mediaReasons: [String] = []
 
@@ -115,7 +115,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
             runtime: makeRuntime(
                 windowStatesById: [
                     visibleWindow.id: visibleWindow,
-                    hiddenWindow.id: hiddenWindow
+                    hiddenWindow.id: hiddenWindow,
                 ],
                 currentTabId: { $0.currentTabId },
                 resolveTab: { tabId, _ in tabId == tab.id ? tab : nil }
@@ -124,7 +124,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(candidate?.owner, visibleOwner)
-        XCTAssertTrue(candidate?.webView === visibleWebView)
+        XCTAssertIdentical(candidate?.webView, visibleWebView)
     }
 
     private func makeRuntime(
@@ -132,22 +132,22 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
         currentTabId: @escaping @MainActor (BrowserWindowState) -> UUID? = { _ in nil },
         splitVisibleTabIds: @escaping @MainActor (UUID) -> [UUID] = { _ in [] },
         resolveTab: @escaping @MainActor (UUID, BrowserWindowState) -> Tab? = { _, _ in nil },
-        canMaterializeNormalTabWebViewDuringStartup: @escaping @MainActor (
+        canMaterializeWebViewDuringStartup: @escaping @MainActor (
             Tab
         ) -> Bool = { _ in true },
-        markTabAccessed: @escaping @MainActor (UUID) -> Void = { _ in },
-        evictHiddenWebViews: @escaping @MainActor (UUID, Set<UUID>) -> Void = { _, _ in },
-        scheduleTabSuspensionReconcile: @escaping @MainActor (String) -> Void = { _ in },
-        scheduleBackgroundMediaReconcile: @escaping @MainActor (String) -> Void = { _ in },
-        refreshCompositor: @escaping @MainActor (BrowserWindowState) -> Void = { _ in }
+        markTabAccessed: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
+        evictHiddenWebViews: @escaping @MainActor (UUID, Set<UUID>) -> Void = { _, _ in /* No-op. */ },
+        scheduleTabSuspensionReconcile: @escaping @MainActor (String) -> Void = { _ in /* No-op. */ },
+        scheduleBackgroundMediaReconcile: @escaping @MainActor (String) -> Void = { _ in /* No-op. */ },
+        refreshCompositor: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ }
     ) -> VisibleWebViewPreparationRuntime {
         VisibleWebViewPreparationRuntime(
             windowState: { windowStatesById[$0] },
             currentTabId: currentTabId,
             splitVisibleTabIds: splitVisibleTabIds,
             resolveTab: resolveTab,
-            canMaterializeNormalTabWebViewDuringStartup:
-                canMaterializeNormalTabWebViewDuringStartup,
+            canMaterializeWebViewDuringStartup:
+                canMaterializeWebViewDuringStartup,
             markTabAccessed: markTabAccessed,
             evictHiddenWebViews: evictHiddenWebViews,
             scheduleTabSuspensionReconcile: scheduleTabSuspensionReconcile,
@@ -158,7 +158,7 @@ final class VisibleWebViewRuntimeOwnerTests: XCTestCase {
 
     private func makeWebTab(urlString: String = "https://example.com") -> Tab {
         Tab(
-            url: URL(string: urlString)!,
+            url: URL(string: urlString) ?? preconditionFailure("Invalid test URL"),
             loadsCachedFaviconOnInit: false
         )
     }

@@ -16,8 +16,8 @@ final class BrowserWindowLifecycleOwner {
         let setActiveWindowState: @MainActor (BrowserWindowState) -> Void
         let handleWindowVisibilityChanged: @MainActor (BrowserWindowState) -> Void
         let prepareForAllWindowsClosed: @MainActor () -> Void
-        let performSiteDataPolicyAllWindowsClosedCleanup: @MainActor () async -> Void
-        let cleanupWindowAfterBrowserRuntimeDeallocation: @MainActor (UUID) -> Void
+        let performAllWindowsClosedSiteDataCleanup: @MainActor () async -> Void
+        let cleanupWindowAfterRuntimeDeallocation: @MainActor (UUID) -> Void
     }
 
     private var didAttach = false
@@ -40,10 +40,10 @@ final class BrowserWindowLifecycleOwner {
         let setActiveWindowState = dependencies.setActiveWindowState
         let handleWindowVisibilityChanged = dependencies.handleWindowVisibilityChanged
         let prepareForAllWindowsClosed = dependencies.prepareForAllWindowsClosed
-        let performSiteDataPolicyAllWindowsClosedCleanup =
-            dependencies.performSiteDataPolicyAllWindowsClosedCleanup
-        let cleanupWindowAfterBrowserRuntimeDeallocation =
-            dependencies.cleanupWindowAfterBrowserRuntimeDeallocation
+        let performAllWindowsClosedSiteDataCleanup =
+            dependencies.performAllWindowsClosedSiteDataCleanup
+        let cleanupWindowAfterRuntimeDeallocation =
+            dependencies.cleanupWindowAfterRuntimeDeallocation
 
         windowRegistry.onWindowRegister = { windowState in
             setupWindowState(windowState)
@@ -55,7 +55,7 @@ final class BrowserWindowLifecycleOwner {
 
         windowRegistry.onWindowClose = { windowId in
             guard browserRuntimeIsAvailable() else {
-                cleanupWindowAfterBrowserRuntimeDeallocation(windowId)
+                cleanupWindowAfterRuntimeDeallocation(windowId)
                 return
             }
 
@@ -84,7 +84,7 @@ final class BrowserWindowLifecycleOwner {
         windowRegistry.onAllWindowsClosed = {
             prepareForAllWindowsClosed()
             Task { @MainActor in
-                await performSiteDataPolicyAllWindowsClosedCleanup()
+                await performAllWindowsClosedSiteDataCleanup()
             }
         }
 
@@ -142,10 +142,10 @@ extension BrowserWindowLifecycleOwner.Dependencies {
             prepareForAllWindowsClosed: { [weak browserManager] in
                 browserManager?.windowSessionService.prepareForAllWindowsClosed()
             },
-            performSiteDataPolicyAllWindowsClosedCleanup: { [weak browserManager] in
-                await browserManager?.performSiteDataPolicyAllWindowsClosedCleanup()
+            performAllWindowsClosedSiteDataCleanup: { [weak browserManager] in
+                await browserManager?.performAllWindowsClosedSiteDataCleanup()
             },
-            cleanupWindowAfterBrowserRuntimeDeallocation: { [webViewCoordinator] windowId in
+            cleanupWindowAfterRuntimeDeallocation: { [webViewCoordinator] windowId in
                 webViewCoordinator.removeCompositorContainerView(for: windowId)
                 RuntimeDiagnostics.emit(
                     "⚠️ [SumiApp] Window \(windowId) closed after BrowserManager deallocation - performed minimal cleanup"

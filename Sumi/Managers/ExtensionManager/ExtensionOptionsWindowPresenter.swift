@@ -163,7 +163,7 @@ enum ExtensionOptionsWindowPresenter {
             )
         }
         configuration.sumiIsNormalTabWebViewConfiguration = false
-        manager.prepareWebViewConfigurationForExtensionRuntime(
+        manager.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: optionsProfileId,
             reason: "ExtensionManager.openOptionsPage.configuration"

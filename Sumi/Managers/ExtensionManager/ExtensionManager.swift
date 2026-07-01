@@ -129,7 +129,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionProfileRuntimeStateOwner(manager: self)
     }
     private let controllerIdentifierOwner =
-        ExtensionRuntimeControllerIdentifierOwner()
+        ExtensionControllerIdentifierOwner()
     var controllerIdentifier: UUID {
         controllerIdentifierOwner.identifier
     }
@@ -211,7 +211,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         }
         let relay = SumiNativeMessagingRelay.production(
             extensionsModuleEnabled: { [weak self] in
-                self?.extensionsModuleEnabledForDelegateCallbacks ?? false
+                self?.extensionsModuleEnabledForCallbacks ?? false
             },
             profileRuntimeLoaded: { [weak self] in
                 guard let self else { return false }

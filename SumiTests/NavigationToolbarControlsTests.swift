@@ -1,5 +1,5 @@
-import XCTest
 import WebKit
+import XCTest
 
 @testable import Sumi
 
@@ -47,7 +47,6 @@ final class NavigationToolbarControlsTests: XCTestCase {
 
         XCTAssertTrue(wrapper.isLoading)
     }
-
 
     func testTabLoadingStateNotificationEmitsOnlyOnLoadingActivityChanges() {
         let tab = Tab(url: URL(string: "https://example.com")!, name: "Example")
@@ -98,7 +97,6 @@ final class NavigationToolbarControlsTests: XCTestCase {
         XCTAssertEqual(loading.reloadAccessibilityTitle, "Stop")
         XCTAssertEqual(loading.reloadTooltip, "Stop loading")
     }
-
 }
 
 private final class NavigationToolbarRecordingWebView: WKWebView {
@@ -118,7 +116,7 @@ private final class NavigationToolbarRecordingWebView: WKWebView {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
+    required init?(coder _: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 

@@ -359,7 +359,7 @@ struct TabSuspensionRuntime {
         allKnownTabs: { [] },
         selectedTabIDs: { [] },
         visibleTabIDsByWindow: { [:] },
-        refreshLazyRestoreQueue: { _ in }
+        refreshLazyRestoreQueue: { _ in /* No-op. */ }
     )
 }
 

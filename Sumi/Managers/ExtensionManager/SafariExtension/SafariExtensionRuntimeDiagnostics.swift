@@ -118,13 +118,15 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
             }
 
             let runtimeStatus = buildRuntimeStatus(
-                target: target,
-                installed: installed,
-                context: context,
-                compatibilityEntry: compatibilityEntry,
-                extensionsModuleEnabled: extensionsModuleEnabled,
-                suppressionReport: suppressionReport,
-                adapterRegistry: adapterRegistry
+                RuntimeStatusInput(
+                    target: target,
+                    installed: installed,
+                    context: context,
+                    compatibilityEntry: compatibilityEntry,
+                    extensionsModuleEnabled: extensionsModuleEnabled,
+                    suppressionReport: suppressionReport,
+                    adapterRegistry: adapterRegistry
+                )
             )
 
             return SafariExtensionRuntimeDiagnosticEntry(
@@ -178,31 +180,35 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         #endif
     }
 
+    private struct RuntimeStatusInput {
+        let target: SafariExtensionCompatibilityTargets.Target
+        let installed: InstalledExtension?
+        let context: WKWebExtensionContext?
+        let compatibilityEntry: SafariExtensionCompatibilityEntry?
+        let extensionsModuleEnabled: Bool
+        let suppressionReport: SafariExtensionNativeMessagingSuppressionReport
+        let adapterRegistry: SumiNativeMessagingAdapterRegistry
+    }
+
     private static func buildRuntimeStatus(
-        target: SafariExtensionCompatibilityTargets.Target,
-        installed: InstalledExtension?,
-        context: WKWebExtensionContext?,
-        compatibilityEntry: SafariExtensionCompatibilityEntry?,
-        extensionsModuleEnabled: Bool,
-        suppressionReport: SafariExtensionNativeMessagingSuppressionReport,
-        adapterRegistry: SumiNativeMessagingAdapterRegistry
+        _ input: RuntimeStatusInput
     ) -> SafariExtensionRuntimeStatusSnapshot {
         var notes: [String] = []
 
         let scriptingStatus = resolveScriptingStatus(
-            installed: installed,
-            context: context,
-            extensionsModuleEnabled: extensionsModuleEnabled
+            installed: input.installed,
+            context: input.context,
+            extensionsModuleEnabled: input.extensionsModuleEnabled
         )
         let contentScriptStatus = resolveContentScriptStatus(
-            installed: installed,
-            compatibilityEntry: compatibilityEntry,
-            extensionsModuleEnabled: extensionsModuleEnabled
+            installed: input.installed,
+            compatibilityEntry: input.compatibilityEntry,
+            extensionsModuleEnabled: input.extensionsModuleEnabled
         )
         let hostPermissionStatus = resolveHostPermissionStatus(
-            installed: installed,
-            context: context,
-            extensionsModuleEnabled: extensionsModuleEnabled
+            installed: input.installed,
+            context: input.context,
+            extensionsModuleEnabled: input.extensionsModuleEnabled
         )
         let tabFrameMappingStatus = SafariExtensionTabFrameMappingProbe.evaluate().status
         if tabFrameMappingStatus != .wired {
@@ -214,13 +220,13 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         }
 
         let isPasswordManager = SafariExtensionNativeMessagingClassificationCatalog
-            .passwordManagerTargetKeys.contains(target.key)
-        let launchSuppressionExpected = isPasswordManager && suppressionReport.repeatedCallSuppressionEnabled
+            .passwordManagerTargetKeys.contains(input.target.key)
+        let launchSuppressionExpected = isPasswordManager && input.suppressionReport.repeatedCallSuppressionEnabled
         let sessionState: SumiNativeMessagingSessionState? =
             isPasswordManager ? .unknownProtocolInitial : nil
 
         let autofillInfrastructure = SafariExtensionAutofillInfrastructureClassifier
-            .classifyInfrastructure(extensionsModuleEnabled: extensionsModuleEnabled)
+            .classifyInfrastructure(extensionsModuleEnabled: input.extensionsModuleEnabled)
         if autofillInfrastructure.isReady == false {
             notes.append(
                 "autofill blocker=\(autofillInfrastructure.primaryBlocker.rawValue): \(autofillInfrastructure.detail)"
@@ -228,8 +234,8 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
         }
 
         if isPasswordManager {
-            if target.key == "bitwarden",
-               adapterRegistry.adapter(
+            if input.target.key == "bitwarden",
+               input.adapterRegistry.adapter(
                    forHostBundleIdentifier: BitwardenNativeMessagingIdentifiers.hostBundleIdentifier
                ) != nil {
                 notes.append(
@@ -254,7 +260,7 @@ enum SafariExtensionRuntimeDiagnosticsBuilder {
             autofillInfrastructureBlocker: autofillInfrastructure.primaryBlocker,
             nativeMessagingSessionState: sessionState,
             launchSuppressionExpected: launchSuppressionExpected,
-            suppressionReport: suppressionReport,
+            suppressionReport: input.suppressionReport,
             detailNotes: notes
         )
     }

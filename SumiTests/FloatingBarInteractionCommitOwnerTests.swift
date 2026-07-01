@@ -13,12 +13,12 @@ final class FloatingBarInteractionCommitOwnerTests: XCTestCase {
         var scheduled: [@MainActor () -> Void] = []
         var commitCount = 0
 
-        XCTAssertTrue(owner.requestCommit(in: windowState, scheduler: { scheduled.append($0) }) {
+        XCTAssertTrue(owner.requestCommit(in: windowState, scheduler: { scheduled.append($0) }, perform: {
             commitCount += 1
-        })
-        XCTAssertFalse(owner.requestCommit(in: windowState, scheduler: { scheduled.append($0) }) {
+        }))
+        XCTAssertFalse(owner.requestCommit(in: windowState, scheduler: { scheduled.append($0) }, perform: {
             commitCount += 1
-        })
+        }))
 
         XCTAssertEqual(scheduled.count, 1)
         XCTAssertEqual(commitCount, 0)
@@ -26,9 +26,9 @@ final class FloatingBarInteractionCommitOwnerTests: XCTestCase {
         scheduled[0]()
 
         XCTAssertEqual(commitCount, 1)
-        XCTAssertFalse(owner.requestCommit(in: windowState, scheduler: { scheduled.append($0) }) {
+        XCTAssertFalse(owner.requestCommit(in: windowState, scheduler: { scheduled.append($0) }, perform: {
             commitCount += 1
-        })
+        }))
     }
 
     func testDeferredCommitIsSuppressedAfterSessionEnds() {
@@ -39,9 +39,9 @@ final class FloatingBarInteractionCommitOwnerTests: XCTestCase {
         var scheduled: [@MainActor () -> Void] = []
         var commitCount = 0
 
-        XCTAssertTrue(owner.requestCommit(in: windowState, scheduler: { scheduled.append($0) }) {
+        XCTAssertTrue(owner.requestCommit(in: windowState, scheduler: { scheduled.append($0) }, perform: {
             commitCount += 1
-        })
+        }))
 
         owner.endSession()
         scheduled[0]()
@@ -57,9 +57,9 @@ final class FloatingBarInteractionCommitOwnerTests: XCTestCase {
         var scheduled: [@MainActor () -> Void] = []
         var dismissCount = 0
 
-        XCTAssertTrue(owner.requestDismiss(in: windowState, scheduler: { scheduled.append($0) }) {
+        XCTAssertTrue(owner.requestDismiss(in: windowState, scheduler: { scheduled.append($0) }, perform: {
             dismissCount += 1
-        })
+        }))
 
         windowState.isFloatingBarVisible = false
         scheduled[0]()

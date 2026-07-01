@@ -42,12 +42,12 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             settingsDefaults.removePersistentDomain(forName: settingsSuiteName)
         }
 
-        let root = SidebarColumnHostedRoot.view(
+        let environmentContext = SidebarHostEnvironmentContext(
             browserContext: SidebarBrowserContext.live(browserManager: browserManager),
             hostActions: SidebarHostActions(
-                updateSidebarWidth: { _, _, _ in },
-                persistWindowSession: { _ in },
-                dismissWorkspaceThemePickerIfNeededCommitting: {}
+                updateSidebarWidth: { _, _, _ in /* No-op. */ },
+                persistWindowSession: { _ in /* No-op. */ },
+                dismissThemePickerCommittingIfNeeded: { /* No-op. */ }
             ),
             structuralInvalidation: Empty().eraseToAnyPublisher(),
             windowState: windowState,
@@ -57,15 +57,18 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             resolvedThemeContext: .default,
             chromeBackgroundResolvedThemeContext: .default,
             windowChromeSize: CGSize(width: 320, height: 640),
-            sidebarDragState: dragState,
+            sidebarDragState: dragState
+        )
+        let root = SidebarColumnHostedRoot.view(
+            environmentContext: environmentContext,
             presentationContext: .docked(sidebarWidth: 280)
         )
 
-        XCTAssertTrue(root.environmentContext.sidebarDragState === dragState)
-        XCTAssertTrue(root.environmentContext.sidebarDragState.locationTracker === dragState.locationTracker)
-        XCTAssertFalse(root.environmentContext.sidebarDragState === SidebarDragState.shared)
-        XCTAssertTrue(root.environmentContext.nowPlayingController === nowPlayingController)
-        XCTAssertTrue(root.environmentContext.browserContext.extensionSurfaceStore === browserManager.extensionSurfaceStore)
+        XCTAssertIdentical(root.environmentContext.sidebarDragState, dragState)
+        XCTAssertIdentical(root.environmentContext.sidebarDragState.locationTracker, dragState.locationTracker)
+        XCTAssertNotIdentical(root.environmentContext.sidebarDragState, SidebarDragState.shared)
+        XCTAssertIdentical(root.environmentContext.nowPlayingController, nowPlayingController)
+        XCTAssertIdentical(root.environmentContext.browserContext.extensionSurfaceStore, browserManager.extensionSurfaceStore)
         XCTAssertEqual(root.presentationContext, .docked(sidebarWidth: 280))
     }
 }

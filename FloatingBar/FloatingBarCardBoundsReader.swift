@@ -8,7 +8,7 @@ import AppKit
 import SwiftUI
 
 private final class FloatingBarCardBoundsProbeView: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? {
+    override func hitTest(_ _: NSPoint) -> NSView? {
         nil
     }
 }
@@ -16,13 +16,13 @@ private final class FloatingBarCardBoundsProbeView: NSView {
 struct FloatingBarCardBoundsReader: NSViewRepresentable {
     let onResolve: (NSView) -> Void
 
-    func makeNSView(context: Context) -> NSView {
+    func makeNSView(context _: Context) -> NSView {
         let view = FloatingBarCardBoundsProbeView()
         onResolve(view)
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_ nsView: NSView, context _: Context) {
         onResolve(nsView)
     }
 }

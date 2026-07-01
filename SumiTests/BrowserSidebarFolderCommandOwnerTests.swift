@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class BrowserSidebarFolderCommandOwnerTests: XCTestCase {
@@ -21,8 +21,8 @@ final class BrowserSidebarFolderCommandOwnerTests: XCTestCase {
 
         owner.createFolderInCurrentSpace(in: windowState)
         owner.createRSSLiveFolderInCurrentSpace(in: windowState)
-        owner.createGitHubPullRequestsLiveFolderInCurrentSpace(in: windowState)
-        owner.createGitHubIssuesLiveFolderInCurrentSpace(in: windowState)
+        owner.createGitHubPRFolderInCurrentSpace(in: windowState)
+        owner.createGitHubIssuesFolderInCurrentSpace(in: windowState)
 
         XCTAssertEqual(
             spy.events,
@@ -48,10 +48,10 @@ final class BrowserSidebarFolderCommandOwnerTests: XCTestCase {
                 createRSSLiveFolderInCurrentSpace: { windowState in
                     spy.events.append(.createRSSLiveFolder(windowState.id))
                 },
-                createGitHubPullRequestsLiveFolderInCurrentSpace: { windowState in
+                createGitHubPRFolderInCurrentSpace: { windowState in
                     spy.events.append(.createGitHubPullRequestsLiveFolder(windowState.id))
                 },
-                createGitHubIssuesLiveFolderInCurrentSpace: { windowState in
+                createGitHubIssuesFolderInCurrentSpace: { windowState in
                     spy.events.append(.createGitHubIssuesLiveFolder(windowState.id))
                 }
             )

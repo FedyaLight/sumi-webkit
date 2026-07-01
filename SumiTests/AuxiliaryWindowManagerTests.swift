@@ -349,7 +349,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
     func testPrivateExtensionNormalWindowIsRejectedBeforeTabCreation() async throws {
         let harness = try await makeExtensionHarness(ownerExtensionID: "private-window-owner")
         let initialRegularTabCount = harness.browserManager.tabManager.tabsBySpace.values
-            .flatMap { $0 }
+            .flatMap(\.self)
             .filter { $0.isAuxiliaryMiniWindow == false }
             .count
         let openedWindow = expectation(description: "private extension window rejected")
@@ -792,7 +792,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         XCTAssertNil(harness.browserManager.auxiliaryWindowManager.session(for: authTab))
         XCTAssertEqual(harness.windowState.currentTabId, authTab.id)
 
-        harness.extensionManager.extensionRuntimeAllowsWithoutEnabledExtensions = true
+        harness.extensionManager.allowsRuntimeWithoutEnabledExtensions = true
         let webView = try XCTUnwrap(authTab.assignedWebView ?? authTab.existingWebView)
         harness.extensionManager.prepareWebViewForExtensionRuntime(
             webView,
@@ -970,7 +970,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             profile: privateProfile
         )
         let regularTabCount = harness.browserManager.tabManager.tabsBySpace.values
-            .flatMap { $0 }
+            .flatMap(\.self)
             .count
 
         let popupTab = try XCTUnwrap(
@@ -1179,7 +1179,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
 
     private func regularTab(with url: URL, in tabManager: TabManager) -> Tab? {
         tabManager.tabsBySpace.values
-            .flatMap { $0 }
+            .flatMap(\.self)
             .first { tab in
                 tab.url == url
                     && tab.isAuxiliaryMiniWindow == false

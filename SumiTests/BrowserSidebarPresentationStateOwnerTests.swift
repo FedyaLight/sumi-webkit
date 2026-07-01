@@ -3,7 +3,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class BrowserSidebarPresentationStateOwnerTests: XCTestCase {
+final class SidebarPresentationStateOwnerTests: XCTestCase {
     func testUpdateSidebarWidthClampsWindowStateAndFallbackCache() {
         let owner = BrowserSidebarPresentationStateOwner()
         let windowState = BrowserWindowState()

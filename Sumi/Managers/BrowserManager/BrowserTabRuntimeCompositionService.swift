@@ -230,7 +230,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         for browserManager: BrowserManager
     ) -> Set<UUID> {
         var selectedIDs = Set<UUID>()
-        for windowState in browserManager.windowRegistry?.windows.values.map({ $0 }) ?? [] {
+        for windowState in browserManager.windowRegistry.map({ Array($0.windows.values) }) ?? [] {
             if let current = browserManager.currentTab(for: windowState) {
                 selectedIDs.insert(current.id)
             }
@@ -242,7 +242,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         for browserManager: BrowserManager
     ) -> [UUID: Set<UUID>] {
         var visible: [UUID: Set<UUID>] = [:]
-        for windowState in browserManager.windowRegistry?.windows.values.map({ $0 }) ?? [] {
+        for windowState in browserManager.windowRegistry.map({ Array($0.windows.values) }) ?? [] {
             let tabIDs = VisibleTabPreparationPlan.visibleTabIDs(
                 currentTabId: browserManager.currentTab(for: windowState)?.id,
                 splitTabIds: browserManager.splitManager.visibleTabIds(for: windowState.id)
@@ -295,7 +295,7 @@ extension BrowserTabRuntimeCompositionService.Dependencies {
         }
 
         browserManager.tabManager.allTabs().forEach(append)
-        (browserManager.windowRegistry?.windows.values.map { $0 } ?? [])
+        (browserManager.windowRegistry.map { Array($0.windows.values) } ?? [])
             .flatMap(\.ephemeralTabs)
             .forEach(append)
         return tabs

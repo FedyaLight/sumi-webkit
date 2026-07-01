@@ -33,9 +33,9 @@ extension SumiNativeNowPlayingRuntimeContext {
                     guard !windowState.isIncognito else { continue }
 
                     let scopedTabs = runtime.mediaCandidateTabs(windowState)
-                    let preferredTabs = scopedTabs.filter { $0.audioState.isPlayingAudio }
+                    let preferredTabs = scopedTabs.filter(\.audioState.isPlayingAudio)
                     let discoveryTabs = preferredTabs.isEmpty
-                        ? [runtime.currentTab(windowState)].compactMap { $0 }
+                        ? [runtime.currentTab(windowState)].compactMap(\.self)
                         : preferredTabs
 
                     for tab in discoveryTabs {

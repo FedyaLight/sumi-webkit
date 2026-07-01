@@ -36,8 +36,7 @@ private final class SumiCommandsBrowserManagerAdapter:
     SumiCommandPageStateProviding,
     SumiCommandBrowserActionRouting,
     SumiCommandHistoryRouting,
-    SumiCommandBookmarkRouting
-{
+    SumiCommandBookmarkRouting {
     private weak var browserManager: BrowserManager?
 
     init(browserManager: BrowserManager) {
@@ -243,12 +242,11 @@ private final class SumiCommandsBrowserManagerAdapter:
     func openBookmarkURLFromMenuItem(_ url: URL) {
         browserManager?.openBookmarkURLFromMenuItem(url)
     }
-
 }
 
 #if DEBUG
 extension SumiCommandsBrowserManagerAdapter: SumiCommandExtensionDiagnosticsRouting {
-    var extensionDiagnosticsAreEnabledForCommands: Bool {
+    var extensionDiagnosticsEnabledForCommands: Bool {
         browserManager?.extensionsModule.isEnabled == true
     }
 

@@ -154,11 +154,12 @@ extension BrowserURLBarContextOwner.Dependencies {
                 userscriptsModule: userscriptsModule
             )
         }
-        let siteControlsSnapshot: @MainActor (URL?, Profile?, Bool, Bool) -> SiteControlsSnapshot = {
-            url,
-            profile,
-            protectionReloadRequired,
-            contentBlockerReloadRequired in
+        let siteControlsSnapshot: @MainActor (
+            URL?,
+            Profile?,
+            Bool,
+            Bool
+        ) -> SiteControlsSnapshot = { url, profile, protectionReloadRequired, contentBlockerReloadRequired in
             BrowserURLBarContextOwner.siteControlsSnapshot(
                 url: url,
                 profile: profile,
@@ -300,8 +301,8 @@ private extension BrowserURLBarContextOwner {
                     )
                 )
             },
-            ensureActionSurfaceMetadataLoadedIfNeeded: {
-                extensionsModule.ensureActionSurfaceMetadataLoadedIfNeeded()
+            ensureActionMetadataLoadedIfNeeded: {
+                extensionsModule.ensureActionMetadataLoadedIfNeeded()
             },
             isPinnedToToolbar: { extensionId in
                 extensionsModule.isPinnedToToolbar(extensionId)
@@ -343,7 +344,7 @@ private extension BrowserURLBarContextOwner {
         protectionReloadRequired: Bool,
         contentBlockerReloadRequired: Bool
     ) -> SiteControlsSnapshot {
-        return SiteControlsSnapshot.resolve(
+        SiteControlsSnapshot.resolve(
             url: url,
             profile: profile,
             protectionCoordinator: protectionCoordinator,
@@ -353,5 +354,4 @@ private extension BrowserURLBarContextOwner {
             safariContentBlockerReloadRequired: contentBlockerReloadRequired
         )
     }
-
 }

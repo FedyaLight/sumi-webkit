@@ -84,19 +84,22 @@ protocol BrowserSiteDataPolicyStoring: AnyObject {
 extension SumiSiteDataPolicyStore: BrowserSiteDataPolicyStoring {}
 
 @MainActor
-protocol BrowserAutomaticBrowsingDataCleanupScheduling: AnyObject {
-    func scheduleIfNeeded(
-        retentionPeriod: SumiBrowsingDataRetentionPeriod,
-        historyManager: HistoryManager,
-        profiles: [Profile],
-        currentProfileId: UUID?,
-        force: Bool,
-        reason: String,
-        delayNanoseconds: UInt64?
-    )
+struct SumiBrowsingDataCleanupScheduleRequest {
+    var retentionPeriod: SumiBrowsingDataRetentionPeriod
+    var historyManager: HistoryManager
+    var profiles: [Profile]
+    var currentProfileId: UUID?
+    var force: Bool = false
+    var reason: String
+    var delayNanoseconds: UInt64?
 }
 
-extension SumiAutomaticBrowsingDataCleanupService: BrowserAutomaticBrowsingDataCleanupScheduling {}
+@MainActor
+protocol BrowsingDataCleanupScheduling: AnyObject {
+    func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest)
+}
+
+extension SumiAutomaticBrowsingDataCleanupService: BrowsingDataCleanupScheduling {}
 
 @MainActor
 protocol BrowserPrivacyServicing: AnyObject {
@@ -130,7 +133,7 @@ extension SharedVisitedLinkStoreProvider: BrowserVisitedLinkStoreManaging {}
 struct BrowserManagerDataServices {
     let websiteDataCleanupService: any SumiWebsiteDataCleanupServicing
     let browsingDataCleanupService: SumiBrowsingDataCleanupService
-    let automaticBrowsingDataCleanupService: any BrowserAutomaticBrowsingDataCleanupScheduling
+    let automaticBrowsingDataCleanupService: any BrowsingDataCleanupScheduling
     let siteDataPolicyStore: any BrowserSiteDataPolicyStoring
     let siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing
     let faviconService: any BrowserFaviconServicing
@@ -143,7 +146,7 @@ struct BrowserManagerDataServices {
     init(
         websiteDataCleanupService: any SumiWebsiteDataCleanupServicing,
         browsingDataCleanupService: SumiBrowsingDataCleanupService,
-        automaticBrowsingDataCleanupService: any BrowserAutomaticBrowsingDataCleanupScheduling,
+        automaticBrowsingDataCleanupService: any BrowsingDataCleanupScheduling,
         siteDataPolicyStore: any BrowserSiteDataPolicyStoring,
         siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing,
         faviconService: any BrowserFaviconServicing,

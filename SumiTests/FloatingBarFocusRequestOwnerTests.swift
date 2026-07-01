@@ -17,7 +17,7 @@ final class FloatingBarFocusRequestOwnerTests: XCTestCase {
         XCTAssertTrue(owner.isCurrent(secondSession))
     }
 
-    func testDeferredFocusRunsForCurrentSession() async throws {
+    func testDeferredFocusRunsForCurrentSession() async {
         let owner = FloatingBarFocusRequestOwner()
         let windowID = UUID()
         let focusExpectation = expectation(description: "deferred focus runs")
@@ -33,7 +33,7 @@ final class FloatingBarFocusRequestOwnerTests: XCTestCase {
         XCTAssertTrue(didFocus)
     }
 
-    func testDeferredFocusIsCancelledWhenSessionEnds() async throws {
+    func testDeferredFocusIsCancelledWhenSessionEnds() async {
         let owner = FloatingBarFocusRequestOwner()
         let windowID = UUID()
         let focusExpectation = expectation(description: "deferred focus is cancelled")
@@ -51,7 +51,7 @@ final class FloatingBarFocusRequestOwnerTests: XCTestCase {
         XCTAssertFalse(didFocus)
     }
 
-    func testDeferredFocusIgnoresMismatchedWindow() async throws {
+    func testDeferredFocusIgnoresMismatchedWindow() async {
         let owner = FloatingBarFocusRequestOwner()
         let focusExpectation = expectation(description: "mismatched deferred focus is ignored")
         focusExpectation.isInverted = true

@@ -329,7 +329,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
     func testSiteDataPolicyStoreScopesRulesByProfileAndHost() {
         let suiteName = "SumiSiteDataPolicyStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SumiSiteDataPolicyStore(userDefaults: defaults)
         let profileA = UUID()
@@ -346,7 +346,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
     func testSiteDataPolicyStoreClassifiesUnreadablePayload() {
         let suiteName = "SumiSiteDataPolicyUnreadableTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let storageKey = "settings.siteDataPolicies.\(UUID().uuidString)"
         let unreadablePayload = Data("not-json".utf8)
@@ -368,7 +368,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
     func testSiteDataBlockStoragePolicyDeletesExactHostImmediately() async {
         let suiteName = "SumiSiteDataBlockStorageTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SumiSiteDataPolicyStore(userDefaults: defaults)
         let cleanupService = FakeCleanupService()
@@ -396,7 +396,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
     func testSiteDataDeleteWhenAllWindowsClosePolicyRunsDeferredCleanup() async {
         let suiteName = "SumiSiteDataDeleteOnCloseTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let store = SumiSiteDataPolicyStore(userDefaults: defaults)
         let cleanupService = FakeCleanupService()
@@ -437,7 +437,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
 
     func testURLBarSiteDataDeleteUsesManualFullExactHostCleanup() async {
         let suiteName = "URLBarSiteDataDeleteTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let policyStore = SumiSiteDataPolicyStore(userDefaults: defaults)
         let cleanupService = FakeCleanupService()
@@ -909,7 +909,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
         let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let referenceDate = historyTestDate("2026-04-23T12:00:00Z")
         let service = makeAutomaticBrowsingDataCleanupService(
@@ -963,7 +963,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
         let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let service = makeAutomaticBrowsingDataCleanupService(
             websiteDataCleanupService: cleanupService,
@@ -1021,7 +1021,7 @@ final class SumiWebsiteDataCleanupServiceTests: XCTestCase {
         let harness = try makeHistoryHarness()
         let cleanupService = FakeCleanupService()
         let suiteName = "SumiBrowsingDataCleanupTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defer { defaults.removePersistentDomain(forName: suiteName) }
         let service = makeAutomaticBrowsingDataCleanupService(
             websiteDataCleanupService: cleanupService,

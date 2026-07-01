@@ -6,7 +6,7 @@ import WebKit
 
 @MainActor
 final class SumiTabNavigationDelegateAdapter {
-    private let distributedNavigationDelegate: DistributedNavigationDelegate
+    private let navigationResponderChain: DistributedNavigationDelegate
     private let popupHandling: SumiPopupHandlingNavigationResponder
 
     private let glanceNavigation: SumiGlanceNavigationResponder
@@ -31,7 +31,7 @@ final class SumiTabNavigationDelegateAdapter {
     private let findInPageAdapter: SumiNavigationResponderAdapter
 
     init(tab: Tab) {
-        self.distributedNavigationDelegate = DistributedNavigationDelegate()
+        self.navigationResponderChain = DistributedNavigationDelegate()
         self.glanceNavigation = SumiGlanceNavigationResponder(tab: tab)
         self.glanceNavigationAdapter = SumiNavigationResponderAdapter(target: glanceNavigation)
         self.installNavigation = SumiInstallNavigationResponder(tab: tab)
@@ -62,7 +62,7 @@ final class SumiTabNavigationDelegateAdapter {
         )
         self.findInPageAdapter = SumiNavigationResponderAdapter(target: tab.findInPage)
 
-        distributedNavigationDelegate.setResponders(
+        navigationResponderChain.setResponders(
             .strong(glanceNavigationAdapter),
             .strong(installNavigationAdapter),
             .strong(internalSurfaceNavigationAdapter),
@@ -78,15 +78,15 @@ final class SumiTabNavigationDelegateAdapter {
     }
 
     func install(on webView: WKWebView) {
-        webView.navigationDelegate = distributedNavigationDelegate
+        webView.navigationDelegate = navigationResponderChain
     }
 
     func isInstalled(on webView: WKWebView) -> Bool {
-        webView.navigationDelegate === distributedNavigationDelegate
+        webView.navigationDelegate === navigationResponderChain
     }
 
     func dispatchCreateWebView(_ callback: @escaping @MainActor @Sendable () -> Void) {
-        distributedNavigationDelegate.dispatchCreateWebView(callback)
+        navigationResponderChain.dispatchCreateWebView(callback)
     }
 
     func createWebView(
@@ -126,7 +126,7 @@ final class SumiTabNavigationDelegateAdapter {
     }
 
     func hasResponder<T: AnyObject>(_ type: T.Type) -> Bool {
-        distributedNavigationDelegate.getResponders().contains { responder in
+        navigationResponderChain.getResponders().contains { responder in
             guard let adapter = responder as? SumiNavigationResponderAdapter else {
                 return false
             }

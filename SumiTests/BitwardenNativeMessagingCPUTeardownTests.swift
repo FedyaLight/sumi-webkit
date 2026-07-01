@@ -326,5 +326,4 @@ final class BitwardenNativeMessagingCPUTeardownTests: XCTestCase {
         )
         try data.write(to: url)
     }
-
 }

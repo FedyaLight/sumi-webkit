@@ -163,24 +163,24 @@ final class BrowserKeyboardShortcutCommandOwnerTests: XCTestCase {
 
     private func makeOwner(
         activeWindow: @escaping @MainActor () -> BrowserWindowState? = { nil },
-        createNewTab: @escaping @MainActor () -> Void = {},
-        openNewTabOrFloatingBar: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
+        createNewTab: @escaping @MainActor () -> Void = { /* No-op. */ },
+        openNewTabOrFloatingBar: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
         tabsForDisplay: @escaping @MainActor (BrowserWindowState) -> [Tab] = { _ in [] },
         currentTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
-        selectTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in },
+        selectTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
         isSplit: @escaping @MainActor (UUID) -> Bool = { _ in false },
-        setSplitLayoutKind: @escaping @MainActor (SplitLayoutKind, UUID) -> Void = { _, _ in },
-        enterSplitWithTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in },
-        unsplitActiveGroup: @escaping @MainActor (UUID) -> Void = { _ in },
-        createEmptySplit: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
+        setSplitLayoutKind: @escaping @MainActor (SplitLayoutKind, UUID) -> Void = { _, _ in /* No-op. */ },
+        enterSplitWithTab: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
+        unsplitActiveGroup: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
+        createEmptySplit: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
         spaces: @escaping @MainActor () -> [Space] = { [] },
-        setActiveSpace: @escaping @MainActor (Space, BrowserWindowState) -> Void = { _, _ in },
-        setAllFoldersOpen: @escaping @MainActor (Bool, UUID) -> Void = { _, _ in },
-        persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
+        setActiveSpace: @escaping @MainActor (Space, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
+        setAllFoldersOpen: @escaping @MainActor (Bool, UUID) -> Void = { _, _ in /* No-op. */ },
+        persistWindowSession: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
         activePageTab: @escaping @MainActor () -> Tab? = { nil },
         activePageWebView: @escaping @MainActor () -> WKWebView? = { nil },
         webView: @escaping @MainActor (UUID, UUID) -> WKWebView? = { _, _ in nil },
-        toggleReaderMode: @escaping @MainActor (WKWebView, Tab) async -> Void = { _, _ in }
+        toggleReaderMode: @escaping @MainActor (WKWebView, Tab) async -> Void = { _, _ in /* No-op. */ }
     ) -> BrowserKeyboardShortcutCommandOwner {
         BrowserKeyboardShortcutCommandOwner(
             dependencies: BrowserKeyboardShortcutCommandOwner.Dependencies(
@@ -209,7 +209,7 @@ final class BrowserKeyboardShortcutCommandOwnerTests: XCTestCase {
 
     private func makeTab(_ url: String) -> Tab {
         Tab(
-            url: URL(string: url)!,
+            url: URL(string: url) ?? preconditionFailure("Invalid test URL"),
             name: url,
             loadsCachedFaviconOnInit: false
         )

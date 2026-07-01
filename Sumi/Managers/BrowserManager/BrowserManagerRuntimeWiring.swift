@@ -87,7 +87,7 @@ enum BrowserManagerRuntimeWiring {
     ) -> SumiNativeNowPlayingBrowserRuntime {
         SumiNativeNowPlayingBrowserRuntime(
             windowStates: { [weak browserManager] in
-                browserManager?.windowRegistry?.windows.values.map { $0 } ?? []
+                browserManager?.windowRegistry.map { Array($0.windows.values) } ?? []
             },
             windowState: { [weak browserManager] windowId in
                 browserManager?.windowRegistry?.windows[windowId]
@@ -277,13 +277,7 @@ extension TabManagerRuntimeContext {
                 )
             },
             captureClosedTab: { [weak browserManager] tab, sourceSpaceId in
-                browserManager?.recentlyClosedManager.captureClosedTab(
-                    tab,
-                    sourceSpaceId: sourceSpaceId,
-                    currentURL: tab.url,
-                    canGoBack: tab.canGoBack,
-                    canGoForward: tab.canGoForward
-                )
+                captureClosedTab(tab, sourceSpaceId: sourceSpaceId, browserManager: browserManager)
             },
             captureDeletedShortcutLauncher: { [weak browserManager] pin in
                 browserManager?.recentlyClosedManager.captureDeletedShortcutLauncher(pin)
@@ -309,6 +303,20 @@ extension TabManagerRuntimeContext {
             deleteLiveFolderState: { [weak browserManager] folderIds in
                 browserManager?.liveFolderManager.deleteState(forFolderIds: folderIds)
             }
+        )
+    }
+
+    private static func captureClosedTab(
+        _ tab: Tab,
+        sourceSpaceId: UUID?,
+        browserManager: BrowserManager?
+    ) {
+        browserManager?.recentlyClosedManager.captureClosedTab(
+            tab,
+            sourceSpaceId: sourceSpaceId,
+            currentURL: tab.url,
+            canGoBack: tab.canGoBack,
+            canGoForward: tab.canGoForward
         )
     }
 }
@@ -568,7 +576,8 @@ extension ExtensionManagerRuntime {
                 browserManager != nil
             },
             extensionsModuleEnabled: { [weak browserManager] in
-                browserManager?.extensionsModule.isEnabled
+                guard let browserManager else { return .unavailable }
+                return .enabled(browserManager.extensionsModule.isEnabled)
             }
         )
     }

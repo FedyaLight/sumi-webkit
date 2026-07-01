@@ -135,7 +135,7 @@ final class BrowserWindowShellServiceTests: XCTestCase {
     func testCloseIncognitoWindowUsesWindowStateOwnershipAndCancelsProfilePermissions() async throws {
         let harness = try makeHarness()
         let service = BrowserWindowShellService()
-        let context = makeContext(harness: harness) { _ in }
+        let context = makeContext(harness: harness) { _ in /* No-op. */ }
         let windowState = BrowserWindowState()
         windowState.isIncognito = true
         windowState.tabManager = harness.tabManager

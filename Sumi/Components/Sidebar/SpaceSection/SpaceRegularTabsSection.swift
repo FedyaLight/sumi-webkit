@@ -27,7 +27,7 @@ extension SpaceView {
     }
 
     private var tabs: [Tab] {
-        return browserContext.regularTabs.tabs(in: space, windowState: windowState)
+        browserContext.regularTabs.tabs(in: space, windowState: windowState)
     }
 
     private var newTabRow: some View {

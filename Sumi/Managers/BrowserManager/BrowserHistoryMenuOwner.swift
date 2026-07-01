@@ -62,7 +62,7 @@ extension BrowserHistoryMenuOwner.Dependencies {
                 await browserManager?.historyManager.clearAll()
             },
             existingWindowIds: { [weak browserManager] in
-                Set(browserManager?.windowRegistry?.windows.keys.map { $0 } ?? [])
+                browserManager?.windowRegistry.map { Set($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
                 browserManager?.createNewWindow()

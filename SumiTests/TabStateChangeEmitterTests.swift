@@ -1,5 +1,5 @@
-@testable import Sumi
 import Combine
+@testable import Sumi
 import XCTest
 
 @MainActor
@@ -23,7 +23,7 @@ final class TabStateChangeEmitterTests: XCTestCase {
         emitter.postLoadingStateDidChange(for: tab)
 
         XCTAssertEqual(recorder.count, 1)
-        XCTAssertTrue(recorder.firstObject === tab)
+        XCTAssertIdentical(recorder.firstObject, tab)
         XCTAssertEqual(recorder.firstTabID, tab.id)
     }
 
@@ -72,8 +72,8 @@ final class TabStateChangeEmitterTests: XCTestCase {
         emitter.postLifecycleDidChange(for: tab)
 
         XCTAssertEqual(recorder.count, 1)
-        XCTAssertTrue(recorder.firstObject === tab)
-        XCTAssertNil(recorder.firstUserInfo)
+        XCTAssertIdentical(recorder.firstObject, tab)
+        XCTAssertFalse(recorder.firstNotificationHasUserInfo)
     }
 }
 
@@ -99,8 +99,8 @@ private final class TabStateChangeNotificationRecorder: @unchecked Sendable {
         lock.withLock { notifications.first?.userInfo?["tabId"] as? UUID }
     }
 
-    var firstUserInfo: [AnyHashable: Any]? {
-        lock.withLock { notifications.first?.userInfo }
+    var firstNotificationHasUserInfo: Bool {
+        lock.withLock { notifications.first?.userInfo != nil }
     }
 }
 

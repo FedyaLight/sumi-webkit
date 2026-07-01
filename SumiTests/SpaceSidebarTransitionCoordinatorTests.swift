@@ -1,5 +1,5 @@
-@testable import Sumi
 import CoreGraphics
+@testable import Sumi
 import SwiftData
 import XCTest
 
@@ -133,19 +133,19 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
     }
 
     func testCommittedSpaceChangeCancelsScheduledCompletion() async throws {
-        let windowState = BrowserWindowState(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000D4")!)
+        let windowState = BrowserWindowState(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000D4") ?? preconditionFailure("Invalid UUID literal"))
         let source = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!,
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A1") ?? preconditionFailure("Invalid UUID literal"),
             name: "Source",
             workspaceTheme: WorkspaceTheme(gradientTheme: .default)
         )
         let scheduledDestination = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!,
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B2") ?? preconditionFailure("Invalid UUID literal"),
             name: "Scheduled",
             workspaceTheme: WorkspaceTheme(gradientTheme: .incognito)
         )
         let directDestination = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C3")!,
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C3") ?? preconditionFailure("Invalid UUID literal"),
             name: "Direct",
             workspaceTheme: WorkspaceTheme(
                 gradientTheme: WorkspaceGradientTheme(
@@ -210,24 +210,24 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
     }
 
     func testCommittedSpaceChangeKeepsCancelledDestinationGeometryFromPromoting() async throws {
-        let windowState = BrowserWindowState(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000D5")!)
-        let sourceProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000000E5")!
-        let scheduledProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000000F5")!
-        let directProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000001F5")!
+        let windowState = BrowserWindowState(id: UUID(uuidString: "00000000-0000-0000-0000-0000000000D5") ?? preconditionFailure("Invalid UUID literal"))
+        let sourceProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000000E5") ?? preconditionFailure("Invalid UUID literal")
+        let scheduledProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000000F5") ?? preconditionFailure("Invalid UUID literal")
+        let directProfileId = UUID(uuidString: "00000000-0000-0000-0000-0000000001F5") ?? preconditionFailure("Invalid UUID literal")
         let source = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A5")!,
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A5") ?? preconditionFailure("Invalid UUID literal"),
             name: "Source",
             workspaceTheme: WorkspaceTheme(gradientTheme: .default),
             profileId: sourceProfileId
         )
         let scheduledDestination = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B5")!,
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000B5") ?? preconditionFailure("Invalid UUID literal"),
             name: "Scheduled",
             workspaceTheme: WorkspaceTheme(gradientTheme: .incognito),
             profileId: scheduledProfileId
         )
         let directDestination = Space(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C5")!,
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C5") ?? preconditionFailure("Invalid UUID literal"),
             name: "Direct",
             workspaceTheme: WorkspaceTheme(
                 gradientTheme: WorkspaceGradientTheme(
@@ -391,19 +391,23 @@ private func applyIncompleteInteractiveGeometry(
         generation: generation
     )
     dragState.applyEssentialsLayoutMetrics(
-        spaceId: spaceId,
-        profileId: profileId,
-        frame: CGRect(x: 0, y: 0, width: 300, height: 140),
-        dropFrame: CGRect(x: 0, y: 0, width: 300, height: 180),
-        itemCount: 4,
-        columnCount: 2,
-        rowCount: 2,
-        itemSize: CGSize(width: 96, height: 48),
-        gridSpacing: 8,
-        canAcceptDrop: true,
-        visibleItemCount: 4,
-        visibleRowCount: 2,
-        maxDropRowCount: 3,
+        SidebarEssentialsLayoutUpdate(
+            spaceId: spaceId,
+            input: SidebarEssentialsLayoutMetricsInput(
+                profileId: profileId,
+                frame: CGRect(x: 0, y: 0, width: 300, height: 140),
+                dropFrame: CGRect(x: 0, y: 0, width: 300, height: 180),
+                itemCount: 4,
+                columnCount: 2,
+                rowCount: 2,
+                itemSize: CGSize(width: 96, height: 48),
+                gridSpacing: 8,
+                canAcceptDrop: true,
+                visibleItemCount: 4,
+                visibleRowCount: 2,
+                maxDropRowCount: 3
+            )
+        ),
         generation: generation
     )
 }
@@ -508,12 +512,12 @@ private final class TestSidebarBrowserContextHarness {
                 liveFolderManager: liveFolderManager
             ),
             presentationActions: SidebarBrowserPresentationActions(
-                showShortcutEditor: { _, _, _, _ in },
-                showFolderEditor: { _, _, _, _ in },
-                showSpaceEditor: { _, _, _, _ in },
-                showGradientEditorForSpace: { _, _ in },
-                confirmDeleteSpace: { _, _ in },
-                presentSharingServicePicker: { _, _ in }
+                showShortcutEditor: { _, _, _, _ in /* No-op. */ },
+                showFolderEditor: { _, _, _, _ in /* No-op. */ },
+                showSpaceEditor: { _, _, _, _ in /* No-op. */ },
+                showGradientEditorForSpace: { _, _ in /* No-op. */ },
+                confirmDeleteSpace: { _, _ in /* No-op. */ },
+                presentSharingServicePicker: { _, _ in /* No-op. */ }
             ),
             headerContext: { _ in fatalError("Unused in SpaceSidebarTransitionCoordinatorTests") },
             tabStructuralRevision: { 0 },
@@ -527,9 +531,9 @@ private final class TestSidebarBrowserContextHarness {
             },
             savedSidebarWidth: { _ in BrowserWindowState.sidebarDefaultWidth },
             performDrop: { _, _, _ in false },
-            configureMediaStore: { _, _ in },
+            configureMediaStore: { _, _ in /* No-op. */ },
             spaceTransitions: SidebarSpaceTransitionActions(
-                completePendingSplitGroupFocusIfReady: { _, _ in },
+                completePendingSplitGroupFocusIfReady: { _, _ in /* No-op. */ },
                 setActiveSpace: { space, windowState in
                     transitionEventRecorder.events.append(.setActiveSpace(space.id))
                     tabManager.currentSpace = space
@@ -580,25 +584,25 @@ private final class TestSidebarBrowserContextHarness {
             ),
             commands: SidebarBrowserCommandActions(
                 canCreateFolderInCurrentSpace: { _ in true },
-                showGradientEditor: { _ in },
-                toggleSidebar: { _ in },
-                openAppearanceSettings: { _ in },
-                closeDownloadsPopover: { _ in },
-                requestUserTabActivation: { _, _ in },
-                closeTab: { _, _ in },
-                moveTabUp: { _ in },
-                moveTabDown: { _ in },
-                focusSplitGroup: { _, _ in },
-                restoreShortcutSplitMember: { _, _, _ in },
+                showGradientEditor: { _ in /* No-op. */ },
+                toggleSidebar: { _ in /* No-op. */ },
+                openAppearanceSettings: { _ in /* No-op. */ },
+                closeDownloadsPopover: { _ in /* No-op. */ },
+                requestUserTabActivation: { _, _ in /* No-op. */ },
+                closeTab: { _, _ in /* No-op. */ },
+                moveTabUp: { _ in /* No-op. */ },
+                moveTabDown: { _ in /* No-op. */ },
+                focusSplitGroup: { _, _ in /* No-op. */ },
+                restoreShortcutSplitMember: { _, _, _ in /* No-op. */ },
                 openForegroundTab: { _, _, _ in nil },
-                openNewTabOrFloatingBar: { _ in },
-                duplicateTab: { _, _ in },
-                pinShortcutGlobally: { _, _, _, _ in },
-                toggleDownloadsPopover: { _ in },
-                createFolderInCurrentSpace: { _ in },
-                createRSSLiveFolderInCurrentSpace: { _ in },
-                createGitHubPullRequestsLiveFolderInCurrentSpace: { _ in },
-                createGitHubIssuesLiveFolderInCurrentSpace: { _ in }
+                openNewTabOrFloatingBar: { _ in /* No-op. */ },
+                duplicateTab: { _, _ in /* No-op. */ },
+                pinShortcutGlobally: { _, _, _, _ in /* No-op. */ },
+                toggleDownloadsPopover: { _ in /* No-op. */ },
+                createFolderInCurrentSpace: { _ in /* No-op. */ },
+                createRSSLiveFolderInCurrentSpace: { _ in /* No-op. */ },
+                createGitHubPRFolderInCurrentSpace: { _ in /* No-op. */ },
+                createGitHubIssuesFolderInCurrentSpace: { _ in /* No-op. */ }
             )
         )
     }

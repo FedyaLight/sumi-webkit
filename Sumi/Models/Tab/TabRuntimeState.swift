@@ -28,7 +28,7 @@ struct TabBrowserRuntime {
     var popupHandlingRuntime: TabPopupHandlingRuntime
     var installNavigationRuntime: TabInstallNavigationRuntime
     var webKitUIRuntime: TabWebKitUIRuntime
-    var configurationPolicyWebViewReplacementRuntime: TabConfigurationPolicyWebViewReplacementRuntime
+    var webViewReplacementRuntime: TabWebViewReplacementRuntime
     var webViewConfigurationContext: () -> TabWebViewConfigurationContext
     var dataServices: () -> TabDependencyDataServices?
     var currentProfileUpdates: () -> AnyPublisher<Profile?, Never>?
@@ -57,7 +57,7 @@ struct TabBrowserRuntime {
         popupHandlingRuntime: .inactive,
         installNavigationRuntime: .inactive,
         webKitUIRuntime: .inactive,
-        configurationPolicyWebViewReplacementRuntime: .inactive,
+        webViewReplacementRuntime: .inactive,
         webViewConfigurationContext: { .empty },
         dataServices: { nil },
         currentProfileUpdates: { nil },
@@ -85,16 +85,16 @@ struct TabBrowserActionService {
         hasBrowserRuntime: { false },
         webPageMenuAppearance: { _, fallback in fallback },
         canBookmark: { _ in false },
-        requestBookmarkEditorFromMenu: {},
+        requestBookmarkEditorFromMenu: { /* No-op. */ },
         canStartContextMenuDownload: { false },
-        startContextMenuDownload: { _, _ in },
-        openURLInForegroundTab: { _, _ in },
-        openURLsInNewWindow: { _ in },
+        startContextMenuDownload: { _, _ in /* No-op. */ },
+        openURLInForegroundTab: { _, _ in /* No-op. */ },
+        openURLsInNewWindow: { _ in /* No-op. */ },
         notificationPermissionBridge: { nil },
         shortcutLaunchURL: { _ in nil },
-        reconcileExtensionRuntimeOnUserGesture: { _, _ in },
+        reconcileExtensionRuntimeOnUserGesture: { _, _ in /* No-op. */ },
         isCurrentTab: { _ in false },
-        activate: { _ in }
+        activate: { _ in /* No-op. */ }
     )
 }
 
@@ -105,9 +105,9 @@ struct TabWebViewRoutingRuntime {
     var setMuteState: (Bool, UUID) -> Void
 
     static let inactive = Self(
-        syncTabAcrossWindows: { _, _ in },
-        reloadTabAcrossWindows: { _ in },
-        setMuteState: { _, _ in }
+        syncTabAcrossWindows: { _, _ in /* No-op. */ },
+        reloadTabAcrossWindows: { _ in /* No-op. */ },
+        setMuteState: { _, _ in /* No-op. */ }
     )
 }
 
@@ -117,8 +117,8 @@ struct TabRuntimePersistenceCallbacks {
     var scheduleRuntimeStatePersistence: (Tab) -> Void
 
     static let inactive = Self(
-        updateNavigationState: { _ in },
-        scheduleRuntimeStatePersistence: { _ in }
+        updateNavigationState: { _ in /* No-op. */ },
+        scheduleRuntimeStatePersistence: { _ in /* No-op. */ }
     )
 }
 
@@ -129,9 +129,9 @@ struct TabMediaRuntimeCallbacks {
     var notifyNowPlayingTabUnloaded: (UUID) -> Void
 
     static let inactive = Self(
-        scheduleNowPlayingRefresh: { _ in },
-        scheduleBackgroundMediaReconcile: { _ in },
-        notifyNowPlayingTabUnloaded: { _ in }
+        scheduleNowPlayingRefresh: { _ in /* No-op. */ },
+        scheduleBackgroundMediaReconcile: { _ in /* No-op. */ },
+        notifyNowPlayingTabUnloaded: { _ in /* No-op. */ }
     )
 }
 
@@ -140,7 +140,7 @@ struct TabScriptMessageRuntime {
     var presentExternalURLInGlance: (URL, Tab, CGRect?) -> Void
 
     static let inactive = Self(
-        presentExternalURLInGlance: { _, _, _ in }
+        presentExternalURLInGlance: { _, _, _ in /* No-op. */ }
     )
 }
 
@@ -164,10 +164,10 @@ struct TabHistorySwipeRuntime {
 
     static let inactive = Self(
         windowIDContaining: { _ in nil },
-        beginHistorySwipeProtection: { _, _, _, _ in },
+        beginHistorySwipeProtection: { _, _, _, _ in /* No-op. */ },
         finishHistorySwipeProtection: { _, _, _, _ in false },
-        cancelWindowMutationsAfterHistorySwipe: { _ in },
-        flushWindowMutationsAfterHistorySwipe: { _ in }
+        cancelWindowMutationsAfterHistorySwipe: { _ in /* No-op. */ },
+        flushWindowMutationsAfterHistorySwipe: { _ in /* No-op. */ }
     )
 }
 
@@ -199,7 +199,7 @@ struct TabHistoryRecordingRuntime {
     var currentProfileId: () -> UUID?
 
     static let inactive = Self(
-        updateTitleIfNeeded: { _, _, _, _ in },
+        updateTitleIfNeeded: { _, _, _, _ in /* No-op. */ },
         addVisit: { _, _, _, _, _, _ in nil },
         currentProfileId: { nil }
     )
@@ -222,7 +222,7 @@ struct TabExtensionPropertiesRuntime {
     ) -> Void
 
     static let inactive = Self(
-        notifyTabPropertiesChanged: { _, _ in }
+        notifyTabPropertiesChanged: { _, _ in /* No-op. */ }
     )
 }
 
@@ -233,9 +233,9 @@ struct TabCloseLifecycleRuntime {
     var removeTab: (UUID) -> Void
 
     static let inactive = Self(
-        cleanupZoomForTab: { _ in },
-        updateTabVisibility: {},
-        removeTab: { _ in }
+        cleanupZoomForTab: { _ in /* No-op. */ },
+        updateTabVisibility: { /* No-op. */ },
+        removeTab: { _ in /* No-op. */ }
     )
 }
 
@@ -252,20 +252,20 @@ struct TabLifecycleNavigationRuntime {
         _ challenge: URLAuthenticationChallenge,
         _ tab: Tab
     ) async -> SumiAuthChallengeDisposition?
-    var isPreparingForDestructiveDataCleanupNavigation: (WKWebView) -> Bool
+    var isPreparingForDataCleanupNavigation: (WKWebView) -> Bool
     var finishDestructiveDataCleanupNavigation: (WKWebView) -> Void
 
     static let inactive = Self(
-        resetRevisitProtection: { _ in },
-        prepareExtensionWebView: { _, _, _ in },
-        prepareExtensionRuntimeBeforeCommit: { _, _, _ in },
-        markExtensionEligibleAfterCommit: { _, _ in },
-        loadZoomForTab: { _ in },
-        applyAdblockZapperRulesAfterNavigation: { _, _, _ in },
-        enforceSiteDataPolicyAfterNavigation: { _ in },
+        resetRevisitProtection: { _ in /* No-op. */ },
+        prepareExtensionWebView: { _, _, _ in /* No-op. */ },
+        prepareExtensionRuntimeBeforeCommit: { _, _, _ in /* No-op. */ },
+        markExtensionEligibleAfterCommit: { _, _ in /* No-op. */ },
+        loadZoomForTab: { _ in /* No-op. */ },
+        applyAdblockZapperRulesAfterNavigation: { _, _, _ in /* No-op. */ },
+        enforceSiteDataPolicyAfterNavigation: { _ in /* No-op. */ },
         resolveAuthenticationChallenge: { _, _ in .next },
-        isPreparingForDestructiveDataCleanupNavigation: { _ in false },
-        finishDestructiveDataCleanupNavigation: { _ in }
+        isPreparingForDataCleanupNavigation: { _ in false },
+        finishDestructiveDataCleanupNavigation: { _ in /* No-op. */ }
     )
 }
 
@@ -277,7 +277,7 @@ struct TabPermissionRuntime {
 
     static let inactive = Self(
         permissionBridges: { nil },
-        handlePermissionLifecycleEvent: { _ in },
+        handlePermissionLifecycleEvent: { _ in /* No-op. */ },
         isActiveGlancePreviewSurface: { _, _ in false }
     )
 }
@@ -291,22 +291,22 @@ struct TabWebViewCleanupRuntime {
 
     static let inactive = Self(
         deferProtectedWebViewCleanup: { _, _, _ in false },
-        cleanupUserScripts: { _, _ in },
-        removeWebViewFromContainers: { _ in },
+        cleanupUserScripts: { _, _ in /* No-op. */ },
+        removeWebViewFromContainers: { _ in /* No-op. */ },
         removeAllWebViews: { _, _ in false }
     )
 }
 
 @MainActor
 struct TabNormalWebViewExtensionRuntime {
-    var registerNormalTabWithExtensionRuntimeIfNeeded: (Tab, String) -> Void
+    var registerTabWithExtensionRuntimeIfNeeded: (Tab, String) -> Void
     var prepareWebViewForExtensionRuntime: (WKWebView, URL?, String) -> Void
-    var ensureInitialDocumentExtensionContextsLoadedIfNeeded: (UUID) async -> Void
+    var ensureInitialExtensionContextsIfNeeded: (UUID) async -> Void
 
     static let inactive = Self(
-        registerNormalTabWithExtensionRuntimeIfNeeded: { _, _ in },
-        prepareWebViewForExtensionRuntime: { _, _, _ in },
-        ensureInitialDocumentExtensionContextsLoadedIfNeeded: { _ in }
+        registerTabWithExtensionRuntimeIfNeeded: { _, _ in /* No-op. */ },
+        prepareWebViewForExtensionRuntime: { _, _, _ in /* No-op. */ },
+        ensureInitialExtensionContextsIfNeeded: { _ in /* No-op. */ }
     )
 }
 
@@ -338,7 +338,7 @@ struct TabPopupHandlingRuntime {
         _ request: SumiPopupPermissionRequest,
         _ tabContext: SumiPopupPermissionTabContext
     ) async -> SumiPopupPermissionResult?
-    var evaluatePopupPermissionSynchronouslyForWebKitFallback: (
+    var evaluatePopupPermissionForWebKitFallback: (
         _ request: SumiPopupPermissionRequest,
         _ tabContext: SumiPopupPermissionTabContext
     ) -> SumiPopupPermissionResult?
@@ -350,7 +350,7 @@ struct TabPopupHandlingRuntime {
         _ openerTab: Tab,
         _ isExtensionOriginated: Bool
     ) -> WKWebView?
-    var applyVisitedLinkStoreToPopupConfiguration: (_ openerTab: Tab, _ configuration: WKWebViewConfiguration) -> Void
+    var applyVisitedLinksToPopupConfiguration: (_ openerTab: Tab, _ configuration: WKWebViewConfiguration) -> Void
     var createPopupTab: (_ openerTab: Tab, _ activate: Bool) -> Tab?
     var windowStateContainingTab: (Tab) -> BrowserWindowState?
     var selectTab: (_ tab: Tab, _ windowState: BrowserWindowState) -> Void
@@ -359,13 +359,13 @@ struct TabPopupHandlingRuntime {
         hasBrowserRuntime: { false },
         consumeRecentlyOpenedExtensionTabRequest: { _ in false },
         evaluatePopupPermission: { _, _ in nil },
-        evaluatePopupPermissionSynchronouslyForWebKitFallback: { _, _ in nil },
+        evaluatePopupPermissionForWebKitFallback: { _, _ in nil },
         openExtensionExternalTab: { _, _ in false },
         presentWebPopup: { _, _, _, _, _ in nil },
-        applyVisitedLinkStoreToPopupConfiguration: { _, _ in },
+        applyVisitedLinksToPopupConfiguration: { _, _ in /* No-op. */ },
         createPopupTab: { _, _ in nil },
         windowStateContainingTab: { _ in nil },
-        selectTab: { _, _ in }
+        selectTab: { _, _ in /* No-op. */ }
     )
 }
 
@@ -381,7 +381,7 @@ struct TabWebKitUIRuntime {
 
     static let inactive = Self(
         handleWebViewDidClose: { _ in false },
-        saveDownloadedData: { _, _, _, _ in }
+        saveDownloadedData: { _, _, _, _ in /* No-op. */ }
     )
 }
 
@@ -395,7 +395,7 @@ struct TabInstallNavigationRuntime {
 }
 
 @MainActor
-struct TabConfigurationPolicyWebViewReplacementRuntime {
+struct TabWebViewReplacementRuntime {
     var trackedWindowIdContainingWebView: (WKWebView) -> UUID?
     var hasTrackedWebViews: (UUID) -> Bool
     var setTrackedWebView: (WKWebView, UUID, UUID) -> Void
@@ -405,9 +405,9 @@ struct TabConfigurationPolicyWebViewReplacementRuntime {
     static let inactive = Self(
         trackedWindowIdContainingWebView: { _ in nil },
         hasTrackedWebViews: { _ in false },
-        setTrackedWebView: { _, _, _ in },
+        setTrackedWebView: { _, _, _ in /* No-op. */ },
         removeTrackedWebViews: { _ in false },
-        refreshWindowAfterWebViewReplacement: { _ in }
+        refreshWindowAfterWebViewReplacement: { _ in /* No-op. */ }
     )
 }
 
@@ -525,8 +525,8 @@ final class TabNavigationRuntime {
     var popupHandlingRuntime = TabPopupHandlingRuntime.inactive
     var webKitUIRuntime = TabWebKitUIRuntime.inactive
     var installNavigationRuntime = TabInstallNavigationRuntime.inactive
-    var configurationPolicyWebViewReplacementRuntime =
-        TabConfigurationPolicyWebViewReplacementRuntime.inactive
+    var webViewReplacementRuntime =
+        TabWebViewReplacementRuntime.inactive
     var navigationCommandRuntime = TabNavigationCommandRuntime.inactive
     var profileResolutionRuntime = TabProfileResolutionRuntime.inactive
     var reloadPolicyRuntime = TabReloadPolicyRuntime.empty

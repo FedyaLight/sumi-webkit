@@ -110,7 +110,7 @@ final class BrowserWindowTabContextOwnerTests: XCTestCase {
 
     private func makeTab(_ urlString: String, spaceId: UUID? = nil) -> Tab {
         Tab(
-            url: URL(string: urlString)!,
+            url: URL(string: urlString) ?? preconditionFailure("Invalid test URL"),
             name: urlString,
             spaceId: spaceId,
             loadsCachedFaviconOnInit: false
@@ -184,7 +184,7 @@ private final class FakeWindowTabContextStore: ShellSelectionTabStore {
 
     func tab(for id: UUID) -> Tab? {
         allTabs.first { $0.id == id }
-            ?? liveShortcutTabsByWindowId.values.lazy.flatMap { $0 }.first { $0.id == id }
+            ?? liveShortcutTabsByWindowId.values.lazy.flatMap(\.self).first { $0.id == id }
     }
 
     func tabs(in space: Space) -> [Tab] {

@@ -102,7 +102,7 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
                 prepareForAllWindowsClosed: {
                     events.append("session")
                 },
-                performSiteDataPolicyAllWindowsClosedCleanup: {
+                performAllWindowsClosedSiteDataCleanup: {
                     events.append("siteData")
                     siteDataExpectation.fulfill()
                 }
@@ -131,7 +131,7 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
                 cleanupWebViews: { _ in events.append("webViews") },
                 cleanupSplitWindow: { _ in events.append("split") },
                 scheduleWindowClosedMediaReconcile: { events.append("media") },
-                cleanupWindowAfterBrowserRuntimeDeallocation: { _ in events.append("fallback") }
+                cleanupWindowAfterRuntimeDeallocation: { _ in events.append("fallback") }
             )
         )
 
@@ -157,19 +157,19 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
     private func makeDependencies(
         windowRegistry: WindowRegistry,
         browserRuntimeIsAvailable: @escaping @MainActor () -> Bool = { true },
-        setupWindowState: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
-        handleWindowWillClose: @escaping @MainActor (UUID) -> Void = { _ in },
-        notifyWindowClosedIfLoaded: @escaping @MainActor (UUID) -> Void = { _ in },
-        cleanupWebViews: @escaping @MainActor (UUID) -> Void = { _ in },
-        cleanupSplitWindow: @escaping @MainActor (UUID) -> Void = { _ in },
-        scheduleWindowClosedMediaReconcile: @escaping @MainActor () -> Void = {},
+        setupWindowState: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
+        handleWindowWillClose: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
+        notifyWindowClosedIfLoaded: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
+        cleanupWebViews: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
+        cleanupSplitWindow: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
+        scheduleWindowClosedMediaReconcile: @escaping @MainActor () -> Void = { /* No-op. */ },
         windowState: @escaping @MainActor (UUID) -> BrowserWindowState? = { _ in nil },
-        closeIncognitoWindow: @escaping @MainActor (BrowserWindowState) async -> Void = { _ in },
-        setActiveWindowState: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
-        handleWindowVisibilityChanged: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
-        prepareForAllWindowsClosed: @escaping @MainActor () -> Void = {},
-        performSiteDataPolicyAllWindowsClosedCleanup: @escaping @MainActor () async -> Void = {},
-        cleanupWindowAfterBrowserRuntimeDeallocation: @escaping @MainActor (UUID) -> Void = { _ in }
+        closeIncognitoWindow: @escaping @MainActor (BrowserWindowState) async -> Void = { _ in /* No-op. */ },
+        setActiveWindowState: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
+        handleWindowVisibilityChanged: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
+        prepareForAllWindowsClosed: @escaping @MainActor () -> Void = { /* No-op. */ },
+        performAllWindowsClosedSiteDataCleanup: @escaping @MainActor () async -> Void = { /* No-op. */ },
+        cleanupWindowAfterRuntimeDeallocation: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ }
     ) -> BrowserWindowLifecycleOwner.Dependencies {
         BrowserWindowLifecycleOwner.Dependencies(
             windowRegistry: windowRegistry,
@@ -185,8 +185,8 @@ final class BrowserWindowLifecycleOwnerTests: XCTestCase {
             setActiveWindowState: setActiveWindowState,
             handleWindowVisibilityChanged: handleWindowVisibilityChanged,
             prepareForAllWindowsClosed: prepareForAllWindowsClosed,
-            performSiteDataPolicyAllWindowsClosedCleanup: performSiteDataPolicyAllWindowsClosedCleanup,
-            cleanupWindowAfterBrowserRuntimeDeallocation: cleanupWindowAfterBrowserRuntimeDeallocation
+            performAllWindowsClosedSiteDataCleanup: performAllWindowsClosedSiteDataCleanup,
+            cleanupWindowAfterRuntimeDeallocation: cleanupWindowAfterRuntimeDeallocation
         )
     }
 }

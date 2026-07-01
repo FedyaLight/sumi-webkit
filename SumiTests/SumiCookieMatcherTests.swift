@@ -65,7 +65,7 @@ final class SumiCookieMatcherTests: XCTestCase {
         let differentSiteURL = try XCTUnwrap(URL(string: "https://example.org/favicon.ico"))
 
         XCTAssertEqual(
-            SumiCookieMatcher.cookies(cookies, matching: sameSiteURL, sourceDocumentURL: sourceURL).map { $0.name },
+            SumiCookieMatcher.cookies(cookies, matching: sameSiteURL, sourceDocumentURL: sourceURL).map(\.name),
             ["same-site"]
         )
         XCTAssertTrue(
@@ -94,10 +94,10 @@ final class SumiCookieMatcherTests: XCTestCase {
         if isSecure {
             properties[.secure] = "TRUE"
         }
-        return HTTPCookie(properties: properties)!
+        return HTTPCookie(properties: properties) ?? preconditionFailure("Invalid cookie properties")
     }
 
     private static func matchedNames(_ cookies: [HTTPCookie], matching url: URL) -> [String] {
-        SumiCookieMatcher.cookies(cookies, matching: url).map { $0.name }
+        SumiCookieMatcher.cookies(cookies, matching: url).map(\.name)
     }
 }

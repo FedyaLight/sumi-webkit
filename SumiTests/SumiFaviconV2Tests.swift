@@ -822,7 +822,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             matching: url,
             sourceDocumentURL: try XCTUnwrap(URL(string: "https://www.example.com/page"))
         )
-        XCTAssertEqual(cookies.map { $0.name }, ["session"])
+        XCTAssertEqual(cookies.map(\.name), ["session"])
     }
 
     func testSessionCookieMatchingDropsCrossSitePageDeclaredCookies() throws {
@@ -867,7 +867,7 @@ final class SumiFaviconV2SchedulerAndCacheTests: XCTestCase {
             sourceDocumentURL: sourceDocumentURL
         )
 
-        XCTAssertEqual(cookies.map { $0.name }, ["session"])
+        XCTAssertEqual(cookies.map(\.name), ["session"])
         XCTAssertEqual(HTTPCookie.requestHeaderFields(with: cookies)["Cookie"], "session=same-site")
     }
 }
@@ -1868,7 +1868,7 @@ final class SumiFaviconV2ServiceRegressionTests: XCTestCase {
     }
 }
 
-final class SumiFaviconV2URLNormalizationRegressionTests: XCTestCase {
+final class FaviconURLNormalizationRegressionTests: XCTestCase {
     func testLiveDiscoveryAcceptsEquivalentDocumentURLNormalizations() throws {
         let documentURL = try XCTUnwrap(URL(string: "https://browserbench.org:443/Speedometer3.1/#run"))
         let currentURL = try XCTUnwrap(URL(string: "https://BROWSERBENCH.org/Speedometer3.1/"))

@@ -40,27 +40,11 @@ enum SidebarDragStateDeferredGeometry {
 
     static func updateFolderDropTarget(
         dragState: SidebarDragState,
-        isActive: Bool,
-        folderId: UUID,
-        spaceId: UUID,
-        parentFolderId: UUID?,
-        topLevelIndex: Int,
-        childCount: Int,
-        isOpen: Bool,
-        region: SidebarFolderDragRegion,
-        frame: CGRect,
+        update: SidebarFolderDropTargetUpdate,
         generation: Int
     ) {
         dragState.scheduleFolderDropTarget(
-            folderId: folderId,
-            spaceId: spaceId,
-            parentFolderId: parentFolderId,
-            topLevelIndex: topLevelIndex,
-            childCount: childCount,
-            isOpen: isOpen,
-            region: region,
-            frame: frame,
-            isActive: isActive,
+            update,
             generation: generation
         )
     }
@@ -72,34 +56,18 @@ enum SidebarDragStateDeferredGeometry {
         generation: Int
     ) {
         dragState.scheduleFolderDropTarget(
-            folderId: folderId,
-            spaceId: UUID(),
-            parentFolderId: nil,
-            topLevelIndex: 0,
-            childCount: 0,
-            isOpen: false,
-            region: region,
-            frame: nil,
-            isActive: false,
+            SidebarFolderDropTargetUpdate(folderId: folderId, region: region),
             generation: generation
         )
     }
 
     static func updateTopLevelPinnedItemTarget(
         dragState: SidebarDragState,
-        isActive: Bool,
-        itemId: UUID,
-        spaceId: UUID,
-        topLevelIndex: Int,
-        frame: CGRect,
+        update: SidebarTopLevelPinnedItemTargetUpdate,
         generation: Int
     ) {
         dragState.scheduleTopLevelPinnedItemTarget(
-            itemId: itemId,
-            spaceId: spaceId,
-            topLevelIndex: topLevelIndex,
-            frame: frame,
-            isActive: isActive,
+            update,
             generation: generation
         )
     }
@@ -110,30 +78,18 @@ enum SidebarDragStateDeferredGeometry {
         generation: Int
     ) {
         dragState.scheduleTopLevelPinnedItemTarget(
-            itemId: itemId,
-            spaceId: UUID(),
-            topLevelIndex: 0,
-            frame: nil,
-            isActive: false,
+            SidebarTopLevelPinnedItemTargetUpdate(itemId: itemId),
             generation: generation
         )
     }
 
     static func updateFolderChildDropTarget(
         dragState: SidebarDragState,
-        isActive: Bool,
-        folderId: UUID,
-        childId: UUID,
-        index: Int,
-        frame: CGRect,
+        update: SidebarFolderChildDropTargetUpdate,
         generation: Int
     ) {
         dragState.scheduleFolderChildDropTarget(
-            folderId: folderId,
-            childId: childId,
-            index: index,
-            frame: frame,
-            isActive: isActive,
+            update,
             generation: generation
         )
     }
@@ -144,11 +100,7 @@ enum SidebarDragStateDeferredGeometry {
         generation: Int
     ) {
         dragState.scheduleFolderChildDropTarget(
-            folderId: UUID(),
-            childId: childId,
-            index: 0,
-            frame: nil,
-            isActive: false,
+            SidebarFolderChildDropTargetUpdate(childId: childId),
             generation: generation
         )
     }
@@ -183,39 +135,11 @@ enum SidebarDragStateDeferredGeometry {
 
     static func updateEssentialsLayoutMetrics(
         dragState: SidebarDragState,
-        spaceId: UUID,
-        profileId: UUID?,
-        frame: CGRect,
-        dropFrame: CGRect,
-        dropSlotFrames: [SidebarEssentialsDropSlotMetrics],
-        itemCount: Int,
-        columnCount: Int,
-        firstSyntheticRowSlot: Int? = nil,
-        rowCount: Int,
-        itemSize: CGSize,
-        gridSpacing: CGFloat,
-        canAcceptDrop: Bool,
-        visibleItemCount: Int,
-        visibleRowCount: Int,
-        maxDropRowCount: Int,
+        update: SidebarEssentialsLayoutUpdate,
         generation: Int
     ) {
         dragState.scheduleEssentialsLayoutMetrics(
-            spaceId: spaceId,
-            profileId: profileId,
-            frame: frame,
-            dropFrame: dropFrame,
-            dropSlotFrames: dropSlotFrames,
-            itemCount: itemCount,
-            columnCount: columnCount,
-            firstSyntheticRowSlot: firstSyntheticRowSlot,
-            rowCount: rowCount,
-            itemSize: itemSize,
-            gridSpacing: gridSpacing,
-            canAcceptDrop: canAcceptDrop,
-            visibleItemCount: visibleItemCount,
-            visibleRowCount: visibleRowCount,
-            maxDropRowCount: maxDropRowCount,
+            update,
             generation: generation
         )
     }
@@ -226,19 +150,7 @@ enum SidebarDragStateDeferredGeometry {
         generation: Int
     ) {
         dragState.scheduleEssentialsLayoutMetrics(
-            spaceId: spaceId,
-            profileId: nil,
-            frame: nil,
-            dropFrame: nil,
-            itemCount: 0,
-            columnCount: 1,
-            rowCount: 1,
-            itemSize: .zero,
-            gridSpacing: 0,
-            canAcceptDrop: false,
-            visibleItemCount: 0,
-            visibleRowCount: 0,
-            maxDropRowCount: 0,
+            SidebarEssentialsLayoutUpdate(spaceId: spaceId),
             generation: generation
         )
     }
@@ -600,17 +512,23 @@ struct SidebarFolderDropGeometryReporter: ViewModifier {
     }
 
     private func update(frame: CGRect) {
+        let update = isActive
+            ? SidebarFolderDropTargetUpdate(
+                metrics: SidebarFolderDropTargetMetrics(
+                    folderId: folderId,
+                    spaceId: spaceId,
+                    parentFolderId: parentFolderId,
+                    topLevelIndex: topLevelIndex,
+                    childCount: childCount,
+                    isOpen: isOpen
+                ),
+                region: region,
+                frame: frame
+            )
+            : SidebarFolderDropTargetUpdate(folderId: folderId, region: region)
         SidebarDragStateDeferredGeometry.updateFolderDropTarget(
             dragState: dragState,
-            isActive: isActive,
-            folderId: folderId,
-            spaceId: spaceId,
-            parentFolderId: parentFolderId,
-            topLevelIndex: topLevelIndex,
-            childCount: childCount,
-            isOpen: isOpen,
-            region: region,
-            frame: frame,
+            update: update,
             generation: generation
         )
     }
@@ -660,13 +578,19 @@ struct SidebarTopLevelPinnedItemGeometryReporter: ViewModifier {
     }
 
     private func update(frame: CGRect) {
+        let update = isActive
+            ? SidebarTopLevelPinnedItemTargetUpdate(
+                metrics: SidebarTopLevelPinnedItemMetrics(
+                    itemId: itemId,
+                    spaceId: spaceId,
+                    topLevelIndex: topLevelIndex,
+                    frame: frame
+                )
+            )
+            : SidebarTopLevelPinnedItemTargetUpdate(itemId: itemId)
         SidebarDragStateDeferredGeometry.updateTopLevelPinnedItemTarget(
             dragState: dragState,
-            isActive: isActive,
-            itemId: itemId,
-            spaceId: spaceId,
-            topLevelIndex: topLevelIndex,
-            frame: frame,
+            update: update,
             generation: generation
         )
     }
@@ -717,13 +641,19 @@ struct SidebarFolderChildDropGeometryReporter: ViewModifier {
     }
 
     private func update(frame: CGRect) {
+        let update = isActive
+            ? SidebarFolderChildDropTargetUpdate(
+                metrics: SidebarFolderChildDropTargetMetrics(
+                    childId: childId,
+                    folderId: folderId,
+                    index: index,
+                    frame: frame
+                )
+            )
+            : SidebarFolderChildDropTargetUpdate(childId: childId)
         SidebarDragStateDeferredGeometry.updateFolderChildDropTarget(
             dragState: dragState,
-            isActive: isActive,
-            folderId: folderId,
-            childId: childId,
-            index: index,
-            frame: frame,
+            update: update,
             generation: generation
         )
     }
@@ -917,23 +847,28 @@ struct SidebarEssentialsLayoutGeometryReporter: ViewModifier {
                     )
                 )
             }
+            let update = SidebarEssentialsLayoutUpdate(
+                spaceId: spaceId,
+                input: SidebarEssentialsLayoutMetricsInput(
+                    profileId: profileId,
+                    frame: frame,
+                    dropFrame: resolvedDropFrame,
+                    dropSlotFrames: resolvedDropSlotFrames,
+                    itemCount: itemCount,
+                    columnCount: columnCount,
+                    firstSyntheticRowSlot: firstSyntheticRowSlot,
+                    rowCount: rowCount,
+                    itemSize: itemSize,
+                    gridSpacing: gridSpacing,
+                    canAcceptDrop: canAcceptDrop,
+                    visibleItemCount: visibleItemCount,
+                    visibleRowCount: visibleRowCount,
+                    maxDropRowCount: maxDropRowCount
+                )
+            )
             SidebarDragStateDeferredGeometry.updateEssentialsLayoutMetrics(
                 dragState: dragState,
-                spaceId: spaceId,
-                profileId: profileId,
-                frame: frame,
-                dropFrame: resolvedDropFrame,
-                dropSlotFrames: resolvedDropSlotFrames,
-                itemCount: itemCount,
-                columnCount: columnCount,
-                firstSyntheticRowSlot: firstSyntheticRowSlot,
-                rowCount: rowCount,
-                itemSize: itemSize,
-                gridSpacing: gridSpacing,
-                canAcceptDrop: canAcceptDrop,
-                visibleItemCount: visibleItemCount,
-                visibleRowCount: visibleRowCount,
-                maxDropRowCount: maxDropRowCount,
+                update: update,
                 generation: generation
             )
         } else {

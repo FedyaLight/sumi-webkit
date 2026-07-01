@@ -27,8 +27,7 @@ final class BrowserStartupPolicyOwner {
 
     var firstRegularWindowForStartupPolicy: BrowserWindowState? {
         dependencies.regularWindows()
-            .sorted { $0.id.uuidString < $1.id.uuidString }
-            .first
+            .min { $0.id.uuidString < $1.id.uuidString }
     }
 
     func applyStartupPolicy(_ mode: SumiStartupMode) {

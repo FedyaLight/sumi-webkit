@@ -5,7 +5,7 @@ import XCTest
 
 @MainActor
 final class BrowserWebViewRoutingServiceTests: XCTestCase {
-    func testMissingTabDoesNotResolveCoordinatorForTabBackedOperations() throws {
+    func testMissingTabDoesNotResolveCoordinatorForTabBackedOperations() {
         let coordinator = RecordingWebViewCoordinator()
         var coordinatorReadCount = 0
         let service = BrowserWebViewRoutingService(
@@ -57,7 +57,7 @@ final class BrowserWebViewRoutingServiceTests: XCTestCase {
         let syncCall = try XCTUnwrap(coordinator.syncCalls.first)
         XCTAssertIdentical(syncCall.tab, tab)
         XCTAssertEqual(syncCall.url, tab.url)
-        XCTAssertTrue(syncCall.originatingWebView === originatingWebView)
+        XCTAssertIdentical(syncCall.originatingWebView, originatingWebView)
 
         XCTAssertEqual(coordinator.reloadCalls.count, 1)
         XCTAssertIdentical(coordinator.reloadCalls.first, tab)

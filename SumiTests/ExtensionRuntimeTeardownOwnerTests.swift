@@ -34,7 +34,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         let nativePortKey = ObjectIdentifier(anchorView)
         manager.extensionsLoaded = true
         manager.runtimeState = .ready
-        manager.extensionRuntimeAllowsWithoutEnabledExtensions = true
+        manager.allowsRuntimeWithoutEnabledExtensions = true
         manager.loadedExtensionManifests["alpha"] = ["manifest_version": 3]
         manager.actionStatesByExtensionID["alpha"] = BrowserExtensionActionSurfaceState(
             extensionID: "alpha",
@@ -70,7 +70,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         XCTAssertEqual(manager.extensionLoadGeneration, generationBeforeTeardown + 1)
         XCTAssertTrue(manager.extensionControllersByProfile.isEmpty)
         XCTAssertNil(browserConfiguration.webViewConfiguration.webExtensionController)
-        XCTAssertFalse(manager.extensionRuntimeAllowsWithoutEnabledExtensions)
+        XCTAssertFalse(manager.allowsRuntimeWithoutEnabledExtensions)
         XCTAssertEqual(
             manager.runtimeState,
             manager.isExtensionSupportAvailable ? .idle : .unavailable
@@ -110,7 +110,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         let anchorView = NSView(frame: NSRect(x: 0, y: 0, width: 32, height: 32))
         manager.extensionsLoaded = true
         manager.runtimeState = .ready
-        manager.extensionRuntimeAllowsWithoutEnabledExtensions = true
+        manager.allowsRuntimeWithoutEnabledExtensions = true
         manager.loadedExtensionManifests["alpha"] = ["manifest_version": 3]
         manager.actionAnchorStore.setAnchor(for: "alpha", anchorView: anchorView)
 
@@ -125,7 +125,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             browserConfiguration.webViewConfiguration.webExtensionController,
             controller
         )
-        XCTAssertTrue(manager.extensionRuntimeAllowsWithoutEnabledExtensions)
+        XCTAssertTrue(manager.allowsRuntimeWithoutEnabledExtensions)
         XCTAssertEqual(manager.runtimeState, .ready)
         XCTAssertTrue(manager.extensionsLoaded)
         XCTAssertTrue(manager.loadedExtensionManifests.isEmpty)
@@ -144,7 +144,7 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile,
             browserConfiguration: browserConfiguration,
-            extensionPreferences: UserDefaults(suiteName: UUID().uuidString)!
+            extensionPreferences: UserDefaults(suiteName: UUID().uuidString) ?? preconditionFailure("Unable to create test user defaults")
         )
         return (container, manager)
     }

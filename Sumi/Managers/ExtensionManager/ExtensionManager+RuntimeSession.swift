@@ -29,9 +29,9 @@ extension ExtensionManager {
         set { runtimeSessionOwner.runtimeState = newValue }
     }
 
-    var extensionRuntimeAllowsWithoutEnabledExtensions: Bool {
-        get { runtimeSessionOwner.extensionRuntimeAllowsWithoutEnabledExtensions }
-        set { runtimeSessionOwner.extensionRuntimeAllowsWithoutEnabledExtensions = newValue }
+    var allowsRuntimeWithoutEnabledExtensions: Bool {
+        get { runtimeSessionOwner.allowsRuntimeWithoutEnabledExtensions }
+        set { runtimeSessionOwner.allowsRuntimeWithoutEnabledExtensions = newValue }
     }
 
     var runtimeInitializationTask: Task<Void, Never>? {

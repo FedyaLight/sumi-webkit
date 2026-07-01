@@ -100,7 +100,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
     func testLegacyHostOnlyDefaultsAreNotLoadedAsProfileState() throws {
         let defaults = makeDefaults()
         let legacyState = [
-            "example.com": SumiAdblockZapperStore.State(rules: [".legacy"], disabled: false)
+            "example.com": SumiAdblockZapperStore.State(rules: [".legacy"], disabled: false),
         ]
         let legacyData = try JSONEncoder().encode(legacyState)
         defaults.set(legacyData, forKey: "settings.adblock.zapper.statesByHost.v1")
@@ -119,7 +119,7 @@ final class SumiAdblockZapperStoreTests: XCTestCase {
 
     private func makeDefaults() -> UserDefaults {
         let suiteName = "SumiAdblockZapperStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defaults.removePersistentDomain(forName: suiteName)
         return defaults
     }

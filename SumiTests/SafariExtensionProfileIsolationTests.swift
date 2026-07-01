@@ -40,9 +40,9 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             windowStateContainingTab: { _ in nil },
             windowOwnedWebView: { _, _ in nil },
             trackedWebViews: { _ in [] },
-            rebuildLiveWebViews: { _ in },
+            rebuildLiveWebViews: { _ in /* No-op. */ },
             browserRuntimeAvailable: { false },
-            extensionsModuleEnabled: { true }
+            extensionsModuleEnabled: { .enabled(true) }
         )
 
         XCTAssertEqual(
@@ -166,7 +166,7 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
         let configuration = BrowserConfiguration.shared.auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigurationForExtensionRuntime(
+        manager.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profileB.id,
             reason: "SafariExtensionProfileIsolationTests"
@@ -199,5 +199,4 @@ final class SafariExtensionProfileIsolationTests: XCTestCase {
             profile.id
         )
     }
-
 }

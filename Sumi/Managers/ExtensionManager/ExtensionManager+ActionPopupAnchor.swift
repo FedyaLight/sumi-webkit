@@ -230,7 +230,7 @@ extension ExtensionManager {
             preferredWindowId,
             browserBridgeContext?.activeExtensionWindowState?.id,
         ]
-        for candidateId in candidates.compactMap({ $0 }) {
+        for candidateId in candidates.compactMap(\.self) {
             guard let windowState = browserBridgeContext?.extensionWindowState(for: candidateId) else {
                 continue
             }

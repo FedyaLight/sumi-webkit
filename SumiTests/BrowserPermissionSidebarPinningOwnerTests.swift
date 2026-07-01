@@ -3,7 +3,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class BrowserPermissionSidebarPinningOwnerTests: XCTestCase {
+final class PermissionSidebarPinningOwnerTests: XCTestCase {
     func testReconcilePinsFromPermissionSnapshotAndWindowResolver() async {
         let windowState = BrowserWindowState()
         let query = Self.permissionQuery()

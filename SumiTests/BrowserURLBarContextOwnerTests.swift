@@ -162,7 +162,6 @@ final class BrowserURLBarContextOwnerTests: XCTestCase {
         XCTAssertTrue(tab.loadingState.isLoading)
     }
 
-
     private func makeHarness() -> Harness {
         let browserManager = BrowserManager()
         let windowRegistry = WindowRegistry()

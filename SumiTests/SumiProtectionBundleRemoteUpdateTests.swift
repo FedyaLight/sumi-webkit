@@ -613,17 +613,17 @@ private final class FakeBundleRemoteUpdater: SumiProtectionBundleRemoteUpdating,
 
 @MainActor
 private final class FakeAdblockCleanupRuleListStore: SumiContentRuleListCompiling, @unchecked Sendable {
-    func lookUpContentRuleList(forIdentifier identifier: String) async -> WKContentRuleList? {
+    func lookUpContentRuleList(forIdentifier _: String) async -> WKContentRuleList? {
         nil
     }
 
-    func canLookUpContentRuleList(forIdentifier identifier: String) async -> Bool {
+    func canLookUpContentRuleList(forIdentifier _: String) async -> Bool {
         false
     }
 
     func compileContentRuleList(
-        forIdentifier identifier: String,
-        encodedContentRuleList: String
+        forIdentifier _: String,
+        encodedContentRuleList _: String
     ) async throws -> WKContentRuleList {
         throw TestActivationError.failed
     }
@@ -632,7 +632,7 @@ private final class FakeAdblockCleanupRuleListStore: SumiContentRuleListCompilin
         []
     }
 
-    func removeContentRuleList(forIdentifier identifier: String) async throws {}
+    func removeContentRuleList(forIdentifier _: String) async { /* No-op. */ }
 }
 
 private enum TestActivationError: LocalizedError, Equatable {

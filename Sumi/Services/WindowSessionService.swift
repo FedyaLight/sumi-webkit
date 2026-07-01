@@ -301,7 +301,7 @@ private enum WindowSessionSnapshotApplier {
             uniqueKeysWithValues: snapshot.activeTabsBySpace.map { ($0.spaceId, $0.tabId) }
         )
         windowState.selectedShortcutPinForSpace = Dictionary(
-            uniqueKeysWithValues: (snapshot.activeShortcutsBySpace ?? []).map { ($0.spaceId, $0.shortcutPinId) }
+            uniqueKeysWithValues: snapshot.activeShortcutsBySpace.map { ($0.spaceId, $0.shortcutPinId) }
         )
         let restoredSidebarWidth = BrowserWindowState.clampedSidebarWidth(CGFloat(snapshot.sidebarWidth))
         let restoredSavedSidebarWidth = BrowserWindowState.clampedSidebarWidth(CGFloat(snapshot.savedSidebarWidth))
@@ -368,7 +368,7 @@ final class WindowSessionService {
 
         for (_, windowState) in windowRegistry.windows {
             if windowState.currentSpaceId == nil
-                || runtime.tabManager.spaces.first(where: { $0.id == windowState.currentSpaceId }) == nil {
+                || runtime.tabManager.spaces.contains { $0.id == windowState.currentSpaceId } == false {
                 windowState.currentSpaceId = resolvedFallbackSpaceId(
                     for: windowState,
                     runtime: runtime

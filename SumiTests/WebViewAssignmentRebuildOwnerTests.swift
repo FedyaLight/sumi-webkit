@@ -26,7 +26,7 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(requestedTabIds, [tab.id])
-        XCTAssertTrue(tab.assignedWebView === webView)
+        XCTAssertIdentical(tab.assignedWebView, webView)
         XCTAssertEqual(tab.primaryWindowId, windowId)
     }
 
@@ -74,15 +74,15 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
         WebViewAssignmentRebuildOwner.Runtime(
             webViewRegistry: webViewRegistry,
             initialDocumentWarmupRuntime: nil,
-            registerTrackedWebView: { _, _, _ in },
+            registerTrackedWebView: { _, _, _ in /* No-op. */ },
             unregisterTrackedWebViewSlot: { _, _ in nil },
-            removeFromContainers: { _ in },
+            removeFromContainers: { _ in /* No-op. */ },
             isWebViewProtectedFromCompositorMutation: { _ in false },
-            deferProtectedRebuild: { _, _, _ in },
+            deferProtectedRebuild: { _, _, _ in /* No-op. */ },
             primaryCandidate: primaryCandidate,
-            liveWindowIDs: { nil },
-            refreshCompositor: { _ in },
-            notifyTabActivatedIfCurrent: { _, _ in }
+            liveWindowSelection: { .allTrackedWindows },
+            refreshCompositor: { _ in /* No-op. */ },
+            notifyTabActivatedIfCurrent: { _, _ in /* No-op. */ }
         )
     }
 }

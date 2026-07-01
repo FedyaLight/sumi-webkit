@@ -16,7 +16,12 @@ struct ExtensionManagerRuntime {
     typealias TrackedWebViewsProvider = @MainActor (_ tabId: UUID) -> [WKWebView]
     typealias RebuildLiveWebViews = @MainActor (_ tab: Tab) -> Void
     typealias BrowserRuntimeAvailabilityProvider = @MainActor () -> Bool
-    typealias ModuleEnabledProvider = @MainActor () -> Bool?
+    typealias ModuleEnabledProvider = @MainActor () -> ModuleEnabledState
+
+    enum ModuleEnabledState: Equatable {
+        case unavailable
+        case enabled(Bool)
+    }
 
     let currentProfile: CurrentProfileProvider
     let profile: ProfileProvider
@@ -43,8 +48,8 @@ struct ExtensionManagerRuntime {
         windowStateContainingTab: { _ in nil },
         windowOwnedWebView: { _, _ in nil },
         trackedWebViews: { _ in [] },
-        rebuildLiveWebViews: { _ in },
+        rebuildLiveWebViews: { _ in /* No-op. */ },
         browserRuntimeAvailable: { false },
-        extensionsModuleEnabled: { nil }
+        extensionsModuleEnabled: { .unavailable }
     )
 }

@@ -10,9 +10,9 @@ struct TabWebViewConfigurationContext {
     let protectionDecision: (URL, UUID) -> SumiProtectionNormalTabDecision?
     let protectionDesiredAttachmentState: (URL?) -> SumiProtectionAttachmentState
     let safariContentBlockerAttachmentState: (URL) -> SumiSafariContentBlockerAttachmentState?
-    let safariContentBlockerDesiredAttachmentState: (URL?) -> SumiSafariContentBlockerAttachmentState
+    let safariBlockerDesiredAttachmentState: (URL?) -> SumiSafariContentBlockerAttachmentState
     let enabledSafariContentBlockingServices: (URL, UUID) -> [SumiContentBlockingService]
-    let prepareWebViewConfigurationForExtensionRuntime: (WKWebViewConfiguration, UUID?, String) -> Void
+    let prepareWebViewConfigForExtensionRuntime: (WKWebViewConfiguration, UUID?, String) -> Void
 
     static let empty = TabWebViewConfigurationContext(
         browserConfiguration: .shared,
@@ -22,9 +22,9 @@ struct TabWebViewConfigurationContext {
         protectionDecision: { _, _ in nil },
         protectionDesiredAttachmentState: { _ in .disabled(siteHost: nil) },
         safariContentBlockerAttachmentState: { _ in nil },
-        safariContentBlockerDesiredAttachmentState: { _ in .disabled(siteHost: nil) },
+        safariBlockerDesiredAttachmentState: { _ in .disabled(siteHost: nil) },
         enabledSafariContentBlockingServices: { _, _ in [] },
-        prepareWebViewConfigurationForExtensionRuntime: { _, _, _ in }
+        prepareWebViewConfigForExtensionRuntime: { _, _, _ in /* No-op. */ }
     )
 }
 
@@ -160,7 +160,7 @@ final class TabWebViewConfigurationOwner {
             surface: .extensionOptions,
             additionalUserScripts: configuration.userContentController.userScripts
         )
-        context.prepareWebViewConfigurationForExtensionRuntime(
+        context.prepareWebViewConfigForExtensionRuntime(
             isolatedConfiguration,
             profileId,
             "Tab.applyWebViewConfigurationOverride"
@@ -190,7 +190,7 @@ final class TabWebViewConfigurationOwner {
         }
 
         let desiredSafariContentBlockerState = context
-            .safariContentBlockerDesiredAttachmentState(webView.url ?? fallbackURL)
+            .safariBlockerDesiredAttachmentState(webView.url ?? fallbackURL)
         if let appliedSafariContentBlockerState =
             reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState {
             guard appliedSafariContentBlockerState
@@ -229,7 +229,7 @@ final class TabWebViewConfigurationOwner {
               let configuration = webExtensionContext.webViewConfiguration
         else { return nil }
 
-        context.prepareWebViewConfigurationForExtensionRuntime(
+        context.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profile.id,
             "Tab.webExtensionContextWebViewConfiguration"

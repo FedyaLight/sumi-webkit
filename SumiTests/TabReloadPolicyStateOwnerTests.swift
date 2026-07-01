@@ -1,6 +1,6 @@
+@testable import Sumi
 import WebKit
 import XCTest
-@testable import Sumi
 
 @MainActor
 final class TabReloadPolicyStateOwnerTests: XCTestCase {
@@ -123,7 +123,7 @@ final class TabReloadPolicyStateOwnerTests: XCTestCase {
         },
         protectionSurfaceHost: @escaping (URL?) -> String? = { _ in nil },
         protectionCurrentTabDiagnostics: @escaping (
-            TabReloadPolicyProtectionDiagnosticsContext
+            ReloadProtectionDiagnosticsContext
         ) -> SumiProtectionCurrentTabDiagnostics? = { _ in nil },
         evaluateAutoplayPolicyChange: @escaping (
             SumiRuntimeAutoplayState,

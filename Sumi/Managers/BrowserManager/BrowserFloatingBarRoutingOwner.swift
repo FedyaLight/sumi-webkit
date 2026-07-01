@@ -14,7 +14,7 @@ final class BrowserFloatingBarRoutingOwner {
         let selectTab: @MainActor @Sendable (Tab, BrowserWindowState) -> Void
         let loadCurrentPageURL: @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void
         let navigateCurrentPage: @MainActor @Sendable (Tab, BrowserWindowState, String) -> Void
-        let dismissWorkspaceThemePickerIfNeededDiscarding: @MainActor @Sendable () -> Void
+        let dismissThemePickerDiscardingIfNeeded: @MainActor @Sendable () -> Void
         let persistWindowSession: @MainActor @Sendable (BrowserWindowState) -> Void
         let schedulePersistWindowSession: @MainActor @Sendable (BrowserWindowState, UInt64) -> Void
     }
@@ -209,7 +209,7 @@ final class BrowserFloatingBarRoutingOwner {
                 else { return }
                 self.dependencies.settings()?.applyNavigationFromSettingsSurfaceURL(url)
             },
-            dismissWorkspaceThemePickerIfNeededDiscarding: dependencies.dismissWorkspaceThemePickerIfNeededDiscarding,
+            dismissThemePickerDiscardingIfNeeded: dependencies.dismissThemePickerDiscardingIfNeeded,
             persistWindowSession: dependencies.persistWindowSession,
             schedulePersistWindowSession: { windowState in
                 self.dependencies.schedulePersistWindowSession(windowState, 450_000_000)
@@ -258,8 +258,8 @@ extension BrowserFloatingBarRoutingOwner.Dependencies {
                     in: windowState
                 )
             },
-            dismissWorkspaceThemePickerIfNeededDiscarding: { [weak browserManager] in
-                browserManager?.dismissWorkspaceThemePickerIfNeededDiscarding()
+            dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
+                browserManager?.dismissThemePickerDiscardingIfNeeded()
             },
             persistWindowSession: { [weak browserManager] windowState in
                 browserManager?.persistWindowSession(for: windowState)

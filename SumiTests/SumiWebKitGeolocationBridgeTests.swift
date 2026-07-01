@@ -358,7 +358,6 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
             isEphemeralProfile: false
         )
     }
-
 }
 
 @available(macOS 12.0, *)

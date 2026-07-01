@@ -77,14 +77,14 @@ extension SafariExtensionImportStore: SafariExtensionImportRecordProviding {}
 
 @available(macOS 15.5, *)
 @MainActor
-struct SafariExtensionCompatibilityReportRuntime {
+struct SafariCompatibilityReportRuntime {
     typealias CurrentTabProvider = @MainActor () -> Tab?
     typealias StableAdapterProvider = @MainActor (_ tab: Tab) -> ExtensionTabAdapter?
 
     let currentTab: CurrentTabProvider
     let stableAdapter: StableAdapterProvider
 
-    static let inactive = SafariExtensionCompatibilityReportRuntime(
+    static let inactive = SafariCompatibilityReportRuntime(
         currentTab: { nil },
         stableAdapter: { _ in nil }
     )
@@ -175,7 +175,7 @@ enum SafariExtensionCompatibilityReportBuilder {
         installedExtensions: [InstalledExtension] = [],
         extensionManager: ExtensionManager? = nil,
         extensionsModuleEnabled: Bool = true,
-        runtime: SafariExtensionCompatibilityReportRuntime? = nil
+        runtime: SafariCompatibilityReportRuntime? = nil
     ) -> SafariExtensionCompatibilityReport {
         let runtime = runtime ?? .live(extensionManager: extensionManager)
         let discoveredByAppexID = Dictionary(

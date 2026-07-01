@@ -22,7 +22,7 @@ struct FloatingBarNavigationOwner {
         let loadCurrentPageURL: @MainActor (Tab, BrowserWindowState, String) -> Void
         let navigateCurrentPage: @MainActor (Tab, BrowserWindowState, String) -> Void
         let applySettingsSurfaceNavigation: @MainActor (String) -> Void
-        let dismissWorkspaceThemePickerIfNeededDiscarding: @MainActor () -> Void
+        let dismissThemePickerDiscardingIfNeeded: @MainActor () -> Void
         let persistWindowSession: @MainActor (BrowserWindowState) -> Void
         let schedulePersistWindowSession: @MainActor (BrowserWindowState) -> Void
     }
@@ -43,7 +43,7 @@ struct FloatingBarNavigationOwner {
         }
         windowState.floatingBarPresentationReason = presentationReason
         windowState.isFloatingBarVisible = true
-        actions.dismissWorkspaceThemePickerIfNeededDiscarding()
+        actions.dismissThemePickerDiscardingIfNeeded()
         actions.persistWindowSession(windowState)
     }
 
@@ -71,7 +71,7 @@ struct FloatingBarNavigationOwner {
         windowState.floatingBarDraftNavigatesCurrentTab = false
         windowState.floatingBarPresentationReason = .emptySpace
         windowState.isFloatingBarVisible = true
-        actions.dismissWorkspaceThemePickerIfNeededDiscarding()
+        actions.dismissThemePickerDiscardingIfNeeded()
         actions.persistWindowSession(windowState)
     }
 

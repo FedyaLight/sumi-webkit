@@ -458,63 +458,63 @@ private final class FakeVisitedLinkStore: NSObject {
 
 @MainActor
 private final class FakeBrowsingDataCleanupService: SumiWebsiteDataCleanupServicing {
-    func fetchCookies(in dataStore: WKWebsiteDataStore) async -> [HTTPCookie] {
+    func fetchCookies(in _: WKWebsiteDataStore) async -> [HTTPCookie] {
         []
     }
 
     func fetchWebsiteDataRecords(
-        ofTypes dataTypes: Set<String>,
-        in dataStore: WKWebsiteDataStore
+        ofTypes _: Set<String>,
+        in _: WKWebsiteDataStore
     ) async -> [WKWebsiteDataRecord] {
         []
     }
 
     func fetchSiteDataEntries(
-        forDomain domain: String,
-        ofTypes dataTypes: Set<String>,
-        in dataStore: WKWebsiteDataStore
+        forDomain _: String,
+        ofTypes _: Set<String>,
+        in _: WKWebsiteDataStore
     ) async -> [SumiSiteDataEntry] {
         []
     }
 
     func removeCookies(
-        _ selection: SumiCookieRemovalSelection,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        _ _: SumiCookieRemovalSelection,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
     func removeWebsiteData(
-        ofTypes dataTypes: Set<String>,
-        modifiedSince date: Date,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        ofTypes _: Set<String>,
+        modifiedSince _: Date,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
     func removeWebsiteDataForDomain(
-        _ domain: String,
-        includingCookies: Bool,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        _ _: String,
+        includingCookies _: Bool,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
     func removeWebsiteDataForExactHost(
-        _ host: String,
-        ofTypes dataTypes: Set<String>,
-        includingCookies: Bool,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        _ _: String,
+        ofTypes _: Set<String>,
+        includingCookies _: Bool,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
     func removeWebsiteDataForDomains(
-        _ domains: Set<String>,
-        ofTypes dataTypes: Set<String>,
-        includingCookies: Bool,
-        in dataStore: WKWebsiteDataStore
-    ) async {}
+        _ _: Set<String>,
+        ofTypes _: Set<String>,
+        includingCookies _: Bool,
+        in _: WKWebsiteDataStore
+    ) async { /* No-op. */ }
 
-    func clearAllProfileWebsiteData(in dataStore: WKWebsiteDataStore) async {}
+    func clearAllProfileWebsiteData(in _: WKWebsiteDataStore) async { /* No-op. */ }
 
-    func removePersistentDataStore(forIdentifier identifier: UUID) async -> Bool {
+    func removePersistentDataStore(forIdentifier _: UUID) async -> Bool {
         true
     }
 
-    func prunePersistentDataStores(keeping identifiersToKeep: Set<UUID>) async -> [UUID] {
+    func prunePersistentDataStores(keeping _: Set<UUID>) async -> [UUID] {
         []
     }
 }

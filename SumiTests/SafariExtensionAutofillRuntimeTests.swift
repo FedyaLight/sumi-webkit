@@ -40,7 +40,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
             for: profile,
             url: URL(string: "https://example.com")!
         )
-        module.prepareWebViewConfigurationForExtensionRuntime(
+        module.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionAutofillRuntimeTests"
@@ -77,7 +77,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         )
         configuration.webExtensionController = controllerA
 
-        manager.prepareWebViewConfigurationForExtensionRuntime(
+        manager.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profileB.id,
             reason: "SafariExtensionAutofillRuntimeTests"
@@ -230,7 +230,7 @@ final class SafariExtensionAutofillRuntimeTests: XCTestCase {
         let configuration = BrowserConfiguration().auxiliaryWebViewConfiguration(
             surface: .extensionOptions
         )
-        manager.prepareWebViewConfigurationForExtensionRuntime(
+        manager.prepareWebViewConfigForExtensionRuntime(
             configuration,
             profileId: profile.id,
             reason: "SafariExtensionAutofillRuntimeTests"

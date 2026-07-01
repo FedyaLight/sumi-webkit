@@ -50,7 +50,7 @@ final class BrowserStartupProtectionRuntime {
         }
     }
 
-    func canMaterializeNormalTabWebViewDuringStartup(_ tab: Tab) -> Bool {
+    func canMaterializeWebViewDuringStartup(_ tab: Tab) -> Bool {
         if ExtensionUtils.isExtensionOwnedURL(tab.url) || tab.webExtensionContextOverride != nil {
             return true
         }

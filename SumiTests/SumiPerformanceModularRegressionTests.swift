@@ -280,7 +280,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         let configuration = WKWebViewConfiguration()
 
         XCTAssertTrue(module.normalTabUserScripts().isEmpty)
-        module.prepareWebViewConfigurationForExtensionRuntime(
+        module.prepareWebViewConfigForExtensionRuntime(
             configuration,
             reason: "Prompt20.disabled"
         )

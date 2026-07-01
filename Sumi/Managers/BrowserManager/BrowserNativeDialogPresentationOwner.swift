@@ -33,8 +33,8 @@ private final class SidebarSharingServicePickerBridge: NSObject, @preconcurrency
     }
 
     func sharingServicePicker(
-        _ sharingServicePicker: NSSharingServicePicker,
-        didChoose service: NSSharingService?
+        _ _: NSSharingServicePicker,
+        didChoose _: NSSharingService?
     ) {
         finish()
     }
@@ -64,8 +64,8 @@ final class BrowserNativeDialogPresentationOwner {
         let setNativeModalPresentation: @MainActor @Sendable (BrowserNativeModalPresentation?) -> Void
         let postCollapsedSidebarOverlayDismissal: @MainActor @Sendable () -> Void
         let dismissFloatingBarForActiveWindow: @MainActor @Sendable (Bool) -> Void
-        let dismissWorkspaceThemePickerIfNeededDiscarding: @MainActor @Sendable () -> Void
-        let dismissWorkspaceThemePickerIfNeededCommitting: @MainActor @Sendable () -> Void
+        let dismissThemePickerDiscardingIfNeeded: @MainActor @Sendable () -> Void
+        let dismissThemePickerCommittingIfNeeded: @MainActor @Sendable () -> Void
         let terminateApplication: @MainActor @Sendable () -> Void
         let keyWindow: @MainActor @Sendable () -> NSWindow?
         let mainWindow: @MainActor @Sendable () -> NSWindow?
@@ -85,7 +85,7 @@ final class BrowserNativeDialogPresentationOwner {
     func showQuitDialog() {
         requestCollapsedSidebarOverlayDismissal()
         dependencies.dismissFloatingBarForActiveWindow(true)
-        dependencies.dismissWorkspaceThemePickerIfNeededCommitting()
+        dependencies.dismissThemePickerCommittingIfNeeded()
         dependencies.terminateApplication()
     }
 
@@ -190,7 +190,7 @@ final class BrowserNativeDialogPresentationOwner {
 
     private func prepareForNativeModalPresentation() {
         requestCollapsedSidebarOverlayDismissal()
-        dependencies.dismissWorkspaceThemePickerIfNeededDiscarding()
+        dependencies.dismissThemePickerDiscardingIfNeeded()
     }
 
     @discardableResult
@@ -293,11 +293,11 @@ extension BrowserNativeDialogPresentationOwner.Dependencies {
             dismissFloatingBarForActiveWindow: { [weak browserManager] preserveDraft in
                 browserManager?.dismissFloatingBarForActiveWindow(preserveDraft: preserveDraft)
             },
-            dismissWorkspaceThemePickerIfNeededDiscarding: { [weak browserManager] in
-                browserManager?.dismissWorkspaceThemePickerIfNeededDiscarding()
+            dismissThemePickerDiscardingIfNeeded: { [weak browserManager] in
+                browserManager?.dismissThemePickerDiscardingIfNeeded()
             },
-            dismissWorkspaceThemePickerIfNeededCommitting: { [weak browserManager] in
-                browserManager?.dismissWorkspaceThemePickerIfNeededCommitting()
+            dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
+                browserManager?.dismissThemePickerCommittingIfNeeded()
             },
             terminateApplication: {
                 NSApplication.shared.terminate(nil)

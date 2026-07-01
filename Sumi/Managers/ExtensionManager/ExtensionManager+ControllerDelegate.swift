@@ -6,9 +6,13 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager: WKWebExtensionControllerDelegate {
-    var extensionsModuleEnabledForDelegateCallbacks: Bool {
-        runtime.extensionsModuleEnabled()
-            ?? moduleRegistry.isEnabled(.extensions)
+    var extensionsModuleEnabledForCallbacks: Bool {
+        switch runtime.extensionsModuleEnabled() {
+        case .enabled(let isEnabled):
+            return isEnabled
+        case .unavailable:
+            return moduleRegistry.isEnabled(.extensions)
+        }
     }
 
     func consumeRecentlyOpenedExtensionTabRequest(for url: URL) -> Bool {
@@ -536,7 +540,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
     ) {
         _ = controller
         let extensionId = extensionID(for: extensionContext)
-        let extensionsModuleEnabled = extensionsModuleEnabledForDelegateCallbacks
+        let extensionsModuleEnabled = extensionsModuleEnabledForCallbacks
 
         SumiNativeMessagingRuntimeCounters.recordDelegateSendMessageInvoked()
         SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
@@ -611,7 +615,7 @@ extension ExtensionManager: WKWebExtensionControllerDelegate {
         SafariExtensionAutofillFillDiagnostics.recordNativeMessagingActivity(
             extensionId: extensionId
         )
-        let extensionsModuleEnabled = extensionsModuleEnabledForDelegateCallbacks
+        let extensionsModuleEnabled = extensionsModuleEnabledForCallbacks
         if extensionsModuleEnabled {
             scheduleNativeMessagingBackgroundWake(
                 for: extensionContext,

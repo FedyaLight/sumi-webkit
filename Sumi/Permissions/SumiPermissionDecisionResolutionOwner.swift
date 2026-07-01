@@ -11,11 +11,11 @@ struct SumiPermissionDecisionResolutionOwner {
         let key: SumiPermissionKey
     }
 
-    private typealias StoredDecisionLookupResult = (
-        deniedDecision: SumiPermissionCoordinatorDecision?,
-        grantedRecords: [SumiPermissionStoreRecord],
-        promptEvaluations: [PolicyEvaluation]
-    )
+    private struct StoredDecisionLookupResult {
+        let deniedDecision: SumiPermissionCoordinatorDecision?
+        let grantedRecords: [SumiPermissionStoreRecord]
+        let promptEvaluations: [PolicyEvaluation]
+    }
 
     enum Resolution {
         case immediate(SumiPermissionCoordinatorDecision)
@@ -201,14 +201,14 @@ struct SumiPermissionDecisionResolutionOwner {
                         for: evaluation,
                         failure: .memoryRecordLastUsed
                     )
-                    return (
-                        SumiPermissionCoordinatorDecision.fromStoredDecision(
+                    return StoredDecisionLookupResult(
+                        deniedDecision: SumiPermissionCoordinatorDecision.fromStoredDecision(
                             memoryRecord.decision,
                             key: evaluation.key,
                             reason: "stored-memory-deny"
                         ),
-                        grantedRecords,
-                        []
+                        grantedRecords: grantedRecords,
+                        promptEvaluations: []
                     )
                 case .ask:
                     promptEvaluations.append(evaluation)
@@ -250,14 +250,14 @@ struct SumiPermissionDecisionResolutionOwner {
                         for: evaluation,
                         failure: .persistentRecordLastUsed
                     )
-                    return (
-                        SumiPermissionCoordinatorDecision.fromStoredDecision(
+                    return StoredDecisionLookupResult(
+                        deniedDecision: SumiPermissionCoordinatorDecision.fromStoredDecision(
                             persistentRecord.decision,
                             key: evaluation.key,
                             reason: "stored-persistent-deny"
                         ),
-                        grantedRecords,
-                        []
+                        grantedRecords: grantedRecords,
+                        promptEvaluations: []
                     )
                 case .ask:
                     promptEvaluations.append(evaluation)
@@ -267,7 +267,11 @@ struct SumiPermissionDecisionResolutionOwner {
             }
         }
 
-        return (nil, grantedRecords, promptEvaluations)
+        return StoredDecisionLookupResult(
+            deniedDecision: nil,
+            grantedRecords: grantedRecords,
+            promptEvaluations: promptEvaluations
+        )
     }
 
     private func recordMemoryLastUsed(
@@ -307,10 +311,10 @@ struct SumiPermissionDecisionResolutionOwner {
         grantedRecords: [SumiPermissionStoreRecord]
     ) -> StoredDecisionLookupResult {
         logStoreFailure(failure, evaluation: evaluation, error: error)
-        return (
-            storeFailureDecision(for: evaluation, failure: failure),
-            grantedRecords,
-            []
+        return StoredDecisionLookupResult(
+            deniedDecision: storeFailureDecision(for: evaluation, failure: failure),
+            grantedRecords: grantedRecords,
+            promptEvaluations: []
         )
     }
 

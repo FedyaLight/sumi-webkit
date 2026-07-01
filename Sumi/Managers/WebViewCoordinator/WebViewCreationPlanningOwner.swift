@@ -15,7 +15,7 @@ enum InitialDocumentWarmupDeferral {
 
 struct InitialDocumentWarmupRuntime {
     let needsInitialDocumentExtensionContextLoad: @MainActor (UUID) -> Bool
-    let ensureInitialDocumentExtensionContextsLoaded: @MainActor (UUID) async -> Void
+    let ensureInitialExtensionContextsLoaded: @MainActor (UUID) async -> Void
     let refreshCompositorForWindow: @MainActor (UUID) -> Void
 }
 
@@ -129,7 +129,7 @@ final class WebViewCreationPlanningOwner {
         }
 
         Task { @MainActor [weak self] in
-            await runtime.ensureInitialDocumentExtensionContextsLoaded(profileId)
+            await runtime.ensureInitialExtensionContextsLoaded(profileId)
             guard let self else { return }
             self.initialDocumentWarmupGate.finish(profileId: profileId)
             runtime.refreshCompositorForWindow(windowId)
@@ -145,7 +145,7 @@ final class WebViewCreationPlanningOwner {
 
     private func adoptableExistingPrimaryWebView(
         for tab: Tab,
-        in windowId: UUID,
+        in _: UUID,
         hasTrackedWebViews: Bool
     ) -> WKWebView? {
         guard let existingWebView = tab.existingWebView else { return nil }

@@ -404,11 +404,21 @@ final class SpaceSidebarTransitionCoordinator {
 
     private func cancelInteractiveThemeTransitionIfNeeded(
         context: Context,
-        hadThemeTransition: Bool? = nil,
         identity: SpaceTransitionIdentity? = nil
     ) {
-        let shouldCancel = hadThemeTransition ?? hasActiveThemeTransition(in: context)
-        guard shouldCancel else { return }
+        cancelInteractiveThemeTransitionIfNeeded(
+            context: context,
+            hadThemeTransition: hasActiveThemeTransition(in: context),
+            identity: identity
+        )
+    }
+
+    private func cancelInteractiveThemeTransitionIfNeeded(
+        context: Context,
+        hadThemeTransition: Bool,
+        identity: SpaceTransitionIdentity? = nil
+    ) {
+        guard hadThemeTransition else { return }
         context.browserContext.spaceTransitions.cancelInteractiveSpaceTransition(
             identity ?? activeThemeTransitionIdentity(in: context),
             context.windowState

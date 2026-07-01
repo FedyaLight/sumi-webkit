@@ -4,9 +4,9 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class TabConfigurationPolicyWebViewReplacementContextOwnerTests: XCTestCase {
+final class TabWebViewReplacementContextOwnerTests: XCTestCase {
     func testMakeContextReflectsUntrackedTabWebViewOwnership() {
-        let owner = TabConfigurationPolicyWebViewReplacementContextOwner()
+        let owner = TabWebViewReplacementContextOwner()
         let tab = Tab(url: URL(string: "https://example.com/replacement-context")!)
         let existingWebView = WKWebView()
         let replacementWebView = WKWebView()
@@ -38,15 +38,15 @@ final class TabConfigurationPolicyWebViewReplacementContextOwnerTests: XCTestCas
     }
 
     func testMakeContextUsesInjectedReplacementRuntimeWithoutBrowserManager() {
-        let owner = TabConfigurationPolicyWebViewReplacementContextOwner()
+        let owner = TabWebViewReplacementContextOwner()
         let tab = Tab(url: URL(string: "https://example.com/replacement-runtime")!)
         let webView = WKWebView()
         let windowId = UUID()
-        var setTrackedCalls: [(ObjectIdentifier, UUID, UUID)] = []
+        var setTrackedCalls: [TrackedWebViewSetCall] = []
         var removeTrackedTabIds: [UUID] = []
         var refreshedWindowIds: [UUID] = []
 
-        tab.configurationPolicyWebViewReplacementRuntime = TabConfigurationPolicyWebViewReplacementRuntime(
+        tab.webViewReplacementRuntime = TabWebViewReplacementRuntime(
             trackedWindowIdContainingWebView: { candidate in
                 XCTAssertIdentical(candidate, webView)
                 return windowId
@@ -56,7 +56,11 @@ final class TabConfigurationPolicyWebViewReplacementContextOwnerTests: XCTestCas
                 return true
             },
             setTrackedWebView: { replacement, tabId, resolvedWindowId in
-                setTrackedCalls.append((ObjectIdentifier(replacement), tabId, resolvedWindowId))
+                setTrackedCalls.append(TrackedWebViewSetCall(
+                    webViewIdentifier: ObjectIdentifier(replacement),
+                    tabId: tabId,
+                    windowId: resolvedWindowId
+                ))
             },
             removeTrackedWebViews: { runtimeTab in
                 removeTrackedTabIds.append(runtimeTab.id)
@@ -73,12 +77,18 @@ final class TabConfigurationPolicyWebViewReplacementContextOwnerTests: XCTestCas
         XCTAssertEqual(context.trackedWindowIdContainingWebView(webView), windowId)
         XCTAssertTrue(context.hasTrackedWebViews(tab.id))
         context.setTrackedWebView(webView, tab.id, windowId)
-        XCTAssertEqual(setTrackedCalls.map(\.0), [ObjectIdentifier(webView)])
-        XCTAssertEqual(setTrackedCalls.map(\.1), [tab.id])
-        XCTAssertEqual(setTrackedCalls.map(\.2), [windowId])
+        XCTAssertEqual(setTrackedCalls.map(\.webViewIdentifier), [ObjectIdentifier(webView)])
+        XCTAssertEqual(setTrackedCalls.map(\.tabId), [tab.id])
+        XCTAssertEqual(setTrackedCalls.map(\.windowId), [windowId])
         XCTAssertTrue(context.removeTrackedWebViews())
         XCTAssertEqual(removeTrackedTabIds, [tab.id])
         context.refreshWindowAfterWebViewReplacement(windowId)
         XCTAssertEqual(refreshedWindowIds, [windowId])
     }
+}
+
+private struct TrackedWebViewSetCall {
+    let webViewIdentifier: ObjectIdentifier
+    let tabId: UUID
+    let windowId: UUID
 }

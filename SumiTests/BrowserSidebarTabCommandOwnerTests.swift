@@ -1,5 +1,5 @@
-import XCTest
 @testable import Sumi
+import XCTest
 
 @MainActor
 final class BrowserSidebarTabCommandOwnerTests: XCTestCase {
@@ -23,7 +23,7 @@ final class BrowserSidebarTabCommandOwnerTests: XCTestCase {
         owner.openNewTabOrFloatingBar(in: windowState)
         owner.duplicateTab(tab, in: windowState)
 
-        XCTAssertTrue(openedTab === returnedTab)
+        XCTAssertIdentical(openedTab, returnedTab)
         XCTAssertEqual(
             spy.events,
             [

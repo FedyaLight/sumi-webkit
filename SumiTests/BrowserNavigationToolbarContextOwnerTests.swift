@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
+final class NavigationToolbarContextOwnerTests: XCTestCase {
     func testToolbarContextUsesBoundWindowForCurrentTabAndWebView() {
         let windowState = BrowserWindowState()
         let tab = makeTab("https://toolbar.example")
@@ -125,7 +125,7 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
             }
         )
 
-        let context = owner.navigationHistoryContext(for: boundWindow!)
+        let context = owner.navigationHistoryContext(for: boundWindow ?? preconditionFailure("Expected bound window"))
         boundWindow = nil
 
         XCTAssertNil(releasedBoundWindow)
@@ -200,12 +200,12 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
     private func makeOwner(
         currentTab: @escaping @MainActor (BrowserWindowState) -> Tab? = { _ in nil },
         webView: @escaping @MainActor (Tab, BrowserWindowState) -> WKWebView? = { _, _ in nil },
-        openURLInCurrentTab: @escaping @MainActor (URL, BrowserWindowState) -> Void = { _, _ in },
-        openNewTab: @escaping @MainActor (String, BrowserTabOpenContext) -> Void = { _, _ in },
-        openHistoryURLsInNewWindow: @escaping @MainActor ([URL]) -> Void = { _ in },
-        goBack: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
-        goForward: @escaping @MainActor (BrowserWindowState) -> Void = { _ in },
-        reload: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in }
+        openURLInCurrentTab: @escaping @MainActor (URL, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
+        openNewTab: @escaping @MainActor (String, BrowserTabOpenContext) -> Void = { _, _ in /* No-op. */ },
+        openHistoryURLsInNewWindow: @escaping @MainActor ([URL]) -> Void = { _ in /* No-op. */ },
+        goBack: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
+        goForward: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ },
+        reload: @escaping @MainActor (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ }
     ) -> BrowserNavigationToolbarContextOwner {
         BrowserNavigationToolbarContextOwner(
             dependencies: BrowserNavigationToolbarContextOwner.Dependencies(
@@ -229,7 +229,7 @@ final class BrowserNavigationToolbarContextOwnerTests: XCTestCase {
 
     private func makeTab(_ url: String) -> Tab {
         Tab(
-            url: URL(string: url)!,
+            url: URL(string: url) ?? preconditionFailure("Invalid test URL"),
             name: url,
             loadsCachedFaviconOnInit: false
         )

@@ -75,7 +75,7 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
 
     func testCreatePopupWebViewUsesAuxiliaryPreparationRuntime() {
         let owner = TabWebViewProvisioningOwner()
-        var capturedOptions: TabCreatedFocusableWebViewPreparationOptions?
+        var capturedOptions: CreatedWebViewPreparationOptions?
         var capturedReason: String?
         var didReplaceWebView = false
         let context = makeContext(
@@ -107,7 +107,7 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
     private func makeContext(
         profileId: @escaping () -> UUID? = { nil },
         resolveProfile: @escaping () -> Profile? = { nil },
-        replaceUntrackedWebView: @escaping (WKWebView) -> Void = { _ in },
+        replaceUntrackedWebView: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
         configurationContext: @escaping () -> TabWebViewConfigurationContext = { .empty },
         configurationRuntime: TabNormalWebViewConfigurationRuntime? = nil,
         preparationRuntime: TabNormalWebViewPreparationRuntime? = nil
@@ -120,24 +120,24 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             parkedWebView: { nil },
             profileId: profileId,
             resolveProfile: resolveProfile,
-            deferWebViewCreationUntilProfileAvailable: {},
-            beginSuspendedRestoreIfNeeded: {},
-            finishSuspendedRestoreIfNeeded: {},
-            setupWebView: {},
-            adoptParkedWebViewAsCurrent: { _ in },
-            clearParkedExistingWebView: {},
+            deferWebViewUntilProfileAvailable: { /* No-op. */ },
+            beginSuspendedRestoreIfNeeded: { /* No-op. */ },
+            finishSuspendedRestoreIfNeeded: { /* No-op. */ },
+            setupWebView: { /* No-op. */ },
+            adoptParkedWebViewAsCurrent: { _ in /* No-op. */ },
+            clearParkedExistingWebView: { /* No-op. */ },
             replaceUntrackedWebView: replaceUntrackedWebView,
-            assignPrimaryWebView: { _, _ in },
-            cleanupCloneWebView: { _ in },
+            assignPrimaryWebView: { _, _ in /* No-op. */ },
+            cleanupCloneWebView: { _ in /* No-op. */ },
             configurationContext: configurationContext,
             configurationRuntime: configurationRuntime ?? makeConfigurationRuntime(),
             preparationRuntime: preparationRuntime ?? makePreparationRuntime(),
             normalTabUserScriptsProvider: { _ in SumiNormalTabUserScripts() },
-            replaceNormalTabUserScripts: { _, _ in },
-            loadMainFrameRequest: { _, _ in },
-            applyCachedFaviconOrPlaceholder: { _ in },
-            registerNormalTabWithExtensionRuntimeIfNeeded: { _ in },
-            scheduleInitialDocumentRuntimeHandoff: { _, _, _, _, _ in }
+            replaceNormalTabUserScripts: { _, _ in /* No-op. */ },
+            loadMainFrameRequest: { _, _ in /* No-op. */ },
+            applyCachedFaviconOrPlaceholder: { _ in /* No-op. */ },
+            registerTabWithExtensionRuntimeIfNeeded: { _ in /* No-op. */ },
+            scheduleInitialDocumentRuntimeHandoff: { _, _, _, _, _ in /* No-op. */ }
         )
     }
 
@@ -156,7 +156,7 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             WKWebViewConfiguration,
             UUID?,
             TabWebViewConfigurationContext
-        ) -> Void = { _, _, _ in },
+        ) -> Void = { _, _, _ in /* No-op. */ },
         canReuseAsNormalTabWebView: @escaping (
             WKWebView,
             URL,
@@ -177,33 +177,33 @@ final class TabWebViewProvisioningOwnerTests: XCTestCase {
             FocusableWKWebView,
             URL?,
             String,
-            TabCreatedFocusableWebViewPreparationOptions
-        ) -> Void = { _, _, _, _ in },
-        prepareAssignedWebView: @escaping (WKWebView) -> Void = { _ in },
-        prepareReusedOrExternallyCreatedWebView: @escaping (WKWebView) -> Void = { _ in },
-        applyOwnedTabWebViewNavigationPreferences: @escaping (WKWebView) -> Void = { _ in }
+            CreatedWebViewPreparationOptions
+        ) -> Void = { _, _, _, _ in /* No-op. */ },
+        prepareAssignedWebView: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
+        prepareReusedOrExternallyCreatedWebView: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
+        applyOwnedWebViewNavPreferences: @escaping (WKWebView) -> Void = { _ in /* No-op. */ }
     ) -> TabNormalWebViewPreparationRuntime {
         TabNormalWebViewPreparationRuntime(
             prepareCreatedFocusableWebView: prepareCreatedFocusableWebView,
             prepareAssignedWebView: prepareAssignedWebView,
             prepareReusedOrExternallyCreatedWebView: prepareReusedOrExternallyCreatedWebView,
-            applyOwnedTabWebViewNavigationPreferences: applyOwnedTabWebViewNavigationPreferences
+            applyOwnedWebViewNavPreferences: applyOwnedWebViewNavPreferences
         )
     }
 
     private func makeOwnedWebViewPreparationDependencies(
-        prepareWebViewForExtensionRuntime: @MainActor @escaping (WKWebView, URL?, String) -> Void = { _, _, _ in }
+        prepareWebViewForExtensionRuntime: @MainActor @escaping (WKWebView, URL?, String) -> Void = { _, _, _ in /* No-op. */ }
     ) -> TabOwnedWebViewPreparationOwner.Dependencies {
         TabOwnedWebViewPreparationOwner.Dependencies(
             tab: { nil },
             uiDelegate: { nil },
             visitedLinkStore: { nil },
             prepareWebViewForExtensionRuntime: prepareWebViewForExtensionRuntime,
-            installNavigationDelegate: { _ in },
-            setupNavigationStateObservers: { _ in },
-            bindAudioState: { _ in },
-            applyRestoredNavigationState: {},
-            ensureFaviconsTabExtension: { _ in }
+            installNavigationDelegate: { _ in /* No-op. */ },
+            setupNavigationStateObservers: { _ in /* No-op. */ },
+            bindAudioState: { _ in /* No-op. */ },
+            applyRestoredNavigationState: { /* No-op. */ },
+            ensureFaviconsTabExtension: { _ in /* No-op. */ }
         )
     }
 }

@@ -15,16 +15,16 @@ struct SumiLiveFolderRuntime {
     var renameFolder: (UUID, String) -> Void
     var openNewTab: (String, BrowserWindowState, UUID?) -> Void
     var profile: (UUID?, UUID) -> Profile?
-    var folderIds: () -> Set<UUID>?
+    var folderIds: () -> Set<UUID>
 
     static let inactive = Self(
         spaceContext: { _ in nil },
         createFolder: { _, _ in nil },
-        updateFolderIcon: { _, _ in },
-        renameFolder: { _, _ in },
-        openNewTab: { _, _, _ in },
+        updateFolderIcon: { _, _ in /* No-op. */ },
+        renameFolder: { _, _ in /* No-op. */ },
+        openNewTab: { _, _, _ in /* No-op. */ },
         profile: { _, _ in nil },
-        folderIds: { nil }
+        folderIds: { [] }
     )
 }
 
@@ -338,7 +338,7 @@ final class SumiLiveFolderManager: ObservableObject {
     }
 
     private func reconcileOrphanedSources() {
-        guard let liveFolderIds = runtime.folderIds() else { return }
+        let liveFolderIds = runtime.folderIds()
         let orphanedFolderIds = Set(sourcesByFolderId.keys).subtracting(liveFolderIds)
         deleteState(forFolderIds: orphanedFolderIds)
     }

@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class SidebarExternalDragGeometryReadinessTests: XCTestCase {
+final class ExternalDragGeometryReadinessTests: XCTestCase {
     func testExternalDragStartFlushesDeferredGeometryBeforeFirstDropResolution() {
         let dragState = SidebarDragState()
         let spaceId = UUID()

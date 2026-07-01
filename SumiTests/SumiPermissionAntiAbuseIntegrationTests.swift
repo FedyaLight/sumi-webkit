@@ -134,7 +134,6 @@ final class SumiPermissionAntiAbuseIntegrationTests: XCTestCase {
             isCurrentPage: { true }
         )
     }
-
 }
 
 private final class SumiPermissionAntiAbuseTestClock: @unchecked Sendable {

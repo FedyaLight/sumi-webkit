@@ -1,5 +1,16 @@
 import Foundation
 
+struct SumiBrowsingHistoryCleanupRequest {
+    let query: HistoryQuery
+    let range: SumiBrowsingDataTimeRange
+    let historyProfileId: UUID?
+    let targetProfileIds: Set<UUID>
+    let includeAllProfiles: Bool
+    let historyManager: HistoryManager
+    let referenceDate: Date
+    let domains: Set<String>
+}
+
 @MainActor
 final class SumiBrowsingDataLocalCleanupOwner {
     private let faviconCacheCleaner: any SumiBrowsingDataFaviconCleaning
@@ -16,16 +27,13 @@ final class SumiBrowsingDataLocalCleanupOwner {
         self.visitedLinkStore = visitedLinkStore
     }
 
-    func clearHistory(
-        query: HistoryQuery,
-        range: SumiBrowsingDataTimeRange,
-        historyProfileId: UUID?,
-        targetProfileIds: Set<UUID>,
-        includeAllProfiles: Bool,
-        historyManager: HistoryManager,
-        referenceDate: Date,
-        domains: Set<String>
-    ) async {
+    func clearHistory(_ request: SumiBrowsingHistoryCleanupRequest) async {
+        let query = request.query
+        let range = request.range
+        let historyProfileId = request.historyProfileId
+        let historyManager = request.historyManager
+        let referenceDate = request.referenceDate
+
         let historyVisitCount = await countVisits(
             matching: query,
             profileId: historyProfileId,
@@ -34,7 +42,7 @@ final class SumiBrowsingDataLocalCleanupOwner {
         )
         guard historyVisitCount > 0 else { return }
 
-        if !includeAllProfiles, historyProfileId == historyManager.currentProfileId {
+        if !request.includeAllProfiles, historyProfileId == historyManager.currentProfileId {
             if range == .allTime {
                 await historyManager.clearAll()
             } else {
@@ -56,7 +64,7 @@ final class SumiBrowsingDataLocalCleanupOwner {
             return
         }
 
-        for profileId in targetProfileIds {
+        for profileId in request.targetProfileIds {
             do {
                 try await reloadVisitedLinks(for: profileId, historyManager: historyManager)
             } catch {
@@ -68,7 +76,7 @@ final class SumiBrowsingDataLocalCleanupOwner {
 
         await clearHistoryFavicons(
             range: range,
-            domains: domains,
+            domains: request.domains,
             historyProfileId: historyProfileId,
             historyManager: historyManager
         )

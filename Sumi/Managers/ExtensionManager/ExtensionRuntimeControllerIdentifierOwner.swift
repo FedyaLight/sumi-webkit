@@ -1,5 +1,5 @@
 //
-//  ExtensionRuntimeControllerIdentifierOwner.swift
+//  ExtensionControllerIdentifierOwner.swift
 //  Sumi
 //
 //  Owns WKWebExtensionController identifier allocation and test storage cleanup.
@@ -10,16 +10,16 @@ import Foundation
 
 @available(macOS 15.5, *)
 @MainActor
-final class ExtensionRuntimeControllerIdentifierOwner {
+final class ExtensionControllerIdentifierOwner {
     nonisolated private static let controllerIdentifierKey =
         "\(SumiAppIdentity.bundleIdentifier).WKWebExtensionController.Identifier"
     #if DEBUG
         nonisolated private static let testControllerIdentifiersDefaultsKey =
             "\(SumiAppIdentity.bundleIdentifier).tests.WKWebExtensionController.Identifiers"
-        nonisolated private static var currentProcessTestControllerIdentifiersDefaultsKey: String {
+        nonisolated private static var testControllerIdentifiersDefaultsKey: String {
             "\(testControllerIdentifiersDefaultsKey).\(ProcessInfo.processInfo.processIdentifier)"
         }
-        nonisolated private static let installTestControllerStorageCleanupAtExit: Void = {
+        nonisolated private static let installTestControllerCleanupAtExit: Void = {
             removeInactiveTestWebExtensionControllerStorage()
         }()
     #endif
@@ -54,7 +54,7 @@ final class ExtensionRuntimeControllerIdentifierOwner {
     private static func makeRuntimeControllerIdentifier() -> UUID {
         #if DEBUG
             if RuntimeDiagnostics.isRunningTests {
-                _ = installTestControllerStorageCleanupAtExit
+                _ = installTestControllerCleanupAtExit
                 let uuid = UUID()
                 registerTestWebExtensionControllerIdentifier(uuid)
                 return uuid
@@ -76,19 +76,19 @@ final class ExtensionRuntimeControllerIdentifierOwner {
             _ controllerIdentifier: UUID
         ) {
             var identifiers = UserDefaults.standard.stringArray(
-                forKey: currentProcessTestControllerIdentifiersDefaultsKey
+                forKey: testControllerIdentifiersDefaultsKey
             ) ?? []
             identifiers.append(controllerIdentifier.uuidString.uppercased())
             UserDefaults.standard.set(
                 Array(Set(identifiers)).sorted(),
-                forKey: currentProcessTestControllerIdentifiersDefaultsKey
+                forKey: testControllerIdentifiersDefaultsKey
             )
         }
 
         nonisolated private static func removeInactiveTestWebExtensionControllerStorage() {
             let defaults = UserDefaults.standard
             let prefix = "\(testControllerIdentifiersDefaultsKey)."
-            let processKey = currentProcessTestControllerIdentifiersDefaultsKey
+            let processKey = testControllerIdentifiersDefaultsKey
             for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
                 guard key != processKey,
                       let rawPID = key.dropFirst(prefix.count).split(separator: ".").first,

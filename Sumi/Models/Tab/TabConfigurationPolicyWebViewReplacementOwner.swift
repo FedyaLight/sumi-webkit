@@ -2,7 +2,7 @@ import Foundation
 import WebKit
 
 @MainActor
-struct TabConfigurationPolicyWebViewReplacementContext {
+struct TabWebViewReplacementContext {
     let tabId: UUID
     let existingWebView: () -> WKWebView?
     let primaryWindowId: UUID?
@@ -10,7 +10,7 @@ struct TabConfigurationPolicyWebViewReplacementContext {
     let hasTrackedWebViews: (UUID) -> Bool
     let setTrackedWebView: (WKWebView, UUID, UUID) -> Void
     let makeNormalTabWebView: (String) -> WKWebView?
-    let invalidateCurrentPermissionPageForWebViewReplacement: (String) -> Void
+    let invalidatePermissionPageForReplacement: (String) -> Void
     let removeTrackedWebViews: () -> Bool
     let cleanupCloneWebView: (WKWebView) -> Void
     let clearCurrentWebViewOwnership: () -> Void
@@ -20,23 +20,23 @@ struct TabConfigurationPolicyWebViewReplacementContext {
 }
 
 @MainActor
-final class TabConfigurationPolicyWebViewReplacementContextOwner {
-    func makeContext(for tab: Tab) -> TabConfigurationPolicyWebViewReplacementContext {
-        TabConfigurationPolicyWebViewReplacementContext(
+final class TabWebViewReplacementContextOwner {
+    func makeContext(for tab: Tab) -> TabWebViewReplacementContext {
+        TabWebViewReplacementContext(
             tabId: tab.id,
             existingWebView: {
                 tab.existingWebView
             },
             primaryWindowId: tab.primaryWindowId,
             trackedWindowIdContainingWebView: { webView in
-                tab.configurationPolicyWebViewReplacementRuntime
+                tab.webViewReplacementRuntime
                     .trackedWindowIdContainingWebView(webView)
             },
             hasTrackedWebViews: { tabId in
-                tab.configurationPolicyWebViewReplacementRuntime.hasTrackedWebViews(tabId)
+                tab.webViewReplacementRuntime.hasTrackedWebViews(tabId)
             },
             setTrackedWebView: { webView, tabId, windowId in
-                tab.configurationPolicyWebViewReplacementRuntime.setTrackedWebView(
+                tab.webViewReplacementRuntime.setTrackedWebView(
                     webView,
                     tabId,
                     windowId
@@ -45,11 +45,11 @@ final class TabConfigurationPolicyWebViewReplacementContextOwner {
             makeNormalTabWebView: { reason in
                 tab.makeNormalTabWebView(reason: reason)
             },
-            invalidateCurrentPermissionPageForWebViewReplacement: { reason in
-                tab.invalidateCurrentPermissionPageForWebViewReplacement(reason: reason)
+            invalidatePermissionPageForReplacement: { reason in
+                tab.invalidatePermissionPageForReplacement(reason: reason)
             },
             removeTrackedWebViews: {
-                tab.configurationPolicyWebViewReplacementRuntime.removeTrackedWebViews(tab)
+                tab.webViewReplacementRuntime.removeTrackedWebViews(tab)
             },
             cleanupCloneWebView: { webView in
                 tab.cleanupCloneWebView(webView)
@@ -64,7 +64,7 @@ final class TabConfigurationPolicyWebViewReplacementContextOwner {
                 tab.assignWebViewToWindow(webView, windowId: windowId)
             },
             refreshWindowAfterWebViewReplacement: { windowId in
-                tab.configurationPolicyWebViewReplacementRuntime
+                tab.webViewReplacementRuntime
                     .refreshWindowAfterWebViewReplacement(windowId)
             }
         )
@@ -72,12 +72,12 @@ final class TabConfigurationPolicyWebViewReplacementContextOwner {
 }
 
 @MainActor
-final class TabConfigurationPolicyWebViewReplacementOwner {
+final class TabWebViewReplacementOwner {
     @discardableResult
     func replaceNormalWebView(
         reason: String,
-        context: TabConfigurationPolicyWebViewReplacementContext,
-        onTrackedWebViewRemovalFailure: () -> Void = {}
+        context: TabWebViewReplacementContext,
+        onTrackedWebViewRemovalFailure: () -> Void = { /* No-op. */ }
     ) -> Bool {
         guard let previousWebView = context.existingWebView() else { return false }
 
@@ -88,7 +88,7 @@ final class TabConfigurationPolicyWebViewReplacementOwner {
         guard let replacementWebView = context.makeNormalTabWebView(reason) else {
             return false
         }
-        context.invalidateCurrentPermissionPageForWebViewReplacement(reason)
+        context.invalidatePermissionPageForReplacement(reason)
 
         let removedTrackedWebViews = context.removeTrackedWebViews()
         if hadTrackedWebViews && !removedTrackedWebViews {

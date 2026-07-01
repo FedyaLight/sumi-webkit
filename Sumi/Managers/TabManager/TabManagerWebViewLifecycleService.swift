@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 struct TabManagerWebViewLifecycleService {
-    private let materializeVisibleTabWebViewIfNeededHandler: (Tab, BrowserWindowState) -> Void
+    private let materializeVisibleWebViewIfNeeded: (Tab, BrowserWindowState) -> Void
     private let loadTabHandler: (Tab) -> Void
     private let unloadTabHandler: (Tab) -> Void
     private let requireRemoveAllWebViewsHandler: (Tab, Bool) -> Void
@@ -11,15 +11,15 @@ struct TabManagerWebViewLifecycleService {
     private let prepareTabHandler: (Tab) -> Void
 
     init(
-        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in },
-        loadTab: @escaping (Tab) -> Void = { _ in },
-        unloadTab: @escaping (Tab) -> Void = { _ in },
-        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in },
+        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
+        loadTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
+        unloadTab: @escaping (Tab) -> Void = { _ in /* No-op. */ },
+        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in /* No-op. */ },
         windowIDsTrackingWebViews: @escaping (UUID) -> [UUID] = { _ in [] },
-        rebuildLiveWebViews: @escaping (Tab, UUID?, URL?) -> Void = { _, _, _ in },
-        prepareTab: @escaping (Tab) -> Void = { _ in }
+        rebuildLiveWebViews: @escaping (Tab, UUID?, URL?) -> Void = { _, _, _ in /* No-op. */ },
+        prepareTab: @escaping (Tab) -> Void = { _ in /* No-op. */ }
     ) {
-        self.materializeVisibleTabWebViewIfNeededHandler = materializeVisibleTabWebViewIfNeeded
+        self.materializeVisibleWebViewIfNeeded = materializeVisibleTabWebViewIfNeeded
         self.loadTabHandler = loadTab
         self.unloadTabHandler = unloadTab
         self.requireRemoveAllWebViewsHandler = requireRemoveAllWebViews
@@ -31,7 +31,7 @@ struct TabManagerWebViewLifecycleService {
     static let inactive = Self()
 
     func materializeVisibleTabWebViewIfNeeded(_ tab: Tab, in windowState: BrowserWindowState) {
-        materializeVisibleTabWebViewIfNeededHandler(tab, windowState)
+        materializeVisibleWebViewIfNeeded(tab, windowState)
     }
 
     func loadTab(_ tab: Tab) {

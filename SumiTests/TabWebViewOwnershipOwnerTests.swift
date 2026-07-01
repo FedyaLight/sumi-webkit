@@ -12,8 +12,8 @@ final class TabWebViewOwnershipOwnerTests: XCTestCase {
 
         owner.assignPrimaryWebView(webView, windowId: windowId)
 
-        XCTAssertTrue(owner.webView === webView)
-        XCTAssertTrue(owner.assignedWebView === webView)
+        XCTAssertIdentical(owner.webView, webView)
+        XCTAssertIdentical(owner.assignedWebView, webView)
         XCTAssertEqual(owner.primaryWindowId, windowId)
         XCTAssertFalse(owner.isUnloaded)
     }
@@ -25,7 +25,7 @@ final class TabWebViewOwnershipOwnerTests: XCTestCase {
         let replacement = WKWebView()
         owner.replaceUntrackedWebView(replacement)
 
-        XCTAssertTrue(owner.webView === replacement)
+        XCTAssertIdentical(owner.webView, replacement)
         XCTAssertNil(owner.assignedWebView)
         XCTAssertNil(owner.primaryWindowId)
     }
@@ -41,7 +41,7 @@ final class TabWebViewOwnershipOwnerTests: XCTestCase {
         XCTAssertNil(owner.webView)
         XCTAssertNil(owner.assignedWebView)
         XCTAssertNil(owner.primaryWindowId)
-        XCTAssertTrue(owner.existingWebView === parked)
+        XCTAssertIdentical(owner.existingWebView, parked)
         XCTAssertTrue(owner.isUnloaded)
     }
 
@@ -67,7 +67,7 @@ final class TabWebViewOwnershipOwnerTests: XCTestCase {
         owner.assignPrimaryWebView(current, windowId: windowId)
 
         XCTAssertFalse(owner.clearCurrentWebViewOwnershipIfIdentical(to: other))
-        XCTAssertTrue(owner.webView === current)
+        XCTAssertIdentical(owner.webView, current)
         XCTAssertEqual(owner.primaryWindowId, windowId)
 
         XCTAssertTrue(owner.clearCurrentWebViewOwnershipIfIdentical(to: current))

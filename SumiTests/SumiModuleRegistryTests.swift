@@ -158,5 +158,4 @@ final class SumiModuleRegistryTests: XCTestCase {
         XCTAssertEqual(extensionsKey, "settings.modules.extensions.enabled")
         XCTAssertEqual(userScriptsKey, "settings.modules.userScripts.enabled")
     }
-
 }

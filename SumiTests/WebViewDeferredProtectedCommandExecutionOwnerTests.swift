@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class WebViewDeferredProtectedCommandExecutionOwnerTests: XCTestCase {
+final class DeferredProtectedCommandTests: XCTestCase {
     func testMatchingTrackedOwnerFlushesDeferredRemoveTrackedWebView() async {
         let owner = WebViewDeferredProtectedCommandExecutionOwner()
         let mediaProtectionOwner = WebViewMediaProtectionOwner()
@@ -212,7 +212,7 @@ final class WebViewDeferredProtectedCommandExecutionOwnerTests: XCTestCase {
         return WebViewDeferredProtectedCommandExecutionOwner.Runtime(
             validationContext: validationContext,
             executeCommand: executeCommand,
-            finishCleanupSuppression: { _ in }
+            finishCleanupSuppression: { _ in /* No-op. */ }
         )
     }
 

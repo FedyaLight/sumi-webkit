@@ -330,7 +330,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
                 probe.events.append("workspaceTheme:\(animate)")
             },
             applySettingsSurfaceNavigation: { _ in probe.events.append("settingsNavigation") },
-            canMaterializeNormalTabWebViewDuringStartup: { _ in true },
+            canMaterializeWebViewDuringStartup: { _ in true },
             markTabAccessed: { _ in probe.events.append("markTabAccessed") },
             webViewCoordinator: { nil },
             handleNativeNowPlayingTabActivated: { _ in probe.events.append("nowPlayingActivated") },

@@ -108,8 +108,7 @@ extension BrowserShortcutLiveTabCloseOwner.Dependencies {
             tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
                 browserManager?.tabManager ?? tabManager
             },
-            recentlyClosedManager: {
-                [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
+            recentlyClosedManager: { [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
                 browserManager?.recentlyClosedManager ?? recentlyClosedManager
             },
             fallbackPlanner: { tabLifecycleService.closeFallbackPlanner },
@@ -125,8 +124,7 @@ extension BrowserShortcutLiveTabCloseOwner.Dependencies {
             showEmptyState: { [weak browserManager] windowState in
                 browserManager?.showEmptyState(in: windowState)
             },
-            restoreShortcutSplitMember: {
-                [weak browserManager] itemId, group, windowState, preserveLiveInstance in
+            restoreShortcutSplitMember: { [weak browserManager] itemId, group, windowState, preserveLiveInstance in
                 browserManager?.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
                     itemId,
                     from: group,

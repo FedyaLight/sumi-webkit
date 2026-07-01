@@ -13,7 +13,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
             "\(tab.id.uuidString.lowercased()):0"
         )
 
-        tab.invalidateCurrentPermissionPageForWebViewReplacement(reason: "test-webview-replacement")
+        tab.invalidatePermissionPageForReplacement(reason: "test-webview-replacement")
 
         XCTAssertEqual(
             tab.currentPermissionPageId(),
@@ -81,7 +81,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
         XCTAssertEqual(context.profilePartitionId, browserManager.currentProfile?.id.uuidString.lowercased())
         XCTAssertTrue(try XCTUnwrap(context.isCurrentPage)())
 
-        tab.invalidateCurrentPermissionPageForWebViewReplacement(reason: "test-webview-replacement")
+        tab.invalidatePermissionPageForReplacement(reason: "test-webview-replacement")
 
         XCTAssertFalse(try XCTUnwrap(context.isCurrentPage)())
         XCTAssertEqual(tab.currentPermissionPageId(), "\(tab.id.uuidString.lowercased()):1")
@@ -90,7 +90,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
     func testPermissionSurfaceOwnerUsesNarrowContextWithoutTab() throws {
         let tabId = UUID()
         let profile = Profile(
-            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")!,
+            id: UUID(uuidString: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee") ?? preconditionFailure("Invalid UUID literal"),
             name: "Permission Context",
             icon: "person"
         )
@@ -123,7 +123,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
                     return pageId == "\(tabIdString):\(generation)"
                         && pageGenerationSnapshot == generation
                 },
-                invalidateCurrentPageForWebViewReplacement: {
+                invalidatePageForWebViewReplacement: {
                     pageGeneration += 1
                 },
                 handlePermissionLifecycleEvent: { event in
@@ -147,7 +147,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(permissionContext.isCurrentPage)())
 
         owner.handleNormalTabPermissionNavigation(to: targetURL)
-        owner.invalidateCurrentPageForWebViewReplacement(reason: "test-replacement")
+        owner.invalidatePageForWebViewReplacement(reason: "test-replacement")
 
         XCTAssertFalse(try XCTUnwrap(permissionContext.isCurrentPage)())
         XCTAssertEqual(owner.currentPageId(), "\(tabId.uuidString.lowercased()):1")

@@ -407,7 +407,6 @@ final class BrowserWindowChromeTests: XCTestCase {
             XCTAssertTrue(button.accessibilityIdentifier().isEmpty, file: file, line: line)
         }
     }
-
 }
 
 @MainActor

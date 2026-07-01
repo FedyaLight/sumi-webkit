@@ -11,7 +11,7 @@ final class FloatingBarSearchSessionOwnerTests: XCTestCase {
             SearchManager.SearchSuggestion(
                 text: "https://example.com",
                 type: .url
-            )
+            ),
         ]
 
         owner.navigateSuggestions(direction: 1)
@@ -31,7 +31,7 @@ final class FloatingBarSearchSessionOwnerTests: XCTestCase {
         let owner = FloatingBarSearchSessionOwner()
         owner.searchManager.suggestions = [
             SearchManager.SearchSuggestion(text: "first", type: .search),
-            SearchManager.SearchSuggestion(text: "second", type: .search)
+            SearchManager.SearchSuggestion(text: "second", type: .search),
         ]
 
         owner.navigateSuggestions(direction: 1)
@@ -60,7 +60,7 @@ final class FloatingBarSearchSessionOwnerTests: XCTestCase {
         )
         owner.searchManager.suggestions = [
             SearchManager.SearchSuggestion(text: "query", type: .search),
-            SearchManager.SearchSuggestion(text: "https://example.com", type: .url)
+            SearchManager.SearchSuggestion(text: "https://example.com", type: .url),
         ]
 
         XCTAssertEqual(owner.visibleSuggestions.map(\.text), ["query"])

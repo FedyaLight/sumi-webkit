@@ -109,7 +109,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
 
     private func makeZoomManager(function: String = #function) -> ZoomManager {
         let suiteName = "BrowserZoomCommandOwnerTests.\(function).\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
+        let defaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         defaults.removePersistentDomain(forName: suiteName)
         addTeardownBlock {
             defaults.removePersistentDomain(forName: suiteName)
@@ -126,8 +126,8 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
         windowStateContainingTab: @escaping @MainActor (Tab) -> BrowserWindowState? = { _ in nil },
         webView: @escaping @MainActor (UUID, UUID) -> WKWebView? = { _, _ in nil },
         sizeOverride: @escaping @MainActor (URL, UUID?) -> Double = { _, _ in 1.0 },
-        incrementZoomStateRevision: @escaping @MainActor () -> Void = {},
-        setZoomPopoverRequest: @escaping @MainActor (ZoomPopoverRequest) -> Void = { _ in }
+        incrementZoomStateRevision: @escaping @MainActor () -> Void = { /* No-op. */ },
+        setZoomPopoverRequest: @escaping @MainActor (ZoomPopoverRequest) -> Void = { _ in /* No-op. */ }
     ) -> BrowserZoomCommandOwner {
         BrowserZoomCommandOwner(
             dependencies: BrowserZoomCommandOwner.Dependencies(
@@ -147,7 +147,7 @@ final class BrowserZoomCommandOwnerTests: XCTestCase {
 
     private func makeTab(url: String, profileId: UUID?) -> Tab {
         let tab = Tab(
-            url: URL(string: url)!,
+            url: URL(string: url) ?? preconditionFailure("Invalid test URL"),
             name: "Test",
             loadsCachedFaviconOnInit: false
         )

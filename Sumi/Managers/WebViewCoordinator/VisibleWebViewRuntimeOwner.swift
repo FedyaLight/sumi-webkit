@@ -121,7 +121,7 @@ final class VisibleWebViewRuntimeOwner {
             guard let tab = runtime.resolveTab(tabId, windowState) else {
                 continue
             }
-            guard runtime.canMaterializeNormalTabWebViewDuringStartup(tab) else {
+            guard runtime.canMaterializeWebViewDuringStartup(tab) else {
                 continue
             }
 
@@ -197,7 +197,7 @@ final class VisibleWebViewRuntimeOwner {
     func preferredPrimaryWebViewCandidate(
         for tabId: UUID,
         runtime: VisibleWebViewPreparationRuntime?,
-        webViewRegistry: WindowWebViewRegistry,
+        webViewRegistry: WindowWebViewRegistry
     ) -> (owner: TrackedWebViewOwner, webView: WKWebView)? {
         let candidates = webViewRegistry.trackedWebViews(for: tabId)
         guard candidates.isEmpty == false else { return nil }

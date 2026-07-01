@@ -48,10 +48,10 @@ final class TabCompositorManagerTests: XCTestCase {
     }
 
     private func makeManager(
-        markTabAccessed: @escaping @MainActor (UUID) -> Void = { _ in },
+        markTabAccessed: @escaping @MainActor (UUID) -> Void = { _ in /* No-op. */ },
         isTabDisplayedInAnyWindow: @escaping @MainActor (UUID) -> Bool = { _ in false },
         registeredCompositorWindows: @escaping @MainActor () -> [BrowserWindowState] = { [] },
-        refreshCompositor: @escaping @MainActor (BrowserWindowState) -> Void = { _ in }
+        refreshCompositor: @escaping @MainActor (BrowserWindowState) -> Void = { _ in /* No-op. */ }
     ) -> TabCompositorManager {
         let manager = TabCompositorManager()
         manager.attach(

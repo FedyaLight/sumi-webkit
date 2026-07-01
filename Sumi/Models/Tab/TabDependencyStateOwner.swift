@@ -4,16 +4,6 @@ struct TabDependencyDataServices {
     let faviconService: any BrowserFaviconServicing
     let faviconImageService: any BrowserFaviconImageServicing
     let visitedLinkStore: any BrowserVisitedLinkStoreManaging
-
-    init(
-        faviconService: any BrowserFaviconServicing,
-        faviconImageService: any BrowserFaviconImageServicing,
-        visitedLinkStore: any BrowserVisitedLinkStoreManaging
-    ) {
-        self.faviconService = faviconService
-        self.faviconImageService = faviconImageService
-        self.visitedLinkStore = visitedLinkStore
-    }
 }
 
 @MainActor

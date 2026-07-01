@@ -103,7 +103,6 @@ final class PerformanceSettingsTests: XCTestCase {
             60,
         ]
         XCTAssertEqual(SumiMemorySaverCustomDelay.presetOptions, expectedPresetOptions)
-
     }
 
     func testPerformanceSettingsCopyMatchesMemoryModeContract() {
@@ -131,5 +130,4 @@ final class PerformanceSettingsTests: XCTestCase {
         )
         .joined(separator: " ")
     }
-
 }

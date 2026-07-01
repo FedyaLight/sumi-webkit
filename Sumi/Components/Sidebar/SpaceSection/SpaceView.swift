@@ -117,7 +117,7 @@ struct SpaceView: View {
     }
 
     var body: some View {
-        let _ = browserContext.tabStructuralRevision()
+        _ = browserContext.tabStructuralRevision()
 
         return VStack(spacing: 4) {
             SpaceTitle(

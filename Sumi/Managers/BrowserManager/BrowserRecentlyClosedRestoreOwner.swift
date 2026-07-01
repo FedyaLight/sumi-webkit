@@ -25,12 +25,12 @@ final class BrowserRecentlyClosedRestoreOwner {
         self.dependencies = dependencies
     }
 
-    var canOfferStartupLastSessionRestoreShortcut: Bool {
+    var canOfferStartupSessionRestoreShortcut: Bool {
         dependencies.startupRestore.canOfferRestoreShortcut
     }
 
     var canRestoreAnyLastSession: Bool {
-        canOfferStartupLastSessionRestoreShortcut || dependencies.lastSessionWindowsStore().canRestoreLastSession
+        canOfferStartupSessionRestoreShortcut || dependencies.lastSessionWindowsStore().canRestoreLastSession
     }
 
     func reopenMostRecentClosedItem() {
@@ -305,13 +305,11 @@ extension BrowserRecentlyClosedRestoreOwner.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         let startupRestoreOwner = browserManager.startupSessionRestoreOwner
         return Self(
-            recentlyClosedManager: {
-                [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
+            recentlyClosedManager: { [weak browserManager, recentlyClosedManager = browserManager.recentlyClosedManager] in
                 browserManager?.recentlyClosedManager ?? recentlyClosedManager
             },
             startupRestore: startupRestoreOwner,
-            lastSessionWindowsStore: {
-                [weak browserManager, lastSessionWindowsStore = browserManager.lastSessionWindowsStore] in
+            lastSessionWindowsStore: { [weak browserManager, lastSessionWindowsStore = browserManager.lastSessionWindowsStore] in
                 browserManager?.lastSessionWindowsStore ?? lastSessionWindowsStore
             },
             currentRegularWindowSnapshots: { [weak browserManager] excludedWindowId in

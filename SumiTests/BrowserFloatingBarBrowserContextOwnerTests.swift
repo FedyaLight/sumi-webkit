@@ -3,7 +3,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class BrowserFloatingBarBrowserContextOwnerTests: XCTestCase {
+final class FloatingBarBrowserContextOwnerTests: XCTestCase {
     func testHistoryDeletionQueryUsesVisitIDWhenAvailable() {
         let visitID = VisitIdentifier(
             uuid: "visit-1",
@@ -56,7 +56,7 @@ final class BrowserFloatingBarBrowserContextOwnerTests: XCTestCase {
         HistoryListItem(
             id: visitID?.description ?? domain,
             visitID: visitID,
-            url: URL(string: "https://\(domain)/page")!,
+            url: URL(string: "https://\(domain)/page") ?? preconditionFailure("Invalid test URL"),
             title: "Example",
             domain: domain,
             siteDomain: siteDomain,

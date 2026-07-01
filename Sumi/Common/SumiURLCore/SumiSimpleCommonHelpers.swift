@@ -33,7 +33,6 @@ extension URL {
             return false
         }
     }
-
 }
 
 struct SumiDecodableHelper {

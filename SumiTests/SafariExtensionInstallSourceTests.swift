@@ -231,5 +231,4 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
         XCTAssertEqual(resolved.sourceBundlePath, appexURL)
         XCTAssertTrue(resolved.resourcesURL.path.contains(".appex/Contents"))
     }
-
 }

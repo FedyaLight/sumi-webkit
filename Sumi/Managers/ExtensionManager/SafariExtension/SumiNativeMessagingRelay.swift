@@ -593,7 +593,7 @@ final class SumiNativeMessagingRelay {
     static func makeError(
         code: ErrorCode,
         description: String? = nil,
-        diagnostic: SafariExtensionNativeMessagingDiagnostic?
+        diagnostic _: SafariExtensionNativeMessagingDiagnostic?
     ) -> NSError {
         let message: String
         switch code {

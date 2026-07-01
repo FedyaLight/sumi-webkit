@@ -8,7 +8,7 @@ struct URLBarExtensionActionContext {
     let orderedPinnedToolbarSlotCount: ([InstalledExtension]) -> Int
     let compactStrip: ([InstalledExtension], BrowserWindowState) -> AnyView
     let hubTiles: ([InstalledExtension], BrowserWindowState) -> AnyView
-    let ensureActionSurfaceMetadataLoadedIfNeeded: () -> Void
+    let ensureActionMetadataLoadedIfNeeded: () -> Void
     let isPinnedToToolbar: (String) -> Bool
     let sumiScriptsManagerEnabled: () -> Bool
 }

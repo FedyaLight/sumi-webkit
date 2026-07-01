@@ -38,12 +38,12 @@ final class BrowserSidebarActionOwner {
         dependencies.liveFolderManager().createRSSFolder(in: space.id, feedURLString: feedURLString)
     }
 
-    func createGitHubPullRequestsLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
+    func createGitHubPRFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
         dependencies.liveFolderManager().createGitHubFolder(in: space.id, kind: .githubPullRequests)
     }
 
-    func createGitHubIssuesLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {
+    func createGitHubIssuesFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
         dependencies.liveFolderManager().createGitHubFolder(in: space.id, kind: .githubIssues)
     }

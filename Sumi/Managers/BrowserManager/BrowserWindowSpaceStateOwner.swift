@@ -313,8 +313,7 @@ extension BrowserWindowSpaceStateOwner.Dependencies {
                     identity: identity
                 )
             },
-            applyTabSelection: {
-                [weak browserManager] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
+            applyTabSelection: { [weak browserManager] tab, windowState, updateSpaceFromTab, updateTheme, rememberSelection, persistSelection in
                 browserManager?.applyTabSelection(
                     tab,
                     in: windowState,

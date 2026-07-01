@@ -13,7 +13,7 @@ final class TabNormalWebViewSetupOwner {
         var didCreateAuxiliaryOverrideWebView = false
 
         guard let profile = context.resolveProfile() else {
-            context.deferWebViewCreationUntilProfileAvailable()
+            context.deferWebViewUntilProfileAvailable()
             return
         }
 
@@ -44,7 +44,7 @@ final class TabNormalWebViewSetupOwner {
 
         if !context.hasCurrentWebView {
             if let auxiliaryOverrideConfiguration {
-                configurationContext.prepareWebViewConfigurationForExtensionRuntime(
+                configurationContext.prepareWebViewConfigForExtensionRuntime(
                     auxiliaryOverrideConfiguration,
                     profile.id,
                     "Tab.setupWebView.configuration"
@@ -71,19 +71,19 @@ final class TabNormalWebViewSetupOwner {
         }
 
         if let webView = context.currentWebView() {
-            context.preparationRuntime.applyOwnedTabWebViewNavigationPreferences(webView)
+            context.preparationRuntime.applyOwnedWebViewNavPreferences(webView)
         }
 
-        let shouldDelayInitialNormalTabRuntimeRegistration =
-            shouldDelayInitialNormalTabRuntimeRegistration(
+        let shouldDelayInitialTabRuntimeRegistration =
+            shouldDelayInitialTabRuntimeRegistration(
                 isPopupHost: context.isPopupHost(),
                 hasExistingWebView: context.hasParkedWebView,
                 didCreateAuxiliaryOverrideWebView: didCreateAuxiliaryOverrideWebView,
                 url: context.currentURL()
             )
 
-        if shouldDelayInitialNormalTabRuntimeRegistration == false {
-            provisioningOwner.registerNormalTabWithExtensionRuntimeIfNeeded(
+        if shouldDelayInitialTabRuntimeRegistration == false {
+            provisioningOwner.registerTabWithExtensionRuntimeIfNeeded(
                 context: context,
                 reason: "Tab.setupWebView"
             )
@@ -97,7 +97,7 @@ final class TabNormalWebViewSetupOwner {
             return
         }
 
-        if shouldDelayInitialNormalTabRuntimeRegistration {
+        if shouldDelayInitialTabRuntimeRegistration {
             let initialWebView = context.currentWebView()
             let hasInitialUserContentController = initialWebView?.configuration
                 .userContentController
@@ -116,7 +116,7 @@ final class TabNormalWebViewSetupOwner {
         context.finishSuspendedRestoreIfNeeded()
     }
 
-    func shouldDelayInitialNormalTabRuntimeRegistration(
+    func shouldDelayInitialTabRuntimeRegistration(
         isPopupHost: Bool,
         hasExistingWebView: Bool,
         didCreateAuxiliaryOverrideWebView: Bool,

@@ -65,7 +65,7 @@ class WindowRegistry {
     @ObservationIgnored
     var mainAppKitWindowProvider: () -> NSWindow? = { NSApp.mainWindow }
 
-    private static let defaultWindowRegistrationTimeoutNanoseconds: UInt64 = 2_000_000_000
+    private static let defaultRegistrationTimeoutNanoseconds: UInt64 = 2_000_000_000
 
     /// Register a new window
     func register(_ window: BrowserWindowState) {
@@ -157,7 +157,7 @@ class WindowRegistry {
     }
 
     private func focusedRegisteredWindow() -> BrowserWindowState? {
-        for appKitWindow in [keyAppKitWindowProvider(), mainAppKitWindowProvider()].compactMap({ $0 }) {
+        for appKitWindow in [keyAppKitWindowProvider(), mainAppKitWindowProvider()].compactMap(\.self) {
             if let windowState = windowState(containing: appKitWindow) {
                 return windowState
             }
@@ -182,7 +182,7 @@ class WindowRegistry {
 
     func awaitNextRegisteredWindow(
         excluding existingWindowIDs: Set<UUID>,
-        timeoutNanoseconds: UInt64 = defaultWindowRegistrationTimeoutNanoseconds
+        timeoutNanoseconds: UInt64 = defaultRegistrationTimeoutNanoseconds
     ) async -> BrowserWindowState? {
         if let existingWindow = windows.values.first(where: {
             existingWindowIDs.contains($0.id) == false

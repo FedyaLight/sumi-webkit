@@ -9,49 +9,12 @@ extension WindowViewBrowserRuntime {
             findManager: browserManager.findManager,
             floatingBarBrowserContext: browserManager.floatingBarBrowserContext,
             sidebarBrowserContext: SidebarBrowserContext.live(browserManager: browserManager),
-            sidebarHostActions: SidebarHostActions(
-                updateSidebarWidth: { [weak browserManager] width, windowState, persist in
-                    browserManager?.updateSidebarWidth(width, for: windowState, persist: persist)
-                },
-                persistWindowSession: { [weak browserManager] windowState in
-                    browserManager?.persistWindowSession(for: windowState)
-                },
-                dismissWorkspaceThemePickerIfNeededCommitting: { [weak browserManager] in
-                    browserManager?.dismissWorkspaceThemePickerIfNeededCommitting()
-                }
-            ),
-            sidebarStructuralInvalidation: Publishers.MergeMany(
-                browserManager.$tabStructuralRevision.map { _ in () }.eraseToAnyPublisher(),
-                browserManager.$currentProfile.map { _ in () }.eraseToAnyPublisher(),
-                browserManager.$isTransitioningProfile.map { _ in () }.eraseToAnyPublisher()
-            )
-            .eraseToAnyPublisher(),
+            sidebarHostActions: sidebarHostActions(browserManager: browserManager),
+            sidebarStructuralInvalidation: sidebarStructuralInvalidation(browserManager: browserManager),
             nativeModalPresentation: { [weak browserManager] in
                 browserManager?.nativeModalPresentation
             },
-            browsingDataDialogContext: { [browserManager, cleanupService = browserManager.browsingDataCleanupService] in
-                SumiBrowsingDataDialogContext(
-                    cleanupService: cleanupService,
-                    profileSnapshot: { [weak browserManager] in
-                        browserManager?.profileManager.profiles ?? []
-                    },
-                    activeCleanupDependencies: { [weak browserManager] in
-                        guard let browserManager,
-                              browserManager.currentProfile != nil
-                        else {
-                            return nil
-                        }
-                        return SumiBrowsingDataDialogCleanupDependencies(
-                            historyManager: browserManager.historyManager,
-                            profiles: browserManager.profileManager.profiles,
-                            websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService
-                        )
-                    },
-                    dismissNativeModalPresentation: { [weak browserManager] in
-                        browserManager?.dismissNativeModalPresentation()
-                    }
-                )
-            },
+            browsingDataDialogContext: browsingDataDialogContext(browserManager: browserManager),
             hasCurrentSpace: { [weak browserManager] in
                 browserManager?.tabManager.currentSpace != nil
             },
@@ -96,6 +59,65 @@ extension WindowViewBrowserRuntime {
             findCurrentTabId: { [weak browserManager] in
                 browserManager?.findManager.currentTab?.id
             }
+        )
+    }
+
+    private static func sidebarHostActions(browserManager: BrowserManager) -> SidebarHostActions {
+        SidebarHostActions(
+            updateSidebarWidth: { [weak browserManager] width, windowState, persist in
+                browserManager?.updateSidebarWidth(width, for: windowState, persist: persist)
+            },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.persistWindowSession(for: windowState)
+            },
+            dismissThemePickerCommittingIfNeeded: { [weak browserManager] in
+                browserManager?.dismissThemePickerCommittingIfNeeded()
+            }
+        )
+    }
+
+    private static func sidebarStructuralInvalidation(
+        browserManager: BrowserManager
+    ) -> AnyPublisher<Void, Never> {
+        Publishers.MergeMany(
+            browserManager.$tabStructuralRevision.map { _ in () }.eraseToAnyPublisher(),
+            browserManager.$currentProfile.map { _ in () }.eraseToAnyPublisher(),
+            browserManager.$isTransitioningProfile.map { _ in () }.eraseToAnyPublisher()
+        )
+        .eraseToAnyPublisher()
+    }
+
+    private static func browsingDataDialogContext(
+        browserManager: BrowserManager
+    ) -> () -> SumiBrowsingDataDialogContext {
+        { [browserManager, cleanupService = browserManager.browsingDataCleanupService] in
+            SumiBrowsingDataDialogContext(
+                cleanupService: cleanupService,
+                profileSnapshot: { [weak browserManager] in
+                    browserManager?.profileManager.profiles ?? []
+                },
+                activeCleanupDependencies: {
+                    activeCleanupDependencies(browserManager: browserManager)
+                },
+                dismissNativeModalPresentation: { [weak browserManager] in
+                    browserManager?.dismissNativeModalPresentation()
+                }
+            )
+        }
+    }
+
+    private static func activeCleanupDependencies(
+        browserManager: BrowserManager?
+    ) -> BrowsingDataDialogCleanupDependencies? {
+        guard let browserManager,
+              browserManager.currentProfile != nil
+        else {
+            return nil
+        }
+        return BrowsingDataDialogCleanupDependencies(
+            historyManager: browserManager.historyManager,
+            profiles: browserManager.profileManager.profiles,
+            websiteDataCleanupService: browserManager.dataServices.websiteDataCleanupService
         )
     }
 }

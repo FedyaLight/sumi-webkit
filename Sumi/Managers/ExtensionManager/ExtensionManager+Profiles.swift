@@ -328,7 +328,7 @@ extension ExtensionManager {
         }
 
         if allowWithoutEnabledExtensions {
-            extensionRuntimeAllowsWithoutEnabledExtensions = true
+            allowsRuntimeWithoutEnabledExtensions = true
         }
 
         let resolvedProfileId = resolvedProfileId(explicitProfileId: profileId)

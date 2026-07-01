@@ -218,7 +218,20 @@ final class SumiContentRuleListMaterializer {
 
     private static func updateEvent(
         for rules: [SumiContentBlockerRules],
-        lookupSucceededIdentifiers: [String]? = nil,
+        lookupFailedIdentifiers: [String] = [],
+        ruleListLookupDuration: TimeInterval? = nil
+    ) -> SumiContentBlockerRulesUpdate {
+        updateEvent(
+            for: rules,
+            lookupSucceededIdentifiers: rules.map(\.storeIdentifier),
+            lookupFailedIdentifiers: lookupFailedIdentifiers,
+            ruleListLookupDuration: ruleListLookupDuration
+        )
+    }
+
+    private static func updateEvent(
+        for rules: [SumiContentBlockerRules],
+        lookupSucceededIdentifiers: [String],
         lookupFailedIdentifiers: [String] = [],
         ruleListLookupDuration: TimeInterval? = nil
     ) -> SumiContentBlockerRulesUpdate {
@@ -227,7 +240,7 @@ final class SumiContentRuleListMaterializer {
             rules: rules,
             changes: changes,
             completionTokens: [],
-            lookupSucceededIdentifiers: (lookupSucceededIdentifiers ?? rules.map(\.storeIdentifier)).sorted(),
+            lookupSucceededIdentifiers: lookupSucceededIdentifiers.sorted(),
             lookupFailedIdentifiers: lookupFailedIdentifiers.sorted(),
             ruleListLookupDuration: ruleListLookupDuration
         )

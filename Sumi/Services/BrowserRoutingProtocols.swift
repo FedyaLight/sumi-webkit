@@ -47,6 +47,6 @@ protocol BrowserPersistenceHandling: AnyObject {
 @MainActor
 protocol BrowserAppTerminationHandling: AnyObject {
     func dismissFloatingBarForActiveWindow(preserveDraft: Bool)
-    func dismissWorkspaceThemePickerIfNeededCommitting()
-    func performSiteDataPolicyAllWindowsClosedCleanup() async
+    func dismissThemePickerCommittingIfNeeded()
+    func performAllWindowsClosedSiteDataCleanup() async
 }

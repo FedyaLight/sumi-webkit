@@ -161,7 +161,7 @@ private struct URLBarZoomPopoverView: View {
 
     var body: some View {
         let tabId = currentTab.id
-        let _ = zoomRevision
+        _ = zoomRevision
 
         HStack(spacing: 0) {
             Text(zoomManager.getZoomPercentageDisplay(for: tabId))

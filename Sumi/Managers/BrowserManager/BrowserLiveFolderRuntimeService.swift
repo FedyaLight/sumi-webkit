@@ -41,7 +41,7 @@ enum BrowserLiveFolderRuntimeService {
                 return browserManager.currentProfile
             },
             folderIds: { [weak browserManager] in
-                guard let browserManager else { return nil }
+                guard let browserManager else { return [] }
                 return Set(
                     browserManager.tabManager.foldersBySpace.values.flatMap { folders in
                         folders.map(\.id)

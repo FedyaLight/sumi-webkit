@@ -6,6 +6,11 @@ import XCTest
 final class SumiPermissionSiteActivityStoreTests: XCTestCase {
     private var temporaryDirectories: [URL] = []
 
+    override func setUp() {
+        super.setUp()
+        temporaryDirectories.removeAll()
+    }
+
     override func tearDown() {
         for directory in temporaryDirectories {
             try? FileManager.default.removeItem(at: directory)

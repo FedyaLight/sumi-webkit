@@ -33,7 +33,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            manager.extensionsModuleEnabledForDelegateCallbacks,
+            manager.extensionsModuleEnabledForCallbacks,
             !sharedEnabled
         )
     }
@@ -54,7 +54,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
         registry.setEnabled(!sharedEnabled, for: .extensions)
 
         XCTAssertEqual(
-            manager.extensionsModuleEnabledForDelegateCallbacks,
+            manager.extensionsModuleEnabledForCallbacks,
             !sharedEnabled
         )
     }
@@ -248,7 +248,7 @@ final class SafariExtensionLazyRuntimePolicyTests: XCTestCase {
 
     private func makeScopedModuleRegistry() -> SumiModuleRegistry {
         let suiteName = UUID().uuidString
-        let userDefaults = UserDefaults(suiteName: suiteName)!
+        let userDefaults = UserDefaults(suiteName: suiteName) ?? preconditionFailure("Unable to create test user defaults")
         addTeardownBlock {
             userDefaults.removePersistentDomain(forName: suiteName)
         }

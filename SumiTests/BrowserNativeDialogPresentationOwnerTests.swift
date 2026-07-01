@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class BrowserNativeDialogPresentationOwnerTests: XCTestCase {
+final class NativeDialogPresentationOwnerTests: XCTestCase {
     func testQuitDialogRunsNativeDismissalOrchestrationInOrder() {
         let harness = NativeDialogOwnerHarness()
 
@@ -55,7 +55,7 @@ final class BrowserNativeDialogPresentationOwnerTests: XCTestCase {
         var cancelCount = 0
         let session = BasicAuthSheetSession(
             model: BasicAuthDialogModel(host: "example.com"),
-            onSubmit: { _, _, _ in },
+            onSubmit: { _, _, _ in /* No-op. */ },
             onCancel: {
                 cancelCount += 1
             }
@@ -92,7 +92,7 @@ final class BrowserNativeDialogPresentationOwnerTests: XCTestCase {
         var cancelCount = 0
         let session = BasicAuthSheetSession(
             model: BasicAuthDialogModel(host: "example.com"),
-            onSubmit: { _, _, _ in },
+            onSubmit: { _, _, _ in /* No-op. */ },
             onCancel: {
                 cancelCount += 1
             }
@@ -172,10 +172,10 @@ private final class NativeDialogOwnerHarness {
             dismissFloatingBarForActiveWindow: { [weak self] preserveDraft in
                 self?.events.append("floating-dismissal:\(preserveDraft)")
             },
-            dismissWorkspaceThemePickerIfNeededDiscarding: { [weak self] in
+            dismissThemePickerDiscardingIfNeeded: { [weak self] in
                 self?.events.append("theme-discard")
             },
-            dismissWorkspaceThemePickerIfNeededCommitting: { [weak self] in
+            dismissThemePickerCommittingIfNeeded: { [weak self] in
                 self?.events.append("theme-commit")
             },
             terminateApplication: { [weak self] in

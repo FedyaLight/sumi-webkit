@@ -15,7 +15,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
             orderedPinnedToolbarSlotCount: { _ in 7 },
             compactStrip: { _, _ in AnyView(EmptyView()) },
             hubTiles: { _, _ in AnyView(EmptyView()) },
-            ensureActionSurfaceMetadataLoadedIfNeeded: {
+            ensureActionMetadataLoadedIfNeeded: {
                 metadataLoadCount += 1
             },
             isPinnedToToolbar: { extensionId in
@@ -49,7 +49,7 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
         XCTAssertTrue(context.extensionActions.sumiScriptsManagerEnabled())
         XCTAssertEqual(context.siteControlsSnapshot(nil, nil, false, false), resolvedSnapshot)
 
-        context.extensionActions.ensureActionSurfaceMetadataLoadedIfNeeded()
+        context.extensionActions.ensureActionMetadataLoadedIfNeeded()
 
         XCTAssertEqual(metadataLoadCount, 1)
     }

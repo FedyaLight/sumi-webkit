@@ -21,8 +21,8 @@ final class BrowserSidebarCommandRoutingOwner {
         let toggleDownloadsPopover: @MainActor (BrowserWindowState) -> Void
         let createFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
         let createRSSLiveFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-        let createGitHubPullRequestsLiveFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
-        let createGitHubIssuesLiveFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
+        let createGitHubPRFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
+        let createGitHubIssuesFolderInCurrentSpace: @MainActor (BrowserWindowState) -> Void
     }
 
     private let dependencies: Dependencies
@@ -87,11 +87,11 @@ final class BrowserSidebarCommandRoutingOwner {
             createRSSLiveFolderInCurrentSpace: { [weak self] windowState in
                 self?.dependencies.createRSSLiveFolderInCurrentSpace(windowState)
             },
-            createGitHubPullRequestsLiveFolderInCurrentSpace: { [weak self] windowState in
-                self?.dependencies.createGitHubPullRequestsLiveFolderInCurrentSpace(windowState)
+            createGitHubPRFolderInCurrentSpace: { [weak self] windowState in
+                self?.dependencies.createGitHubPRFolderInCurrentSpace(windowState)
             },
-            createGitHubIssuesLiveFolderInCurrentSpace: { [weak self] windowState in
-                self?.dependencies.createGitHubIssuesLiveFolderInCurrentSpace(windowState)
+            createGitHubIssuesFolderInCurrentSpace: { [weak self] windowState in
+                self?.dependencies.createGitHubIssuesFolderInCurrentSpace(windowState)
             }
         )
     }
@@ -167,13 +167,13 @@ extension BrowserSidebarCommandRoutingOwner.Dependencies {
             createRSSLiveFolderInCurrentSpace: { [weak browserManager] windowState in
                 browserManager?.sidebarCommandService.folderCommand.createRSSLiveFolderInCurrentSpace(in: windowState)
             },
-            createGitHubPullRequestsLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.folderCommand.createGitHubPullRequestsLiveFolderInCurrentSpace(
+            createGitHubPRFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.sidebarCommandService.folderCommand.createGitHubPRFolderInCurrentSpace(
                     in: windowState
                 )
             },
-            createGitHubIssuesLiveFolderInCurrentSpace: { [weak browserManager] windowState in
-                browserManager?.sidebarCommandService.folderCommand.createGitHubIssuesLiveFolderInCurrentSpace(
+            createGitHubIssuesFolderInCurrentSpace: { [weak browserManager] windowState in
+                browserManager?.sidebarCommandService.folderCommand.createGitHubIssuesFolderInCurrentSpace(
                     in: windowState
                 )
             }

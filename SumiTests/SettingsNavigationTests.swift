@@ -335,7 +335,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(firstSettingsTab.name, "Settings")
         XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
         XCTAssertEqual(settings.currentSettingsTab, .privacy)
-        XCTAssertTrue(browserManager.tabManager.tabs(in: space).filter(\.representsSumiSettingsSurface).isEmpty)
+        XCTAssertFalse(browserManager.tabManager.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
 
         browserManager.openSettingsTab(selecting: .about, in: windowState)
 
@@ -345,7 +345,7 @@ final class SettingsNavigationTests: XCTestCase {
         XCTAssertEqual(firstSettingsTab.url, SettingsTabs.about.settingsSurfaceURL)
         XCTAssertEqual(windowState.currentTabId, firstSettingsTab.id)
         XCTAssertEqual(settings.currentSettingsTab, .about)
-        XCTAssertTrue(browserManager.tabManager.tabs(in: space).filter(\.representsSumiSettingsSurface).isEmpty)
+        XCTAssertFalse(browserManager.tabManager.tabs(in: space).contains(where: \.representsSumiSettingsSurface))
     }
 
     func testFloatingBarCurrentSettingsURLCommitAppliesPaneNavigation() {

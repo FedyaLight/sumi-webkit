@@ -29,26 +29,26 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             },
             shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime(
                 cleanupUserScripts: { controller, webViewId in
-                    XCTAssertTrue(controller === webView.configuration.userContentController)
+                    XCTAssertIdentical(controller, webView.configuration.userContentController)
                     events.append(.cleanupUserScripts(webViewId))
                 },
                 removeWebViewFromContainers: { candidateWebView in
-                    XCTAssertTrue(candidateWebView === webView)
+                    XCTAssertIdentical(candidateWebView, webView)
                     events.append(.removeFromContainers)
                 }
             ),
             currentPermissionPageId: { "page-1" },
             profilePartitionId: { "profile-1" },
             unbindAudioState: { candidateWebView in
-                XCTAssertTrue(candidateWebView === webView)
+                XCTAssertIdentical(candidateWebView, webView)
                 events.append(.unbindAudio)
             },
             removeNavigationStateObservers: { candidateWebView in
-                XCTAssertTrue(candidateWebView === webView)
+                XCTAssertIdentical(candidateWebView, webView)
                 events.append(.removeNavigationStateObservers)
             },
             removeNavigationDelegateBundle: { candidateWebView in
-                XCTAssertTrue(candidateWebView === webView)
+                XCTAssertIdentical(candidateWebView, webView)
                 events.append(.removeNavigationDelegateBundle)
             }
         )
@@ -64,7 +64,7 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
                 reason: "normal-tab-webview-cleanup"
             )
         )
-        XCTAssertTrue(deferredWebView === webView)
+        XCTAssertIdentical(deferredWebView, webView)
         XCTAssertEqual(deferredTabId, tabId)
         XCTAssertEqual(deferredReason, "Tab.cleanupCloneWebView")
         XCTAssertEqual(
@@ -121,17 +121,17 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
 
     private func makeContext(
         tabId: UUID,
-        handlePermissionLifecycleEvent: @escaping TabWebViewCleanupOwner.PermissionLifecycleEventHandler = { _ in },
+        handlePermissionLifecycleEvent: @escaping TabWebViewCleanupOwner.PermissionLifecycleEventHandler = { _ in /* No-op. */ },
         deferProtectedWebViewCleanup: @escaping TabWebViewCleanupOwner.ProtectedWebViewCleanupDeferrer = { _, _, _ in false },
         shutdownRuntime: SumiWebViewShutdown.NormalTabRuntime = SumiWebViewShutdown.NormalTabRuntime(
-            cleanupUserScripts: { _, _ in },
-            removeWebViewFromContainers: { _ in }
+            cleanupUserScripts: { _, _ in /* No-op. */ },
+            removeWebViewFromContainers: { _ in /* No-op. */ }
         ),
         currentPermissionPageId: @escaping () -> String = { "page" },
         profilePartitionId: @escaping () -> String? = { nil },
-        unbindAudioState: @escaping (WKWebView) -> Void = { _ in },
-        removeNavigationStateObservers: @escaping (WKWebView) -> Void = { _ in },
-        removeNavigationDelegateBundle: @escaping (WKWebView) -> Void = { _ in }
+        unbindAudioState: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
+        removeNavigationStateObservers: @escaping (WKWebView) -> Void = { _ in /* No-op. */ },
+        removeNavigationDelegateBundle: @escaping (WKWebView) -> Void = { _ in /* No-op. */ }
     ) -> TabWebViewCleanupOwner.Context {
         TabWebViewCleanupOwner.Context(
             tabId: tabId,
@@ -139,18 +139,18 @@ final class TabWebViewCleanupOwnerTests: XCTestCase {
             handlePermissionLifecycleEvent: handlePermissionLifecycleEvent,
             deferProtectedWebViewCleanup: deferProtectedWebViewCleanup,
             shutdownRuntime: shutdownRuntime,
-            notifyNowPlayingTabUnloaded: { _ in },
+            notifyNowPlayingTabUnloaded: { _ in /* No-op. */ },
             currentWebView: { nil },
-            clearCurrentWebView: {},
+            clearCurrentWebView: { /* No-op. */ },
             removeAllWebViews: { _ in false },
             currentPermissionPageId: currentPermissionPageId,
             profilePartitionId: profilePartitionId,
-            invalidateCurrentPermissionPageForWebViewReplacement: { _ in },
+            invalidatePermissionPageForReplacement: { _ in /* No-op. */ },
             unbindAudioState: unbindAudioState,
             removeNavigationStateObservers: removeNavigationStateObservers,
             removeNavigationDelegateBundle: removeNavigationDelegateBundle,
-            resetPlaybackActivity: {},
-            setLoadingIdle: {}
+            resetPlaybackActivity: { /* No-op. */ },
+            setLoadingIdle: { /* No-op. */ }
         )
     }
 }

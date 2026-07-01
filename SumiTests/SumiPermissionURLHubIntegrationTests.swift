@@ -136,7 +136,6 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
             profilePartitionId: context.profilePartitionId,
             isEphemeralProfile: context.isEphemeralProfile
         ).isEmpty)
-
     }
 
     func testURLHubRowsExposeOnlySupportedCurrentSitePermissionSurfaces() async throws {
@@ -325,5 +324,4 @@ final class SumiPermissionURLHubIntegrationTests: XCTestCase {
             createdAt: sumiPermissionIntegrationNow
         )
     }
-
 }

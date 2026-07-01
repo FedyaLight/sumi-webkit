@@ -6,6 +6,11 @@ import XCTest
 
 @MainActor
 final class SumiFaviconAccentColorTests: XCTestCase {
+    override func setUp() {
+        super.setUp()
+        SumiFaviconAccentCache.shared.resetForTesting()
+    }
+
     override func tearDown() {
         // The accent cache is a shared singleton; clear it between tests so one
         // test's stored colors cannot leak into another.

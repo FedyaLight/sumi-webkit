@@ -367,7 +367,6 @@ final class SumiFaviconNetworkClient: SumiFaviconNetworkFetching, @unchecked Sen
             }
         }
     }
-
 }
 
 @MainActor

@@ -41,7 +41,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             harness.browserManager.lastSessionWindowsStore.tabSnapshot?.tabs.map(\.id).contains(regularTab.id),
             true
         )
-        XCTAssertTrue(harness.browserManager.canOfferStartupLastSessionRestoreShortcut)
+        XCTAssertTrue(harness.browserManager.canOfferStartupSessionRestoreShortcut)
     }
 
     func testSpecificPageStartupOpensExactlyOneConfiguredRegularTabAndArchivesManualRestoreSnapshot() throws {
@@ -66,7 +66,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
             harness.browserManager.lastSessionWindowsStore.tabSnapshot?.tabs.map(\.id).contains(previousTab.id),
             true
         )
-        XCTAssertTrue(harness.browserManager.canOfferStartupLastSessionRestoreShortcut)
+        XCTAssertTrue(harness.browserManager.canOfferStartupSessionRestoreShortcut)
     }
 
     func testSpecificPageStartupWithStaleWindowSpaceDoesNotUseGlobalCurrentSpaceOrFirstSpace() throws {

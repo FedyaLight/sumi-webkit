@@ -403,7 +403,7 @@ final class SumiExternalSchemePermissionBridgeTests: XCTestCase {
         XCTAssertEqual(context.request.permissionTypes, [.externalScheme("mailto")])
     }
 
-    func testSecurityContextPropagatesGlanceSurfaceFromTabContext() throws {
+    func testSecurityContextPropagatesGlanceSurfaceFromTabContext() {
         let bridge = SumiExternalSchemePermissionBridge(
             coordinator: ExternalSchemeFakePermissionCoordinator(
                 decision: externalCoordinatorDecision(.promptRequired, reason: "ask")

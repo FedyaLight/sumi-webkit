@@ -332,7 +332,7 @@ private struct SumiScriptsToolbarControl: View {
             SumiScriptsPopupView(
                 manager: manager,
                 currentURL: currentTab?.url,
-                webView: currentTab.map(browserContext.webView) ?? nil
+                webView: currentTab.map(browserContext.webView)
             )
         }
     }
@@ -720,8 +720,8 @@ struct ExtensionActionButton: View {
             currentProfileID: { nil },
             hasLoadedInitialData: { true },
             webView: { $0.existingWebView },
-            openSettingsTab: { _ in },
-            showExtensionUnavailableAlert: { _, _ in }
+            openSettingsTab: { _ in /* No-op. */ },
+            showExtensionUnavailableAlert: { _, _ in /* No-op. */ }
         )
     )
 }

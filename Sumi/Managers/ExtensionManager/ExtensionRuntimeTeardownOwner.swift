@@ -91,7 +91,7 @@ final class ExtensionRuntimeTeardownOwner {
             }
             manager.extensionControllersByProfile.removeAll()
             manager.profileRuntimeOwner.removeAllWebsiteDataStores()
-            manager.extensionRuntimeAllowsWithoutEnabledExtensions = false
+            manager.allowsRuntimeWithoutEnabledExtensions = false
             manager.runtimeState = manager.isExtensionSupportAvailable ? .idle : .unavailable
             manager.extensionsLoaded = false
         }

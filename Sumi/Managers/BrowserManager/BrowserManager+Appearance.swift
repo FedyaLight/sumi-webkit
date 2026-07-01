@@ -54,13 +54,13 @@ extension BrowserManager {
     }
 
     /// Discards any open workspace theme picker session (used before presenting app-wide modals).
-    func dismissWorkspaceThemePickerIfNeededDiscarding() {
+    func dismissThemePickerDiscardingIfNeeded() {
         guard let session = workspaceThemePickerSession else { return }
         dismissWorkspaceThemePickerDiscarding(sessionID: session.id)
     }
 
     /// Commits and closes any open workspace theme picker session.
-    func dismissWorkspaceThemePickerIfNeededCommitting() {
+    func dismissThemePickerCommittingIfNeeded() {
         guard let session = workspaceThemePickerSession else { return }
         dismissWorkspaceThemePicker(sessionID: session.id)
     }

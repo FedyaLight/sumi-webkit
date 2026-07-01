@@ -72,7 +72,7 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
     func webView(
         _ webView: WKWebView,
         runJavaScriptAlertPanelWithMessage message: String,
-        initiatedByFrame frame: WKFrameInfo,
+        initiatedByFrame _: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable () -> Void
     ) {
         let alert = NSAlert()
@@ -91,7 +91,7 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
     func webView(
         _ webView: WKWebView,
         runJavaScriptConfirmPanelWithMessage message: String,
-        initiatedByFrame frame: WKFrameInfo,
+        initiatedByFrame _: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable (Bool) -> Void
     ) {
         let alert = NSAlert()
@@ -112,7 +112,7 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
         _ webView: WKWebView,
         runJavaScriptTextInputPanelWithPrompt prompt: String,
         defaultText: String?,
-        initiatedByFrame frame: WKFrameInfo,
+        initiatedByFrame _: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable (String?) -> Void
     ) {
         let alert = NSAlert()
@@ -139,6 +139,8 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
         _ webView: WKWebView,
         runOpenPanelWith parameters: WKOpenPanelParameters,
         initiatedByFrame frame: WKFrameInfo,
+        // WebKit uses nil here to report open-panel cancellation.
+        // swiftlint:disable:next discouraged_optional_collection
         completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void
     ) {
         guard let tab else {
@@ -192,6 +194,8 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
     }
 
     @objc(_webView:requestDisplayCapturePermissionForOrigin:initiatedByFrame:withSystemAudio:decisionHandler:)
+    // Private WebKit display-capture delegate selector must keep the leading underscore.
+    // swiftlint:disable:next identifier_name
     func _webView(
         _ webView: WKWebView,
         requestDisplayCapturePermissionForOrigin origin: WKSecurityOrigin,

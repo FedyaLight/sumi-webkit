@@ -7,6 +7,11 @@ import XCTest
 final class SumiCommandsBrowserContextTests: XCTestCase {
     private var temporaryDirectories: [URL] = []
 
+    override func setUp() async throws {
+        try await super.setUp()
+        temporaryDirectories.removeAll()
+    }
+
     override func tearDown() async throws {
         for directory in temporaryDirectories {
             try? FileManager.default.removeItem(at: directory)
@@ -31,7 +36,7 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
                 prefill: "https://preview.example/session",
                 navigateCurrentTab: true,
                 presentationReason: .keyboard
-            )
+            ),
         ])
     }
 
@@ -97,7 +102,7 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
             .reopenAllWindows,
             .openHistoryURL(historyURL),
             .showHistory,
-            .clearAllHistory
+            .clearAllHistory,
         ])
         XCTAssertEqual(bookmarkRouting.events, [
             .requestEditor,
@@ -105,7 +110,7 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
             .manageBookmarks,
             .importBookmarks,
             .exportBookmarks,
-            .openBookmarkURL(bookmarkURL)
+            .openBookmarkURL(bookmarkURL),
         ])
     }
 
@@ -211,22 +216,22 @@ private final class FakeCommandBrowserActions: SumiCommandBrowserActionRouting {
         _ = (pane, windowState)
     }
 
-    func setAsDefaultBrowser() {}
-    func clearCurrentPageCookies() {}
-    func showGradientEditor() {}
-    func showQuitDialog() {}
-    func closeCurrentTab() {}
+    func setAsDefaultBrowser() { /* No-op. */ }
+    func clearCurrentPageCookies() { /* No-op. */ }
+    func showGradientEditor() { /* No-op. */ }
+    func showQuitDialog() { /* No-op. */ }
+    func closeCurrentTab() { /* No-op. */ }
     func closeCurrentTab(in windowState: BrowserWindowState) {
         closedTabWindowIds.append(windowState.id)
     }
-    func closeActiveWindow() {}
+    func closeActiveWindow() { /* No-op. */ }
     func closeWindow(_ windowState: BrowserWindowState) {
         closedWindowIds.append(windowState.id)
     }
-    func undoCloseTab() {}
-    func openNewTabSurfaceInActiveWindow() {}
-    func createNewWindow() {}
-    func createIncognitoWindow() {}
+    func undoCloseTab() { /* No-op. */ }
+    func openNewTabSurfaceInActiveWindow() { /* No-op. */ }
+    func createNewWindow() { /* No-op. */ }
+    func createIncognitoWindow() { /* No-op. */ }
 
     func focusFloatingBarForActiveWindow(
         prefill: String,
@@ -242,16 +247,16 @@ private final class FakeCommandBrowserActions: SumiCommandBrowserActionRouting {
         )
     }
 
-    func copyCurrentURL() {}
-    func toggleSidebar() {}
-    func showFindBar() {}
-    func refreshCurrentTabInActiveWindow() {}
-    func zoomInCurrentTab() {}
-    func zoomOutCurrentTab() {}
-    func resetZoomCurrentTab() {}
-    func hardReloadCurrentPage() {}
-    func openWebInspector() {}
-    func toggleMuteCurrentTabInActiveWindow() {}
+    func copyCurrentURL() { /* No-op. */ }
+    func toggleSidebar() { /* No-op. */ }
+    func showFindBar() { /* No-op. */ }
+    func refreshCurrentTabInActiveWindow() { /* No-op. */ }
+    func zoomInCurrentTab() { /* No-op. */ }
+    func zoomOutCurrentTab() { /* No-op. */ }
+    func resetZoomCurrentTab() { /* No-op. */ }
+    func hardReloadCurrentPage() { /* No-op. */ }
+    func openWebInspector() { /* No-op. */ }
+    func toggleMuteCurrentTabInActiveWindow() { /* No-op. */ }
 }
 
 @MainActor

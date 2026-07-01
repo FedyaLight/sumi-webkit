@@ -118,7 +118,7 @@ final class SumiNativeNowPlayingController: ObservableObject, SumiNativeNowPlayi
 
         if currentOwner == nil,
            pausedCardOwner == nil,
-           !candidateProvider(runtimeContext).contains(where: { $0.tab.audioState.isPlayingAudio }) {
+           !candidateProvider(runtimeContext).contains(where: \.tab.audioState.isPlayingAudio) {
             clearCardState()
             return
         }

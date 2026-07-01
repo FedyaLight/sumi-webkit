@@ -76,51 +76,51 @@ final class TabDependencyStateOwnerTests: XCTestCase {
 
 @MainActor
 private final class FakeTabDependencyFaviconService: BrowserFaviconServicing {
-    func partition(profile: Profile?) -> SumiFaviconPartition { fatalError("Not needed") }
-    func invalidateSite(domain: String, profile: Profile?) {}
-    func syncShortcutPins(_ pins: [ShortcutPin]) {}
-    func syncBookmarks(_ bookmarks: [SumiBookmark], partition: SumiFaviconPartition) {}
-    func clearFaviconPartition(for profile: Profile) {}
+    func partition(profile: Profile?) -> SumiFaviconPartition { .regular(profile?.id) }
+    func invalidateSite(domain _: String, profile _: Profile?) { /* No-op. */ }
+    func syncShortcutPins(_ _: [ShortcutPin]) { /* No-op. */ }
+    func syncBookmarks(_ _: [SumiBookmark], partition _: SumiFaviconPartition) { /* No-op. */ }
+    func clearFaviconPartition(for _: Profile) { /* No-op. */ }
 
     #if DEBUG
-    func drainRuntimeTasksForTests(cancel: Bool) async {}
+    func drainRuntimeTasksForTests(cancel _: Bool) async { /* No-op. */ }
     #endif
 }
 
 private final class FakeTabDependencyFaviconImageService: BrowserFaviconImageServicing {
-    func cachedPreparedImage(for request: SumiPreparedFaviconRequest) -> NSImage? { nil }
-    func cachedSelection(for pageURL: URL, partition: SumiFaviconPartition) -> SumiStoredFaviconSelection? { nil }
+    func cachedPreparedImage(for _: SumiPreparedFaviconRequest) -> NSImage? { nil }
+    func cachedSelection(for _: URL, partition _: SumiFaviconPartition) -> SumiStoredFaviconSelection? { nil }
     func preparedImage(
-        for request: SumiPreparedFaviconRequest,
-        priority: SumiFaviconFetchPriority,
-        scheduleFetchOnMiss: Bool
+        for _: SumiPreparedFaviconRequest,
+        priority _: SumiFaviconFetchPriority,
+        scheduleFetchOnMiss _: Bool
     ) async -> NSImage? {
         nil
     }
 
     @MainActor
     func ingestVisibleTabDiscovery(
-        links: [SumiFaviconDiscoveredLink],
-        documentURL: URL,
-        baseURL: URL?,
-        partition: SumiFaviconPartition,
-        webView: WKWebView?,
-        aliasPageURLs: [URL]
+        links _: [SumiFaviconDiscoveredLink],
+        documentURL _: URL,
+        baseURL _: URL?,
+        partition _: SumiFaviconPartition,
+        webView _: WKWebView?,
+        aliasPageURLs _: [URL]
     ) async -> NSImage? {
         nil
     }
 
     func scheduleColdFetch(
-        for pageURL: URL,
-        partition: SumiFaviconPartition,
-        priority: SumiFaviconFetchPriority
-    ) {}
+        for _: URL,
+        partition _: SumiFaviconPartition,
+        priority _: SumiFaviconFetchPriority
+    ) { /* No-op. */ }
 
     func ingestLocalExtensionIcon(
-        fileURL: URL,
-        documentURL: URL,
-        partition: SumiFaviconPartition,
-        context: SumiFaviconDisplayContext
+        fileURL _: URL,
+        documentURL _: URL,
+        partition _: SumiFaviconPartition,
+        context _: SumiFaviconDisplayContext
     ) async -> NSImage? {
         nil
     }
@@ -128,19 +128,19 @@ private final class FakeTabDependencyFaviconImageService: BrowserFaviconImageSer
 
 @MainActor
 private final class FakeTabDependencyVisitedLinkStore: BrowserVisitedLinkStoreManaging {
-    func replaceVisitedLinks(_ urls: [URL], for profileId: UUID) {}
-    func applyStore(to configuration: WKWebViewConfiguration, for profile: Profile) {}
-    func applyStore(to configuration: WKWebViewConfiguration, profileId: UUID) {}
+    func replaceVisitedLinks(_ _: [URL], for _: UUID) { /* No-op. */ }
+    func applyStore(to _: WKWebViewConfiguration, for _: Profile) { /* No-op. */ }
+    func applyStore(to _: WKWebViewConfiguration, profileId _: UUID) { /* No-op. */ }
     func applyStoreFromSourceIfAvailable(
-        to configuration: WKWebViewConfiguration,
-        source: WKWebViewConfiguration?
-    ) {}
-    func enableVisitedLinkRecording(on webView: WKWebView) {}
+        to _: WKWebViewConfiguration,
+        source _: WKWebViewConfiguration?
+    ) { /* No-op. */ }
+    func enableVisitedLinkRecording(on _: WKWebView) { /* No-op. */ }
     func recordVisitedLink(
-        _ url: URL,
-        for profile: Profile,
-        sourceConfiguration: WKWebViewConfiguration?
-    ) {}
-    func preloadVisitedLinks(_ urls: [URL], for profileId: UUID) {}
-    func discardStore(for profileId: UUID) {}
+        _ _: URL,
+        for _: Profile,
+        sourceConfiguration _: WKWebViewConfiguration?
+    ) { /* No-op. */ }
+    func preloadVisitedLinks(_ _: [URL], for _: UUID) { /* No-op. */ }
+    func discardStore(for _: UUID) { /* No-op. */ }
 }

@@ -369,8 +369,8 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             tab: tab,
             windowState: windowState,
             isEphemeral: false,
-            onSelector: { _ in },
-            onFinish: {}
+            onSelector: { _ in /* No-op. */ },
+            onFinish: { /* No-op. */ }
         )
         browserManager.boostsModule.stopZapSelection()
         return started
@@ -621,7 +621,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     func testBrowserManagerRuntimeDataServicesUseInjectedBundle() async throws {
         let browsingDataCleanupService = makeBrowsingDataCleanupService()
-        let automaticCleanupService = FakeAutomaticBrowsingDataCleanupScheduler()
+        let automaticCleanupService = FakeBrowsingDataCleanupScheduler()
         let siteDataPolicyService = FakeBrowserSiteDataPolicyService()
         let faviconService = FakeBrowserFaviconService()
         let visitedLinkStore = FakeBrowserVisitedLinkStore()
@@ -662,7 +662,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         XCTAssertEqual(siteDataPolicyService.enforcedURLs, [tab.url])
         XCTAssertEqual(siteDataPolicyService.enforcedProfileIds, [initialProfile.id])
 
-        await browserManager.performSiteDataPolicyAllWindowsClosedCleanup()
+        await browserManager.performAllWindowsClosedSiteDataCleanup()
 
         XCTAssertEqual(
             siteDataPolicyService.closedCleanupProfileIds,
@@ -715,7 +715,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             dataServices: BrowserManagerDataServices(
                 websiteDataCleanupService: FakeWebsiteDataCleanupService(),
                 browsingDataCleanupService: browsingDataCleanupService,
-                automaticBrowsingDataCleanupService: FakeAutomaticBrowsingDataCleanupScheduler(),
+                automaticBrowsingDataCleanupService: FakeBrowsingDataCleanupScheduler(),
                 siteDataPolicyStore: try makeSiteDataPolicyStore(),
                 siteDataPolicyEnforcementService: FakeBrowserSiteDataPolicyService(),
                 faviconService: faviconService,
@@ -902,7 +902,7 @@ private final class FakeNativeNowPlayingController: SumiNativeNowPlayingRuntimeC
 }
 
 @MainActor
-private final class FakeAutomaticBrowsingDataCleanupScheduler: BrowserAutomaticBrowsingDataCleanupScheduling {
+private final class FakeBrowsingDataCleanupScheduler: BrowsingDataCleanupScheduling {
     struct Schedule: Equatable {
         let retentionPeriod: SumiBrowsingDataRetentionPeriod
         let profileIds: [UUID]
@@ -914,24 +914,16 @@ private final class FakeAutomaticBrowsingDataCleanupScheduler: BrowserAutomaticB
 
     private(set) var schedules: [Schedule] = []
 
-    func scheduleIfNeeded(
-        retentionPeriod: SumiBrowsingDataRetentionPeriod,
-        historyManager: HistoryManager,
-        profiles: [Profile],
-        currentProfileId: UUID?,
-        force: Bool,
-        reason: String,
-        delayNanoseconds: UInt64?
-    ) {
-        _ = historyManager
+    func scheduleIfNeeded(_ request: SumiBrowsingDataCleanupScheduleRequest) {
+        _ = request.historyManager
         schedules.append(
             Schedule(
-                retentionPeriod: retentionPeriod,
-                profileIds: profiles.map(\.id),
-                currentProfileId: currentProfileId,
-                force: force,
-                reason: reason,
-                delayNanoseconds: delayNanoseconds
+                retentionPeriod: request.retentionPeriod,
+                profileIds: request.profiles.map(\.id),
+                currentProfileId: request.currentProfileId,
+                force: request.force,
+                reason: request.reason,
+                delayNanoseconds: request.delayNanoseconds
             )
         )
     }
@@ -1179,6 +1171,8 @@ private final class FakeBrowsingDataCredentialStore: SumiBasicAuthCredentialClea
 
     func deleteCredentials(
         profilePartitionId: UUID?,
+        // nil means the cleanup scope includes both regular and ephemeral profile credentials.
+        // swiftlint:disable:next discouraged_optional_boolean
         isEphemeralProfile: Bool?
     ) -> Bool {
         _ = (profilePartitionId, isEphemeralProfile)

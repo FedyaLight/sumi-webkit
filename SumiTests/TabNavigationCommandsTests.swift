@@ -161,5 +161,5 @@ private final class DelayedNavigationUserContentController:
         continuation = nil
     }
 
-    func cleanUpBeforeClosing() {}
+    func cleanUpBeforeClosing() { /* No-op. */ }
 }

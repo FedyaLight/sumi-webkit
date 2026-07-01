@@ -73,7 +73,6 @@ enum SidebarPassiveScrollIndicatorLayout {
             thumbHeight: thumbHeight
         )
     }
-
 }
 
 private struct SidebarPassiveScrollIndicatorState: Equatable {

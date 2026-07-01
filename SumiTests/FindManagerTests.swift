@@ -134,7 +134,7 @@ final class FindManagerTests: XCTestCase {
         XCTAssertEqual(lookup?.tabId, tab.id)
         XCTAssertEqual(lookup?.windowId, windowId)
         XCTAssertEqual(manager.findFieldFocusGeneration, 1)
-        XCTAssertTrue(manager.currentModel === tab.findInPage.model)
+        XCTAssertIdentical(manager.currentModel, tab.findInPage.model)
     }
 }
 

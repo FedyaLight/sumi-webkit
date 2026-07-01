@@ -1,10 +1,10 @@
-import XCTest
 import SwiftData
+import XCTest
 
 @testable import Sumi
 
 @MainActor
-final class BrowserSidebarSplitShortcutRoutingOwnerTests: XCTestCase {
+final class SidebarSplitShortcutRoutingOwnerTests: XCTestCase {
     func testUnloadShortcutHostedSplitGroupWithStaleWindowSpaceDoesNotSelectGlobalFirstTab() throws {
         let browserManager = BrowserManager(
             startupPersistence: BrowserManagerStartupPersistence(
@@ -65,13 +65,13 @@ final class BrowserSidebarSplitShortcutRoutingOwnerTests: XCTestCase {
                         tabManager.spaces.first { $0.id == requested }
                     }
                 },
-                setActiveSpace: { _, _ in },
+                setActiveSpace: { _, _ in /* No-op. */ },
                 selectTab: { tab, _ in
                     selectedTabs.append(tab.id)
                 },
-                refreshCompositor: { _ in },
-                performImmediateVisualHandoffIfPossible: { _ in },
-                persistWindowSession: { _ in },
+                refreshCompositor: { _ in /* No-op. */ },
+                performImmediateVisualHandoffIfPossible: { _ in /* No-op. */ },
+                persistWindowSession: { _ in /* No-op. */ },
                 showEmptyState: { windowState in
                     didShowEmptyState = true
                     windowState.isShowingEmptyState = true

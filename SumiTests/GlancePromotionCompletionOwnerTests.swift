@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class GlancePromotionCompletionOwnerTests: XCTestCase {
-    func testFallbackCompletesCurrentPromotion() async throws {
+    func testFallbackCompletesCurrentPromotion() async {
         let owner = GlancePromotionCompletionOwner()
         let sessionID = UUID()
         var fallbackSessionIDs: [UUID] = []
@@ -44,7 +44,7 @@ final class GlancePromotionCompletionOwnerTests: XCTestCase {
         XCTAssertFalse(owner.isAwaitingAttachment)
     }
 
-    func testMismatchedCompletionDoesNotCancelFallback() async throws {
+    func testMismatchedCompletionDoesNotCancelFallback() async {
         let owner = GlancePromotionCompletionOwner()
         let sessionID = UUID()
         var fallbackCount = 0

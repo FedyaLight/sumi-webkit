@@ -8,7 +8,7 @@ final class SumiPermissionSourceRegressionTests: XCTestCase {
     func testExternalSchemeBridgeDoesNotOpenResolverWhenPermissionDenies() async {
         let mailURL = URL(string: "mailto:test@example.com?subject=secret")!
         let resolver = SourceRegressionExternalSchemeResolver(handlerSchemes: ["mailto"])
-        let coordinator = SourceRegressionExternalSchemeCoordinator(
+        let coordinator = ExternalSchemeSourceCoordinator(
             decision: sourceRegressionExternalSchemeDecision(
                 .denied,
                 reason: "stored-deny"
@@ -140,7 +140,7 @@ private final class SourceRegressionExternalSchemeResolver: SumiExternalAppResol
     }
 }
 
-private actor SourceRegressionExternalSchemeCoordinator: SumiPermissionCoordinating {
+private actor ExternalSchemeSourceCoordinator: SumiPermissionCoordinating {
     private let decision: SumiPermissionCoordinatorDecision
     private var contexts: [SumiPermissionSecurityContext] = []
 

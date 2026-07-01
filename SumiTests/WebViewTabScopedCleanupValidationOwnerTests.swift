@@ -4,7 +4,7 @@ import XCTest
 @testable import Sumi
 
 @MainActor
-final class WebViewTabScopedCleanupValidationOwnerTests: XCTestCase {
+final class WebViewScopedCleanupValidationTests: XCTestCase {
     func testRejectsTrackedWebViewEvenWhenTrackedForSameTab() {
         let validator = WebViewTabScopedCleanupValidationOwner()
         let tab = makeTab()
@@ -105,7 +105,7 @@ final class WebViewTabScopedCleanupValidationOwnerTests: XCTestCase {
 
     private func makeTab(urlString: String = "https://example.com") -> Tab {
         Tab(
-            url: URL(string: urlString)!,
+            url: URL(string: urlString) ?? preconditionFailure("Invalid test URL"),
             loadsCachedFaviconOnInit: false
         )
     }

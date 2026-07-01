@@ -22,8 +22,8 @@ final class TabSuspensionStateOwnerTests: XCTestCase {
         XCTAssertFalse(tab.audioState.isPlayingAudio)
         XCTAssertEqual(tab.lastMediaActivityAt, .distantPast)
         XCTAssertEqual(recorder.count, 1)
-        XCTAssertTrue(recorder.firstObject === tab)
-        XCTAssertNil(recorder.firstUserInfo)
+        XCTAssertIdentical(recorder.firstObject, tab)
+        XCTAssertFalse(recorder.firstNotificationHasUserInfo)
     }
 
     func testMarkSuspendedKeepsExistingLastSelectedAt() {
@@ -54,7 +54,7 @@ final class TabSuspensionStateOwnerTests: XCTestCase {
         XCTAssertFalse(tab.isSuspended)
         XCTAssertFalse(tab.isSuspensionRestoreInProgress)
         XCTAssertEqual(recorder.count, 1)
-        XCTAssertTrue(recorder.firstObject === tab)
+        XCTAssertIdentical(recorder.firstObject, tab)
     }
 
     func testResetPageSuspensionRuntimeStateClearsEligibilityFlagsOnly() {
@@ -120,7 +120,7 @@ private final class TabSuspensionLifecycleRecorder: @unchecked Sendable {
         lock.withLock { notifications.first?.object as? AnyObject }
     }
 
-    var firstUserInfo: [AnyHashable: Any]? {
-        lock.withLock { notifications.first?.userInfo }
+    var firstNotificationHasUserInfo: Bool {
+        lock.withLock { notifications.first?.userInfo != nil }
     }
 }

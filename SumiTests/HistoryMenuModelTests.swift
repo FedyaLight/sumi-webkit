@@ -145,9 +145,9 @@ final class HistoryMenuModelTests: XCTestCase {
     }
 
     private func makeHistoryContext(
-        openURLInCurrentTab: @escaping (URL, Tab?) -> Void = { _, _ in },
-        openURLInNewTab: @escaping (URL, Bool, Tab?) -> Void = { _, _, _ in },
-        openURLsInNewWindow: @escaping ([URL]) -> Void = { _ in }
+        openURLInCurrentTab: @escaping (URL, Tab?) -> Void = { _, _ in /* No-op. */ },
+        openURLInNewTab: @escaping (URL, Bool, Tab?) -> Void = { _, _, _ in /* No-op. */ },
+        openURLsInNewWindow: @escaping ([URL]) -> Void = { _ in /* No-op. */ }
     ) -> SumiNavigationHistoryContext {
         SumiNavigationHistoryContext(
             faviconService: BrowserManagerDataServices.productionFaviconService,

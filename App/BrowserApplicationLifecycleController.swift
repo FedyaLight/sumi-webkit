@@ -10,8 +10,8 @@ protocol BrowserAppLifecycleHandling: AnyObject {
 final class BrowserApplicationLifecycleController: BrowserAppLifecycleHandling {
     struct Dependencies {
         let scheduleBackgroundMediaReconcile: @MainActor (String) -> Void
-        let pauseGeolocationForApplicationBackgroundIfNeeded: @MainActor () -> Void
-        let resumeGeolocationForApplicationForegroundIfNeeded: @MainActor () -> Void
+        let pauseGeolocationOnAppBackgroundIfNeeded: @MainActor () -> Void
+        let resumeGeolocationOnAppForegroundIfNeeded: @MainActor () -> Void
     }
 
     private let dependencies: Dependencies
@@ -22,12 +22,12 @@ final class BrowserApplicationLifecycleController: BrowserAppLifecycleHandling {
 
     func handleApplicationWillResignActive() {
         dependencies.scheduleBackgroundMediaReconcile("app-will-resign-active")
-        dependencies.pauseGeolocationForApplicationBackgroundIfNeeded()
+        dependencies.pauseGeolocationOnAppBackgroundIfNeeded()
     }
 
     func handleApplicationDidBecomeActive() {
         dependencies.scheduleBackgroundMediaReconcile("app-did-become-active")
-        dependencies.resumeGeolocationForApplicationForegroundIfNeeded()
+        dependencies.resumeGeolocationOnAppForegroundIfNeeded()
     }
 }
 
@@ -41,11 +41,11 @@ extension BrowserApplicationLifecycleController.Dependencies {
             scheduleBackgroundMediaReconcile: { reason in
                 backgroundMediaOptimizationService.scheduleReconcile(reason: reason)
             },
-            pauseGeolocationForApplicationBackgroundIfNeeded: {
-                permissionRuntime.pauseGeolocationForApplicationBackgroundIfNeeded()
+            pauseGeolocationOnAppBackgroundIfNeeded: {
+                permissionRuntime.pauseGeolocationOnAppBackgroundIfNeeded()
             },
-            resumeGeolocationForApplicationForegroundIfNeeded: {
-                permissionRuntime.resumeGeolocationForApplicationForegroundIfNeeded()
+            resumeGeolocationOnAppForegroundIfNeeded: {
+                permissionRuntime.resumeGeolocationOnAppForegroundIfNeeded()
             }
         )
     }

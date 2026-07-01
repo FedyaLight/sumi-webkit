@@ -41,8 +41,8 @@ struct SidebarBrowserCommandActions {
     let toggleDownloadsPopover: (BrowserWindowState) -> Void
     let createFolderInCurrentSpace: (BrowserWindowState) -> Void
     let createRSSLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
-    let createGitHubPullRequestsLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
-    let createGitHubIssuesLiveFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let createGitHubPRFolderInCurrentSpace: (BrowserWindowState) -> Void
+    let createGitHubIssuesFolderInCurrentSpace: (BrowserWindowState) -> Void
 }
 
 @MainActor

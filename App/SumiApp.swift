@@ -10,6 +10,15 @@ import OSLog
 import SwiftUI
 import WebKit
 
+private struct SumiAppRootDependencies {
+    let browserManager: BrowserManager
+    let settingsManager: SumiSettingsService
+    let keyboardShortcutManager: KeyboardShortcutManager
+    let nowPlayingController: SumiNativeNowPlayingController
+    let windowRegistry: WindowRegistry
+    let webViewCoordinator: WebViewCoordinator
+}
+
 @main
 struct SumiApp: App {
     @State private var windowRegistry = WindowRegistry()
@@ -91,12 +100,14 @@ struct SumiApp: App {
 
         return { windowRegistry, webViewCoordinator, windowState in
             Self.makeWindowShellContentView(
-                browserManager: browserManager,
-                settingsManager: settingsManager,
-                keyboardShortcutManager: keyboardShortcutManager,
-                nowPlayingController: nowPlayingController,
-                windowRegistry: windowRegistry,
-                webViewCoordinator: webViewCoordinator,
+                dependencies: SumiAppRootDependencies(
+                    browserManager: browserManager,
+                    settingsManager: settingsManager,
+                    keyboardShortcutManager: keyboardShortcutManager,
+                    nowPlayingController: nowPlayingController,
+                    windowRegistry: windowRegistry,
+                    webViewCoordinator: webViewCoordinator
+                ),
                 windowState: windowState
             )
         }
@@ -113,68 +124,55 @@ struct SumiApp: App {
         initialWorkspaceTheme: WorkspaceTheme?
     ) -> some View {
         Self.makeRootContentView(
-            browserManager: browserManager,
-            settingsManager: settingsManager,
-            keyboardShortcutManager: keyboardShortcutManager,
-            nowPlayingController: nowPlayingController,
-            windowRegistry: windowRegistry,
-            webViewCoordinator: webViewCoordinator,
+            dependencies: SumiAppRootDependencies(
+                browserManager: browserManager,
+                settingsManager: settingsManager,
+                keyboardShortcutManager: keyboardShortcutManager,
+                nowPlayingController: nowPlayingController,
+                windowRegistry: windowRegistry,
+                webViewCoordinator: webViewCoordinator
+            ),
             windowState: windowState,
             initialWorkspaceTheme: initialWorkspaceTheme
         )
     }
 
     private static func makeWindowShellContentView(
-        browserManager: BrowserManager,
-        settingsManager: SumiSettingsService,
-        keyboardShortcutManager: KeyboardShortcutManager,
-        nowPlayingController: SumiNativeNowPlayingController,
-        windowRegistry: WindowRegistry,
-        webViewCoordinator: WebViewCoordinator,
+        dependencies: SumiAppRootDependencies,
         windowState: BrowserWindowState
     ) -> NSView {
         let contentView = makeRootContentView(
-            browserManager: browserManager,
-            settingsManager: settingsManager,
-            keyboardShortcutManager: keyboardShortcutManager,
-            nowPlayingController: nowPlayingController,
-            windowRegistry: windowRegistry,
-            webViewCoordinator: webViewCoordinator,
+            dependencies: dependencies,
             windowState: windowState,
-            initialWorkspaceTheme: browserManager.tabManager.currentSpace?.workspaceTheme
+            initialWorkspaceTheme: dependencies.browserManager.tabManager.currentSpace?.workspaceTheme
         )
 
         return NSHostingView(rootView: contentView)
     }
 
     private static func makeRootContentView(
-        browserManager: BrowserManager,
-        settingsManager: SumiSettingsService,
-        keyboardShortcutManager: KeyboardShortcutManager,
-        nowPlayingController: SumiNativeNowPlayingController,
-        windowRegistry: WindowRegistry,
-        webViewCoordinator: WebViewCoordinator,
+        dependencies: SumiAppRootDependencies,
         windowState: BrowserWindowState?,
         initialWorkspaceTheme: WorkspaceTheme?
     ) -> some View {
         ContentView(
-            windowLifecycleHandler: browserManager,
-            browserContext: .live(browserManager: browserManager),
+            windowLifecycleHandler: dependencies.browserManager,
+            browserContext: .live(browserManager: dependencies.browserManager),
             windowState: windowState,
             initialWorkspaceTheme: initialWorkspaceTheme
         )
             .ignoresSafeArea(.all)
             .writingToolsBehavior(.disabled)
-            .environmentObject(browserManager.glanceManager)
-            .environmentObject(browserManager.extensionSurfaceStore)
-            .environmentObject(nowPlayingController)
-            .environment(windowRegistry)
-            .environment(webViewCoordinator)
-            .environment(\.sumiSettings, settingsManager)
-            .environment(\.sumiModuleRegistry, browserManager.moduleRegistry)
-            .environment(\.sumiProtectionCoordinator, browserManager.protectionCoordinator)
-            .environment(\.sumiExtensionsModule, browserManager.extensionsModule)
-            .environment(\.sumiUserscriptsModule, browserManager.userscriptsModule)
-            .environment(keyboardShortcutManager)
+            .environmentObject(dependencies.browserManager.glanceManager)
+            .environmentObject(dependencies.browserManager.extensionSurfaceStore)
+            .environmentObject(dependencies.nowPlayingController)
+            .environment(dependencies.windowRegistry)
+            .environment(dependencies.webViewCoordinator)
+            .environment(\.sumiSettings, dependencies.settingsManager)
+            .environment(\.sumiModuleRegistry, dependencies.browserManager.moduleRegistry)
+            .environment(\.sumiProtectionCoordinator, dependencies.browserManager.protectionCoordinator)
+            .environment(\.sumiExtensionsModule, dependencies.browserManager.extensionsModule)
+            .environment(\.sumiUserscriptsModule, dependencies.browserManager.userscriptsModule)
+            .environment(dependencies.keyboardShortcutManager)
     }
 }

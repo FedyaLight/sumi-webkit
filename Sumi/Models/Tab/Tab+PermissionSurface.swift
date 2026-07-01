@@ -38,7 +38,7 @@ extension Tab {
         permissionSurfaceOwner.cleanupNormalTabPermissionRuntime(reason: reason)
     }
 
-    func invalidateCurrentPermissionPageForWebViewReplacement(reason: String) {
-        permissionSurfaceOwner.invalidateCurrentPageForWebViewReplacement(reason: reason)
+    func invalidatePermissionPageForReplacement(reason: String) {
+        permissionSurfaceOwner.invalidatePageForWebViewReplacement(reason: reason)
     }
 }

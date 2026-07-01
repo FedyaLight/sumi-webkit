@@ -1,7 +1,7 @@
 import Foundation
 
 @MainActor
-final class BrowserSidebarSpaceTransitionRoutingOwner {
+final class BrowserSpaceTransitionRoutingOwner {
     struct Dependencies {
         let completePendingSplitGroupFocusIfReady: @MainActor (BrowserWindowState, UUID) -> Void
         let setActiveSpace: @MainActor (Space, BrowserWindowState) -> Void
@@ -46,7 +46,7 @@ final class BrowserSidebarSpaceTransitionRoutingOwner {
     }
 }
 
-extension BrowserSidebarSpaceTransitionRoutingOwner.Dependencies {
+extension BrowserSpaceTransitionRoutingOwner.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             completePendingSplitGroupFocusIfReady: { [weak browserManager] windowState, spaceId in

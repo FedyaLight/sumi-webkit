@@ -430,5 +430,4 @@ final class SumiNativeMessagingPerformanceGuardTests: XCTestCase {
     private func makeDefaults() -> UserDefaults {
         UserDefaults(suiteName: "SumiNativeMessagingPerformanceGuardTests.\(UUID().uuidString)")!
     }
-
 }

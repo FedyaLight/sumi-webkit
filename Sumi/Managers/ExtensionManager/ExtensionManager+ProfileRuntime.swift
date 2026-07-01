@@ -145,7 +145,12 @@ extension ExtensionManager {
     }
 
     func extensionsModuleEnabledForRuntimeBoundary() -> Bool {
-        runtime.extensionsModuleEnabled() ?? true
+        switch runtime.extensionsModuleEnabled() {
+        case .enabled(let isEnabled):
+            return isEnabled
+        case .unavailable:
+            return true
+        }
     }
 
     @discardableResult
@@ -190,7 +195,7 @@ extension ExtensionManager {
             return controller
         }
         guard hasEnabledInstalledExtensions
-            || extensionRuntimeAllowsWithoutEnabledExtensions
+            || allowsRuntimeWithoutEnabledExtensions
         else {
             return nil
         }
@@ -404,9 +409,9 @@ extension ExtensionManager {
             .ensureContentScriptContextsLoaded(for: profileId)
     }
 
-    func ensureInitialDocumentExtensionContextsLoaded(for profileId: UUID) async {
+    func ensureInitialExtensionContextsLoaded(for profileId: UUID) async {
         await initialDocumentRuntimePreparationOwner
-            .ensureInitialDocumentExtensionContextsLoaded(for: profileId)
+            .ensureInitialExtensionContextsLoaded(for: profileId)
     }
 
     func cancelInitialDocumentNativeMessagingWarmupTasks() {
@@ -562,7 +567,7 @@ extension ExtensionManager {
         if let existing = extensionControllersByProfile[profileId] {
             expectedController = existing
         } else if hasEnabledInstalledExtensions
-            || extensionRuntimeAllowsWithoutEnabledExtensions {
+            || allowsRuntimeWithoutEnabledExtensions {
             expectedController = ensureExtensionController(for: profileId)
         } else {
             return false

@@ -828,7 +828,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             spaceId: spaceId,
             index: index,
             folderId: folderId,
-            launchURL: URL(string: urlString)!,
+            launchURL: URL(string: urlString) ?? preconditionFailure("Invalid test URL"),
             title: "Shortcut"
         )
     }

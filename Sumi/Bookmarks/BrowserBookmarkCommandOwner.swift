@@ -409,7 +409,7 @@ extension BrowserBookmarkCommandOwner.Dependencies {
                 browserManager?.openHistoryURLsInNewWindow(urls)
             },
             windowIds: { [weak browserManager] in
-                browserManager?.windowRegistry?.windows.keys.map { $0 } ?? []
+                browserManager?.windowRegistry.map { Array($0.windows.keys) } ?? []
             },
             createNewWindow: { [weak browserManager] in
                 browserManager?.createNewWindow()
@@ -530,7 +530,7 @@ final class BrowserBookmarkCommandAppKitPresenter: BrowserBookmarkCommandPresent
 
     func promptUnreadableSafariBookmarksReplacement(
         source: SumiBookmarkImportSource,
-        originalError: Error
+        originalError _: Error
     ) -> URL? {
         let panel = NSOpenPanel()
         panel.message = "Choose \(source.title)'s Bookmarks.plist file."

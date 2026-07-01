@@ -79,7 +79,6 @@ struct FloatingBarFaviconContainer<Content: View>: View {
         )
         .background(background)
     }
-
 }
 
 extension FloatingBarSuggestionMetrics {

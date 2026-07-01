@@ -19,11 +19,11 @@ final class BrowserHistoryMenuOwnerTests: XCTestCase {
                     events.append("clear")
                 },
                 existingWindowIds: { [] },
-                createNewWindow: {},
+                createNewWindow: { /* No-op. */ },
                 awaitNextRegisteredWindow: { _ in nil },
-                applyWindowSessionSnapshot: { _, _ in },
-                bringWindowToFront: { _ in },
-                activateApplication: {}
+                applyWindowSessionSnapshot: { _, _ in /* No-op. */ },
+                bringWindowToFront: { _ in /* No-op. */ },
+                activateApplication: { /* No-op. */ }
             )
         )
 
@@ -48,11 +48,11 @@ final class BrowserHistoryMenuOwnerTests: XCTestCase {
                     events.append("clear")
                 },
                 existingWindowIds: { [] },
-                createNewWindow: {},
+                createNewWindow: { /* No-op. */ },
                 awaitNextRegisteredWindow: { _ in nil },
-                applyWindowSessionSnapshot: { _, _ in },
-                bringWindowToFront: { _ in },
-                activateApplication: {}
+                applyWindowSessionSnapshot: { _, _ in /* No-op. */ },
+                bringWindowToFront: { _ in /* No-op. */ },
+                activateApplication: { /* No-op. */ }
             )
         )
 
@@ -67,14 +67,14 @@ final class BrowserHistoryMenuOwnerTests: XCTestCase {
         let targetWindow = BrowserWindowState()
         let snapshot = makeWindowSessionSnapshot()
         var events: [String] = []
-        var awaitedExistingWindowIds: Set<UUID>?
+        var awaitedExistingWindowIds = Set<UUID>()
         var appliedSnapshot: WindowSessionSnapshot?
         var appliedWindow: BrowserWindowState?
         let owner = BrowserHistoryMenuOwner(
             dependencies: BrowserHistoryMenuOwner.Dependencies(
-                requestCollapsedSidebarOverlayDismissal: {},
+                requestCollapsedSidebarOverlayDismissal: { /* No-op. */ },
                 confirmClearAllHistory: { false },
-                clearAllHistory: {},
+                clearAllHistory: { /* No-op. */ },
                 existingWindowIds: {
                     events.append("existing")
                     return [existingWindowId]

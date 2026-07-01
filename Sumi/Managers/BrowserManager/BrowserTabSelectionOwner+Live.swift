@@ -39,8 +39,8 @@ extension BrowserTabSelectionOwner {
             applySettingsSurfaceNavigation: { [weak browserManager] url in
                 browserManager?.sumiSettings?.applyNavigationFromSettingsSurfaceURL(url)
             },
-            canMaterializeNormalTabWebViewDuringStartup: { [weak browserManager] tab in
-                browserManager?.canMaterializeNormalTabWebViewDuringStartup(tab) ?? true
+            canMaterializeWebViewDuringStartup: { [weak browserManager] tab in
+                browserManager?.canMaterializeWebViewDuringStartup(tab) ?? true
             },
             markTabAccessed: { [weak browserManager] tabId in
                 browserManager?.compositorManager.markTabAccessed(tabId)

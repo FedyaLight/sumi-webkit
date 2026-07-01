@@ -255,7 +255,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             activationState: activationState,
             isExtensionOriginated: isExtensionOriginated
         )
-        let permissionResult = tab.popupHandlingRuntime.evaluatePopupPermissionSynchronouslyForWebKitFallback(
+        let permissionResult = tab.popupHandlingRuntime.evaluatePopupPermissionForWebKitFallback(
             request,
             tabContext
         )
@@ -519,7 +519,7 @@ final class SumiPopupHandlingNavigationResponder: SumiNavigationActionWebViewRes
             return popupWebView
         }
 
-        tab.popupHandlingRuntime.applyVisitedLinkStoreToPopupConfiguration(tab, configuration)
+        tab.popupHandlingRuntime.applyVisitedLinksToPopupConfiguration(tab, configuration)
 
         WebContentProcessDisplayNameProvider.apply(
             WebContentProcessDisplayNameProvider.popup,

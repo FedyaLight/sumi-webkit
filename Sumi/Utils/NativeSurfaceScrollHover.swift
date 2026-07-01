@@ -269,7 +269,7 @@ private struct NativeSurfaceHoverModifier: ViewModifier {
     }
 }
 
-private struct NativeSurfaceScrollHoverSuppressionModifier: ViewModifier {
+private struct NativeScrollHoverSuppressionModifier: ViewModifier {
     let coordinator: NativeSurfaceScrollHoverCoordinator
     let region: String
 
@@ -321,7 +321,7 @@ extension View {
         region: String
     ) -> some View {
         modifier(
-            NativeSurfaceScrollHoverSuppressionModifier(
+            NativeScrollHoverSuppressionModifier(
                 coordinator: coordinator,
                 region: region
             )

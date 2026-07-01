@@ -601,5 +601,4 @@ final class SidebarContextMenuLifecycleTests: XCTestCase {
             deleteSavedTab: deleteSavedTab
         )
     }
-
 }

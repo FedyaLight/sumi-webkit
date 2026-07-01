@@ -13,8 +13,8 @@ struct WorkspaceThemePickerPopoverRuntime {
 
     static let inactive = WorkspaceThemePickerPopoverRuntime(
         settings: { SumiSettingsService() },
-        previewDraft: { _ in },
-        finalizeDismiss: { _ in }
+        previewDraft: { _ in /* No-op. */ },
+        finalizeDismiss: { _ in /* No-op. */ }
     )
 }
 

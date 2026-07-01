@@ -19,7 +19,7 @@ final class BrowserTabSelectionOwner {
         let space: (UUID?) -> Space?
         let updateWorkspaceTheme: (BrowserWindowState, WorkspaceTheme, Bool) -> Void
         let applySettingsSurfaceNavigation: (URL) -> Void
-        let canMaterializeNormalTabWebViewDuringStartup: (Tab) -> Bool
+        let canMaterializeWebViewDuringStartup: (Tab) -> Bool
         let markTabAccessed: (UUID) -> Void
         let webViewCoordinator: () -> WebViewCoordinator?
         let handleNativeNowPlayingTabActivated: (UUID) -> Void
@@ -249,7 +249,7 @@ final class BrowserTabSelectionOwner {
             tab.beginLoadingPresentationIfNeeded()
         }
 
-        guard actions.canMaterializeNormalTabWebViewDuringStartup(tab) else { return }
+        guard actions.canMaterializeWebViewDuringStartup(tab) else { return }
 
         switch loadPolicy {
         case .immediate:

@@ -203,7 +203,7 @@ struct URLBarHubPopover: View {
         .clipped()
         .animation(Self.modeAnimation, value: containerWidth)
         .onAppear {
-            browserContext.extensionActions.ensureActionSurfaceMetadataLoadedIfNeeded()
+            browserContext.extensionActions.ensureActionMetadataLoadedIfNeeded()
             handleBookmarkPresentationRequest(browserContext.bookmarkPresentationRequest)
         }
         .task(id: permissionsLoadKey) {
