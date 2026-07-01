@@ -69,7 +69,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         XCTAssertTrue(harness.browserManager.canOfferStartupLastSessionRestoreShortcut)
     }
 
-    func testSpecificPageStartupWithStaleWindowSpaceDoesNotUseGlobalCurrentSpace() throws {
+    func testSpecificPageStartupWithStaleWindowSpaceDoesNotUseGlobalCurrentSpaceOrFirstSpace() throws {
         let harness = try makeHarness(startupMode: .specificPage, startupPage: "configured.example")
         defer { harness.defaults.reset() }
         let secondarySpace = Space(name: "Secondary")
@@ -82,14 +82,40 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         harness.browserManager.applyStartupPolicy(.specificPage)
 
         let primaryTabs = harness.browserManager.tabManager.tabs(in: harness.space)
-        XCTAssertEqual(primaryTabs.count, 1)
-        XCTAssertEqual(primaryTabs.first?.url.absoluteString, "https://configured.example")
+        XCTAssertTrue(primaryTabs.isEmpty)
         XCTAssertTrue(harness.browserManager.tabManager.tabs(in: secondarySpace).isEmpty)
-        XCTAssertEqual(harness.windowState.currentSpaceId, harness.space.id)
-        XCTAssertEqual(harness.windowState.currentTabId, primaryTabs.first?.id)
+        XCTAssertNil(harness.windowState.currentSpaceId)
+        XCTAssertNil(harness.windowState.currentTabId)
+        XCTAssertTrue(harness.windowState.isShowingEmptyState)
     }
 
-    func testSpecificPageStartupWithStaleProfileUsesLiveCurrentProfileBeforeFirstSpace() throws {
+    func testSpecificPageStartupWithWindowProfileRepairsStaleSpace() throws {
+        let harness = try makeHarness(startupMode: .specificPage, startupPage: "configured.example")
+        defer { harness.defaults.reset() }
+        let fallbackProfile = Profile(name: "Fallback")
+        let windowProfile = Profile(name: "Window")
+        let fallbackSpace = Space(name: "Fallback", profileId: fallbackProfile.id)
+        let windowProfileSpace = Space(name: "Window", profileId: windowProfile.id)
+        harness.browserManager.profileManager.profiles = [fallbackProfile, windowProfile]
+        harness.browserManager.currentProfile = fallbackProfile
+        harness.browserManager.tabManager.spaces = [fallbackSpace, windowProfileSpace]
+        harness.browserManager.tabManager.setTabs([], for: fallbackSpace.id)
+        harness.browserManager.tabManager.setTabs([], for: windowProfileSpace.id)
+        harness.browserManager.tabManager.currentSpace = fallbackSpace
+        harness.windowState.currentSpaceId = UUID()
+        harness.windowState.currentProfileId = windowProfile.id
+
+        harness.browserManager.applyStartupPolicy(.specificPage)
+
+        let windowProfileTabs = harness.browserManager.tabManager.tabs(in: windowProfileSpace)
+        XCTAssertEqual(windowProfileTabs.count, 1)
+        XCTAssertEqual(windowProfileTabs.first?.url.absoluteString, "https://configured.example")
+        XCTAssertTrue(harness.browserManager.tabManager.tabs(in: fallbackSpace).isEmpty)
+        XCTAssertEqual(harness.windowState.currentSpaceId, windowProfileSpace.id)
+        XCTAssertEqual(harness.windowState.currentProfileId, windowProfile.id)
+    }
+
+    func testSpecificPageStartupWithStaleProfileDoesNotUseLiveCurrentProfileOrFirstSpace() throws {
         let harness = try makeHarness(startupMode: .specificPage, startupPage: "configured.example")
         defer { harness.defaults.reset() }
         let fallbackProfile = Profile(name: "Fallback")
@@ -108,11 +134,12 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         harness.browserManager.applyStartupPolicy(.specificPage)
 
         let currentProfileTabs = harness.browserManager.tabManager.tabs(in: currentProfileSpace)
-        XCTAssertEqual(currentProfileTabs.count, 1)
-        XCTAssertEqual(currentProfileTabs.first?.url.absoluteString, "https://configured.example")
+        XCTAssertTrue(currentProfileTabs.isEmpty)
         XCTAssertTrue(harness.browserManager.tabManager.tabs(in: fallbackSpace).isEmpty)
-        XCTAssertEqual(harness.windowState.currentSpaceId, currentProfileSpace.id)
-        XCTAssertEqual(harness.windowState.currentProfileId, currentProfile.id)
+        XCTAssertNil(harness.windowState.currentSpaceId)
+        XCTAssertNil(harness.windowState.currentProfileId)
+        XCTAssertNil(harness.windowState.currentTabId)
+        XCTAssertTrue(harness.windowState.isShowingEmptyState)
     }
 
     func testCleanStartupDismissesGlanceAndReleasesPreviewWebView() throws {

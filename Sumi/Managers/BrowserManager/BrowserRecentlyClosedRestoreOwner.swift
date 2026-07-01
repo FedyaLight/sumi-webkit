@@ -15,7 +15,6 @@ final class BrowserRecentlyClosedRestoreOwner {
         let windowState: @MainActor (UUID) -> BrowserWindowState?
         let tabManager: @MainActor () -> TabManager
         let profileManager: @MainActor () -> ProfileManager
-        let currentProfile: @MainActor () -> Profile?
         let space: @MainActor (UUID) -> Space?
         let selectTab: @MainActor (Tab, BrowserWindowState) -> Void
     }
@@ -40,18 +39,21 @@ final class BrowserRecentlyClosedRestoreOwner {
     }
 
     func reopenRecentlyClosedItem(_ item: RecentlyClosedItem) {
+        let didRestore: Bool
         switch item {
         case .tab(let tabState):
-            reopenClosedTab(tabState)
+            didRestore = reopenClosedTab(tabState)
         case .shortcutLiveInstance(let shortcutState):
-            reopenClosedShortcutLiveInstance(shortcutState)
+            didRestore = reopenClosedShortcutLiveInstance(shortcutState)
         case .shortcutLauncher(let launcherState):
-            restoreShortcutLauncher(from: launcherState.pin)
+            didRestore = restoreShortcutLauncher(from: launcherState.pin) != nil
         case .window(let windowState):
+            didRestore = true
             Task { @MainActor [dependencies] in
                 await dependencies.reopenWindow(windowState.session)
             }
         }
+        guard didRestore else { return }
         dependencies.recentlyClosedManager().remove(item)
         dependencies.startupRestore.markRestoreOfferConsumed()
     }
@@ -84,14 +86,16 @@ final class BrowserRecentlyClosedRestoreOwner {
         }
     }
 
-    private func reopenClosedTab(_ tabState: RecentlyClosedTabState) {
+    private func reopenClosedTab(_ tabState: RecentlyClosedTabState) -> Bool {
         let tabManager = dependencies.tabManager()
         let targetWindow = dependencies.activeWindow()
-        let targetSpace = restoredSpace(
+        guard let targetSpace = restoredSpace(
             sourceSpaceId: tabState.sourceSpaceId,
             sourceProfileId: tabState.profileId,
             fallbackWindow: targetWindow
-        )
+        ) else {
+            return false
+        }
 
         let restoredTab = tabManager.createNewTab(
             url: (tabState.currentURL ?? tabState.url).absoluteString,
@@ -107,20 +111,20 @@ final class BrowserRecentlyClosedRestoreOwner {
         } else {
             tabManager.setActiveTab(restoredTab)
         }
+        return true
     }
 
-    private func reopenClosedShortcutLiveInstance(_ shortcutState: RecentlyClosedShortcutLiveState) {
+    private func reopenClosedShortcutLiveInstance(_ shortcutState: RecentlyClosedShortcutLiveState) -> Bool {
         let tabManager = dependencies.tabManager()
         guard let targetWindow = targetWindowForClosedShortcut(shortcutState) else {
             if tabManager.shortcutPin(by: shortcutState.pin.id) == nil {
-                restoreShortcutLauncher(from: shortcutState.pin)
+                return restoreShortcutLauncher(from: shortcutState.pin) != nil
             }
-            return
+            return false
         }
 
         guard let pin = tabManager.shortcutPin(by: shortcutState.pin.id) else {
-            restoreShortcutLauncher(from: shortcutState.pin, fallbackWindow: targetWindow)
-            return
+            return restoreShortcutLauncher(from: shortcutState.pin, fallbackWindow: targetWindow) != nil
         }
 
         let restoredTab = tabManager.activateShortcutPin(
@@ -130,6 +134,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         )
         applyShortcutLiveState(shortcutState, to: restoredTab)
         dependencies.selectTab(restoredTab, targetWindow)
+        return true
     }
 
     private func targetWindowForClosedShortcut(_ shortcutState: RecentlyClosedShortcutLiveState) -> BrowserWindowState? {
@@ -232,11 +237,7 @@ final class BrowserRecentlyClosedRestoreOwner {
            profileManager.profiles.contains(where: { $0.id == profileId }) {
             return profileId
         }
-        if let profileId = dependencies.currentProfile()?.id,
-           profileManager.profiles.contains(where: { $0.id == profileId }) {
-            return profileId
-        }
-        return profileManager.profiles.first?.id
+        return nil
     }
 
     private func restoredSpacePinnedSpaceId(
@@ -256,11 +257,7 @@ final class BrowserRecentlyClosedRestoreOwner {
            let profileSpaceId = firstSpaceId(for: profileId, tabManager: tabManager) {
             return profileSpaceId
         }
-        if let profileId = dependencies.currentProfile()?.id,
-           let profileSpaceId = firstSpaceId(for: profileId, tabManager: tabManager) {
-            return profileSpaceId
-        }
-        return tabManager.spaces.first?.id
+        return nil
     }
 
     private func restoredSpace(
@@ -285,11 +282,7 @@ final class BrowserRecentlyClosedRestoreOwner {
            let profileSpace = firstSpace(for: profileId, tabManager: tabManager) {
             return profileSpace
         }
-        if let profileId = dependencies.currentProfile()?.id,
-           let profileSpace = firstSpace(for: profileId, tabManager: tabManager) {
-            return profileSpace
-        }
-        return tabManager.spaces.first
+        return nil
     }
 
     private func firstSpaceId(
@@ -344,9 +337,6 @@ extension BrowserRecentlyClosedRestoreOwner.Dependencies {
             },
             profileManager: { [weak browserManager, profileManager = browserManager.profileManager] in
                 browserManager?.profileManager ?? profileManager
-            },
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
             },
             space: { [weak browserManager] spaceId in
                 browserManager?.space(for: spaceId)

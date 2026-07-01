@@ -6,7 +6,6 @@ final class BrowserStartupPolicyOwner {
         let regularWindows: @MainActor () -> [BrowserWindowState]
         let startupRestoreOwner: @MainActor () -> BrowserStartupSessionRestoreOwner
         let tabManager: @MainActor () -> TabManager
-        let currentProfile: @MainActor () -> Profile?
         let startupPageURL: @MainActor () -> URL?
         let space: @MainActor (UUID?) -> Space?
         let splitManager: @MainActor () -> SplitViewManager
@@ -53,10 +52,13 @@ final class BrowserStartupPolicyOwner {
         resetWindowStatesForCleanStartup(selectedWindow: windowState)
 
         if let startupURL {
-            let targetSpace = resolvedStartupSpace(
+            guard let targetSpace = resolvedStartupSpace(
                 tabManager: tabManager,
                 windowState: windowState
-            )
+            ) else {
+                dependencies.showEmptyState(windowState)
+                return
+            }
             let tab = tabManager.createNewTab(
                 url: startupURL.absoluteString,
                 in: targetSpace,
@@ -106,7 +108,6 @@ final class BrowserStartupPolicyOwner {
                 windowState.id == selectedWindow.id ? .emptySpace : .none
             windowState.currentSpaceId = fallbackSpaceId
             windowState.currentProfileId = fallbackSpaceId.flatMap { dependencies.space($0)?.profileId }
-                ?? dependencies.currentProfile()?.id
             windowState.isAwaitingInitialSessionResolution = false
             dependencies.glanceManager().restoreSession(nil, in: windowState)
             windowState.refreshCompositor()
@@ -126,12 +127,7 @@ final class BrowserStartupPolicyOwner {
             return profileSpace
         }
 
-        if let profileId = dependencies.currentProfile()?.id,
-           let profileSpace = firstSpace(for: profileId, tabManager: tabManager) {
-            return profileSpace
-        }
-
-        return tabManager.spaces.first
+        return nil
     }
 
     private func firstSpace(
@@ -199,9 +195,6 @@ extension BrowserStartupPolicyOwner.Dependencies {
                     preconditionFailure("BrowserStartupPolicyOwner used after BrowserManager deallocation")
                 }
                 return browserManager.tabManager
-            },
-            currentProfile: { [weak browserManager] in
-                browserManager?.currentProfile
             },
             startupPageURL: { [weak browserManager] in
                 browserManager?.sumiSettings?.resolvedStartupPageURL

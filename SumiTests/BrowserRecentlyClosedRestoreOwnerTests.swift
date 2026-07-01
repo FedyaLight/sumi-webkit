@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
-    func testReopenClosedTabUsesCurrentProfileSpaceInsteadOfGlobalCurrentSpace() throws {
+    func testReopenClosedTabUsesSourceProfileSpaceInsteadOfGlobalFallback() throws {
         let harness = try makeRestoreHarness()
         let tabState = RecentlyClosedTabState(
             id: UUID(),
@@ -14,7 +14,7 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
             currentURL: nil,
             canGoBack: true,
             canGoForward: false,
-            profileId: nil
+            profileId: try XCTUnwrap(harness.currentProfileSpace.profileId)
         )
 
         harness.owner.reopenRecentlyClosedItem(.tab(tabState))
@@ -28,13 +28,37 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
         XCTAssertEqual(harness.tabManager.currentTab?.id, restored.id)
     }
 
-    func testRestoreSpacePinnedShortcutLauncherUsesCurrentProfileSpaceInsteadOfGlobalCurrentSpace()
+    func testReopenClosedTabWithoutSourceOrWindowDoesNotUseGlobalFallback() throws {
+        let harness = try makeRestoreHarness()
+        let closedTab = Tab(
+            url: URL(string: "https://closed.example")!,
+            name: "Closed"
+        )
+        harness.recentlyClosedManager.captureClosedTab(
+            closedTab,
+            sourceSpaceId: nil,
+            currentURL: nil,
+            canGoBack: false,
+            canGoForward: false
+        )
+        let item = try XCTUnwrap(harness.recentlyClosedManager.mostRecentItem)
+
+        harness.owner.reopenRecentlyClosedItem(item)
+
+        XCTAssertTrue(harness.tabManager.tabs(in: harness.currentProfileSpace).isEmpty)
+        XCTAssertTrue(harness.tabManager.tabs(in: harness.fallbackSpace).isEmpty)
+        XCTAssertNil(harness.tabManager.currentTab)
+        XCTAssertEqual(harness.recentlyClosedManager.mostRecentItem?.id, item.id)
+        XCTAssertFalse(harness.startupRestore.didConsumeRestoreOffer)
+    }
+
+    func testRestoreSpacePinnedShortcutLauncherUsesSourceSpaceInsteadOfGlobalFallback()
         throws {
         let harness = try makeRestoreHarness()
         let pin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
-            spaceId: nil,
+            spaceId: harness.currentProfileSpace.id,
             index: 0,
             launchURL: URL(string: "https://shortcut.example")!,
             title: "Shortcut"
@@ -54,6 +78,31 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
             [pinState.id]
         )
         XCTAssertTrue(harness.tabManager.spacePinnedPins(for: harness.fallbackSpace.id).isEmpty)
+    }
+
+    func testRestoreSpacePinnedShortcutLauncherWithoutSourceOrWindowDoesNotUseGlobalFallback()
+        throws {
+        let harness = try makeRestoreHarness()
+        let pin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: nil,
+            index: 0,
+            launchURL: URL(string: "https://shortcut.example")!,
+            title: "Shortcut"
+        )
+        let pinState = RecentlyClosedShortcutPinState(pin: pin)
+
+        harness.owner.reopenRecentlyClosedItem(
+            .shortcutLauncher(
+                RecentlyClosedShortcutLauncherState(id: UUID(), pin: pinState)
+            )
+        )
+
+        XCTAssertNil(harness.tabManager.shortcutPin(by: pinState.id))
+        XCTAssertTrue(harness.tabManager.spacePinnedPins(for: harness.currentProfileSpace.id).isEmpty)
+        XCTAssertTrue(harness.tabManager.spacePinnedPins(for: harness.fallbackSpace.id).isEmpty)
+        XCTAssertFalse(harness.startupRestore.didConsumeRestoreOffer)
     }
 
     func testReopenAllWindowsFromLastSessionUsesStartupArchiveMergesTabSnapshotSkipsExistingSessionAndRefreshesStore() async throws {
@@ -107,7 +156,6 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
                 windowState: { _ in nil },
                 tabManager: { tabManager },
                 profileManager: { browserManager.profileManager },
-                currentProfile: { nil },
                 space: { _ in nil },
                 selectTab: { _, _ in }
             )
@@ -170,7 +218,6 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
                 windowState: { _ in nil },
                 tabManager: { browserManager.tabManager },
                 profileManager: { browserManager.profileManager },
-                currentProfile: { browserManager.currentProfile },
                 space: { spaceId in
                     browserManager.tabManager.spaces.first { $0.id == spaceId }
                 },
@@ -181,6 +228,8 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
         return RestoreHarness(
             owner: owner,
             tabManager: browserManager.tabManager,
+            recentlyClosedManager: recentlyClosedManager,
+            startupRestore: startupRestore,
             fallbackSpace: fallbackSpace,
             currentProfileSpace: currentProfileSpace
         )
@@ -222,6 +271,8 @@ private enum Event: Equatable {
 private struct RestoreHarness {
     let owner: BrowserRecentlyClosedRestoreOwner
     let tabManager: TabManager
+    let recentlyClosedManager: RecentlyClosedManager
+    let startupRestore: FakeRecentlyClosedStartupRestoreProvider
     let fallbackSpace: Space
     let currentProfileSpace: Space
 }
