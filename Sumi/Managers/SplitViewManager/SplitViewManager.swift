@@ -540,12 +540,17 @@ final class SplitViewManager: ObservableObject {
         let sourcePin = sourceMember?.pinId.flatMap { tabManager.shortcutPin(by: $0) }
         if let pin = shortcutPin(for: candidate) ?? sourcePin {
             let liveTab = resolvedLiveShortcutTab(for: pin, candidate: candidate, in: windowState)
+            guard let origin = sourceMember?.origin
+                ?? splitMemberOrigin(for: pin, host: host, windowState: windowState)
+            else {
+                return nil
+            }
             return ResolvedSplitTab(
                 tab: liveTab,
                 member: SplitGroupMember(
                     tabId: liveTab.id,
                     pinId: pin.id,
-                    origin: sourceMember?.origin ?? splitMemberOrigin(for: pin)
+                    origin: origin
                 )
             )
         }
@@ -741,13 +746,20 @@ final class SplitViewManager: ObservableObject {
         )
     }
 
-    private func splitMemberOrigin(for pin: ShortcutPin) -> SplitGroupMemberOrigin {
+    private func splitMemberOrigin(
+        for pin: ShortcutPin,
+        host: SplitGroupHost,
+        windowState: BrowserWindowState
+    ) -> SplitGroupMemberOrigin? {
         switch pin.role {
         case .essential:
             return .essential(profileId: pin.profileId, index: pin.index)
         case .spacePinned:
+            guard let spaceId = pin.spaceId ?? host.spaceId ?? windowState.currentSpaceId else {
+                return nil
+            }
             return .spacePinned(
-                spaceId: pin.spaceId ?? windowRegistry?.activeWindow?.currentSpaceId ?? UUID(),
+                spaceId: spaceId,
                 folderId: pin.folderId,
                 index: pin.index
             )

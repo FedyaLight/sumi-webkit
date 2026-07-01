@@ -317,9 +317,22 @@ private extension TabManager {
             }
 
             let existingMember = group.member(for: leafId) ?? group.member(forPinId: pin.id)
-            let repairedOrigin = existingMember?.origin.isShortcutBacked == true
-                ? existingMember?.origin ?? splitMemberOrigin(for: pin)
-                : splitMemberOrigin(for: pin)
+            guard let repairedOrigin = repairedSplitMemberOrigin(
+                existingMember: existingMember,
+                pin: pin,
+                in: group
+            ) else {
+                let filteredMembers = members.filter { member in
+                    member.tabId != leafId
+                        && member.pinId != pin.id
+                        && member.stableId != pin.id
+                }
+                if filteredMembers.count != members.count {
+                    didRepair = true
+                    members = filteredMembers
+                }
+                continue
+            }
             let repairedMember = SplitGroupMember(
                 tabId: leafId,
                 pinId: pin.id,
@@ -341,6 +354,38 @@ private extension TabManager {
         return group.settingMembers(members)
     }
 
+    func repairedSplitMemberOrigin(
+        existingMember: SplitGroupMember?,
+        pin: ShortcutPin,
+        in group: SplitGroup
+    ) -> SplitGroupMemberOrigin? {
+        if let existingOrigin = existingMember?.origin,
+           isValidShortcutBackedOrigin(existingOrigin, for: pin, in: group) {
+            return existingOrigin
+        }
+        return splitMemberOrigin(for: pin, in: group)
+    }
+
+    func isValidShortcutBackedOrigin(
+        _ origin: SplitGroupMemberOrigin,
+        for pin: ShortcutPin,
+        in group: SplitGroup
+    ) -> Bool {
+        switch (pin.role, origin) {
+        case (.essential, .essential(let profileId, _)):
+            return pin.profileId.map { $0 == profileId } ?? true
+        case (.spacePinned, .spacePinned(let spaceId, let folderId, _)):
+            guard resolvedSpacePinnedOriginSpaceId(for: pin, in: group) == spaceId else {
+                return false
+            }
+            return folderId.map { self.folderSpaceId(for: $0) == spaceId } ?? true
+        case (.spacePinned, .generatedSpacePinnedFromRegular(let spaceId, _)):
+            return resolvedSpacePinnedOriginSpaceId(for: pin, in: group) == spaceId
+        default:
+            return false
+        }
+    }
+
     func shortcutPinForSplitLeaf(_ leafId: UUID) -> ShortcutPin? {
         if let pin = shortcutPin(by: leafId) {
             return pin
@@ -351,16 +396,33 @@ private extension TabManager {
         return shortcutPin(by: pinId)
     }
 
-    func splitMemberOrigin(for pin: ShortcutPin) -> SplitGroupMemberOrigin {
+    func splitMemberOrigin(for pin: ShortcutPin, in group: SplitGroup) -> SplitGroupMemberOrigin? {
         switch pin.role {
         case .essential:
             return .essential(profileId: pin.profileId, index: pin.index)
         case .spacePinned:
+            guard let spaceId = resolvedSpacePinnedOriginSpaceId(for: pin, in: group) else {
+                return nil
+            }
             return .spacePinned(
-                spaceId: pin.spaceId ?? currentSpace?.id ?? spaces.first?.id ?? UUID(),
-                folderId: pin.folderId,
+                spaceId: spaceId,
+                folderId: pin.folderId.flatMap {
+                    folderSpaceId(for: $0) == spaceId ? $0 : nil
+                },
                 index: pin.index
             )
         }
+    }
+
+    func resolvedSpacePinnedOriginSpaceId(for pin: ShortcutPin, in group: SplitGroup) -> UUID? {
+        if let spaceId = pin.spaceId,
+           spaces.contains(where: { $0.id == spaceId }) {
+            return spaceId
+        }
+        if let spaceId = group.hostSpaceId,
+           spaces.contains(where: { $0.id == spaceId }) {
+            return spaceId
+        }
+        return nil
     }
 }

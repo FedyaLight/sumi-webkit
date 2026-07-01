@@ -693,6 +693,78 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(harness.tabManager.splitGroup(containingPinId: spacePin.id)?.id, malformedGroup.id)
     }
 
+    func testUpsertDoesNotRepairSpacePinnedSplitMemberFromGlobalCurrentSpace() throws {
+        let harness = try makeHarness()
+        let storageSpace = harness.tabManager.createSpace(name: "Storage")
+        let globalCurrentSpace = harness.tabManager.createSpace(name: "Global Current")
+        harness.tabManager.currentSpace = globalCurrentSpace
+        let malformedPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: nil,
+            index: 0,
+            launchURL: URL(string: "https://malformed.example")!,
+            title: "Malformed"
+        )
+        harness.tabManager.setSpacePinnedShortcuts([malformedPin], for: storageSpace.id)
+        let regular = harness.tabManager.createNewTab(
+            url: "https://regular.example",
+            in: storageSpace,
+            activate: false
+        )
+        let malformedGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [malformedPin.id, regular.id],
+            layoutKind: .vertical,
+            members: [
+                SplitGroupMember(
+                    tabId: regular.id,
+                    pinId: nil,
+                    origin: .regular(spaceId: storageSpace.id, index: regular.index)
+                ),
+            ]
+        ))
+
+        harness.tabManager.upsertSplitGroup(malformedGroup)
+
+        let repaired = try XCTUnwrap(harness.tabManager.splitGroup(with: malformedGroup.id))
+        XCTAssertNil(repaired.member(forPinId: malformedPin.id))
+        XCTAssertFalse(
+            repaired.members.contains {
+                $0.origin == .spacePinned(spaceId: globalCurrentSpace.id, folderId: nil, index: 0)
+            }
+        )
+    }
+
+    func testUpsertRepairsSpacePinnedSplitMemberFromHostSpaceWhenPinSpaceIsMissing() throws {
+        let harness = try makeHarness()
+        let hostSpace = harness.tabManager.createSpace(name: "Host")
+        let globalCurrentSpace = harness.tabManager.createSpace(name: "Global Current")
+        harness.tabManager.currentSpace = globalCurrentSpace
+        let malformedPin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            spaceId: nil,
+            index: 0,
+            launchURL: URL(string: "https://malformed.example")!,
+            title: "Malformed"
+        )
+        harness.tabManager.setSpacePinnedShortcuts([malformedPin], for: hostSpace.id)
+        let companionId = UUID()
+        let malformedGroup = try XCTUnwrap(SplitGroup.make(
+            tabIds: [malformedPin.id, companionId],
+            layoutKind: .vertical,
+            host: .shortcutPinned(spaceId: hostSpace.id, profileId: nil, index: 0)
+        ))
+
+        harness.tabManager.upsertSplitGroup(malformedGroup)
+
+        let repaired = try XCTUnwrap(harness.tabManager.splitGroup(with: malformedGroup.id))
+        XCTAssertEqual(
+            repaired.member(forPinId: malformedPin.id)?.origin,
+            .spacePinned(spaceId: hostSpace.id, folderId: nil, index: 0)
+        )
+    }
+
     func testRestoreShortcutSplitMemberKeepsLiveInstanceLoaded() throws {
         let harness = try makeHarness()
         let profileId = UUID()
