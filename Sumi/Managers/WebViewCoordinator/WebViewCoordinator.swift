@@ -59,6 +59,12 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private var browserRuntimeContext: WebViewCoordinatorBrowserRuntimeContext?
 
     @ObservationIgnored
+    private var initialDocumentRuntimeContext: WebViewCoordinatorInitialDocumentRuntimeContext?
+
+    @ObservationIgnored
+    private var shutdownRuntimeContext: WebViewCoordinatorShutdownRuntimeContext?
+
+    @ObservationIgnored
     private let mediaProtectionOwner = WebViewMediaProtectionOwner()
 
     @ObservationIgnored
@@ -268,6 +274,24 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     func detachBrowserRuntimeContext() {
         browserRuntimeContext = nil
+    }
+
+    func attachInitialDocumentRuntimeContext(
+        _ context: WebViewCoordinatorInitialDocumentRuntimeContext
+    ) {
+        initialDocumentRuntimeContext = context
+    }
+
+    func detachInitialDocumentRuntimeContext() {
+        initialDocumentRuntimeContext = nil
+    }
+
+    func attachShutdownRuntimeContext(_ context: WebViewCoordinatorShutdownRuntimeContext) {
+        shutdownRuntimeContext = context
+    }
+
+    func detachShutdownRuntimeContext() {
+        shutdownRuntimeContext = nil
     }
 
     // MARK: - Window Cleanup
@@ -1005,6 +1029,24 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         return browserRuntimeContext
     }
 
+    private func requireInitialDocumentRuntimeContext() -> WebViewCoordinatorInitialDocumentRuntimeContext {
+        guard let initialDocumentRuntimeContext else {
+            preconditionFailure(
+                "WebViewCoordinator initial document runtime context is nil. Attach it via BrowserManager.webViewCoordinator before rebuilding WebViews."
+            )
+        }
+        return initialDocumentRuntimeContext
+    }
+
+    private func requireShutdownRuntimeContext() -> WebViewCoordinatorShutdownRuntimeContext {
+        guard let shutdownRuntimeContext else {
+            preconditionFailure(
+                "WebViewCoordinator shutdown runtime context is nil. Attach it via BrowserManager.webViewCoordinator before cleaning WebViews."
+            )
+        }
+        return shutdownRuntimeContext
+    }
+
     private func requireVisibleWebViewPreparationRuntime() -> VisibleWebViewPreparationRuntime {
         guard let visibleRuntimeContext else {
             preconditionFailure(
@@ -1129,9 +1171,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         let runtimeContext = requireBrowserRuntimeContext()
         return WebViewAssignmentRebuildOwner.Runtime(
             webViewRegistry: webViewRegistry,
-            initialDocumentWarmupRuntime: initialDocumentWarmupRuntime(
-                runtimeContext: runtimeContext
-            ),
+            initialDocumentWarmupRuntime: initialDocumentWarmupRuntime(),
             registerTrackedWebView: { [self] webView, tabId, windowId in
                 registerTrackedWebView(webView, for: tabId, in: windowId)
             },
@@ -1180,9 +1220,8 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         )
     }
 
-    private func initialDocumentWarmupRuntime(
-        runtimeContext: WebViewCoordinatorBrowserRuntimeContext
-    ) -> InitialDocumentWarmupRuntime {
+    private func initialDocumentWarmupRuntime() -> InitialDocumentWarmupRuntime {
+        let runtimeContext = requireInitialDocumentRuntimeContext()
         return InitialDocumentWarmupRuntime(
             needsInitialDocumentExtensionContextLoad: { profileId in
                 runtimeContext.needsInitialDocumentExtensionContextLoad(profileId)
@@ -1191,9 +1230,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 await runtimeContext.ensureInitialDocumentExtensionContextsLoaded(profileId)
             },
             refreshCompositorForWindow: { windowId in
-                guard let windowState = runtimeContext.window(windowId)
-                else { return }
-                runtimeContext.refreshCompositor(windowState)
+                runtimeContext.refreshCompositorForWindow(windowId)
             }
         )
     }
@@ -1256,7 +1293,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func webViewShutdownRuntime() -> SumiWebViewShutdown.NormalTabRuntime {
-        let runtimeContext = requireBrowserRuntimeContext()
+        let runtimeContext = requireShutdownRuntimeContext()
         return SumiWebViewShutdown.NormalTabRuntime(
             cleanupUserScripts: { controller, webViewId in
                 runtimeContext.cleanupUserScripts(controller, webViewId)

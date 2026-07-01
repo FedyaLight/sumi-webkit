@@ -14,8 +14,5 @@ struct WebViewCoordinatorBrowserRuntimeContext {
     let handleUnprotectedWebViewDidClose: (WKWebView) -> Bool
     let refreshCompositor: (BrowserWindowState) -> Void
     let notifyTabActivatedIfLoaded: (Tab) -> Void
-    let needsInitialDocumentExtensionContextLoad: (UUID) -> Bool
-    let ensureInitialDocumentExtensionContextsLoaded: (UUID) async -> Void
-    let cleanupUserScripts: (WKUserContentController, UUID) -> Void
     let globallyVisibleTabIDs: @MainActor @Sendable () -> Set<UUID>
 }

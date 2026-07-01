@@ -558,6 +558,8 @@ class BrowserManager: ObservableObject {
             releaseWebViewCoordinator: { [weak self] coordinator in
                 guard self != nil else { return }
                 coordinator?.detachVisiblePreparationRuntimeContext()
+                coordinator?.detachInitialDocumentRuntimeContext()
+                coordinator?.detachShutdownRuntimeContext()
                 coordinator?.detachBrowserRuntimeContext()
             },
             adoptWebViewCoordinator: { [weak self] coordinator in
@@ -565,6 +567,16 @@ class BrowserManager: ObservableObject {
                 guard let coordinator else { return }
                 coordinator.attachBrowserRuntimeContext(
                     BrowserManagerWebViewCoordinatorRuntimeFactory.browserRuntimeContext(
+                        for: self
+                    )
+                )
+                coordinator.attachInitialDocumentRuntimeContext(
+                    BrowserManagerWebViewCoordinatorRuntimeFactory.initialDocumentContext(
+                        for: self
+                    )
+                )
+                coordinator.attachShutdownRuntimeContext(
+                    BrowserManagerWebViewCoordinatorRuntimeFactory.shutdownContext(
                         for: self
                     )
                 )

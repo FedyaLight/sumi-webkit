@@ -55,6 +55,19 @@ enum BrowserManagerWebViewCoordinatorRuntimeFactory {
                     previous: nil
                 )
             },
+            globallyVisibleTabIDs: { [weak browserManager] in
+                requireBrowserManager(
+                    browserManager,
+                    operation: "resolve globally visible tabs"
+                ).tabSuspensionService.suspensionEvaluationContext().visibleTabIDs
+            }
+        )
+    }
+
+    static func initialDocumentContext(
+        for browserManager: BrowserManager
+    ) -> WebViewCoordinatorInitialDocumentRuntimeContext {
+        WebViewCoordinatorInitialDocumentRuntimeContext(
             needsInitialDocumentExtensionContextLoad: { [weak browserManager] profileId in
                 requireBrowserManager(
                     browserManager,
@@ -68,6 +81,19 @@ enum BrowserManagerWebViewCoordinatorRuntimeFactory {
                 ).extensionsModule
                     .ensureInitialDocumentExtensionContextsLoadedIfNeeded(profileId: profileId)
             },
+            refreshCompositorForWindow: { [weak browserManager] windowId in
+                guard let browserManager = browserManager,
+                      let windowState = browserManager.windowRegistry?.windows[windowId]
+                else { return }
+                browserManager.refreshCompositor(for: windowState)
+            }
+        )
+    }
+
+    static func shutdownContext(
+        for browserManager: BrowserManager
+    ) -> WebViewCoordinatorShutdownRuntimeContext {
+        WebViewCoordinatorShutdownRuntimeContext(
             cleanupUserScripts: { [weak browserManager] controller, webViewId in
                 requireBrowserManager(
                     browserManager,
@@ -76,12 +102,6 @@ enum BrowserManagerWebViewCoordinatorRuntimeFactory {
                     controller: controller,
                     webViewId: webViewId
                 )
-            },
-            globallyVisibleTabIDs: { [weak browserManager] in
-                requireBrowserManager(
-                    browserManager,
-                    operation: "resolve globally visible tabs"
-                ).tabSuspensionService.suspensionEvaluationContext().visibleTabIDs
             }
         )
     }
