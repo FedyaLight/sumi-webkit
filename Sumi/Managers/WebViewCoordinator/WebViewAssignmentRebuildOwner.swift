@@ -97,9 +97,6 @@ final class WebViewAssignmentRebuildOwner {
         let trackedWindowIds = Set(runtime.webViewRegistry.windowIDs(for: tab.id))
         var targetWindowIds = trackedWindowIds
 
-        if let primaryWindowId = tab.primaryWindowId {
-            targetWindowIds.insert(primaryWindowId)
-        }
         if let liveWindowIds = runtime.liveWindowIDs() {
             targetWindowIds.formIntersection(liveWindowIds)
         }
@@ -114,15 +111,15 @@ final class WebViewAssignmentRebuildOwner {
         } else {
             preferredPrimaryWindowIdCandidate = nil
         }
-        let existingPrimaryWindowIdCandidate: UUID?
-        if let existingPrimaryWindowId = tab.primaryWindowId,
-           targetWindowIds.contains(existingPrimaryWindowId) {
-            existingPrimaryWindowIdCandidate = existingPrimaryWindowId
+        let registryPrimaryWindowIdCandidate: UUID?
+        if let registryPrimaryWindowId = runtime.primaryCandidate(tab.id)?.owner.windowID,
+           targetWindowIds.contains(registryPrimaryWindowId) {
+            registryPrimaryWindowIdCandidate = registryPrimaryWindowId
         } else {
-            existingPrimaryWindowIdCandidate = nil
+            registryPrimaryWindowIdCandidate = nil
         }
         let primaryWindowId = preferredPrimaryWindowIdCandidate
-            ?? existingPrimaryWindowIdCandidate
+            ?? registryPrimaryWindowIdCandidate
             ?? targetWindowIds.sorted { $0.uuidString < $1.uuidString }.first
 
         guard let primaryWindowId else { return false }

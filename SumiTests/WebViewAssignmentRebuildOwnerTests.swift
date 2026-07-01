@@ -45,6 +45,21 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
         XCTAssertNil(tab.primaryWindowId)
     }
 
+    func testRebuildLiveWebViewsDoesNotUseStalePrimaryMirrorAsTargetWindow() {
+        let owner = WebViewAssignmentRebuildOwner()
+        let tab = makeTab()
+        let staleWindowId = UUID()
+        tab.assignWebViewToWindow(WKWebView(frame: .zero), windowId: staleWindowId)
+
+        let rebuilt = owner.rebuildLiveWebViews(
+            for: tab,
+            runtime: makeRuntime()
+        )
+
+        XCTAssertFalse(rebuilt)
+        XCTAssertEqual(tab.primaryWindowId, staleWindowId)
+    }
+
     private func makeTab() -> Tab {
         Tab(
             url: URL(string: "https://example.com")!,
@@ -53,10 +68,11 @@ final class WebViewAssignmentRebuildOwnerTests: XCTestCase {
     }
 
     private func makeRuntime(
+        webViewRegistry: WindowWebViewRegistry = WindowWebViewRegistry(),
         primaryCandidate: @escaping WebViewAssignmentRebuildOwner.PrimaryCandidateResolver = { _ in nil }
     ) -> WebViewAssignmentRebuildOwner.Runtime {
         WebViewAssignmentRebuildOwner.Runtime(
-            webViewRegistry: WindowWebViewRegistry(),
+            webViewRegistry: webViewRegistry,
             initialDocumentWarmupRuntime: nil,
             registerTrackedWebView: { _, _, _ in },
             unregisterTrackedWebViewSlot: { _, _ in nil },

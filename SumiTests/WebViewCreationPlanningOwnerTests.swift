@@ -22,6 +22,53 @@ final class WebViewCreationPlanningOwnerTests: XCTestCase {
         }
     }
 
+    func testCreationPlanAdoptsExistingWebViewDespiteStalePrimaryMirrorWhenRegistryIsEmpty() {
+        let owner = WebViewCreationPlanningOwner()
+        let tab = makeWarmupTab()
+        let targetWindowId = UUID()
+        let staleMirrorWindowId = UUID()
+        let webView = WKWebView(frame: .zero)
+        tab.assignWebViewToWindow(webView, windowId: staleMirrorWindowId)
+
+        let plan = owner.creationPlan(
+            for: tab,
+            in: targetWindowId,
+            initialDocumentWarmupRuntime: nil,
+            existingWebView: nil,
+            windowWebViews: [:]
+        )
+
+        guard case let .adoptExistingPrimary(adoptedWebView) = plan else {
+            return XCTFail("Expected adoption from Tab mirror only when registry is empty")
+        }
+        XCTAssertIdentical(adoptedWebView, webView)
+    }
+
+    func testCreationPlanChoosesClonePrimaryFromRegistryNotStalePrimaryMirror() {
+        let owner = WebViewCreationPlanningOwner()
+        let tab = makeWarmupTab()
+        let targetWindowId = UUID()
+        let stableRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let laterRegistryWindowId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        tab.primaryWindowId = laterRegistryWindowId
+
+        let plan = owner.creationPlan(
+            for: tab,
+            in: targetWindowId,
+            initialDocumentWarmupRuntime: nil,
+            existingWebView: nil,
+            windowWebViews: [
+                laterRegistryWindowId: WKWebView(frame: .zero),
+                stableRegistryWindowId: WKWebView(frame: .zero),
+            ]
+        )
+
+        guard case let .createClone(primaryWindowId) = plan else {
+            return XCTFail("Expected clone creation from registry-owned WebViews")
+        }
+        XCTAssertEqual(primaryWindowId, stableRegistryWindowId)
+    }
+
     func testCreationPlanStartsWarmupAndWaitsWhileInFlight() {
         let owner = WebViewCreationPlanningOwner()
         let expectedProfileId = UUID()

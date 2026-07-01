@@ -109,10 +109,7 @@ final class WebViewCreationPlanningOwner {
             return .createPrimary
         }
 
-        guard let primaryWindowId = Self.primaryWindowIdForClone(
-            preferredPrimaryWindowId: tab.primaryWindowId,
-            otherWindowIds: otherWindowIds
-        ) else {
+        guard let primaryWindowId = Self.primaryWindowIdForClone(otherWindowIds: otherWindowIds) else {
             return .createPrimary
         }
 
@@ -140,15 +137,9 @@ final class WebViewCreationPlanningOwner {
     }
 
     static func primaryWindowIdForClone<S: Sequence>(
-        preferredPrimaryWindowId: UUID?,
         otherWindowIds: S
     ) -> UUID? where S.Element == UUID {
         let candidates = Array(otherWindowIds)
-        if let preferredPrimaryWindowId,
-           candidates.contains(preferredPrimaryWindowId) {
-            return preferredPrimaryWindowId
-        }
-
         return candidates.min { $0.uuidString < $1.uuidString }
     }
 
@@ -159,7 +150,6 @@ final class WebViewCreationPlanningOwner {
     ) -> WKWebView? {
         guard let existingWebView = tab.existingWebView else { return nil }
         guard hasTrackedWebViews == false else { return nil }
-        guard tab.primaryWindowId == nil || tab.primaryWindowId == windowId else { return nil }
         return existingWebView
     }
 }

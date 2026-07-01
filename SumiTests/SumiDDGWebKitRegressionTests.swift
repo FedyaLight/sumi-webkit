@@ -252,21 +252,12 @@ final class SumiDDGWebKitRegressionTests: XCTestCase {
         XCTAssertFalse(wrapper.isSplitDropCaptureActive)
     }
 
-    func testCloneWebViewPrimaryWindowSelectionUsesPreferredThenStableFallback() {
-        let preferred = UUID(uuidString: "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF")!
+    func testCloneWebViewPrimaryWindowSelectionUsesStableRegistryFallback() {
         let stableFallback = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let laterFallback = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
 
         XCTAssertEqual(
             WebViewCreationPlanningOwner.primaryWindowIdForClone(
-                preferredPrimaryWindowId: preferred,
-                otherWindowIds: [stableFallback, preferred]
-            ),
-            preferred
-        )
-        XCTAssertEqual(
-            WebViewCreationPlanningOwner.primaryWindowIdForClone(
-                preferredPrimaryWindowId: nil,
                 otherWindowIds: [laterFallback, stableFallback]
             ),
             stableFallback
