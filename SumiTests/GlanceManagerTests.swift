@@ -118,6 +118,31 @@ final class GlanceManagerTests: XCTestCase {
         withExtendedLifetime(windowRegistry) { /* BrowserManager keeps the registry weak. */ }
     }
 
+    func testWebKitCloseForTrackedWebViewWithStaleOwnerCleansSlotWithoutClosingAnotherWindow() {
+        let browserManager = BrowserManager()
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        let sourceTab = makeSourceTab(in: browserManager)
+        let (windowRegistry, visibleWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
+        let staleOwnerWindowID = UUID()
+        let webView = WKWebView()
+
+        browserManager.webViewCoordinator?.setWebView(
+            webView,
+            for: sourceTab.id,
+            in: staleOwnerWindowID
+        )
+
+        XCTAssertTrue(browserManager.handleWebViewDidClose(webView))
+
+        XCTAssertNotNil(browserManager.tabManager.tab(for: sourceTab.id))
+        XCTAssertEqual(visibleWindow.currentTabId, sourceTab.id)
+        XCTAssertNil(browserManager.webViewCoordinator?.getWebView(
+            for: sourceTab.id,
+            in: staleOwnerWindowID
+        ))
+        withExtendedLifetime(windowRegistry) { /* BrowserManager keeps the registry weak. */ }
+    }
+
     func testMoveToNewTabAdoptsSamePreviewTabAndWebView() async throws {
         let browserManager = BrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)

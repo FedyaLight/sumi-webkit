@@ -34,11 +34,11 @@ enum BrowserManagerWebViewCoordinatorRuntimeFactory {
             currentTab: { [weak browserManager] windowState in
                 requireBrowserManager(browserManager, operation: "resolve current tab").currentTab(for: windowState)
             },
-            closeTab: { [weak browserManager] tab, windowState in
-                requireBrowserManager(browserManager, operation: "close tab").closeTab(tab, in: windowState)
-            },
-            removeTab: { [weak browserManager] tabId in
-                requireBrowserManager(browserManager, operation: "remove tab").tabManager.removeTab(tabId)
+            handleUnprotectedWebViewDidClose: { [weak browserManager] webView in
+                requireBrowserManager(
+                    browserManager,
+                    operation: "handle unprotected WebKit close"
+                ).handleNormalWebViewDidClose(webView)
             },
             refreshCompositor: { [weak browserManager] windowState in
                 requireBrowserManager(

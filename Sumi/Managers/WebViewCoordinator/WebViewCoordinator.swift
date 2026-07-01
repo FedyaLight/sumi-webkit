@@ -377,8 +377,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         windowId(containing: webView)
     }
 
-    @discardableResult
-    func handleWebViewDidClose(_ webView: WKWebView) -> Bool {
+    func prepareWebKitClose(
+        _ webView: WKWebView
+    ) -> WebViewCoordinatorWebKitClosePreparation {
         let webViewID = ObjectIdentifier(webView)
         mediaProtectionOwner.note(webView)
         finishDestructiveDataCleanupNavigation(on: webView)
@@ -389,20 +390,17 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             reason: "webViewDidClose"
         ) {
             mediaProtectionOwner.closeFullscreenMediaIfNeeded(on: webView)
-            return true
+            return .deferred
         }
 
-        if let owner = trackedOwner(containing: webView) {
-            return closeTrackedWebViewFromWebKit(webView, owner: owner)
-        }
+        return .ready(trackedOwner: trackedOwner(containing: webView))
+    }
 
-        if let (tab, windowState) = untrackedTabContext(for: webView) {
-            closeTabForWebKitCloseRequest(tab, windowState: windowState)
-            return true
-        }
-
-        SumiAuxiliaryWebViewShutdown.perform(on: webView)
-        return true
+    func cleanupTrackedWebViewAfterWebKitClose(
+        _ webView: WKWebView,
+        owner: TrackedWebViewOwner
+    ) {
+        cleanupTrackedWebView(webView, owner: owner)
     }
 
     private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
@@ -853,7 +851,9 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
             guard let webView = resolveWebView(with: webViewID) else {
                 return false
             }
-            handleWebViewDidClose(webView)
+            guard requireBrowserRuntimeContext().handleUnprotectedWebViewDidClose(webView) else {
+                return false
+            }
         case .cleanupWindow(let windowID):
             cleanupWindow(windowID, tabManager: requireBrowserRuntimeContext().tabManager())
         case .cleanupAllWebViews:
@@ -952,73 +952,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
                 )
             }
         )
-    }
-
-    @discardableResult
-    private func closeTrackedWebViewFromWebKit(
-        _ webView: WKWebView,
-        owner: TrackedWebViewOwner
-    ) -> Bool {
-        let runtimeContext = requireBrowserRuntimeContext()
-        guard let tab = resolvedTab(with: owner.tabID, runtimeContext: runtimeContext) else {
-            cleanupTrackedWebView(webView, owner: owner)
-            return true
-        }
-
-        let windowState = runtimeContext.window(owner.windowID)
-            ?? runtimeContext.windowContaining(tab)
-        closeTabForWebKitCloseRequest(
-            tab,
-            windowState: windowState,
-            runtimeContext: runtimeContext
-        )
-        return true
-    }
-
-    private func closeTabForWebKitCloseRequest(
-        _ tab: Tab,
-        windowState: BrowserWindowState?,
-        runtimeContext: WebViewCoordinatorBrowserRuntimeContext? = nil
-    ) {
-        let runtimeContext = runtimeContext ?? requireBrowserRuntimeContext()
-
-        if let windowState {
-            runtimeContext.closeTab(tab, windowState)
-            return
-        }
-
-        if let containingWindow = runtimeContext.windowContaining(tab) {
-            runtimeContext.closeTab(tab, containingWindow)
-            return
-        }
-
-        tab.performComprehensiveWebViewCleanup()
-        runtimeContext.removeTab(tab.id)
-    }
-
-    private func untrackedTabContext(
-        for webView: WKWebView
-    ) -> (tab: Tab, windowState: BrowserWindowState?)? {
-        let runtimeContext = requireBrowserRuntimeContext()
-
-        func matches(_ tab: Tab) -> Bool {
-            tab.existingWebView === webView || tab.assignedWebView === webView
-        }
-
-        for windowState in runtimeContext.allWindows() {
-            if let tab = windowState.ephemeralTabs.first(where: matches) {
-                return (tab, windowState)
-            }
-        }
-
-        if let tab = runtimeContext.regularTabs().first(where: matches) {
-            return (
-                tab,
-                runtimeContext.windowContaining(tab)
-            )
-        }
-
-        return nil
     }
 
     private func tabScopedCleanupValidationContext(

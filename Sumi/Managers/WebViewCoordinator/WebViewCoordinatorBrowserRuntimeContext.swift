@@ -11,8 +11,7 @@ struct WebViewCoordinatorBrowserRuntimeContext {
     let window: (UUID) -> BrowserWindowState?
     let windowContaining: (Tab) -> BrowserWindowState?
     let currentTab: (BrowserWindowState) -> Tab?
-    let closeTab: (Tab, BrowserWindowState) -> Void
-    let removeTab: (UUID) -> Void
+    let handleUnprotectedWebViewDidClose: (WKWebView) -> Bool
     let refreshCompositor: (BrowserWindowState) -> Void
     let notifyTabActivatedIfLoaded: (Tab) -> Void
     let needsInitialDocumentExtensionContextLoad: (UUID) -> Bool

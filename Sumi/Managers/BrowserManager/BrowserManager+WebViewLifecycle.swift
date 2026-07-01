@@ -13,7 +13,51 @@ extension BrowserManager {
             return true
         }
 
-        return requireWebViewCoordinator().handleWebViewDidClose(webView)
+        return handleNormalWebViewDidClose(webView)
+    }
+
+    @discardableResult
+    func handleNormalWebViewDidClose(_ webView: WKWebView) -> Bool {
+        BrowserWebKitCloseRoutingOwner().handleWebViewDidClose(
+            webView,
+            runtime: webKitCloseRoutingRuntime()
+        )
+    }
+
+    private func webKitCloseRoutingRuntime() -> BrowserWebKitCloseRoutingOwner.Runtime {
+        BrowserWebKitCloseRoutingOwner.Runtime(
+            prepareClose: { [weak self] webView in
+                self?.requireWebViewCoordinator().prepareWebKitClose(webView)
+                    ?? .ready(trackedOwner: nil)
+            },
+            cleanupTrackedWebView: { [weak self] webView, owner in
+                self?.requireWebViewCoordinator().cleanupTrackedWebViewAfterWebKitClose(
+                    webView,
+                    owner: owner
+                )
+            },
+            tab: { [weak self] tabID in
+                self?.tabManager.tab(for: tabID)
+            },
+            regularTabs: { [weak self] in
+                self?.tabManager.allTabs() ?? []
+            },
+            allWindows: { [weak self] in
+                self?.windowRegistry?.allWindows ?? []
+            },
+            window: { [weak self] windowID in
+                self?.windowRegistry?.windows[windowID]
+            },
+            windowContaining: { [weak self] tab in
+                self?.windowState(containing: tab)
+            },
+            closeTab: { [weak self] tab, windowState in
+                self?.closeTab(tab, in: windowState)
+            },
+            removeTab: { [weak self] tabID in
+                self?.tabManager.removeTab(tabID)
+            }
+        )
     }
 
     func closeAuxiliaryMiniWindow(
