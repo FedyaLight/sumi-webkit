@@ -11,6 +11,7 @@ checks=(
   "scripts/check_startup_persistence_boundary.sh"
   "scripts/check_tracker_radar_import_boundary.sh"
   "scripts/check_userscript_hot_paths.sh"
+  "scripts/check_webview_runtime_context_boundary.sh"
 )
 
 for check in "${checks[@]}"; do
