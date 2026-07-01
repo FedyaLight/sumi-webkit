@@ -39,6 +39,16 @@ final class ShortcutActionDispatcherTests: XCTestCase {
         XCTAssertEqual(router.events, [.goBack])
     }
 
+    func testCloseTabRoutesSynchronously() {
+        let router = RecordingShortcutActionRouter()
+        let dispatcher = ShortcutActionDispatcher()
+        dispatcher.actionRouter = router
+
+        dispatcher.execute(.closeTab)
+
+        XCTAssertEqual(router.events, [.closeTab])
+    }
+
     func testFocusAddressBarUsesActiveURLPrefill() async {
         let router = RecordingShortcutActionRouter()
         router.activePageURL = URL(string: "https://example.com/path")!

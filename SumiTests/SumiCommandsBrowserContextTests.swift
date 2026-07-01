@@ -109,6 +109,19 @@ final class SumiCommandsBrowserContextTests: XCTestCase {
         ])
     }
 
+    func testCloseCommandsForwardExplicitWindowTargets() throws {
+        let browserActions = FakeCommandBrowserActions()
+        let context = try makeContext(browserActions: browserActions)
+        let tabWindow = BrowserWindowState()
+        let closeWindow = BrowserWindowState()
+
+        context.closeCurrentTab(in: tabWindow)
+        context.closeWindow(closeWindow)
+
+        XCTAssertEqual(browserActions.closedTabWindowIds, [tabWindow.id])
+        XCTAssertEqual(browserActions.closedWindowIds, [closeWindow.id])
+    }
+
     private func makeContext(
         pageState: FakeCommandPageState = FakeCommandPageState(),
         browserActions: FakeCommandBrowserActions = FakeCommandBrowserActions(),
@@ -191,6 +204,8 @@ private final class FakeCommandBrowserActions: SumiCommandBrowserActionRouting {
     }
 
     private(set) var focusCalls: [FocusCall] = []
+    private(set) var closedTabWindowIds: [UUID] = []
+    private(set) var closedWindowIds: [UUID] = []
 
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState?) {
         _ = (pane, windowState)
@@ -201,7 +216,13 @@ private final class FakeCommandBrowserActions: SumiCommandBrowserActionRouting {
     func showGradientEditor() {}
     func showQuitDialog() {}
     func closeCurrentTab() {}
+    func closeCurrentTab(in windowState: BrowserWindowState) {
+        closedTabWindowIds.append(windowState.id)
+    }
     func closeActiveWindow() {}
+    func closeWindow(_ windowState: BrowserWindowState) {
+        closedWindowIds.append(windowState.id)
+    }
     func undoCloseTab() {}
     func openNewTabSurfaceInActiveWindow() {}
     func createNewWindow() {}

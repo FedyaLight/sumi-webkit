@@ -95,4 +95,68 @@ final class WindowRegistryTests: XCTestCase {
         XCTAssertIdentical(registry.activeWindow, fallbackWindow)
         XCTAssertEqual(activatedWindowIds, [fallbackWindow.id])
     }
+
+    func testSetActiveBeforeRegisterReplacesPreviousActiveWhenRegistered() {
+        let registry = WindowRegistry()
+        let previousWindow = BrowserWindowState()
+        let pendingWindow = BrowserWindowState()
+        var activatedWindowIds: [UUID] = []
+
+        registry.register(previousWindow)
+        registry.setActive(previousWindow)
+        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+
+        registry.setActive(pendingWindow)
+
+        XCTAssertEqual(registry.activeWindowId, pendingWindow.id)
+        XCTAssertNil(registry.activeWindow)
+        XCTAssertTrue(activatedWindowIds.isEmpty)
+
+        registry.register(pendingWindow)
+
+        XCTAssertEqual(registry.activeWindowId, pendingWindow.id)
+        XCTAssertIdentical(registry.activeWindow, pendingWindow)
+        XCTAssertEqual(activatedWindowIds, [pendingWindow.id])
+    }
+
+    func testSetActiveBeforeRegisterBecomesActiveWhenRegistered() {
+        let registry = WindowRegistry()
+        let window = BrowserWindowState()
+        var activatedWindowIds: [UUID] = []
+        registry.onActiveWindowChange = { activatedWindowIds.append($0.id) }
+
+        registry.setActive(window)
+
+        XCTAssertEqual(registry.activeWindowId, window.id)
+        XCTAssertNil(registry.activeWindow)
+        XCTAssertTrue(activatedWindowIds.isEmpty)
+
+        registry.register(window)
+
+        XCTAssertEqual(registry.activeWindowId, window.id)
+        XCTAssertIdentical(registry.activeWindow, window)
+        XCTAssertEqual(activatedWindowIds, [window.id])
+    }
+
+    func testWindowStateContainingReturnsParentForChildWindow() {
+        let registry = WindowRegistry()
+        let parentWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let childWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 100, height: 80),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        let windowState = BrowserWindowState()
+        windowState.window = parentWindow
+        parentWindow.addChildWindow(childWindow, ordered: .above)
+        registry.register(windowState)
+
+        XCTAssertIdentical(registry.windowState(containing: childWindow), windowState)
+    }
 }

@@ -15,11 +15,13 @@ protocol BrowserMouseButtonCommandRouting: AnyObject {
 @MainActor
 protocol BrowserTabCommandRouting: AnyObject {
     func closeCurrentTab()
+    func closeCurrentTab(in windowState: BrowserWindowState)
 }
 
 @MainActor
 protocol WindowCommandRouting: AnyObject {
     func closeActiveWindow()
+    func closeWindow(_ windowState: BrowserWindowState)
 }
 
 @MainActor

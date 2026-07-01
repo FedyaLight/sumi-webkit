@@ -3,7 +3,6 @@ import Foundation
 @MainActor
 protocol SumiProfileRoutingSupport: AnyObject {
     var currentProfile: Profile? { get }
-    var isSwitchingProfile: Bool { get }
     var profileManager: ProfileManager { get }
     var windowRegistry: WindowRegistry? { get }
 
@@ -29,7 +28,6 @@ final class SumiProfileRouter {
         support: SumiProfileRoutingSupport
     ) {
         guard let targetProfileId = windowState.currentProfileId else { return }
-        guard !support.isSwitchingProfile else { return }
         guard support.currentProfile?.id != targetProfileId else { return }
         guard let targetProfile = support.profileManager.profiles.first(where: { $0.id == targetProfileId })
         else {
@@ -47,12 +45,6 @@ final class SumiProfileRouter {
                 context: context,
                 in: windowState
             )
-            await MainActor.run {
-                if let activeId = support?.windowRegistry?.activeWindow?.id,
-                   activeId == windowState.id {
-                    support?.windowRegistry?.activeWindow?.currentProfileId = targetProfileId
-                }
-            }
         }
     }
 }

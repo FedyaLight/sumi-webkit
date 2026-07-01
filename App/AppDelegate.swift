@@ -37,6 +37,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     weak var windowRegistry: WindowRegistry?
     private var quitConfirmationInProgress = false
     private let mouseButtonRoutingOwner = BrowserMouseButtonRoutingOwner()
+    private let menuCloseRoutingOwner = BrowserMenuCloseRoutingOwner()
 
     private let urlEventClass = AEEventClass(kInternetEventClass)
     private let urlEventID = AEEventID(kAEGetURL)
@@ -151,21 +152,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     }
 
     @MainActor @objc private func handleCloseTabMenuItem(_ sender: Any?) {
-        if let keyWindow = NSApp.keyWindow,
-           windowRegistry?.windows.values.contains(where: { $0.window === keyWindow }) != true {
-            keyWindow.performClose(sender)
-            return
-        }
-        tabCommandRouter?.closeCurrentTab()
+        menuCloseRoutingOwner.closeCurrentTab(
+            keyWindow: NSApp.keyWindow,
+            sender: sender,
+            windowRegistry: windowRegistry,
+            closeCurrentTab: { [weak self] windowState in
+                self?.tabCommandRouter?.closeCurrentTab(in: windowState)
+            }
+        )
     }
 
     @MainActor @objc private func handleCloseWindowMenuItem(_ sender: Any?) {
-        if let keyWindow = NSApp.keyWindow,
-           windowRegistry?.windows.values.contains(where: { $0.window === keyWindow }) != true {
-            keyWindow.performClose(sender)
-            return
-        }
-        windowRouter?.closeActiveWindow()
+        menuCloseRoutingOwner.closeWindow(
+            keyWindow: NSApp.keyWindow,
+            sender: sender,
+            windowRegistry: windowRegistry,
+            closeWindow: { [weak self] windowState in
+                self?.windowRouter?.closeWindow(windowState)
+            }
+        )
     }
 
     /// Handles URLs opened from external sources (e.g., Finder, other apps)

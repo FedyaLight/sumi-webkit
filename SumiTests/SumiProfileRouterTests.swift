@@ -57,18 +57,86 @@ final class SumiProfileRouterTests: XCTestCase {
 
         try? await Task.sleep(nanoseconds: 200_000_000)
         XCTAssertEqual(support.switchedProfileId, targetProfile.id)
+        XCTAssertEqual(support.switchedWindowId, windowState.id)
+    }
+
+    func testWindowActivationSwitchUpdatesActiveRequestedWindow() async throws {
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        let currentProfile = try XCTUnwrap(browserManager.currentProfile)
+        let targetProfile = Profile(name: "Target")
+        let requestedWindow = BrowserWindowState()
+        let activeWindow = BrowserWindowState()
+        requestedWindow.currentProfileId = currentProfile.id
+        activeWindow.currentProfileId = currentProfile.id
+
+        let registry = WindowRegistry()
+        registry.register(requestedWindow)
+        registry.register(activeWindow)
+        registry.setActive(requestedWindow)
+        browserManager.windowRegistry = registry
+
+        await browserManager.switchToProfile(
+            targetProfile,
+            context: .windowActivation,
+            in: requestedWindow
+        )
+
+        XCTAssertEqual(requestedWindow.currentProfileId, targetProfile.id)
+        XCTAssertEqual(activeWindow.currentProfileId, currentProfile.id)
+        XCTAssertEqual(browserManager.currentProfile?.id, targetProfile.id)
+    }
+
+    func testWindowActivationSwitchIgnoresInactiveRequestedWindow() async throws {
+        let browserManager = BrowserManager(
+            startupPersistence: BrowserManagerStartupPersistence(
+                container: try makeInMemoryStartupContainer()
+            )
+        )
+        let currentProfile = try XCTUnwrap(browserManager.currentProfile)
+        let targetProfile = Profile(name: "Target")
+        let requestedWindow = BrowserWindowState()
+        let activeWindow = BrowserWindowState()
+        requestedWindow.currentProfileId = currentProfile.id
+        activeWindow.currentProfileId = currentProfile.id
+
+        let registry = WindowRegistry()
+        registry.register(requestedWindow)
+        registry.register(activeWindow)
+        registry.setActive(activeWindow)
+        browserManager.windowRegistry = registry
+
+        await browserManager.switchToProfile(
+            targetProfile,
+            context: .windowActivation,
+            in: requestedWindow
+        )
+
+        XCTAssertEqual(requestedWindow.currentProfileId, currentProfile.id)
+        XCTAssertEqual(activeWindow.currentProfileId, currentProfile.id)
+        XCTAssertEqual(browserManager.currentProfile?.id, currentProfile.id)
+    }
+
+    private func makeInMemoryStartupContainer() throws -> ModelContainer {
+        try ModelContainer(
+            for: SumiStartupPersistence.schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
     }
 }
 
 @MainActor
 private final class FakeSumiProfileRoutingSupport: SumiProfileRoutingSupport {
     let currentProfile: Profile?
-    let isSwitchingProfile = false
     let startupContainer: ModelContainer
     let profileManager: ProfileManager
     let windowRegistry: WindowRegistry? = WindowRegistry()
 
     private(set) var switchedProfileId: UUID?
+    private(set) var switchedWindowId: UUID?
 
     init(currentProfile: Profile?, profiles: [Profile]) throws {
         self.currentProfile = currentProfile
@@ -83,8 +151,9 @@ private final class FakeSumiProfileRoutingSupport: SumiProfileRoutingSupport {
     func switchToProfile(
         _ profile: Profile,
         context _: BrowserManager.ProfileSwitchContext,
-        in _: BrowserWindowState?
+        in windowState: BrowserWindowState?
     ) async {
         switchedProfileId = profile.id
+        switchedWindowId = windowState?.id
     }
 }

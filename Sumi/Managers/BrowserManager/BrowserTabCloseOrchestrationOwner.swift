@@ -26,21 +26,25 @@ final class BrowserTabCloseOrchestrationOwner {
             return
         }
 
-        if activeWindow.isFloatingBarVisible {
+        closeCurrentTab(in: activeWindow)
+    }
+
+    func closeCurrentTab(in windowState: BrowserWindowState) {
+        if windowState.isFloatingBarVisible {
             return
         }
 
-        if dependencies.glanceManager.activePreviewTab(for: activeWindow) != nil {
+        if dependencies.glanceManager.activePreviewTab(for: windowState) != nil {
             dependencies.glanceManager.dismissGlance()
             return
         }
 
-        guard let currentTab = dependencies.currentTab(activeWindow) else {
-            dependencies.showEmptyState(activeWindow)
+        guard let currentTab = dependencies.currentTab(windowState) else {
+            dependencies.showEmptyState(windowState)
             return
         }
 
-        closeTab(currentTab, in: activeWindow)
+        closeTab(currentTab, in: windowState)
     }
 
     func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {

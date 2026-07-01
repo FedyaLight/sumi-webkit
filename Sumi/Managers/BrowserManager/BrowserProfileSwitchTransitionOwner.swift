@@ -4,7 +4,6 @@ import SwiftUI
 @MainActor
 protocol BrowserProfileSwitchTransitionHost: AnyObject {
     var currentProfile: Profile? { get set }
-    var isSwitchingProfile: Bool { get set }
     var isTransitioningProfile: Bool { get set }
     var windowRegistry: WindowRegistry? { get }
 
@@ -31,7 +30,7 @@ final class BrowserProfileSwitchTransitionOwner {
     }
 
     actor ProfileOps {
-        func run(_ body: @MainActor () async -> Void) async {
+        func run(_ body: @MainActor () -> Bool) async -> Bool {
             await body()
         }
     }
@@ -53,17 +52,14 @@ final class BrowserProfileSwitchTransitionOwner {
         context: BrowserManager.ProfileSwitchContext,
         in windowState: BrowserWindowState?
     ) async {
-        await profileOps.run { [weak self] in
-            guard let self else { return }
+        let targetWindowState = windowState ?? host.windowRegistry?.activeWindow
+        let shouldRunCleanup = await profileOps.run { [weak self] in
+            guard let self else { return false }
             let host = self.host
-            if host.isSwitchingProfile {
-                RuntimeDiagnostics.emit {
-                    "⏳ [BrowserManager] Ignoring concurrent profile switch request"
-                }
-                return
-            }
-            host.isSwitchingProfile = true
-            defer { host.isSwitchingProfile = false }
+            guard self.canApplyProfileSwitch(
+                context: context,
+                targetWindowState: targetWindowState
+            ) else { return false }
 
             let previousProfile = host.currentProfile
             RuntimeDiagnostics.emit {
@@ -74,6 +70,7 @@ final class BrowserProfileSwitchTransitionOwner {
             let performUpdates = {
                 self.applyProfileSwitchUpdates(
                     profile,
+                    in: targetWindowState,
                     animateTransition: animateTransition
                 )
             }
@@ -89,7 +86,7 @@ final class BrowserProfileSwitchTransitionOwner {
             if context.shouldProvideFeedback {
                 host.showProfileSwitchToast(
                     to: profile,
-                    in: windowState ?? host.windowRegistry?.activeWindow
+                    in: targetWindowState
                 )
                 NSHapticFeedbackManager.defaultPerformer.perform(
                     .generic,
@@ -103,24 +100,52 @@ final class BrowserProfileSwitchTransitionOwner {
                 }
             }
 
-            await host.runAutomaticPermissionCleanupIfNeeded(for: profile)
-            host.scheduleAutomaticBrowsingDataCleanup(
-                reason: "profile-switch",
-                force: false,
-                delayNanoseconds: nil
-            )
+            return true
+        }
+
+        guard shouldRunCleanup else { return }
+        _ = await host.runAutomaticPermissionCleanupIfNeeded(for: profile)
+        host.scheduleAutomaticBrowsingDataCleanup(
+            reason: "profile-switch",
+            force: false,
+            delayNanoseconds: nil
+        )
+    }
+
+    private func canApplyProfileSwitch(
+        context: BrowserManager.ProfileSwitchContext,
+        targetWindowState: BrowserWindowState?
+    ) -> Bool {
+        switch context {
+        case .userInitiated, .recovery:
+            return true
+        case .windowActivation, .spaceChange:
+            guard let targetWindowState,
+                  let windowRegistry = host.windowRegistry,
+                  let registeredWindow = windowRegistry.windows[targetWindowState.id],
+                  registeredWindow === targetWindowState,
+                  windowRegistry.activeWindow === targetWindowState
+            else {
+                RuntimeDiagnostics.emit {
+                    let targetId = targetWindowState?.id.uuidString ?? "nil"
+                    return "⏳ [BrowserManager] Ignoring stale profile switch for \(context): targetWindow=\(targetId)"
+                }
+                return false
+            }
+            return true
         }
     }
 
     private func applyProfileSwitchUpdates(
         _ profile: Profile,
+        in windowState: BrowserWindowState?,
         animateTransition: Bool
     ) {
         let host = self.host
         dependencies.auxiliaryWindowManager.closeAll(reason: .profileSwitch)
         host.isTransitioningProfile = animateTransition
         host.currentProfile = profile
-        host.windowRegistry?.activeWindow?.currentProfileId = profile.id
+        windowState?.currentProfileId = profile.id
         dependencies.bookmarkManager.setFaviconPrefetchPartition(
             dependencies.faviconService.partition(profile: profile)
         )

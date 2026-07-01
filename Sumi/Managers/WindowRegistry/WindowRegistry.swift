@@ -78,6 +78,9 @@ class WindowRegistry {
             }
 
             onWindowRegister?(window)
+            if activeWindowId == window.id {
+                onActiveWindowChange?(window)
+            }
             RuntimeDiagnostics.emit {
                 "🪟 [WindowRegistry] Registered window: \(window.id)"
             }
@@ -118,10 +121,25 @@ class WindowRegistry {
 
     /// Set the active (focused) window
     func setActive(_ window: BrowserWindowState) {
-        activeWindowId = window.id
-        onActiveWindowChange?(window)
+        guard let registeredWindow = windows[window.id] else {
+            activeWindowId = window.id
+            RuntimeDiagnostics.emit {
+                "🪟 [WindowRegistry] Pending active window: \(window.id)"
+            }
+            return
+        }
+
+        guard registeredWindow === window else {
+            RuntimeDiagnostics.emit {
+                "🪟 [WindowRegistry] Ignored active window change for stale window object: \(window.id)"
+            }
+            return
+        }
+
+        activeWindowId = registeredWindow.id
+        onActiveWindowChange?(registeredWindow)
         RuntimeDiagnostics.emit {
-            "🪟 [WindowRegistry] Active window: \(window.id)"
+            "🪟 [WindowRegistry] Active window: \(registeredWindow.id)"
         }
     }
 

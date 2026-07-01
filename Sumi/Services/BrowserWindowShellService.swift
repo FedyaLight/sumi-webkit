@@ -130,7 +130,12 @@ final class BrowserWindowShellService {
     }
 
     func closeActiveWindow(in windowRegistry: WindowRegistry) {
-        windowRegistry.activeWindow?.window?.performCloseFromBrowserChrome(nil)
+        guard let activeWindow = windowRegistry.activeWindow else { return }
+        closeWindow(activeWindow)
+    }
+
+    func closeWindow(_ windowState: BrowserWindowState) {
+        windowState.window?.performCloseFromBrowserChrome(nil)
     }
 
     func toggleFullScreenForActiveWindow(in windowRegistry: WindowRegistry) {

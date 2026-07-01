@@ -293,7 +293,6 @@ class BrowserManager: ObservableObject {
     private lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
         dependencies: .live(browserManager: self)
     )
-    var isSwitchingProfile: Bool = false
     private var structuralChangeCancellable: AnyCancellable?
     private var tabManagerLoadObserverToken: NSObjectProtocol?
     private var browsingDataRetentionObserverToken: NSObjectProtocol?
@@ -808,6 +807,10 @@ class BrowserManager: ObservableObject {
 
     func closeCurrentTab() {
         tabCloseOrchestrationOwner.closeCurrentTab()
+    }
+
+    func closeCurrentTab(in windowState: BrowserWindowState) {
+        tabCloseOrchestrationOwner.closeCurrentTab(in: windowState)
     }
 
     func closeTab(_ tab: Tab, in windowState: BrowserWindowState) {

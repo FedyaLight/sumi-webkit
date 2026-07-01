@@ -18,7 +18,9 @@ protocol SumiCommandBrowserActionRouting: AnyObject {
     func showGradientEditor()
     func showQuitDialog()
     func closeCurrentTab()
+    func closeCurrentTab(in windowState: BrowserWindowState)
     func closeActiveWindow()
+    func closeWindow(_ windowState: BrowserWindowState)
     func undoCloseTab()
     func openNewTabSurfaceInActiveWindow()
     func createNewWindow()
@@ -235,8 +237,16 @@ final class SumiCommandsBrowserContext {
         browserActions.closeCurrentTab()
     }
 
+    func closeCurrentTab(in windowState: BrowserWindowState) {
+        browserActions.closeCurrentTab(in: windowState)
+    }
+
     func closeActiveWindow() {
         browserActions.closeActiveWindow()
+    }
+
+    func closeWindow(_ windowState: BrowserWindowState) {
+        browserActions.closeWindow(windowState)
     }
 
     func undoCloseTab() {

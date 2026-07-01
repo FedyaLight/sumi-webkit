@@ -92,8 +92,16 @@ private final class SumiCommandsBrowserManagerAdapter:
         browserManager?.closeCurrentTab()
     }
 
+    func closeCurrentTab(in windowState: BrowserWindowState) {
+        browserManager?.closeCurrentTab(in: windowState)
+    }
+
     func closeActiveWindow() {
         browserManager?.closeActiveWindow()
+    }
+
+    func closeWindow(_ windowState: BrowserWindowState) {
+        browserManager?.closeWindow(windowState)
     }
 
     func undoCloseTab() {

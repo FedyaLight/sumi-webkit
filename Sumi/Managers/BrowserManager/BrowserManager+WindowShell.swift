@@ -19,6 +19,10 @@ extension BrowserManager {
         windowShellService.closeActiveWindow(in: requireWindowRegistry())
     }
 
+    func closeWindow(_ windowState: BrowserWindowState) {
+        windowShellService.closeWindow(windowState)
+    }
+
     func toggleFullScreenForActiveWindow() {
         windowShellService.toggleFullScreenForActiveWindow(in: requireWindowRegistry())
     }

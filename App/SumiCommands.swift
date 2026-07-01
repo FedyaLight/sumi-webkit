@@ -14,6 +14,7 @@ struct SumiCommands: Commands {
     let shortcutManager: KeyboardShortcutManager
     @ObservedObject private var recentlyClosedManager: RecentlyClosedManager
     @Environment(\.sumiSettings) var sumiSettings
+    private let menuCloseRoutingOwner = BrowserMenuCloseRoutingOwner()
 
     init(
         browserContext: SumiCommandsBrowserContext,
@@ -38,25 +39,26 @@ struct SumiCommands: Commands {
         )
     }
 
-    private func keyWindowIsManagedBrowserWindow() -> Bool {
-        guard let keyWindow = NSApp.keyWindow else { return false }
-        return windowRegistry.windows.values.contains(where: { $0.window === keyWindow })
-    }
-
     private func closeKeyWindowOrCurrentTab() {
-        if let keyWindow = NSApp.keyWindow, keyWindowIsManagedBrowserWindow() == false {
-            keyWindow.performClose(nil)
-            return
-        }
-        browserContext.closeCurrentTab()
+        menuCloseRoutingOwner.closeCurrentTab(
+            keyWindow: NSApp.keyWindow,
+            sender: nil,
+            windowRegistry: windowRegistry,
+            closeCurrentTab: { windowState in
+                browserContext.closeCurrentTab(in: windowState)
+            }
+        )
     }
 
     private func closeKeyWindowOrSumiBrowserWindow() {
-        if let keyWindow = NSApp.keyWindow, keyWindowIsManagedBrowserWindow() == false {
-            keyWindow.performClose(nil)
-            return
-        }
-        browserContext.closeActiveWindow()
+        menuCloseRoutingOwner.closeWindow(
+            keyWindow: NSApp.keyWindow,
+            sender: nil,
+            windowRegistry: windowRegistry,
+            closeWindow: { windowState in
+                browserContext.closeWindow(windowState)
+            }
+        )
     }
 
     @CommandsBuilder
