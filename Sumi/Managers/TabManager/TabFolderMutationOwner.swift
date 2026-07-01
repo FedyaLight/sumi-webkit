@@ -144,23 +144,30 @@ final class TabFolderMutationOwner {
                 for: spaceId
             )
 
+            var cleanupResult = ShortcutPinSelectionCleanupResult()
             for pin in deletedPins {
                 tabManager.runtimeContext?.captureDeletedShortcutLauncher(pin)
                 let liveWindowIds = tabManager.transientShortcutTabsByWindow.compactMap { windowId, tabsByPin in
                     tabsByPin[pin.id] == nil ? nil : windowId
                 }
                 for windowId in liveWindowIds {
-                    tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowId)
+                    let windowState = tabManager.runtimeContext?.windowState(for: windowId)
+                    if tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowId),
+                       let windowState {
+                        cleanupResult.recordCurrentSelectionCleared(in: windowState)
+                    }
                 }
-                tabManager.runtimeContext?.forEachWindowState { windowState in
-                    windowState.removeFromShortcutLiveSelectionHistory(pin.id)
-                }
+                cleanupResult.merge(tabManager.clearDeletedShortcutPinSelectionReferences(pin.id))
             }
 
             for tabId in liveTabsToRemove {
                 tabManager.removeTab(tabId)
             }
 
+            if cleanupResult.didClearCurrentSelection {
+                tabManager.runtimeContext?.validateWindowStates()
+            }
+            tabManager.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
             tabManager.runtimeContext?.deleteLiveFolderState(forFolderIds: deletedFolderIds)
             tabManager.scheduleStructuralPersistence()
         }

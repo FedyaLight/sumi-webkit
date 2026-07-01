@@ -770,6 +770,9 @@ extension TabManagerRuntimeContext {
             validateWindowStates: { [weak browserManager] in
                 browserManager?.validateWindowStates()
             },
+            persistWindowSession: { [weak browserManager] windowState in
+                browserManager?.persistWindowSession(for: windowState)
+            },
             syncWorkspaceThemeAcrossWindows: { [weak browserManager] space, animate in
                 browserManager?.syncWorkspaceThemeAcrossWindows(for: space, animate: animate)
             },

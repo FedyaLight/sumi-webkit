@@ -1,6 +1,31 @@
 import Foundation
 
 @MainActor
+struct ShortcutPinSelectionCleanupResult {
+    private(set) var didClearCurrentSelection = false
+    private(set) var windowStatesNeedingPersistence: [BrowserWindowState] = []
+
+    mutating func recordCurrentSelectionCleared(in windowState: BrowserWindowState) {
+        didClearCurrentSelection = true
+        recordWindowSessionChange(in: windowState)
+    }
+
+    mutating func recordWindowSessionChange(in windowState: BrowserWindowState) {
+        guard !windowStatesNeedingPersistence.contains(where: { $0.id == windowState.id }) else {
+            return
+        }
+        windowStatesNeedingPersistence.append(windowState)
+    }
+
+    mutating func merge(_ other: ShortcutPinSelectionCleanupResult) {
+        didClearCurrentSelection = didClearCurrentSelection || other.didClearCurrentSelection
+        for windowState in other.windowStatesNeedingPersistence {
+            recordWindowSessionChange(in: windowState)
+        }
+    }
+}
+
+@MainActor
 extension TabManager {
     // MARK: - Pinned tabs (global)
 
@@ -114,12 +139,19 @@ extension TabManager {
             let liveWindowIds = transientShortcutTabsByWindow.compactMap { windowId, tabsByPin in
                 tabsByPin[pin.id] == nil ? nil : windowId
             }
+            var cleanupResult = ShortcutPinSelectionCleanupResult()
             for windowId in liveWindowIds {
-                deactivateShortcutLiveTab(pinId: pin.id, in: windowId)
+                let windowState = runtimeContext?.windowState(for: windowId)
+                if deactivateShortcutLiveTab(pinId: pin.id, in: windowId),
+                   let windowState {
+                    cleanupResult.recordCurrentSelectionCleared(in: windowState)
+                }
             }
-            runtimeContext?.forEachWindowState { windowState in
-                windowState.removeFromShortcutLiveSelectionHistory(pin.id)
+            cleanupResult.merge(clearDeletedShortcutPinSelectionReferences(pin.id))
+            if cleanupResult.didClearCurrentSelection {
+                runtimeContext?.validateWindowStates()
             }
+            persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
             scheduleStructuralPersistence()
         }
     }
@@ -499,14 +531,26 @@ extension TabManager {
         }
     }
 
-    func deactivateShortcutLiveTab(in windowId: UUID) {
-        guard let pinId = activeShortcutTab(for: windowId)?.shortcutPinId else { return }
-        deactivateShortcutLiveTab(pinId: pinId, in: windowId)
+    @discardableResult
+    func deactivateShortcutLiveTab(in windowId: UUID) -> Bool {
+        guard let pinId = activeShortcutTab(for: windowId)?.shortcutPinId else { return false }
+        return deactivateShortcutLiveTab(pinId: pinId, in: windowId)
     }
 
-    func deactivateShortcutLiveTab(pinId: UUID, in windowId: UUID) {
+    @discardableResult
+    func deactivateShortcutLiveTab(pinId: UUID, in windowId: UUID) -> Bool {
         withStructuralUpdateTransaction {
-            guard let tab = transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId) else { return }
+            guard let tab = transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId) else { return false }
+            let runtimeContext = runtimeContext
+            let windowState = runtimeContext?.windowState(for: windowId)
+            let cleanupResult = windowState.map {
+                clearShortcutSelectionReferences(
+                    to: pinId,
+                    removedLiveTabId: tab.id,
+                    removeRememberedSelection: false,
+                    in: $0
+                )
+            } ?? ShortcutPinSelectionCleanupResult()
             cancelRuntimeStatePersistence(for: tab.id)
             if transientShortcutTabsByWindow[windowId]?.isEmpty == true {
                 transientShortcutTabsByWindow.removeValue(forKey: windowId)
@@ -519,7 +563,65 @@ extension TabManager {
                 name: .sumiTabLifecycleDidChange,
                 object: tab
             )
+            return cleanupResult.didClearCurrentSelection
         }
+    }
+
+    @discardableResult
+    func clearDeletedShortcutPinSelectionReferences(_ pinId: UUID) -> ShortcutPinSelectionCleanupResult {
+        var cleanupResult = ShortcutPinSelectionCleanupResult()
+        runtimeContext?.forEachWindowState { windowState in
+            cleanupResult.merge(clearShortcutSelectionReferences(
+                to: pinId,
+                removedLiveTabId: nil,
+                removeRememberedSelection: true,
+                in: windowState
+            ))
+        }
+        return cleanupResult
+    }
+
+    func persistWindowSessionsForShortcutSelectionCleanup(_ cleanupResult: ShortcutPinSelectionCleanupResult) {
+        guard let runtimeContext else { return }
+        for windowState in cleanupResult.windowStatesNeedingPersistence {
+            runtimeContext.persistWindowSession(for: windowState)
+        }
+    }
+
+    @discardableResult
+    private func clearShortcutSelectionReferences(
+        to pinId: UUID,
+        removedLiveTabId: UUID?,
+        removeRememberedSelection: Bool,
+        in windowState: BrowserWindowState
+    ) -> ShortcutPinSelectionCleanupResult {
+        var cleanupResult = ShortcutPinSelectionCleanupResult()
+        if let removedLiveTabId, windowState.currentTabId == removedLiveTabId {
+            windowState.currentTabId = nil
+            cleanupResult.recordCurrentSelectionCleared(in: windowState)
+        }
+        if windowState.currentTabId == pinId {
+            windowState.currentTabId = nil
+            cleanupResult.recordCurrentSelectionCleared(in: windowState)
+        }
+        if windowState.currentShortcutPinId == pinId {
+            windowState.currentShortcutPinId = nil
+            windowState.currentShortcutPinRole = nil
+            cleanupResult.recordCurrentSelectionCleared(in: windowState)
+        }
+        if removeRememberedSelection {
+            let staleSpaceIds = windowState.selectedShortcutPinForSpace.compactMap { spaceId, selectedPinId in
+                selectedPinId == pinId ? spaceId : nil
+            }
+            for spaceId in staleSpaceIds {
+                windowState.selectedShortcutPinForSpace.removeValue(forKey: spaceId)
+            }
+            if !staleSpaceIds.isEmpty {
+                cleanupResult.recordWindowSessionChange(in: windowState)
+            }
+        }
+        windowState.removeFromShortcutLiveSelectionHistory(pinId)
+        return cleanupResult
     }
 
     func folderSpaceId(for folderId: UUID) -> UUID? {

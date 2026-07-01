@@ -28,6 +28,7 @@ struct TabManagerRuntimeContext {
     private let captureDeletedShortcutLauncherHandler: (ShortcutPin) -> Void
     private let presentTabClosureToastHandler: (Int) -> Void
     private let validateWindowStatesHandler: () -> Void
+    private let persistWindowSessionHandler: (BrowserWindowState) -> Void
     private let syncWorkspaceThemeAcrossWindowsHandler: (Space, Bool) -> Void
     private let closeAuxiliaryMiniWindowHandler: (Tab, AuxiliaryWindowCloseReason) -> Void
     private let isLiveFolderProvider: (UUID) -> Bool
@@ -61,6 +62,7 @@ struct TabManagerRuntimeContext {
         captureDeletedShortcutLauncher: @escaping (ShortcutPin) -> Void = { _ in },
         presentTabClosureToast: @escaping (Int) -> Void = { _ in },
         validateWindowStates: @escaping () -> Void = {},
+        persistWindowSession: @escaping (BrowserWindowState) -> Void = { _ in },
         syncWorkspaceThemeAcrossWindows: @escaping (Space, Bool) -> Void = { _, _ in },
         closeAuxiliaryMiniWindow: @escaping (Tab, AuxiliaryWindowCloseReason) -> Void = { _, _ in },
         isLiveFolder: @escaping (UUID) -> Bool = { _ in false },
@@ -93,6 +95,7 @@ struct TabManagerRuntimeContext {
         self.captureDeletedShortcutLauncherHandler = captureDeletedShortcutLauncher
         self.presentTabClosureToastHandler = presentTabClosureToast
         self.validateWindowStatesHandler = validateWindowStates
+        self.persistWindowSessionHandler = persistWindowSession
         self.syncWorkspaceThemeAcrossWindowsHandler = syncWorkspaceThemeAcrossWindows
         self.closeAuxiliaryMiniWindowHandler = closeAuxiliaryMiniWindow
         self.isLiveFolderProvider = isLiveFolder
@@ -199,6 +202,10 @@ struct TabManagerRuntimeContext {
 
     func validateWindowStates() {
         validateWindowStatesHandler()
+    }
+
+    func persistWindowSession(for windowState: BrowserWindowState) {
+        persistWindowSessionHandler(windowState)
     }
 
     func syncWorkspaceThemeAcrossWindows(for space: Space, animate: Bool) {

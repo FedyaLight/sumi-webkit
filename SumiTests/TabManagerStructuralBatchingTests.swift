@@ -134,6 +134,176 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(tabManager.structuralLookupBatchFlushCount, batchFlushesBefore)
     }
 
+    func testRemoveSelectedShortcutPinClearsWindowShortcutSelection() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let pin = makeSpacePinnedShortcut(spaceId: space.id)
+        tabManager.setSpacePinnedShortcuts([pin], for: space.id)
+        let windowState = BrowserWindowState()
+        windowState.tabManager = tabManager
+        windowState.currentSpaceId = space.id
+        let validationRecorder = RuntimeValidationRecorder()
+        attachRuntimeContext(tabManager, windowStates: [windowState], validationRecorder: validationRecorder)
+        let liveTab = tabManager.activateShortcutPin(
+            pin,
+            in: windowState.id,
+            currentSpaceId: space.id
+        )
+        let regularHistoryId = UUID()
+        windowState.currentTabId = liveTab.id
+        windowState.currentShortcutPinId = pin.id
+        windowState.currentShortcutPinRole = pin.role
+        windowState.selectedShortcutPinForSpace[space.id] = pin.id
+        windowState.recentSelectionItemsBySpace[space.id] = [
+            .shortcutPin(pin.id),
+            .regularTab(regularHistoryId),
+        ]
+
+        tabManager.removeShortcutPin(pin)
+
+        XCTAssertNil(tabManager.shortcutPin(by: pin.id))
+        XCTAssertNil(tabManager.tab(for: liveTab.id))
+        XCTAssertNil(windowState.currentTabId)
+        XCTAssertNil(windowState.currentShortcutPinId)
+        XCTAssertNil(windowState.currentShortcutPinRole)
+        XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
+        XCTAssertEqual(windowState.recentSelectionItemsBySpace[space.id], [.regularTab(regularHistoryId)])
+        XCTAssertEqual(validationRecorder.count, 1)
+    }
+
+    func testDeactivateSelectedShortcutLiveTabClearsCurrentSelectionWithoutValidation() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let pin = makeSpacePinnedShortcut(spaceId: space.id)
+        tabManager.setSpacePinnedShortcuts([pin], for: space.id)
+        let windowState = BrowserWindowState()
+        windowState.tabManager = tabManager
+        windowState.currentSpaceId = space.id
+        let validationRecorder = RuntimeValidationRecorder()
+        attachRuntimeContext(tabManager, windowStates: [windowState], validationRecorder: validationRecorder)
+        let liveTab = tabManager.activateShortcutPin(
+            pin,
+            in: windowState.id,
+            currentSpaceId: space.id
+        )
+        windowState.currentTabId = liveTab.id
+        windowState.currentShortcutPinId = pin.id
+        windowState.currentShortcutPinRole = pin.role
+
+        let didClearSelection = tabManager.deactivateShortcutLiveTab(pinId: pin.id, in: windowState.id)
+
+        XCTAssertTrue(didClearSelection)
+        XCTAssertNil(tabManager.tab(for: liveTab.id))
+        XCTAssertNil(windowState.currentTabId)
+        XCTAssertNil(windowState.currentShortcutPinId)
+        XCTAssertNil(windowState.currentShortcutPinRole)
+        XCTAssertEqual(validationRecorder.count, 0)
+    }
+
+    func testRemoveShortcutPinClearsProxySelectionWithoutLiveTab() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let pin = makeSpacePinnedShortcut(spaceId: space.id)
+        tabManager.setSpacePinnedShortcuts([pin], for: space.id)
+        let windowState = BrowserWindowState()
+        windowState.tabManager = tabManager
+        windowState.currentSpaceId = space.id
+        let validationRecorder = RuntimeValidationRecorder()
+        attachRuntimeContext(tabManager, windowStates: [windowState], validationRecorder: validationRecorder)
+        windowState.currentTabId = pin.id
+        windowState.currentShortcutPinId = pin.id
+        windowState.currentShortcutPinRole = pin.role
+        windowState.selectedShortcutPinForSpace[space.id] = pin.id
+        windowState.recentSelectionItemsBySpace[space.id] = [.shortcutPin(pin.id)]
+
+        tabManager.removeShortcutPin(pin)
+
+        XCTAssertNil(tabManager.shortcutPin(by: pin.id))
+        XCTAssertNil(windowState.currentTabId)
+        XCTAssertNil(windowState.currentShortcutPinId)
+        XCTAssertNil(windowState.currentShortcutPinRole)
+        XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
+        XCTAssertNil(windowState.recentSelectionItemsBySpace[space.id])
+        XCTAssertEqual(validationRecorder.count, 1)
+    }
+
+    func testRemoveBackgroundShortcutPinPreservesRegularSelection() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let pin = makeSpacePinnedShortcut(spaceId: space.id)
+        tabManager.setSpacePinnedShortcuts([pin], for: space.id)
+        let regularTab = tabManager.createNewTab(url: "https://example.com/regular", in: space)
+        let windowState = BrowserWindowState()
+        windowState.tabManager = tabManager
+        windowState.currentSpaceId = space.id
+        windowState.currentTabId = regularTab.id
+        windowState.selectedShortcutPinForSpace[space.id] = pin.id
+        windowState.recentSelectionItemsBySpace[space.id] = [
+            .shortcutPin(pin.id),
+            .regularTab(regularTab.id),
+        ]
+        let validationRecorder = RuntimeValidationRecorder()
+        let persistenceRecorder = RuntimeWindowSessionPersistenceRecorder()
+        attachRuntimeContext(
+            tabManager,
+            windowStates: [windowState],
+            validationRecorder: validationRecorder,
+            persistenceRecorder: persistenceRecorder
+        )
+        let liveTab = tabManager.activateShortcutPin(
+            pin,
+            in: windowState.id,
+            currentSpaceId: space.id
+        )
+
+        tabManager.removeShortcutPin(pin)
+
+        XCTAssertNil(tabManager.shortcutPin(by: pin.id))
+        XCTAssertNil(tabManager.tab(for: liveTab.id))
+        XCTAssertEqual(windowState.currentTabId, regularTab.id)
+        XCTAssertNil(windowState.currentShortcutPinId)
+        XCTAssertNil(windowState.currentShortcutPinRole)
+        XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
+        XCTAssertEqual(windowState.recentSelectionItemsBySpace[space.id], [.regularTab(regularTab.id)])
+        XCTAssertEqual(validationRecorder.count, 0)
+        XCTAssertEqual(persistenceRecorder.windowIds, [windowState.id])
+    }
+
+    func testDeleteFolderClearsDeletedShortcutPinSelectionReferences() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let space = tabManager.createSpace(name: "Workspace")
+        let folder = tabManager.createFolder(for: space.id, name: "Pinned")
+        let pin = makeSpacePinnedShortcut(spaceId: space.id, folderId: folder.id)
+        tabManager.setSpacePinnedShortcuts([pin], for: space.id)
+        let windowState = BrowserWindowState()
+        windowState.tabManager = tabManager
+        windowState.currentSpaceId = space.id
+        let validationRecorder = RuntimeValidationRecorder()
+        attachRuntimeContext(tabManager, windowStates: [windowState], validationRecorder: validationRecorder)
+        let liveTab = tabManager.activateShortcutPin(
+            pin,
+            in: windowState.id,
+            currentSpaceId: space.id
+        )
+        windowState.currentTabId = liveTab.id
+        windowState.currentShortcutPinId = pin.id
+        windowState.currentShortcutPinRole = pin.role
+        windowState.selectedShortcutPinForSpace[space.id] = pin.id
+        windowState.recentSelectionItemsBySpace[space.id] = [.shortcutPin(pin.id)]
+
+        tabManager.deleteFolder(folder.id)
+
+        XCTAssertNil(tabManager.folder(by: folder.id))
+        XCTAssertNil(tabManager.shortcutPin(by: pin.id))
+        XCTAssertNil(tabManager.tab(for: liveTab.id))
+        XCTAssertNil(windowState.currentTabId)
+        XCTAssertNil(windowState.currentShortcutPinId)
+        XCTAssertNil(windowState.currentShortcutPinRole)
+        XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
+        XCTAssertNil(windowState.recentSelectionItemsBySpace[space.id])
+        XCTAssertEqual(validationRecorder.count, 1)
+    }
+
     func testLookupIncludesTransientExtensionAndAuxiliaryTabs() throws {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.createSpace(name: "Workspace")
@@ -648,6 +818,47 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertEqual(recorder.count, 1)
     }
 
+    private func makeSpacePinnedShortcut(
+        id: UUID = UUID(),
+        spaceId: UUID,
+        folderId: UUID? = nil,
+        index: Int = 0,
+        urlString: String = "https://shortcut.example"
+    ) -> ShortcutPin {
+        ShortcutPin(
+            id: id,
+            role: .spacePinned,
+            spaceId: spaceId,
+            index: index,
+            folderId: folderId,
+            launchURL: URL(string: urlString)!,
+            title: "Shortcut"
+        )
+    }
+
+    private func attachRuntimeContext(
+        _ tabManager: TabManager,
+        windowStates: [BrowserWindowState],
+        validationRecorder: RuntimeValidationRecorder,
+        persistenceRecorder: RuntimeWindowSessionPersistenceRecorder? = nil
+    ) {
+        let statesById = Dictionary(uniqueKeysWithValues: windowStates.map { ($0.id, $0) })
+        tabManager.attachRuntimeContext(
+            TabManagerRuntimeContext(
+                windowState: { statesById[$0] },
+                windows: { windowStates.map { ($0.id, $0) } },
+                windowStates: { windowStates },
+                requireRemoveAllWebViews: { _, _ in },
+                validateWindowStates: {
+                    validationRecorder.count += 1
+                },
+                persistWindowSession: { windowState in
+                    persistenceRecorder?.windowIds.append(windowState.id)
+                }
+            )
+        )
+    }
+
     private func makeInMemoryTabManager() throws -> TabManager {
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
@@ -661,6 +872,16 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         )
         return tabManager
     }
+}
+
+@MainActor
+private final class RuntimeValidationRecorder {
+    var count = 0
+}
+
+@MainActor
+private final class RuntimeWindowSessionPersistenceRecorder {
+    var windowIds: [UUID] = []
 }
 
 @MainActor
