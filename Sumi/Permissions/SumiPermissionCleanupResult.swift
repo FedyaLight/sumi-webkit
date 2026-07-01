@@ -4,6 +4,7 @@ enum SumiPermissionCleanupResult: Equatable, Sendable {
     case disabled
     case throttled
     case completed
+    case failed(String)
 
     static func disabled(profilePartitionId: String, now: Date) -> Self {
         _ = profilePartitionId
@@ -15,5 +16,9 @@ enum SumiPermissionCleanupResult: Equatable, Sendable {
         _ = profilePartitionId
         _ = now
         return .throttled
+    }
+
+    static func failed(_ error: any Error) -> Self {
+        .failed(String(describing: error))
     }
 }

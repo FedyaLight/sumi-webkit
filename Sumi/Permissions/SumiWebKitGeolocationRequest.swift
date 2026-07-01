@@ -70,6 +70,7 @@ struct SumiWebKitGeolocationRequest: Sendable {
 struct SumiWebKitGeolocationTabContext: Sendable {
     let tabId: String
     let pageId: String
+    let surface: SumiPermissionSecurityContext.Surface
     let profilePartitionId: String
     let isEphemeralProfile: Bool
     let committedURL: URL?
@@ -83,6 +84,7 @@ struct SumiWebKitGeolocationTabContext: Sendable {
     init(
         tabId: String,
         pageId: String,
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String,
         isEphemeralProfile: Bool,
         committedURL: URL?,
@@ -95,6 +97,7 @@ struct SumiWebKitGeolocationTabContext: Sendable {
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines)
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.surface = surface
         self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         self.isEphemeralProfile = isEphemeralProfile
         self.committedURL = committedURL

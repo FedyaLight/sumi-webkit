@@ -111,8 +111,7 @@ final class SumiPermissionCleanupService {
             userDefaults.set(removedEvents.count, forKey: lastRemovedKey(profile.profilePartitionId))
             return .completed
         } catch {
-            _ = now()
-            return .completed
+            return .failed(error)
         }
     }
 

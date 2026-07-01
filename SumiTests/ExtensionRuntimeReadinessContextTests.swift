@@ -17,7 +17,7 @@ final class ExtensionRuntimeReadinessContextTests: XCTestCase {
         XCTAssertFalse(readiness.canUseExistingRuntime(extensionID: nil))
     }
 
-    func testProfileReadinessCountsCreatedContextBeforeExtensionLoaded() {
+    func testProfileReadinessRequiresCreatedContextToFinishLoading() {
         let readiness = ExtensionRuntimeReadinessContext(
             hasEnabledExtensionDemand: true,
             enabledExtensionIDs: ["alpha"],
@@ -26,8 +26,10 @@ final class ExtensionRuntimeReadinessContextTests: XCTestCase {
             globalRuntimeReady: false
         )
 
-        XCTAssertTrue(readiness.isProfileReady)
-        XCTAssertTrue(readiness.canUseExistingRuntime(extensionID: nil))
+        XCTAssertTrue(readiness.missingEnabledExtensionIDs.isEmpty)
+        XCTAssertEqual(readiness.unloadedEnabledExtensionIDs, ["alpha"])
+        XCTAssertFalse(readiness.isProfileReady)
+        XCTAssertFalse(readiness.canUseExistingRuntime(extensionID: nil))
         XCTAssertFalse(readiness.isExtensionReady(extensionID: "alpha"))
         XCTAssertFalse(readiness.canUseExistingRuntime(extensionID: "alpha"))
     }
@@ -50,8 +52,21 @@ final class ExtensionRuntimeReadinessContextTests: XCTestCase {
 
         XCTAssertFalse(loadingReadiness.isReadyAfterRuntimeRequest(extensionID: nil))
         XCTAssertFalse(loadingReadiness.allowsReadyControllerFallback(extensionID: nil))
-        XCTAssertTrue(readyReadiness.allowsReadyControllerFallback(extensionID: nil))
+        XCTAssertFalse(readyReadiness.allowsReadyControllerFallback(extensionID: nil))
         XCTAssertFalse(readyReadiness.allowsReadyControllerFallback(extensionID: "alpha"))
+    }
+
+    func testReadyControllerFallbackRequiresLoadedProfileContexts() {
+        let readiness = ExtensionRuntimeReadinessContext(
+            hasEnabledExtensionDemand: true,
+            enabledExtensionIDs: ["alpha"],
+            loadedExtensionStatesByID: ["alpha": true],
+            controllerExists: true,
+            globalRuntimeReady: true
+        )
+
+        XCTAssertTrue(readiness.isProfileReady)
+        XCTAssertTrue(readiness.allowsReadyControllerFallback(extensionID: nil))
     }
 
     func testMissingDiagnosticsSurviveWhenNoRuntimeDemandExists() {

@@ -204,7 +204,7 @@ final class SumiWebKitGeolocationBridge {
             isEphemeralProfile: tabContext.isEphemeralProfile,
             profilePartitionId: tabContext.profilePartitionId,
             transientPageId: tabContext.pageId,
-            surface: .normalTab,
+            surface: tabContext.surface,
             navigationOrPageGeneration: tabContext.navigationOrPageGeneration,
             now: permissionRequest.requestedAt
         )

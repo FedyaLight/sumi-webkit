@@ -79,6 +79,7 @@ struct SumiFilePickerPermissionRequest: Sendable {
 struct SumiFilePickerPermissionTabContext: Sendable {
     let tabId: String
     let pageId: String
+    let surface: SumiPermissionSecurityContext.Surface
     let profilePartitionId: String
     let isEphemeralProfile: Bool
     let committedURL: URL?
@@ -91,6 +92,7 @@ struct SumiFilePickerPermissionTabContext: Sendable {
     init(
         tabId: String,
         pageId: String,
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String,
         isEphemeralProfile: Bool,
         committedURL: URL?,
@@ -102,6 +104,7 @@ struct SumiFilePickerPermissionTabContext: Sendable {
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.surface = surface
         self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         self.isEphemeralProfile = isEphemeralProfile
         self.committedURL = committedURL

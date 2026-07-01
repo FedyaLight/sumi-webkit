@@ -257,12 +257,12 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
     ) -> Bool {
         guard let webView,
               let tab = webView.owningTab,
-              let popupHandling = tab.navigationDelegateBundle(for: webView)?.popupHandling
+              let navigationAdapter = tab.navigationDelegateBundle(for: webView)
         else {
             return false
         }
 
-        return popupHandling.consumeNativeContextMenuRequest(
+        return navigationAdapter.consumeNativeContextMenuRequest(
             from: originalItem,
             perform: handler
         )

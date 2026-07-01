@@ -229,10 +229,10 @@ extension ExtensionManager {
         if readiness.isProfileReady {
             runtimeState = .ready
         } else if runtimeState != .failed {
-            runtimeState = .ready
+            runtimeState = .loading
         }
         extensionRuntimeTrace(
-            "markExtensionRuntimeReady profile=\(profileId.uuidString) loadedContexts=\(extensionContexts(for: profileId).count) allEnabledLoaded=\(readiness.isProfileReady)"
+            "markExtensionRuntimeReady profile=\(profileId.uuidString) loadedContexts=\(extensionContexts(for: profileId).count) allEnabledLoaded=\(readiness.isProfileReady) unloadedEnabledExtensionIDs=\(readiness.unloadedEnabledExtensionIDs.joined(separator: ","))"
         )
     }
 

@@ -17,7 +17,7 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
         for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
-        tab?.navigationDelegateBundle(for: webView)?.popupHandling.createWebView(
+        tab?.navigationDelegateBundle(for: webView)?.createWebView(
             from: webView,
             with: configuration,
             for: navigationAction,
@@ -44,7 +44,7 @@ final class TabWebKitUIDelegateOwner: NSObject, WKUIDelegate {
                 return
             }
             Task { @MainActor in
-                let popupWebView = await tab.navigationDelegateBundle(for: webView)?.popupHandling.createWebViewAsync(
+                let popupWebView = await tab.navigationDelegateBundle(for: webView)?.createWebViewAsync(
                     from: webView,
                     with: configuration,
                     for: navigationAction,

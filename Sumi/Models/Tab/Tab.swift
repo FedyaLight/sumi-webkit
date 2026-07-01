@@ -176,7 +176,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     var titleUpdateOwner: TabTitleUpdateOwner {
         navigationRuntime.titleUpdateOwner
     }
-    var navigationDelegateBundles: NSMapTable<WKWebView, SumiTabNavigationDelegateBundle> {
+    var navigationDelegateBundles: NSMapTable<WKWebView, SumiTabNavigationDelegateAdapter> {
         navigationRuntime.navigationDelegateBundles
     }
     var webViewRoutingRuntime: TabWebViewRoutingRuntime {

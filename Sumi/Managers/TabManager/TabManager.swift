@@ -1006,9 +1006,8 @@ extension TabManager {
         return runtimeContext
     }
 
-    func attachRuntimeContext(_ context: TabManagerRuntimeContext?) {
+    func attachRuntimeContext(_ context: TabManagerRuntimeContext) {
         runtimeContext = context
-        guard context != nil else { return }
 
         let knownTabs = allTabs()
         for tab in knownTabs {

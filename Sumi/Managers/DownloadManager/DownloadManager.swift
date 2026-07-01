@@ -101,12 +101,12 @@ final class DownloadManager: ObservableObject {
         let writeTask = Task.detached(priority: .utility) {
             do {
                 try data.write(to: tempURL, options: .atomic)
-                if FileManager.default.fileExists(atPath: destinationURL.path) {
-                    try FileManager.default.removeItem(at: destinationURL)
-                }
-                try FileManager.default.moveItem(at: tempURL, to: destinationURL)
-                try SumiDownloadSafety.applyQuarantine(to: destinationURL, sourceURL: originatingURL)
-                return Result<URL, Error>.success(destinationURL)
+                let finalURL = try SumiDownloadCompletionService.finalizeDownloadedFile(
+                    temporaryURL: tempURL,
+                    destinationURL: destinationURL,
+                    sourceURL: originatingURL
+                )
+                return Result<URL, Error>.success(finalURL)
             } catch {
                 try? FileManager.default.removeItem(at: tempURL)
                 return Result<URL, Error>.failure(error)
@@ -164,17 +164,12 @@ final class DownloadManager: ObservableObject {
         let progress = item.progress
         let sourceURL = item.downloadURL
         let moveTask = Task.detached(priority: .utility) {
-            let finalURL = DownloadFileUtilities.uniqueURL(for: destinationURL)
             do {
-                try FileManager.default.createDirectory(
-                    at: finalURL.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
+                let finalURL = try SumiDownloadCompletionService.finalizeDownloadedFile(
+                    temporaryURL: temporaryURL,
+                    destinationURL: destinationURL,
+                    sourceURL: sourceURL
                 )
-                if FileManager.default.fileExists(atPath: finalURL.path) {
-                    try FileManager.default.removeItem(at: finalURL)
-                }
-                try FileManager.default.moveItem(at: temporaryURL, to: finalURL)
-                try SumiDownloadSafety.applyQuarantine(to: finalURL, sourceURL: sourceURL)
                 return Result<URL, Error>.success(finalURL)
             } catch {
                 return Result<URL, Error>.failure(error)

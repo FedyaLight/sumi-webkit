@@ -223,18 +223,14 @@ final class SumiWebKitDownloadTask: NSObject, WKDownloadDelegate {
         }
 
         let itemID = item.id
+        let sourceURL = item.downloadURL
         let moveTask = Task.detached(priority: .utility) {
-            let finalURL = DownloadFileUtilities.uniqueURL(for: destinationURL)
             do {
-                let fm = FileManager.default
-                try fm.createDirectory(
-                    at: finalURL.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
+                let finalURL = try SumiDownloadCompletionService.finalizeDownloadedFile(
+                    temporaryURL: tempURL,
+                    destinationURL: destinationURL,
+                    sourceURL: sourceURL
                 )
-                if fm.fileExists(atPath: finalURL.path) {
-                    try fm.removeItem(at: finalURL)
-                }
-                try fm.moveItem(at: tempURL, to: finalURL)
                 return Result<URL, Error>.success(finalURL)
             } catch {
                 await MainActor.run {

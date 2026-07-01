@@ -35,6 +35,15 @@ final class TabPermissionSurfaceOwner {
         return (context.isActiveTab(), context.isVisibleTab())
     }
 
+    func permissionSurface(for webView: WKWebView?) -> SumiPermissionSecurityContext.Surface {
+        guard let webView,
+              isActiveGlancePreviewSurface(for: webView)
+        else {
+            return .normalTab
+        }
+        return .glance
+    }
+
     func isActiveSurface(for webView: WKWebView?) -> Bool {
         surfaceState(for: webView).isActive
     }
@@ -52,6 +61,7 @@ final class TabPermissionSurfaceOwner {
         return SumiPopupPermissionTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
+            surface: permissionSurface(for: webView),
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -72,6 +82,7 @@ final class TabPermissionSurfaceOwner {
         return SumiExternalSchemePermissionTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
+            surface: permissionSurface(for: webView),
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -97,6 +108,7 @@ final class TabPermissionSurfaceOwner {
         return SumiWebKitGeolocationTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
+            surface: permissionSurface(for: webView),
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -125,6 +137,7 @@ final class TabPermissionSurfaceOwner {
         return SumiWebKitMediaCaptureTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
+            surface: permissionSurface(for: webView),
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -150,6 +163,7 @@ final class TabPermissionSurfaceOwner {
         return SumiFilePickerPermissionTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
+            surface: permissionSurface(for: webView),
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,
@@ -171,6 +185,7 @@ final class TabPermissionSurfaceOwner {
         return SumiStorageAccessTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
+            surface: permissionSurface(for: webView),
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,

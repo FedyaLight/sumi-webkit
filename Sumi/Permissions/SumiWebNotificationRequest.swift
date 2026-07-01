@@ -58,6 +58,7 @@ struct SumiWebNotificationRequest: Sendable {
 struct SumiWebNotificationTabContext: Sendable {
     let tabId: String
     let pageId: String
+    let surface: SumiPermissionSecurityContext.Surface
     let profilePartitionId: String
     let isEphemeralProfile: Bool
     let committedURL: URL?
@@ -72,6 +73,7 @@ struct SumiWebNotificationTabContext: Sendable {
     init(
         tabId: String,
         pageId: String,
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String,
         isEphemeralProfile: Bool,
         committedURL: URL?,
@@ -85,6 +87,7 @@ struct SumiWebNotificationTabContext: Sendable {
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines)
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.surface = surface
         self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         self.isEphemeralProfile = isEphemeralProfile
         self.committedURL = committedURL

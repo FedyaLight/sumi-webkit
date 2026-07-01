@@ -525,7 +525,7 @@ final class TabNavigationRuntime {
     let navigationStateController = TabNavigationStateController()
     let historyRecorder = HistoryTabRecorder()
     let titleUpdateOwner = TabTitleUpdateOwner()
-    let navigationDelegateBundles = NSMapTable<WKWebView, SumiTabNavigationDelegateBundle>.weakToStrongObjects()
+    let navigationDelegateBundles = NSMapTable<WKWebView, SumiTabNavigationDelegateAdapter>.weakToStrongObjects()
 }
 
 @MainActor

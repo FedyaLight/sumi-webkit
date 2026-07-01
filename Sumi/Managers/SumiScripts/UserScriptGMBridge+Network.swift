@@ -235,7 +235,7 @@ extension UserScriptGMBridge {
         }
 
         guard !script.metadata.connects.isEmpty else {
-            return nil
+            return "No @connect permissions declared for native GM network access"
         }
 
         let isAllowed = script.metadata.connects.contains { connectDomain in

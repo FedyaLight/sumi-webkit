@@ -550,6 +550,7 @@ extension Tab {
         return SumiWebNotificationTabContext(
             tabId: identity.tabId,
             pageId: identity.pageId,
+            surface: permissionSurfaceOwner.permissionSurface(for: webView),
             profilePartitionId: profile.id.uuidString.lowercased(),
             isEphemeralProfile: profile.isEphemeral,
             committedURL: committedURL,

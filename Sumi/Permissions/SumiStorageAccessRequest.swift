@@ -3,16 +3,21 @@ import Foundation
 struct SumiStorageAccessRequest: Sendable {
     let id: String
     let requestingOrigin: SumiPermissionOrigin
+    let currentOrigin: SumiPermissionOrigin
+    let quirkOrigins: [SumiPermissionOrigin]
 
     init(
         id: String = UUID().uuidString,
         requestingDomain: String,
-        currentDomain _: String,
-        quirkDomains _: [String] = []
+        currentDomain: String,
+        quirkDomains: [String] = []
     ) {
         let normalizedRequestingDomain = Self.normalizedDomain(requestingDomain)
         self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString : id
         self.requestingOrigin = Self.origin(from: normalizedRequestingDomain)
+        self.currentOrigin = Self.origin(from: currentDomain)
+        self.quirkOrigins = quirkDomains
+            .map(Self.origin(from:))
     }
 
     static func origin(from domain: String) -> SumiPermissionOrigin {
@@ -42,6 +47,7 @@ struct SumiStorageAccessRequest: Sendable {
 struct SumiStorageAccessTabContext: Sendable {
     let tabId: String
     let pageId: String
+    let surface: SumiPermissionSecurityContext.Surface
     let profilePartitionId: String
     let isEphemeralProfile: Bool
     let committedURL: URL?
@@ -55,6 +61,7 @@ struct SumiStorageAccessTabContext: Sendable {
     init(
         tabId: String,
         pageId: String,
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String,
         isEphemeralProfile: Bool,
         committedURL: URL?,
@@ -67,6 +74,7 @@ struct SumiStorageAccessTabContext: Sendable {
     ) {
         self.tabId = tabId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         self.pageId = pageId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        self.surface = surface
         self.profilePartitionId = SumiPermissionKey.normalizedProfilePartitionId(profilePartitionId)
         self.isEphemeralProfile = isEphemeralProfile
         self.committedURL = committedURL

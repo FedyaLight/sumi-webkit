@@ -93,7 +93,7 @@ enum SafariExtensionInlineUIInfrastructureProbe {
 
         let navigationBundle = tab.installNavigationDelegate(on: webView)
         let inlineUINavigationResponderWired =
-            webView.navigationDelegate === navigationBundle.distributedNavigationDelegate
+            navigationBundle.isInstalled(on: webView)
                 && navigationBundle.hasInlineUIExtensionResourceResponderInChain()
 
         let lateBindBlocksLoadedPages: Bool

@@ -1,12 +1,13 @@
+import AppKit
 import Combine
 import Foundation
 import Navigation
 import WebKit
 
 @MainActor
-final class SumiTabNavigationDelegateBundle {
-    let distributedNavigationDelegate: DistributedNavigationDelegate
-    let popupHandling: SumiPopupHandlingNavigationResponder
+final class SumiTabNavigationDelegateAdapter {
+    private let distributedNavigationDelegate: DistributedNavigationDelegate
+    private let popupHandling: SumiPopupHandlingNavigationResponder
 
     private let glanceNavigation: SumiGlanceNavigationResponder
     private let glanceNavigationAdapter: SumiNavigationResponderAdapter
@@ -76,33 +77,85 @@ final class SumiTabNavigationDelegateBundle {
         )
     }
 
-    func hasInlineUIExtensionResourceResponderInChain() -> Bool {
+    func install(on webView: WKWebView) {
+        webView.navigationDelegate = distributedNavigationDelegate
+    }
+
+    func isInstalled(on webView: WKWebView) -> Bool {
+        webView.navigationDelegate === distributedNavigationDelegate
+    }
+
+    func dispatchCreateWebView(_ callback: @escaping @MainActor @Sendable () -> Void) {
+        distributedNavigationDelegate.dispatchCreateWebView(callback)
+    }
+
+    func createWebView(
+        from webView: WKWebView,
+        with configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        popupHandling.createWebView(
+            from: webView,
+            with: configuration,
+            for: navigationAction,
+            windowFeatures: windowFeatures
+        )
+    }
+
+    func createWebViewAsync(
+        from webView: WKWebView,
+        with configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) async -> WKWebView? {
+        await popupHandling.createWebViewAsync(
+            from: webView,
+            with: configuration,
+            for: navigationAction,
+            windowFeatures: windowFeatures
+        )
+    }
+
+    @discardableResult
+    func consumeNativeContextMenuRequest(
+        from item: NSMenuItem,
+        perform handler: @escaping @MainActor (WKNavigationAction) -> Void
+    ) -> Bool {
+        popupHandling.consumeNativeContextMenuRequest(from: item, perform: handler)
+    }
+
+    func hasResponder<T: AnyObject>(_ type: T.Type) -> Bool {
         distributedNavigationDelegate.getResponders().contains { responder in
             guard let adapter = responder as? SumiNavigationResponderAdapter else {
                 return false
             }
-            return adapter.isAdapting(SafariExtensionInlineUINavigationResponder.self)
+            return adapter.isAdapting(type)
         }
+    }
+
+    func hasInlineUIExtensionResourceResponderInChain() -> Bool {
+        hasResponder(SafariExtensionInlineUINavigationResponder.self)
     }
 }
 
 extension Tab {
     @discardableResult
-    func installNavigationDelegate(on webView: WKWebView) -> SumiTabNavigationDelegateBundle {
+    func installNavigationDelegate(on webView: WKWebView) -> SumiTabNavigationDelegateAdapter {
         if let existing = navigationDelegateBundle(for: webView) {
-            webView.navigationDelegate = existing.distributedNavigationDelegate
+            existing.install(on: webView)
             bindWebViewInteractionEvents(on: webView)
             return existing
         }
 
-        let bundle = SumiTabNavigationDelegateBundle(tab: self)
+        let bundle = SumiTabNavigationDelegateAdapter(tab: self)
         navigationDelegateBundles.setObject(bundle, forKey: webView)
-        webView.navigationDelegate = bundle.distributedNavigationDelegate
+        bundle.install(on: webView)
         bindWebViewInteractionEvents(on: webView)
         return bundle
     }
 
-    func navigationDelegateBundle(for webView: WKWebView) -> SumiTabNavigationDelegateBundle? {
+    func navigationDelegateBundle(for webView: WKWebView) -> SumiTabNavigationDelegateAdapter? {
         navigationDelegateBundles.object(forKey: webView)
     }
 
@@ -116,7 +169,7 @@ extension Tab {
         _ callback: @escaping @MainActor @Sendable () -> Void
     ) {
         if let bundle = navigationDelegateBundle(for: webView) {
-            bundle.distributedNavigationDelegate.dispatchCreateWebView(callback)
+            bundle.dispatchCreateWebView(callback)
         } else {
             callback()
         }

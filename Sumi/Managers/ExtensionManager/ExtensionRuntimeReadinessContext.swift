@@ -19,8 +19,14 @@ struct ExtensionRuntimeReadinessContext: Equatable {
         Array(enabledExtensionIDs.subtracting(loadedExtensionStatesByID.keys)).sorted()
     }
 
+    var unloadedEnabledExtensionIDs: [String] {
+        enabledExtensionIDs
+            .filter { loadedExtensionStatesByID[$0] != true }
+            .sorted()
+    }
+
     var isProfileReady: Bool {
-        hasEnabledExtensionDemand == false || missingEnabledExtensionIDs.isEmpty
+        hasEnabledExtensionDemand == false || unloadedEnabledExtensionIDs.isEmpty
     }
 
     func isExtensionReady(extensionID: String) -> Bool {
@@ -42,6 +48,6 @@ struct ExtensionRuntimeReadinessContext: Equatable {
     }
 
     func allowsReadyControllerFallback(extensionID: String?) -> Bool {
-        extensionID == nil && controllerExists && globalRuntimeReady
+        extensionID == nil && controllerExists && globalRuntimeReady && isProfileReady
     }
 }

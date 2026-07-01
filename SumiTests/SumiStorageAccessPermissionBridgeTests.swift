@@ -10,7 +10,11 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
     func testSecurityContextPreservesRequestingAndTopOrigins() {
         let bridge = makeBridge(store: StorageAccessBridgePermissionStore())
         let context = bridge.securityContext(
-            for: storageRequest(requestingDomain: "IdP.Example."),
+            for: storageRequest(
+                requestingDomain: "IdP.Example.",
+                currentDomain: "RP.Example:9443.",
+                quirkDomains: ["Legacy.Example."]
+            ),
             tabContext: tabContext(
                 profilePartitionId: "Profile-A",
                 isEphemeralProfile: true,
@@ -27,6 +31,28 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(context.transientPageId, "tab-a:1")
         XCTAssertEqual(context.request.displayDomain, "idp.example")
         XCTAssertNil(context.hasUserGesture)
+    }
+
+    func testSecurityContextPropagatesSurfaceFromTabContext() {
+        let bridge = makeBridge(store: StorageAccessBridgePermissionStore())
+        let context = bridge.securityContext(
+            for: storageRequest(),
+            tabContext: tabContext(surface: .glance)
+        )
+
+        XCTAssertEqual(context.surface, .glance)
+    }
+
+    func testRequestPreservesStorageAccessWebKitInputs() {
+        let request = storageRequest(
+            requestingDomain: "IdP.Example.",
+            currentDomain: "RP.Example.",
+            quirkDomains: ["Legacy.Example.", "Bad Domain"]
+        )
+
+        XCTAssertEqual(request.requestingOrigin.identity, "https://idp.example")
+        XCTAssertEqual(request.currentOrigin.identity, "https://rp.example")
+        XCTAssertEqual(request.quirkOrigins.map(\.identity), ["https://legacy.example", "invalid"])
     }
 
     func testStoredAllowGrantsWebKitStorageAccess() async {
@@ -123,6 +149,30 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
 
         let results = await resolve(
             bridge: bridge,
+            request: storageRequest(currentDomain: "http://rp.example"),
+            tabContext: tabContext(
+                committedURL: URL(string: "http://rp.example")!,
+                visibleURL: URL(string: "http://rp.example")!,
+                mainFrameURL: URL(string: "http://rp.example")!
+            )
+        )
+
+        XCTAssertEqual(results, [false])
+        let getCount = await store.getDecisionCallCount()
+        XCTAssertEqual(getCount, 0)
+    }
+
+    func testSchemeLessCurrentDomainDoesNotUpgradeInsecureTopOrigin() async {
+        let store = StorageAccessBridgePermissionStore()
+        await store.seed(
+            storageKey(),
+            decision: storageDecision(.allow, reason: "stored-https-allow")
+        )
+        let bridge = makeBridge(store: store)
+
+        let results = await resolve(
+            bridge: bridge,
+            request: storageRequest(currentDomain: "rp.example"),
             tabContext: tabContext(
                 committedURL: URL(string: "http://rp.example")!,
                 visibleURL: URL(string: "http://rp.example")!,
@@ -235,6 +285,7 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
     private func tabContext(
         tabId: String = "tab-a",
         pageId: String = "tab-a:1",
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String = "profile-a",
         isEphemeralProfile: Bool = false,
         committedURL: URL? = URL(string: "https://rp.example"),
@@ -247,6 +298,7 @@ final class SumiStorageAccessPermissionBridgeTests: XCTestCase {
         SumiStorageAccessTabContext(
             tabId: tabId,
             pageId: pageId,
+            surface: surface,
             profilePartitionId: profilePartitionId,
             isEphemeralProfile: isEphemeralProfile,
             committedURL: committedURL,

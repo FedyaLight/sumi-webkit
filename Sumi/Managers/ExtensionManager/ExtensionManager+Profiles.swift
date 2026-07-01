@@ -457,7 +457,6 @@ extension ExtensionManager {
         runtimeState = .loading
         _ = ensureExtensionController(for: resolvedProfileId)
         extensionsLoaded = true
-        runtimeState = .ready
         markExtensionRuntimeReadyIfProfileContextsLoaded(for: resolvedProfileId)
         extensionRuntimeTrace(
             "lazyRuntime controller-only reason=\(reason.rawValue) profileId=\(resolvedProfileId.uuidString) loadedContexts=\(countLoadedExtensionContexts()) forceReload=\(forceReload)"

@@ -375,6 +375,7 @@ final class SumiProtectionCoordinator {
             if wasApplyNeeded || selectedLevel != previousAppliedLevel {
                 settings.setBrowserRestartRequired(true)
             }
+            runtimeAppliedLevel = selectedLevel
             attachmentOwner.syncRuntime(for: runtimeAppliedLevel)
             let summary = applySummary(
                 selectedLevel: selectedLevel,

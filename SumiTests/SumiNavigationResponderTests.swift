@@ -10,14 +10,16 @@ import XCTest
 final class SumiNavigationResponderTests: XCTestCase {
     private var retainedAutoplayTabs: [Tab] = []
 
-    func testAssignWebViewInstallsDistributedNavigationDelegateBundle() {
+    func testAssignWebViewInstallsSumiNavigationDelegateAdapter() {
         let tab = Tab(url: URL(string: "https://example.com")!)
         let webView = WKWebView(frame: .zero)
 
         tab.assignWebViewToWindow(webView, windowId: UUID())
 
-        XCTAssertTrue(webView.navigationDelegate is DistributedNavigationDelegate)
-        XCTAssertNotNil(tab.navigationDelegateBundle(for: webView))
+        let adapter = tab.navigationDelegateBundle(for: webView)
+        XCTAssertNotNil(adapter)
+        XCTAssertEqual(adapter?.isInstalled(on: webView), true)
+        XCTAssertEqual(adapter?.hasResponder(SafariExtensionInlineUINavigationResponder.self), true)
     }
 
     func testDistributedNavigationDecisionHandlerIsCalledExactlyOnceForCancelledPolicy() {

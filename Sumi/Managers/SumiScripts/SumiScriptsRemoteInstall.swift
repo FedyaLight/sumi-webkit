@@ -63,7 +63,7 @@ enum SumiScriptsRemoteInstall {
         alert.messageText = "Install Userscript?"
         let metadata = preview.metadata
         let scopes = (metadata.matches + metadata.includes).prefix(6).joined(separator: "\n")
-        let connects = metadata.connects.isEmpty ? "None" : metadata.connects.joined(separator: ", ")
+        let connects = nativeNetworkAccessDescription(for: metadata)
         alert.informativeText = """
         \(metadata.name)
         Version: \(metadata.version ?? "unknown")
@@ -78,6 +78,12 @@ enum SumiScriptsRemoteInstall {
         alert.addButton(withTitle: "Install")
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    static func nativeNetworkAccessDescription(for metadata: UserScriptMetadata) -> String {
+        metadata.connects.isEmpty
+            ? "None declared - native GM network blocked"
+            : metadata.connects.joined(separator: ", ")
     }
 
     @MainActor

@@ -37,6 +37,21 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         XCTAssertEqual(context.request.displayDomain, "geo.example")
     }
 
+    func testSecurityContextPropagatesSurfaceFromTabContext() {
+        let bridge = makeBridge(
+            coordinator: FakeGeolocationPermissionCoordinator(
+                mode: .immediate(decision(.denied, reason: "test-deny"))
+            ),
+            provider: FakeSumiGeolocationProvider()
+        )
+        let context = bridge.securityContext(
+            for: geolocationRequest(),
+            tabContext: tabContext(surface: .glance)
+        )
+
+        XCTAssertEqual(context.surface, .glance)
+    }
+
     func testCoordinatorDecisionMappingAndProviderRegistration() async {
         let outcomes: [(SumiPermissionCoordinatorOutcome, WKPermissionDecision)] = [
             (.granted, .grant),
@@ -308,6 +323,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
     private func tabContext(
         tabId: String = "tab-a",
         pageId: String = "tab-a:1",
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String = "profile-a",
         isEphemeralProfile: Bool = false,
         committedURL: URL? = URL(string: "https://example.com"),
@@ -320,6 +336,7 @@ final class SumiWebKitGeolocationBridgeTests: XCTestCase {
         SumiWebKitGeolocationTabContext(
             tabId: tabId,
             pageId: pageId,
+            surface: surface,
             profilePartitionId: profilePartitionId,
             isEphemeralProfile: isEphemeralProfile,
             committedURL: committedURL,

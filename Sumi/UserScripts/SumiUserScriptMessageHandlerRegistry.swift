@@ -80,13 +80,12 @@ final class SumiUserScriptMessageHandlerRegistry {
 
     func replaceUserScripts(with provider: SumiNormalTabUserScripts) async {
         guard !isCleanedUp,
-              let userContentController,
-              canRemoveInstalledUserScripts(from: userContentController)
+              let userContentController
         else { return }
         guard !hasInstalledUserScripts(for: provider) else { return }
 
         let wkUserScripts = await provider.loadWKUserScripts()
-        removeInstalledUserScripts(from: userContentController)
+        guard removeInstalledUserScripts(from: userContentController) else { return }
         removeInstalledScriptMessageHandlers(from: userContentController)
         installUserScripts(
             wkUserScripts,
@@ -98,15 +97,14 @@ final class SumiUserScriptMessageHandlerRegistry {
 
     func installInitialUserScripts(with provider: SumiNormalTabUserScripts) {
         guard !isCleanedUp,
-              let userContentController,
-              canRemoveInstalledUserScripts(from: userContentController)
+              let userContentController
         else { return }
         guard !hasInstalledUserScripts(for: provider) else { return }
 
         let wkUserScripts = provider.userScripts.map {
             SumiUserScriptBuilder.makeWKUserScript(from: $0)
         }
-        removeInstalledUserScripts(from: userContentController)
+        guard removeInstalledUserScripts(from: userContentController) else { return }
         removeInstalledScriptMessageHandlers(from: userContentController)
         installUserScripts(
             wkUserScripts,
@@ -128,9 +126,7 @@ final class SumiUserScriptMessageHandlerRegistry {
             return
         }
 
-        if canRemoveInstalledUserScripts(from: userContentController) {
-            removeInstalledUserScripts(from: userContentController)
-        }
+        _ = removeInstalledUserScripts(from: userContentController)
         removeInstalledScriptMessageHandlers(from: userContentController)
         installedProvider = nil
         installedProviderRevision = nil
@@ -197,35 +193,27 @@ final class SumiUserScriptMessageHandlerRegistry {
         installedProviderRevision = nil
     }
 
-    private func canRemoveInstalledUserScripts(from userContentController: WKUserContentController) -> Bool {
+    @discardableResult
+    private func removeInstalledUserScripts(from userContentController: WKUserContentController) -> Bool {
         guard !installedUserScripts.isEmpty else { return true }
 #if os(macOS)
-        let supported = userContentController.responds(to: Self.removeUserScriptSelector)
-        assertionFailureIfNeeded(
-            !supported,
-            "WKUserContentController precise user-script removal is unavailable."
-        )
-        return supported
-#else
-        assertionFailure("Sumi normal-tab user-script replacement requires precise user-script removal.")
-        return false
-#endif
-    }
+        guard userContentController.responds(to: Self.removeUserScriptSelector) else {
+            RuntimeDiagnostics.debug(
+                "WKUserContentController precise user-script removal is unavailable; normal-tab script replacement skipped.",
+                category: "UserScripts"
+            )
+            return false
+        }
 
-    private func removeInstalledUserScripts(from userContentController: WKUserContentController) {
-        guard !installedUserScripts.isEmpty else { return }
-#if os(macOS)
         for installedUserScript in installedUserScripts {
             userContentController.perform(Self.removeUserScriptSelector, with: installedUserScript)
         }
         installedUserScripts.removeAll(keepingCapacity: true)
+        return true
+#else
+        assertionFailure("Sumi normal-tab user-script replacement requires script removal.")
+        return false
 #endif
-    }
-
-    private func assertionFailureIfNeeded(_ condition: Bool, _ message: String) {
-        if condition {
-            assertionFailure(message)
-        }
     }
 
 #if os(macOS)

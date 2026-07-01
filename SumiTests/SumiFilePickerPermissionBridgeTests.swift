@@ -67,6 +67,16 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         XCTAssertTrue(presenter.requests.isEmpty)
     }
 
+    func testSecurityContextPropagatesSurfaceFromTabContext() {
+        let bridge = makeBridge(presenter: FilePickerFakePanelPresenter())
+        let context = bridge.securityContext(
+            for: filePickerRequest(userActivation: .directWebKit),
+            tabContext: tabContext(surface: .glance)
+        )
+
+        XCTAssertEqual(context.surface, .glance)
+    }
+
     func testEphemeralProfileStillUsesOneTimePanelFlow() async {
         let presenter = FilePickerFakePanelPresenter(nextResult: .selected([fileURL("ephemeral.txt")]))
         let bridge = makeBridge(presenter: presenter)
@@ -303,6 +313,7 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
     private func tabContext(
         tabId: String = "tab-a",
         pageId: String = "tab-a:1",
+        surface: SumiPermissionSecurityContext.Surface = .normalTab,
         profilePartitionId: String = "profile-a",
         isEphemeralProfile: Bool = false,
         committedURL: URL? = URL(string: "https://example.com"),
@@ -315,6 +326,7 @@ final class SumiFilePickerPermissionBridgeTests: XCTestCase {
         SumiFilePickerPermissionTabContext(
             tabId: tabId,
             pageId: pageId,
+            surface: surface,
             profilePartitionId: profilePartitionId,
             isEphemeralProfile: isEphemeralProfile,
             committedURL: committedURL,

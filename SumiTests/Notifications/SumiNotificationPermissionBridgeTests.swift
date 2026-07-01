@@ -89,6 +89,21 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         XCTAssertEqual(cancelledReasons, ["notification-prompt-presenter-unavailable-deny"])
     }
 
+    func testSecurityContextPropagatesSurfaceFromTabContext() {
+        let bridge = makeBridge(
+            coordinator: FakeNotificationPermissionCoordinator(
+                mode: .immediate(decision(.denied, systemState: .authorized))
+            ),
+            service: FakeSumiNotificationService()
+        )
+        let context = bridge.securityContext(
+            for: notificationRequest(),
+            tabContext: tabContext(surface: .glance)
+        )
+
+        XCTAssertEqual(context.surface, .glance)
+    }
+
     func testWebsitePermissionStateMapsPromptToDefault() async {
         let bridge = makeBridge(
             coordinator: FakeNotificationPermissionCoordinator(
@@ -216,10 +231,13 @@ final class SumiNotificationPermissionBridgeTests: XCTestCase {
         )
     }
 
-    private func tabContext() -> SumiWebNotificationTabContext {
+    private func tabContext(
+        surface: SumiPermissionSecurityContext.Surface = .normalTab
+    ) -> SumiWebNotificationTabContext {
         SumiWebNotificationTabContext(
             tabId: "tab-a",
             pageId: "tab-a:1",
+            surface: surface,
             profilePartitionId: "profile-a",
             isEphemeralProfile: false,
             committedURL: URL(string: "https://example.com/page"),

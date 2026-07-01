@@ -249,6 +249,19 @@ final class UserScriptsRuntimeTests: XCTestCase {
         XCTAssertTrue(bridge.activeDownloadItems.isEmpty)
     }
 
+    func testGMDownloadRejectsMissingConnectDeclarationBeforeStartingTask() throws {
+        let bridge = try makeDownloadBridge(connects: [])
+
+        bridge.performDownload(
+            args: ["details": ["url": "https://example.test/file.txt"]],
+            callbackId: "blocked-download",
+            webView: nil
+        )
+
+        XCTAssertTrue(bridge.activeTasks.isEmpty)
+        XCTAssertTrue(bridge.activeDownloadItems.isEmpty)
+    }
+
     func testGMDownloadAllowsURLInsideConnectAllowlist() throws {
         let bridge = try makeDownloadBridge(connects: ["allowed.example.test"])
 
@@ -274,6 +287,52 @@ final class UserScriptsRuntimeTests: XCTestCase {
         )
 
         XCTAssertTrue(bridge.activeTasks.isEmpty)
+    }
+
+    func testGMXMLHttpRequestRejectsMissingConnectDeclarationBeforeStartingTask() throws {
+        let bridge = try makeNetworkBridge(
+            grants: ["GM_xmlhttpRequest"],
+            connects: []
+        )
+
+        bridge.performXMLHttpRequest(
+            args: ["url": "https://example.test/api"],
+            callbackId: "blocked-xhr",
+            webView: nil
+        )
+
+        XCTAssertTrue(bridge.activeTasks.isEmpty)
+    }
+
+    func testGMXMLHttpRequestAllowsExplicitConnectWildcard() throws {
+        let bridge = try makeNetworkBridge(
+            grants: ["GM_xmlhttpRequest"],
+            connects: ["*"]
+        )
+
+        bridge.performXMLHttpRequest(
+            args: ["url": "https://example.test/api"],
+            callbackId: "allowed-xhr",
+            webView: nil
+        )
+
+        XCTAssertNotNil(bridge.activeTasks["allowed-xhr"])
+        bridge.performXMLHttpRequestAbort(args: ["requestId": "allowed-xhr"])
+        XCTAssertNil(bridge.activeTasks["allowed-xhr"])
+    }
+
+    func testInstallPreviewDescribesMissingConnectAsBlockedNativeNetwork() throws {
+        let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
+        // ==UserScript==
+        // @name Preview Connect Test
+        // @grant GM_xmlhttpRequest
+        // ==/UserScript==
+        """))
+
+        XCTAssertEqual(
+            SumiScriptsRemoteInstall.nativeNetworkAccessDescription(for: metadata),
+            "None declared - native GM network blocked"
+        )
     }
 
     func testGMShimRunsBeforeRequireDependencies() throws {
@@ -397,11 +456,19 @@ final class UserScriptsRuntimeTests: XCTestCase {
     }
 
     private func makeDownloadBridge(connects: [String]) throws -> UserScriptGMBridge {
+        try makeNetworkBridge(grants: ["GM_download"], connects: connects)
+    }
+
+    private func makeNetworkBridge(
+        grants: [String],
+        connects: [String]
+    ) throws -> UserScriptGMBridge {
+        let grantLines = grants.map { "// @grant \($0)" }.joined(separator: "\n")
         let connectLines = connects.map { "// @connect \($0)" }.joined(separator: "\n")
         let metadata = try XCTUnwrap(UserScriptMetadataParser.parse("""
         // ==UserScript==
-        // @name GM Download Connect Test
-        // @grant GM_download
+        // @name GM Network Connect Test
+        \(grantLines)
         \(connectLines)
         // ==/UserScript==
         console.log('ok');
