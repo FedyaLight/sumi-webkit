@@ -5,13 +5,13 @@ final class BrowserMouseButtonRoutingOwner {
     @discardableResult
     func handleOtherMouseDown(
         _ event: NSEvent,
-        commandRouter: any BrowserCommandRouting,
+        mouseButtonRouter: any BrowserMouseButtonCommandRouting,
         windowRegistry: WindowRegistry
     ) -> Bool {
         handleMouseButton(
             event.buttonNumber,
             eventWindow: event.window,
-            commandRouter: commandRouter,
+            mouseButtonRouter: mouseButtonRouter,
             windowRegistry: windowRegistry
         )
     }
@@ -20,7 +20,7 @@ final class BrowserMouseButtonRoutingOwner {
     func handleMouseButton(
         _ buttonNumber: Int,
         eventWindow: NSWindow?,
-        commandRouter: any BrowserCommandRouting,
+        mouseButtonRouter: any BrowserMouseButtonCommandRouting,
         windowRegistry: WindowRegistry
     ) -> Bool {
         switch buttonNumber {
@@ -28,7 +28,7 @@ final class BrowserMouseButtonRoutingOwner {
             guard let windowState = targetWindow(eventWindow: eventWindow, windowRegistry: windowRegistry) else {
                 return false
             }
-            commandRouter.focusFloatingBar(
+            mouseButtonRouter.focusFloatingBar(
                 in: windowState,
                 prefill: "",
                 navigateCurrentTab: false
@@ -38,13 +38,13 @@ final class BrowserMouseButtonRoutingOwner {
             guard let windowState = targetWindow(eventWindow: eventWindow, windowRegistry: windowRegistry) else {
                 return false
             }
-            commandRouter.goBack(in: windowState)
+            mouseButtonRouter.goBack(in: windowState)
             return true
         case 4:
             guard let windowState = targetWindow(eventWindow: eventWindow, windowRegistry: windowRegistry) else {
                 return false
             }
-            commandRouter.goForward(in: windowState)
+            mouseButtonRouter.goForward(in: windowState)
             return true
         default:
             return false

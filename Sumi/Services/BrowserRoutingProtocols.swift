@@ -2,15 +2,18 @@ import AppKit
 import SwiftData
 
 @MainActor
-protocol BrowserCommandRouting: AnyObject {
+protocol BrowserMouseButtonCommandRouting: AnyObject {
     func focusFloatingBar(
         in windowState: BrowserWindowState,
         prefill: String,
         navigateCurrentTab: Bool
     )
-    func currentTab(for windowState: BrowserWindowState) -> Tab?
     func goBack(in windowState: BrowserWindowState)
     func goForward(in windowState: BrowserWindowState)
+}
+
+@MainActor
+protocol BrowserTabCommandRouting: AnyObject {
     func closeCurrentTab()
 }
 

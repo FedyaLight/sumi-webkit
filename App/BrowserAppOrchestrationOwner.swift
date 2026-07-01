@@ -36,7 +36,8 @@ final class BrowserAppOrchestrationOwner {
         let nowPlayingController = dependencies.nowPlayingController
 
         appDelegate.windowRegistry = windowRegistry
-        appDelegate.commandRouter = browserManager
+        appDelegate.mouseButtonRouter = browserManager
+        appDelegate.tabCommandRouter = browserManager
         appDelegate.windowRouter = browserManager
         appDelegate.externalURLHandler = browserManager
         appDelegate.persistenceHandler = browserManager

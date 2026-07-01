@@ -20,7 +20,7 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
         XCTAssertTrue(owner.handleMouseButton(
             3,
             eventWindow: eventWindowState.window,
-            commandRouter: router,
+            mouseButtonRouter: router,
             windowRegistry: registry
         ))
 
@@ -39,7 +39,7 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
         XCTAssertTrue(owner.handleMouseButton(
             4,
             eventWindow: nil,
-            commandRouter: router,
+            mouseButtonRouter: router,
             windowRegistry: registry
         ))
 
@@ -49,7 +49,7 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
 }
 
 @MainActor
-private final class RecordingBrowserCommandRouter: BrowserCommandRouting {
+private final class RecordingBrowserCommandRouter: BrowserMouseButtonCommandRouting {
     var focusedWindowIDs: [UUID] = []
     var backWindowIDs: [UUID] = []
     var forwardWindowIDs: [UUID] = []
@@ -64,11 +64,6 @@ private final class RecordingBrowserCommandRouter: BrowserCommandRouting {
         focusedWindowIDs.append(windowState.id)
     }
 
-    func currentTab(for windowState: BrowserWindowState) -> Tab? {
-        _ = windowState
-        return nil
-    }
-
     func goBack(in windowState: BrowserWindowState) {
         backWindowIDs.append(windowState.id)
     }
@@ -76,6 +71,4 @@ private final class RecordingBrowserCommandRouter: BrowserCommandRouting {
     func goForward(in windowState: BrowserWindowState) {
         forwardWindowIDs.append(windowState.id)
     }
-
-    func closeCurrentTab() {}
 }

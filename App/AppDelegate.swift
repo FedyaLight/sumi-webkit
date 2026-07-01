@@ -22,7 +22,8 @@ import UserNotifications
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private static let log = Logger.sumi(category: "AppTermination")
 
-    weak var commandRouter: (any BrowserCommandRouting)?
+    weak var mouseButtonRouter: (any BrowserMouseButtonCommandRouting)?
+    weak var tabCommandRouter: (any BrowserTabCommandRouting)?
     weak var windowRouter: (any WindowCommandRouting)?
     weak var externalURLHandler: (any ExternalURLHandling)?
     weak var persistenceHandler: (any BrowserPersistenceHandling)?
@@ -103,14 +104,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private func setupMouseButtonHandling() {
         _ = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
             guard let self = self,
-                  let commandRouter = self.commandRouter,
+                  let mouseButtonRouter = self.mouseButtonRouter,
                   let registry = self.windowRegistry else { return event }
 
             // Mouse events are delivered on the main thread, so we can safely assume main actor isolation
             _ = MainActor.assumeIsolated {
                 self.mouseButtonRoutingOwner.handleOtherMouseDown(
                     event,
-                    commandRouter: commandRouter,
+                    mouseButtonRouter: mouseButtonRouter,
                     windowRegistry: registry
                 )
             }
@@ -155,7 +156,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             keyWindow.performClose(sender)
             return
         }
-        commandRouter?.closeCurrentTab()
+        tabCommandRouter?.closeCurrentTab()
     }
 
     @MainActor @objc private func handleCloseWindowMenuItem(_ sender: Any?) {
