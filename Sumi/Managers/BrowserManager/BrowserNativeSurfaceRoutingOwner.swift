@@ -40,14 +40,13 @@ final class BrowserNativeSurfaceRoutingOwner {
             return
         }
 
-        let targetSpace =
-            preferredSpaceId.flatMap { id in tabManager.spaces.first(where: { $0.id == id }) }
-            ?? windowState.currentSpaceId.flatMap { id in tabManager.spaces.first(where: { $0.id == id }) }
-            ?? windowState.currentProfileId.flatMap { pid in tabManager.spaces.first(where: { $0.profileId == pid }) }
-            ?? tabManager.currentSpace
+        let targetSpace = resolvedTargetSpace(
+            tabManager: tabManager,
+            windowState: windowState,
+            preferredSpaceId: preferredSpaceId
+        )
 
-        let spaceIdForLookup = targetSpace?.id ?? tabManager.currentSpace?.id
-        if let sid = spaceIdForLookup,
+        if let sid = targetSpace?.id,
            let existing = (tabManager.tabsBySpace[sid] ?? []).first(where: { kind.matches($0) }) {
             configureAndSelect(existing, kind: kind, url: url, in: windowState)
             tabManager.scheduleRuntimeStatePersistence(for: existing)
@@ -66,6 +65,29 @@ final class BrowserNativeSurfaceRoutingOwner {
         configureSurface(newTab, kind: kind, url: url)
         tabManager.scheduleRuntimeStatePersistence(for: newTab)
         dependencies.focusWindow(windowState)
+    }
+
+    private func resolvedTargetSpace(
+        tabManager: TabManager,
+        windowState: BrowserWindowState,
+        preferredSpaceId: UUID?
+    ) -> Space? {
+        if let preferredSpaceId,
+           let preferredSpace = tabManager.spaces.first(where: { $0.id == preferredSpaceId }) {
+            return preferredSpace
+        }
+
+        if let windowSpaceId = windowState.currentSpaceId,
+           let windowSpace = tabManager.spaces.first(where: { $0.id == windowSpaceId }) {
+            return windowSpace
+        }
+
+        if let profileId = windowState.currentProfileId,
+           let profileSpace = tabManager.spaces.first(where: { $0.profileId == profileId }) {
+            return profileSpace
+        }
+
+        return tabManager.spaces.first
     }
 
     private func configureAndSelect(
