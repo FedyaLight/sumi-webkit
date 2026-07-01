@@ -433,10 +433,12 @@ final class WindowSessionService {
 
         let restored = restoreWindowSession(into: windowState, runtime: runtime)
         if !restored {
-            windowState.currentProfileId = runtime.currentProfile?.id
+            let activeProfileId = runtime.currentProfile?.id
+            windowState.currentProfileId = activeProfileId
             windowState.currentSpaceId = resolvedFallbackSpaceId(
                 for: windowState,
-                runtime: runtime
+                runtime: runtime,
+                seededProfileId: activeProfileId
             )
         }
 
@@ -454,25 +456,44 @@ final class WindowSessionService {
 
     private func resolvedFallbackSpaceId(
         for windowState: BrowserWindowState,
-        runtime: WindowSessionRuntime
+        runtime: WindowSessionRuntime,
+        seededProfileId: UUID? = nil
     ) -> UUID? {
         if let windowSpaceId = windowState.currentSpaceId,
            runtime.tabManager.spaces.contains(where: { $0.id == windowSpaceId }) {
             return windowSpaceId
         }
 
-        // Do not repair one window from process-global currentSpace; use deterministic live profile ownership.
+        if let tabSpaceId = currentTabSpaceId(for: windowState, runtime: runtime) {
+            return tabSpaceId
+        }
+
         if let profileId = windowState.currentProfileId,
            let profileSpaceId = firstSpaceId(for: profileId, runtime: runtime) {
             return profileSpaceId
         }
+        windowState.currentProfileId = nil
 
-        if let profileId = runtime.currentProfile?.id,
+        if let profileId = seededProfileId,
            let profileSpaceId = firstSpaceId(for: profileId, runtime: runtime) {
             return profileSpaceId
         }
 
-        return runtime.tabManager.spaces.first?.id
+        return nil
+    }
+
+    private func currentTabSpaceId(
+        for windowState: BrowserWindowState,
+        runtime: WindowSessionRuntime
+    ) -> UUID? {
+        guard let currentTabId = windowState.currentTabId,
+              let spaceId = runtime.tabManager.tab(for: currentTabId)?.spaceId,
+              runtime.tabManager.spaces.contains(where: { $0.id == spaceId })
+        else {
+            return nil
+        }
+
+        return spaceId
     }
 
     private func firstSpaceId(
@@ -637,7 +658,7 @@ final class WindowSessionService {
     ) {
         if let spaceId = windowState.currentSpaceId,
            let space = runtime.tabManager.spaces.first(where: { $0.id == spaceId }) {
-            windowState.currentProfileId = space.profileId ?? runtime.currentProfile?.id
+            windowState.currentProfileId = space.profileId
             runtime.commitWorkspaceTheme(space.workspaceTheme, for: windowState)
             return
         }
@@ -664,9 +685,6 @@ final class WindowSessionService {
         _ windowState: BrowserWindowState,
         runtime: WindowSessionRuntime
     ) {
-        if windowState.currentProfileId == nil {
-            windowState.currentProfileId = runtime.currentProfile?.id
-        }
         runtime.syncSidebarPresentationState(from: windowState)
         persistWindowSession(for: windowState, runtime: runtime)
     }

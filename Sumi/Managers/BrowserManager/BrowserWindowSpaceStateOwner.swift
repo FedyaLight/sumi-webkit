@@ -5,8 +5,6 @@ final class BrowserWindowSpaceStateOwner {
     struct Dependencies {
         let tabManager: () -> TabManager
         let windowRegistry: () -> WindowRegistry?
-        let currentProfile: () -> Profile?
-        let profileRouter: SumiProfileRouter
         let selectionService: ShellSelectionService
         let sanitizeFloatingBarState: (BrowserWindowState) -> Void
         let syncShortcutSelectionState: (BrowserWindowState) -> Void
@@ -43,10 +41,7 @@ final class BrowserWindowSpaceStateOwner {
     func syncWindowSpaceContext(in windowState: BrowserWindowState, animateTheme: Bool) {
         _ = animateTheme
         let currentSpace = space(for: windowState.currentSpaceId)
-        let activeProfileId = dependencies.profileRouter.activeProfileId(
-            for: currentSpace,
-            currentProfile: dependencies.currentProfile()
-        )
+        let activeProfileId = currentSpace?.profileId
         if windowState.currentProfileId != activeProfileId {
             windowState.currentProfileId = activeProfileId
         }
@@ -139,9 +134,12 @@ final class BrowserWindowSpaceStateOwner {
                 needsUpdate = true
             }
 
-            if let currentSpaceId = windowState.currentSpaceId,
-               tabManager.spaces.first(where: { $0.id == currentSpaceId }) == nil {
-                windowState.currentSpaceId = tabManager.spaces.first?.id
+            let resolvedWindowSpace = resolvedWindowOwnedSpace(
+                for: windowState,
+                tabManager: tabManager
+            )
+            if windowState.currentSpaceId != resolvedWindowSpace?.id {
+                windowState.currentSpaceId = resolvedWindowSpace?.id
                 needsUpdate = true
             }
 
@@ -177,17 +175,18 @@ final class BrowserWindowSpaceStateOwner {
                 needsUpdate = true
             }
 
-            if windowState.currentSpaceId == nil {
-                windowState.currentSpaceId = tabManager.spaces.first?.id
-                needsUpdate = true
-            }
-
             if let currentSpace = space(for: windowState.currentSpaceId) {
                 dependencies.commitWorkspaceTheme(currentSpace.workspaceTheme, windowState)
-                windowState.currentProfileId = currentSpace.profileId ?? dependencies.currentProfile()?.id
+                if windowState.currentProfileId != currentSpace.profileId {
+                    windowState.currentProfileId = currentSpace.profileId
+                    needsUpdate = true
+                }
             } else if windowState.currentSpaceId == nil {
                 dependencies.commitWorkspaceTheme(.default, windowState)
-                windowState.currentProfileId = dependencies.currentProfile()?.id
+                if windowState.currentProfileId != nil {
+                    windowState.currentProfileId = nil
+                    needsUpdate = true
+                }
             }
 
             if needsUpdate {
@@ -249,6 +248,27 @@ final class BrowserWindowSpaceStateOwner {
         )
     }
 
+    private func resolvedWindowOwnedSpace(
+        for windowState: BrowserWindowState,
+        tabManager: TabManager
+    ) -> Space? {
+        if let currentSpace = space(for: windowState.currentSpaceId) {
+            return currentSpace
+        }
+
+        if let currentTabId = windowState.currentTabId,
+           let tabSpaceId = tabManager.tab(for: currentTabId)?.spaceId,
+           let tabSpace = space(for: tabSpaceId) {
+            return tabSpace
+        }
+
+        if let profileId = windowState.currentProfileId {
+            return tabManager.spaces.first(where: { $0.profileId == profileId })
+        }
+
+        return nil
+    }
+
     private func applySpaceContext(
         _ space: Space,
         to windowState: BrowserWindowState
@@ -256,7 +276,7 @@ final class BrowserWindowSpaceStateOwner {
         if windowState.currentSpaceId != space.id {
             windowState.currentSpaceId = space.id
         }
-        let profileId = space.profileId ?? dependencies.currentProfile()?.id
+        let profileId = space.profileId
         if windowState.currentProfileId != profileId {
             windowState.currentProfileId = profileId
         }
@@ -267,15 +287,12 @@ final class BrowserWindowSpaceStateOwner {
 extension BrowserWindowSpaceStateOwner.Dependencies {
     @MainActor
     static func live(browserManager: BrowserManager) -> Self {
-        let profileRouter = browserManager.sumiProfileRouter
         let selectionService = browserManager.shellSelectionService
         return Self(
             tabManager: { [weak browserManager, tabManager = browserManager.tabManager] in
                 browserManager?.tabManager ?? tabManager
             },
             windowRegistry: { [weak browserManager] in browserManager?.windowRegistry },
-            currentProfile: { [weak browserManager] in browserManager?.currentProfile },
-            profileRouter: profileRouter,
             selectionService: selectionService,
             sanitizeFloatingBarState: { [weak browserManager] windowState in
                 browserManager?.sanitizeFloatingBarState(in: windowState)
