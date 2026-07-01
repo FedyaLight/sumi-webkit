@@ -33,13 +33,13 @@ import WebKit
 @MainActor
 struct SumiScriptsManagerRuntime {
     var injectorRuntime: () -> UserScriptInjectorRuntime
-    var openTab: (String, Bool) -> Void
-    var closeTab: (String?) -> Void
+    var openTab: (String, Bool, WKWebView?) -> Void
+    var closeTab: (String?, WKWebView?) -> Void
 
     static let inactive = Self(
         injectorRuntime: { .inactive },
-        openTab: { _, _ in },
-        closeTab: { _ in }
+        openTab: { _, _, _ in },
+        closeTab: { _, _ in }
     )
 }
 
@@ -489,11 +489,11 @@ private struct UserScriptRuntimeErrorNotificationSnapshot: Sendable {
 // MARK: - SumiScriptsTabHandler
 
 extension SumiScriptsManager: SumiScriptsTabHandler {
-    func openTab(url: String, background: Bool) {
-        runtime.openTab(url, background)
+    func openTab(url: String, background: Bool, sourceWebView: WKWebView? = nil) {
+        runtime.openTab(url, background, sourceWebView)
     }
 
-    func closeTab(tabId: String?) {
-        runtime.closeTab(tabId)
+    func closeTab(tabId: String?, sourceWebView: WKWebView? = nil) {
+        runtime.closeTab(tabId, sourceWebView)
     }
 }

@@ -1134,7 +1134,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         )
     }
 
-    private func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
+    func trackedOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
         webViewRegistry.trackedOwner(containing: webView)
     }
 

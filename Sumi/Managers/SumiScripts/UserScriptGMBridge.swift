@@ -262,7 +262,7 @@ final class UserScriptGMBridge: NSObject {
     }
 
     func performWindowClose(callbackId: String, webView: WKWebView?) {
-        tabOpenHandler?.closeTab(tabId: nil)
+        tabOpenHandler?.closeTab(tabId: nil, sourceWebView: webView)
         resolveCallback(callbackId, result: true, webView: webView)
     }
 
@@ -282,7 +282,7 @@ final class UserScriptGMBridge: NSObject {
         }
 
         let active = args["active"] as? Bool ?? !(args["background"] as? Bool ?? false)
-        tabOpenHandler?.openTab(url: url, background: active == false)
+        tabOpenHandler?.openTab(url: url, background: active == false, sourceWebView: webView)
         resolveCallback(callbackId, result: [
             "closed": false,
             "id": UUID().uuidString,
@@ -416,8 +416,8 @@ final class UserScriptGMBridge: NSObject {
 /// Protocol for SumiScriptsManager to provide tab operations to GM bridge.
 @MainActor
 protocol SumiScriptsTabHandler: AnyObject {
-    func openTab(url: String, background: Bool)
-    func closeTab(tabId: String?)
+    func openTab(url: String, background: Bool, sourceWebView: WKWebView?)
+    func closeTab(tabId: String?, sourceWebView: WKWebView?)
 }
 
 extension String {

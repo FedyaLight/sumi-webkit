@@ -88,6 +88,29 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         harness.browserManager.auxiliaryWindowManager.closeAll(reason: .managerCloseAll)
     }
 
+    func testUserscriptWindowCloseFromAuxiliaryWebViewClosesPopupNotOpener() throws {
+        let harness = makeHarness()
+        let popupWebView = try XCTUnwrap(
+            harness.browserManager.auxiliaryWindowManager.presentWebPopup(
+                configuration: WKWebViewConfiguration(),
+                request: URLRequest(url: URL(string: "https://popup.example/userscript")!),
+                windowFeatures: WKWindowFeatures(),
+                openerTab: harness.sourceTab
+            )
+        )
+        let runtime = SumiScriptsManagerRuntime.live(browserManager: harness.browserManager)
+
+        XCTAssertTrue(harness.browserManager.auxiliaryWindowManager.contains(webView: popupWebView))
+        XCTAssertNotNil(harness.browserManager.tabManager.tab(for: harness.sourceTab.id))
+
+        runtime.closeTab(nil, popupWebView)
+
+        XCTAssertFalse(harness.browserManager.auxiliaryWindowManager.contains(webView: popupWebView))
+        XCTAssertNil(harness.browserManager.auxiliaryWindowManager.session(for: popupWebView))
+        XCTAssertNotNil(harness.browserManager.tabManager.tab(for: harness.sourceTab.id))
+        XCTAssertEqual(harness.windowState.currentTabId, harness.sourceTab.id)
+    }
+
     func testCloseAllForExtensionIdRemovesRegisteredMiniWindowAdapter() throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Auxiliary Owner")

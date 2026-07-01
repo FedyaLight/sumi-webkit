@@ -1126,6 +1126,10 @@ extension BrowserManager {
         webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
     }
 
+    func trackedWebViewOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
+        webViewRoutingService.trackedOwner(containing: webView)
+    }
+
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
         webViewRoutingService.syncTabAcrossWindows(
             tabId,
