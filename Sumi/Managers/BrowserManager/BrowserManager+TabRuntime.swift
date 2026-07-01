@@ -183,10 +183,11 @@ extension BrowserManager {
                     self?.popupPermissionBridge
                 },
                 targetSpaceForOpener: { [weak self] openerTab in
-                    guard let tabManager = self?.tabManager else { return nil }
+                    guard let self else { return nil }
                     return TabPopupHandlingRuntime.targetSpace(
                         for: openerTab,
-                        tabManager: tabManager
+                        tabManager: tabManager,
+                        windowState: windowState(containing: openerTab)
                     )
                 },
                 createNewTab: { [weak self] url, space, activate in
@@ -821,11 +822,30 @@ extension TabPopupHandlingRuntime {
 
     static func targetSpace(
         for openerTab: Tab,
-        tabManager: TabManager
+        tabManager: TabManager,
+        windowState: BrowserWindowState?
     ) -> Space? {
-        openerTab.spaceId.flatMap { spaceID in
-            tabManager.spaces.first(where: { $0.id == spaceID })
-        } ?? tabManager.currentSpace
+        if let openerSpaceId = openerTab.spaceId,
+           let openerSpace = tabManager.spaces.first(where: { $0.id == openerSpaceId }) {
+            return openerSpace
+        }
+
+        if let windowSpaceId = windowState?.currentSpaceId,
+           let windowSpace = tabManager.spaces.first(where: { $0.id == windowSpaceId }) {
+            return windowSpace
+        }
+
+        if let windowProfileId = windowState?.currentProfileId,
+           let windowProfileSpace = tabManager.spaces.first(where: { $0.profileId == windowProfileId }) {
+            return windowProfileSpace
+        }
+
+        if let openerProfileId = openerTab.profileId,
+           let openerProfileSpace = tabManager.spaces.first(where: { $0.profileId == openerProfileId }) {
+            return openerProfileSpace
+        }
+
+        return tabManager.spaces.first
     }
 
     static func explicitPopupOpenerProfile(

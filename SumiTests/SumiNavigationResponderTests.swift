@@ -2287,6 +2287,58 @@ final class SumiNavigationResponderTests: XCTestCase {
         XCTAssertNotNil(openedTab.assignedWebView ?? openedTab.existingWebView)
     }
 
+    func testExtensionPopupExternalCreateWebViewUsesOpenerWindowSpaceWhenSourceSpaceIsMissing()
+        async throws {
+        let harness = try makePopupFocusHarness()
+        let secondarySpace = Space(
+            name: "Secondary",
+            profileId: harness.sourceSpace.profileId
+        )
+        harness.browserManager.tabManager.spaces.append(secondarySpace)
+        harness.browserManager.tabManager.currentSpace = secondarySpace
+        harness.sourceTab.spaceId = nil
+
+        let extensionPopupURL = URL(
+            string: "safari-web-extension://extension-id/popup.html"
+        )!
+        let targetURL = URL(string: "https://account.example.test/login")!
+        harness.sourceTab.url = extensionPopupURL
+        let initialWindowSpaceTabCount = harness.browserManager.tabManager.tabsBySpace[
+            harness.sourceSpace.id
+        ]?.count ?? 0
+        let initialGlobalSpaceTabCount = harness.browserManager.tabManager.tabsBySpace[
+            secondarySpace.id
+        ]?.count ?? 0
+
+        let responder = SumiPopupHandlingNavigationResponder(tab: harness.sourceTab)
+        let action = popupNavigationAction(
+            sourceURL: extensionPopupURL,
+            targetURL: targetURL,
+            webView: harness.sourceWebView
+        )
+
+        let childWebView = await responder.createWebViewAsync(
+            from: harness.sourceWebView,
+            with: WKWebViewConfiguration(),
+            for: action,
+            windowFeatures: WKWindowFeatures()
+        )
+
+        XCTAssertNil(childWebView)
+        XCTAssertEqual(
+            harness.browserManager.tabManager.tabsBySpace[harness.sourceSpace.id]?.count,
+            initialWindowSpaceTabCount + 1
+        )
+        XCTAssertEqual(
+            harness.browserManager.tabManager.tabsBySpace[secondarySpace.id]?.count ?? 0,
+            initialGlobalSpaceTabCount
+        )
+        let openedTab = try XCTUnwrap(harness.browserManager.tabManager.tabs.last)
+        XCTAssertEqual(openedTab.url, targetURL)
+        XCTAssertEqual(openedTab.spaceId, harness.sourceSpace.id)
+        XCTAssertEqual(harness.windowState.currentTabId, openedTab.id)
+    }
+
     func testExtensionPopupExternalCreateWebViewUsesTabURLWhenSourceFrameMissing()
         async throws {
         let harness = try makePopupFocusHarness()
@@ -2406,6 +2458,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         let browserManager: BrowserManager
         let windowRegistry: WindowRegistry
         let windowState: BrowserWindowState
+        let sourceSpace: Space
         let sourceTab: Tab
         let sourceWebView: WKWebView
     }
@@ -2446,6 +2499,7 @@ final class SumiNavigationResponderTests: XCTestCase {
             browserManager: browserManager,
             windowRegistry: windowRegistry,
             windowState: windowState,
+            sourceSpace: space,
             sourceTab: sourceTab,
             sourceWebView: sourceWebView
         )
