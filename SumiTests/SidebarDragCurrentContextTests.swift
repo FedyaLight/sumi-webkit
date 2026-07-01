@@ -575,6 +575,114 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertEqual(harness.browserManager.splitManager.visibleTabIds(for: harness.windowState.id), [currentTab.id, draggedTab.id])
     }
 
+    func testSplitVisibleRegularTabDropDoesNotCreateHiddenLiveInstanceInOtherWindow() throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let currentTab = tabManager.createNewTab(url: "https://example.com/current", in: space)
+        let draggedTab = tabManager.createNewTab(url: "https://example.com/split-other-window", in: space, activate: false)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = draggedTab.id
+
+        let otherWindowState = BrowserWindowState()
+        otherWindowState.tabManager = tabManager
+        otherWindowState.currentSpaceId = space.id
+        otherWindowState.currentProfileId = profileId
+        otherWindowState.currentTabId = currentTab.id
+        harness.windowRegistry.register(otherWindowState)
+
+        let splitGroup = try XCTUnwrap(
+            SplitGroup.make(
+                tabIds: [currentTab.id, draggedTab.id],
+                layoutKind: .vertical,
+                activeTabId: draggedTab.id
+            )
+        )
+        tabManager.upsertSplitGroup(splitGroup, schedulePersistence: false)
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(draggedTab),
+            windowState: harness.windowState
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(draggedTab),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .spacePinned(space.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertIdentical(liveTab, draggedTab)
+        XCTAssertNil(tabManager.shortcutLiveTab(for: pin.id, in: otherWindowState.id))
+        XCTAssertEqual(
+            harness.browserManager.splitManager.visibleTabIds(for: otherWindowState.id),
+            [currentTab.id, draggedTab.id]
+        )
+    }
+
+    func testSelectedSplitVisibleRegularTabDropCreatesLiveInstanceInOtherWindow() throws {
+        let harness = try makeLiveWindowHarness()
+        let tabManager = harness.tabManager
+        let profileId = UUID()
+        let space = tabManager.createSpace(name: "Work", profileId: profileId)
+        let currentTab = tabManager.createNewTab(url: "https://example.com/current", in: space)
+        let draggedTab = tabManager.createNewTab(url: "https://example.com/split-selected-window", in: space, activate: false)
+        harness.windowState.currentSpaceId = space.id
+        harness.windowState.currentProfileId = profileId
+        harness.windowState.currentTabId = draggedTab.id
+
+        let otherWindowState = BrowserWindowState()
+        otherWindowState.tabManager = tabManager
+        otherWindowState.currentSpaceId = space.id
+        otherWindowState.currentProfileId = profileId
+        otherWindowState.currentTabId = draggedTab.id
+        harness.windowRegistry.register(otherWindowState)
+
+        let splitGroup = try XCTUnwrap(
+            SplitGroup.make(
+                tabIds: [currentTab.id, draggedTab.id],
+                layoutKind: .vertical,
+                activeTabId: draggedTab.id
+            )
+        )
+        tabManager.upsertSplitGroup(splitGroup, schedulePersistence: false)
+        let scope = try makeScope(
+            spaceId: space.id,
+            profileId: profileId,
+            sourceZone: .spaceRegular(space.id),
+            item: dragItem(draggedTab),
+            windowState: harness.windowState
+        )
+
+        let didMove = tabManager.performSidebarDragOperation(
+            DragOperation(
+                payload: .tab(draggedTab),
+                scope: scope,
+                fromContainer: .spaceRegular(space.id),
+                toContainer: .spacePinned(space.id),
+                toIndex: 0
+            )
+        )
+
+        XCTAssertTrue(didMove)
+        let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
+        let otherLiveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: otherWindowState.id))
+        XCTAssertNotEqual(otherLiveTab.id, draggedTab.id)
+        XCTAssertEqual(otherWindowState.currentTabId, otherLiveTab.id)
+        XCTAssertEqual(otherWindowState.currentShortcutPinId, pin.id)
+        XCTAssertEqual(otherWindowState.currentShortcutPinRole, .spacePinned)
+    }
+
     func testNonDisplayedRegularTabDropIntoShortcutSectionsCreatesLauncherWithoutLiveTab() throws {
         try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .spacePinned)
         try assertNonDisplayedRegularTabConversionCreatesLauncherOnly(target: .folder)
@@ -1463,7 +1571,13 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
-        return TabManager(context: container.mainContext, loadPersistedState: false)
+        return TabManager(
+            runtimeContext: TabManagerRuntimeContext(
+                requireRemoveAllWebViews: { _, _ in }
+            ),
+            context: container.mainContext,
+            loadPersistedState: false
+        )
     }
 
     private func makeLiveWindowHarness() throws -> LiveWindowHarness {
@@ -1472,6 +1586,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
         )
         let browserManager = BrowserManager()
+        browserManager.webViewCoordinator = WebViewCoordinator()
         let tabManager = TabManager(
             runtimeContext: .live(browserManager: browserManager),
             context: container.mainContext,
@@ -1496,9 +1611,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         spaceId: UUID,
         profileId: UUID,
         sourceZone: DropZoneID,
-        item: SumiDragItem
+        item: SumiDragItem,
+        windowState: BrowserWindowState? = nil
     ) throws -> SidebarDragScope {
-        let windowState = BrowserWindowState()
+        let windowState = windowState ?? BrowserWindowState()
         windowState.currentSpaceId = spaceId
         windowState.currentProfileId = profileId
         return try XCTUnwrap(

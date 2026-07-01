@@ -20,42 +20,50 @@ final class FloatingBarFocusRequestOwnerTests: XCTestCase {
     func testDeferredFocusRunsForCurrentSession() async throws {
         let owner = FloatingBarFocusRequestOwner()
         let windowID = UUID()
+        let focusExpectation = expectation(description: "deferred focus runs")
         var didFocus = false
 
         owner.beginSession(windowID: windowID)
         owner.scheduleDeferredFocus(windowID: windowID) {
             didFocus = true
+            focusExpectation.fulfill()
         }
 
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await fulfillment(of: [focusExpectation], timeout: 1.0)
         XCTAssertTrue(didFocus)
     }
 
     func testDeferredFocusIsCancelledWhenSessionEnds() async throws {
         let owner = FloatingBarFocusRequestOwner()
         let windowID = UUID()
+        let focusExpectation = expectation(description: "deferred focus is cancelled")
+        focusExpectation.isInverted = true
         var didFocus = false
 
         owner.beginSession(windowID: windowID)
         owner.scheduleDeferredFocus(windowID: windowID) {
             didFocus = true
+            focusExpectation.fulfill()
         }
         owner.endSession()
 
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await fulfillment(of: [focusExpectation], timeout: 0.05)
         XCTAssertFalse(didFocus)
     }
 
     func testDeferredFocusIgnoresMismatchedWindow() async throws {
         let owner = FloatingBarFocusRequestOwner()
+        let focusExpectation = expectation(description: "mismatched deferred focus is ignored")
+        focusExpectation.isInverted = true
         var didFocus = false
 
         owner.beginSession(windowID: UUID())
         owner.scheduleDeferredFocus(windowID: UUID()) {
             didFocus = true
+            focusExpectation.fulfill()
         }
 
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await fulfillment(of: [focusExpectation], timeout: 0.05)
         XCTAssertFalse(didFocus)
     }
 }

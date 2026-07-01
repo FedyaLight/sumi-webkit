@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class GlanceManagerTests: XCTestCase {
     func testSameURLPresentationIsNoOp() throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let url = URL(string: "https://destination.example/page")!
 
@@ -20,7 +20,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testDifferentURLPresentationReplacesAndCleansOldPreview() async throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let firstURL = URL(string: "https://first.example/page")!
         let secondURL = URL(string: "https://second.example/page")!
@@ -40,7 +40,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testPresentationWithoutSourceUsesActiveWindowSpaceInsteadOfGlobalCurrentSpace() throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let windowSpace = browserManager.tabManager.createSpace(name: "Window Space")
         let globalSpace = browserManager.tabManager.createSpace(name: "Global Space")
         browserManager.tabManager.currentSpace = globalSpace
@@ -59,7 +59,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testDismissCleansPreviewAndReturnsIdle() async throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let url = URL(string: "https://destination.example/page")!
 
@@ -78,7 +78,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testDismissGlanceImmediatelyClearsPreviewInstance() async throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let url = URL(string: "https://destination.example/page")!
 
@@ -97,7 +97,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testWebKitCloseDismissesAndCleansPreviewInstance() async throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let url = URL(string: "https://destination.example/page")!
 
@@ -115,8 +115,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testWebKitCloseForTrackedRegularWebViewClosesOwningTab() {
-        let browserManager = BrowserManager()
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let webView = WKWebView()
@@ -138,8 +137,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testWebKitCloseForTrackedWebViewWithStaleOwnerCleansSlotWithoutClosingAnotherWindow() {
-        let browserManager = BrowserManager()
-        browserManager.webViewCoordinator = WebViewCoordinator()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let (windowRegistry, visibleWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let staleOwnerWindowID = UUID()
@@ -163,7 +161,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testMoveToNewTabAdoptsSamePreviewTabAndWebView() async throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let url = URL(string: "https://destination.example/page")!
 
@@ -181,7 +179,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testMoveToNewTabPromotesPreviewInSourceWindow() async throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let otherWindow = BrowserWindowState()
@@ -206,7 +204,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testMoveToNewTabCanWaitForDisplayAttachmentBeforeFinishingPromotion() async throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let (windowRegistry, sourceWindow) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let url = URL(string: "https://destination.example/page")!
@@ -266,7 +264,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testMoveToSplitViewPromotesPreviewIntoSourceWindowSplit() async throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let sourceSpace = try XCTUnwrap(sourceTab.spaceId.flatMap { spaceId in
             browserManager.tabManager.spaces.first { $0.id == spaceId }
@@ -330,7 +328,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testGlancePresentationStaysPinnedToSourceTabSelection() {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let otherTab = browserManager.tabManager.createNewTab(
             url: "https://other.example/page",
@@ -373,7 +371,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testGlancePreviewPermissionSurfaceCountsAsActiveAndVisible() async throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let (windowRegistry, _) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let url = URL(string: "https://destination.example/page")!
@@ -393,7 +391,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testGlanceSessionObserveAppliesInitialWebViewStateSynchronously() {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let targetURL = URL(string: "https://destination.example/page")!
         let previewTab = Tab(url: targetURL, name: "Destination")
@@ -416,7 +414,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testGlanceSessionSnapshotRestoresPreviewForWindow() throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let (_, windowState) = makeRegisteredWindow(in: browserManager, selecting: sourceTab)
         let targetURL = URL(string: "https://destination.example/page")!
@@ -441,7 +439,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testGlanceSessionRestoreRebindsToSourceTabSelection() throws {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         let sourceTab = makeSourceTab(in: browserManager)
         let otherTab = browserManager.tabManager.createNewTab(
             url: "https://other.example/page",
@@ -467,7 +465,7 @@ final class GlanceManagerTests: XCTestCase {
     }
 
     func testGlanceSessionRestoreDoesNotPresentWhenSourceTabIsMissing() {
-        let browserManager = BrowserManager()
+        let browserManager = makeBrowserManager()
         browserManager.tabManager.markInitialDataLoadFinished()
         let selectedTab = makeSourceTab(in: browserManager)
         let (_, windowState) = makeRegisteredWindow(in: browserManager, selecting: selectedTab)
@@ -542,6 +540,13 @@ final class GlanceManagerTests: XCTestCase {
         manager.dismissGlance()
 
         XCTAssertEqual(persistedWindowIds, [windowState.id])
+    }
+
+    @discardableResult
+    private func makeBrowserManager() -> BrowserManager {
+        let browserManager = BrowserManager()
+        browserManager.webViewCoordinator = WebViewCoordinator()
+        return browserManager
     }
 
     @discardableResult

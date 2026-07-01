@@ -69,16 +69,13 @@ enum BrowserManagerWebViewCoordinatorRuntimeFactory {
     ) -> WebViewCoordinatorInitialDocumentRuntimeContext {
         WebViewCoordinatorInitialDocumentRuntimeContext(
             needsInitialDocumentExtensionContextLoad: { [weak browserManager] profileId in
-                requireBrowserManager(
-                    browserManager,
-                    operation: "check initial document extension contexts"
-                ).extensionsModule.needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
+                guard let browserManager else { return false }
+                return browserManager.extensionsModule
+                    .needsInitialDocumentExtensionContextLoadIfNeeded(profileId: profileId)
             },
             ensureInitialDocumentExtensionContextsLoaded: { [weak browserManager] profileId in
-                await requireBrowserManager(
-                    browserManager,
-                    operation: "load initial document extension contexts"
-                ).extensionsModule
+                guard let browserManager else { return }
+                await browserManager.extensionsModule
                     .ensureInitialDocumentExtensionContextsLoadedIfNeeded(profileId: profileId)
             },
             refreshCompositorForWindow: { [weak browserManager] windowId in

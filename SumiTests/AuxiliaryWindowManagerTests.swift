@@ -136,6 +136,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: .live(browserManager: browserManager))
@@ -191,6 +192,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: .live(browserManager: browserManager))
@@ -412,6 +414,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: .live(browserManager: browserManager))
@@ -472,6 +475,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: .live(browserManager: browserManager))
@@ -533,6 +537,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             moduleRegistry: registry,
             extensionsModule: extensionsModule
         )
+        browserManager.webViewCoordinator = WebViewCoordinator()
         browserManager.profileManager.profiles = [profile]
         browserManager.currentProfile = profile
         extensionsModule.attach(runtime: .live(browserManager: browserManager))
@@ -1054,13 +1059,11 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             initialProfileProvider: { profile },
             managerFactory: { _, _, _, _ in extensionManager }
         )
-        let browserManager = BrowserManager(
+        let browserManager = makeSafariExtensionTestBrowserManager(
             moduleRegistry: registry,
-            extensionsModule: extensionsModule
+            extensionsModule: extensionsModule,
+            profile: profile
         )
-        browserManager.profileManager.profiles = [profile]
-        browserManager.currentProfile = profile
-        browserManager.webViewCoordinator = WebViewCoordinator()
         extensionsModule.attach(runtime: .live(browserManager: browserManager))
         extensionManager.attach(browserManager: browserManager)
         XCTAssertIdentical(extensionsModule.managerIfEnabled(), extensionManager)
@@ -1158,21 +1161,40 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         in tabManager: TabManager,
         timeout: TimeInterval = 2.0
     ) async throws -> Tab {
-        let deadline = Date().addingTimeInterval(timeout)
+        let clock = ContinuousClock()
+        let timeoutMilliseconds = Int64((max(0, timeout) * 1_000).rounded(.up))
+        let deadline = clock.now.advanced(by: .milliseconds(timeoutMilliseconds))
         repeat {
-            if let tab = tabManager.tabsBySpace.values
-                .flatMap({ $0 })
-                .first(where: { $0.url == url && $0.isAuxiliaryMiniWindow == false }) {
+            if let tab = regularTab(with: url, in: tabManager) {
                 return tab
             }
             try await Task.sleep(nanoseconds: 20_000_000)
-        } while Date() < deadline
+        } while clock.now < deadline
 
         return try XCTUnwrap(
-            tabManager.tabsBySpace.values
-                .flatMap({ $0 })
-                .first(where: { $0.url == url && $0.isAuxiliaryMiniWindow == false })
+            regularTab(with: url, in: tabManager),
+            "Expected regular tab for \(url.absoluteString); existing regular tabs: \(regularTabDescriptions(in: tabManager))"
         )
+    }
+
+    private func regularTab(with url: URL, in tabManager: TabManager) -> Tab? {
+        tabManager.tabsBySpace.values
+            .flatMap { $0 }
+            .first { tab in
+                tab.url == url
+                    && tab.isAuxiliaryMiniWindow == false
+                    && tab.isPopupHost == false
+            }
+    }
+
+    private func regularTabDescriptions(in tabManager: TabManager) -> String {
+        tabManager.tabsBySpace
+            .flatMap { spaceId, tabs in
+                tabs.map { tab in
+                    "space=\(spaceId.uuidString) tab=\(tab.id.uuidString) url=\(tab.url.absoluteString) auxiliary=\(tab.isAuxiliaryMiniWindow) popup=\(tab.isPopupHost)"
+                }
+            }
+            .joined(separator: "; ")
     }
 
     private func popupNavigationAction(

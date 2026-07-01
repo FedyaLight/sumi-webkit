@@ -131,6 +131,7 @@ extension XCTestCase {
             protectionCoordinator: protectionCoordinator,
             extensionsModule: extensionsModule
         )
+        browserManager.webViewCoordinator = WebViewCoordinator()
         if let profile {
             browserManager.profileManager.profiles = [profile]
             browserManager.currentProfile = profile

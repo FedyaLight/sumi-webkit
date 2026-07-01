@@ -26,14 +26,23 @@ enum DownloadsDirectoryResolver {
 
     private static func isolatedRoot(fileManager: FileManager) -> URL {
         let env = ProcessInfo.processInfo.environment
+        let base: URL
         if let override = env["SUMI_APP_SUPPORT_OVERRIDE"], !override.isEmpty {
-            return URL(fileURLWithPath: override, isDirectory: true)
+            base = URL(fileURLWithPath: override, isDirectory: true)
                 .appendingPathComponent("TestDownloads", isDirectory: true)
+        } else if let tmp = env["TMPDIR"], !tmp.isEmpty {
+            base = URL(fileURLWithPath: tmp, isDirectory: true)
+        } else {
+            base = fileManager.temporaryDirectory
         }
-        if let tmp = env["TMPDIR"], !tmp.isEmpty {
-            return URL(fileURLWithPath: tmp, isDirectory: true)
+
+        guard env["XCTestConfigurationFilePath"] != nil else {
+            return base
         }
-        return fileManager.temporaryDirectory
+        return base.appendingPathComponent(
+            "SumiDownloads-\(ProcessInfo.processInfo.processIdentifier)",
+            isDirectory: true
+        )
     }
 }
 

@@ -8,15 +8,17 @@ final class GlancePromotionCompletionOwnerTests: XCTestCase {
         let owner = GlancePromotionCompletionOwner()
         let sessionID = UUID()
         var fallbackSessionIDs: [UUID] = []
+        let fallbackCompleted = expectation(description: "fallbackCompleted")
 
         owner.beginAwaitingAttachment(
             sessionID: sessionID,
             fallbackDelayNanoseconds: 1_000_000
         ) {
             fallbackSessionIDs.append(sessionID)
+            fallbackCompleted.fulfill()
         }
 
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await fulfillment(of: [fallbackCompleted], timeout: 1)
 
         XCTAssertEqual(fallbackSessionIDs, [sessionID])
         XCTAssertFalse(owner.isAwaitingAttachment)
@@ -46,17 +48,19 @@ final class GlancePromotionCompletionOwnerTests: XCTestCase {
         let owner = GlancePromotionCompletionOwner()
         let sessionID = UUID()
         var fallbackCount = 0
+        let fallbackCompleted = expectation(description: "fallbackCompleted")
 
         owner.beginAwaitingAttachment(
             sessionID: sessionID,
             fallbackDelayNanoseconds: 1_000_000
         ) {
             fallbackCount += 1
+            fallbackCompleted.fulfill()
         }
 
         XCTAssertFalse(owner.completeAttachment(sessionID: UUID()))
 
-        try await Task.sleep(nanoseconds: 20_000_000)
+        await fulfillment(of: [fallbackCompleted], timeout: 1)
 
         XCTAssertEqual(fallbackCount, 1)
         XCTAssertFalse(owner.isAwaitingAttachment)

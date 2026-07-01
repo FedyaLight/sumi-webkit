@@ -337,7 +337,8 @@ extension TabManager {
         spaceId: UUID?,
         folderId: UUID?,
         at targetIndex: Int,
-        openTargetFolder: Bool = true
+        openTargetFolder: Bool = true,
+        preferredWindowId: UUID? = nil
     ) -> ShortcutPin? {
         withStructuralUpdateTransaction {
             let pin = makeShortcutPin(
@@ -354,7 +355,11 @@ extension TabManager {
                 openTargetFolder: openTargetFolder
             ) else { return nil }
 
-            if !convertSelectedTabToShortcutLiveInstances(tab, pin: insertedPin) {
+            if !convertDisplayedTabToShortcutLiveInstances(
+                tab,
+                pin: insertedPin,
+                preferredWindowId: preferredWindowId
+            ) {
                 removeTab(tab.id)
             }
             scheduleStructuralPersistence()

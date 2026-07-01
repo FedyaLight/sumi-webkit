@@ -6,12 +6,14 @@ import XCTest
 @MainActor
 final class WindowSessionServiceTests: XCTestCase {
     func testBrowserManagerFlushesPendingWindowSessionWithoutWaitingForDebounce() throws {
-        UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
+        let sessionKey = "SumiTests.windowSession.flush.\(UUID().uuidString)"
+        UserDefaults.standard.removeObject(forKey: sessionKey)
         defer {
-            UserDefaults.standard.removeObject(forKey: BrowserManager.lastWindowSessionKey)
+            UserDefaults.standard.removeObject(forKey: sessionKey)
         }
 
         let browserManager = BrowserManager()
+        browserManager.windowSessionService = WindowSessionService(lastWindowSessionKey: sessionKey)
         let windowState = BrowserWindowState()
         let spaceId = UUID()
         windowState.currentSpaceId = spaceId
@@ -24,11 +26,11 @@ final class WindowSessionServiceTests: XCTestCase {
             delayNanoseconds: 60_000_000_000
         )
 
-        XCTAssertNil(UserDefaults.standard.data(forKey: BrowserManager.lastWindowSessionKey))
+        XCTAssertNil(UserDefaults.standard.data(forKey: sessionKey))
 
         browserManager.flushPendingWindowSessionPersistence()
 
-        let data = try XCTUnwrap(UserDefaults.standard.data(forKey: BrowserManager.lastWindowSessionKey))
+        let data = try XCTUnwrap(UserDefaults.standard.data(forKey: sessionKey))
         let snapshot = try JSONDecoder().decode(WindowSessionSnapshot.self, from: data)
         XCTAssertEqual(snapshot.currentSpaceId, spaceId)
         XCTAssertEqual(snapshot.sidebarWidth, 312)

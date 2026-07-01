@@ -82,9 +82,8 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             context: container.mainContext,
             initialProfile: profile
         )
-        let browserManager = BrowserManager()
+        let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
         manager.extensionsLoaded = true
         let installed = try await installProbeExtension(manager: manager)
         let tab = Tab(
@@ -113,9 +112,8 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
-        let browserManager = BrowserManager()
+        let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
         _ = manager.requestExtensionRuntime(
             reason: .attach,
             allowWithoutEnabledExtensions: true
@@ -169,9 +167,8 @@ final class SafariExtensionAutofillInfrastructureTests: XCTestCase {
             initialProfile: profile,
             browserConfiguration: browserConfiguration
         )
-        let browserManager = BrowserManager()
+        let browserManager = makeSafariExtensionTestBrowserManager(profile: profile)
         manager.attach(browserManager: browserManager)
-        browserManager.profileManager.profiles = [profile]
         _ = manager.requestExtensionRuntime(
             reason: .attach,
             allowWithoutEnabledExtensions: true

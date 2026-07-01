@@ -32,7 +32,8 @@ final class SidebarRegularTabDragService {
                 profileId: nil,
                 spaceId: targetSpaceId,
                 folderId: nil,
-                at: operation.toIndex
+                at: operation.toIndex,
+                preferredWindowId: operation.scope.windowId
             ) != nil
 
         case .moveToRegular(let targetSpaceId) where operation.fromContainer == .spacePinned(operation.scope.spaceId):
@@ -48,7 +49,8 @@ final class SidebarRegularTabDragService {
                 profileId: profileId,
                 spaceId: nil,
                 folderId: nil,
-                at: operation.toIndex
+                at: operation.toIndex,
+                preferredWindowId: operation.scope.windowId
             ) != nil
 
         case .moveToRegular(let spaceId) where operation.fromContainer == .essentials:
@@ -61,7 +63,8 @@ final class SidebarRegularTabDragService {
                 profileId: nil,
                 spaceId: spaceId,
                 folderId: nil,
-                at: operation.toIndex
+                at: operation.toIndex,
+                preferredWindowId: operation.scope.windowId
             ) != nil
 
         case .moveToFolder(let toFolderId) where isFolderContainer(operation.fromContainer):
@@ -75,7 +78,8 @@ final class SidebarRegularTabDragService {
                 spaceId: spaceId,
                 folderId: targetFolderId,
                 at: operation.toIndex,
-                openTargetFolder: false
+                openTargetFolder: false,
+                preferredWindowId: operation.scope.windowId
             ) != nil
 
         case .moveToEssentials where isFolderContainer(operation.fromContainer):
@@ -86,7 +90,8 @@ final class SidebarRegularTabDragService {
                 profileId: profileId,
                 spaceId: nil,
                 folderId: nil,
-                at: operation.toIndex
+                at: operation.toIndex,
+                preferredWindowId: operation.scope.windowId
             ) != nil
 
         case .moveToPinned(let spaceId) where isFolderContainer(operation.fromContainer):
@@ -96,7 +101,8 @@ final class SidebarRegularTabDragService {
                 profileId: nil,
                 spaceId: spaceId,
                 folderId: nil,
-                at: operation.toIndex
+                at: operation.toIndex,
+                preferredWindowId: operation.scope.windowId
             ) != nil
 
         case .moveToRegular(let spaceId) where isFolderContainer(operation.fromContainer):
@@ -114,7 +120,8 @@ final class SidebarRegularTabDragService {
                 spaceId: targetSpaceId,
                 folderId: toFolderId,
                 at: operation.toIndex,
-                openTargetFolder: false
+                openTargetFolder: false,
+                preferredWindowId: operation.scope.windowId
             ) != nil
 
         case .moveToFolder(let toFolderId) where operation.fromContainer == .spacePinned(operation.scope.spaceId):
@@ -129,7 +136,8 @@ final class SidebarRegularTabDragService {
                 spaceId: targetSpaceId,
                 folderId: toFolderId,
                 at: operation.toIndex,
-                openTargetFolder: false
+                openTargetFolder: false,
+                preferredWindowId: operation.scope.windowId
             ) != nil
 
         case .unsupported,

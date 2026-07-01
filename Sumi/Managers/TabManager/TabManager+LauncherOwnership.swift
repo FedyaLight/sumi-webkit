@@ -48,7 +48,7 @@ extension TabManager {
                 context: context
             )
 
-            if !convertSelectedTabToShortcutLiveInstances(
+            if !convertDisplayedTabToShortcutLiveInstances(
                 tab,
                 pin: insertedPin,
                 preferredWindowId: context?.windowState?.id
@@ -416,7 +416,12 @@ extension TabManager {
         }
     }
 
-    func convertTabToShortcutLiveInstance(_ tab: Tab, pin: ShortcutPin, in windowId: UUID) {
+    func convertTabToShortcutLiveInstance(
+        _ tab: Tab,
+        pin: ShortcutPin,
+        in windowId: UUID,
+        updateSelection: Bool = true
+    ) {
         removeFromCurrentContainer(tab)
         tab.isPinned = false
         tab.isSpacePinned = false
@@ -430,12 +435,16 @@ extension TabManager {
         notifyTransientShortcutStateChanged()
 
         if let windowState = runtimeContext?.windowState(for: windowId) {
-            windowState.currentShortcutPinId = pin.id
-            windowState.currentShortcutPinRole = pin.role
-            windowState.currentTabId = tab.id
-            windowState.isShowingEmptyState = false
+            if updateSelection || windowState.currentTabId == tab.id {
+                windowState.currentShortcutPinId = pin.id
+                windowState.currentShortcutPinRole = pin.role
+                windowState.currentTabId = tab.id
+                windowState.isShowingEmptyState = false
+            }
             if let spaceId = pin.spaceId {
-                windowState.currentSpaceId = spaceId
+                if updateSelection {
+                    windowState.currentSpaceId = spaceId
+                }
                 if windowState.activeTabForSpace[spaceId] == tab.id {
                     windowState.activeTabForSpace[spaceId] = tabsBySpace[spaceId]?.first?.id
                 }
@@ -445,7 +454,7 @@ extension TabManager {
     }
 
     @discardableResult
-    func convertSelectedTabToShortcutLiveInstances(
+    func convertDisplayedTabToShortcutLiveInstances(
         _ tab: Tab,
         pin: ShortcutPin,
         preferredWindowId: UUID? = nil
@@ -454,12 +463,33 @@ extension TabManager {
             tabId: tab.id,
             preferredWindowId: preferredWindowId
         )
-        guard let firstWindowId = selectedWindowIds.first else { return false }
+        let displayingWindowIds = windowIdsDisplaying(
+            tabId: tab.id,
+            preferredWindowId: preferredWindowId
+        )
+        guard let firstWindowId = selectedWindowIds.first ?? displayingWindowIds.first else {
+            return false
+        }
 
-        convertTabToShortcutLiveInstance(tab, pin: pin, in: firstWindowId)
+        convertTabToShortcutLiveInstance(
+            tab,
+            pin: pin,
+            in: firstWindowId,
+            updateSelection: selectedWindowIds.contains(firstWindowId)
+        )
 
-        for windowId in selectedWindowIds.dropFirst() {
-            replaceDisplayedTabWithShortcutLiveInstance(tab, pin: pin, in: windowId)
+        for windowId in displayingWindowIds where windowId != firstWindowId {
+            let isSelectedWindow = selectedWindowIds.contains(windowId)
+            if !isSelectedWindow,
+               runtimeContext?.isTabVisibleInSplit(tab.id, in: windowId) == true {
+                continue
+            }
+            replaceDisplayedTabWithShortcutLiveInstance(
+                tab,
+                pin: pin,
+                in: windowId,
+                updateSelection: isSelectedWindow
+            )
         }
         return true
     }
@@ -467,7 +497,8 @@ extension TabManager {
     private func replaceDisplayedTabWithShortcutLiveInstance(
         _ originalTab: Tab,
         pin: ShortcutPin,
-        in windowId: UUID
+        in windowId: UUID,
+        updateSelection: Bool = true
     ) {
         guard let windowState = runtimeContext?.windowState(for: windowId) else { return }
         let liveTab = activateShortcutPin(
@@ -479,11 +510,15 @@ extension TabManager {
         if windowState.currentTabId == originalTab.id {
             windowState.currentTabId = liveTab.id
         }
-        windowState.currentShortcutPinId = pin.id
-        windowState.currentShortcutPinRole = pin.role
-        windowState.isShowingEmptyState = false
+        if updateSelection || windowState.currentTabId == liveTab.id {
+            windowState.currentShortcutPinId = pin.id
+            windowState.currentShortcutPinRole = pin.role
+            windowState.isShowingEmptyState = false
+        }
         if let spaceId = pin.spaceId {
-            windowState.currentSpaceId = spaceId
+            if updateSelection {
+                windowState.currentSpaceId = spaceId
+            }
             if windowState.activeTabForSpace[spaceId] == originalTab.id {
                 windowState.activeTabForSpace[spaceId] = tabsBySpace[spaceId]?.first?.id
             }

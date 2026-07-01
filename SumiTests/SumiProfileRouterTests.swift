@@ -68,10 +68,17 @@ final class SumiProfileRouterTests: XCTestCase {
         )
         let currentProfile = try XCTUnwrap(browserManager.currentProfile)
         let targetProfile = Profile(name: "Target")
+        browserManager.profileManager.profiles = [currentProfile, targetProfile]
+        let currentSpace = Space(name: "Current", profileId: currentProfile.id)
+        let targetSpace = Space(name: "Target", profileId: targetProfile.id)
+        browserManager.tabManager.spaces = [currentSpace, targetSpace]
+        browserManager.tabManager.currentSpace = currentSpace
         let requestedWindow = BrowserWindowState()
         let activeWindow = BrowserWindowState()
         requestedWindow.currentProfileId = currentProfile.id
+        requestedWindow.currentSpaceId = targetSpace.id
         activeWindow.currentProfileId = currentProfile.id
+        activeWindow.currentSpaceId = currentSpace.id
 
         let registry = WindowRegistry()
         registry.register(requestedWindow)
@@ -98,10 +105,17 @@ final class SumiProfileRouterTests: XCTestCase {
         )
         let currentProfile = try XCTUnwrap(browserManager.currentProfile)
         let targetProfile = Profile(name: "Target")
+        browserManager.profileManager.profiles = [currentProfile, targetProfile]
+        let currentSpace = Space(name: "Current", profileId: currentProfile.id)
+        let targetSpace = Space(name: "Target", profileId: targetProfile.id)
+        browserManager.tabManager.spaces = [currentSpace, targetSpace]
+        browserManager.tabManager.currentSpace = currentSpace
         let requestedWindow = BrowserWindowState()
         let activeWindow = BrowserWindowState()
         requestedWindow.currentProfileId = currentProfile.id
+        requestedWindow.currentSpaceId = targetSpace.id
         activeWindow.currentProfileId = currentProfile.id
+        activeWindow.currentSpaceId = currentSpace.id
 
         let registry = WindowRegistry()
         registry.register(requestedWindow)

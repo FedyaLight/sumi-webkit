@@ -31,6 +31,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             extensionsModule: extensionsModule,
             profile: profile
         )
+        browserManager.webViewCoordinator = WebViewCoordinator()
         return browserManager
     }
 
