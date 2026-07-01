@@ -10,7 +10,7 @@ final class TabTransientWebKitTabLifecycleOwner {
         let regularTabCollectionOwner: () -> RegularTabCollectionOwner
         let attach: (Tab) -> Void
         let detach: (Tab) -> Void
-        let targetSpace: (Space?, UUID?) -> Space
+        let targetSpace: (Space?) -> Space
         let spaceForID: (UUID) -> Space?
         let backfillTargetSpaceProfileIfNeeded: (Space, UUID?) -> Bool
         let insertRegularTab: (Tab, UUID, Int?) -> Void
@@ -41,7 +41,7 @@ final class TabTransientWebKitTabLifecycleOwner {
         let normalizedUrl = normalizeURL(url, queryTemplate: resolvedSearchEngineTemplate)
         let validURL = URL(string: normalizedUrl) ?? SumiSurface.emptyTabURL
 
-        let targetSpace = dependencies.targetSpace(space, nil)
+        let targetSpace = dependencies.targetSpace(space)
         if dependencies.backfillTargetSpaceProfileIfNeeded(targetSpace, defaultProfileIdForSpaceBootstrap) {
             dependencies.scheduleStructuralPersistence()
         }
@@ -152,7 +152,7 @@ final class TabTransientWebKitTabLifecycleOwner {
     }
 
     private var defaultProfileIdForSpaceBootstrap: UUID? {
-        dependencies.runtimeContext()?.defaultProfileId
+        dependencies.runtimeContext()?.currentProfileId ?? dependencies.runtimeContext()?.defaultProfileId
     }
 
     private func unloadAndDetach(_ tab: Tab, notifyExtensionClose: Bool) {

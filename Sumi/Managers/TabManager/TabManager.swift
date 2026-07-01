@@ -78,8 +78,8 @@ class TabManager: ObservableObject {
             regularTabCollectionOwner: { [unowned self] in self.regularTabCollectionOwner },
             attach: { [unowned self] tab in self.attach(tab) },
             detach: { [unowned self] tab in self.detach(tab) },
-            targetSpace: { [unowned self] space, fallbackSpaceId in
-                self.resolvedTargetSpace(preferred: space, fallbackSpaceId: fallbackSpaceId)
+            targetSpace: { [unowned self] space in
+                self.resolvedTargetSpace(preferred: space)
             },
             spaceForID: { [unowned self] spaceId in
                 self.spaces.first { $0.id == spaceId }
@@ -139,16 +139,24 @@ class TabManager: ObservableObject {
     }
 
     func selectionTabsForCurrentContext(in windowId: UUID? = nil) -> [Tab] {
-        let regularTabs = tabs
+        let contextWindowState = windowId.flatMap { runtimeContext?.windowState(for: $0) }
+        let contextSpaceId = contextWindowState?.currentSpaceId ?? currentSpace?.id
+        let contextProfileId =
+            contextWindowState?.currentProfileId
+            ?? contextSpaceId.flatMap { spaceId in
+                spaces.first(where: { $0.id == spaceId })?.profileId
+            }
+            ?? runtimeContext?.currentProfileId
+        let regularTabs = contextSpaceId.map { regularTabCollectionOwner.tabs(in: $0) } ?? []
         let activeLauncherTab = windowId
             .flatMap { activeShortcutTab(for: $0) }
             .flatMap { liveTab -> Tab? in
                 guard liveTab.shortcutPinRole != .essential else { return nil }
-                guard liveTab.spaceId == nil || liveTab.spaceId == currentSpace?.id else { return nil }
+                guard liveTab.spaceId == nil || liveTab.spaceId == contextSpaceId else { return nil }
                 return liveTab
             }
 
-        return pinnedTabs + (activeLauncherTab.map { [$0] } ?? []) + regularTabs
+        return activeEssentialTabs(for: contextProfileId) + (activeLauncherTab.map { [$0] } ?? []) + regularTabs
     }
 
     func folderPinnedPins(for folderId: UUID, in spaceId: UUID) -> [ShortcutPin] {
@@ -478,17 +486,15 @@ class TabManager: ObservableObject {
     /// Create a new regular tab duplicating the source tab's URL/name and insert near an anchor tab.
     /// - Parameters:
     ///   - source: The tab to duplicate (pinned/space-pinned or regular).
-    ///   - anchor: A regular tab used to decide target space and placement. If nil, falls back to currentSpace.
+    ///   - anchor: A regular tab used to decide target space and placement.
     ///   - placeAfterAnchor: If true, insert right after the anchor's index; otherwise at the anchor's index.
     /// - Returns: The newly created regular Tab.
     @discardableResult
-    func duplicateAsRegularForSplit(from source: Tab, anchor: Tab?, placeAfterAnchor: Bool = true) -> Tab {
+    func duplicateAsRegularForSplit(from source: Tab, anchor: Tab, placeAfterAnchor: Bool = true) -> Tab {
         withStructuralUpdateTransaction {
-            // Resolve target space: prefer the anchor's space, else currentSpace.
-            let targetSpace: Space = {
-                if let a = anchor, let sid = a.spaceId, let sp = spaces.first(where: { $0.id == sid }) { return sp }
-                return currentSpace ?? ensureDefaultSpaceIfNeeded()
-            }()
+            let targetSpace = anchor.spaceId.flatMap { sid in
+                spaces.first(where: { $0.id == sid })
+            } ?? ensureDefaultSpaceIfNeeded()
 
             // Build the duplicate with the same URL/name; favicon will refresh from URL.
             let newTab = Tab(
@@ -502,10 +508,7 @@ class TabManager: ObservableObject {
                 visitedLinkStore: visitedLinkStore
             )
 
-            let insertionIndex = anchor
-                .flatMap { anchor in
-                    regularTabCollectionOwner.firstIndex(of: anchor, in: targetSpace.id)
-                }
+            let insertionIndex = regularTabCollectionOwner.firstIndex(of: anchor, in: targetSpace.id)
                 .map { $0 + (placeAfterAnchor ? 1 : 0) }
             addTab(newTab, regularInsertionIndex: insertionIndex)
 
@@ -588,12 +591,11 @@ class TabManager: ObservableObject {
             ?? fallbackSpaceId.flatMap { spaceId in
                 spaces.first(where: { $0.id == spaceId })
             }
-            ?? currentSpace
             ?? ensureDefaultSpaceIfNeeded()
     }
 
     var defaultProfileIdForSpaceBootstrap: UUID? {
-        runtimeContext?.defaultProfileId
+        runtimeContext?.currentProfileId ?? runtimeContext?.defaultProfileId
     }
 
     @discardableResult
@@ -924,27 +926,41 @@ class TabManager: ObservableObject {
         )
     }
 
-    // Ensure a default space exists and is active; create a Personal space if needed
+    // Ensure a deterministic default target space exists without inheriting process-global selection.
     private func ensureDefaultSpaceIfNeeded() -> Space {
-        if let cs = currentSpace { return cs }
-        if spaces.isEmpty {
-            let resolvedProfileId = runtimeContext?.currentProfileId
-            let personal = Space(
-                name: "Personal",
-                icon: "🏠",
-                workspaceTheme: .default,
-                profileId: resolvedProfileId
-            )
-            spaces.append(personal)
-            markAllSpacesStructurallyDirty()
-            setTabs([], for: personal.id)
-            currentSpace = personal
-            scheduleStructuralPersistence()
-            return personal
-        } else {
-            currentSpace = spaces.first
-            return currentSpace ?? spaces.first ?? createSpace(name: "Personal")
+        let profileId = defaultProfileIdForSpaceBootstrap
+        if let profileId,
+           let profileSpace = spaces.first(where: { $0.profileId == profileId }) {
+            return profileSpace
         }
+
+        if let profileId,
+           let unassignedSpace = spaces.first(where: { $0.profileId == nil }) {
+            unassignedSpace.profileId = profileId
+            markAllSpacesStructurallyDirty()
+            scheduleStructuralPersistence()
+            return unassignedSpace
+        }
+
+        if profileId == nil,
+           let firstSpace = spaces.first {
+            return firstSpace
+        }
+
+        let personal = Space(
+            name: "Personal",
+            icon: "🏠",
+            workspaceTheme: .default,
+            profileId: profileId
+        )
+        spaces.append(personal)
+        markAllSpacesStructurallyDirty()
+        setTabs([], for: personal.id)
+        if currentSpace == nil {
+            currentSpace = personal
+        }
+        scheduleStructuralPersistence()
+        return personal
     }
 
     func clearRegularTabs(for spaceId: UUID) {

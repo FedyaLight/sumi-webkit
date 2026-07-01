@@ -199,6 +199,187 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertNil(tabManager.tabsBySpace[sourceSpace.id]?.first { $0.id == transientExtension.id })
     }
 
+    func testTabCreationWithoutTargetSpaceUsesDefaultSpaceInsteadOfCurrentSpace() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let defaultSpace = tabManager.createSpace(name: "Default")
+        let currentSpace = tabManager.createSpace(name: "Current")
+
+        tabManager.currentSpace = currentSpace
+        let regular = tabManager.createNewTab(
+            url: "https://example.com/regular",
+            in: nil,
+            activate: false
+        )
+
+        tabManager.currentSpace = currentSpace
+        let transientExtension = tabManager.createTransientExtensionTab(
+            url: "https://example.com/transient",
+            in: nil,
+            webExtensionContextOverride: nil
+        )
+
+        tabManager.currentSpace = currentSpace
+        let webViewBacked = tabManager.createNewTabWithWebView(
+            url: "https://example.com/webview",
+            in: nil
+        )
+
+        tabManager.currentSpace = currentSpace
+        let popup = tabManager.createPopupTab(in: nil, activate: false)
+
+        XCTAssertEqual(regular.spaceId, defaultSpace.id)
+        XCTAssertEqual(transientExtension.spaceId, defaultSpace.id)
+        XCTAssertEqual(webViewBacked.spaceId, defaultSpace.id)
+        XCTAssertEqual(popup.spaceId, defaultSpace.id)
+        XCTAssertTrue(tabManager.tabsBySpace[currentSpace.id]?.isEmpty ?? true)
+    }
+
+    func testTabCreationWithoutTargetSpaceUsesCurrentProfileSpaceBeforeFirstSpace() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let firstProfileId = UUID()
+        let currentProfileId = UUID()
+        let firstProfileSpace = tabManager.createSpace(name: "First", profileId: firstProfileId)
+        let currentProfileSpace = tabManager.createSpace(name: "Current Profile", profileId: currentProfileId)
+        tabManager.currentSpace = firstProfileSpace
+        tabManager.attachRuntimeContext(
+            TabManagerRuntimeContext(
+                currentProfileId: { currentProfileId },
+                defaultProfileId: { firstProfileId },
+                requireRemoveAllWebViews: { _, _ in }
+            )
+        )
+
+        let tab = tabManager.createNewTab(
+            url: "https://example.com/profile",
+            in: nil,
+            activate: false
+        )
+
+        XCTAssertEqual(tab.spaceId, currentProfileSpace.id)
+        XCTAssertEqual(tab.profileId, currentProfileId)
+        XCTAssertTrue(tabManager.tabsBySpace[firstProfileSpace.id]?.isEmpty ?? true)
+    }
+
+    func testTransientExtensionTabWithoutTargetSpaceUsesCurrentProfileSpaceBeforeFirstSpace() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let defaultProfileId = UUID()
+        let currentProfileId = UUID()
+        let defaultProfileSpace = tabManager.createSpace(name: "Default Profile", profileId: defaultProfileId)
+        let currentProfileSpace = tabManager.createSpace(name: "Current Profile", profileId: currentProfileId)
+        tabManager.currentSpace = defaultProfileSpace
+        tabManager.attachRuntimeContext(
+            TabManagerRuntimeContext(
+                currentProfileId: { currentProfileId },
+                defaultProfileId: { defaultProfileId },
+                requireRemoveAllWebViews: { _, _ in }
+            )
+        )
+
+        let transientExtension = tabManager.createTransientExtensionTab(
+            url: "https://example.com/transient",
+            in: nil,
+            webExtensionContextOverride: nil
+        )
+
+        XCTAssertEqual(transientExtension.profileId, currentProfileId)
+        XCTAssertEqual(transientExtension.spaceId, currentProfileSpace.id)
+        XCTAssertTrue(tabManager.tabsBySpace[defaultProfileSpace.id]?.isEmpty ?? true)
+    }
+
+    func testSelectionTabsForWindowContextUsesWindowSpaceInsteadOfCurrentSpace() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let windowProfileId = UUID()
+        let globalProfileId = UUID()
+        let windowSpace = tabManager.createSpace(name: "Window", profileId: windowProfileId)
+        let globalSpace = tabManager.createSpace(name: "Global", profileId: globalProfileId)
+        let windowRegular = tabManager.createNewTab(
+            url: "https://window.example/regular",
+            in: windowSpace,
+            activate: false
+        )
+        let globalRegular = tabManager.createNewTab(
+            url: "https://global.example/regular",
+            in: globalSpace,
+            activate: false
+        )
+        let windowState = BrowserWindowState()
+        windowState.currentSpaceId = windowSpace.id
+        windowState.currentProfileId = windowProfileId
+
+        let windowEssentialPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: windowProfileId,
+            spaceId: nil,
+            index: 0,
+            folderId: nil,
+            launchURL: URL(string: "https://window.example/essential")!,
+            title: "Window Essential",
+            iconAsset: nil
+        )
+        let globalEssentialPin = ShortcutPin(
+            id: UUID(),
+            role: .essential,
+            profileId: globalProfileId,
+            spaceId: nil,
+            index: 0,
+            folderId: nil,
+            launchURL: URL(string: "https://global.example/essential")!,
+            title: "Global Essential",
+            iconAsset: nil
+        )
+        let windowSpacePin = ShortcutPin(
+            id: UUID(),
+            role: .spacePinned,
+            profileId: nil,
+            spaceId: windowSpace.id,
+            index: 0,
+            folderId: nil,
+            launchURL: URL(string: "https://window.example/pinned")!,
+            title: "Window Pin",
+            iconAsset: nil
+        )
+        tabManager.setPinnedTabs([windowEssentialPin], for: windowProfileId)
+        tabManager.setPinnedTabs([globalEssentialPin], for: globalProfileId)
+        tabManager.setSpacePinnedShortcuts([windowSpacePin], for: windowSpace.id)
+        tabManager.currentSpace = globalSpace
+        tabManager.attachRuntimeContext(
+            TabManagerRuntimeContext(
+                currentProfileId: { globalProfileId },
+                windowState: { id in
+                    id == windowState.id ? windowState : nil
+                },
+                requireRemoveAllWebViews: { _, _ in }
+            )
+        )
+
+        let windowEssential = tabManager.activateShortcutPin(
+            windowEssentialPin,
+            in: windowState.id,
+            currentSpaceId: windowSpace.id
+        )
+        let globalEssential = tabManager.activateShortcutPin(
+            globalEssentialPin,
+            in: UUID(),
+            currentSpaceId: globalSpace.id
+        )
+        let windowLauncher = tabManager.activateShortcutPin(
+            windowSpacePin,
+            in: windowState.id,
+            currentSpaceId: windowSpace.id
+        )
+        windowState.currentShortcutPinId = windowSpacePin.id
+
+        let selection = tabManager.selectionTabsForCurrentContext(in: windowState.id)
+        let selectionIds = selection.map(\.id)
+
+        XCTAssertTrue(selectionIds.contains(windowEssential.id))
+        XCTAssertTrue(selectionIds.contains(windowLauncher.id))
+        XCTAssertTrue(selectionIds.contains(windowRegular.id))
+        XCTAssertFalse(selectionIds.contains(globalEssential.id))
+        XCTAssertFalse(selectionIds.contains(globalRegular.id))
+    }
+
     func testSplitGroupLookupsFollowStructuralMutations() throws {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.createSpace(name: "Workspace")
