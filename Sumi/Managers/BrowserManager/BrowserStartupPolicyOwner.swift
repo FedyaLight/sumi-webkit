@@ -53,9 +53,10 @@ final class BrowserStartupPolicyOwner {
         resetWindowStatesForCleanStartup(selectedWindow: windowState)
 
         if let startupURL {
-            let targetSpace = dependencies.space(windowState.currentSpaceId)
-                ?? tabManager.currentSpace
-                ?? tabManager.spaces.first
+            let targetSpace = resolvedStartupSpace(
+                tabManager: tabManager,
+                windowState: windowState
+            )
             let tab = tabManager.createNewTab(
                 url: startupURL.absoluteString,
                 in: targetSpace,
@@ -87,9 +88,10 @@ final class BrowserStartupPolicyOwner {
     private func resetWindowStatesForCleanStartup(selectedWindow: BrowserWindowState) {
         let tabManager = dependencies.tabManager()
         for windowState in dependencies.regularWindows() {
-            let fallbackSpaceId = windowState.currentSpaceId
-                ?? tabManager.currentSpace?.id
-                ?? tabManager.spaces.first?.id
+            let fallbackSpaceId = resolvedStartupSpace(
+                tabManager: tabManager,
+                windowState: windowState
+            )?.id
 
             windowState.currentTabId = nil
             windowState.currentShortcutPinId = nil
@@ -109,6 +111,34 @@ final class BrowserStartupPolicyOwner {
             dependencies.glanceManager().restoreSession(nil, in: windowState)
             windowState.refreshCompositor()
         }
+    }
+
+    private func resolvedStartupSpace(
+        tabManager: TabManager,
+        windowState: BrowserWindowState
+    ) -> Space? {
+        if let currentSpace = dependencies.space(windowState.currentSpaceId) {
+            return currentSpace
+        }
+
+        if let profileId = windowState.currentProfileId,
+           let profileSpace = firstSpace(for: profileId, tabManager: tabManager) {
+            return profileSpace
+        }
+
+        if let profileId = dependencies.currentProfile()?.id,
+           let profileSpace = firstSpace(for: profileId, tabManager: tabManager) {
+            return profileSpace
+        }
+
+        return tabManager.spaces.first
+    }
+
+    private func firstSpace(
+        for profileId: UUID,
+        tabManager: TabManager
+    ) -> Space? {
+        tabManager.spaces.first(where: { $0.profileId == profileId })
     }
 
     private func restoreAdditionalStartupWindowsIfNeeded() {
