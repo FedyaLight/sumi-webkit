@@ -12,21 +12,27 @@ final class SumiStartupPersistenceTests: XCTestCase {
 
         XCTAssertEqual(SumiStartupPersistence.schema.version, Schema.Version(1, 0, 0))
         XCTAssertEqual(SumiStartupSchemaV1.versionIdentifier, Schema.Version(1, 0, 0))
-        XCTAssertEqual(Set(SumiStartupSchemaV1.models.map { String(describing: $0) }), [
-            "ExtensionEntity",
+        let schemaModelNames = SumiStartupSchemaV1.models.map { String(describing: $0) }
+        let expectedSchemaModelNames = [
+            "SpaceEntity",
+            "ProfileEntity",
+            "TabEntity",
             "FolderEntity",
+            "TabsStateEntity",
             "HistoryEntryEntity",
             "HistoryVisitEntity",
-            "PermissionDecisionEntity",
-            "ProfileEntity",
+            "ExtensionEntity",
             "SafariContentBlockerEntity",
-            "SpaceEntity",
-            "TabEntity",
-            "TabsStateEntity",
             "UserScriptEntity",
             "UserScriptResourceEntity",
-        ])
-        XCTAssertEqual(SumiStartupMigrationPlan.schemas.count, 1)
+            "PermissionDecisionEntity",
+        ]
+        XCTAssertEqual(schemaModelNames, expectedSchemaModelNames)
+        XCTAssertEqual(Set(schemaModelNames).count, expectedSchemaModelNames.count)
+        XCTAssertEqual(
+            SumiStartupMigrationPlan.schemas.map { $0.versionIdentifier },
+            [Schema.Version(1, 0, 0)]
+        )
         XCTAssertTrue(SumiStartupMigrationPlan.stages.isEmpty)
         XCTAssertNotNil(container.migrationPlan)
     }

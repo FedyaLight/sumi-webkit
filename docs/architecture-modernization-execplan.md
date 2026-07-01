@@ -7,7 +7,7 @@ Last updated: 2026-07-02
 - Starting score: 78/100.
 - Target score: at least 84/100.
 - Evidence baseline: `docs/refactor/modernization-audit.md`, `docs/architecture.md`, `xcodebuild -list -project Sumi.xcodeproj`.
-- Current score estimate: 83/100 after adding CI architecture guardrails, persistence/WebView/sidebar boundary checks, and clearer shell runtime dependency ownership.
+- Current score estimate: 84/100 after adding CI architecture guardrails, persistence/WebView/sidebar boundary checks, clearer shell runtime dependency ownership, and an explicit SwiftData schema contract test.
 
 ## Assumptions
 
@@ -22,7 +22,7 @@ Last updated: 2026-07-02
 | --- | --- | --- | --- | --- |
 | 1 | Aggregate architecture boundary scripts and run them in CI. | `scripts/check_architecture_guardrails.sh`, `.github/workflows/architecture-guardrails.yml` | Low | `scripts/check_architecture_guardrails.sh` |
 | 2 | Guard production SwiftData container construction behind `SumiStartupPersistence`. | `scripts/check_startup_persistence_boundary.sh`, `scripts/check_architecture_guardrails.sh` | Low | `scripts/check_startup_persistence_boundary.sh`; `scripts/check_architecture_guardrails.sh` |
-| 3 | Strengthen SwiftData startup schema guardrails without changing store shape. | `Sumi/Services/SumiStartupPersistence.swift`, `SumiTests/SumiStartupPersistenceTests.swift` | Medium | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -only-testing:SumiTests/SumiStartupPersistenceTests` |
+| 3 | Strengthen SwiftData startup schema guardrails without changing store shape. | `SumiTests/SumiStartupPersistenceTests.swift` | Low | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -derivedDataPath .build/DerivedData-architecture-modernization-night -only-testing:SumiTests/SumiStartupPersistenceTests` |
 | 4 | Move required app-shell dependency checks to `BrowserShellRuntime`. | `Sumi/Managers/BrowserManager/BrowserShellRuntime.swift`, `Sumi/Managers/BrowserManager/BrowserManager.swift` | Low | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -derivedDataPath .build/DerivedData-architecture-modernization-night -only-testing:SumiTests/BrowserManagerRuntimeWiringTests` |
 | 5 | Guard WebView runtime context attachment ownership. | `scripts/check_webview_runtime_context_boundary.sh`, `scripts/check_architecture_guardrails.sh` | Low | `scripts/check_webview_runtime_context_boundary.sh`; `scripts/check_architecture_guardrails.sh` |
 | 6 | Reduce BrowserManager responsibility by extracting or tightening one cohesive planning boundary. | `Sumi/Managers/BrowserManager*`, related owner tests | Medium | Focused `SumiTests/Browser*OwnerTests` for the touched owner |
@@ -48,9 +48,10 @@ Last updated: 2026-07-02
 | Shell runtime ownership | Complete | Moved required WebView coordinator, window registry, and shell content factory checks into `BrowserShellRuntime`; `BrowserManager` remains the public facade. | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -derivedDataPath .build/DerivedData-architecture-modernization-night -only-testing:SumiTests/BrowserManagerRuntimeWiringTests` passed. | Precondition text changed for missing bindings; no runtime behavior change is intended. | 81/100 |
 | WebView runtime boundary | Complete | Added a production scan that keeps WebView runtime context attach/detach calls inside `WebViewCoordinator` declarations and BrowserManager shell binding. Wired it into the aggregate guardrail. | `scripts/check_webview_runtime_context_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed. | The guard protects ownership placement, not semantic correctness of each runtime context. | 82/100 |
 | Sidebar environment boundary | Complete | Added a production UI scan that prevents direct `BrowserManager` SwiftUI environment injection and preserves projection/context ownership for sidebar/chrome views. Wired it into the aggregate guardrail. | `scripts/check_sidebar_browser_manager_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed. | The guard blocks broad environment coupling; it does not reduce existing projected context width. | 83/100 |
+| SwiftData schema contract | Complete | Strengthened startup persistence tests to assert the exact schema model order, uniqueness, migration schema version, and empty migration stages for V1. | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -derivedDataPath .build/DerivedData-architecture-modernization-night -only-testing:SumiTests/SumiStartupPersistenceTests` passed. | This verifies the current V1 contract; future V2 work still needs a real migration stage. | 84/100 |
 
 ## Before/After Estimate
 
 - Before: 78/100.
-- After current slice estimate: 83/100.
+- After current slice estimate: 84/100.
 - Target after planned slices: 84/100 or higher.
