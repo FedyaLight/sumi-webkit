@@ -266,6 +266,61 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         )
     }
 
+    func testPinnedGridContextPrefersExplicitSpaceOverWindowSpace() {
+        let explicitSpaceId = UUID()
+        let windowSpaceId = UUID()
+
+        XCTAssertEqual(
+            PinnedGridContextResolver.contextMenuSpaceId(
+                explicitSpaceId: explicitSpaceId,
+                windowSpaceId: windowSpaceId
+            ),
+            explicitSpaceId
+        )
+        XCTAssertEqual(
+            PinnedGridContextResolver.geometrySpaceId(
+                explicitSpaceId: explicitSpaceId,
+                windowSpaceId: windowSpaceId
+            ),
+            explicitSpaceId
+        )
+    }
+
+    func testPinnedGridContextUsesWindowSpaceWithoutGlobalFallback() {
+        let windowSpaceId = UUID()
+
+        XCTAssertEqual(
+            PinnedGridContextResolver.contextMenuSpaceId(
+                explicitSpaceId: nil,
+                windowSpaceId: windowSpaceId
+            ),
+            windowSpaceId
+        )
+        XCTAssertEqual(
+            PinnedGridContextResolver.geometrySpaceId(
+                explicitSpaceId: nil,
+                windowSpaceId: windowSpaceId
+            ),
+            windowSpaceId
+        )
+    }
+
+    func testPinnedGridContextWithoutSpaceKeepsStableGeometryAndNoMenuTarget() {
+        XCTAssertNil(
+            PinnedGridContextResolver.contextMenuSpaceId(
+                explicitSpaceId: nil,
+                windowSpaceId: nil
+            )
+        )
+        XCTAssertEqual(
+            PinnedGridContextResolver.geometrySpaceId(
+                explicitSpaceId: nil,
+                windowSpaceId: nil
+            ),
+            PinnedGridContextResolver.unresolvedGeometrySpaceId
+        )
+    }
+
     func testSnapshotBuilderKeepsSingleStationaryEssentialsForSameProfileTransition() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()

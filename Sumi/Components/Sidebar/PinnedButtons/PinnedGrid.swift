@@ -5,6 +5,24 @@
 //
 import SwiftUI
 
+enum PinnedGridContextResolver {
+    static let unresolvedGeometrySpaceId = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+
+    static func contextMenuSpaceId(
+        explicitSpaceId: UUID?,
+        windowSpaceId: UUID?
+    ) -> UUID? {
+        explicitSpaceId ?? windowSpaceId
+    }
+
+    static func geometrySpaceId(
+        explicitSpaceId: UUID?,
+        windowSpaceId: UUID?
+    ) -> UUID {
+        explicitSpaceId ?? windowSpaceId ?? unresolvedGeometrySpaceId
+    }
+}
+
 struct PinnedGrid: View {
     private static let collapsedRevealHeight: CGFloat = 6
 
@@ -403,9 +421,10 @@ struct PinnedGrid: View {
     }
 
     private var contextMenuSpace: Space? {
-        let targetSpaceId = windowState.currentSpaceId
-            ?? spaceId
-            ?? browserContext.tabManager.currentSpace?.id
+        let targetSpaceId = PinnedGridContextResolver.contextMenuSpaceId(
+            explicitSpaceId: spaceId,
+            windowSpaceId: windowState.currentSpaceId
+        )
         guard let targetSpaceId else { return nil }
         return browserContext.tabManager.spaces.first { $0.id == targetSpaceId }
     }
@@ -541,11 +560,10 @@ struct PinnedGrid: View {
     }
 
     private var geometrySpaceId: UUID {
-        spaceId
-            ?? windowState.currentSpaceId
-            ?? browserContext.tabManager.currentSpace?.id
-            ?? browserContext.tabManager.spaces.first?.id
-            ?? UUID()
+        PinnedGridContextResolver.geometrySpaceId(
+            explicitSpaceId: spaceId,
+            windowSpaceId: windowState.currentSpaceId
+        )
     }
 }
 
