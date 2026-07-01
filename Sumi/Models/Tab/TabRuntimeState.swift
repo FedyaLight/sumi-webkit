@@ -198,11 +198,9 @@ struct TabHistoryRecordingRuntime {
 
 @MainActor
 struct TabFindInPageRuntime {
-    var activeWindowId: () -> UUID?
     var webView: (_ tabId: UUID, _ windowId: UUID) -> WKWebView?
 
     static let inactive = Self(
-        activeWindowId: { nil },
         webView: { _, _ in nil }
     )
 }

@@ -727,12 +727,19 @@ class BrowserManager: ObservableObject {
     }
 
     func showFindBar() {
-        findManager.showFindBar(for: activePageTabForActiveWindow())
+        guard let windowState = windowRegistry?.activeWindow else {
+            findManager.showFindBar(for: nil, in: nil)
+            return
+        }
+        findManager.showFindBar(for: activePageTab(for: windowState), in: windowState.id)
     }
 
     func updateFindManagerCurrentTab() {
-        // Update the current tab for find manager
-        findManager.updateCurrentTab(activePageTabForActiveWindow())
+        guard let windowState = windowRegistry?.activeWindow else {
+            findManager.updateCurrentTab(nil, in: nil)
+            return
+        }
+        findManager.updateCurrentTab(activePageTab(for: windowState), in: windowState.id)
     }
 
     typealias TabOpenActivationPolicy = BrowserTabOpenActivationPolicy

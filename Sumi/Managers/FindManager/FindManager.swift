@@ -13,12 +13,8 @@ final class FindManager: ObservableObject {
     /// Bumps whenever the AppKit find panel should move keyboard focus to the search field (new show or repeat Cmd+F).
     @Published private(set) var findFieldFocusGeneration: UInt = 0
 
-    var currentTab: Tab? {
-        didSet {
-            rebindVisibleSessionIfNeeded()
-            bindCurrentTabModel()
-        }
-    }
+    private(set) var currentTab: Tab?
+    private var currentWindowId: UUID?
 
     var currentModel: FindInPageModel? {
         currentTab?.findInPage.model
@@ -26,11 +22,11 @@ final class FindManager: ObservableObject {
 
     private var modelCancellables = Set<AnyCancellable>()
 
-    func showFindBar(for tab: Tab? = nil) {
-        currentTab = tab
+    func showFindBar(for tab: Tab?, in windowId: UUID?) {
+        updateCurrentSession(tab, windowId: windowId)
 
         guard let tab,
-              let webView = tab.targetFindWebView()
+              let webView = tab.targetFindWebView(in: windowId)
         else { return }
 
         findFieldFocusGeneration &+= 1
@@ -44,8 +40,8 @@ final class FindManager: ObservableObject {
         bindCurrentTabModel()
     }
 
-    func updateCurrentTab(_ tab: Tab?) {
-        currentTab = tab
+    func updateCurrentTab(_ tab: Tab?, in windowId: UUID?) {
+        updateCurrentSession(tab, windowId: windowId)
     }
 
     func findNext() {
@@ -74,10 +70,17 @@ final class FindManager: ObservableObject {
             .store(in: &modelCancellables)
     }
 
+    private func updateCurrentSession(_ tab: Tab?, windowId: UUID?) {
+        currentTab = tab
+        currentWindowId = tab == nil ? nil : windowId
+        rebindVisibleSessionIfNeeded()
+        bindCurrentTabModel()
+    }
+
     private func rebindVisibleSessionIfNeeded() {
         guard let currentTab,
               currentTab.findInPage.model.isVisible,
-              let webView = currentTab.targetFindWebView()
+              let webView = currentTab.targetFindWebView(in: currentWindowId)
         else { return }
 
         currentTab.findInPage.show(with: webView)

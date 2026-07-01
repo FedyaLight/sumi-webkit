@@ -254,22 +254,21 @@ final class TabRuntimeRoutingTests: XCTestCase {
         XCTAssertEqual(history.titleUpdateProfileIds, [profileId])
     }
 
-    func testFindInPageUsesInjectedActiveWindowWebViewWithoutBrowserManager() {
+    func testFindInPageUsesInjectedWindowScopedWebViewWithoutBrowserManager() {
         let existingWebView = FocusableWKWebView()
-        let activeWindowWebView = FocusableWKWebView()
+        let windowScopedWebView = FocusableWKWebView()
         let windowId = UUID()
         let tab = Tab(existingWebView: existingWebView, loadsCachedFaviconOnInit: false)
         var lookup: (tabId: UUID, windowId: UUID)?
         tab.findInPageRuntime = TabFindInPageRuntime(
-            activeWindowId: { windowId },
             webView: { tabId, resolvedWindowId in
                 lookup = (tabId, resolvedWindowId)
-                return activeWindowWebView
+                return windowScopedWebView
             }
         )
 
         XCTAssertFalse(tab.hasBrowserRuntime)
-        XCTAssertIdentical(tab.targetFindWebView(), activeWindowWebView)
+        XCTAssertIdentical(tab.targetFindWebView(in: windowId), windowScopedWebView)
         XCTAssertEqual(lookup?.tabId, tab.id)
         XCTAssertEqual(lookup?.windowId, windowId)
     }

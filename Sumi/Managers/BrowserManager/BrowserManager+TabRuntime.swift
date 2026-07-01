@@ -75,9 +75,6 @@ extension BrowserManager {
                 }
             ),
             findInPageRuntime: .live(
-                activeWindowId: { [weak self] in
-                    self?.windowRegistry?.activeWindow?.id
-                },
                 webView: { [weak self] tabId, windowId in
                     self?.getWebView(for: tabId, in: windowId)
                 }
@@ -1010,11 +1007,9 @@ extension TabExtensionPropertiesRuntime {
 @MainActor
 extension TabFindInPageRuntime {
     static func live(
-        activeWindowId: @escaping () -> UUID?,
         webView: @escaping (_ tabId: UUID, _ windowId: UUID) -> WKWebView?
     ) -> Self {
         Self(
-            activeWindowId: activeWindowId,
             webView: webView
         )
     }

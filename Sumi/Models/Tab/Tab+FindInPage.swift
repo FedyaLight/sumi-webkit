@@ -2,10 +2,10 @@ import Foundation
 import WebKit
 
 extension Tab {
-    func targetFindWebView() -> FocusableWKWebView? {
+    func targetFindWebView(in windowId: UUID?) -> FocusableWKWebView? {
         let targetWebView: WKWebView?
-        if let activeWindowId = findInPageRuntime.activeWindowId() {
-            targetWebView = findInPageRuntime.webView(id, activeWindowId)
+        if let windowId {
+            targetWebView = findInPageRuntime.webView(id, windowId)
         } else {
             targetWebView = existingWebView
         }

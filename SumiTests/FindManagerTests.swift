@@ -104,7 +104,7 @@ final class FindManagerTests: XCTestCase {
     func testShowFindBarWithoutTabKeepsManagerHidden() {
         let manager = FindManager()
 
-        manager.showFindBar()
+        manager.showFindBar(for: nil, in: nil)
 
         XCTAssertFalse(manager.isFindBarVisible)
     }
@@ -112,10 +112,29 @@ final class FindManagerTests: XCTestCase {
     func testUpdateCurrentTabWithoutSessionResetsVisibleState() {
         let manager = FindManager()
 
-        manager.updateCurrentTab(nil)
+        manager.updateCurrentTab(nil, in: nil)
 
         XCTAssertFalse(manager.isFindBarVisible)
         XCTAssertNil(manager.currentModel)
+    }
+
+    func testShowFindBarUsesProvidedWindowScopedWebView() {
+        let manager = FindManager()
+        let tab = Tab(loadsCachedFaviconOnInit: false)
+        let webView = FocusableWKWebView()
+        let windowId = UUID()
+        var lookup: (tabId: UUID, windowId: UUID)?
+        tab.findInPageRuntime = TabFindInPageRuntime { tabId, resolvedWindowId in
+            lookup = (tabId, resolvedWindowId)
+            return webView
+        }
+
+        manager.showFindBar(for: tab, in: windowId)
+
+        XCTAssertEqual(lookup?.tabId, tab.id)
+        XCTAssertEqual(lookup?.windowId, windowId)
+        XCTAssertEqual(manager.findFieldFocusGeneration, 1)
+        XCTAssertTrue(manager.currentModel === tab.findInPage.model)
     }
 }
 

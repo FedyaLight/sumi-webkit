@@ -67,7 +67,7 @@ extension BrowserTabSelectionOwner {
                 browserManager?.updateFindManagerCurrentTab()
             },
             clearFindManagerCurrentTab: { [weak browserManager] in
-                browserManager?.findManager.updateCurrentTab(nil)
+                browserManager?.findManager.updateCurrentTab(nil, in: nil)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
                 browserManager?.schedulePrepareVisibleWebViews(for: windowState)
