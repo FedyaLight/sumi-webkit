@@ -12,8 +12,6 @@ final class TabTransientWebKitTabLifecycleOwner {
         let detach: (Tab) -> Void
         let targetSpace: (Space?, UUID?) -> Space
         let spaceForID: (UUID) -> Space?
-        let currentSpace: () -> Space?
-        let ensureDefaultSpace: () -> Space
         let backfillTargetSpaceProfileIfNeeded: (Space, UUID?) -> Bool
         let insertRegularTab: (Tab, UUID, Int?) -> Void
         let scheduleStructuralPersistence: () -> Void
@@ -114,12 +112,12 @@ final class TabTransientWebKitTabLifecycleOwner {
         in space: Space?,
         activate: Bool
     ) -> Bool {
+        guard let targetSpace = space ?? tab.spaceId.flatMap(dependencies.spaceForID) else {
+            RuntimeDiagnostics.debug("Skipping transient extension tab promotion for '\(tab.name)' because no target space was resolved.", category: "TabManager")
+            return false
+        }
         guard dependencies.membershipOwner().promoteTransientExtensionTab(tab) else { return false }
 
-        let targetSpace = space
-            ?? tab.spaceId.flatMap(dependencies.spaceForID)
-            ?? dependencies.currentSpace()
-            ?? dependencies.ensureDefaultSpace()
         dependencies.insertRegularTab(tab, targetSpace.id, nil)
         dependencies.scheduleStructuralPersistence()
         if activate {

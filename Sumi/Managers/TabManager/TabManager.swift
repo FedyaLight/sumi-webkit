@@ -84,8 +84,6 @@ class TabManager: ObservableObject {
             spaceForID: { [unowned self] spaceId in
                 self.spaces.first { $0.id == spaceId }
             },
-            currentSpace: { [unowned self] in self.currentSpace },
-            ensureDefaultSpace: { [unowned self] in self.ensureDefaultSpaceIfNeeded() },
             backfillTargetSpaceProfileIfNeeded: { [unowned self] space, profileId in
                 self.backfillTargetSpaceProfileIfNeeded(space, profileId: profileId)
             },

@@ -11,16 +11,13 @@ final class TabRegularLifecycleOwner {
 
     func addTab(_ tab: Tab, regularInsertionIndex: Int?) {
         tabManager.withStructuralUpdateTransaction {
-            tabManager.attach(tab)
-            if tabManager.contains(tab) { return }
-
-            if tab.spaceId == nil {
-                tab.spaceId = tabManager.currentSpace?.id
-            }
             guard let sid = tab.spaceId else {
                 RuntimeDiagnostics.debug("Skipping addTab for '\(tab.name)' because no spaceId was resolved.", category: "TabManager")
                 return
             }
+
+            if tabManager.contains(tab) { return }
+            tabManager.attach(tab)
             insertRegularTab(tab, in: sid, at: regularInsertionIndex)
 
             // Load the tab in compositor if it's the current tab.

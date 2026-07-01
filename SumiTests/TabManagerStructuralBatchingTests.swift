@@ -156,6 +156,49 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertNil(tabManager.tab(for: transientExtension.id))
     }
 
+    func testAddTabWithoutSpaceDoesNotFallbackToCurrentSpaceOrAttachOrphan() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let primarySpace = tabManager.createSpace(name: "Primary")
+        let currentSpace = tabManager.createSpace(name: "Current")
+        tabManager.currentSpace = currentSpace
+        let tab = Tab(
+            url: URL(string: "https://example.com/orphan")!,
+            name: "Orphan",
+            spaceId: nil
+        )
+
+        tabManager.addTab(tab)
+
+        XCTAssertNil(tab.spaceId)
+        XCTAssertTrue(tabManager.tabsBySpace[primarySpace.id]?.isEmpty ?? true)
+        XCTAssertTrue(tabManager.tabsBySpace[currentSpace.id]?.isEmpty ?? true)
+        XCTAssertNil(tabManager.tab(for: tab.id))
+    }
+
+    func testPromotingTransientExtensionWithoutTargetSpaceDoesNotFallbackToCurrentSpace() throws {
+        let tabManager = try makeInMemoryTabManager()
+        let sourceSpace = tabManager.createSpace(name: "Source")
+        let currentSpace = tabManager.createSpace(name: "Current")
+        tabManager.currentSpace = currentSpace
+        let transientExtension = tabManager.createTransientExtensionTab(
+            url: "https://example.com/transient",
+            in: sourceSpace,
+            webExtensionContextOverride: nil
+        )
+        transientExtension.spaceId = nil
+
+        let promoted = tabManager.promoteTransientExtensionTab(
+            transientExtension,
+            in: nil,
+            activate: false
+        )
+
+        XCTAssertFalse(promoted)
+        XCTAssertTrue(tabManager.isTransientExtensionTab(transientExtension))
+        XCTAssertTrue(tabManager.tabsBySpace[currentSpace.id]?.isEmpty ?? true)
+        XCTAssertNil(tabManager.tabsBySpace[sourceSpace.id]?.first { $0.id == transientExtension.id })
+    }
+
     func testSplitGroupLookupsFollowStructuralMutations() throws {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.createSpace(name: "Workspace")
