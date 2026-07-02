@@ -43,7 +43,7 @@ final class ExtensionRuntimeTeardownOwner {
             .union(manager.loadedExtensionManifests.keys)
             .union(manager.optionsWindows.keys)
             .union(manager.nativeMessagingPortRegistry.extensionIDs)
-            .union(manager.extensionErrorObserverTokens.keys)
+            .union(manager.errorObservationOwner.observedExtensionIDs)
             .union(uiStateIDs)
 
         for extensionId in loadedIDs {
@@ -53,10 +53,7 @@ final class ExtensionRuntimeTeardownOwner {
             )
         }
 
-        for (_, token) in manager.extensionErrorObserverTokens {
-            NotificationCenter.default.removeObserver(token)
-        }
-        manager.extensionErrorObserverTokens.removeAll()
+        manager.errorObservationOwner.removeAllObservers()
 
         if removeUIState {
             for extensionId in manager.actionAnchorStore.extensionIDs {
@@ -78,10 +75,10 @@ final class ExtensionRuntimeTeardownOwner {
         manager.extensionRuntimeResidencyState.removeAll()
         manager.backgroundRuntimeStateOwner.removeAll()
         manager.runtimeMetricsByExtensionID.removeAll()
-        manager.lastLoggedExtensionErrorFingerprints.removeAll()
+        manager.errorObservationOwner.removeAllLoggedErrorFingerprints()
         manager.requestedTabLifecycleOwner.removeAllRecentlyOpenedTabRequests()
         manager.clearPermissionsOriginsCompatibilityInstallations()
-        manager.extensionPageUserContentControllersByProfile.removeAll()
+        manager.controllerProvisioningOwner.removeAllExtensionPageUserContentControllers()
         manager.adapterStore.removeTabAndWindowAdapters()
 
         if releaseController {

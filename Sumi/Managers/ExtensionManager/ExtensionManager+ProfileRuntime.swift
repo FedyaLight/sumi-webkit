@@ -138,12 +138,6 @@ extension ExtensionManager {
         )
     }
 
-    func extensionControllerIdentifier(for profileId: UUID) -> UUID {
-        var uuid = profileId.uuid
-        uuid.15 ^= 0xA5
-        return UUID(uuid: uuid)
-    }
-
     func extensionsModuleEnabledForRuntimeBoundary() -> Bool {
         switch runtime.extensionsModuleEnabled() {
         case .enabled(let isEnabled):
@@ -151,42 +145,6 @@ extension ExtensionManager {
         case .unavailable:
             return true
         }
-    }
-
-    @discardableResult
-    func ensureExtensionController(for profileId: UUID) -> WKWebExtensionController {
-        if let existing = profileRuntimeOwner.controller(for: profileId) {
-            return existing
-        }
-
-        let signpostState = PerformanceTrace.beginInterval(
-            "ExtensionManager.setupExtensionController"
-        )
-        defer {
-            PerformanceTrace.endInterval(
-                "ExtensionManager.setupExtensionController",
-                signpostState
-            )
-        }
-
-        let defaultDataStore = getExtensionDataStore(for: profileId)
-        let controller = makeExtensionController(
-            defaultDataStore: defaultDataStore,
-            profileId: profileId
-        )
-        profileRuntimeOwner.setController(controller, for: profileId)
-        scheduleControllerDelegateRebind(for: controller)
-
-        if currentProfileId == profileId {
-            browserConfiguration.webViewConfiguration.webExtensionController = controller
-        }
-
-        extensionRuntimeTrace(
-            "ensureExtensionController profile=\(profileId.uuidString) controller=\(extensionRuntimeControllerDescription(controller))"
-        )
-        updateWebViewsForProfile(profileId)
-        verifyExtensionStorage(profileId: profileId)
-        return controller
     }
 
     func extensionController(for tab: Tab) -> WKWebExtensionController? {

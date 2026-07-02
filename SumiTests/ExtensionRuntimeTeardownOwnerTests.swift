@@ -52,9 +52,10 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         )
         manager.runtimeMetricsByExtensionID["alpha"] =
             ExtensionManager.ExtensionRuntimeMetrics()
-        manager.lastLoggedExtensionErrorFingerprints["alpha"] = "fingerprint"
-        manager.extensionPageUserContentControllersByProfile[profile.id] =
-            WKUserContentController()
+        manager.errorObservationOwner.seedLoggedErrorFingerprintForTesting(
+            "fingerprint",
+            extensionId: "alpha"
+        )
         manager.actionAnchorStore.setAnchor(for: "alpha", anchorView: anchorView)
         manager.nativeMessagingPortRegistry.nativeMessagePortExtensionIDs[nativePortKey] = "alpha"
         manager.nativeMessagingPortRegistry.nativeMessagePortProfileIDs[nativePortKey] = profile.id
@@ -81,8 +82,10 @@ final class ExtensionRuntimeTeardownOwnerTests: XCTestCase {
         XCTAssertTrue(manager.lastExtensionLoadErrors.isEmpty)
         XCTAssertTrue(manager.extensionRuntimeResidencyState.liveContextKeys.isEmpty)
         XCTAssertTrue(manager.runtimeMetricsByExtensionID.isEmpty)
-        XCTAssertTrue(manager.lastLoggedExtensionErrorFingerprints.isEmpty)
-        XCTAssertTrue(manager.extensionPageUserContentControllersByProfile.isEmpty)
+        XCTAssertFalse(manager.errorObservationOwner.hasLoggedErrorFingerprints)
+        XCTAssertFalse(
+            manager.controllerProvisioningOwner.hasExtensionPageUserContentControllers
+        )
         XCTAssertTrue(manager.actionAnchorStore.isEmpty)
         XCTAssertTrue(manager.nativeMessagingPortRegistry.nativeMessagePortExtensionIDs.isEmpty)
         XCTAssertTrue(manager.nativeMessagingPortRegistry.nativeMessagePortProfileIDs.isEmpty)

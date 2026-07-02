@@ -154,6 +154,15 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var actionPopupAnchorResolutionOwner = ExtensionActionPopupAnchorResolutionOwner(
         dependencies: .live(manager: self)
     )
+    lazy var errorObservationOwner = ExtensionErrorObservationOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var controllerProvisioningOwner = ExtensionControllerProvisioningOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var runtimeStateResetOwner = ExtensionRuntimeStateResetOwner(
+        dependencies: .live(manager: self)
+    )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
@@ -225,8 +234,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
     let actionAnchorStore = ExtensionActionAnchorStore()
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()
-    var extensionErrorObserverTokens: [String: NSObjectProtocol] = [:]
-    var lastLoggedExtensionErrorFingerprints: [String: String] = [:]
     var optionsWindows: [String: NSWindow] = [:]
     var optionsWindowDelegates: [String: ExtensionOptionsWindowDelegate] = [:]
     weak var activeExtensionActionPopover: NSPopover?
@@ -263,8 +270,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionPermissionDelegateCallbackOwner()
     var permissionsOriginsCompatibilityInstallations:
         [ObjectIdentifier: Set<String>] = [:]
-    var extensionPageUserContentControllersByProfile:
-        [UUID: WKUserContentController] = [:]
 
     var currentProfileId: UUID? {
         get { profileRuntimeOwner.currentProfileId }
@@ -317,6 +322,12 @@ final class ExtensionManager: NSObject, ObservableObject {
                 reason: "relaySucceeded"
             )
         }
+
+        // The deinit teardown path reaches these owners; forming their weak
+        // captures during deallocation traps, so they must exist up front.
+        _ = errorObservationOwner
+        _ = controllerProvisioningOwner
+        _ = runtimeStateResetOwner
 
         guard isExtensionSupportAvailable else {
             extensionsLoaded = true
