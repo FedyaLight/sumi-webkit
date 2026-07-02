@@ -197,7 +197,7 @@ extension ExtensionControllerProvisioningOwner.Dependencies {
                 manager?.currentProfileId
             },
             assignControllerDelegate: { [weak manager] controller in
-                controller.delegate = manager
+                controller.delegate = manager?.controllerDelegateBridge
             },
             isControllerRegistered: { [weak manager] controller in
                 manager?.extensionControllersByProfile.values.contains {

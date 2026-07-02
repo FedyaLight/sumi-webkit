@@ -158,7 +158,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             )
         )
 
-        XCTAssertTrue(delegateObject === manager)
+        XCTAssertTrue(delegateObject === manager.controllerDelegateBridge)
         XCTAssertTrue(delegate.responds(to: sendSelector))
         XCTAssertTrue(delegate.responds(to: connectSelector))
         XCTAssertIdentical(

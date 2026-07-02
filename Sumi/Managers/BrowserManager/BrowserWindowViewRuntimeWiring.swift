@@ -30,7 +30,7 @@ extension WindowViewBrowserRuntime {
             attachHoverSidebarManager: { [weak browserManager] hoverSidebarManager, windowState in
                 guard let browserManager else { return }
                 hoverSidebarManager.attach(
-                    runtime: .live(browserManager: browserManager),
+                    runtime: BrowserHoverSidebarRuntimeFactory.runtime(for: browserManager),
                     windowState: windowState
                 )
             },

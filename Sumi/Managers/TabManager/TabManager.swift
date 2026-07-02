@@ -40,6 +40,8 @@ class TabManager: ObservableObject {
     lazy var folderMutationOwner = TabFolderMutationOwner(tabManager: self)
     lazy var regularTabCollectionOwner = RegularTabCollectionOwner(tabManager: self)
     lazy var regularTabLifecycleOwner = TabRegularLifecycleOwner(tabManager: self)
+    lazy var tabRemovalOwner = TabRemovalOwner(tabManager: self)
+    lazy var activeSelectionOwner = TabActiveSelectionOwner(tabManager: self)
     lazy var regularTabDragService = SidebarRegularTabDragService(tabManager: self)
     lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
     lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(tabManager: self)
@@ -329,6 +331,9 @@ class TabManager: ObservableObject {
         }
     }
     var splitGroupIndexStore = SplitGroupIndexStore()
+    lazy var splitGroupRepairOwner = TabManagerSplitGroupRepairOwner(
+        dependencies: .live(tabManager: self)
+    )
 
     // Folders per space
     @Published var foldersBySpace: [UUID: [TabFolder]] = [:]
@@ -400,8 +405,20 @@ class TabManager: ObservableObject {
     private lazy var structuralPublishOwner = TabStructuralPublishOwner(structuralChanges: structuralChanges)
     var structuralLookupBatchFlushCount: Int { structuralLookupOwner.batchFlushCount }
     var structuralLookupImmediateFlushCount: Int { structuralLookupOwner.immediateFlushCount }
-    private var faviconCacheObserver: NSObjectProtocol?
-    private var pendingFaviconPresentationRefreshTask: Task<Void, Never>?
+    private lazy var faviconPresentationRefreshOwner = TabFaviconPresentationRefreshOwner(
+        dependencies: TabFaviconPresentationRefreshOwner.Dependencies(
+            notificationCenter: .default,
+            debounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds,
+            tabsNeedingRefresh: { [weak self] in
+                guard let self else { return [] }
+                return Array(tabsBySpace.values.joined())
+                    + Array(transientShortcutTabsByWindow.values.joined().map(\.value))
+            },
+            requestStructuralPublish: { [weak self] in
+                self?.requestStructuralPublish()
+            }
+        )
+    )
     // Space activation to resume after a deferred profile switch
     var pendingSpaceActivation: UUID?
 
@@ -735,15 +752,7 @@ class TabManager: ObservableObject {
                 await persistence.persistRuntimeStates(runtimeStates)
             }
         )
-        self.faviconCacheObserver = NotificationCenter.default.addObserver(
-            forName: .faviconCacheUpdated,
-            object: nil,
-            queue: nil
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.scheduleCachedFaviconPresentationRefresh()
-            }
-        }
+        faviconPresentationRefreshOwner.startObserving()
         if loadPersistedState {
             Task { @MainActor in
                 loadFromStore()
@@ -756,12 +765,7 @@ class TabManager: ObservableObject {
         // Scheduled persistence and startup restore tasks are cancelled by the
         // owning TabStructuralPersistenceOwner/TabStoreRestoreOwner deinits.
         MainActor.assumeIsolated {
-            pendingFaviconPresentationRefreshTask?.cancel()
-            pendingFaviconPresentationRefreshTask = nil
-            if let faviconCacheObserver {
-                NotificationCenter.default.removeObserver(faviconCacheObserver)
-                self.faviconCacheObserver = nil
-            }
+            faviconPresentationRefreshOwner.stop()
             tabsBySpace.removeAll()
             splitGroups.removeAll()
             spacePinnedShortcuts.removeAll()
@@ -829,30 +833,6 @@ class TabManager: ObservableObject {
 
     func notifyTransientShortcutStateChanged() {
         queueTransientTabLookupRefresh()
-        requestStructuralPublish()
-    }
-
-    private func scheduleCachedFaviconPresentationRefresh() {
-        pendingFaviconPresentationRefreshTask?.cancel()
-        pendingFaviconPresentationRefreshTask = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(nanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds)
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
-
-            self?.pendingFaviconPresentationRefreshTask = nil
-            self?.refreshCachedFaviconPresentation()
-        }
-    }
-
-    private func refreshCachedFaviconPresentation() {
-        let tabsNeedingRefresh = Array(tabsBySpace.values.joined())
-            + Array(transientShortcutTabsByWindow.values.joined().map(\.value))
-        for tab in tabsNeedingRefresh where tab.faviconIsTemplateGlobePlaceholder {
-            _ = tab.applyCachedFaviconOrPlaceholder(for: tab.url)
-        }
         requestStructuralPublish()
     }
 
@@ -1296,6 +1276,16 @@ class TabManager: ObservableObject {
     }
 
     @discardableResult
+    func removeTransientExtensionTab(id: UUID) -> Bool {
+        transientWebKitTabLifecycleOwner.removeTransientExtensionTab(id: id)
+    }
+
+    @discardableResult
+    func closeAuxiliaryMiniWindowTabIfPresent(id: UUID) -> Bool {
+        transientWebKitTabLifecycleOwner.closeAuxiliaryMiniWindowTabIfPresent(id: id)
+    }
+
+    @discardableResult
     func promoteTransientExtensionTab(
         _ tab: Tab,
         in space: Space? = nil,
@@ -1309,183 +1299,17 @@ class TabManager: ObservableObject {
     }
 
     func removeTab(_ id: UUID) {
-        withStructuralUpdateTransaction {
-            // Notify SplitViewManager about tab closure to prevent zombie state
-            runtimeContext?.handleTabClosure(id)
-            cancelRuntimeStatePersistence(for: id)
-
-            let wasCurrent = (currentTab?.id == id)
-            var removed: Tab?
-            var removedSpaceId: UUID?
-            var removedIndexInCurrentSpace: Int?
-
-            if transientWebKitTabLifecycleOwner.removeTransientExtensionTab(id: id) {
-                return
-            }
-
-            if transientWebKitTabLifecycleOwner.closeAuxiliaryMiniWindowTabIfPresent(id: id) {
-                return
-            }
-
-            if let removal = regularTabCollectionOwner.remove(
-                id,
-                in: spaces,
-                currentSpaceId: currentSpace?.id
-            ) {
-                removed = removal.tab
-                removedSpaceId = removal.spaceId
-                removedIndexInCurrentSpace = removal.indexInCurrentSpace
-            }
-            if removed == nil,
-               let (windowId, pinId, tab) = transientShortcutTabsByWindow.lazy
-                    .compactMap({ windowId, tabsByPin -> (UUID, UUID, Tab)? in
-                        guard let match = tabsByPin.first(where: { $0.value.id == id }) else { return nil }
-                        return (windowId, match.key, match.value)
-                    })
-                    .first {
-                transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId)
-                if transientShortcutTabsByWindow[windowId]?.isEmpty == true {
-                    transientShortcutTabsByWindow.removeValue(forKey: windowId)
-                }
-                notifyTransientShortcutStateChanged()
-                removed = tab
-            }
-
-            guard let tab = removed else { return }
-            let runtimeContext = requireRuntimeContext()
-
-            runtimeContext.notifyTabClosedIfLoaded(tab)
-
-            runtimeContext.forEachWindowState { windowState in
-                windowState.removeFromRegularTabHistory(tab.id)
-            }
-
-            captureRecentlyClosedTab(tab, spaceId: removedSpaceId)
-
-            // Force unload the tab from compositor before removing
-            runtimeContext.webViewLifecycle.unloadTab(tab)
-            runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
-                for: tab,
-                closeActiveFullscreenMedia: true
-            )
-            detach(tab)
-
-            NotificationCenter.default.post(
-                name: .sumiTabLifecycleDidChange,
-                object: tab
-            )
-
-            if wasCurrent {
-                if tab.spaceId == nil {
-                    // Tab was global pinned
-                    if !pinnedTabs.isEmpty {
-                        currentTab = pinnedTabs.last
-                    } else if let cs = currentSpace {
-                        let spacePinned = liveSpacePinnedTabs(for: cs.id)
-                        let arr = regularTabCollectionOwner.tabs(in: cs.id)
-                        currentTab = spacePinned.last ?? arr.last
-                    } else {
-                        currentTab = nil
-                    }
-                } else if let cs = currentSpace {
-                    // Tab was in a space
-                    let spacePinned = liveSpacePinnedTabs(for: cs.id)
-                    let arr = regularTabCollectionOwner.tabs(in: cs.id)
-
-                    if let i = removedIndexInCurrentSpace {
-                        // Try to select adjacent tab
-                        let allSpaceTabs = spacePinned + arr
-                        if !allSpaceTabs.isEmpty {
-                            let newIndex = min(i, allSpaceTabs.count - 1)
-                            currentTab = allSpaceTabs.indices.contains(newIndex)
-                                ? allSpaceTabs[newIndex]
-                                : allSpaceTabs.first
-                        } else if !pinnedTabs.isEmpty {
-                            currentTab = pinnedTabs.last
-                        } else {
-                            currentTab = nil
-                        }
-                    } else {
-                        // Fallback to last tab
-                        currentTab = arr.last ?? spacePinned.last ?? pinnedTabs.last
-                    }
-                }
-            }
-
-            scheduleStructuralPersistence()
-
-            // Validate window states after tab removal
-            runtimeContext.validateWindowStates()
-        }
+        tabRemovalOwner.removeTab(id)
     }
 
     func setActiveTab(_ tab: Tab) {
-        guard contains(tab) else {
-            return
-        }
-        let previous = currentTab
-        if previous?.id != tab.id {
-            currentTab = tab
-        }
-
-        // Update active split group state for windows that currently display this tab.
-        if let runtimeContext {
-            runtimeContext.forEachWindow { windowId, windowState in
-                if runtimeContext.visibleSplitTabIds(for: windowId).contains(tab.id) {
-                    runtimeContext.updateActiveSplitSide(for: tab.id, in: windowId)
-                    if windowState.currentTabId != tab.id {
-                        windowState.currentTabId = tab.id
-                    }
-                }
-            }
-        }
-
-        updateActiveTabSpaceSelectionState(for: tab, refreshCurrentSpaceReference: false)
-
-        if previous?.id != tab.id {
-            runtimeContext?.notifyTabActivatedIfLoaded(
-                newTab: tab,
-                previous: previous
-            )
-        }
-
-        persistSelection()
+        activeSelectionOwner.setActiveTab(tab)
     }
 
     /// Update only the global tab state without triggering UI operations
     /// Used when BrowserManager.selectTab() has already handled all UI concerns
     func updateActiveTabState(_ tab: Tab) {
-        guard contains(tab) else {
-            return
-        }
-        currentTab = tab
-        updateActiveTabSpaceSelectionState(for: tab, refreshCurrentSpaceReference: true)
-
-        persistSelection()
-    }
-
-    private func updateActiveTabSpaceSelectionState(
-        for tab: Tab,
-        refreshCurrentSpaceReference: Bool
-    ) {
-        var didChangeSpacePersistenceState = false
-        if let sid = tab.spaceId, let space = spaces.first(where: { $0.id == sid }) {
-            if space.activeTabId != tab.id {
-                space.activeTabId = tab.id
-                didChangeSpacePersistenceState = true
-            }
-            if refreshCurrentSpaceReference || currentSpace?.id != space.id {
-                currentSpace = space
-            }
-        } else if let cs = currentSpace {
-            if cs.activeTabId != tab.id {
-                cs.activeTabId = tab.id
-                didChangeSpacePersistenceState = true
-            }
-        }
-        if didChangeSpacePersistenceState {
-            markSpacesSnapshotDirty()
-        }
+        activeSelectionOwner.updateActiveTabState(tab)
     }
 
     @discardableResult

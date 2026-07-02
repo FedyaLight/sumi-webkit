@@ -98,7 +98,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
                 openerTab: harness.sourceTab
             )
         )
-        let runtime = SumiScriptsManagerRuntime.live(browserManager: harness.browserManager)
+        let runtime = BrowserUserscriptRuntimeFactory.runtime(for: harness.browserManager)
 
         XCTAssertTrue(harness.browserManager.auxiliaryWindowManager.contains(webView: popupWebView))
         XCTAssertNotNil(harness.browserManager.tabManager.tab(for: harness.sourceTab.id))
@@ -361,7 +361,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             shouldBePrivate: true
         ).windowConfiguration
 
-        harness.extensionManager.webExtensionController(
+        harness.extensionManager.controllerDelegateBridge.webExtensionController(
             harness.controller,
             openNewWindowUsing: configuration,
             for: harness.extensionContext
@@ -600,7 +600,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
 
         mainWindow.makeKeyAndOrderFront(nil)
 
-        let focusedWindow = harness.extensionManager.webExtensionController(
+        let focusedWindow = harness.extensionManager.controllerDelegateBridge.webExtensionController(
             harness.controller,
             focusedWindowFor: harness.extensionContext
         )
@@ -642,7 +642,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             "Expected extension-owned mini-window presentation to register a mini-window adapter"
         )
 
-        let openWindows = harness.extensionManager.webExtensionController(
+        let openWindows = harness.extensionManager.controllerDelegateBridge.webExtensionController(
             harness.controller,
             openWindowsFor: harness.extensionContext
         )
@@ -687,7 +687,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         }
 
         let focusedWindow = try XCTUnwrap(
-            harness.extensionManager.webExtensionController(
+            harness.extensionManager.controllerDelegateBridge.webExtensionController(
                 harness.controller,
                 focusedWindowFor: harness.extensionContext
             ) as? ExtensionMiniWindowAdapter

@@ -1,7 +1,6 @@
 import AppKit
 import Carbon
 import Combine
-import ObjectiveC.runtime
 import WebKit
 
 enum SumiWebViewInteractionEvent {
@@ -26,14 +25,10 @@ final class FocusableWKWebView: WKWebView {
     /// Mirrors `features.macOSBrowserConfig.features.controlClickFix.settings.domains` in DuckDuckGo’s bundled `macos-config.json` (`drive.google.com` only).
     private static let controlClickFixAllowlistedHosts: Set<String> = ["drive.google.com"]
 
-    private static let webKitMouseTrackingLoadSheddingEnabled = true
-    private static let webKitMouseTrackingObserverClassName = "WKMouseTrackingObserver"
     private static let glanceCursorReuseDistance: CGFloat = 72
     private static let glanceCursorReuseDistanceSquared = glanceCursorReuseDistance * glanceCursorReuseDistance
     private static let glanceCursorReuseInterval: TimeInterval = 0.2
-    private var webKitMouseTrackingLoadSheddingObserver: NSKeyValueObservation?
-    private var webKitMouseTrackingArea: NSTrackingArea?
-    private var isWebKitMouseTrackingLoadSheddingActive = false
+    private var webKitMouseTrackingLoadSheddingOwner: WebKitMouseTrackingLoadSheddingOwner?
     private var isTransientChromeMouseTrackingSuppressed = false
     private var isTransientChromeInteractionShieldApplied = false
     private var transientChromeInteractionShieldRects: [SumiTransientChromeInteractionShieldRect] = []
@@ -59,13 +54,13 @@ final class FocusableWKWebView: WKWebView {
             } else {
                 WebContentMouseTrackingShield.applyCurrentShieldState(to: self)
             }
-            refreshWebKitMouseTrackingArea()
+            webKitMouseTrackingLoadSheddingOwner?.refresh()
         }
     }
     var keepsWebKitMouseTrackingDuringLoad = false {
         didSet {
             guard keepsWebKitMouseTrackingDuringLoad != oldValue else { return }
-            refreshWebKitMouseTrackingArea()
+            webKitMouseTrackingLoadSheddingOwner?.refresh()
         }
     }
     var stabilizesCursorDuringGlancePresentation = false {
@@ -89,98 +84,50 @@ final class FocusableWKWebView: WKWebView {
         super.init(coder: coder)
     }
 
-    deinit {
-        webKitMouseTrackingLoadSheddingObserver?.invalidate()
-    }
-
     override func addTrackingArea(_ trackingArea: NSTrackingArea) {
-        guard Self.webKitMouseTrackingLoadSheddingEnabled,
-              Self.isWebKitMouseTrackingArea(trackingArea)
-        else {
+        guard WebKitMouseTrackingLoadSheddingOwner.canHandle(trackingArea) else {
             superAddTrackingArea(trackingArea)
             return
         }
 
-        installWebKitMouseTrackingLoadShedding(for: trackingArea)
-        if !shouldSuspendWebKitMouseTracking, !trackingAreas.contains(trackingArea) {
-            superAddTrackingArea(trackingArea)
-        }
-        scheduleWebKitMouseTrackingRefresh(for: trackingArea)
+        webKitMouseTrackingOwner().installTrackingArea(trackingArea)
     }
 
     private func superAddTrackingArea(_ trackingArea: NSTrackingArea) {
         super.addTrackingArea(trackingArea)
     }
 
-    private func installWebKitMouseTrackingLoadShedding(for trackingArea: NSTrackingArea) {
-        guard webKitMouseTrackingArea !== trackingArea ||
-              webKitMouseTrackingLoadSheddingObserver == nil
-        else { return }
-
-        webKitMouseTrackingLoadSheddingObserver?.invalidate()
-        webKitMouseTrackingArea = trackingArea
-        let trackingAreaID = ObjectIdentifier(trackingArea)
-        // WKWebView delivers KVO for its own properties on the main thread, so
-        // we can update the tracking area synchronously instead of allocating
-        // a fresh Task on every loading transition.
-        webKitMouseTrackingLoadSheddingObserver = observe(\.isLoading, options: [.new]) { [weak self, trackingAreaID] _, change in
-            guard let isLoading = change.newValue else { return }
-            MainActor.assumeIsolated {
-                guard let self,
-                      let trackingArea = self.webKitMouseTrackingArea,
-                      ObjectIdentifier(trackingArea) == trackingAreaID
-                else { return }
-                self.isWebKitMouseTrackingLoadSheddingActive = isLoading
-                self.updateWebKitMouseTrackingArea(trackingArea)
-            }
+    private func webKitMouseTrackingOwner() -> WebKitMouseTrackingLoadSheddingOwner {
+        if let webKitMouseTrackingLoadSheddingOwner {
+            return webKitMouseTrackingLoadSheddingOwner
         }
-    }
-
-    private static func isWebKitMouseTrackingArea(_ trackingArea: NSTrackingArea) -> Bool {
-        guard trackingArea.options.contains(.mouseMoved),
-              let owner = trackingArea.owner
-        else { return false }
-
-        let ownerClassName = NSStringFromClass(object_getClass(owner) ?? Swift.type(of: owner))
-        return ownerClassName == webKitMouseTrackingObserverClassName
-            || ownerClassName.hasSuffix(".\(webKitMouseTrackingObserverClassName)")
-            || ownerClassName.contains(webKitMouseTrackingObserverClassName)
-    }
-
-    private func scheduleWebKitMouseTrackingRefresh(for trackingArea: NSTrackingArea) {
-        let trackingAreaID = ObjectIdentifier(trackingArea)
-        Task { @MainActor [weak self, trackingAreaID] in
-            guard let self,
-                  let trackingArea = self.webKitMouseTrackingArea,
-                  ObjectIdentifier(trackingArea) == trackingAreaID
-            else { return }
-            self.updateWebKitMouseTrackingArea(trackingArea)
-        }
-    }
-
-    private func updateWebKitMouseTrackingArea(_ trackingArea: NSTrackingArea) {
-        if shouldSuspendWebKitMouseTracking {
-            guard trackingAreas.contains(trackingArea) else { return }
-            removeTrackingArea(trackingArea)
-        } else {
-            guard !trackingAreas.contains(trackingArea) else { return }
-            superAddTrackingArea(trackingArea)
-        }
-    }
-
-    private var shouldSuspendWebKitMouseTracking: Bool {
-        (isWebKitMouseTrackingLoadSheddingActive && !keepsWebKitMouseTrackingDuringLoad)
-            || isTransientChromeMouseTrackingSuppressed
-    }
-
-    private func refreshWebKitMouseTrackingArea() {
-        guard let trackingArea = webKitMouseTrackingArea else { return }
-        updateWebKitMouseTrackingArea(trackingArea)
+        let owner = WebKitMouseTrackingLoadSheddingOwner(
+            webView: self,
+            dependencies: WebKitMouseTrackingLoadSheddingOwner.Dependencies(
+                addTrackingArea: { [weak self] trackingArea in
+                    self?.superAddTrackingArea(trackingArea)
+                },
+                removeTrackingArea: { [weak self] trackingArea in
+                    self?.removeTrackingArea(trackingArea)
+                },
+                containsTrackingArea: { [weak self] trackingArea in
+                    self?.trackingAreas.contains(trackingArea) == true
+                },
+                keepsMouseTrackingDuringLoad: { [weak self] in
+                    self?.keepsWebKitMouseTrackingDuringLoad == true
+                },
+                isTransientChromeMouseTrackingSuppressed: { [weak self] in
+                    self?.isTransientChromeMouseTrackingSuppressed == true
+                }
+            )
+        )
+        webKitMouseTrackingLoadSheddingOwner = owner
+        return owner
     }
 
     func refreshMouseTrackingForGlancePresentation() {
         updateTrackingAreas()
-        refreshWebKitMouseTrackingArea()
+        webKitMouseTrackingLoadSheddingOwner?.refresh()
         window?.invalidateCursorRects(for: self)
     }
 
@@ -202,9 +149,7 @@ final class FocusableWKWebView: WKWebView {
         guard isTransientChromeMouseTrackingSuppressed != shouldSuppress else { return }
 
         isTransientChromeMouseTrackingSuppressed = shouldSuppress
-        if let trackingArea = webKitMouseTrackingArea {
-            updateWebKitMouseTrackingArea(trackingArea)
-        }
+        webKitMouseTrackingLoadSheddingOwner?.refresh()
 
         if shouldSuppress {
             owningTab?.updateHoveredLink(nil)

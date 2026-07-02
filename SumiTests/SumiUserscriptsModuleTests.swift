@@ -336,7 +336,7 @@ final class SumiUserscriptsModuleTests: XCTestCase {
         let initialSourceTabCount = browserManager.tabManager.tabs(in: sourceSpace).count
         let initialGlobalTabCount = browserManager.tabManager.tabs(in: globalSpace).count
 
-        module.attach(runtime: .live(browserManager: browserManager))
+        module.attach(runtime: BrowserUserscriptRuntimeFactory.runtime(for: browserManager))
         let manager = try XCTUnwrap(module.managerIfEnabled())
 
         manager.openTab(

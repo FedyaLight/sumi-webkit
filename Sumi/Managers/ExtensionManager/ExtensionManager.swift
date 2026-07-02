@@ -180,6 +180,17 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var actionClickFlowOwner = ExtensionActionClickFlowOwner(
         dependencies: .live(manager: self)
     )
+    lazy var windowFocusResolutionOwner = ExtensionWindowFocusResolutionOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var nativeMessagingRoutingOwner =
+        ExtensionNativeMessagingRoutingOwner(manager: self)
+    lazy var nativeMessagingRelayOwner = ExtensionNativeMessagingRelayOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var deferredRuntimeOwnerStore = ExtensionDeferredRuntimeOwnerStore(manager: self)
+    lazy var runtimeDiagnosticsOwner = ExtensionRuntimeDiagnosticsOwner(manager: self)
+    lazy var controllerDelegateBridge = ExtensionControllerDelegateBridge(manager: self)
     lazy var webViewRuntimePreparationOwner = ExtensionWebViewRuntimePreparationOwner(
         dependencies: .live(manager: self)
     )
@@ -215,46 +226,27 @@ final class ExtensionManager: NSObject, ObservableObject {
     let installCapabilityOwner = SafariExtensionInstallCapabilityOwner()
     let backgroundRuntimeStateOwner = ExtensionBackgroundRuntimeStateOwner()
     let runtimeTeardownOwner = ExtensionRuntimeTeardownOwner()
-    var nativeMessagingBackgroundWakeOwnerStorage:
-        ExtensionNativeMessagingBackgroundWakeOwner?
     var nativeMessagingBackgroundWakeOwner:
         ExtensionNativeMessagingBackgroundWakeOwner {
-        if let nativeMessagingBackgroundWakeOwnerStorage {
-            return nativeMessagingBackgroundWakeOwnerStorage
-        }
-        let owner = ExtensionNativeMessagingBackgroundWakeOwner()
-        nativeMessagingBackgroundWakeOwnerStorage = owner
-        return owner
+        deferredRuntimeOwnerStore.nativeMessagingBackgroundWakeOwner
     }
     var loadedNativeMessagingBackgroundWakeOwner:
         ExtensionNativeMessagingBackgroundWakeOwner? {
-        nativeMessagingBackgroundWakeOwnerStorage
+        deferredRuntimeOwnerStore.loadedNativeMessagingBackgroundWakeOwner
     }
-    var initialDocumentRuntimePreparationOwnerStorage:
-        ExtensionInitialDocumentRuntimePreparationOwner?
+
     var initialDocumentRuntimePreparationOwner:
         ExtensionInitialDocumentRuntimePreparationOwner {
-        if let initialDocumentRuntimePreparationOwnerStorage {
-            return initialDocumentRuntimePreparationOwnerStorage
-        }
-        let owner = ExtensionInitialDocumentRuntimePreparationOwner(manager: self)
-        initialDocumentRuntimePreparationOwnerStorage = owner
-        return owner
+        deferredRuntimeOwnerStore.initialDocumentRuntimePreparationOwner
     }
     var loadedInitialDocumentRuntimePreparationOwner:
         ExtensionInitialDocumentRuntimePreparationOwner? {
-        initialDocumentRuntimePreparationOwnerStorage
+        deferredRuntimeOwnerStore.loadedInitialDocumentRuntimePreparationOwner
     }
-    var normalTabRuntimeBindingOwnerStorage:
-        ExtensionNormalTabRuntimeBindingOwner?
+
     var normalTabRuntimeBindingOwner:
         ExtensionNormalTabRuntimeBindingOwner {
-        if let normalTabRuntimeBindingOwnerStorage {
-            return normalTabRuntimeBindingOwnerStorage
-        }
-        let owner = ExtensionNormalTabRuntimeBindingOwner(manager: self)
-        normalTabRuntimeBindingOwnerStorage = owner
-        return owner
+        deferredRuntimeOwnerStore.normalTabRuntimeBindingOwner
     }
     let actionAnchorStore = ExtensionActionAnchorStore()
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()
@@ -262,28 +254,18 @@ final class ExtensionManager: NSObject, ObservableObject {
     var optionsWindowDelegates: [String: ExtensionOptionsWindowDelegate] = [:]
     let adapterStore = ExtensionBrowserAdapterStore()
     let nativeMessagingPortRegistry = ExtensionNativeMessagingPortRegistry()
-    private var nativeMessagingRelayStorage: SumiNativeMessagingRelay?
+    var extensionsModuleEnabledForCallbacks: Bool {
+        nativeMessagingRelayOwner.extensionsModuleEnabledForCallbacks
+    }
+
     var nativeMessagingRelay: SumiNativeMessagingRelay {
-        if let nativeMessagingRelayStorage {
-            return nativeMessagingRelayStorage
-        }
-        let relay = SumiNativeMessagingRelay.production(
-            extensionsModuleEnabled: { [weak self] in
-                self?.extensionsModuleEnabledForCallbacks ?? false
-            },
-            profileRuntimeLoaded: { [weak self] in
-                guard let self else { return false }
-                return self.runtimeState == .ready || self.runtimeState == .loading
-            }
-        )
-        nativeMessagingRelayStorage = relay
-        return relay
+        nativeMessagingRelayOwner.relay
     }
 
     var safariNativeMessagingHost: SumiNativeMessagingRelay { nativeMessagingRelay }
 
     var loadedNativeMessagingRelay: SumiNativeMessagingRelay? {
-        nativeMessagingRelayStorage
+        nativeMessagingRelayOwner.loadedRelay
     }
     let extensionPermissionPromptPresentationOwner =
         ExtensionPermissionPromptPresentationOwner()
@@ -349,6 +331,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         _ = errorObservationOwner
         _ = controllerProvisioningOwner
         _ = runtimeStateResetOwner
+        _ = deferredRuntimeOwnerStore
 
         guard isExtensionSupportAvailable else {
             extensionsLoaded = true
@@ -380,6 +363,131 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     func normalTabUserScripts() -> [SumiUserScript] {
         []
+    }
+
+    // MARK: - Extension Requested Tab Facades
+
+    func consumeRecentlyOpenedExtensionTabRequest(for url: URL) -> Bool {
+        requestedTabLifecycleOwner.consumeRecentlyOpenedTabRequest(for: url)
+    }
+
+    func recordRecentlyOpenedExtensionTabRequest(for url: URL?) {
+        requestedTabLifecycleOwner.recordRecentlyOpenedTabRequest(for: url)
+    }
+
+    func extensionLoadURL(
+        for requestedURL: URL?,
+        controller: WKWebExtensionController
+    ) -> (url: URL?, context: WKWebExtensionContext?) {
+        requestedTabLifecycleOwner.loadURL(
+            for: requestedURL,
+            controller: controller
+        )
+    }
+
+    @discardableResult
+    func prepareExtensionRequestedTabForInitialLoad(
+        url: URL?,
+        requestedWindow: (any WKWebExtensionWindow)?,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext? = nil
+    ) async throws -> UUID? {
+        try await requestedTabLifecycleOwner.prepareInitialLoad(
+            url: url,
+            requestedWindow: requestedWindow,
+            controller: controller,
+            extensionContext: extensionContext,
+            manager: self
+        )
+    }
+
+    @discardableResult
+    func prepareContentScriptContextsForExtensionRequestedInitialLoad(
+        loadURL: URL?,
+        webExtensionContextOverride: WKWebExtensionContext?,
+        targetWindow: BrowserWindowState?,
+        targetSpace: Space?,
+        controller: WKWebExtensionController
+    ) async -> UUID? {
+        await requestedTabLifecycleOwner.prepareContentScriptContextsForInitialLoad(
+            loadURL: loadURL,
+            webExtensionContextOverride: webExtensionContextOverride,
+            targetWindow: targetWindow,
+            targetSpace: targetSpace,
+            controller: controller,
+            manager: self
+        )
+    }
+
+    @discardableResult
+    func openExtensionRequestedTab(
+        url: URL?,
+        shouldBeActive: Bool,
+        shouldBePinned: Bool,
+        requestedWindow: (any WKWebExtensionWindow)?,
+        controller: WKWebExtensionController,
+        extensionContext: WKWebExtensionContext? = nil,
+        reason: String = #function
+    ) throws -> Tab {
+        try requestedTabLifecycleOwner.openTab(
+            url: url,
+            shouldBeActive: shouldBeActive,
+            shouldBePinned: shouldBePinned,
+            requestedWindow: requestedWindow,
+            controller: controller,
+            extensionContext: extensionContext,
+            reason: reason,
+            manager: self
+        )
+    }
+
+    func materializeExtensionRequestedNormalTabIfNeeded(
+        _ tab: Tab,
+        isActive: Bool,
+        targetWindow: BrowserWindowState?
+    ) {
+        requestedTabLifecycleOwner.materializeNormalTabIfNeeded(
+            tab,
+            isActive: isActive,
+            targetWindow: targetWindow,
+            manager: self
+        )
+    }
+
+    func registerExtensionCreatedTabWithExtensionRuntime(
+        _ tab: Tab,
+        reason: String = #function
+    ) {
+        requestedTabLifecycleOwner.registerCreatedTabWithExtensionRuntime(
+            tab,
+            reason: reason,
+            manager: self
+        )
+    }
+
+    // MARK: - Extension Window Facades
+
+    func focusedOwnerMiniWindowAdapter(
+        for extensionContext: WKWebExtensionContext
+    ) -> ExtensionMiniWindowAdapter? {
+        guard let ownerExtensionID = extensionID(for: extensionContext) else {
+            return nil
+        }
+
+        return windowFocusResolutionOwner.miniWindowAdapters(
+            ownerExtensionID: ownerExtensionID,
+            profileId: profileId(for: extensionContext)
+        ).first
+    }
+
+    func extensionMiniWindowAdapters(
+        ownerExtensionID: String,
+        profileId: UUID?
+    ) -> [ExtensionMiniWindowAdapter] {
+        windowFocusResolutionOwner.miniWindowAdapters(
+            ownerExtensionID: ownerExtensionID,
+            profileId: profileId
+        )
     }
 
     // MARK: - Extension Runtime Adapters
@@ -705,36 +813,33 @@ final class ExtensionManager: NSObject, ObservableObject {
         _ message: @autoclosure () -> String
     ) {
         guard Self.isWebKitRuntimeTraceEnabled else { return }
-        let renderedMessage = message()
-        RuntimeDiagnostics.logger(category: "ExtensionRuntimeTrace")
-            .debug("\(renderedMessage, privacy: .public)")
+        runtimeDiagnosticsOwner.trace(message())
     }
 
     func extensionRuntimeObjectDescription(_ object: AnyObject?) -> String {
-        guard let object else { return "nil" }
-        return String(describing: Unmanaged.passUnretained(object).toOpaque())
+        ExtensionRuntimeDiagnosticsOwner.objectDescription(object)
     }
 
     func extensionRuntimeControllerDescription(
         _ controller: WKWebExtensionController?
     ) -> String {
-        extensionRuntimeObjectDescription(controller)
+        ExtensionRuntimeDiagnosticsOwner.objectDescription(controller)
     }
 
     func extensionRuntimeConfigurationDescription(
         _ configuration: WKWebViewConfiguration?
     ) -> String {
-        extensionRuntimeObjectDescription(configuration)
+        ExtensionRuntimeDiagnosticsOwner.objectDescription(configuration)
     }
 
     func extensionRuntimeUserContentControllerDescription(
         _ userContentController: WKUserContentController?
     ) -> String {
-        extensionRuntimeObjectDescription(userContentController)
+        ExtensionRuntimeDiagnosticsOwner.objectDescription(userContentController)
     }
 
     func extensionRuntimeWebViewDescription(_ webView: WKWebView?) -> String {
-        extensionRuntimeObjectDescription(webView)
+        ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)
     }
 
     func traceNativeMessagingContextBinding(
@@ -749,103 +854,17 @@ final class ExtensionManager: NSObject, ObservableObject {
         webView: WKWebView? = nil
     ) {
         #if DEBUG || SUMI_DIAGNOSTICS
-            guard RuntimeDiagnostics.isVerboseEnabled else { return }
-
-            let profileController = profileId.flatMap {
-                extensionControllersByProfile[$0]
-            }
-            let effectiveController = controller ?? configuration?.webExtensionController
-                ?? webView?.configuration.webExtensionController
-                ?? extensionContext?.webViewConfiguration?.webExtensionController
-                ?? profileController
-            let delegate = effectiveController?.delegate
-            let delegateObject = delegate.map { $0 as AnyObject }
-            let delegateNSObject: NSObjectProtocol? = delegate
-            let sendSelector = #selector(
-                WKWebExtensionControllerDelegate.webExtensionController(
-                    _:sendMessage:toApplicationWithIdentifier:for:replyHandler:
-                )
+            runtimeDiagnosticsOwner.traceNativeMessagingContextBinding(
+                phase: phase,
+                extensionId: extensionId,
+                profileId: profileId,
+                loadSource: loadSource,
+                webExtension: webExtension,
+                extensionContext: extensionContext,
+                controller: controller,
+                configuration: configuration,
+                webView: webView
             )
-            let connectSelector = #selector(
-                WKWebExtensionControllerDelegate.webExtensionController(
-                    _:connectUsing:for:completionHandler:
-                )
-            )
-            let controllerOwnsContext: String = {
-                guard let effectiveController, let extensionContext else { return "-" }
-                return String(
-                    effectiveController.extensionContext(for: extensionContext.baseURL)
-                        === extensionContext
-                )
-            }()
-            let nativeMessagingGranted: String = {
-                guard let extensionContext else { return "-" }
-                return String(
-                    isGrantedPermissionStatus(
-                        extensionContext.permissionStatus(for: .nativeMessaging)
-                    )
-                )
-            }()
-            let unsupportedNativeMessaging: String = {
-                guard let extensionContext else { return "-" }
-                return String(
-                    extensionContext.unsupportedAPIs.contains {
-                        $0.localizedCaseInsensitiveContains("nativeMessaging")
-                    }
-                )
-            }()
-            let configurationController = configuration?.webExtensionController
-            let webViewController = webView?.configuration.webExtensionController
-            let contextConfigurationController =
-                extensionContext?.webViewConfiguration?.webExtensionController
-            let delegateIsSumi: Bool = {
-                guard let delegateObject else { return false }
-                return delegateObject === self
-            }()
-            let controllerIsProfile: Bool = {
-                guard let effectiveController, let profileController else { return false }
-                return effectiveController === profileController
-            }()
-            let contextConfigurationControllerMatches: Bool = {
-                guard let contextConfigurationController, let effectiveController else {
-                    return false
-                }
-                return contextConfigurationController === effectiveController
-            }()
-            let configurationControllerMatches: Bool = {
-                guard let configurationController, let effectiveController else { return false }
-                return configurationController === effectiveController
-            }()
-            let webViewControllerMatches: Bool = {
-                guard let webViewController, let effectiveController else { return false }
-                return webViewController === effectiveController
-            }()
-            let delegateRespondsToSend = delegateNSObject?.responds(to: sendSelector) ?? false
-            let delegateRespondsToConnect = delegateNSObject?.responds(to: connectSelector) ?? false
-
-            RuntimeDiagnostics.debug(category: "SafariNativeMessagingContext") {
-                """
-                phase=\(phase) \
-                extBucket=\(SafariExtensionNativeMessagingRoutingProbe.extensionIdBucket(extensionId)) \
-                profile=\(SafariExtensionNativeMessagingRoutingProbe.profileIdBucket(profileId)) \
-                loadSource=\(loadSource?.rawValue ?? "-") \
-                webExtension=\(extensionRuntimeObjectDescription(webExtension)) \
-                context=\(extensionRuntimeObjectDescription(extensionContext)) \
-                controller=\(extensionRuntimeControllerDescription(effectiveController)) \
-                profileController=\(extensionRuntimeControllerDescription(profileController)) \
-                controllerIsProfile=\(controllerIsProfile) \
-                controllerOwnsContext=\(controllerOwnsContext) \
-                nativeMessagingGranted=\(nativeMessagingGranted) \
-                unsupportedNativeMessaging=\(unsupportedNativeMessaging) \
-                delegate=\(delegateObject.map { String(describing: type(of: $0)) } ?? "nil") \
-                delegateIsSumi=\(delegateIsSumi) \
-                delegateSend=\(delegateRespondsToSend) \
-                delegateConnect=\(delegateRespondsToConnect) \
-                contextConfigControllerMatches=\(contextConfigurationControllerMatches) \
-                configControllerMatches=\(configurationControllerMatches) \
-                webViewControllerMatches=\(webViewControllerMatches)
-                """
-            }
         #else
             _ = (
                 phase,
@@ -871,12 +890,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     func extensionRuntimeTabDescription(_ tab: Tab) -> String {
-        let webViews = liveWebViews(for: tab)
-            .map { extensionRuntimeWebViewDescription($0) }
-            .joined(separator: ",")
-        let resolvedURL = resolvedLiveWebView(for: tab)?.url?.absoluteString
-            ?? tab.url.absoluteString
-        return "tab=\(tab.id.uuidString.prefix(8)) url=\(resolvedURL) webViews=[\(webViews)]"
+        runtimeDiagnosticsOwner.tabDescription(tab)
     }
 
     #if DEBUG

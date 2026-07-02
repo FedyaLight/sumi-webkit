@@ -771,12 +771,18 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         let runtimeNotifications = BrowserManagerRuntimeWiring.tabSelectionRuntimeNotifications(
             for: browserManager
         )
+        let windowSessionDependencies = BrowserWindowSessionActivationOwner.Dependencies.live(
+            browserManager: browserManager
+        )
+        let closeRouterDependencies = BrowserWebViewCloseRouter.Dependencies.live(
+            browserManager: browserManager
+        )
 
-        BrowserManagerRuntimeWiring.notifyExtensionWindowOpened(windowState, for: browserManager)
-        BrowserManagerRuntimeWiring.notifyExtensionWindowFocused(windowState, for: browserManager)
+        windowSessionDependencies.notifyExtensionWindowOpened(windowState)
+        windowSessionDependencies.notifyExtensionWindowFocused(windowState)
         runtimeNotifications.tabActivated(tab, nil)
         runtimeNotifications.tabSelectionChanged("test-tab-selection")
-        BrowserManagerRuntimeWiring.notifyExtensionTabClosed(tab, for: browserManager)
+        closeRouterDependencies.notifyExtensionTabClosed(tab)
 
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
     }

@@ -378,7 +378,7 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
 extension ExtensionManager {
     func attach(browserManager: BrowserManager) {
         browserBridgeContext = browserManager.extensionBridgeAdapter
-        runtime = .live(browserManager: browserManager)
+        runtime = BrowserExtensionManagerRuntimeFactory.runtime(for: browserManager)
 
         if runtime.activeWindowState() == nil,
            let currentProfile = runtime.currentProfile() {

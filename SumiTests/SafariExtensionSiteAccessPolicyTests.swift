@@ -548,7 +548,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
 
         let controller = manager.ensureExtensionController(for: profile.id)
         let grantedPatterns = await withCheckedContinuation { continuation in
-            manager.webExtensionController(
+            manager.controllerDelegateBridge.webExtensionController(
                 controller,
                 promptForPermissionMatchPatterns: [matchPattern],
                 in: nil,

@@ -178,12 +178,10 @@ extension BrowserWindowSessionActivationOwner.Dependencies {
                 browserManager?.updateFindManagerCurrentTab()
             },
             notifyExtensionWindowOpened: { [weak browserManager] windowState in
-                guard let browserManager else { return }
-                BrowserManagerRuntimeWiring.notifyExtensionWindowOpened(windowState, for: browserManager)
+                browserManager?.extensionsModule.notifyWindowOpenedIfLoaded(windowState)
             },
             notifyExtensionWindowFocused: { [weak browserManager] windowState in
-                guard let browserManager else { return }
-                BrowserManagerRuntimeWiring.notifyExtensionWindowFocused(windowState, for: browserManager)
+                browserManager?.extensionsModule.notifyWindowFocusedIfLoaded(windowState)
             },
             reconcileStartupSessionIfPossible: { [weak browserManager] in
                 browserManager?.reconcileStartupSessionIfPossible()

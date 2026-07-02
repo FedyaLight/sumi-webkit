@@ -54,6 +54,9 @@ final class UserScriptStore {
     /// `internal` for SwiftData persistence helpers in `UserScriptStore+SwiftData.swift`.
     internal let context: ModelContext?
     private let fileManager = FileManager.default
+    private lazy var resourceCache = UserScriptResourceCache(
+        dependencies: .live(store: self)
+    )
     private var dispatchSource: DispatchSourceFileSystemObject?
 
     /// Callback invoked when scripts change on disk (for hot-reload).
@@ -65,10 +68,6 @@ final class UserScriptStore {
             reload()
             startWatching()
         }
-    }
-
-    private var requireDirectory: URL {
-        scriptsDirectory.appendingPathComponent("require")
     }
 
     private var manifestURL: URL {
@@ -175,15 +174,15 @@ final class UserScriptStore {
             ?? contextEntity(filename: filename)
         let scriptId = existingScriptEntity?.id ?? UUID()
         clearPersistedResources(for: scriptId)
-        clearCachedResources(for: filename)
+        resourceCache.clearCachedResources(for: filename)
         let compatPreludes = UserScriptCompatAssembly.preludeFragments(for: metadata)
-        let requiredCode = try await cacheRequiredResources(
+        let requiredCode = try await resourceCache.cacheRequiredResources(
             for: filename,
             scriptId: scriptId,
             requires: metadata.requires,
             installURL: url
         )
-        let resourceData = try await cacheResources(
+        let resourceData = try await resourceCache.cacheResources(
             for: filename,
             scriptId: scriptId,
             resources: metadata.resources,
@@ -303,10 +302,15 @@ final class UserScriptStore {
             let isEnabled = !manifest.disabled.contains(filename)
 
             let compatPreludes = UserScriptCompatAssembly.preludeFragments(for: parsedMeta)
-            let requiredCode = loadRequiredResources(for: filename, requires: parsedMeta.requires)
+            let requiredCode = resourceCache.loadRequiredResources(
+                for: filename,
+                requires: parsedMeta.requires
+            )
 
-            // Load @resource resources
-            let resourceData = loadResourceData(for: filename, resources: parsedMeta.resources)
+            let resourceData = resourceCache.loadResourceData(
+                for: filename,
+                resources: parsedMeta.resources
+            )
             let existingScriptEntity = existingEntity(namespace: parsedMeta.namespace ?? "", name: parsedMeta.name)
                 ?? contextEntity(filename: filename)
             let id = existingScriptEntity?.id ?? UUID()
@@ -331,147 +335,6 @@ final class UserScriptStore {
         }
 
         return result
-    }
-
-    // MARK: - @require Resources
-
-    private func loadRequiredResources(for filename: String, requires: [String]) -> [String] {
-        guard !requires.isEmpty else { return [] }
-
-        let scriptRequireDir = requireDirectory.appendingPathComponent(filename).appendingPathComponent("requires")
-        ensureDirectoryExists(scriptRequireDir)
-
-        var results: [String] = []
-
-        for urlString in requires {
-            if let bundled = UserScriptInternalRequireURL.content(from: urlString) {
-                results.append(bundled)
-                continue
-            }
-            let sanitizedName = Self.sanitizeFilename(urlString)
-            let localFile = scriptRequireDir.appendingPathComponent(sanitizedName)
-
-            if fileManager.fileExists(atPath: localFile.path),
-               let content = readCachedTextFile(localFile, description: "userscript @require cache") {
-                results.append(content)
-            }
-        }
-
-        return results
-    }
-
-    // MARK: - @resource Data
-
-    private func loadResourceData(for filename: String, resources: [String: String]) -> [String: String] {
-        guard !resources.isEmpty else { return [:] }
-
-        let scriptResourceDir = requireDirectory.appendingPathComponent(filename).appendingPathComponent("resources")
-        ensureDirectoryExists(scriptResourceDir)
-
-        var result: [String: String] = [:]
-
-        for (name, _) in resources {
-            let sanitizedName = Self.sanitizeFilename(name)
-            let localFile = scriptResourceDir.appendingPathComponent(sanitizedName)
-
-            if fileManager.fileExists(atPath: localFile.path),
-               let content = readCachedTextFile(localFile, description: "userscript @resource cache") {
-                result[name] = content
-            }
-        }
-
-        return result
-    }
-
-    private func cacheRequiredResources(
-        for filename: String,
-        scriptId: UUID,
-        requires: [String],
-        installURL: URL
-    ) async throws -> [String] {
-        guard requires.isEmpty == false else { return [] }
-        let scriptRequireDir = requireDirectory.appendingPathComponent(filename).appendingPathComponent("requires")
-        ensureDirectoryExists(scriptRequireDir)
-
-        var result: [String] = []
-        for urlString in requires {
-            if let bundled = UserScriptInternalRequireURL.content(from: urlString) {
-                let sanitizedName = Self.sanitizeFilename(urlString)
-                let localFile = scriptRequireDir.appendingPathComponent(sanitizedName)
-                let data = Data(bundled.utf8)
-                try data.write(to: localFile, options: .atomic)
-                if let internalURL = URL(string: urlString.trimmingCharacters(in: .whitespacesAndNewlines)) {
-                    persistResource(
-                        scriptId: scriptId,
-                        kind: "require",
-                        name: urlString,
-                        sourceURL: internalURL,
-                        localFile: localFile,
-                        mimeType: "text/javascript",
-                        data: data
-                    )
-                }
-                result.append(bundled)
-                continue
-            }
-            let url = try resolvedResourceURL(urlString, baseURL: installURL)
-            let (data, response) = try await SumiNonPersistentURLSession.shared.data(from: url)
-            let content = String(data: data, encoding: .utf8) ?? ""
-            let localFile = scriptRequireDir.appendingPathComponent(Self.sanitizeFilename(url.absoluteString))
-            try data.write(to: localFile, options: .atomic)
-            persistResource(
-                scriptId: scriptId,
-                kind: "require",
-                name: url.absoluteString,
-                sourceURL: url,
-                localFile: localFile,
-                mimeType: response.mimeType,
-                data: data
-            )
-            result.append(content)
-        }
-        return result
-    }
-
-    private func cacheResources(
-        for filename: String,
-        scriptId: UUID,
-        resources: [String: String],
-        installURL: URL
-    ) async throws -> [String: String] {
-        guard resources.isEmpty == false else { return [:] }
-        let scriptResourceDir = requireDirectory.appendingPathComponent(filename).appendingPathComponent("resources")
-        ensureDirectoryExists(scriptResourceDir)
-
-        var result: [String: String] = [:]
-        for (name, urlString) in resources {
-            let url = try resolvedResourceURL(urlString, baseURL: installURL)
-            let (data, response) = try await SumiNonPersistentURLSession.shared.data(from: url)
-            let content = String(data: data, encoding: .utf8) ?? data.base64EncodedString()
-            let localFile = scriptResourceDir.appendingPathComponent(Self.sanitizeFilename(name))
-            try data.write(to: localFile, options: .atomic)
-            persistResource(
-                scriptId: scriptId,
-                kind: "resource",
-                name: name,
-                sourceURL: url,
-                localFile: localFile,
-                mimeType: response.mimeType,
-                data: data
-            )
-            result[name] = content
-        }
-        return result
-    }
-
-    private func resolvedResourceURL(_ raw: String, baseURL: URL) throws -> URL {
-        guard let resolved = URL(string: raw, relativeTo: baseURL)?.absoluteURL else {
-            throw SumiUserScriptError.invalidResourceURL(raw)
-        }
-        guard ["http", "https"].contains(resolved.scheme?.lowercased()) else {
-            throw SumiUserScriptError.invalidResourceURL(raw)
-        }
-        return resolved
     }
 
     // MARK: - Manifest
@@ -572,17 +435,6 @@ final class UserScriptStore {
         }
     }
 
-    private func readCachedTextFile(_ url: URL, description: String) -> String? {
-        do {
-            return try String(contentsOf: url, encoding: .utf8)
-        } catch {
-            Self.log.error(
-                "Failed to read \(description, privacy: .public) at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
-            )
-            return nil
-        }
-    }
-
     static func sanitizeFilename(_ str: String) -> String {
         var s = str
         if s.first == "." {
@@ -592,11 +444,6 @@ final class UserScriptStore {
         s = s.replacingOccurrences(of: ":", with: "%3A")
         s = s.replacingOccurrences(of: "\\", with: "%5C")
         return s
-    }
-
-    private func clearCachedResources(for filename: String) {
-        let directory = requireDirectory.appendingPathComponent(filename)
-        try? fileManager.removeItem(at: directory)
     }
 
     static func sha256Hex(_ data: Data) -> String {

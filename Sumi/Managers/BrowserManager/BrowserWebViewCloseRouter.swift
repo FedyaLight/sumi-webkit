@@ -83,8 +83,7 @@ extension BrowserWebViewCloseRouter.Dependencies {
                 browserManager?.tabManager.removeAuxiliaryMiniWindowTab(tab)
             },
             notifyExtensionTabClosed: { [weak browserManager] tab in
-                guard let browserManager else { return }
-                BrowserManagerRuntimeWiring.notifyExtensionTabClosed(tab, for: browserManager)
+                browserManager?.extensionsModule.notifyTabClosedIfLoaded(tab)
             },
             makeWebKitCloseRoutingRuntime: { [weak browserManager] in
                 BrowserWebKitCloseRoutingOwner.Runtime(
