@@ -4,29 +4,43 @@ struct SumiFooterSecurityStatus: View {
     let securityState: SiteControlsSnapshot.SecurityState
 
     var body: some View {
-        HStack(spacing: 8) {
-            SumiZenChromeIcon(
-                iconName: securityState.chromeIconName,
-                fallbackSystemName: securityState.fallbackSystemName,
-                size: 16,
-                tint: labelColor
-            )
+        ZStack(alignment: .leading) {
+            HStack {
+                SumiZenChromeIcon(
+                    iconName: securityState.chromeIconName,
+                    fallbackSystemName: securityState.fallbackSystemName,
+                    size: 16,
+                    tint: iconColor
+                )
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+
             Text(securityState.footerTitle)
+                .strikethrough(securityState.isFooterStruckThrough, color: strikethroughColor)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(labelColor)
+                .foregroundStyle(URLBarHubNativeStyle.primaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.86)
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.horizontal, 30)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity)
         .padding(.vertical, 9)
         .background(URLBarHubNativeStyle.controlBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private var labelColor: Color {
-        securityState == .notSecure ? URLBarHubNativeStyle.destructiveText : URLBarHubNativeStyle.primaryText
+    private var strikethroughColor: Color {
+        securityState.isFooterStruckThrough
+            ? URLBarHubNativeStyle.destructiveText
+            : URLBarHubNativeStyle.primaryText
+    }
+
+    private var iconColor: Color {
+        securityState == .notSecure
+            ? URLBarHubNativeStyle.destructiveText
+            : URLBarHubNativeStyle.primaryText
     }
 }
 struct SumiFooterSiteSettingsButton: View {

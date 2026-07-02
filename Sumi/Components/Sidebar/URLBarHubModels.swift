@@ -76,24 +76,14 @@ struct SiteControlsSnapshot: Equatable {
 
         var footerTitle: String {
             switch self {
-            case .secure: return "Secure connection"
-            case .notSecure: return "Connection not secure"
+            case .secure, .notSecure: return "Secure"
             case .localPage: return "Local page"
             case .internalPage: return "Page information"
             }
         }
 
         var chromeIconName: String? {
-            switch self {
-            case .secure:
-                return "security"
-            case .notSecure:
-                return "security-broken"
-            case .localPage:
-                return nil
-            case .internalPage:
-                return nil
-            }
+            nil
         }
 
         var fallbackSystemName: String {
@@ -107,6 +97,10 @@ struct SiteControlsSnapshot: Equatable {
 
         var showsFooterButton: Bool {
             self != .internalPage
+        }
+
+        var isFooterStruckThrough: Bool {
+            self == .notSecure
         }
     }
 

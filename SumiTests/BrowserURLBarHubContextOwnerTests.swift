@@ -6,6 +6,26 @@ import XCTest
 
 @MainActor
 final class BrowserURLBarHubContextOwnerTests: XCTestCase {
+    func testSecurityFooterPresentationUsesSystemLockSymbols() throws {
+        let secureURL = try XCTUnwrap(URL(string: "https://example.test/path"))
+        let insecureURL = try XCTUnwrap(URL(string: "http://example.test/path"))
+
+        let secureState = SiteControlsSnapshot.resolve(url: secureURL, profile: nil).securityState
+        let insecureState = SiteControlsSnapshot.resolve(url: insecureURL, profile: nil).securityState
+
+        XCTAssertEqual(secureState, .secure)
+        XCTAssertEqual(secureState.footerTitle, "Secure")
+        XCTAssertNil(secureState.chromeIconName)
+        XCTAssertEqual(secureState.fallbackSystemName, "lock.fill")
+        XCTAssertFalse(secureState.isFooterStruckThrough)
+
+        XCTAssertEqual(insecureState, .notSecure)
+        XCTAssertEqual(insecureState.footerTitle, "Secure")
+        XCTAssertNil(insecureState.chromeIconName)
+        XCTAssertEqual(insecureState.fallbackSystemName, "lock.open.fill")
+        XCTAssertTrue(insecureState.isFooterStruckThrough)
+    }
+
     func testLiveContextUsesBrowserManagerStoresAndInjectedExtensionActions() {
         let browserManager = BrowserManager()
         let permissionContextOwner = BrowserURLBarPermissionContextOwner(
