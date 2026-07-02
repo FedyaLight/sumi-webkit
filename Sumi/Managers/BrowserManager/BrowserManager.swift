@@ -70,7 +70,7 @@ class BrowserManager: ObservableObject {
     weak var keyboardShortcutManager: KeyboardShortcutManager?
     let sumiProfileRouter = SumiProfileRouter()
     let liveFolderManager = SumiLiveFolderManager()
-    private let permissionSiteSettingsRoutingOwner = BrowserPermissionSiteSettingsRoutingOwner()
+    let permissionSiteSettingsRoutingOwner = BrowserPermissionSiteSettingsRoutingOwner()
     lazy var sidebarCommandService = BrowserSidebarCommandService(browserManager: self)
 
     lazy var shellSelectionService = ShellSelectionService { [weak self] windowId in
@@ -106,6 +106,9 @@ class BrowserManager: ObservableObject {
         dependencies: .live(browserManager: self)
     )
     lazy var nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
+        dependencies: .live(browserManager: self)
+    )
+    private lazy var settingsSurfaceRoutingOwner = BrowserSettingsSurfaceRoutingOwner(
         dependencies: .live(browserManager: self)
     )
     private lazy var permissionSidebarPinningOwner = BrowserPermissionSidebarPinningOwner(
@@ -163,6 +166,9 @@ class BrowserManager: ObservableObject {
         dependencies: .live(browserManager: self)
     )
     lazy var activePageRoutingOwner = BrowserActivePageRoutingOwner(
+        dependencies: .live(browserManager: self)
+    )
+    private lazy var findBarRoutingOwner = BrowserFindBarRoutingOwner(
         dependencies: .live(browserManager: self)
     )
     private(set) lazy var zoomCommandOwner = BrowserZoomCommandOwner(
@@ -774,19 +780,11 @@ class BrowserManager: ObservableObject {
     }
 
     func showFindBar() {
-        guard let windowState = windowRegistry?.activeWindow else {
-            findManager.showFindBar(for: nil, in: nil)
-            return
-        }
-        findManager.showFindBar(for: activePageRoutingOwner.activePageTab(for: windowState), in: windowState.id)
+        findBarRoutingOwner.showFindBar()
     }
 
     func updateFindManagerCurrentTab() {
-        guard let windowState = windowRegistry?.activeWindow else {
-            findManager.updateCurrentTab(nil, in: nil)
-            return
-        }
-        findManager.updateCurrentTab(activePageRoutingOwner.activePageTab(for: windowState), in: windowState.id)
+        findBarRoutingOwner.updateCurrentTab()
     }
 
     typealias TabOpenContext = BrowserTabOpenContext
@@ -836,26 +834,14 @@ class BrowserManager: ObservableObject {
 
     /// Opens Sumi settings as a normal browser tab (one per space), optionally focusing a pane.
     func openSettingsTab(selecting pane: SettingsTabs, in windowState: BrowserWindowState? = nil) {
-        guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }
-        nativeSurfaceRoutingOwner.openNativeBrowserSurface(
-            .settings,
-            url: permissionSiteSettingsRoutingOwner.settingsSurfaceURL(for: pane),
-            in: windowState
-        )
+        settingsSurfaceRoutingOwner.openSettingsTab(selecting: pane, in: windowState)
     }
 
     func openSiteSettingsTab(
         focusing tab: Tab? = nil,
         in windowState: BrowserWindowState? = nil
     ) {
-        guard let windowState = windowState ?? windowRegistry?.activeWindow else { return }
-        let targetTab = tab ?? currentTab(for: windowState)
-
-        nativeSurfaceRoutingOwner.openNativeBrowserSurface(
-            .settings,
-            url: permissionSiteSettingsRoutingOwner.privacySiteSettingsSurfaceURL(focusing: targetTab),
-            in: windowState
-        )
+        settingsSurfaceRoutingOwner.openSiteSettingsTab(focusing: tab, in: windowState)
     }
 
     func duplicateCurrentTab() {
