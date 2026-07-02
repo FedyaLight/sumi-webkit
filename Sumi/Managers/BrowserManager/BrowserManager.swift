@@ -276,9 +276,31 @@ class BrowserManager: ObservableObject {
     private lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
         dependencies: .live(browserManager: self)
     )
-    private var structuralChangeCancellable: AnyCancellable?
-    private var tabManagerLoadObserverToken: NSObjectProtocol?
-    private var browsingDataRetentionObserverToken: NSObjectProtocol?
+    private lazy var initializationWiringOwner = BrowserManagerInitializationWiringOwner(
+        dependencies: BrowserManagerInitializationWiringOwner.Dependencies(
+            attachShellRuntime: { [weak self] in
+                guard let self else { return }
+                self.shellRuntime.attach(dependencies: self.shellRuntimeDependencies())
+            },
+            attachRuntimeWiring: { [weak self] in
+                guard let self else { return AnyCancellable {} }
+                return BrowserManagerRuntimeWiring.attach(to: self)
+            },
+            handleTabManagerDataLoaded: { [weak self] in
+                self?.handleTabManagerDataLoaded()
+            },
+            scheduleBrowsingDataRetentionCleanup: { [weak self] in
+                self?.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
+                    reason: "retention-setting-changed",
+                    force: true,
+                    delayNanoseconds: 0
+                )
+            },
+            beginProtectionRestoreForStartupIfNeeded: { [weak self] in
+                self?.beginProtectionRestoreForStartupIfNeeded()
+            }
+        )
+    )
     private var startupProtectionRuntime: BrowserStartupProtectionRuntime!
     private lazy var windowVisualMutationOwner = BrowserWindowVisualMutationOwner(
         dependencies: BrowserWindowVisualMutationOwner.Dependencies(
@@ -503,7 +525,7 @@ class BrowserManager: ObservableObject {
             dependencies: .live(browserManager: self)
         )
 
-        finishInitializationWiring()
+        initializationWiringOwner.finishInitializationWiring()
     }
 
     private static func makeBookmarkManager(
@@ -567,37 +589,6 @@ class BrowserManager: ObservableObject {
         permissionRuntime.startPermissionEventObservation { [weak self] _ in
             await self?.permissionSidebarPinningOwner.reconcile(reason: "permission-event")
         }
-    }
-
-    private func finishInitializationWiring() {
-        shellRuntime.attach(dependencies: shellRuntimeDependencies())
-        structuralChangeCancellable = BrowserManagerRuntimeWiring.attach(to: self)
-
-        tabManagerLoadObserverToken = NotificationCenter.default.addObserver(
-            forName: .tabManagerDidLoadInitialData,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.handleTabManagerDataLoaded()
-            }
-        }
-
-        browsingDataRetentionObserverToken = NotificationCenter.default.addObserver(
-            forName: .sumiBrowsingDataRetentionChanged,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.automaticDataCleanupOwner.scheduleAutomaticBrowsingDataCleanup(
-                    reason: "retention-setting-changed",
-                    force: true,
-                    delayNanoseconds: 0
-                )
-            }
-        }
-
-        beginProtectionRestoreForStartupIfNeeded()
     }
 
     private func shellRuntimeDependencies() -> BrowserShellRuntime.Dependencies {
@@ -871,12 +862,7 @@ class BrowserManager: ObservableObject {
         permissionRuntime.cancelPermissionEventObservation()
         startupProtectionRuntime.cancelProtectionRestoreTask()
         windowSessionService.cancelPendingWindowSessionPersistence()
-        if let token = tabManagerLoadObserverToken {
-            NotificationCenter.default.removeObserver(token)
-        }
-        if let token = browsingDataRetentionObserverToken {
-            NotificationCenter.default.removeObserver(token)
-        }
+        initializationWiringOwner.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
