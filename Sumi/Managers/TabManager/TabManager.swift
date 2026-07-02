@@ -337,12 +337,35 @@ class TabManager: ObservableObject {
     // Folders per space
     @Published var foldersBySpace: [UUID: [TabFolder]] = [:]
 
+    private let shortcutPinCollectionStateOwner = ShortcutPinCollectionStateOwner()
+
     // Global pinned launchers (essentials), isolated per profile
-    @Published var pinnedByProfile: [UUID: [ShortcutPin]] = [:]
+    var pinnedByProfile: [UUID: [ShortcutPin]] {
+        get { shortcutPinCollectionStateOwner.pinnedByProfile }
+        set {
+            objectWillChange.send()
+            shortcutPinCollectionStateOwner.replacePinnedByProfile(newValue)
+        }
+    }
+
     // Space-level shortcut launchers
-    @Published var spacePinnedShortcuts: [UUID: [ShortcutPin]] = [:]
+    var spacePinnedShortcuts: [UUID: [ShortcutPin]] {
+        get { shortcutPinCollectionStateOwner.spacePinnedShortcuts }
+        set {
+            objectWillChange.send()
+            shortcutPinCollectionStateOwner.replaceSpacePinnedShortcuts(newValue)
+        }
+    }
+
     // Pinned launchers encountered during load that have no profile assignment yet
-    var pendingPinnedWithoutProfile: [ShortcutPin] = []
+    var pendingPinnedWithoutProfile: [ShortcutPin] {
+        get { shortcutPinCollectionStateOwner.pendingPinnedWithoutProfile }
+        set {
+            objectWillChange.send()
+            shortcutPinCollectionStateOwner.replacePendingPinnedWithoutProfile(newValue)
+        }
+    }
+
     let transientTabRegistryOwner = TabTransientTabRegistryOwner()
     // Transient shortcut-backed live tabs per window, keyed by shortcut pin id.
     var transientShortcutTabsByWindow: [UUID: [UUID: Tab]] {
@@ -447,8 +470,7 @@ class TabManager: ObservableObject {
     }
 
     func essentialPins(for profileId: UUID?) -> [ShortcutPin] {
-        guard let profileId else { return [] }
-        return Array(pinnedByProfile[profileId] ?? []).sorted { $0.index < $1.index }
+        shortcutPinCollectionStateOwner.essentialPins(for: profileId)
     }
 
     func resolveEssentialsTarget(
@@ -630,7 +652,7 @@ class TabManager: ObservableObject {
     }
 
     func spacePinnedPins(for spaceId: UUID) -> [ShortcutPin] {
-        Array(spacePinnedShortcuts[spaceId] ?? []).sorted { $0.index < $1.index }
+        shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
     }
 
     func liveSpacePinnedTabs(for spaceId: UUID) -> [Tab] {
@@ -681,13 +703,7 @@ class TabManager: ObservableObject {
     }
 
     func shortcutPin(by id: UUID) -> ShortcutPin? {
-        for pins in pinnedByProfile.values {
-            if let match = pins.first(where: { $0.id == id }) { return match }
-        }
-        for pins in spacePinnedShortcuts.values {
-            if let match = pins.first(where: { $0.id == id }) { return match }
-        }
-        return nil
+        shortcutPinCollectionStateOwner.shortcutPin(by: id)
     }
 
     func folder(by id: UUID) -> TabFolder? {
@@ -782,10 +798,8 @@ class TabManager: ObservableObject {
             faviconPresentationRefreshOwner.stop()
             tabsBySpace.removeAll()
             splitGroups.removeAll()
-            spacePinnedShortcuts.removeAll()
             foldersBySpace.removeAll()
-            pinnedByProfile.removeAll()
-            pendingPinnedWithoutProfile.removeAll()
+            shortcutPinCollectionStateOwner.removeAll()
             transientTabRegistryOwner.removeAll()
             structuralLookupOwner.removeAll()
             spaces.removeAll()
@@ -1577,16 +1591,19 @@ class TabManager: ObservableObject {
         spaces = restoredState.spaces
         tabsBySpace = restoredState.tabsBySpace
         foldersBySpace = restoredState.foldersBySpace
-        pinnedByProfile = restoredState.pinnedByProfile
-        pendingPinnedWithoutProfile = restoredState.pendingPinnedWithoutProfile
-        spacePinnedShortcuts = restoredState.spacePinnedShortcuts
+        objectWillChange.send()
+        shortcutPinCollectionStateOwner.replaceAll(
+            pinnedByProfile: restoredState.pinnedByProfile,
+            spacePinnedShortcuts: restoredState.spacePinnedShortcuts,
+            pendingPinnedWithoutProfile: restoredState.pendingPinnedWithoutProfile
+        )
     }
 
     func hasLiveRuntimeContent(in space: Space) -> Bool {
         let spaceId = space.id
 
         if !(tabsBySpace[spaceId] ?? []).isEmpty { return true }
-        if !(spacePinnedShortcuts[spaceId] ?? []).isEmpty { return true }
+        if shortcutPinCollectionStateOwner.hasSpacePinnedShortcuts(in: spaceId) { return true }
         if !(foldersBySpace[spaceId] ?? []).isEmpty { return true }
 
         return transientTabRegistryOwner.transientShortcutTabs
