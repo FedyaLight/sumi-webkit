@@ -351,6 +351,9 @@ class TabManager: ObservableObject {
     var transientExtensionTabsByID: [UUID: Tab] = [:]
     var auxiliaryMiniWindowTabsByID: [UUID: Tab] = [:]
     private let structuralLookupOwner = TabStructuralLookupOwner()
+    private lazy var structuralCollectionMutationOwner = TabStructuralCollectionMutationOwner(
+        dependencies: .live(tabManager: self)
+    )
     private lazy var tabCollectionMembershipOwner = TabCollectionMembershipOwner(
         tabManager: self,
         structuralLookupOwner: structuralLookupOwner
@@ -793,42 +796,19 @@ class TabManager: ObservableObject {
     }
 
     func setTabs(_ items: [Tab], for spaceId: UUID) {
-        let previousTabs = tabsBySpace[spaceId] ?? []
-        let sortedItems = items.sorted { lhs, rhs in
-            if lhs.index != rhs.index { return lhs.index < rhs.index }
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
-        tabsBySpace[spaceId] = sortedItems
-        markRegularTabsSnapshotDirty(for: spaceId)
-        recordRegularTabsStructuralChange(previous: previousTabs, current: sortedItems)
-        queueTabLookupEntries(removing: previousTabs, with: sortedItems)
-        requestStructuralPublish()
+        structuralCollectionMutationOwner.setTabs(items, for: spaceId)
     }
 
     func setFolders(_ items: [TabFolder], for spaceId: UUID) {
-        let previousFolders = foldersBySpace[spaceId] ?? []
-        foldersBySpace[spaceId] = items
-        markFoldersSnapshotDirty(for: spaceId)
-        recordFoldersStructuralChange(previous: previousFolders, current: items)
-        requestStructuralPublish()
+        structuralCollectionMutationOwner.setFolders(items, for: spaceId)
     }
 
     func setPinnedTabs(_ items: [ShortcutPin], for profileId: UUID) {
-        let previousPins = pinnedByProfile[profileId] ?? []
-        pinnedByProfile[profileId] = items
-        faviconService.syncShortcutPins(Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined()))
-        markPinnedSnapshotDirty(for: profileId)
-        recordShortcutPinsStructuralChange(previous: previousPins, current: items)
-        requestStructuralPublish()
+        structuralCollectionMutationOwner.setPinnedTabs(items, for: profileId)
     }
 
     func setSpacePinnedShortcuts(_ items: [ShortcutPin], for spaceId: UUID) {
-        let previousPins = spacePinnedShortcuts[spaceId] ?? []
-        spacePinnedShortcuts[spaceId] = items
-        faviconService.syncShortcutPins(Array(pinnedByProfile.values.joined()) + Array(spacePinnedShortcuts.values.joined()))
-        markSpacePinnedSnapshotDirty(for: spaceId)
-        recordShortcutPinsStructuralChange(previous: previousPins, current: items)
-        requestStructuralPublish()
+        structuralCollectionMutationOwner.setSpacePinnedShortcuts(items, for: spaceId)
     }
 
     func notifyTransientShortcutStateChanged() {
@@ -869,7 +849,7 @@ class TabManager: ObservableObject {
         structuralPublishOwner.requestPublish()
     }
 
-    private func queueTabLookupEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
+    func queueTabLookupEntries(removing previousTabs: [Tab], with currentTabs: [Tab]) {
         structuralLookupOwner.queueEntries(
             removing: previousTabs,
             with: currentTabs,
