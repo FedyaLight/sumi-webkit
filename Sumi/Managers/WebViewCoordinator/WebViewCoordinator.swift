@@ -29,10 +29,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     let webViewRegistry = WindowWebViewRegistry()
 
     @ObservationIgnored
-    private let visibleWebViewRuntimeOwner = VisibleWebViewRuntimeOwner()
+    let visibleWebViewRuntimeOwner = VisibleWebViewRuntimeOwner()
 
     @ObservationIgnored
-    private let crossWindowSyncOwner = WebViewCrossWindowSyncOwner()
+    let crossWindowSyncOwner = WebViewCrossWindowSyncOwner()
 
     @ObservationIgnored
     private let webViewAssignmentRebuildOwner = WebViewAssignmentRebuildOwner()
@@ -54,10 +54,20 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     )
 
     @ObservationIgnored
+    private lazy var windowCleanupOwner = WebViewWindowCleanupOwner(
+        dependencies: .live(coordinator: self)
+    )
+
+    @ObservationIgnored
+    private lazy var navigationBroadcastOwner = WebViewNavigationBroadcastOwner(
+        dependencies: .live(coordinator: self)
+    )
+
+    @ObservationIgnored
     let tabScopedCleanupValidationOwner = WebViewTabScopedCleanupValidationOwner()
 
     @ObservationIgnored
-    private let cleanupScopeOwner = WebViewCleanupScopeOwner()
+    let cleanupScopeOwner = WebViewCleanupScopeOwner()
 
     @ObservationIgnored
     private let hiddenCloneEvictionOwner = WebViewHiddenCloneEvictionOwner()
@@ -287,36 +297,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     // MARK: - Window Cleanup
 
     func cleanupWindow(_ windowId: UUID, tabManager: TabManager) {
-        let signpostState = PerformanceTrace.beginInterval("WebViewCoordinator.cleanupWindow")
-        defer {
-            PerformanceTrace.endInterval("WebViewCoordinator.cleanupWindow", signpostState)
-        }
-
-        visibleWebViewRuntimeOwner.cancelScheduledPreparation(for: windowId)
-        cleanupScopeOwner.cleanupWindow(
-            windowId,
-            entries: webViewRegistry.trackedWebViews(in: windowId),
-            runtime: cleanupScopeRuntime(tabManager: tabManager)
-        )
-        removeCompositorContainerView(for: windowId)
+        windowCleanupOwner.cleanupWindow(windowId, tabManager: tabManager)
     }
 
     func cleanupAllWebViews(tabManager: TabManager) {
-        cleanupScopeOwner.cleanupAllWebViews(
-            entries: webViewRegistry.trackedWebViews(),
-            totalWebViewCount: webViewRegistry.totalTrackedWebViewCount,
-            runtime: cleanupScopeRuntime(tabManager: tabManager)
-        )
-
-        if webViewRegistry.isEmpty {
-            webViewRegistry.removeAll()
-            visibleWebViewRuntimeOwner.resetWindowRegistrations()
-            mediaProtectionOwner.removeVisualHandoffFullscreenAndNowPlayingState()
-        }
-
-        RuntimeDiagnostics.debug("Completed full WebView cleanup.", category: "WebViewCoordinator")
-
-        pruneStaleWebViewBookkeeping(reason: "cleanupAllWebViews")
+        windowCleanupOwner.cleanupAllWebViews(tabManager: tabManager)
     }
 
     // MARK: - History Swipe Protection
@@ -559,12 +544,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         return nil
     }
 
-    private func pruneStaleWebViewBookkeeping(reason: String) {
-        finishDestructiveCleanupSuppression(
-            for: mediaProtectionOwner.pruneStaleBookkeeping(reason: reason)
-        )
-    }
-
     func pruneInvalidDeferredProtectedCommands(reason: String) {
         finishDestructiveCleanupSuppression(
             for: mediaProtectionOwner.pruneStaleBookkeeping(reason: "\(reason).staleBookkeeping")
@@ -577,31 +556,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         for webViewID in webViewIDs {
             destructiveCleanupPreparationOwner.finishNavigationSuppression(webViewID: webViewID)
         }
-    }
-
-    private func cleanupScopeRuntime(tabManager: TabManager) -> WebViewCleanupScopeOwner.Runtime {
-        let runtimeContext = resolvedBrowserRuntimeContext()
-        return WebViewCleanupScopeOwner.Runtime(
-            tabForID: { tabID in
-                runtimeContext?.tab(tabID) ?? tabManager.tab(for: tabID)
-            },
-            isWebViewProtectedFromCompositorMutation: { [self] webView in
-                isWebViewProtectedFromCompositorMutation(webView)
-            },
-            enqueueDeferredProtectedCommand: { [self] command, webView, reason in
-                enqueueDeferredProtectedCommand(command, for: webView, reason: reason)
-            },
-            cleanupUnprotectedTrackedWebView: { [self] webView, owner, tab in
-                cleanupUnprotectedTrackedWebView(
-                    webView,
-                    owner: owner,
-                    tab: tab
-                )
-            },
-            refreshPrimaryTrackedWebView: { [self] tab in
-                refreshPrimaryTrackedWebView(for: tab)
-            }
-        )
     }
 
     private func hiddenCloneEvictionRuntime(
@@ -908,83 +862,22 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
 
     /// Sync a tab's URL across all windows displaying it
     func syncTab(_ tab: Tab, to url: URL, originatingWebView: WKWebView? = nil) {
-        let tabId = tab.id
-        crossWindowSyncOwner.syncTab(
-            tabId,
-            to: url,
-            webViews: getAllWebViews(for: tabId),
-            originatingWebView: originatingWebView,
-            isProtected: { [self] webView in
-                isWebViewProtectedFromCompositorMutation(webView)
-            },
-            load: { webView in
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView
-                ) { resolvedWebView in
-                    resolvedWebView.load(URLRequest(url: url))
-                }
-            }
-        )
+        navigationBroadcastOwner.syncTab(tab, to: url, originatingWebView: originatingWebView)
     }
 
     /// Reload a tab across all windows displaying it
     func reloadTab(_ tab: Tab) {
-        let reloadTargetURL = tab.existingWebView?.url ?? tab.url
-        let protectionReloadWasRequired = tab.isProtectionReloadRequired
-        if tab.configurationPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
-            if rebuildLiveWebViews(
-                for: tab,
-                preferredPrimaryWindowId: tab.primaryWindowId,
-                load: reloadTargetURL
-            ), protectionReloadWasRequired {
-                tab.noteProtectionManualReloadResult(
-                    rebuiltForConfigurationPolicy: true,
-                    targetURL: reloadTargetURL
-                )
-            }
-            return
-        }
-        let tabId = tab.id
-        crossWindowSyncOwner.reloadTab(
-            tabId,
-            webViews: getAllWebViews(for: tabId),
-            isProtected: { [self] webView in
-                isWebViewProtectedFromCompositorMutation(webView)
-            },
-            reload: { webView in
-                tab.performMainFrameNavigationAfterHydrationIfNeeded(
-                    on: webView
-                ) { resolvedWebView in
-                    resolvedWebView.reload()
-                }
-            }
-        )
+        navigationBroadcastOwner.reloadTab(tab)
     }
 
     /// Reload a tab only in the requested window.
     @discardableResult
     func reloadTab(_ tab: Tab, in windowId: UUID) -> Bool {
-        guard let webView = getWebView(for: tab.id, in: windowId) else { return false }
-        if isWebViewProtectedFromCompositorMutation(webView) {
-            RuntimeDiagnostics.protectedWebViewTrace(
-                "skipReloadProtected webView=\(ObjectIdentifier(webView)) tab=\(tab.id.uuidString.prefix(8)) window=\(windowId.uuidString.prefix(8))"
-            )
-            return false
-        }
-        tab.performMainFrameNavigationAfterHydrationIfNeeded(
-            on: webView
-        ) { resolvedWebView in
-            resolvedWebView.reload()
-        }
-        return true
+        navigationBroadcastOwner.reloadTab(tab, in: windowId)
     }
 
     /// Set mute state for a tab across all windows
     func setMuteState(_ muted: Bool, for tabId: UUID) {
-        crossWindowSyncOwner.setMuteState(
-            muted,
-            for: tabId,
-            windowWebViews: webViewRegistry.windowWebViews(for: tabId)
-        )
+        navigationBroadcastOwner.setMuteState(muted, for: tabId)
     }
 }
