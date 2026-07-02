@@ -188,6 +188,10 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var nativeMessagingRelayOwner = ExtensionNativeMessagingRelayOwner(
         dependencies: .live(manager: self)
     )
+    lazy var permissionsOriginsCompatibilityPreludeInstallationOwner =
+        ExtensionPermissionsOriginsCompatibilityPreludeInstallationOwner(
+            dependencies: .live(manager: self)
+        )
     lazy var deferredRuntimeOwnerStore = ExtensionDeferredRuntimeOwnerStore(manager: self)
     lazy var runtimeDiagnosticsOwner = ExtensionRuntimeDiagnosticsOwner(manager: self)
     lazy var controllerDelegateBridge = ExtensionControllerDelegateBridge(manager: self)
@@ -276,8 +280,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionPermissionPromptPresentationOwner()
     let permissionDelegateCallbackOwner =
         ExtensionPermissionDelegateCallbackOwner()
-    var permissionsOriginsCompatibilityInstallations:
-        [ObjectIdentifier: Set<String>] = [:]
 
     var currentProfileId: UUID? {
         get { profileRuntimeOwner.currentProfileId }
