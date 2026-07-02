@@ -50,6 +50,7 @@ class TabManager: ObservableObject {
     lazy var regularTabDragService = SidebarRegularTabDragService(tabManager: self)
     lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
     lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(tabManager: self)
+    lazy var spaceLifecycleOwner = TabSpaceLifecycleOwner(tabManager: self)
     private lazy var essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(
         dependencies: EssentialsShortcutPlacementOwner.Dependencies(
             spaces: { [weak self] in
@@ -1467,6 +1468,56 @@ class TabManager: ObservableObject {
         }
         scheduleStructuralPersistence()
         return personal
+    }
+
+    // MARK: - Space Lifecycle
+
+    func userVisibleTabCount(for spaceId: UUID) -> Int {
+        launcherProjection(for: spaceId).userVisibleTabCount
+    }
+
+    @discardableResult
+    func createSpace(
+        name: String,
+        icon: String = "square.grid.2x2",
+        workspaceTheme: WorkspaceTheme? = nil,
+        profileId: UUID? = nil
+    ) -> Space {
+        spaceLifecycleOwner.createSpace(
+            name: name,
+            icon: icon,
+            workspaceTheme: workspaceTheme,
+            profileId: profileId
+        )
+    }
+
+    func removeSpace(_ id: UUID) {
+        spaceLifecycleOwner.removeSpace(id)
+    }
+
+    @discardableResult
+    func reorderSpace(spaceId: UUID, to targetIndex: Int) -> Bool {
+        spaceLifecycleOwner.reorderSpace(spaceId: spaceId, to: targetIndex)
+    }
+
+    func setActiveSpace(
+        _ space: Space,
+        preferredTab: Tab? = nil,
+        contextWindowId: UUID? = nil
+    ) {
+        spaceLifecycleOwner.setActiveSpace(
+            space,
+            preferredTab: preferredTab,
+            contextWindowId: contextWindowId
+        )
+    }
+
+    func renameSpace(spaceId: UUID, newName: String) throws {
+        try spaceLifecycleOwner.renameSpace(spaceId: spaceId, newName: newName)
+    }
+
+    func updateSpaceIcon(spaceId: UUID, icon: String) throws {
+        try spaceLifecycleOwner.updateSpaceIcon(spaceId: spaceId, icon: icon)
     }
 
     func clearRegularTabs(for spaceId: UUID) {
