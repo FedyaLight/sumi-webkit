@@ -20,6 +20,12 @@ class TabManager: ObservableObject {
     }
 
     typealias SpaceLauncherProjection = SpaceLauncherProjectionSnapshot
+    typealias EssentialsCapacityPolicy = EssentialsShortcutPlacementOwner.CapacityPolicy
+    typealias EssentialsTargetContext = EssentialsShortcutPlacementOwner.TargetContext
+    typealias EssentialsTargetSource = EssentialsShortcutPlacementOwner.TargetSource
+    typealias EssentialsTargetResolution = EssentialsShortcutPlacementOwner.TargetResolution
+    typealias EssentialsInsertionContext = EssentialsShortcutPlacementOwner.InsertionContext
+    typealias EssentialsInsertionPlan = EssentialsShortcutPlacementOwner.InsertionPlan
 
     private(set) var runtimeContext: TabManagerRuntimeContext?
     weak var sumiSettings: SumiSettingsService?
@@ -37,6 +43,19 @@ class TabManager: ObservableObject {
     lazy var regularTabDragService = SidebarRegularTabDragService(tabManager: self)
     lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
     lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(tabManager: self)
+    private lazy var essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(
+        dependencies: EssentialsShortcutPlacementOwner.Dependencies(
+            spaces: { [weak self] in
+                self?.spaces ?? []
+            },
+            runtimeContext: { [weak self] in
+                self?.runtimeContext
+            },
+            essentialPins: { [weak self] profileId in
+                self?.essentialPins(for: profileId) ?? []
+            }
+        )
+    )
     private lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
         dependencies: TabShortcutPresentationOwner.Dependencies(
             transientShortcutTabsByWindow: { [weak self] in
@@ -262,6 +281,45 @@ class TabManager: ObservableObject {
     func essentialPins(for profileId: UUID?) -> [ShortcutPin] {
         guard let profileId else { return [] }
         return Array(pinnedByProfile[profileId] ?? []).sorted { $0.index < $1.index }
+    }
+
+    func resolveEssentialsTarget(
+        using context: EssentialsTargetContext? = nil
+    ) -> EssentialsTargetResolution {
+        essentialsShortcutPlacementOwner.resolveTarget(using: context)
+    }
+
+    func resolvedEssentialsProfileId(
+        using context: EssentialsTargetContext? = nil
+    ) -> UUID? {
+        essentialsShortcutPlacementOwner.resolvedProfileId(using: context)
+    }
+
+    func canAddURLToEssentials(
+        _ url: URL,
+        using context: EssentialsTargetContext? = nil
+    ) -> Bool {
+        essentialsShortcutPlacementOwner.canAddURL(url, using: context)
+    }
+
+    func resolveEssentialsInsertion(
+        using context: EssentialsInsertionContext
+    ) -> EssentialsInsertionPlan? {
+        essentialsShortcutPlacementOwner.resolveInsertion(using: context)
+    }
+
+    func resolvedEssentialsProfileId(for operation: DragOperation) -> UUID? {
+        essentialsShortcutPlacementOwner.resolvedProfileId(for: operation)
+    }
+
+    func logEssentialsTargetMismatchIfNeeded(
+        resolution: EssentialsTargetResolution,
+        context: EssentialsTargetContext?
+    ) {
+        essentialsShortcutPlacementOwner.logTargetMismatchIfNeeded(
+            resolution: resolution,
+            context: context
+        )
     }
 
     func spacePinnedPins(for spaceId: UUID) -> [ShortcutPin] {
