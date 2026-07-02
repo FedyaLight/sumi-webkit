@@ -44,6 +44,7 @@ final class ShortcutLiveTabOwner {
         let pinnedByProfile: @MainActor () -> [UUID: [ShortcutPin]]
         let setPinnedTabs: @MainActor ([ShortcutPin], UUID) -> Void
         let removeRegularTab: @MainActor (UUID, UUID, UUID?) -> Void
+        let insertRegularTab: @MainActor (Tab, UUID, Int?) -> Void
         let faviconService: @MainActor () -> any BrowserFaviconServicing
         let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
         let visitedLinkStore: @MainActor () -> any BrowserVisitedLinkStoreManaging
@@ -168,6 +169,29 @@ final class ShortcutLiveTabOwner {
         return true
     }
 
+    func updateTransientShortcutBindings(for pin: ShortcutPin) {
+        for (windowId, tabsByPin) in dependencies.transientShortcutTabsByWindow() {
+            if let tab = tabsByPin[pin.id] {
+                tab.bindToShortcutPin(pin)
+                let windowCurrentSpaceId = dependencies.runtimeContext()?.windowState(for: windowId)?.currentSpaceId
+                tab.spaceId = dependencies.resolvedLiveSpaceId(pin, windowCurrentSpaceId)
+                tab.folderId = pin.folderId
+                dependencies.assignProfile(
+                    dependencies.resolvedExecutionProfileId(pin, windowCurrentSpaceId),
+                    tab
+                )
+                if let windowState = dependencies.runtimeContext()?.windowState(for: windowId) {
+                    if windowState.currentShortcutPinId == pin.id {
+                        windowState.currentShortcutPinRole = pin.role
+                    }
+                    if let spaceId = pin.spaceId {
+                        windowState.currentSpaceId = spaceId
+                    }
+                }
+            }
+        }
+    }
+
     @discardableResult
     func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
         let currentLiveTabsByWindow = dependencies.transientShortcutTabsByWindow()
@@ -258,6 +282,64 @@ final class ShortcutLiveTabOwner {
         }
         cleanupResult.merge(clearDeletedShortcutPinSelectionReferences(pinId))
         return cleanupResult
+    }
+
+    func liveShortcutEntry(for pinId: UUID) -> (windowId: UUID, tab: Tab)? {
+        for (windowId, tabsByPin) in dependencies.transientShortcutTabsByWindow() {
+            if let tab = tabsByPin[pinId] {
+                return (windowId, tab)
+            }
+        }
+        return nil
+    }
+
+    @discardableResult
+    func insertRegularTabFromShortcut(
+        _ pin: ShortcutPin,
+        into targetSpaceId: UUID,
+        at targetIndex: Int? = nil
+    ) -> Tab {
+        if let existing = liveShortcutEntry(for: pin.id) {
+            let existingWindowId = existing.windowId
+            let existingLiveTab = existing.tab
+            dependencies.updateTransientShortcutTabsByWindow { liveTabsByWindow in
+                liveTabsByWindow[existingWindowId]?.removeValue(forKey: pin.id)
+                if liveTabsByWindow[existingWindowId]?.isEmpty == true {
+                    liveTabsByWindow.removeValue(forKey: existingWindowId)
+                }
+            }
+            dependencies.notifyTransientShortcutStateChanged()
+            existingLiveTab.clearShortcutBinding()
+            existingLiveTab.spaceId = targetSpaceId
+            existingLiveTab.folderId = nil
+            existingLiveTab.isPinned = false
+            existingLiveTab.isSpacePinned = false
+            dependencies.attach(existingLiveTab)
+            dependencies.insertRegularTab(existingLiveTab, targetSpaceId, targetIndex)
+            if let windowState = dependencies.runtimeContext()?.windowState(for: existingWindowId) {
+                windowState.currentShortcutPinId = nil
+                windowState.currentShortcutPinRole = nil
+                windowState.currentSpaceId = targetSpaceId
+                windowState.currentTabId = existingLiveTab.id
+                windowState.activeTabForSpace[targetSpaceId] = existingLiveTab.id
+            }
+            return existingLiveTab
+        }
+
+        let tab = Tab(
+            url: pin.launchURL,
+            name: pin.title,
+            favicon: SumiPersistentGlyph.launcherSystemImageFallback,
+            spaceId: targetSpaceId,
+            index: 0,
+            faviconService: dependencies.faviconService(),
+            faviconImageService: dependencies.faviconImageService(),
+            visitedLinkStore: dependencies.visitedLinkStore()
+        )
+        _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
+        dependencies.attach(tab)
+        dependencies.insertRegularTab(tab, targetSpaceId, targetIndex)
+        return tab
     }
 
     @discardableResult

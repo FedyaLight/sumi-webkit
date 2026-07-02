@@ -208,29 +208,6 @@ extension TabManager {
         return faviconService.partition(profile: profile)
     }
 
-    func updateTransientShortcutBindings(for pin: ShortcutPin) {
-        for (windowId, tabsByPin) in transientShortcutTabsByWindow {
-            if let tab = tabsByPin[pin.id] {
-                tab.bindToShortcutPin(pin)
-                let windowCurrentSpaceId = runtimeContext?.windowState(for: windowId)?.currentSpaceId
-                tab.spaceId = resolvedLiveSpaceId(for: pin, currentSpaceId: windowCurrentSpaceId)
-                tab.folderId = pin.folderId
-                assignProfile(
-                    resolvedExecutionProfileId(for: pin, currentSpaceId: windowCurrentSpaceId),
-                    to: tab
-                )
-                if let windowState = runtimeContext?.windowState(for: windowId) {
-                    if windowState.currentShortcutPinId == pin.id {
-                        windowState.currentShortcutPinRole = pin.role
-                    }
-                    if let spaceId = pin.spaceId {
-                        windowState.currentSpaceId = spaceId
-                    }
-                }
-            }
-        }
-    }
-
     @discardableResult
     func convertShortcutPinToRegularTab(_ pin: ShortcutPin, in targetSpaceId: UUID, at targetIndex: Int? = nil) -> Bool {
         withStructuralUpdateTransaction {
@@ -551,15 +528,6 @@ private extension TabManager {
         )
     }
 
-    func liveShortcutEntry(for pinId: UUID) -> (windowId: UUID, tab: Tab)? {
-        for (windowId, tabsByPin) in transientShortcutTabsByWindow {
-            if let tab = tabsByPin[pinId] {
-                return (windowId, tab)
-            }
-        }
-        return nil
-    }
-
     func removeShortcutPinFromContainers(_ pin: ShortcutPin) {
         if pin.role == .essential, let profileId = pin.profileId {
             var arr = pinnedByProfile[profileId] ?? []
@@ -580,50 +548,4 @@ private extension TabManager {
         }
     }
 
-    @discardableResult
-    func insertRegularTabFromShortcut(
-        _ pin: ShortcutPin,
-        into targetSpaceId: UUID,
-        at targetIndex: Int? = nil
-    ) -> Tab {
-        if let existing = liveShortcutEntry(for: pin.id) {
-            let existingWindowId = existing.windowId
-            let existingLiveTab = existing.tab
-            transientShortcutTabsByWindow[existingWindowId]?.removeValue(forKey: pin.id)
-            if transientShortcutTabsByWindow[existingWindowId]?.isEmpty == true {
-                transientShortcutTabsByWindow.removeValue(forKey: existingWindowId)
-            }
-            notifyTransientShortcutStateChanged()
-            existingLiveTab.clearShortcutBinding()
-            existingLiveTab.spaceId = targetSpaceId
-            existingLiveTab.folderId = nil
-            existingLiveTab.isPinned = false
-            existingLiveTab.isSpacePinned = false
-            attach(existingLiveTab)
-            regularTabCollectionOwner.insert(existingLiveTab, in: targetSpaceId, at: targetIndex)
-            if let windowState = runtimeContext?.windowState(for: existingWindowId) {
-                windowState.currentShortcutPinId = nil
-                windowState.currentShortcutPinRole = nil
-                windowState.currentSpaceId = targetSpaceId
-                windowState.currentTabId = existingLiveTab.id
-                windowState.activeTabForSpace[targetSpaceId] = existingLiveTab.id
-            }
-            return existingLiveTab
-        }
-
-        let tab = Tab(
-            url: pin.launchURL,
-            name: pin.title,
-            favicon: SumiPersistentGlyph.launcherSystemImageFallback,
-            spaceId: targetSpaceId,
-            index: 0,
-            faviconService: faviconService,
-            faviconImageService: faviconImageService,
-            visitedLinkStore: visitedLinkStore
-        )
-        _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
-        attach(tab)
-        regularTabCollectionOwner.insert(tab, in: targetSpaceId, at: targetIndex)
-        return tab
-    }
 }

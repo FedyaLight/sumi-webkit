@@ -120,6 +120,9 @@ class TabManager: ObservableObject {
                     currentSpaceId: currentSpaceId
                 )
             },
+            insertRegularTab: { [weak self] tab, spaceId, insertionIndex in
+                self?.regularTabCollectionOwner.insert(tab, in: spaceId, at: insertionIndex)
+            },
             faviconService: { [weak self] in
                 guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
                 return self.faviconService
@@ -702,6 +705,10 @@ class TabManager: ObservableObject {
         shortcutLiveTabOwner.rebindLiveShortcutTab(tab, from: sourcePin, to: insertedPin)
     }
 
+    func updateTransientShortcutBindings(for pin: ShortcutPin) {
+        shortcutLiveTabOwner.updateTransientShortcutBindings(for: pin)
+    }
+
     @discardableResult
     func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
         withStructuralUpdateTransaction {
@@ -754,6 +761,15 @@ class TabManager: ObservableObject {
 
     func removeFromCurrentContainer(_ tab: Tab) {
         shortcutLiveTabOwner.removeFromCurrentContainer(tab)
+    }
+
+    @discardableResult
+    func insertRegularTabFromShortcut(
+        _ pin: ShortcutPin,
+        into targetSpaceId: UUID,
+        at targetIndex: Int? = nil
+    ) -> Tab {
+        shortcutLiveTabOwner.insertRegularTabFromShortcut(pin, into: targetSpaceId, at: targetIndex)
     }
 
     // MARK: - Container Membership Helpers
