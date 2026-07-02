@@ -172,6 +172,18 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var actionPopupFailureDiagnosticsOwner = ExtensionActionPopupFailureDiagnosticsOwner(
         dependencies: .live(manager: self)
     )
+    lazy var actionSurfacePublicationOwner = ExtensionActionSurfacePublicationOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var actionClickFlowOwner = ExtensionActionClickFlowOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var webViewRuntimePreparationOwner = ExtensionWebViewRuntimePreparationOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var requestedWindowOpeningOwner = ExtensionRequestedWindowOpeningOwner(
+        dependencies: .live(manager: self)
+    )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
@@ -514,6 +526,65 @@ final class ExtensionManager: NSObject, ObservableObject {
         update: (inout ExtensionRuntimeMetrics) -> Void
     ) {
         runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
+    }
+
+    // MARK: - Action Anchors & Options Windows
+
+    func setActionAnchor(for extensionId: String, anchorView: NSView) {
+        actionAnchorStore.setAnchor(for: extensionId, anchorView: anchorView)
+    }
+
+    func clearActionAnchors(for extensionId: String) {
+        actionAnchorStore.clearAnchors(for: extensionId)
+    }
+
+    func closeOptionsWindow(for extensionId: String) {
+        ExtensionOptionsWindowPresenter.closeWindow(for: extensionId, manager: self)
+    }
+
+    func closeAllOptionsWindows() {
+        ExtensionOptionsWindowPresenter.closeAllWindows(manager: self)
+    }
+
+    func cleanupOptionsWindow(
+        for extensionId: String,
+        window: NSWindow? = nil,
+        webView: WKWebView? = nil,
+        shouldOrderOut: Bool
+    ) {
+        ExtensionOptionsWindowPresenter.cleanupWindow(
+            for: extensionId,
+            manager: self,
+            window: window,
+            webView: webView,
+            shouldOrderOut: shouldOrderOut
+        )
+    }
+
+    func presentOptionsPageWindow(
+        for extensionContext: WKWebExtensionContext,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        ExtensionOptionsWindowPresenter.presentOptionsPageWindow(
+            for: extensionContext,
+            manager: self,
+            completionHandler: completionHandler
+        )
+    }
+
+    func createAuxiliaryWebViewFromActionPopup(
+        _ popupWebView: WKWebView,
+        with configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        ExtensionActionPopupPresentationOwner.createAuxiliaryWebViewFromActionPopup(
+            popupWebView,
+            with: configuration,
+            for: navigationAction,
+            windowFeatures: windowFeatures,
+            manager: self
+        )
     }
 
     // MARK: - Load Error Bookkeeping
