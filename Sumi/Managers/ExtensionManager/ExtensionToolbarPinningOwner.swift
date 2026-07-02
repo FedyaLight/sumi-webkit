@@ -25,8 +25,6 @@ final class ExtensionToolbarPinningOwner {
         let preferences: UserDefaults
         let currentProfileId: @MainActor () -> UUID?
         let installedExtensionIDs: @MainActor () -> Set<String>
-        let idsByProfile: @MainActor () -> [String: [String]]
-        let setIdsByProfile: @MainActor ([String: [String]]) -> Void
         let publishedPinnedIDs: @MainActor () -> [String]
         let setPublishedPinnedIDs: @MainActor ([String]) -> Void
     }
@@ -36,9 +34,24 @@ final class ExtensionToolbarPinningOwner {
     private static let globalPinnedToolbarProfileKey = "__global__"
 
     private let dependencies: Dependencies
+    private var idsByProfile: [String: [String]]
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
+        self.idsByProfile =
+            Self.loadPinnedToolbarExtensionIDsByProfile(from: dependencies.preferences)
+    }
+
+    var pinnedToolbarExtensionIDsByProfile: [String: [String]] {
+        idsByProfile
+    }
+
+    func replacePinnedToolbarExtensionIDsByProfile(
+        _ idsByProfile: [String: [String]]
+    ) {
+        self.idsByProfile = idsByProfile.mapValues(Self.normalizedPinnedToolbarExtensionIDs)
+        reloadPinnedToolbarExtensionsForCurrentProfile()
+        persistPinnedToolbarExtensionIDsByProfile()
     }
 
     func isPinnedToToolbar(_ extensionId: String) -> Bool {
@@ -62,7 +75,7 @@ final class ExtensionToolbarPinningOwner {
         let profileKey = Self.pinnedToolbarProfileKey(for: dependencies.currentProfileId())
         dependencies.setPublishedPinnedIDs(
             Self.normalizedPinnedToolbarExtensionIDs(
-                dependencies.idsByProfile()[profileKey] ?? []
+                idsByProfile[profileKey] ?? []
             )
         )
     }
@@ -100,7 +113,7 @@ final class ExtensionToolbarPinningOwner {
         let profileKey = Self.pinnedToolbarProfileKey(for: profileId)
         let normalizedPinnedIDs =
             Self.normalizedPinnedToolbarExtensionIDs(
-                dependencies.idsByProfile()[profileKey] ?? []
+                idsByProfile[profileKey] ?? []
             )
 
         return normalizedPinnedIDs.compactMap { id -> PinnedToolbarSlot? in
@@ -114,20 +127,18 @@ final class ExtensionToolbarPinningOwner {
 
     private func updatePinnedToolbarExtensionIDs(_ update: (inout [String]) -> Void) {
         let profileKey = Self.pinnedToolbarProfileKey(for: dependencies.currentProfileId())
-        var idsByProfile = dependencies.idsByProfile()
         var ids = idsByProfile[profileKey] ?? []
         update(&ids)
 
         let normalized = Self.normalizedPinnedToolbarExtensionIDs(ids)
         idsByProfile[profileKey] = normalized
-        dependencies.setIdsByProfile(idsByProfile)
         dependencies.setPublishedPinnedIDs(normalized)
         persistPinnedToolbarExtensionIDsByProfile()
     }
 
     private func persistPinnedToolbarExtensionIDsByProfile() {
         guard
-            let data = try? JSONEncoder().encode(dependencies.idsByProfile())
+            let data = try? JSONEncoder().encode(idsByProfile)
         else {
             return
         }
@@ -185,12 +196,6 @@ extension ExtensionToolbarPinningOwner.Dependencies {
             installedExtensionIDs: { [weak manager] in
                 Set((manager?.installedExtensions ?? []).map(\.id))
             },
-            idsByProfile: { [weak manager] in
-                manager?.pinnedToolbarExtensionIDsByProfile ?? [:]
-            },
-            setIdsByProfile: { [weak manager] idsByProfile in
-                manager?.pinnedToolbarExtensionIDsByProfile = idsByProfile
-            },
             publishedPinnedIDs: { [weak manager] in
                 manager?.pinnedToolbarExtensionIDs ?? []
             },
@@ -206,6 +211,15 @@ extension ExtensionToolbarPinningOwner.Dependencies {
 @available(macOS 15.5, *)
 @MainActor
 extension ExtensionManager {
+    var pinnedToolbarExtensionIDsByProfile: [String: [String]] {
+        get {
+            toolbarPinningOwner.pinnedToolbarExtensionIDsByProfile
+        }
+        set {
+            toolbarPinningOwner.replacePinnedToolbarExtensionIDsByProfile(newValue)
+        }
+    }
+
     func isPinnedToToolbar(_ extensionId: String) -> Bool {
         toolbarPinningOwner.isPinnedToToolbar(extensionId)
     }

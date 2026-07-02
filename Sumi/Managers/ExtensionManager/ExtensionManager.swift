@@ -283,7 +283,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         get { profileRuntimeOwner.currentProfileId }
         set { profileRuntimeOwner.currentProfileId = newValue }
     }
-    var pinnedToolbarExtensionIDsByProfile: [String: [String]] = [:]
 
     nonisolated static let profileExtensionStoreLimit =
         ExtensionProfileWebsiteDataStoreCache.defaultLimit
@@ -314,14 +313,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         self.profileRuntimeOwner = ExtensionProfileRuntimeOwner(
             initialProfileId: initialProfile?.id
         )
-        self.pinnedToolbarExtensionIDsByProfile =
-            Self.loadPinnedToolbarExtensionIDsByProfile(from: extensionPreferences)
-        self.pinnedToolbarExtensionIDs = Self.normalizedPinnedToolbarExtensionIDs(
-            pinnedToolbarExtensionIDsByProfile[
-                Self.pinnedToolbarProfileKey(for: initialProfile?.id)
-            ] ?? []
-        )
         super.init()
+        toolbarPinningOwner.reloadPinnedToolbarExtensionsForCurrentProfile()
         SafariExtensionAutofillFillDiagnostics.deferredFillCompletionHandler = {
             [weak self] extensionId in
             guard let extensionId else { return }

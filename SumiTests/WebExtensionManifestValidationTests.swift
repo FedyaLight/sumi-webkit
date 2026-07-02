@@ -408,6 +408,13 @@ final class WebExtensionManifestValidationTests: XCTestCase {
     @MainActor
     func testLoadInstalledMetadataFetchFailurePreservesPinnedToolbarIDs() throws {
         let profile = Profile(name: "Pinned Toolbar Profile")
+        let preferencesSuiteName = "SumiTests.PinnedToolbar.\(UUID().uuidString)"
+        let extensionPreferences = try XCTUnwrap(
+            UserDefaults(suiteName: preferencesSuiteName)
+        )
+        defer {
+            extensionPreferences.removePersistentDomain(forName: preferencesSuiteName)
+        }
         let container = try ModelContainer(
             for: SumiStartupPersistence.schema,
             configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
@@ -415,11 +422,11 @@ final class WebExtensionManifestValidationTests: XCTestCase {
         let manager = ExtensionManager(
             context: container.mainContext,
             initialProfile: profile,
-            browserConfiguration: BrowserConfiguration()
+            browserConfiguration: BrowserConfiguration(),
+            extensionPreferences: extensionPreferences
         )
         let profileKey = ExtensionManager.pinnedToolbarProfileKey(for: profile.id)
         manager.pinnedToolbarExtensionIDsByProfile[profileKey] = ["missing-extension"]
-        manager.pinnedToolbarExtensionIDs = ["missing-extension"]
 
         _ = manager.applyInstalledExtensionMetadataLoadResult(
             .init(
