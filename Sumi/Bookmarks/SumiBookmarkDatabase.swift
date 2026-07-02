@@ -86,10 +86,16 @@ final class SumiBookmarkDatabase {
                     "SumiBookmarks-\(ProcessInfo.processInfo.processIdentifier)",
                     isDirectory: true
                 )
-            try? FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true
-            )
+            do {
+                try FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: true
+                )
+            } catch {
+                log.error(
+                    "Failed to create temporary bookmarks directory: \(String(describing: error), privacy: .public)"
+                )
+            }
             return directory
         }
 

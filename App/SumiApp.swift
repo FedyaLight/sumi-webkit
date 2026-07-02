@@ -15,6 +15,8 @@ private struct SumiAppRootDependencies {
     let settingsManager: SumiSettingsService
     let keyboardShortcutManager: KeyboardShortcutManager
     let nowPlayingController: SumiNativeNowPlayingController
+    let updaterService: SumiUpdaterService
+    let defaultBrowserService: SumiDefaultBrowserService
     let windowRegistry: WindowRegistry
     let webViewCoordinator: WebViewCoordinator
 }
@@ -32,10 +34,16 @@ struct SumiApp: App {
     // are routed through dedicated controllers and narrow protocols before reaching browser services.
     @StateObject private var browserManager: BrowserManager
     @StateObject private var nowPlayingController: SumiNativeNowPlayingController
+    private let updaterService: SumiUpdaterService
+    private let defaultBrowserService: SumiDefaultBrowserService
 
     init() {
         StartupPerformanceTrace.appLaunchStarted()
         let nowPlayingController = SumiNativeNowPlayingController.shared
+        let updaterService = SumiUpdaterService.shared
+        let defaultBrowserService = SumiDefaultBrowserService.shared
+        self.updaterService = updaterService
+        self.defaultBrowserService = defaultBrowserService
         _nowPlayingController = StateObject(wrappedValue: nowPlayingController)
         _settingsManager = State(initialValue: SumiSettingsService(nowPlayingController: nowPlayingController))
         _browserManager = StateObject(
@@ -85,9 +93,7 @@ struct SumiApp: App {
                 nowPlayingController: nowPlayingController,
                 windowShellContentViewFactory: makeWindowShellContentViewFactory(),
                 fallbackPersistenceSave: SumiStartupPersistenceComposition.saveMainContext,
-                startUpdater: {
-                    SumiUpdaterService.shared.start()
-                }
+                startUpdater: { updaterService.start() }
             )
         )
     }
@@ -97,6 +103,8 @@ struct SumiApp: App {
         let settingsManager = settingsManager
         let keyboardShortcutManager = keyboardShortcutManager
         let nowPlayingController = nowPlayingController
+        let updaterService = updaterService
+        let defaultBrowserService = defaultBrowserService
 
         return { windowRegistry, webViewCoordinator, windowState in
             Self.makeWindowShellContentView(
@@ -105,6 +113,8 @@ struct SumiApp: App {
                     settingsManager: settingsManager,
                     keyboardShortcutManager: keyboardShortcutManager,
                     nowPlayingController: nowPlayingController,
+                    updaterService: updaterService,
+                    defaultBrowserService: defaultBrowserService,
                     windowRegistry: windowRegistry,
                     webViewCoordinator: webViewCoordinator
                 ),
@@ -129,6 +139,8 @@ struct SumiApp: App {
                 settingsManager: settingsManager,
                 keyboardShortcutManager: keyboardShortcutManager,
                 nowPlayingController: nowPlayingController,
+                updaterService: updaterService,
+                defaultBrowserService: defaultBrowserService,
                 windowRegistry: windowRegistry,
                 webViewCoordinator: webViewCoordinator
             ),
@@ -157,7 +169,12 @@ struct SumiApp: App {
     ) -> some View {
         ContentView(
             windowLifecycleHandler: dependencies.browserManager.appCommandRouter,
-            browserContext: .live(browserManager: dependencies.browserManager),
+            browserContext: .live(
+                browserManager: dependencies.browserManager,
+                updaterService: dependencies.updaterService,
+                defaultBrowserService: dependencies.defaultBrowserService
+            ),
+            updaterService: dependencies.updaterService,
             windowState: windowState,
             initialWorkspaceTheme: initialWorkspaceTheme
         )

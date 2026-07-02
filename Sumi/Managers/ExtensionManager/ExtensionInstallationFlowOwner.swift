@@ -101,6 +101,35 @@ final class ExtensionInstallationFlowOwner {
         }
     }
 
+    private func resolvedExtensionID(
+        manifest: [String: Any],
+        existingEntity: ExtensionEntity?,
+        preferredBundleIdentifier: String? = nil
+    ) throws -> String {
+        let rawExtensionId: String
+        if let existingEntity {
+            rawExtensionId = existingEntity.id
+        } else if let preferredBundleIdentifier,
+                  preferredBundleIdentifier.isEmpty == false {
+            rawExtensionId = preferredBundleIdentifier
+        } else if let geckoId = Self.geckoExtensionID(from: manifest) {
+            rawExtensionId = geckoId
+        } else {
+            rawExtensionId = UUID().uuidString
+        }
+
+        return try ExtensionUtils.validateExtensionIDPathComponent(rawExtensionId)
+    }
+
+    private static func geckoExtensionID(from manifest: [String: Any]) -> String? {
+        guard let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any],
+              let gecko = browserSpecificSettings["gecko"] as? [String: Any]
+        else {
+            return nil
+        }
+        return gecko["id"] as? String
+    }
+
     func installExtension(
         from sourceURL: URL,
         completionHandler: @escaping (Result<InstalledExtension, ExtensionError>) -> Void
@@ -398,19 +427,13 @@ final class ExtensionInstallationFlowOwner {
             )
             try dependencies.validateMV3Requirements(manifest, temporaryDirectory)
 
-            let rawExtensionId: String
             let allEntities = try dependencies.modelContext.fetch(FetchDescriptor<ExtensionEntity>())
-            if let existingEntity = allEntities.first(where: { $0.sourceBundlePath == resolvedSource.sourceBundlePath.path }) {
-                rawExtensionId = existingEntity.id
-            } else if let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any],
-                      let gecko = browserSpecificSettings["gecko"] as? [String: Any],
-                      let geckoId = gecko["id"] as? String {
-                rawExtensionId = geckoId
-            } else {
-                rawExtensionId = UUID().uuidString
+            let existingEntityBySource = allEntities.first {
+                $0.sourceBundlePath == resolvedSource.sourceBundlePath.path
             }
-            let extensionId = try ExtensionUtils.validateExtensionIDPathComponent(
-                rawExtensionId
+            let extensionId = try resolvedExtensionID(
+                manifest: manifest,
+                existingEntity: existingEntityBySource
             )
 
             installedExtensionID = extensionId
@@ -516,7 +539,10 @@ final class ExtensionInstallationFlowOwner {
             }
 
             if let backupDirectory {
-                try? FileManager.default.removeItem(at: backupDirectory)
+                removeInstallArtifactIfPresent(
+                    backupDirectory,
+                    reason: "discarding extension package backup after successful install"
+                )
             }
 
             return record
@@ -525,19 +551,23 @@ final class ExtensionInstallationFlowOwner {
                 dependencies.tearDownExtensionRuntimeState(installedExtensionID, false)
             }
 
-            if let finalDirectory, FileManager.default.fileExists(atPath: finalDirectory.path) {
-                try? FileManager.default.removeItem(at: finalDirectory)
+            if let finalDirectory {
+                removeInstallArtifactIfPresent(
+                    finalDirectory,
+                    reason: "removing failed extension install destination"
+                )
             }
 
-            if FileManager.default.fileExists(atPath: temporaryDirectory.path) {
-                try? FileManager.default.removeItem(at: temporaryDirectory)
-            }
+            removeInstallArtifactIfPresent(
+                temporaryDirectory,
+                reason: "removing failed extension install staging directory"
+            )
 
             if let backupDirectory, let finalDirectory {
-                if FileManager.default.fileExists(atPath: finalDirectory.path) {
-                    try? FileManager.default.removeItem(at: finalDirectory)
-                }
-                try? FileManager.default.moveItem(at: backupDirectory, to: finalDirectory)
+                restoreInstallBackup(
+                    backupDirectory: backupDirectory,
+                    finalDirectory: finalDirectory
+                )
             }
 
             if shouldRestoreExistingRuntime, let existingEntitySnapshot {
@@ -560,6 +590,31 @@ final class ExtensionInstallationFlowOwner {
             }
 
             throw error
+        }
+    }
+
+    private func removeInstallArtifactIfPresent(_ url: URL, reason: String) {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            ExtensionManager.logger.error(
+                "Failed \(reason, privacy: .public) at \(url.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func restoreInstallBackup(backupDirectory: URL, finalDirectory: URL) {
+        removeInstallArtifactIfPresent(
+            finalDirectory,
+            reason: "removing failed extension install destination before restoring backup"
+        )
+        do {
+            try FileManager.default.moveItem(at: backupDirectory, to: finalDirectory)
+        } catch {
+            ExtensionManager.logger.error(
+                "Failed to restore extension package backup from \(backupDirectory.path, privacy: .public) to \(finalDirectory.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
         }
     }
 
@@ -592,21 +647,10 @@ final class ExtensionInstallationFlowOwner {
             URL(fileURLWithPath: $0.sourceBundlePath, isDirectory: true)
                 .standardizedFileURL.path == resolvedSource.sourceBundlePath.standardizedFileURL.path
         }
-        let rawExtensionId: String
-        if let existingEntityBySource {
-            rawExtensionId = existingEntityBySource.id
-        } else if let bundleIdentifier = bundle.bundleIdentifier,
-                  bundleIdentifier.isEmpty == false {
-            rawExtensionId = bundleIdentifier
-        } else if let browserSpecificSettings = manifest["browser_specific_settings"] as? [String: Any],
-                  let gecko = browserSpecificSettings["gecko"] as? [String: Any],
-                  let geckoId = gecko["id"] as? String {
-            rawExtensionId = geckoId
-        } else {
-            rawExtensionId = UUID().uuidString
-        }
-        let extensionId = try ExtensionUtils.validateExtensionIDPathComponent(
-            rawExtensionId
+        let extensionId = try resolvedExtensionID(
+            manifest: manifest,
+            existingEntity: existingEntityBySource,
+            preferredBundleIdentifier: bundle.bundleIdentifier
         )
 
         let existingEntitySnapshot: ExtensionEntity?
@@ -830,6 +874,7 @@ extension ExtensionInstallationFlowOwner.Dependencies {
                     baseURL: baseURL
                 )
             },
+            // swiftlint:disable:next line_length
             makeInstalledRecord: { [weak manager] extensionId, manifest, extensionRoot, isEnabled, sourceKind, sourceBundlePath, sourceFingerprintURL, existingEntity in
                 guard let manager else {
                     throw ExtensionError.installationFailed("Extension manager is unavailable")

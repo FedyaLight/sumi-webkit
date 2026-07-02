@@ -3,7 +3,6 @@
 //  Sumi
 //
 
-import AppKit
 import SwiftUI
 
 private enum RegularExternalDropGapPlacement: Equatable {
@@ -714,11 +713,12 @@ extension SpaceView {
             role: .regularTab,
             actions: .init(
                 duplicate: { browserContext.commands.duplicateTab(tab, windowState) },
-                copyLink: { copyLink(tab.url) },
+                copyLink: { SidebarLinkActions.copyLink(tab.url) },
                 share: {
-                    presentSharePicker(
+                    SidebarLinkActions.presentSharePicker(
                         for: tab.url,
-                        source: windowState.resolveSidebarPresentationSource()
+                        source: windowState.resolveSidebarPresentationSource(),
+                        presentationActions: browserContext.presentationActions
                     )
                 },
                 rename: { tab.startRenaming() },
@@ -773,30 +773,5 @@ extension SpaceView {
             exclusions.append(.fixedRect(SpaceTab.audioButtonHitFrame))
         }
         return exclusions
-    }
-
-    private func copyLink(_ url: URL) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
-    }
-
-    private func presentSharePicker(
-        for url: URL,
-        source: SidebarTransientPresentationSource? = nil
-    ) {
-        if let source {
-            browserContext.presentationActions.presentSharingServicePicker([url], source)
-            return
-        }
-
-        guard let contentView = NSApp.keyWindow?.contentView else { return }
-        let picker = NSSharingServicePicker(items: [url])
-        let anchor = NSRect(
-            x: contentView.bounds.midX,
-            y: contentView.bounds.midY,
-            width: 1,
-            height: 1
-        )
-        picker.show(relativeTo: anchor, of: contentView, preferredEdge: .minY)
     }
 }

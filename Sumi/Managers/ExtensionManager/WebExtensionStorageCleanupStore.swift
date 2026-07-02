@@ -49,10 +49,17 @@ struct WebExtensionStorageCleanupStore {
             .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
             .appendingPathComponent("WebExtensions", isDirectory: true)
             .appendingPathComponent(controllerStorageId.uuidString.uppercased(), isDirectory: true)
-        return try? ExtensionUtils.extensionDirectory(
-            forExtensionID: extensionId,
-            under: storageRoot
-        )
+        do {
+            return try ExtensionUtils.extensionDirectory(
+                forExtensionID: extensionId,
+                under: storageRoot
+            )
+        } catch {
+            Self.logger.debug(
+                "Failed to resolve WebExtension storage directory for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
     }
 
     func hasStoredDataCandidate(for extensionId: String) -> Bool {
@@ -64,13 +71,25 @@ struct WebExtensionStorageCleanupStore {
         guard let storageDirectory = directory(for: extensionId) else {
             return false
         }
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: storageDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+
+        guard fileManager.fileExists(atPath: storageDirectory.path) else {
             return false
         }
+
+        let contents: [URL]
+        do {
+            contents = try fileManager.contentsOfDirectory(
+                at: storageDirectory,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            Self.logger.debug(
+                "Failed to inspect WebExtension storage directory for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return false
+        }
+
         guard contents.allSatisfy(planner.isPrunableStorageEntry) else {
             return false
         }
@@ -116,11 +135,27 @@ struct WebExtensionStorageCleanupStore {
             return Self.emptySnapshot
         }
 
-        let entryNames = ((try? fileManager.contentsOfDirectory(
-            at: storageDirectory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )) ?? []).map(\.lastPathComponent).sorted()
+        let contents: [URL]
+        do {
+            contents = try fileManager.contentsOfDirectory(
+                at: storageDirectory,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            Self.logger.debug(
+                "Failed to read WebExtension storage directory snapshot for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return StorageSnapshot(
+                directoryExists: true,
+                entryNames: [],
+                hasRegisteredContentScriptsStore: false,
+                hasLocalStorageStore: false,
+                hasSyncStorageStore: false
+            )
+        }
+
+        let entryNames = contents.map(\.lastPathComponent).sorted()
 
         return StorageSnapshot(
             directoryExists: true,

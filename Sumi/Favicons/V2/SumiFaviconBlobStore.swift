@@ -121,7 +121,13 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
     init(rootDirectory: URL, fileManager: FileManager = .default) {
         self.rootDirectory = rootDirectory
         self.fileManager = fileManager
-        try? fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+        do {
+            try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+        } catch {
+            Self.log.error(
+                "Failed to create favicon blob root directory: \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 
     func cachedSelection(
@@ -156,7 +162,17 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
             if partition.isPrivate {
                 return privatePayloads[partition]?[blobID]
             }
-            return try? Data(contentsOf: blobURL(for: blob, partition: partition))
+            do {
+                return try Data(contentsOf: blobURL(for: blob, partition: partition))
+            } catch {
+                let nsError = error as NSError
+                if nsError.domain != NSCocoaErrorDomain || nsError.code != NSFileReadNoSuchFileError {
+                    Self.log.error(
+                        "Failed to read favicon blob \(blob.blobID, privacy: .public) for \(partition.storageComponent, privacy: .public): \(String(describing: error), privacy: .public)"
+                    )
+                }
+                return nil
+            }
         }
     }
 
@@ -457,7 +473,10 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
             metadataByPartition[partition] = Metadata()
             privatePayloads[partition] = nil
             if !partition.isPrivate {
-                try? fileManager.removeItem(at: partitionDirectory(for: partition))
+                removeItemIfPresent(
+                    at: partitionDirectory(for: partition),
+                    operation: "clear favicon partition \(partition.storageComponent)"
+                )
             }
         }
     }
@@ -612,7 +631,13 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
     private func preserveUnreadableMetadata(_ data: Data, at url: URL) {
         let backupURL = url.appendingPathExtension("unreadable")
         guard !fileManager.fileExists(atPath: backupURL.path) else { return }
-        try? data.write(to: backupURL, options: [.atomic])
+        do {
+            try data.write(to: backupURL, options: [.atomic])
+        } catch {
+            Self.log.error(
+                "Failed to preserve unreadable favicon metadata at \(backupURL.path, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 
     private func cleanupDiskBudgetIfNeeded(metadata: inout Metadata, partition: SumiFaviconPartition) {
@@ -626,7 +651,13 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
             .sorted { $0.lastAccessedAt < $1.lastAccessedAt }
 
         for blob in removable where total > SumiFaviconConstants.diskBudgetBytes {
-            try? fileManager.removeItem(at: blobURL(for: blob, partition: partition))
+            let didRemoveFile = removeItemIfPresent(
+                at: blobURL(for: blob, partition: partition),
+                operation: "favicon disk budget cleanup"
+            )
+            guard didRemoveFile else {
+                continue
+            }
             metadata.blobs[blob.blobID] = nil
             total -= blob.byteCount
         }
@@ -634,11 +665,19 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
 
     private func loadedOrDiscoverablePartitions() -> Set<SumiFaviconPartition> {
         var partitions = Set(metadataByPartition.keys)
-        guard let contents = try? fileManager.contentsOfDirectory(
-            at: rootDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        let contents: [URL]
+        do {
+            contents = try fileManager.contentsOfDirectory(
+                at: rootDirectory,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles]
+            )
+        } catch {
+            if !Self.isMissingFileError(error) {
+                Self.log.error(
+                    "Failed to discover favicon partitions under \(self.rootDirectory.path, privacy: .public): \(String(describing: error), privacy: .public)"
+                )
+            }
             return partitions
         }
         for url in contents {
@@ -648,6 +687,29 @@ final class SumiFaviconBlobStore: @unchecked Sendable {
             }
         }
         return partitions
+    }
+
+    @discardableResult
+    private func removeItemIfPresent(at url: URL, operation: String) -> Bool {
+        do {
+            try fileManager.removeItem(at: url)
+            return true
+        } catch {
+            if Self.isMissingFileError(error) {
+                return true
+            }
+            Self.log.error(
+                "Failed to remove item during \(operation, privacy: .public) at \(url.path, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+            return false
+        }
+    }
+
+    private static func isMissingFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSCocoaErrorDomain
+            && (nsError.code == NSFileNoSuchFileError
+                || nsError.code == NSFileReadNoSuchFileError)
     }
 
     private func selection(

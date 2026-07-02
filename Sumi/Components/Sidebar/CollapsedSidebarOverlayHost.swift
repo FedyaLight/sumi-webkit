@@ -18,6 +18,7 @@ private struct ZenCompactSidebarOffset: @preconcurrency AnimatableModifier {
 
 struct CollapsedSidebarOverlayHost: View {
     var browserContext: SidebarBrowserContext
+    var updaterService: SumiUpdaterService
     var hostActions: SidebarHostActions
     var structuralInvalidation: AnyPublisher<Void, Never>
     var windowState: BrowserWindowState
@@ -50,6 +51,7 @@ struct CollapsedSidebarOverlayHost: View {
             ZStack {
                 SidebarColumnRepresentable(
                     browserContext: browserContext,
+                    updaterService: updaterService,
                     hostActions: hostActions,
                     structuralInvalidation: structuralInvalidation,
                     windowState: windowState,

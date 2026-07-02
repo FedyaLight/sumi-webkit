@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import OSLog
 
 enum SumiAdblockSiteOverride: String, Codable, CaseIterable, Sendable {
     case inherit
@@ -50,6 +51,8 @@ struct SumiAdblockSurfaceEligibility: Equatable, Sendable {
 
 @MainActor
 final class AdblockSitePolicyStore: ObservableObject {
+    private static let log = Logger.sumi(category: "ContentBlocking")
+
     private enum DefaultsKey {
         static let siteOverrides = "settings.adblock.siteOverrides"
     }
@@ -110,16 +113,24 @@ final class AdblockSitePolicyStore: ObservableObject {
         }
         guard updated != siteOverrides else { return }
         siteOverrides = updated
-        if let data = try? JSONEncoder().encode(updated.mapValues(\.rawValue)) {
+        do {
+            let data = try JSONEncoder().encode(updated.mapValues(\.rawValue))
             userDefaults.set(data, forKey: DefaultsKey.siteOverrides)
+        } catch {
+            Self.log.error("Failed to persist adblock site overrides: \(error.localizedDescription, privacy: .public)")
         }
         changesSubject.send(())
     }
 
     private static func loadSiteOverrides(from userDefaults: UserDefaults) -> [String: SumiAdblockSiteOverride] {
-        guard let data = userDefaults.data(forKey: DefaultsKey.siteOverrides),
-              let decoded = try? JSONDecoder().decode([String: String].self, from: data)
-        else { return [:] }
+        guard let data = userDefaults.data(forKey: DefaultsKey.siteOverrides) else { return [:] }
+        let decoded: [String: String]
+        do {
+            decoded = try JSONDecoder().decode([String: String].self, from: data)
+        } catch {
+            Self.log.error("Failed to load adblock site overrides: \(error.localizedDescription, privacy: .public)")
+            return [:]
+        }
         return decoded.reduce(into: [:]) { result, entry in
             guard let override = SumiAdblockSiteOverride(rawValue: entry.value), override != .inherit else { return }
             result[entry.key] = override

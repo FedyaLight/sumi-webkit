@@ -6,11 +6,14 @@
 //
 
 import Foundation
+import OSLog
 import SwiftData
 
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionInstallationMetadataStore {
+    nonisolated private static let logger = Logger.sumi(category: "Extensions")
+
     struct MetadataLoadResult {
         var didFetchPersistedMetadata: Bool
         var records: [InstalledExtension]
@@ -85,7 +88,7 @@ final class ExtensionInstallationMetadataStore {
         do {
             entities = try context.fetch(FetchDescriptor<ExtensionEntity>())
         } catch {
-            ExtensionManager.logger.error("Failed to fetch extensions: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Failed to fetch extensions: \(error.localizedDescription, privacy: .public)")
             return MetadataLoadResult(
                 didFetchPersistedMetadata: false,
                 records: [],
@@ -109,7 +112,7 @@ final class ExtensionInstallationMetadataStore {
             } catch {
                 context.delete(entity)
                 didMutatePersistence = true
-                ExtensionManager.logger.error(
+                Self.logger.error(
                     "Dropped invalid persisted extension record for \(entity.name, privacy: .public)"
                 )
                 continue
@@ -117,30 +120,25 @@ final class ExtensionInstallationMetadataStore {
             guard FileManager.default.fileExists(atPath: packageURL.path) else {
                 context.delete(entity)
                 didMutatePersistence = true
-                ExtensionManager.logger.error(
+                Self.logger.error(
                     "Dropped invalid persisted extension record for \(entity.name, privacy: .public)"
                 )
                 continue
             }
 
             var record = InstalledExtensionRecord(from: entity)
-            if let manifest = try? ExtensionUtils.loadJSONObject(
-                at: packageURL.appendingPathComponent("manifest.json")
-            ),
-               let refreshed = try? refreshedRecord(for: entity, manifest: manifest),
-               extensionMetadataNeedsRefresh(entity, refreshedRecord: refreshed) {
-                update(entity, from: refreshed)
-                record = refreshed
-                didMutatePersistence = true
-                trace(
-                    "Refreshed extension metadata id=\(entity.id) background=\(refreshed.backgroundModel.rawValue)"
-                )
-            }
+            refreshPersistedMetadataIfNeeded(
+                entity: entity,
+                packageURL: packageURL,
+                trace: trace,
+                record: &record,
+                didMutatePersistence: &didMutatePersistence
+            )
 
             guard let record else {
                 context.delete(entity)
                 didMutatePersistence = true
-                ExtensionManager.logger.error(
+                Self.logger.error(
                     "Dropped invalid persisted extension record for \(entity.name, privacy: .public)"
                 )
                 continue
@@ -160,7 +158,7 @@ final class ExtensionInstallationMetadataStore {
             do {
                 try context.save()
             } catch {
-                ExtensionManager.logger.error("Failed to persist refreshed extension metadata: \(error.localizedDescription, privacy: .public)")
+                Self.logger.error("Failed to persist refreshed extension metadata: \(error.localizedDescription, privacy: .public)")
             }
         }
 
@@ -367,6 +365,46 @@ final class ExtensionInstallationMetadataStore {
             || entity.manifestSnapshotJSON != refreshedRecord.encodedManifestSnapshot
     }
 
+    private func refreshPersistedMetadataIfNeeded(
+        entity: ExtensionEntity,
+        packageURL: URL,
+        trace: (String) -> Void,
+        record: inout InstalledExtensionRecord?,
+        didMutatePersistence: inout Bool
+    ) {
+        let manifestURL = packageURL.appendingPathComponent("manifest.json")
+        let manifest: [String: Any]
+        do {
+            manifest = try ExtensionUtils.loadJSONObject(at: manifestURL)
+        } catch {
+            Self.logger.error(
+                "Failed to read persisted extension manifest for \(entity.id, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+            return
+        }
+
+        let refreshed: InstalledExtension
+        do {
+            refreshed = try refreshedRecord(for: entity, manifest: manifest)
+        } catch {
+            Self.logger.error(
+                "Failed to refresh persisted extension metadata for \(entity.id, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+            return
+        }
+
+        guard extensionMetadataNeedsRefresh(entity, refreshedRecord: refreshed) else {
+            return
+        }
+
+        update(entity, from: refreshed)
+        record = refreshed
+        didMutatePersistence = true
+        trace(
+            "Refreshed extension metadata id=\(entity.id) background=\(refreshed.backgroundModel.rawValue)"
+        )
+    }
+
     private nonisolated func cleanupOrphanedExtensionPackages(
         referencedPackagePaths: Set<String>
     ) {
@@ -386,28 +424,59 @@ final class ExtensionInstallationMetadataStore {
             let referencedPaths = Set(referencedPackagePaths.map {
                 URL(fileURLWithPath: $0).standardizedFileURL.path
             })
-            let packageDirectories = (try? fileManager.contentsOfDirectory(
-                at: extensionsDirectory,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )) ?? []
+            let packageDirectories: [URL]
+            do {
+                packageDirectories = try fileManager.contentsOfDirectory(
+                    at: extensionsDirectory,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                )
+            } catch {
+                guard !Self.isMissingFileError(error) else { return }
+                Self.logger.error(
+                    "Failed to enumerate extension packages for orphan cleanup: \(error.localizedDescription, privacy: .public)"
+                )
+                return
+            }
 
             for packageDirectory in packageDirectories {
                 guard UUID(uuidString: packageDirectory.lastPathComponent) != nil else {
                     continue
                 }
-                guard (try? packageDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+                let isDirectory: Bool
+                do {
+                    isDirectory = try packageDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+                } catch {
+                    Self.logger.debug(
+                        "Skipping unreadable extension package during orphan cleanup \(packageDirectory.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    )
+                    continue
+                }
+                guard isDirectory else {
                     continue
                 }
                 guard referencedPaths.contains(packageDirectory.standardizedFileURL.path) == false else {
                     continue
                 }
-                try? fileManager.removeItem(at: packageDirectory)
+                do {
+                    try fileManager.removeItem(at: packageDirectory)
+                } catch {
+                    Self.logger.error(
+                        "Failed to remove orphaned extension package \(packageDirectory.path, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    )
+                }
             }
         }
     }
 
-    private nonisolated static func shouldRunOrphanedExtensionPackageCleanup() -> Bool {
+    nonisolated private static func isMissingFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == NSCocoaErrorDomain else { return false }
+        return nsError.code == NSFileNoSuchFileError
+            || nsError.code == NSFileReadNoSuchFileError
+    }
+
+    nonisolated private static func shouldRunOrphanedExtensionPackageCleanup() -> Bool {
         guard let lastRun = UserDefaults.standard.object(
             forKey: orphanedExtensionCleanupDefaultsKey
         ) as? Date else {

@@ -12,6 +12,7 @@ final class BrowserURLBarHubContextOwner {
         let permissionContext: @MainActor () -> URLBarPermissionContext
         let permissionLoadDependencies: @MainActor () -> SumiCurrentSitePermissionsViewModel.LoadDependencies
         let protectionCoordinator: @MainActor () -> SumiProtectionCoordinator
+        let adblockZapperStore: @MainActor () -> SumiAdblockZapperStore
         let cleanupService: @MainActor () -> any SumiWebsiteDataCleanupServicing
         let siteDataPolicyStore: @MainActor () -> any BrowserSiteDataPolicyStoring
         let siteDataPolicyEnforcementService: @MainActor () -> any BrowserSiteDataPolicyEnforcing
@@ -55,6 +56,7 @@ final class BrowserURLBarHubContextOwner {
             permission: dependencies.permissionContext(),
             permissionDependencies: dependencies.permissionLoadDependencies(),
             protectionCoordinator: dependencies.protectionCoordinator(),
+            adblockZapperStore: dependencies.adblockZapperStore(),
             cleanupService: dependencies.cleanupService(),
             siteDataPolicyStore: dependencies.siteDataPolicyStore(),
             siteDataPolicyEnforcementService: dependencies.siteDataPolicyEnforcementService(),
@@ -118,6 +120,9 @@ extension BrowserURLBarHubContextOwner.Dependencies {
             },
             protectionCoordinator: {
                 protectionCoordinator
+            },
+            adblockZapperStore: {
+                SumiAdblockZapperStore.shared
             },
             cleanupService: {
                 dataServices.websiteDataCleanupService

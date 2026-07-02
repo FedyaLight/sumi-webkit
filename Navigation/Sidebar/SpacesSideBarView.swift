@@ -41,13 +41,14 @@ struct SpacesSideBarView: View {
     @ObservedObject private var downloadManager: DownloadManager
     @ObservedObject private var nowPlayingController: SumiNativeNowPlayingController
     @ObservedObject private var extensionSurfaceStore: BrowserExtensionSurfaceStore
-    @ObservedObject private var updaterService = SumiUpdaterService.shared
+    @ObservedObject private var updaterService: SumiUpdaterService
     @StateObject private var scrollHoverCoordinator = NativeSurfaceScrollHoverCoordinator()
     let browserContext: SidebarBrowserContext
 
     init(
         browserContext: SidebarBrowserContext,
-        nowPlayingController: SumiNativeNowPlayingController
+        nowPlayingController: SumiNativeNowPlayingController,
+        updaterService: SumiUpdaterService
     ) {
         self.browserContext = browserContext
         self._tabManager = ObservedObject(wrappedValue: browserContext.tabManager)
@@ -59,6 +60,7 @@ struct SpacesSideBarView: View {
         self._extensionSurfaceStore = ObservedObject(
             wrappedValue: browserContext.extensionSurfaceStore
         )
+        self._updaterService = ObservedObject(wrappedValue: updaterService)
     }
 
     private var sidebarBrowserContext: SidebarBrowserContext {

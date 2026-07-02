@@ -9,6 +9,8 @@ on:
       - "Navigation/**"
       - "Settings/**"
       - "Sumi/**"
+      - "SumiTests/**"
+      - "SumiUITests/**"
       - "Sumi.xcodeproj/**"
       - "UI/**"
       - "Vendor/DDG/**"
@@ -23,6 +25,8 @@ on:
       - "Navigation/**"
       - "Settings/**"
       - "Sumi/**"
+      - "SumiTests/**"
+      - "SumiUITests/**"
       - "Sumi.xcodeproj/**"
       - "UI/**"
       - "Vendor/DDG/**"
@@ -42,3 +46,21 @@ jobs:
 
       - name: Run architecture guardrails
         run: scripts/check_architecture_guardrails.sh
+
+  xcode-smoke-tests:
+    name: Run Xcode smoke tests
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Run focused SumiTests subset
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project Sumi.xcodeproj \
+            -scheme Sumi \
+            -destination 'platform=macOS' \
+            -derivedDataPath "${RUNNER_TEMP}/SumiDerivedData" \
+            -only-testing:SumiTests/BrowserManagerRuntimeWiringTests \
+            -only-testing:SumiTests/SumiStartupPersistenceTests

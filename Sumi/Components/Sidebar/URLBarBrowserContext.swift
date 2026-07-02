@@ -47,6 +47,7 @@ struct URLBarHubBrowserContext {
     let permission: URLBarPermissionContext
     let permissionDependencies: SumiCurrentSitePermissionsViewModel.LoadDependencies
     let protectionCoordinator: SumiProtectionCoordinator
+    let adblockZapperStore: SumiAdblockZapperStore
     let cleanupService: any SumiWebsiteDataCleanupServicing
     let siteDataPolicyStore: any BrowserSiteDataPolicyStoring
     let siteDataPolicyEnforcementService: any BrowserSiteDataPolicyEnforcing

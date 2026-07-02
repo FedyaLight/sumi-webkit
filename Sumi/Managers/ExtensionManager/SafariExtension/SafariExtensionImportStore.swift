@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import OSLog
 
 protocol SafariExtensionImportStoring: AnyObject {
     func refreshDiscoveredCandidates(_ candidates: [DiscoveredSafariExtensionCandidate])
@@ -37,6 +38,7 @@ struct SafariExtensionImportedRecord: Codable, Equatable, Sendable {
 /// Minimal registry for scanner output vs explicit user imports.
 final class SafariExtensionImportStore: @unchecked Sendable {
     static let shared = SafariExtensionImportStore()
+    private static let log = Logger.sumi(category: "Extensions")
 
     private let defaults: UserDefaults
     private let discoveredKey = "Sumi.SafariExtensionImportStore.discovered"
@@ -155,11 +157,22 @@ final class SafariExtensionImportStore: @unchecked Sendable {
 
     private func decode<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
         guard let data = defaults.data(forKey: key) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            Self.log.error("Failed to load Safari extension import store value for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     private func encode<T: Encodable>(_ value: T, forKey key: String) {
-        guard let data = try? JSONEncoder().encode(value) else { return }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(value)
+        } catch {
+            Self.log.error("Failed to persist Safari extension import store value for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return
+        }
         defaults.set(data, forKey: key)
     }
 }

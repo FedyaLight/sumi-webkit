@@ -8,7 +8,11 @@ import XCTest
 final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
     func testSidebarStructuralInvalidationTracksProfileRuntimeState() {
         let browserManager = BrowserManager()
-        let context = WindowViewBrowserContext.live(browserManager: browserManager)
+        let context = WindowViewBrowserContext.live(
+            browserManager: browserManager,
+            updaterService: SumiUpdaterService(backendFactory: { _ in nil }),
+            defaultBrowserService: SumiDefaultBrowserService()
+        )
         var invalidationCount = 0
         let cancellable = context.sidebarStructuralInvalidation.sink {
             invalidationCount += 1
@@ -32,6 +36,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
 
     func testSidebarColumnHostedRootCarriesInjectedDragState() throws {
         let nowPlayingController = SumiNativeNowPlayingController()
+        let updaterService = SumiUpdaterService(backendFactory: { _ in nil })
         let browserManager = BrowserManager(nowPlayingController: nowPlayingController)
         let windowState = BrowserWindowState()
         let windowRegistry = WindowRegistry()
@@ -54,6 +59,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
             windowRegistry: windowRegistry,
             sumiSettings: SumiSettingsService(userDefaults: settingsDefaults),
             nowPlayingController: nowPlayingController,
+            updaterService: updaterService,
             resolvedThemeContext: .default,
             chromeBackgroundResolvedThemeContext: .default,
             windowChromeSize: CGSize(width: 320, height: 640),
@@ -68,6 +74,7 @@ final class SidebarSpaceBodyInjectionRegressionTests: XCTestCase {
         XCTAssertIdentical(root.environmentContext.sidebarDragState.locationTracker, dragState.locationTracker)
         XCTAssertNotIdentical(root.environmentContext.sidebarDragState, SidebarDragState.shared)
         XCTAssertIdentical(root.environmentContext.nowPlayingController, nowPlayingController)
+        XCTAssertIdentical(root.environmentContext.updaterService, updaterService)
         XCTAssertIdentical(root.environmentContext.browserContext.extensionSurfaceStore, browserManager.extensionSurfaceStore)
         XCTAssertEqual(root.presentationContext, .docked(sidebarWidth: 280))
     }

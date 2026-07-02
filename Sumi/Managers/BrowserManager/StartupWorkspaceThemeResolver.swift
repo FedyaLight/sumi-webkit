@@ -1,8 +1,11 @@
 import Foundation
+import OSLog
 import SwiftData
 
 @MainActor
 enum StartupWorkspaceThemeResolver {
+    private static let logger = Logger.sumi(category: "WorkspaceTheme")
+
     static func resolve(
         userDefaults: UserDefaults = .standard,
         lastWindowSessionKey: String,
@@ -24,9 +27,17 @@ enum StartupWorkspaceThemeResolver {
         for spaceId: UUID,
         modelContext: ModelContext
     ) -> WorkspaceTheme? {
-        guard let spaces = try? modelContext.fetch(FetchDescriptor<SpaceEntity>()),
-              let space = spaces.first(where: { $0.id == spaceId })
-        else {
+        let spaces: [SpaceEntity]
+        do {
+            spaces = try modelContext.fetch(FetchDescriptor<SpaceEntity>())
+        } catch {
+            logger.error(
+                "Failed to fetch spaces for startup workspace theme: \(String(describing: error), privacy: .public)"
+            )
+            return nil
+        }
+
+        guard let space = spaces.first(where: { $0.id == spaceId }) else {
             return nil
         }
 

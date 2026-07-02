@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import WebKit
 
 /// Owns persisted per-profile extension permission decisions: lookup with
@@ -6,6 +7,8 @@ import WebKit
 @available(macOS 15.5, *)
 @MainActor
 final class ExtensionPermissionDecisionStoreOwner {
+    private static let log = Logger.sumi(category: "Extensions")
+
     struct Dependencies {
         let preferences: UserDefaults
         let extensionID: @MainActor (WKWebExtensionContext) -> String?
@@ -173,21 +176,30 @@ final class ExtensionPermissionDecisionStoreOwner {
         -> [String: ExtensionManager.ExtensionStoredPermissionDecision] {
         guard let data = dependencies.preferences.data(
             forKey: ExtensionManager.extensionPermissionDecisionsStorageKey
-        ),
-              let decoded = try? JSONDecoder().decode(
-                  [String: ExtensionManager.ExtensionStoredPermissionDecision].self,
-                  from: data
-              )
-        else {
+        ) else {
             return [:]
         }
-        return decoded
+        do {
+            return try JSONDecoder().decode(
+                [String: ExtensionManager.ExtensionStoredPermissionDecision].self,
+                from: data
+            )
+        } catch {
+            Self.log.error("Failed to load persisted extension permission decisions: \(error.localizedDescription, privacy: .public)")
+            return [:]
+        }
     }
 
     private func saveStoredExtensionPermissionDecisions(
         _ decisions: [String: ExtensionManager.ExtensionStoredPermissionDecision]
     ) {
-        guard let data = try? JSONEncoder().encode(decisions) else { return }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(decisions)
+        } catch {
+            Self.log.error("Failed to persist extension permission decisions: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         dependencies.preferences.set(
             data,
             forKey: ExtensionManager.extensionPermissionDecisionsStorageKey

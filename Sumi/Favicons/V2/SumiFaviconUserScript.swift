@@ -393,6 +393,8 @@ private struct SumiFaviconMessagePayload {
 }
 
 private struct SumiFaviconMessageResponse: Encodable {
+    private static let log = Logger.sumi(category: "FaviconUserScript")
+
     let request: SumiFaviconRequestEnvelope
     let result: Encodable
 
@@ -405,7 +407,13 @@ private struct SumiFaviconMessageResponse: Encodable {
     }
 
     func toJSON() -> String? {
-        guard let jsonData = try? JSONEncoder().encode(self) else { return nil }
+        let jsonData: Data
+        do {
+            jsonData = try JSONEncoder().encode(self)
+        } catch {
+            Self.log.error("Failed to encode favicon script response: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
         return String(data: jsonData, encoding: .utf8)
     }
 
@@ -418,6 +426,8 @@ private struct SumiFaviconMessageResponse: Encodable {
 }
 
 private struct SumiFaviconMessageErrorResponse: Encodable {
+    private static let log = Logger.sumi(category: "FaviconUserScript")
+
     let context: String
     let featureName: String
     let id: String
@@ -431,9 +441,15 @@ private struct SumiFaviconMessageErrorResponse: Encodable {
     }
 
     func toJSON() -> String {
-        guard let jsonData = try? JSONEncoder().encode(self),
-              let jsonString = String(data: jsonData, encoding: .utf8)
-        else {
+        let jsonData: Data
+        do {
+            jsonData = try JSONEncoder().encode(self)
+        } catch {
+            Self.log.error("Failed to encode favicon script error response: \(error.localizedDescription, privacy: .public)")
+            return #"{"error":{"message":"could not convert result to json"}}"#
+        }
+        guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+            Self.log.error("Failed to convert favicon script error response to UTF-8")
             return #"{"error":{"message":"could not convert result to json"}}"#
         }
         return jsonString

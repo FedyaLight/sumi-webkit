@@ -411,7 +411,7 @@ private final class SumiFaviconWebKitDownloader: NSObject, WKDownloadDelegate {
         Task {
             _ = await download.cancel()
         }
-        try? pending?.destinationURL.map(FileManager.default.removeItem(at:))
+        Self.removeTemporaryDownloadIfPresent(pending?.destinationURL)
         pending?.continuation.resume(returning: .failure(.transport))
     }
 
@@ -443,7 +443,7 @@ private final class SumiFaviconWebKitDownloader: NSObject, WKDownloadDelegate {
     func downloadDidFinish(_ download: WKDownload) {
         guard let pending = pendingDownloads.removeValue(forKey: download) else { return }
         defer {
-            pending.destinationURL.flatMap { try? FileManager.default.removeItem(at: $0) }
+            Self.removeTemporaryDownloadIfPresent(pending.destinationURL)
         }
         guard let destinationURL = pending.destinationURL else {
             pending.continuation.resume(returning: .failure(.transport))
@@ -476,8 +476,21 @@ private final class SumiFaviconWebKitDownloader: NSObject, WKDownloadDelegate {
 
     func download(_ download: WKDownload, didFailWithError _: Error, resumeData _: Data?) {
         guard let pending = pendingDownloads.removeValue(forKey: download) else { return }
-        pending.destinationURL.flatMap { try? FileManager.default.removeItem(at: $0) }
+        Self.removeTemporaryDownloadIfPresent(pending.destinationURL)
         let failure: SumiFaviconValidationFailureKind = pending.statusCode == 404 ? .notFound : .transport
         pending.continuation.resume(returning: .failure(failure))
+    }
+
+    private static func removeTemporaryDownloadIfPresent(_ url: URL?) {
+        guard let url else { return }
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            let nsError = error as NSError
+            guard nsError.domain != NSCocoaErrorDomain || nsError.code != NSFileNoSuchFileError else {
+                return
+            }
+            Self.log.error("Failed to remove temporary favicon download: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

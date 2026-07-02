@@ -72,6 +72,7 @@ struct SidebarHoverOverlayView: View {
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     let windowChromeSize: CGSize
     let browserContext: SidebarBrowserContext
+    let updaterService: SumiUpdaterService
     let hostActions: SidebarHostActions
     let structuralInvalidation: AnyPublisher<Void, Never>
     @ObservedObject private var dragState: SidebarDragState
@@ -87,6 +88,7 @@ struct SidebarHoverOverlayView: View {
         chromeBackgroundResolvedThemeContext: ResolvedThemeContext,
         windowChromeSize: CGSize,
         browserContext: SidebarBrowserContext,
+        updaterService: SumiUpdaterService,
         hostActions: SidebarHostActions,
         structuralInvalidation: AnyPublisher<Void, Never>,
         sidebarDragState: SidebarDragState
@@ -95,6 +97,7 @@ struct SidebarHoverOverlayView: View {
         self.chromeBackgroundResolvedThemeContext = chromeBackgroundResolvedThemeContext
         self.windowChromeSize = windowChromeSize
         self.browserContext = browserContext
+        self.updaterService = updaterService
         self.hostActions = hostActions
         self.structuralInvalidation = structuralInvalidation
         self._dragState = ObservedObject(wrappedValue: sidebarDragState)
@@ -215,6 +218,7 @@ struct SidebarHoverOverlayView: View {
     private var collapsedOverlayHost: some View {
         CollapsedSidebarOverlayHost(
             browserContext: browserContext,
+            updaterService: updaterService,
             hostActions: hostActions,
             structuralInvalidation: structuralInvalidation,
             windowState: windowState,

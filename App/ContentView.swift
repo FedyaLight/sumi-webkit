@@ -11,6 +11,7 @@ struct ContentView: View {
 
     private let windowLifecycleHandler: any BrowserWindowLifecycleHandling
     private let browserContext: WindowViewBrowserContext
+    private let updaterService: SumiUpdaterService
     private let providedWindowState: BrowserWindowState?
 
     @State private var defaultWindowState: BrowserWindowState
@@ -19,11 +20,13 @@ struct ContentView: View {
     init(
         windowLifecycleHandler: any BrowserWindowLifecycleHandling,
         browserContext: WindowViewBrowserContext,
+        updaterService: SumiUpdaterService,
         windowState: BrowserWindowState? = nil,
         initialWorkspaceTheme: WorkspaceTheme? = nil
     ) {
         self.windowLifecycleHandler = windowLifecycleHandler
         self.browserContext = browserContext
+        self.updaterService = updaterService
         self.providedWindowState = windowState
         _defaultWindowState = State(
             initialValue: BrowserWindowState(
@@ -40,6 +43,7 @@ struct ContentView: View {
     var body: some View {
         WindowView(
             browserContext: browserContext,
+            updaterService: updaterService,
             sidebarDragState: sidebarDragState
         )
             .environment(windowState)

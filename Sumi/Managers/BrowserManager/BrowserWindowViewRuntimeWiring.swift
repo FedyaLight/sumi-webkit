@@ -3,7 +3,11 @@ import Foundation
 
 @MainActor
 extension WindowViewBrowserRuntime {
-    static func live(browserManager: BrowserManager) -> WindowViewBrowserRuntime {
+    static func live(
+        browserManager: BrowserManager,
+        updaterService: SumiUpdaterService,
+        defaultBrowserService: SumiDefaultBrowserService
+    ) -> WindowViewBrowserRuntime {
         WindowViewBrowserRuntime(
             splitManager: browserManager.splitManager,
             findManager: browserManager.findManager,
@@ -38,7 +42,11 @@ extension WindowViewBrowserRuntime {
                 WebsiteViewContextFactory.websiteViewBrowserContext(for: browserManager, sidebarDragState: sidebarDragState)
             },
             websiteNativeSurfaceRootBuilders: { [browserManager] in
-                WebsiteViewContextFactory.nativeSurfaceRootBuilders(for: browserManager)
+                WebsiteViewContextFactory.nativeSurfaceRootBuilders(
+                    for: browserManager,
+                    updaterService: updaterService,
+                    defaultBrowserService: defaultBrowserService
+                )
             },
             currentTab: { [weak browserManager] windowState in
                 browserManager?.currentTab(for: windowState)
@@ -123,7 +131,17 @@ extension WindowViewBrowserRuntime {
 }
 
 extension WindowViewBrowserContext {
-    static func live(browserManager: BrowserManager) -> WindowViewBrowserContext {
-        WindowViewBrowserContext(runtime: .live(browserManager: browserManager))
+    static func live(
+        browserManager: BrowserManager,
+        updaterService: SumiUpdaterService,
+        defaultBrowserService: SumiDefaultBrowserService
+    ) -> WindowViewBrowserContext {
+        WindowViewBrowserContext(
+            runtime: .live(
+                browserManager: browserManager,
+                updaterService: updaterService,
+                defaultBrowserService: defaultBrowserService
+            )
+        )
     }
 }

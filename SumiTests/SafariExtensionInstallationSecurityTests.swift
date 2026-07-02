@@ -137,6 +137,49 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         )
     }
 
+    func testSafariAppexInstallPrefersBundleIdentifierOverManifestGeckoID() async throws {
+        let container = try makeTestContainer()
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: Profile(name: "Safari Bundle ID Profile")
+        )
+        let bundleIdentifier = "com.example.safari.\(UUID().uuidString.lowercased())"
+        let geckoId = "gecko-\(UUID().uuidString.lowercased())@example.com"
+        let manifest: [String: Any] = [
+            "manifest_version": 3,
+            "name": "Safari Bundle ID",
+            "version": "1.0",
+            "browser_specific_settings": [
+                "gecko": [
+                    "id": geckoId,
+                ],
+            ],
+        ]
+        let manifestData = try JSONSerialization.data(
+            withJSONObject: manifest,
+            options: [.sortedKeys]
+        )
+        let appexURL = try SafariExtensionScannerTestSupport.makeStandaloneAppex(
+            in: scratchDirectory,
+            specification: .init(
+                name: "SafariBundleID",
+                bundleIdentifier: bundleIdentifier,
+                displayName: "Safari Bundle ID",
+                resourceFiles: [
+                    .init(relativePath: "manifest.json", data: manifestData),
+                ]
+            )
+        )
+
+        let installed = try await manager.performInstallation(
+            from: appexURL,
+            enableOnInstall: false
+        )
+
+        XCTAssertEqual(installed.id, bundleIdentifier)
+        XCTAssertNotEqual(installed.id, geckoId)
+    }
+
     func testOptionalNativeMessagingIsNotPregrantedOnInstall() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "Optional Native Messaging Profile")

@@ -7,10 +7,14 @@ import AppKit
 import SwiftUI
 
 struct SettingsAboutTab: View {
-    @ObservedObject private var updaterService = SumiUpdaterService.shared
+    @ObservedObject private var updaterService: SumiUpdaterService
     @State private var didRequestInitialUpdateCheck = false
 
     private let metadata = SumiAppVersionMetadata.resolve()
+
+    init(updaterService: SumiUpdaterService) {
+        self._updaterService = ObservedObject(wrappedValue: updaterService)
+    }
 
     private var appIconImage: Image {
         Image(nsImage: NSApp.applicationIconImage ?? NSImage())

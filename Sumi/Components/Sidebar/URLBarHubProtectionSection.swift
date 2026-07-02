@@ -3,6 +3,7 @@ import WebKit
 
 struct URLBarHubProtectionSection: View {
     let coordinator: SumiProtectionCoordinator
+    let zapperStore: SumiAdblockZapperStore
     let currentTab: Tab?
     let webViewProvider: () -> WKWebView?
     let onBack: () -> Void
@@ -268,7 +269,7 @@ struct URLBarHubProtectionSection: View {
                       let zapperProfilePartitionId
                 else { return }
                 areSavedRulesEnabled = isEnabled
-                SumiAdblockZapperStore.shared.setEnabled(
+                zapperStore.setEnabled(
                     isEnabled,
                     forHost: host,
                     profilePartitionId: zapperProfilePartitionId,
@@ -289,7 +290,7 @@ struct URLBarHubProtectionSection: View {
             errorMessage = nil
             return
         }
-        let zapperState = SumiAdblockZapperStore.shared.state(
+        let zapperState = zapperStore.state(
             forHost: host,
             profilePartitionId: zapperProfilePartitionId,
             isEphemeralProfile: isEphemeralZapperProfile
@@ -308,7 +309,7 @@ struct URLBarHubProtectionSection: View {
         guard let host,
               let zapperProfilePartitionId
         else { return }
-        SumiAdblockZapperStore.shared.setRules(
+        zapperStore.setRules(
             normalizedDraftRules,
             forHost: host,
             profilePartitionId: zapperProfilePartitionId,
@@ -322,7 +323,7 @@ struct URLBarHubProtectionSection: View {
         guard let host,
               let zapperProfilePartitionId
         else { return }
-        SumiAdblockZapperStore.shared.setRules(
+        zapperStore.setRules(
             [],
             forHost: host,
             profilePartitionId: zapperProfilePartitionId,
@@ -345,7 +346,8 @@ struct URLBarHubProtectionSection: View {
                 in: webView,
                 host: host,
                 profilePartitionId: zapperProfilePartitionId,
-                isEphemeralProfile: isEphemeralZapperProfile
+                isEphemeralProfile: isEphemeralZapperProfile,
+                store: zapperStore
             )
             isActivatingZapper = false
             if didActivate {
@@ -365,7 +367,8 @@ struct URLBarHubProtectionSection: View {
             to: webView,
             host: host,
             profilePartitionId: zapperProfilePartitionId,
-            isEphemeralProfile: isEphemeralZapperProfile
+            isEphemeralProfile: isEphemeralZapperProfile,
+            store: zapperStore
         )
     }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 @available(macOS 15.5, *)
 enum PinnedToolbarSlot: Identifiable {
@@ -32,6 +33,7 @@ final class ExtensionToolbarPinningOwner {
     static let pinnedToolbarExtensionIDsStorageKey =
         "\(SumiAppIdentity.bundleIdentifier).extensions.toolbarPinnedIDsByProfile"
     private static let globalPinnedToolbarProfileKey = "__global__"
+    private static let logger = Logger.sumi(category: "Extensions")
 
     private let dependencies: Dependencies
     private var idsByProfile: [String: [String]]
@@ -137,9 +139,13 @@ final class ExtensionToolbarPinningOwner {
     }
 
     private func persistPinnedToolbarExtensionIDsByProfile() {
-        guard
-            let data = try? JSONEncoder().encode(idsByProfile)
-        else {
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(idsByProfile)
+        } catch {
+            Self.logger.error(
+                "Failed to encode pinned toolbar extension IDs: \(String(describing: error), privacy: .public)"
+            )
             return
         }
 
@@ -155,9 +161,18 @@ final class ExtensionToolbarPinningOwner {
         guard
             let data = userDefaults.data(
                 forKey: pinnedToolbarExtensionIDsStorageKey
-            ),
-            let decoded = try? JSONDecoder().decode([String: [String]].self, from: data)
+            )
         else {
+            return [:]
+        }
+
+        let decoded: [String: [String]]
+        do {
+            decoded = try JSONDecoder().decode([String: [String]].self, from: data)
+        } catch {
+            Self.logger.error(
+                "Failed to decode pinned toolbar extension IDs: \(String(describing: error), privacy: .public)"
+            )
             return [:]
         }
 

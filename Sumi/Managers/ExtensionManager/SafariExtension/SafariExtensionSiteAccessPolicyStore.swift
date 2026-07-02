@@ -6,10 +6,13 @@
 //
 
 import Foundation
+import OSLog
 
 @available(macOS 15.5, *)
 @MainActor
 final class SafariExtensionSiteAccessPolicyStore {
+    private static let log = Logger.sumi(category: "Extensions")
+
     struct SnapshotResult {
         let policiesByExtensionId: [String: SafariExtensionSiteAccessPolicy]
         let didPersistChanges: Bool
@@ -171,21 +174,30 @@ final class SafariExtensionSiteAccessPolicyStore {
     }
 
     private func loadPolicies() -> [String: SafariExtensionSiteAccessPolicy] {
-        guard let data = preferences.data(forKey: Self.siteAccessStorageKey),
-              let decoded = try? JSONDecoder().decode(
-                  [String: SafariExtensionSiteAccessPolicy].self,
-                  from: data
-              )
-        else {
+        guard let data = preferences.data(forKey: Self.siteAccessStorageKey) else {
             return [:]
         }
-        return decoded
+        do {
+            return try JSONDecoder().decode(
+                [String: SafariExtensionSiteAccessPolicy].self,
+                from: data
+            )
+        } catch {
+            Self.log.error("Failed to load Safari extension site-access policies: \(error.localizedDescription, privacy: .public)")
+            return [:]
+        }
     }
 
     private func savePolicies(
         _ policies: [String: SafariExtensionSiteAccessPolicy]
     ) -> Bool {
-        guard let data = try? JSONEncoder().encode(policies) else { return false }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(policies)
+        } catch {
+            Self.log.error("Failed to persist Safari extension site-access policies: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
         preferences.set(data, forKey: Self.siteAccessStorageKey)
         return true
     }
@@ -194,14 +206,17 @@ final class SafariExtensionSiteAccessPolicyStore {
         -> [String: LegacyStoredPermissionDecision] {
         guard let data = preferences.data(
             forKey: Self.legacyPermissionDecisionsStorageKey
-        ),
-              let decoded = try? JSONDecoder().decode(
-                  [String: LegacyStoredPermissionDecision].self,
-                  from: data
-              )
-        else {
+        ) else {
             return [:]
         }
-        return decoded
+        do {
+            return try JSONDecoder().decode(
+                [String: LegacyStoredPermissionDecision].self,
+                from: data
+            )
+        } catch {
+            Self.log.error("Failed to load legacy extension permission decisions for site-access migration: \(error.localizedDescription, privacy: .public)")
+            return [:]
+        }
     }
 }

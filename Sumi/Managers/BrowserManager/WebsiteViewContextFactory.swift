@@ -26,7 +26,9 @@ enum WebsiteViewContextFactory {
     }
 
     static func nativeSurfaceRootBuilders(
-        for browserManager: BrowserManager
+        for browserManager: BrowserManager,
+        updaterService: SumiUpdaterService,
+        defaultBrowserService: SumiDefaultBrowserService
     ) -> WebsiteNativeSurfaceRootBuilders {
         WebsiteNativeSurfaceRootBuilders(
             history: { [weak browserManager] windowState in
@@ -52,6 +54,8 @@ enum WebsiteViewContextFactory {
                 return AnyView(
                     SumiSettingsTabRootView(
                         browserManager: browserManager,
+                        updaterService: updaterService,
+                        defaultBrowserService: defaultBrowserService,
                         windowState: windowState
                     )
                     .environmentObject(browserManager.extensionsModule.surfaceStore)

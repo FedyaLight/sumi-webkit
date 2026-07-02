@@ -1,10 +1,13 @@
 import AppKit
 import Foundation
+import OSLog
 import WebKit
 
 // Cross-task facade; mutable scheduling state is isolated to `schedulingQueue`, and collaborators
 // are actors or queue-protected services.
 final class SumiFaviconService: @unchecked Sendable {
+    private static let log = Logger.sumi(category: "FaviconService")
+
     private struct ScheduledColdFetch {
         let token: UUID
         var task: Task<Void, Never>?
@@ -233,9 +236,15 @@ final class SumiFaviconService: @unchecked Sendable {
         partition: SumiFaviconPartition,
         context: SumiFaviconDisplayContext
     ) async -> NSImage? {
-        guard ExtensionUtils.isExtensionOwnedURL(documentURL),
-              let data = try? Data(contentsOf: fileURL, options: [.mappedIfSafe])
-        else {
+        guard ExtensionUtils.isExtensionOwnedURL(documentURL) else {
+            return nil
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+        } catch {
+            Self.log.error("Failed to load local extension favicon icon: \(error.localizedDescription, privacy: .public)")
             return nil
         }
 
@@ -286,7 +295,9 @@ final class SumiFaviconService: @unchecked Sendable {
     ) -> Bool {
         blobStore.cachedSelection(for: pageURL, partition: partition) != nil
     }
+}
 
+extension SumiFaviconService {
     @MainActor
     private func candidatesFromLiveDiscovery(
         links: [SumiFaviconDiscoveredLink],

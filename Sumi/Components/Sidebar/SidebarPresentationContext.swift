@@ -17,6 +17,7 @@ struct SidebarHostEnvironmentContext {
     let windowRegistry: WindowRegistry
     let sumiSettings: SumiSettingsService
     let nowPlayingController: SumiNativeNowPlayingController
+    let updaterService: SumiUpdaterService
     let resolvedThemeContext: ResolvedThemeContext
     let chromeBackgroundResolvedThemeContext: ResolvedThemeContext
     let windowChromeSize: CGSize

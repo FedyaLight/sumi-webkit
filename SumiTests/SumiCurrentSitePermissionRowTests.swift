@@ -66,4 +66,69 @@ final class SumiCurrentSitePermissionRowTests: XCTestCase {
 
         XCTAssertEqual(summary.activityText, "Microphone muted, 2 blocked attempts")
     }
+
+    func testURLBarInlineCycleResolverUsesPermissionSpecificTransitions() {
+        XCTAssertEqual(
+            URLBarPermissionInlineCycleResolver.nextOption(
+                for: row(kind: .autoplay, currentOption: .default, availableOptions: [.default, .allowAll, .blockAudible, .blockAll])
+            ),
+            .blockAll
+        )
+        XCTAssertEqual(
+            URLBarPermissionInlineCycleResolver.nextOption(
+                for: row(kind: .autoplay, currentOption: .blockAll, availableOptions: [.default, .allowAll, .blockAudible, .blockAll])
+            ),
+            .allowAll
+        )
+        XCTAssertEqual(
+            URLBarPermissionInlineCycleResolver.nextOption(
+                for: row(kind: .popups, currentOption: .block, availableOptions: [.default, .allow, .block])
+            ),
+            .allow
+        )
+        XCTAssertEqual(
+            URLBarPermissionInlineCycleResolver.nextOption(
+                for: row(kind: .sitePermission(.camera), currentOption: .allow, availableOptions: [.ask, .allow, .block])
+            ),
+            .block
+        )
+    }
+
+    func testURLBarInlineCycleResolverFallsBackToFirstAvailableOption() {
+        XCTAssertEqual(
+            URLBarPermissionInlineCycleResolver.nextOption(
+                for: row(kind: .sitePermission(.camera), currentOption: .ask, availableOptions: [.allow])
+            ),
+            .allow
+        )
+    }
+
+    func testURLBarInlineCycleResolverSkipsNonCyclingRows() {
+        XCTAssertNil(
+            URLBarPermissionInlineCycleResolver.nextOption(
+                for: row(kind: .externalApps, currentOption: nil, availableOptions: [.allow, .block])
+            )
+        )
+        XCTAssertNil(
+            URLBarPermissionInlineCycleResolver.nextOption(
+                for: row(kind: .filePicker, currentOption: nil, availableOptions: [.allow, .block])
+            )
+        )
+    }
+
+    private func row(
+        kind: SumiCurrentSitePermissionRow.Kind,
+        currentOption: SumiCurrentSitePermissionOption?,
+        availableOptions: [SumiCurrentSitePermissionOption]
+    ) -> SumiCurrentSitePermissionRow {
+        SumiCurrentSitePermissionRow(
+            id: "test",
+            kind: kind,
+            title: "Test",
+            fallbackSystemName: "questionmark",
+            currentOption: currentOption,
+            availableOptions: availableOptions,
+            isEditable: true
+        )
+    }
 }

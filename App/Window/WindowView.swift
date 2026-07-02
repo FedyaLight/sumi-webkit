@@ -32,13 +32,16 @@ struct WindowView: View {
     /// Bumps when system/window effective appearance changes so `globalColorScheme` refreshes while in auto mode.
     @State private var effectiveAppearanceRevision: UInt = 0
     private let browserContext: WindowViewBrowserContext
+    private let updaterService: SumiUpdaterService
     private let sidebarDragState: SidebarDragState
 
     init(
         browserContext: WindowViewBrowserContext,
+        updaterService: SumiUpdaterService,
         sidebarDragState: SidebarDragState
     ) {
         self.browserContext = browserContext
+        self.updaterService = updaterService
         self.sidebarDragState = sidebarDragState
     }
 
@@ -78,6 +81,7 @@ struct WindowView: View {
                             chromeBackgroundResolvedThemeContext: resolvedThemeContext,
                             windowChromeSize: windowChromeSize,
                             browserContext: browserContext.sidebarBrowserContext,
+                            updaterService: updaterService,
                             hostActions: browserContext.sidebarHostActions,
                             structuralInvalidation: browserContext.sidebarStructuralInvalidation,
                             sidebarDragState: sidebarDragState
@@ -329,6 +333,7 @@ struct WindowView: View {
 
         SidebarColumnRepresentable(
             browserContext: browserContext.sidebarBrowserContext,
+            updaterService: updaterService,
             hostActions: browserContext.sidebarHostActions,
             structuralInvalidation: browserContext.sidebarStructuralInvalidation,
             windowState: windowState,

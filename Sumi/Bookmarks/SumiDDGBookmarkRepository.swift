@@ -1,9 +1,12 @@
 import Bookmarks
 import CoreData
 import Foundation
+import OSLog
 
 @MainActor
 final class SumiDDGBookmarkRepository: SumiBookmarkRepository, @unchecked Sendable {
+    private static let log = Logger.sumi(category: "Bookmarks")
+
     private let context: NSManagedObjectContext
 
     init(database: SumiBookmarkDatabase) {
@@ -27,8 +30,15 @@ final class SumiDDGBookmarkRepository: SumiBookmarkRepository, @unchecked Sendab
         ]
         request.returnsObjectsAsFaults = false
 
-        let entities = (try? context.fetch(request)) ?? []
-        return entities.compactMap(bookmark(from:))
+        do {
+            let entities = try context.fetch(request)
+            return entities.compactMap(bookmark(from:))
+        } catch {
+            Self.log.error(
+                "Failed to fetch bookmarks: \(String(describing: error), privacy: .public)"
+            )
+            return []
+        }
     }
 
     func snapshot(sortMode: SumiBookmarkSortMode = .manual) -> SumiBookmarksSnapshot {
@@ -461,7 +471,7 @@ final class SumiDDGBookmarkRepository: SumiBookmarkRepository, @unchecked Sendab
         )
         request.fetchLimit = 1
         request.returnsObjectsAsFaults = false
-        return try? context.fetch(request).first
+        return fetchFirstBookmarkEntity(request, operation: "bookmark lookup")
     }
 
     private func entityForAnyID(_ id: String) -> BookmarkEntity? {
@@ -477,7 +487,7 @@ final class SumiDDGBookmarkRepository: SumiBookmarkRepository, @unchecked Sendab
         )
         request.fetchLimit = 1
         request.returnsObjectsAsFaults = false
-        return try? context.fetch(request).first
+        return fetchFirstBookmarkEntity(request, operation: "entity lookup")
     }
 
     private func rootFolder() -> BookmarkEntity? {
@@ -508,7 +518,21 @@ final class SumiDDGBookmarkRepository: SumiBookmarkRepository, @unchecked Sendab
         )
         request.fetchLimit = 1
         request.returnsObjectsAsFaults = false
-        return try? context.fetch(request).first
+        return fetchFirstBookmarkEntity(request, operation: "folder lookup")
+    }
+
+    private func fetchFirstBookmarkEntity(
+        _ request: NSFetchRequest<BookmarkEntity>,
+        operation: String
+    ) -> BookmarkEntity? {
+        do {
+            return try context.fetch(request).first
+        } catch {
+            Self.log.error(
+                "Failed to fetch bookmark entity during \(operation, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
+            return nil
+        }
     }
 
     private func save() throws {

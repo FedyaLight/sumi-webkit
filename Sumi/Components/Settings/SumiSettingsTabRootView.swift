@@ -13,10 +13,24 @@ struct SumiSettingsTabRootView: View {
     @Environment(\.resolvedThemeContext) private var themeContext
     @Environment(KeyboardShortcutManager.self) private var keyboardShortcutManager
     @ObservedObject var browserManager: BrowserManager
+    let updaterService: SumiUpdaterService
+    let defaultBrowserService: SumiDefaultBrowserService
     /// When `nil` (e.g. standalone preview), sidebar still works; tab URL sync is skipped.
     var windowState: BrowserWindowState?
 
     @State private var searchText = ""
+
+    init(
+        browserManager: BrowserManager,
+        updaterService: SumiUpdaterService,
+        defaultBrowserService: SumiDefaultBrowserService,
+        windowState: BrowserWindowState? = nil
+    ) {
+        self._browserManager = ObservedObject(wrappedValue: browserManager)
+        self.updaterService = updaterService
+        self.defaultBrowserService = defaultBrowserService
+        self.windowState = windowState
+    }
 
     private enum Layout {
         static let sidebarMinWidth: CGFloat = 260
@@ -310,7 +324,7 @@ struct SumiSettingsTabRootView: View {
         case .appearance:
             SettingsAppearanceTab()
         case .general:
-            SettingsGeneralTab()
+            SettingsGeneralTab(defaultBrowserService: defaultBrowserService)
         case .startup:
             SettingsStartupTab()
         case .downloads:
@@ -365,7 +379,7 @@ struct SumiSettingsTabRootView: View {
                 )
             )
         case .about:
-            SettingsAboutTab()
+            SettingsAboutTab(updaterService: updaterService)
         }
     }
 

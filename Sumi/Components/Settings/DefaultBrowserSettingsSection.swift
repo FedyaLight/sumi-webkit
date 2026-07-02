@@ -10,7 +10,7 @@ struct DefaultBrowserSettingsSection: View {
     @State private var isSettingDefaultBrowser = false
     @State private var errorMessage: String?
 
-    init(service: SumiDefaultBrowserService = .shared) {
+    init(service: SumiDefaultBrowserService) {
         self.service = service
     }
 

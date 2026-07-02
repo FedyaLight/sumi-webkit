@@ -4,7 +4,6 @@
 //
 //
 
-import AppKit
 import SwiftUI
 
 @MainActor
@@ -60,11 +59,12 @@ struct TabFolderContextMenuActionOwner {
             role: .folderPinnedTab,
             actions: .init(
                 duplicate: { duplicateShortcutPin(pin) },
-                copyLink: { copyLink(pin.launchURL) },
+                copyLink: { SidebarLinkActions.copyLink(pin.launchURL) },
                 share: {
-                    presentSharePicker(
+                    SidebarLinkActions.presentSharePicker(
                         for: pin.launchURL,
-                        source: windowState.resolveSidebarPresentationSource()
+                        source: windowState.resolveSidebarPresentationSource(),
+                        presentationActions: browserContext.presentationActions
                     )
                 },
                 edit: {
@@ -110,12 +110,13 @@ struct TabFolderContextMenuActionOwner {
                         browserContext.liveFolderManager.open(item: item, in: windowState)
                     }),
                     .action(.init(title: "Copy Link", systemImage: "link", classification: .presentationOnly) {
-                        copyLink(url)
+                        SidebarLinkActions.copyLink(url)
                     }),
                     .action(.init(title: "Share…", systemImage: "square.and.arrow.up", classification: .presentationOnly) {
-                        presentSharePicker(
+                        SidebarLinkActions.presentSharePicker(
                             for: url,
-                            source: windowState.resolveSidebarPresentationSource()
+                            source: windowState.resolveSidebarPresentationSource(),
+                            presentationActions: browserContext.presentationActions
                         )
                     }),
                 ],
@@ -159,12 +160,10 @@ struct TabFolderContextMenuActionOwner {
     }
 
     func resetShortcutPin(_ pin: ShortcutPin) {
-        let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-        let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
-        _ = browserContext.tabManager.resetShortcutPinToLaunchURL(
+        SidebarShortcutPinActions.resetToLaunchURL(
             pin,
             in: windowState,
-            preserveCurrentPage: preserveCurrentPage
+            tabManager: browserContext.tabManager
         )
     }
 
@@ -389,30 +388,5 @@ struct TabFolderContextMenuActionOwner {
         for pin in descendantShortcutPins {
             unloadShortcutPin(pin)
         }
-    }
-
-    private func copyLink(_ url: URL) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
-    }
-
-    private func presentSharePicker(
-        for url: URL,
-        source: SidebarTransientPresentationSource? = nil
-    ) {
-        if let source {
-            browserContext.presentationActions.presentSharingServicePicker([url], source)
-            return
-        }
-
-        guard let contentView = NSApp.keyWindow?.contentView else { return }
-        let picker = NSSharingServicePicker(items: [url])
-        let anchor = NSRect(
-            x: contentView.bounds.midX,
-            y: contentView.bounds.midY,
-            width: 1,
-            height: 1
-        )
-        picker.show(relativeTo: anchor, of: contentView, preferredEdge: .minY)
     }
 }

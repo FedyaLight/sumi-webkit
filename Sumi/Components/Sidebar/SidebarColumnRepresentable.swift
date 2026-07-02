@@ -12,7 +12,8 @@ struct SidebarColumnHostedRootView: View {
         let _ = structuralInvalidationGeneration
         SpacesSideBarView(
             browserContext: environmentContext.browserContext,
-            nowPlayingController: environmentContext.nowPlayingController
+            nowPlayingController: environmentContext.nowPlayingController,
+            updaterService: environmentContext.updaterService
         )
             .frame(width: presentationContext.sidebarWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -157,6 +158,7 @@ enum SidebarColumnHostedRoot {
 
 struct SidebarColumnRepresentable: NSViewControllerRepresentable {
     var browserContext: SidebarBrowserContext
+    var updaterService: SumiUpdaterService
     var hostActions: SidebarHostActions
     var structuralInvalidation: AnyPublisher<Void, Never>
     var windowState: BrowserWindowState
@@ -178,6 +180,7 @@ struct SidebarColumnRepresentable: NSViewControllerRepresentable {
             windowRegistry: windowRegistry,
             sumiSettings: sumiSettings,
             nowPlayingController: nowPlayingController,
+            updaterService: updaterService,
             resolvedThemeContext: resolvedThemeContext,
             chromeBackgroundResolvedThemeContext: chromeBackgroundResolvedThemeContext,
             windowChromeSize: windowChromeSize,

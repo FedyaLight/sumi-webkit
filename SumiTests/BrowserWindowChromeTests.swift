@@ -363,10 +363,16 @@ final class BrowserWindowChromeTests: XCTestCase {
         let handler = try FakeWindowLifecycleHandler()
         let lifecycleHandler: any BrowserWindowLifecycleHandling = handler
         let browserManager = BrowserManager()
+        let updaterService = SumiUpdaterService(backendFactory: { _ in nil })
 
         let contentView = ContentView(
             windowLifecycleHandler: lifecycleHandler,
-            browserContext: .live(browserManager: browserManager),
+            browserContext: .live(
+                browserManager: browserManager,
+                updaterService: updaterService,
+                defaultBrowserService: SumiDefaultBrowserService()
+            ),
+            updaterService: updaterService,
             initialWorkspaceTheme: .default
         )
 

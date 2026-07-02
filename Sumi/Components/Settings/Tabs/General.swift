@@ -7,6 +7,7 @@ import SwiftUI
 
 struct SettingsGeneralTab: View {
     @Environment(\.sumiSettings) var sumiSettings
+    let defaultBrowserService: SumiDefaultBrowserService
     @State private var searchEngineFilter = ""
     @State private var editingSearchEngine: SearchEngineEditorDraft?
     @State private var searchEnginePendingRemoval: SumiSearchEngine?
@@ -17,7 +18,7 @@ struct SettingsGeneralTab: View {
         @Bindable var settings = sumiSettings
 
         VStack(alignment: .leading, spacing: 16) {
-            DefaultBrowserSettingsSection()
+            DefaultBrowserSettingsSection(service: defaultBrowserService)
 
             SettingsSection(
                 title: "Window",

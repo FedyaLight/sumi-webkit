@@ -364,7 +364,7 @@ struct PinnedGrid: View {
     }
 
     private func duplicateAsRegularTab(_ pin: ShortcutPin) {
-        let _ = browserContext.commands.openForegroundTab(
+        _ = browserContext.commands.openForegroundTab(
             pin.launchURL.absoluteString,
             windowState,
             windowState.currentSpaceId
@@ -392,11 +392,12 @@ struct PinnedGrid: View {
                 role: .essential,
                 actions: .init(
                     duplicate: { duplicateAsRegularTab(pin) },
-                    copyLink: { copyLink(pin.launchURL) },
+                    copyLink: { SidebarLinkActions.copyLink(pin.launchURL) },
                     share: {
-                        presentSharePicker(
+                        SidebarLinkActions.presentSharePicker(
                             for: pin.launchURL,
-                            source: windowState.resolveSidebarPresentationSource()
+                            source: windowState.resolveSidebarPresentationSource(),
+                            presentationActions: browserContext.presentationActions
                         )
                     },
                     edit: { presentShortcutLinkEditor(for: pin) },
@@ -465,7 +466,7 @@ struct PinnedGrid: View {
         ).count
 
         mutateContentLayout {
-            let _ = browserContext.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -480,7 +481,7 @@ struct PinnedGrid: View {
         let targetIndex = browserContext.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutateContentLayout {
-            let _ = browserContext.tabManager.moveShortcutPin(
+            _ = browserContext.tabManager.moveShortcutPin(
                 pin,
                 to: .spacePinned,
                 profileId: nil,
@@ -492,12 +493,10 @@ struct PinnedGrid: View {
     }
 
     private func resetShortcutPin(_ pin: ShortcutPin) {
-        let modifiers = NSApp.currentEvent?.modifierFlags ?? []
-        let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
-        let _ = browserContext.tabManager.resetShortcutPinToLaunchURL(
+        SidebarShortcutPinActions.resetToLaunchURL(
             pin,
             in: windowState,
-            preserveCurrentPage: preserveCurrentPage
+            tabManager: browserContext.tabManager
         )
     }
 
@@ -524,31 +523,6 @@ struct PinnedGrid: View {
             themeContext,
             windowState.resolveSidebarPresentationSource()
         )
-    }
-
-    private func copyLink(_ url: URL) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
-    }
-
-    private func presentSharePicker(
-        for url: URL,
-        source: SidebarTransientPresentationSource? = nil
-    ) {
-        if let source {
-            browserContext.presentationActions.presentSharingServicePicker([url], source)
-            return
-        }
-
-        guard let contentView = NSApp.keyWindow?.contentView else { return }
-        let picker = NSSharingServicePicker(items: [url])
-        let anchor = NSRect(
-            x: contentView.bounds.midX,
-            y: contentView.bounds.midY,
-            width: 1,
-            height: 1
-        )
-        picker.show(relativeTo: anchor, of: contentView, preferredEdge: .minY)
     }
 
     private func mutateContentLayout(_ update: () -> Void) {

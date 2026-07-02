@@ -1,8 +1,11 @@
 import Foundation
+import OSLog
 import WebKit
 
 @MainActor
 final class SumiAdblockZapperStore {
+    private static let log = Logger.sumi(category: "ContentBlocking")
+
     struct State: Codable, Equatable {
         var rules: [String]
         var disabled: Bool
@@ -156,14 +159,27 @@ final class SumiAdblockZapperStore {
             userDefaults.removeObject(forKey: DefaultsKey.statesByPersistentProfileAndHost)
             return
         }
-        guard let data = try? JSONEncoder().encode(persistentStates) else { return }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(persistentStates)
+        } catch {
+            Self.log.error("Failed to encode adblock zapper state: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         userDefaults.set(data, forKey: DefaultsKey.statesByPersistentProfileAndHost)
     }
 
     private static func loadPersistentStates(from userDefaults: UserDefaults) -> [String: [String: State]] {
-        guard let data = userDefaults.data(forKey: DefaultsKey.statesByPersistentProfileAndHost),
-              let decoded = try? JSONDecoder().decode([String: [String: State]].self, from: data)
-        else { return [:] }
+        guard let data = userDefaults.data(forKey: DefaultsKey.statesByPersistentProfileAndHost) else {
+            return [:]
+        }
+        let decoded: [String: [String: State]]
+        do {
+            decoded = try JSONDecoder().decode([String: [String: State]].self, from: data)
+        } catch {
+            log.error("Failed to decode adblock zapper state: \(error.localizedDescription, privacy: .public)")
+            return [:]
+        }
         return decoded.filter { scopeKey, _ in
             scopeKey.hasPrefix(Scope.persistentPrefix)
         }
@@ -185,6 +201,7 @@ final class SumiAdblockZapperStore {
 
 @MainActor
 enum SumiAdblockZapperInjector {
+    private static let log = Logger.sumi(category: "ContentBlocking")
     private static let styleElementID = "sumi-adblock-zapper-style"
 
     static func applySavedRules(
@@ -302,9 +319,17 @@ enum SumiAdblockZapperInjector {
     }
 
     private static func jsonLiteral<T: Encodable>(_ value: T) -> String {
-        guard let data = try? JSONEncoder().encode(value),
-              let string = String(data: data, encoding: .utf8)
-        else { return "null" }
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(value)
+        } catch {
+            Self.log.error("Failed to encode adblock zapper JavaScript literal: \(error.localizedDescription, privacy: .public)")
+            return "null"
+        }
+        guard let string = String(data: data, encoding: .utf8) else {
+            Self.log.error("Failed to convert adblock zapper JavaScript literal to UTF-8")
+            return "null"
+        }
         return string
     }
 }

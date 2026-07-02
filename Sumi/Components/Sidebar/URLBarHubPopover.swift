@@ -38,6 +38,7 @@ struct URLBarHubPopover: View {
     let currentTab: Tab?
     let profile: Profile?
     let profileId: UUID?
+    let adblockZapperStore: SumiAdblockZapperStore
     let onClose: () -> Void
     let onContentSizeChange: (CGSize) -> Void
 
@@ -100,6 +101,7 @@ struct URLBarHubPopover: View {
         self.currentTab = currentTab
         self.profile = profile
         self.profileId = profileId
+        self.adblockZapperStore = browserContext.adblockZapperStore
         self.onClose = onClose
         self.onContentSizeChange = onContentSizeChange
         self._siteDataDetailsModel = StateObject(
@@ -133,12 +135,12 @@ struct URLBarHubPopover: View {
     }
 
     private var currentSiteBoosts: [SumiBoost] {
-        let _ = refreshNonce
+        _ = refreshNonce
         return browserContext.changedBoosts(currentTab?.url, activeProfile?.id)
     }
 
     private var currentActiveBoostId: UUID? {
-        let _ = refreshNonce
+        _ = refreshNonce
         return browserContext.activeBoostId(currentTab?.url, activeProfile?.id)
     }
 
@@ -265,6 +267,7 @@ struct URLBarHubPopover: View {
         case .protectionDetails:
             URLBarHubProtectionSection(
                 coordinator: browserContext.protectionCoordinator,
+                zapperStore: adblockZapperStore,
                 currentTab: currentTab,
                 webViewProvider: {
                     guard let currentTab else { return nil }
@@ -669,7 +672,7 @@ struct URLBarHubPopover: View {
     }
 
     private func cyclePermission(_ row: SumiCurrentSitePermissionRow) {
-        guard let nextOption = nextInlineOption(for: row) else { return }
+        guard let nextOption = URLBarPermissionInlineCycleResolver.nextOption(for: row) else { return }
         selectPermission(nextOption, for: row)
     }
 
@@ -691,49 +694,6 @@ struct URLBarHubPopover: View {
             await reloadPermissionsImmediately()
             scheduleCoalescedRefresh()
         }
-    }
-
-    private func nextInlineOption(
-        for row: SumiCurrentSitePermissionRow
-    ) -> SumiCurrentSitePermissionOption? {
-        let proposed: SumiCurrentSitePermissionOption
-        switch row.kind {
-        case .autoplay:
-            switch row.currentOption ?? .default {
-            case .default, .ask:
-                proposed = .blockAll
-            case .blockAll, .blockAudible, .block:
-                proposed = .allowAll
-            case .allowAll, .allow:
-                proposed = .blockAll
-            }
-        case .popups:
-            switch row.currentOption ?? .default {
-            case .default, .ask:
-                proposed = .block
-            case .block:
-                proposed = .allow
-            case .allow:
-                proposed = .block
-            case .allowAll, .blockAudible, .blockAll:
-                proposed = .block
-            }
-        case .sitePermission, .externalScheme:
-            switch row.currentOption ?? .ask {
-            case .ask, .default:
-                proposed = .block
-            case .block:
-                proposed = .allow
-            case .allow:
-                proposed = .block
-            case .allowAll, .blockAudible, .blockAll:
-                proposed = .block
-            }
-        case .externalApps, .filePicker:
-            return nil
-        }
-
-        return row.availableOptions.contains(proposed) ? proposed : row.availableOptions.first
     }
 
     private func openSystemSettings(for row: SumiCurrentSitePermissionRow) {
@@ -785,7 +745,7 @@ struct URLBarHubPopover: View {
     private func resetAction(
         for row: SiteControlsSettingRowModel
     ) -> (() -> Void)? {
-        let _ = row
+        _ = row
         return nil
     }
 
