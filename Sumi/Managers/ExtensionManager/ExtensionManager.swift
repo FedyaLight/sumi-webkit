@@ -130,6 +130,18 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var backgroundWakeCoordinator = ExtensionBackgroundWakeCoordinator(
         dependencies: .live(manager: self)
     )
+    lazy var toolbarPinningOwner = ExtensionToolbarPinningOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var permissionDecisionStoreOwner = ExtensionPermissionDecisionStoreOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var siteAccessPolicyCoordinator = ExtensionSiteAccessPolicyCoordinator(
+        dependencies: .live(manager: self)
+    )
+    lazy var pageResolutionOwner = ExtensionPageResolutionOwner(
+        dependencies: .live(manager: self)
+    )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
@@ -324,6 +336,22 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     func normalTabUserScripts() -> [SumiUserScript] {
         []
+    }
+
+    func sortInstalledExtensions() {
+        installedExtensions.sort {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
+    func upsertInstalledExtension(_ record: InstalledExtension) {
+        if let index = installedExtensions.firstIndex(where: { $0.id == record.id }) {
+            installedExtensions[index] = record
+        } else {
+            installedExtensions.append(record)
+        }
+        sortInstalledExtensions()
+        reconcilePinnedToolbarExtensions()
     }
 
     nonisolated static var isWebKitRuntimeTraceEnabled: Bool {

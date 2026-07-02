@@ -417,3 +417,69 @@ final class ExtensionInstallationMetadataStore {
         return Date().timeIntervalSince(lastRun) >= orphanedExtensionCleanupInterval
     }
 }
+
+// MARK: - ExtensionManager facade
+
+@available(macOS 15.5, *)
+@MainActor
+extension ExtensionManager {
+    func persist(record: InstalledExtension) throws {
+        try installationMetadataStore.persist(record: record)
+    }
+
+    func extensionEntity(for id: String) throws -> ExtensionEntity? {
+        try installationMetadataStore.extensionEntity(for: id)
+    }
+
+    func extensionResourcesRoot(
+        sourceKind: WebExtensionSourceKind,
+        packagePath: String,
+        sourceBundlePath: String
+    ) throws -> URL {
+        try installationMetadataStore.extensionResourcesRoot(
+            sourceKind: sourceKind,
+            packagePath: packagePath,
+            sourceBundlePath: sourceBundlePath
+        )
+    }
+
+    func extensionResourcesRoot(for entity: ExtensionEntity) throws -> URL {
+        try installationMetadataStore.extensionResourcesRoot(for: entity)
+    }
+
+    func update(
+        _ entity: ExtensionEntity,
+        from record: InstalledExtension
+    ) {
+        installationMetadataStore.update(entity, from: record)
+    }
+
+    func refreshedRecord(
+        for entity: ExtensionEntity,
+        manifest: [String: Any]
+    ) throws -> InstalledExtension {
+        try installationMetadataStore.refreshedRecord(for: entity, manifest: manifest)
+    }
+
+    func makeInstalledRecord(
+        extensionId: String,
+        manifest: [String: Any],
+        extensionRoot: URL,
+        isEnabled: Bool,
+        sourceKind: WebExtensionSourceKind,
+        sourceBundlePath: String,
+        sourceFingerprintURL: URL,
+        existingEntity: ExtensionEntity?
+    ) throws -> InstalledExtension {
+        try installationMetadataStore.makeInstalledRecord(
+            extensionId: extensionId,
+            manifest: manifest,
+            extensionRoot: extensionRoot,
+            isEnabled: isEnabled,
+            sourceKind: sourceKind,
+            sourceBundlePath: sourceBundlePath,
+            sourceFingerprintURL: sourceFingerprintURL,
+            existingEntity: existingEntity
+        )
+    }
+}
