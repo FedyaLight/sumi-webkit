@@ -33,7 +33,9 @@ final class ExtensionManager: NSObject, ObservableObject {
         ExtensionUtils.isExtensionSupportAvailable
     @Published var extensionsLoaded = false
     @Published var isPopupActive = false
-    var activePopupIdentity: ExtensionActionPopupIdentity?
+    var activePopupIdentity: ExtensionActionPopupIdentity? {
+        actionPopupSessionOwner.activeIdentity
+    }
     @Published var pinnedToolbarExtensionIDs: [String] = []
 
     enum ExtensionBackgroundWakeReason: String, Codable, CaseIterable {
@@ -184,6 +186,7 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var requestedWindowOpeningOwner = ExtensionRequestedWindowOpeningOwner(
         dependencies: .live(manager: self)
     )
+    lazy var actionPopupSessionOwner = ExtensionActionPopupSessionOwner(manager: self)
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
@@ -257,9 +260,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()
     var optionsWindows: [String: NSWindow] = [:]
     var optionsWindowDelegates: [String: ExtensionOptionsWindowDelegate] = [:]
-    weak var activeExtensionActionPopover: NSPopover?
-    var extensionActionPopupUIDelegates: [String: ExtensionActionPopupUIDelegate] = [:]
-    var deferredPopupContextUnloadTasks: [ExtensionActionPopupIdentity: Task<Void, Never>] = [:]
     let adapterStore = ExtensionBrowserAdapterStore()
     let nativeMessagingPortRegistry = ExtensionNativeMessagingPortRegistry()
     private var nativeMessagingRelayStorage: SumiNativeMessagingRelay?
@@ -338,7 +338,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         SafariExtensionAutofillFillDiagnostics.deferredFillCompletionHandler = {
             [weak self] extensionId in
             guard let extensionId else { return }
-            self?.completeDeferredPopupContextUnload(
+            self?.actionPopupSessionOwner.completeDeferredContextUnload(
                 forExtensionId: extensionId,
                 reason: "relaySucceeded"
             )
