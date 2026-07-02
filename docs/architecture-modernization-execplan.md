@@ -1,13 +1,13 @@
 # Architecture Modernization Exec Plan
 
-Last updated: 2026-07-02
+Last updated: 2026-07-03
 
 ## Baseline
 
 - Starting score: 78/100.
 - Target score: 95/100.
 - Evidence baseline: `docs/refactor/modernization-audit.md`, `docs/architecture.md`, `xcodebuild -list -project Sumi.xcodeproj`.
-- Current score estimate: 90/100 after adding CI architecture guardrails, persistence/WebView/sidebar boundary checks, clearer shell runtime dependency ownership, SwiftData schema contracts, TabManager composition owners, settings directory-store ownership, browser dependency boundary tightening, web page menu composition owners, and Glance overlay runtime owners.
+- Current score estimate: 91/100 after adding CI architecture guardrails, persistence/WebView/sidebar boundary checks, clearer shell runtime dependency ownership, SwiftData schema contracts, TabManager composition owners, settings directory-store ownership, browser dependency boundary tightening, web page menu composition owners, Glance overlay runtime owners, and updater Sparkle backend ownership.
 
 ## Assumptions
 
@@ -56,21 +56,22 @@ Last updated: 2026-07-02
 | Browser dependency boundary tightening | Complete | Tightened broad browser/runtime dependencies by introducing narrower sidebar actions, permission inline cycle resolution, settings/content-blocking/favicons/extension stores, and explicit environment/context boundaries instead of direct manager reach-through. | `scripts/check_architecture_guardrails.sh` passed in subsequent final passes; `ce635a4ab` contains focused sidebar, permission, browser-window, and extension security tests for the slice. | This was a broad ownership pass; current follow-up did not rerun every focused test from that commit. | 88/100 |
 | Web page menu composition owners | Complete | Split web page context menu orchestration, Sumi-owned menu sections, shared item creation, and menu text formatting into dedicated role types while leaving WebKit native item mutation in `SumiWebPageNativeMenuComposer`. `SumiWebPageMenuController.swift` dropped to ~326 lines. | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -only-testing:SumiTests/SumiWebPageMenuControllerTests -only-testing:SumiTests/TabRuntimeRoutingTests -only-testing:SumiTests/SumiNavigationResponderTests/testNativeContextMenuProbeConsumesChildWebViewRequestBeforeDynamicGlance` passed; guardrails passed. | Controller still owns action methods and validation, which is appropriate until call sites can target command owners directly. | 89/100 |
 | Glance overlay runtime owners | Complete | Moved overlay visual styling, presentation state, promotion handoff, Escape-key command handling, and shield anchor view into dedicated role types. `GlanceOverlayController.swift` dropped from ~1148 to ~756 lines and gained direct keyboard owner tests. | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -only-testing:SumiTests/GlanceOverlayKeyCommandOwnerTests -only-testing:SumiTests/GlanceOverlayLayoutTests -only-testing:SumiTests/GlancePromotionCompletionOwnerTests -only-testing:SumiTests/GlanceManagerTests` passed; guardrails passed. | The controller still orchestrates open/close/promotion animation flow; further extraction should target animation choreography, not view-file splitting. | 90/100 |
+| Updater Sparkle backend ownership | Complete | Moved production Sparkle backend, delegate, user driver, and appcast item mapping out of `SumiUpdaterService.swift` into dedicated role files. `SumiUpdaterService.swift` no longer imports Sparkle or Combine and dropped from ~997 to ~659 lines. Added an updater Sparkle boundary guardrail to keep framework coupling inside `SumiSparkle*` files. | `scripts/check_updater_sparkle_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed; `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -only-testing:SumiTests/SumiUpdaterServiceTests` passed. | Updater service still owns notice state and store/view-model types in one file; future slices can separate update notice policy and About view projection if needed. | 91/100 |
 
 ## Before/After Estimate
 
 - Before: 78/100.
-- After current slice estimate: 90/100.
+- After current slice estimate: 91/100.
 - Target: 95/100 (standing instruction; honest composition only, no same-class extension-file splitting, owners named by real role).
 
 ## Ranked Next Targets (toward 95/100)
 
 | Rank | Target | Size | Notes |
 | --- | --- | --- | --- |
-| 1 | `Sumi/Updates/SumiUpdaterService.swift` | ~997 | Split feed/appcast parsing from install orchestration and UI-facing state projection. |
-| 2 | `Sumi/ImportExport/SumiBrowserImportService.swift` | ~968 | Split per-browser importers from orchestration and import-result application. |
-| 3 | `Sumi/Components/WebsiteView/WebsiteCompositorView.swift` | ~1074 | Separate compositor state/geometry/input routing from SwiftUI rendering. |
-| 4 | `Sumi/Managers/ExtensionManager/ExtensionInstallationFlowOwner.swift` | ~1046 | Split installation metadata/policy/progress orchestration without restoring broad manager coupling. |
-| 5 | `Sumi/Managers/TabSuspensionService.swift` | ~993 | Separate suspension policy, scheduling, and tab mutation effects. |
-| 6 | `Sumi/Components/Sidebar/URLBarHubPopover.swift` + `PinnedButtons/PinnedGrid.swift` | ~950 each | SwiftUI views; extract view models/state owners, not view splitting. |
+| 1 | `Sumi/ImportExport/SumiBrowserImportService.swift` | ~968 | Split per-browser importers from orchestration and import-result application. |
+| 2 | `Sumi/Components/WebsiteView/WebsiteCompositorView.swift` | ~1074 | Separate compositor state/geometry/input routing from SwiftUI rendering. |
+| 3 | `Sumi/Managers/ExtensionManager/ExtensionInstallationFlowOwner.swift` | ~1046 | Split installation metadata/policy/progress orchestration without restoring broad manager coupling. |
+| 4 | `Sumi/Managers/TabSuspensionService.swift` | ~993 | Separate suspension policy, scheduling, and tab mutation effects. |
+| 5 | `Sumi/Components/Sidebar/URLBarHubPopover.swift` + `PinnedButtons/PinnedGrid.swift` | ~950 each | SwiftUI views; extract view models/state owners, not view splitting. |
+| 6 | `Sumi/Updates/SumiUpdaterService.swift` remaining seams | ~659 | Separate update notice policy and About view projection from service state if further updater work is needed. |
 | 7 | `BrowserManager.swift` facade narrowing | ~1167 | Mostly owner wiring already; migrate call sites to owners where it removes real dependency width. |
