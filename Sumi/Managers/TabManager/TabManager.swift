@@ -96,6 +96,20 @@ class TabManager: ObservableObject {
             }
         )
     )
+    private lazy var shortcutPinRuntimeResolutionOwner = ShortcutPinRuntimeResolutionOwner(
+        dependencies: ShortcutPinRuntimeResolutionOwner.Dependencies(
+            spaces: { [weak self] in
+                self?.spaces ?? []
+            },
+            runtimeContext: { [weak self] in
+                self?.runtimeContext
+            },
+            faviconService: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.faviconService
+            }
+        )
+    )
     private lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
         dependencies: TabShortcutPresentationOwner.Dependencies(
             transientShortcutTabsByWindow: { [weak self] in
@@ -413,6 +427,45 @@ class TabManager: ObservableObject {
 
     func removeShortcutPinFromContainers(_ pin: ShortcutPin) {
         shortcutPinStoreOwner.removeFromContainers(pin)
+    }
+
+    func makeShortcutPin(
+        from tab: Tab,
+        role: ShortcutPinRole,
+        profileId: UUID? = nil,
+        spaceId: UUID? = nil,
+        folderId: UUID? = nil,
+        index: Int
+    ) -> ShortcutPin {
+        shortcutPinRuntimeResolutionOwner.makeShortcutPin(
+            from: tab,
+            role: role,
+            profileId: profileId,
+            spaceId: spaceId,
+            folderId: folderId,
+            index: index
+        )
+    }
+
+    func resolvedLiveSpaceId(for pin: ShortcutPin, currentSpaceId: UUID?) -> UUID? {
+        shortcutPinRuntimeResolutionOwner.resolvedLiveSpaceId(
+            for: pin,
+            currentSpaceId: currentSpaceId
+        )
+    }
+
+    func resolvedExecutionProfileId(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> UUID? {
+        shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(
+            for: pin,
+            currentSpaceId: currentSpaceId
+        )
+    }
+
+    func resolvedFaviconPartition(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> SumiFaviconPartition {
+        shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
+            for: pin,
+            currentSpaceId: currentSpaceId
+        )
     }
 
     func spacePinnedPins(for spaceId: UUID) -> [ShortcutPin] {

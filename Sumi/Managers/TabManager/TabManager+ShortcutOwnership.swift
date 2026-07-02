@@ -10,66 +10,6 @@ extension TabManager {
         }
     }
 
-    func makeShortcutPin(
-        from tab: Tab,
-        role: ShortcutPinRole,
-        profileId: UUID? = nil,
-        spaceId: UUID? = nil,
-        folderId: UUID? = nil,
-        index: Int
-    ) -> ShortcutPin {
-        ShortcutPin(
-            id: UUID(),
-            role: role,
-            profileId: profileId,
-            executionProfileId: shortcutExecutionProfileId(
-                from: tab,
-                role: role,
-                profileId: profileId,
-                spaceId: spaceId
-            ),
-            spaceId: spaceId,
-            index: index,
-            folderId: folderId,
-            launchURL: tab.url,
-            title: tab.name
-        )
-    }
-
-    func resolvedLiveSpaceId(for pin: ShortcutPin, currentSpaceId: UUID?) -> UUID? {
-        switch pin.role {
-        case .essential:
-            return nil
-        case .spacePinned:
-            return pin.spaceId ?? currentSpaceId
-        }
-    }
-
-    func resolvedExecutionProfileId(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> UUID? {
-        if let executionProfileId = pin.executionProfileId {
-            return executionProfileId
-        }
-
-        switch pin.role {
-        case .essential:
-            return pin.profileId
-        case .spacePinned:
-            return (pin.spaceId ?? currentSpaceId).flatMap { spaceId in
-                spaces.first(where: { $0.id == spaceId })?.profileId
-            }
-        }
-    }
-
-    func resolvedFaviconPartition(for pin: ShortcutPin, currentSpaceId: UUID? = nil) -> SumiFaviconPartition {
-        let profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
-        guard let profileId,
-              let profile = runtimeContext?.profile(with: profileId)
-        else {
-            return .regular(profileId)
-        }
-        return faviconService.partition(profile: profile)
-    }
-
     @discardableResult
     func convertShortcutPinToRegularTab(_ pin: ShortcutPin, in targetSpaceId: UUID, at targetIndex: Int? = nil) -> Bool {
         withStructuralUpdateTransaction {
@@ -208,28 +148,5 @@ extension TabManager {
                 return false
             }
         }
-    }
-}
-
-private extension TabManager {
-    func shortcutExecutionProfileId(
-        from tab: Tab,
-        role: ShortcutPinRole,
-        profileId: UUID?,
-        spaceId: UUID?
-    ) -> UUID? {
-        guard let tabProfileId = tab.profileId else { return nil }
-
-        let containerProfileId: UUID?
-        switch role {
-        case .essential:
-            containerProfileId = profileId
-        case .spacePinned:
-            containerProfileId = spaceId.flatMap { targetSpaceId in
-                spaces.first(where: { $0.id == targetSpaceId })?.profileId
-            }
-        }
-
-        return tabProfileId == containerProfileId ? nil : tabProfileId
     }
 }
