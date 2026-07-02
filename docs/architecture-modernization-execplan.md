@@ -7,7 +7,7 @@ Last updated: 2026-07-03
 - Starting score: 78/100.
 - Target score: 95/100.
 - Evidence baseline: `docs/refactor/modernization-audit.md`, `docs/architecture.md`, `xcodebuild -list -project Sumi.xcodeproj`.
-- Current score estimate: 91/100 after adding CI architecture guardrails, persistence/WebView/sidebar boundary checks, clearer shell runtime dependency ownership, SwiftData schema contracts, TabManager composition owners, settings directory-store ownership, browser dependency boundary tightening, web page menu composition owners, Glance overlay runtime owners, and updater Sparkle backend ownership.
+- Current score estimate: 92/100 after adding CI architecture guardrails, persistence/WebView/sidebar boundary checks, clearer shell runtime dependency ownership, SwiftData schema contracts, TabManager composition owners, settings directory-store ownership, browser dependency boundary tightening, web page menu composition owners, Glance overlay runtime owners, updater Sparkle backend ownership, and import/export Zen parser ownership.
 
 ## Assumptions
 
@@ -57,18 +57,19 @@ Last updated: 2026-07-03
 | Web page menu composition owners | Complete | Split web page context menu orchestration, Sumi-owned menu sections, shared item creation, and menu text formatting into dedicated role types while leaving WebKit native item mutation in `SumiWebPageNativeMenuComposer`. `SumiWebPageMenuController.swift` dropped to ~326 lines. | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -only-testing:SumiTests/SumiWebPageMenuControllerTests -only-testing:SumiTests/TabRuntimeRoutingTests -only-testing:SumiTests/SumiNavigationResponderTests/testNativeContextMenuProbeConsumesChildWebViewRequestBeforeDynamicGlance` passed; guardrails passed. | Controller still owns action methods and validation, which is appropriate until call sites can target command owners directly. | 89/100 |
 | Glance overlay runtime owners | Complete | Moved overlay visual styling, presentation state, promotion handoff, Escape-key command handling, and shield anchor view into dedicated role types. `GlanceOverlayController.swift` dropped from ~1148 to ~756 lines and gained direct keyboard owner tests. | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -only-testing:SumiTests/GlanceOverlayKeyCommandOwnerTests -only-testing:SumiTests/GlanceOverlayLayoutTests -only-testing:SumiTests/GlancePromotionCompletionOwnerTests -only-testing:SumiTests/GlanceManagerTests` passed; guardrails passed. | The controller still orchestrates open/close/promotion animation flow; further extraction should target animation choreography, not view-file splitting. | 90/100 |
 | Updater Sparkle backend ownership | Complete | Moved production Sparkle backend, delegate, user driver, and appcast item mapping out of `SumiUpdaterService.swift` into dedicated role files. `SumiUpdaterService.swift` no longer imports Sparkle or Combine and dropped from ~997 to ~659 lines. Added an updater Sparkle boundary guardrail to keep framework coupling inside `SumiSparkle*` files. | `scripts/check_updater_sparkle_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed; `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -only-testing:SumiTests/SumiUpdaterServiceTests` passed. | Updater service still owns notice state and store/view-model types in one file; future slices can separate update notice policy and About view projection if needed. | 91/100 |
+| Import/export Zen parser ownership | Complete | Moved Zen import parsing, Mozilla LZ4 decoding, shared folder hierarchy repair, and import text normalization out of `SumiBrowserImportService.swift`. The service no longer imports Compression and dropped from ~968 to ~543 lines. Added an import/export boundary guardrail. | `scripts/check_import_export_boundaries.sh` passed; `scripts/check_architecture_guardrails.sh` passed; `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -only-testing:SumiTests/SumiImportExportTests` passed. | Arc parsing and file preview orchestration still remain in `SumiBrowserImportService.swift`; next import/export slice should extract those roles without splitting the service cosmetically. | 92/100 |
 
 ## Before/After Estimate
 
 - Before: 78/100.
-- After current slice estimate: 91/100.
+- After current slice estimate: 92/100.
 - Target: 95/100 (standing instruction; honest composition only, no same-class extension-file splitting, owners named by real role).
 
 ## Ranked Next Targets (toward 95/100)
 
 | Rank | Target | Size | Notes |
 | --- | --- | --- | --- |
-| 1 | `Sumi/ImportExport/SumiBrowserImportService.swift` | ~968 | Split per-browser importers from orchestration and import-result application. |
+| 1 | `Sumi/ImportExport/SumiBrowserImportService.swift` | ~543 | Move Arc parsing and file preview/backup routing into real role types while keeping the service as import preview orchestration. |
 | 2 | `Sumi/Components/WebsiteView/WebsiteCompositorView.swift` | ~1074 | Separate compositor state/geometry/input routing from SwiftUI rendering. |
 | 3 | `Sumi/Managers/ExtensionManager/ExtensionInstallationFlowOwner.swift` | ~1046 | Split installation metadata/policy/progress orchestration without restoring broad manager coupling. |
 | 4 | `Sumi/Managers/TabSuspensionService.swift` | ~993 | Separate suspension policy, scheduling, and tab mutation effects. |
