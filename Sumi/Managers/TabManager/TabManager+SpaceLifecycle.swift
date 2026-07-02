@@ -61,7 +61,8 @@ extension TabManager {
 
             setTabs([], for: id)
             markSpaceStructurallyDeleted(id)
-            foldersBySpace.removeValue(forKey: id)
+            objectWillChange.send()
+            folderCollectionStateOwner.removeFolders(for: id)
             spacePinnedShortcuts.removeValue(forKey: id)
             markFoldersSnapshotDirty(for: id)
             markSpacePinnedSnapshotDirty(for: id)

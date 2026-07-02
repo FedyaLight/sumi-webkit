@@ -334,8 +334,16 @@ class TabManager: ObservableObject {
         dependencies: .live(tabManager: self)
     )
 
+    let folderCollectionStateOwner = TabFolderCollectionStateOwner()
+
     // Folders per space
-    @Published var foldersBySpace: [UUID: [TabFolder]] = [:]
+    var foldersBySpace: [UUID: [TabFolder]] {
+        get { folderCollectionStateOwner.foldersBySpace }
+        set {
+            objectWillChange.send()
+            folderCollectionStateOwner.replaceFoldersBySpace(newValue)
+        }
+    }
 
     private let shortcutPinCollectionStateOwner = ShortcutPinCollectionStateOwner()
 
@@ -694,12 +702,7 @@ class TabManager: ObservableObject {
     }
 
     func childFolders(of parentFolderId: UUID?, in spaceId: UUID) -> [TabFolder] {
-        (foldersBySpace[spaceId] ?? [])
-            .filter { $0.parentFolderId == parentFolderId }
-            .sorted { lhs, rhs in
-                if lhs.index != rhs.index { return lhs.index < rhs.index }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
+        folderCollectionStateOwner.childFolders(of: parentFolderId, in: spaceId)
     }
 
     func shortcutPin(by id: UUID) -> ShortcutPin? {
@@ -707,10 +710,7 @@ class TabManager: ObservableObject {
     }
 
     func folder(by id: UUID) -> TabFolder? {
-        for folders in foldersBySpace.values {
-            if let match = folders.first(where: { $0.id == id }) { return match }
-        }
-        return nil
+        folderCollectionStateOwner.folder(by: id)
     }
 
     func parentContainer(for folder: TabFolder) -> TabDragManager.DragContainer {
@@ -798,7 +798,7 @@ class TabManager: ObservableObject {
             faviconPresentationRefreshOwner.stop()
             tabsBySpace.removeAll()
             splitGroups.removeAll()
-            foldersBySpace.removeAll()
+            folderCollectionStateOwner.removeAll()
             shortcutPinCollectionStateOwner.removeAll()
             transientTabRegistryOwner.removeAll()
             structuralLookupOwner.removeAll()
@@ -1186,7 +1186,7 @@ class TabManager: ObservableObject {
     }
 
     func folders(for spaceId: UUID) -> [TabFolder] {
-        folderMutationOwner.folders(for: spaceId)
+        folderCollectionStateOwner.folders(for: spaceId)
     }
 
     func openFolderIfNeeded(_ folderId: UUID) {
@@ -1604,7 +1604,7 @@ class TabManager: ObservableObject {
 
         if !(tabsBySpace[spaceId] ?? []).isEmpty { return true }
         if shortcutPinCollectionStateOwner.hasSpacePinnedShortcuts(in: spaceId) { return true }
-        if !(foldersBySpace[spaceId] ?? []).isEmpty { return true }
+        if folderCollectionStateOwner.hasFolders(in: spaceId) { return true }
 
         return transientTabRegistryOwner.transientShortcutTabs
             .contains { $0.spaceId == spaceId }

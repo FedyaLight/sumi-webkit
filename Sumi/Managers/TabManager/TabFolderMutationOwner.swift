@@ -211,16 +211,9 @@ final class TabFolderMutationOwner {
         }
     }
 
-    func folders(for spaceId: UUID) -> [TabFolder] {
-        (tabManager.foldersBySpace[spaceId] ?? []).sorted { lhs, rhs in
-            if lhs.index != rhs.index { return lhs.index < rhs.index }
-            return lhs.id.uuidString < rhs.id.uuidString
-        }
-    }
-
     func setAllFolders(open isOpen: Bool, in spaceId: UUID) {
         tabManager.withStructuralUpdateTransaction {
-            let folders = tabManager.foldersBySpace[spaceId] ?? []
+            let folders = tabManager.folders(for: spaceId)
             guard folders.isEmpty == false else { return }
 
             var didChange = false
@@ -406,7 +399,7 @@ final class TabFolderMutationOwner {
         in parentFolderId: UUID?,
         spaceId: UUID
     ) {
-        let folders = tabManager.foldersBySpace[spaceId] ?? []
+        let folders = tabManager.folders(for: spaceId)
         let folderMap = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
         let pinMap = Dictionary(uniqueKeysWithValues: (tabManager.spacePinnedShortcuts[spaceId] ?? []).map { ($0.id, $0) })
 
@@ -451,7 +444,7 @@ final class TabFolderMutationOwner {
         var seen: Set<UUID> = []
         while let id = currentId {
             guard seen.insert(id).inserted else { return true }
-            guard let folder = (tabManager.foldersBySpace[spaceId] ?? []).first(where: { $0.id == id }) else {
+            guard let folder = tabManager.folders(for: spaceId).first(where: { $0.id == id }) else {
                 return false
             }
             if folder.parentFolderId == ancestorId {
@@ -463,7 +456,7 @@ final class TabFolderMutationOwner {
     }
 
     private func descendantFolderIds(including rootFolderId: UUID, spaceId: UUID) -> Set<UUID> {
-        let folders = tabManager.foldersBySpace[spaceId] ?? []
+        let folders = tabManager.folders(for: spaceId)
         let childrenByParentId = Dictionary(grouping: folders, by: \.parentFolderId)
 
         var result: Set<UUID> = []

@@ -327,6 +327,6 @@ extension TabManager {
     }
 
     func folderSpaceId(for folderId: UUID) -> UUID? {
-        foldersBySpace.first(where: { $0.value.contains(where: { $0.id == folderId }) })?.key
+        folderCollectionStateOwner.spaceId(for: folderId)
     }
 }
