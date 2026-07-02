@@ -130,4 +130,93 @@ final class TabRemovalOwner {
                 ?? tabManager.pinnedTabs.last
         }
     }
+
+    // MARK: - Closure Undo Capture
+
+    func captureRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
+        tabManager.runtimeContext?.captureClosedTab(tab, sourceSpaceId: spaceId)
+        tabManager.runtimeContext?.presentTabClosureToast(tabCount: 1)
+    }
+
+    private func captureRecentlyClosedTabs(_ tabs: [(tab: Tab, spaceId: UUID?)], count: Int) {
+        for (tab, spaceId) in tabs {
+            tabManager.runtimeContext?.captureClosedTab(tab, sourceSpaceId: spaceId)
+        }
+
+        tabManager.runtimeContext?.presentTabClosureToast(tabCount: count)
+    }
+
+    // MARK: - Bulk Removal
+
+    func closeAllTabsBelow(_ tab: Tab) {
+        tabManager.withStructuralUpdateTransaction {
+            guard let spaceId = tab.spaceId else { return }
+            guard let tabsBelow = tabManager.regularTabCollectionOwner.tabsBelow(tab) else { return }
+            if tabsBelow.isEmpty {
+                return
+            }
+
+            let tabsToTrack = tabsBelow.map { (tab: $0, spaceId: spaceId) }
+            for tabToClose in tabsBelow {
+                closeTabWithoutTracking(tabToClose.id)
+            }
+
+            captureRecentlyClosedTabs(tabsToTrack, count: tabsBelow.count)
+        }
+    }
+
+    private func closeTabWithoutTracking(_ id: UUID) {
+        tabManager.cancelRuntimeStatePersistence(for: id)
+        let wasCurrent = tabManager.currentTab?.id == id
+        var removed: Tab?
+        var removedIndexInCurrentSpace: Int?
+
+        if let removal = tabManager.regularTabCollectionOwner.remove(
+            id,
+            in: tabManager.spaces,
+            currentSpaceId: tabManager.currentSpace?.id
+        ) {
+            removed = removal.tab
+            removedIndexInCurrentSpace = removal.indexInCurrentSpace
+        }
+
+        if removed == nil,
+           let removal = tabManager.transientTabRegistryOwner.removeTransientShortcutTab(tabId: id) {
+            _ = removal.windowId
+            _ = removal.pinId
+            tabManager.notifyTransientShortcutStateChanged()
+            removed = removal.tab
+        }
+
+        guard let tab = removed else { return }
+
+        let runtimeContext = tabManager.requireRuntimeContext()
+        runtimeContext.webViewLifecycle.unloadTab(tab)
+        runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
+            for: tab,
+            closeActiveFullscreenMedia: true
+        )
+
+        NotificationCenter.default.post(
+            name: .sumiTabLifecycleDidChange,
+            object: tab
+        )
+
+        if wasCurrent {
+            if tab.spaceId == nil {
+                let tabs = tabManager.essentialTabs(for: runtimeContext.currentProfileId)
+                if let first = tabs.first {
+                    tabManager.setActiveTab(first)
+                }
+            } else if let spaceId = tab.spaceId {
+                let spaceTabs = tabManager.regularTabCollectionOwner.tabs(in: spaceId)
+                if !spaceTabs.isEmpty {
+                    let targetIndex = min(removedIndexInCurrentSpace ?? 0, spaceTabs.count - 1)
+                    tabManager.setActiveTab(spaceTabs[targetIndex])
+                }
+            }
+        }
+
+        tabManager.scheduleStructuralPersistence()
+    }
 }

@@ -1,58 +1,62 @@
-//
-//  TabManager+StartupRestore.swift
-//  Sumi
-//
-
 import AppKit
 import Foundation
 
+/// Owns last-session restore: resetting live regular tabs and shortcut live
+/// instances at startup, and merging a persisted snapshot back into the live
+/// space/folder/pin/tab collections.
 @MainActor
-extension TabManager {
+final class TabLastSessionRestoreOwner {
+    unowned let tabManager: TabManager
+
+    init(tabManager: TabManager) {
+        self.tabManager = tabManager
+    }
+
     func resetRegularTabsAndShortcutLiveInstancesForStartup() {
-        let runtimeContext = requireRuntimeContext()
-        withStructuralUpdateTransaction {
-            lazyRestoreCoordinator.clear()
-            let liveShortcutTabs = transientTabRegistryOwner.transientShortcutTabs
+        let runtimeContext = tabManager.requireRuntimeContext()
+        tabManager.withStructuralUpdateTransaction {
+            tabManager.lazyRestoreCoordinator.clear()
+            let liveShortcutTabs = tabManager.transientTabRegistryOwner.transientShortcutTabs
             if !liveShortcutTabs.isEmpty {
                 for tab in liveShortcutTabs {
-                    cancelRuntimeStatePersistence(for: tab.id)
+                    tabManager.cancelRuntimeStatePersistence(for: tab.id)
                     tab.performComprehensiveWebViewCleanup()
                     runtimeContext.webViewLifecycle.unloadTab(tab)
                     runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )
-                    detach(tab)
+                    tabManager.detach(tab)
                 }
-                transientTabRegistryOwner.replaceTransientShortcutTabsByWindow([:])
-                notifyTransientShortcutStateChanged()
+                tabManager.transientTabRegistryOwner.replaceTransientShortcutTabsByWindow([:])
+                tabManager.notifyTransientShortcutStateChanged()
             }
 
-            for space in spaces {
-                let regularTabs = regularTabCollectionOwner.tabs(in: space)
+            for space in tabManager.spaces {
+                let regularTabs = tabManager.regularTabCollectionOwner.tabs(in: space)
                 for tab in regularTabs {
-                    cancelRuntimeStatePersistence(for: tab.id)
+                    tabManager.cancelRuntimeStatePersistence(for: tab.id)
                     runtimeContext.webViewLifecycle.unloadTab(tab)
                     runtimeContext.webViewLifecycle.requireRemoveAllWebViews(
                         for: tab,
                         closeActiveFullscreenMedia: true
                     )
-                    detach(tab)
+                    tabManager.detach(tab)
                 }
-                setTabs([], for: space.id)
+                tabManager.setTabs([], for: space.id)
                 if space.activeTabId != nil {
                     space.activeTabId = nil
-                    markSpacesSnapshotDirty()
+                    tabManager.markSpacesSnapshotDirty()
                 }
             }
 
-            currentTab = nil
-            scheduleStructuralPersistence()
+            tabManager.currentTab = nil
+            tabManager.scheduleStructuralPersistence()
         }
     }
 
     func mergeSnapshotForLastSessionRestore(_ snapshot: TabSnapshotRepository.Snapshot) {
-        withStructuralUpdateTransaction {
+        tabManager.withStructuralUpdateTransaction {
             mergeSpaces(from: snapshot.spaces)
             mergeFolders(from: snapshot.folders)
             mergeShortcutPins(from: snapshot.tabs.filter { $0.isPinned })
@@ -60,25 +64,25 @@ extension TabManager {
             mergeRegularTabs(from: snapshot.tabs.filter { !$0.isPinned && !$0.isSpacePinned })
 
             if let currentSpaceId = snapshot.state.currentSpaceID,
-               let restoredSpace = spaceCollectionStateOwner.space(with: currentSpaceId) {
-                currentSpace = restoredSpace
-            } else if spaceCollectionStateOwner.currentSpace == nil {
-                currentSpace = spaceCollectionStateOwner.firstSpace
+               let restoredSpace = tabManager.spaceCollectionStateOwner.space(with: currentSpaceId) {
+                tabManager.currentSpace = restoredSpace
+            } else if tabManager.spaceCollectionStateOwner.currentSpace == nil {
+                tabManager.currentSpace = tabManager.spaceCollectionStateOwner.firstSpace
             }
 
             if let currentTabId = snapshot.state.currentTabID,
-               let restoredTab = tab(for: currentTabId) {
-                currentTab = restoredTab
+               let restoredTab = tabManager.tab(for: currentTabId) {
+                tabManager.currentTab = restoredTab
             }
 
-            lazyRestoreCoordinator.reset(
+            tabManager.lazyRestoreCoordinator.reset(
                 restoredTabIDs: Set(
                     snapshot.tabs
                         .filter { !$0.isPinned && !$0.isSpacePinned }
                         .map(\.id)
                 )
             )
-            scheduleStructuralPersistence()
+            tabManager.scheduleStructuralPersistence()
         }
     }
 
@@ -86,7 +90,7 @@ extension TabManager {
         var didAddSpace = false
         for snapshotSpace in snapshotSpaces.sorted(by: sortSnapshotSpaces) {
             let restoredTheme = restoredWorkspaceTheme(from: snapshotSpace)
-            if let existing = spaceCollectionStateOwner.space(with: snapshotSpace.id) {
+            if let existing = tabManager.spaceCollectionStateOwner.space(with: snapshotSpace.id) {
                 existing.name = snapshotSpace.name
                 existing.icon = SumiPersistentGlyph.normalizedSpaceIconValue(snapshotSpace.icon)
                 existing.workspaceTheme = restoredTheme
@@ -94,8 +98,8 @@ extension TabManager {
                 continue
             }
 
-            objectWillChange.send()
-            spaceCollectionStateOwner.append(
+            tabManager.objectWillChange.send()
+            tabManager.spaceCollectionStateOwner.append(
                 Space(
                     id: snapshotSpace.id,
                     name: snapshotSpace.name,
@@ -108,8 +112,8 @@ extension TabManager {
         }
 
         let order = Dictionary(uniqueKeysWithValues: snapshotSpaces.map { ($0.id, $0.index) })
-        objectWillChange.send()
-        spaceCollectionStateOwner.sort {
+        tabManager.objectWillChange.send()
+        tabManager.spaceCollectionStateOwner.sort {
             let lhs = order[$0.id] ?? Int.max
             let rhs = order[$1.id] ?? Int.max
             if lhs != rhs { return lhs < rhs }
@@ -117,18 +121,19 @@ extension TabManager {
         }
 
         if didAddSpace {
-            for space in spaces where regularTabCollectionStateOwner.tabsBySpace[space.id] == nil {
-                setTabs([], for: space.id)
+            for space in tabManager.spaces
+            where tabManager.regularTabCollectionStateOwner.tabsBySpace[space.id] == nil {
+                tabManager.setTabs([], for: space.id)
             }
         }
-        markAllSpacesStructurallyDirty()
+        tabManager.markAllSpacesStructurallyDirty()
     }
 
     private func mergeFolders(from snapshotFolders: [TabSnapshotRepository.SnapshotFolder]) {
         let foldersBySnapshotSpace = Dictionary(grouping: snapshotFolders, by: \.spaceId)
         for (spaceId, snapshotFolders) in foldersBySnapshotSpace {
-            guard spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
-            var existingFolders = foldersBySpace[spaceId] ?? []
+            guard tabManager.spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
+            var existingFolders = tabManager.foldersBySpace[spaceId] ?? []
             for snapshotFolder in snapshotFolders.sorted(by: sortSnapshotFolders) {
                 if let index = existingFolders.firstIndex(where: { $0.id == snapshotFolder.id }) {
                     existingFolders[index].name = snapshotFolder.name
@@ -152,7 +157,7 @@ extension TabManager {
                 }
             }
             existingFolders.sort(by: sortFolders)
-            setFolders(existingFolders, for: spaceId)
+            tabManager.setFolders(existingFolders, for: spaceId)
         }
     }
 
@@ -160,7 +165,7 @@ extension TabManager {
         let pinsByProfile = Dictionary(grouping: snapshotTabs, by: \.profileId)
         for (profileId, snapshotTabs) in pinsByProfile {
             guard let profileId else { continue }
-            var pins = pinnedByProfile[profileId] ?? []
+            var pins = tabManager.pinnedByProfile[profileId] ?? []
             for snapshotTab in snapshotTabs.sorted(by: sortSnapshotTabs) {
                 guard pins.contains(where: { $0.id == snapshotTab.id }) == false,
                       let url = URL(string: snapshotTab.urlString)
@@ -180,7 +185,10 @@ extension TabManager {
                     )
                 )
             }
-            setPinnedTabs(reindexed(pins.sorted(by: sortPins)), for: profileId)
+            tabManager.setPinnedTabs(
+                tabManager.reindexed(pins.sorted(by: sortPins)),
+                for: profileId
+            )
         }
     }
 
@@ -191,8 +199,8 @@ extension TabManager {
         }, by: \.0)
 
         for (spaceId, entries) in pinsBySpace {
-            guard spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
-            var pins = spacePinnedShortcuts[spaceId] ?? []
+            guard tabManager.spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
+            var pins = tabManager.spacePinnedShortcuts[spaceId] ?? []
             for snapshotTab in entries.map(\.1).sorted(by: sortSnapshotTabs) {
                 guard pins.contains(where: { $0.id == snapshotTab.id }) == false,
                       let url = URL(string: snapshotTab.urlString)
@@ -213,7 +221,10 @@ extension TabManager {
                     )
                 )
             }
-            setSpacePinnedShortcuts(normalizedSpacePinnedShortcuts(pins), for: spaceId)
+            tabManager.setSpacePinnedShortcuts(
+                tabManager.normalizedSpacePinnedShortcuts(pins),
+                for: spaceId
+            )
         }
     }
 
@@ -224,8 +235,8 @@ extension TabManager {
         }, by: \.0)
 
         for (spaceId, entries) in tabsBySnapshotSpace {
-            guard spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
-            var tabs = regularTabCollectionOwner.tabs(in: spaceId)
+            guard tabManager.spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
+            var tabs = tabManager.regularTabCollectionOwner.tabs(in: spaceId)
             for snapshotTab in entries.map(\.1).sorted(by: sortSnapshotTabs) {
                 guard tabs.contains(where: { $0.id == snapshotTab.id }) == false,
                       let url = URL(string: snapshotTab.currentURLString ?? snapshotTab.urlString)
@@ -242,18 +253,19 @@ extension TabManager {
                     spaceId: spaceId,
                     index: snapshotTab.index,
                     loadsCachedFaviconOnInit: false,
-                    faviconService: faviconService,
-                    faviconImageService: faviconImageService,
-                    visitedLinkStore: visitedLinkStore
+                    faviconService: tabManager.faviconService,
+                    faviconImageService: tabManager.faviconImageService,
+                    visitedLinkStore: tabManager.visitedLinkStore
                 )
                 tab.canGoBack = snapshotTab.canGoBack
                 tab.canGoForward = snapshotTab.canGoForward
-                tab.profileId = snapshotTab.profileId ?? spaceCollectionStateOwner.profileId(for: spaceId)
-                attach(tab)
+                tab.profileId = snapshotTab.profileId
+                    ?? tabManager.spaceCollectionStateOwner.profileId(for: spaceId)
+                tabManager.attach(tab)
                 tabs.append(tab)
             }
             tabs.sort(by: sortTabs)
-            setTabs(tabs, for: spaceId)
+            tabManager.setTabs(tabs, for: spaceId)
         }
     }
 

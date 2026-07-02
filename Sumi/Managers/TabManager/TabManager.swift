@@ -51,6 +51,10 @@ class TabManager: ObservableObject {
     lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
     lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(tabManager: self)
     lazy var spaceLifecycleOwner = TabSpaceLifecycleOwner(tabManager: self)
+    lazy var profileAssignmentOwner = TabProfileAssignmentOwner(tabManager: self)
+    lazy var lastSessionRestoreOwner = TabLastSessionRestoreOwner(tabManager: self)
+    lazy var shortcutPinCommandOwner = ShortcutPinCommandOwner(tabManager: self)
+    lazy var sidebarDragRoutingOwner = SidebarDragOperationRoutingOwner(tabManager: self)
     private lazy var essentialsShortcutPlacementOwner = EssentialsShortcutPlacementOwner(
         dependencies: EssentialsShortcutPlacementOwner.Dependencies(
             spaces: { [weak self] in
@@ -1471,6 +1475,188 @@ class TabManager: ObservableObject {
         return personal
     }
 
+    // MARK: - Launcher Pin Commands
+
+    func pinTab(_ tab: Tab, context: EssentialsTargetContext? = nil) {
+        shortcutPinCommandOwner.pinTab(tab, context: context)
+    }
+
+    @discardableResult
+    func copyShortcutPinToEssentials(
+        _ pin: ShortcutPin,
+        title: String,
+        context: EssentialsTargetContext? = nil
+    ) -> ShortcutPin? {
+        shortcutPinCommandOwner.copyShortcutPinToEssentials(pin, title: title, context: context)
+    }
+
+    func removeShortcutPin(_ pin: ShortcutPin) {
+        shortcutPinCommandOwner.removeShortcutPin(pin)
+    }
+
+    @discardableResult
+    func updateShortcutPin(
+        _ pin: ShortcutPin,
+        title: String? = nil,
+        launchURL: URL? = nil,
+        iconAsset: String?? = nil,
+        executionProfileId: UUID?? = nil
+    ) -> ShortcutPin? {
+        shortcutPinCommandOwner.updateShortcutPin(
+            pin,
+            title: title,
+            launchURL: launchURL,
+            iconAsset: iconAsset,
+            executionProfileId: executionProfileId
+        )
+    }
+
+    @discardableResult
+    func replaceShortcutPinURLWithCurrent(
+        _ pin: ShortcutPin,
+        in windowState: BrowserWindowState
+    ) -> ShortcutPin? {
+        shortcutPinCommandOwner.replaceShortcutPinURLWithCurrent(pin, in: windowState)
+    }
+
+    @discardableResult
+    func resetShortcutPinToLaunchURL(
+        _ pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        preserveCurrentPage: Bool = false
+    ) -> ShortcutPin? {
+        shortcutPinCommandOwner.resetShortcutPinToLaunchURL(
+            pin,
+            in: windowState,
+            preserveCurrentPage: preserveCurrentPage
+        )
+    }
+
+    func removeFromEssentials(_ pin: ShortcutPin) {
+        shortcutPinCommandOwner.removeShortcutPin(pin)
+    }
+
+    @discardableResult
+    func reorderEssential(_ pin: ShortcutPin, to index: Int) -> Bool {
+        shortcutPinCommandOwner.reorderEssential(pin, to: index)
+    }
+
+    @discardableResult
+    func reorderSpacePinned(_ pin: ShortcutPin, in spaceId: UUID, to index: Int) -> Bool {
+        shortcutPinCommandOwner.reorderSpacePinned(pin, in: spaceId, to: index)
+    }
+
+    func pinTabToSpace(_ tab: Tab, spaceId: UUID) {
+        shortcutPinCommandOwner.pinTabToSpace(tab, spaceId: spaceId)
+    }
+
+    func folderSpaceId(for folderId: UUID) -> UUID? {
+        folderCollectionStateOwner.spaceId(for: folderId)
+    }
+
+    // MARK: - Sidebar Drag Routing and Tab Moves
+
+    @discardableResult
+    func performSidebarDragOperation(_ operation: DragOperation) -> Bool {
+        withStructuralUpdateTransaction {
+            sidebarDragRoutingOwner.handleDragOperation(operation)
+        }
+    }
+
+    @discardableResult
+    func handleDragOperation(_ operation: DragOperation) -> Bool {
+        sidebarDragRoutingOwner.handleDragOperation(operation)
+    }
+
+    func alphabetizeFolderPins(_ folderId: UUID, in spaceId: UUID) {
+        folderMutationOwner.alphabetizeFolderPins(folderId, in: spaceId)
+    }
+
+    @discardableResult
+    func reorderSpacePinnedTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
+        regularTabDragService.reorderSpacePinnedTabs(tab, in: spaceId, to: index)
+    }
+
+    @discardableResult
+    func reorderRegularTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
+        regularTabDragService.reorderRegularTabs(tab, in: spaceId, to: index)
+    }
+
+    func moveTab(_ tabId: UUID, to targetSpaceId: UUID) {
+        sidebarDragRoutingOwner.moveTab(tabId, to: targetSpaceId)
+    }
+
+    func moveTabUp(_ tabId: UUID) {
+        withStructuralUpdateTransaction {
+            guard regularTabCollectionOwner.moveUp(tabId) else { return }
+            scheduleStructuralPersistence()
+        }
+    }
+
+    func moveTabDown(_ tabId: UUID) {
+        withStructuralUpdateTransaction {
+            guard regularTabCollectionOwner.moveDown(tabId) else { return }
+            scheduleStructuralPersistence()
+        }
+    }
+
+    // MARK: - Profile Assignment and Cleanup
+
+    func cleanupProfileReferences(_ deletedProfileId: UUID, fallbackProfileId: UUID) {
+        profileAssignmentOwner.cleanupProfileReferences(
+            deletedProfileId,
+            fallbackProfileId: fallbackProfileId
+        )
+    }
+
+    func handleProfileSwitch(contextWindowId: UUID? = nil) {
+        profileAssignmentOwner.handleProfileSwitch(contextWindowId: contextWindowId)
+    }
+
+    func reconcileSpaceProfilesIfNeeded() {
+        profileAssignmentOwner.reconcileSpaceProfilesIfNeeded()
+    }
+
+    func assign(spaceId: UUID, toProfile profileId: UUID) {
+        profileAssignmentOwner.assign(spaceId: spaceId, toProfile: profileId)
+    }
+
+    @discardableResult
+    func assign(tab: Tab, toProfile profileId: UUID) -> Bool {
+        profileAssignmentOwner.assign(tab: tab, toProfile: profileId)
+    }
+
+    @discardableResult
+    func assign(shortcutPin pin: ShortcutPin, toExecutionProfile profileId: UUID) -> ShortcutPin? {
+        profileAssignmentOwner.assign(shortcutPin: pin, toExecutionProfile: profileId)
+    }
+
+    func assignProfile(_ profileId: UUID?, to tab: Tab) {
+        profileAssignmentOwner.assignProfile(profileId, to: tab)
+    }
+
+    func profileExists(_ profileId: UUID) -> Bool {
+        profileAssignmentOwner.profileExists(profileId)
+    }
+
+    // MARK: - Tab Closure Undo and Bulk Removal
+
+    func tabs(in space: Space) -> [Tab] {
+        regularTabCollectionOwner.tabs(in: space)
+    }
+
+    func captureRecentlyClosedTab(_ tab: Tab, spaceId: UUID?) {
+        tabRemovalOwner.captureRecentlyClosedTab(tab, spaceId: spaceId)
+    }
+
+    func updateTabNavigationState(_ tab: Tab) {
+        scheduleRuntimeStatePersistence(for: tab)
+    }
+
+    func closeAllTabsBelow(_ tab: Tab) {
+        tabRemovalOwner.closeAllTabsBelow(tab)
+    }
+
     // MARK: - Split Group Structure
 
     typealias SpacePinnedVisualItem = TabSplitGroupStructureOwner.SpacePinnedVisualItem
@@ -1761,6 +1947,14 @@ class TabManager: ObservableObject {
 
     func loadFromStore() {
         storeRestore.loadFromStore()
+    }
+
+    func resetRegularTabsAndShortcutLiveInstancesForStartup() {
+        lastSessionRestoreOwner.resetRegularTabsAndShortcutLiveInstancesForStartup()
+    }
+
+    func mergeSnapshotForLastSessionRestore(_ snapshot: TabSnapshotRepository.Snapshot) {
+        lastSessionRestoreOwner.mergeSnapshotForLastSessionRestore(snapshot)
     }
 
     @discardableResult

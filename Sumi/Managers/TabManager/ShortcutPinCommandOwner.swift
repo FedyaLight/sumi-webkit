@@ -1,36 +1,44 @@
 import Foundation
 
+/// Owns user-level launcher pin commands: pinning tabs to essentials or a
+/// space, copying, removing, updating, resetting, and reordering shortcut
+/// pins in response to explicit user actions.
 @MainActor
-extension TabManager {
-    // MARK: - Pinned tabs (global)
+final class ShortcutPinCommandOwner {
+    unowned let tabManager: TabManager
 
-    func pinTab(_ tab: Tab, context: EssentialsTargetContext? = nil) {
-        withStructuralUpdateTransaction {
-            guard let insertion = resolveEssentialsInsertion(
-                using: EssentialsInsertionContext(target: context)
+    init(tabManager: TabManager) {
+        self.tabManager = tabManager
+    }
+
+    func pinTab(_ tab: Tab, context: TabManager.EssentialsTargetContext?) {
+        tabManager.withStructuralUpdateTransaction {
+            guard let insertion = tabManager.resolveEssentialsInsertion(
+                using: TabManager.EssentialsInsertionContext(target: context)
             ) else { return }
-            if essentialPins(for: insertion.profileId).contains(where: { $0.launchURL == tab.url }) { return }
+            if tabManager.essentialPins(for: insertion.profileId)
+                .contains(where: { $0.launchURL == tab.url }) { return }
 
-            let pin = makeShortcutPin(
+            let pin = tabManager.makeShortcutPin(
                 from: tab,
                 role: .essential,
                 profileId: insertion.profileId,
                 index: insertion.index
             )
-            guard let insertedPin = insertShortcutPin(pin, at: insertion.index) else { return }
-            logEssentialsTargetMismatchIfNeeded(
+            guard let insertedPin = tabManager.insertShortcutPin(pin, at: insertion.index) else { return }
+            tabManager.logEssentialsTargetMismatchIfNeeded(
                 resolution: insertion.resolution,
                 context: context
             )
 
-            if !convertDisplayedTabToShortcutLiveInstances(
+            if !tabManager.convertDisplayedTabToShortcutLiveInstances(
                 tab,
                 pin: insertedPin,
                 preferredWindowId: context?.windowState?.id
             ) {
-                removeTab(tab.id)
+                tabManager.removeTab(tab.id)
             }
-            scheduleStructuralPersistence()
+            tabManager.scheduleStructuralPersistence()
         }
     }
 
@@ -38,13 +46,14 @@ extension TabManager {
     func copyShortcutPinToEssentials(
         _ pin: ShortcutPin,
         title: String,
-        context: EssentialsTargetContext? = nil
+        context: TabManager.EssentialsTargetContext?
     ) -> ShortcutPin? {
-        withStructuralUpdateTransaction {
-            guard let insertion = resolveEssentialsInsertion(
-                using: EssentialsInsertionContext(target: context)
+        tabManager.withStructuralUpdateTransaction {
+            guard let insertion = tabManager.resolveEssentialsInsertion(
+                using: TabManager.EssentialsInsertionContext(target: context)
             ) else { return nil }
-            if essentialPins(for: insertion.profileId).contains(where: { $0.launchURL == pin.launchURL }) {
+            if tabManager.essentialPins(for: insertion.profileId)
+                .contains(where: { $0.launchURL == pin.launchURL }) {
                 return nil
             }
 
@@ -64,15 +73,15 @@ extension TabManager {
                 title: title,
                 iconAsset: pin.iconAsset
             )
-            guard let insertedPin = insertShortcutPin(copiedPin, at: insertion.index) else {
+            guard let insertedPin = tabManager.insertShortcutPin(copiedPin, at: insertion.index) else {
                 return nil
             }
 
-            logEssentialsTargetMismatchIfNeeded(
+            tabManager.logEssentialsTargetMismatchIfNeeded(
                 resolution: insertion.resolution,
                 context: context
             )
-            scheduleStructuralPersistence()
+            tabManager.scheduleStructuralPersistence()
             return insertedPin
         }
     }
@@ -80,39 +89,42 @@ extension TabManager {
     private func copiedShortcutExecutionProfileId(
         for pin: ShortcutPin,
         targetProfileId: UUID,
-        context: EssentialsTargetContext?
+        context: TabManager.EssentialsTargetContext?
     ) -> UUID? {
         let currentSpaceId = context?.spaceId ?? context?.windowState?.currentSpaceId
-        let executionProfileId = resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
+        let executionProfileId = tabManager.resolvedExecutionProfileId(
+            for: pin,
+            currentSpaceId: currentSpaceId
+        )
         return executionProfileId == targetProfileId ? nil : executionProfileId
     }
 
     func removeShortcutPin(_ pin: ShortcutPin) {
-        withStructuralUpdateTransaction {
-            if shortcutPin(by: pin.id) != nil {
-                runtimeContext?.captureDeletedShortcutLauncher(pin)
+        tabManager.withStructuralUpdateTransaction {
+            if tabManager.shortcutPin(by: pin.id) != nil {
+                tabManager.runtimeContext?.captureDeletedShortcutLauncher(pin)
             }
 
-            removeShortcutPinFromContainers(pin)
+            tabManager.removeShortcutPinFromContainers(pin)
 
-            let cleanupResult = removeLiveShortcutTabs(forDeletedPinId: pin.id)
+            let cleanupResult = tabManager.removeLiveShortcutTabs(forDeletedPinId: pin.id)
             if cleanupResult.didClearCurrentSelection {
-                runtimeContext?.validateWindowStates()
+                tabManager.runtimeContext?.validateWindowStates()
             }
-            persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
-            scheduleStructuralPersistence()
+            tabManager.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
+            tabManager.scheduleStructuralPersistence()
         }
     }
 
     @discardableResult
     func updateShortcutPin(
         _ pin: ShortcutPin,
-        title: String? = nil,
-        launchURL: URL? = nil,
-        iconAsset: String?? = nil,
-        executionProfileId: UUID?? = nil
+        title: String?,
+        launchURL: URL?,
+        iconAsset: String??,
+        executionProfileId: UUID??
     ) -> ShortcutPin? {
-        withStructuralUpdateTransaction {
+        tabManager.withStructuralUpdateTransaction {
             let updatedPin = pin.updated(
                 title: title,
                 launchURL: launchURL,
@@ -123,39 +135,41 @@ extension TabManager {
             switch pin.role {
             case .essential:
                 guard let profileId = pin.profileId,
-                      var pins = pinnedByProfile[profileId],
+                      var pins = tabManager.pinnedByProfile[profileId],
                       let index = pins.firstIndex(where: { $0.id == pin.id }) else {
                     return nil
                 }
 
                 pins[index] = updatedPin.refreshed(index: pin.index)
-                setPinnedTabs(reindexed(pins), for: profileId)
-                if let inserted = pinnedByProfile[profileId]?.first(where: { $0.id == pin.id }) {
-                    updateTransientShortcutBindings(for: inserted)
-                    scheduleStructuralPersistence()
+                tabManager.setPinnedTabs(tabManager.reindexed(pins), for: profileId)
+                if let inserted = tabManager.pinnedByProfile[profileId]?
+                    .first(where: { $0.id == pin.id }) {
+                    tabManager.updateTransientShortcutBindings(for: inserted)
+                    tabManager.scheduleStructuralPersistence()
                     return inserted
                 }
             case .spacePinned:
                 guard let spaceId = pin.spaceId else { return nil }
                 if pin.folderId == nil {
-                    let items = topLevelSpacePinnedItems(for: spaceId).map { item -> SpacePinnedTopLevelItem in
-                        guard case .shortcut(let existingPin) = item, existingPin.id == pin.id else {
-                            return item
+                    let items = tabManager.topLevelSpacePinnedItems(for: spaceId)
+                        .map { item -> TabManager.SpacePinnedTopLevelItem in
+                            guard case .shortcut(let existingPin) = item, existingPin.id == pin.id else {
+                                return item
+                            }
+                            return .shortcut(updatedPin.refreshed(index: pin.index))
                         }
-                        return .shortcut(updatedPin.refreshed(index: pin.index))
-                    }
-                    applyTopLevelSpacePinnedOrder(items, for: spaceId)
+                    tabManager.applyTopLevelSpacePinnedOrder(items, for: spaceId)
                 } else {
-                    withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { pins in
+                    tabManager.withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { pins in
                         if let index = pins.firstIndex(where: { $0.id == pin.id }) {
                             pins[index] = updatedPin.refreshed(index: pin.index)
                         }
                     }
                 }
 
-                if let inserted = shortcutPin(by: pin.id) {
-                    updateTransientShortcutBindings(for: inserted)
-                    scheduleStructuralPersistence()
+                if let inserted = tabManager.shortcutPin(by: pin.id) {
+                    tabManager.updateTransientShortcutBindings(for: inserted)
+                    tabManager.scheduleStructuralPersistence()
                     return inserted
                 }
             }
@@ -169,13 +183,13 @@ extension TabManager {
         _ pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> ShortcutPin? {
-        guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
+        guard let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) else {
             return nil
         }
 
         let liveTitle = liveTab.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedTitle = liveTitle.isEmpty ? pin.title : liveTitle
-        let updated = updateShortcutPin(
+        let updated = tabManager.updateShortcutPin(
             pin,
             title: resolvedTitle,
             launchURL: liveTab.url
@@ -187,10 +201,10 @@ extension TabManager {
     func resetShortcutPinToLaunchURL(
         _ pin: ShortcutPin,
         in windowState: BrowserWindowState,
-        preserveCurrentPage: Bool = false
+        preserveCurrentPage: Bool
     ) -> ShortcutPin? {
-        withStructuralUpdateTransaction {
-            guard let liveTab = shortcutLiveTab(for: pin.id, in: windowState.id) else {
+        tabManager.withStructuralUpdateTransaction {
+            guard let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) else {
                 return nil
             }
 
@@ -207,24 +221,24 @@ extension TabManager {
                     favicon: SumiPersistentGlyph.launcherSystemImageFallback,
                     spaceId: targetSpaceId,
                     index: 0,
-                    faviconService: faviconService,
-                    faviconImageService: faviconImageService,
-                    visitedLinkStore: visitedLinkStore
+                    faviconService: tabManager.faviconService,
+                    faviconImageService: tabManager.faviconImageService,
+                    visitedLinkStore: tabManager.visitedLinkStore
                 )
                 duplicateTab.favicon = liveTab.favicon
                 duplicateTab.faviconIsTemplateGlobePlaceholder = liveTab.faviconIsTemplateGlobePlaceholder
                 duplicateTab.profileId = liveTab.profileId
-                attach(duplicateTab)
-                var spaceTabs = regularTabCollectionOwner.tabs(in: targetSpaceId)
+                tabManager.attach(duplicateTab)
+                var spaceTabs = tabManager.regularTabCollectionOwner.tabs(in: targetSpaceId)
                 spaceTabs.append(duplicateTab)
-                setTabs(spaceTabs, for: targetSpaceId)
+                tabManager.setTabs(spaceTabs, for: targetSpaceId)
             }
 
             _ = liveTab.acceptResolvedDisplayTitle(pin.title, url: pin.launchURL)
             liveTab.url = pin.launchURL
             liveTab.loadURL(pin.launchURL)
 
-            let updated = updateShortcutPin(
+            let updated = tabManager.updateShortcutPin(
                 pin,
                 title: pin.title,
                 launchURL: pin.launchURL
@@ -233,41 +247,39 @@ extension TabManager {
         }
     }
 
-    // MARK: - Essentials API (profile-aware)
-
-    func removeFromEssentials(_ pin: ShortcutPin) {
-        removeShortcutPin(pin)
-    }
-
     @discardableResult
     func reorderEssential(_ pin: ShortcutPin, to index: Int) -> Bool {
-        withStructuralUpdateTransaction {
+        tabManager.withStructuralUpdateTransaction {
             guard let pid = pin.profileId else { return false }
-            var arr = pinnedByProfile[pid] ?? []
+            var arr = tabManager.pinnedByProfile[pid] ?? []
             guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return false }
-            let adjustedIndex = adjustedSameContainerInsertionIndex(
+            let adjustedIndex = tabManager.adjustedSameContainerInsertionIndex(
                 currentIndex: currentIndex,
                 proposedIndex: index
             )
             guard adjustedIndex != currentIndex else { return false }
             if currentIndex < arr.count { arr.remove(at: currentIndex) }
             arr.insert(pin, at: max(0, min(adjustedIndex, arr.count)))
-            setPinnedTabs(reindexed(arr), for: pid)
-            scheduleStructuralPersistence()
+            tabManager.setPinnedTabs(tabManager.reindexed(arr), for: pid)
+            tabManager.scheduleStructuralPersistence()
             return true
         }
     }
 
     @discardableResult
     func reorderSpacePinned(_ pin: ShortcutPin, in spaceId: UUID, to index: Int) -> Bool {
-        withStructuralUpdateTransaction {
+        tabManager.withStructuralUpdateTransaction {
             var didReorder = false
             if pin.folderId == nil {
-                didReorder = reorderTopLevelSpacePinnedShortcut(pin, in: spaceId, to: index) != nil
+                didReorder = tabManager.reorderTopLevelSpacePinnedShortcut(
+                    pin,
+                    in: spaceId,
+                    to: index
+                ) != nil
             } else {
-                withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { arr in
+                tabManager.withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { arr in
                     guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return }
-                    let adjustedIndex = adjustedSameContainerInsertionIndex(
+                    let adjustedIndex = tabManager.adjustedSameContainerInsertionIndex(
                         currentIndex: currentIndex,
                         proposedIndex: index
                     )
@@ -278,25 +290,24 @@ extension TabManager {
                 }
             }
             if didReorder {
-                scheduleStructuralPersistence()
+                tabManager.scheduleStructuralPersistence()
             }
             return didReorder
         }
     }
 
-    // MARK: - Space-Level Pinned Tabs
-
     func pinTabToSpace(_ tab: Tab, spaceId: UUID) {
-        withStructuralUpdateTransaction {
-            guard spaces.contains(where: { $0.id == spaceId }) else { return }
-            if spacePinnedPins(for: spaceId).contains(where: { $0.launchURL == tab.url }) { return }
+        tabManager.withStructuralUpdateTransaction {
+            guard tabManager.spaces.contains(where: { $0.id == spaceId }) else { return }
+            if tabManager.spacePinnedPins(for: spaceId)
+                .contains(where: { $0.launchURL == tab.url }) { return }
 
             if tab.isShortcutLiveInstance,
                let shortcutId = tab.shortcutPinId,
-               let sourcePin = shortcutPin(by: shortcutId),
+               let sourcePin = tabManager.shortcutPin(by: shortcutId),
                sourcePin.role == .essential {
-                let targetIndex = spacePinnedPins(for: spaceId).count
-                let detachedPin = makeShortcutPin(
+                let targetIndex = tabManager.spacePinnedPins(for: spaceId).count
+                let detachedPin = tabManager.makeShortcutPin(
                     from: tab,
                     role: .spacePinned,
                     profileId: nil,
@@ -305,28 +316,24 @@ extension TabManager {
                     index: targetIndex
                 )
 
-                guard let insertedPin = insertShortcutPin(detachedPin, at: targetIndex) else {
+                guard let insertedPin = tabManager.insertShortcutPin(detachedPin, at: targetIndex) else {
                     return
                 }
 
-                rebindLiveShortcutTab(tab, from: sourcePin, to: insertedPin)
+                tabManager.rebindLiveShortcutTab(tab, from: sourcePin, to: insertedPin)
 
-                scheduleStructuralPersistence()
+                tabManager.scheduleStructuralPersistence()
                 return
             }
 
-            _ = convertTabToShortcutPin(
+            _ = tabManager.convertTabToShortcutPin(
                 tab,
                 role: .spacePinned,
                 profileId: nil,
                 spaceId: spaceId,
                 folderId: nil,
-                at: spacePinnedPins(for: spaceId).count
+                at: tabManager.spacePinnedPins(for: spaceId).count
             )
         }
-    }
-
-    func folderSpaceId(for folderId: UUID) -> UUID? {
-        folderCollectionStateOwner.spaceId(for: folderId)
     }
 }
