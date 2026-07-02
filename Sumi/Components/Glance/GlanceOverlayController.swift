@@ -7,7 +7,6 @@ final class GlanceOverlayController: NSObject {
     private weak var manager: GlanceManager?
     private var session: GlanceSession?
     private var configuration: GlanceOverlayConfiguration?
-    private var keyMonitor: Any?
     private let presentationState = GlanceOverlayPresentationStateOwner()
     private let promotionHandoff = GlancePromotionHandoffOwner()
     private let overlayLayout = GlanceOverlayLayout()
@@ -26,6 +25,24 @@ final class GlanceOverlayController: NSObject {
     private lazy var actionChrome = GlanceOverlayActionChrome { [weak self] action in
         self?.handleActionChromeAction(action)
     }
+    private lazy var keyCommands = GlanceOverlayKeyCommandOwner(
+        dependencies: GlanceOverlayKeyCommandOwner.Dependencies(
+            rootWindow: { [weak self] in self?.rootView?.window },
+            activeWindowID: { [weak self] in self?.session?.windowId },
+            dismissFloatingBarIfVisible: { [weak self] windowID in
+                self?.manager?.dismissFloatingBarIfVisible(in: windowID) == true
+            },
+            isFindBarVisible: { [weak self] in
+                self?.manager?.isFindBarVisible == true
+            },
+            hideFindBar: { [weak self] in
+                _ = self?.manager?.hideFindBar()
+            },
+            closeOverlay: { [weak self] in
+                _ = self?.closeFromBackdrop()
+            }
+        )
+    )
 
     private enum Motion {
         static let glanceDuration: TimeInterval = 0.35
@@ -71,7 +88,7 @@ final class GlanceOverlayController: NSObject {
 
         guard let session else {
             presentationState.resetForMissingSession()
-            uninstallKeyMonitor()
+            keyCommands.uninstall()
             tearDownPresentedViews(
                 preservingPromotionHandoff: promotionHandoff.preservesPresentedHostDuringTeardown
             )
@@ -122,7 +139,7 @@ final class GlanceOverlayController: NSObject {
     func tearDown() {
         presentationState.prepareForTearDown()
         promotionHandoff.reset()
-        uninstallKeyMonitor()
+        keyCommands.uninstall()
         tearDownPresentedViews()
         rootView?.onLayout = nil
         rootView?.onBackgroundMouseDown = nil
@@ -192,7 +209,7 @@ final class GlanceOverlayController: NSObject {
         contentShadowView.isHidden = false
         actionChrome.isHidden = false
         webContentShieldAnchorView.isHidden = false
-        installKeyMonitorIfNeeded()
+        keyCommands.installIfNeeded()
         resetCloseConfirmation()
         previewHostAttachment.attachIfAvailable(for: session)
 
@@ -437,11 +454,11 @@ final class GlanceOverlayController: NSObject {
         webContentShieldAnchorView.isHidden = !isVisible
 
         if isVisible {
-            installKeyMonitorIfNeeded()
+            keyCommands.installIfNeeded()
             contentShadowView.alphaValue = 1
             actionChrome.alphaValue = 1
         } else {
-            uninstallKeyMonitor()
+            keyCommands.uninstall()
             publishContentFrame(nil, in: rootView)
             WebContentMouseTrackingShield.unregister(webContentShieldAnchorView)
             rootView?.sidebarPassthroughRect = nil
@@ -527,36 +544,6 @@ final class GlanceOverlayController: NSObject {
             return
         }
         manager.updateContentFrameInWindowSpace(swiftUIFrame, sessionID: session.id)
-    }
-
-    private func installKeyMonitorIfNeeded() {
-        guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self,
-                  let session = self.session,
-                  let rootWindow = self.rootView?.window,
-                  event.window === rootWindow,
-                  event.keyCode == 53
-            else { return event }
-
-            if self.manager?.dismissFloatingBarIfVisible(in: session.windowId) == true {
-                return nil
-            }
-
-            if self.manager?.isFindBarVisible == true {
-                self.manager?.hideFindBar()
-                return nil
-            }
-
-            self.closeFromBackdrop()
-            return nil
-        }
-    }
-
-    private func uninstallKeyMonitor() {
-        guard let keyMonitor else { return }
-        NSEvent.removeMonitor(keyMonitor)
-        self.keyMonitor = nil
     }
 
     private func closeFromBackdrop() {
@@ -754,385 +741,6 @@ final class GlanceOverlayController: NSObject {
     private func resetCloseConfirmation() {
         presentationState.cancelCloseConfirmationReset()
         actionChrome.closeRequiresSecondPress = false
-    }
-}
-
-@MainActor
-private final class GlanceOverlayContentVisualStyleOwner {
-    private struct Style {
-        let cornerRadius: CGFloat
-        let shadowOpacity: Float
-        let shadowRadius: CGFloat
-        let shadowOffset: CGSize
-    }
-
-    private let contentShadowView: NSView
-    private let webClipView: NSView
-
-    init(
-        contentShadowView: NSView,
-        webClipView: NSView
-    ) {
-        self.contentShadowView = contentShadowView
-        self.webClipView = webClipView
-    }
-
-    func configureViews() {
-        contentShadowView.wantsLayer = true
-        contentShadowView.layer?.shadowColor = NSColor.black.cgColor
-        contentShadowView.layer?.shadowOpacity = GlanceOverlayLayout.Metrics.glanceShadowOpacity
-        contentShadowView.layer?.shadowRadius = GlanceOverlayLayout.Metrics.glanceShadowRadius
-        contentShadowView.layer?.shadowOffset = GlanceOverlayLayout.Metrics.glanceShadowOffset
-        if #available(macOS 10.15, *) {
-            contentShadowView.layer?.cornerCurve = .continuous
-        }
-
-        webClipView.wantsLayer = true
-        webClipView.layer?.masksToBounds = true
-        webClipView.autoresizingMask = [.width, .height]
-        if #available(macOS 10.15, *) {
-            webClipView.layer?.cornerCurve = .continuous
-        }
-    }
-
-    func applySurfaceColor(_ surfaceColor: NSColor) {
-        contentShadowView.layer?.backgroundColor = surfaceColor.cgColor
-        webClipView.layer?.backgroundColor = surfaceColor.cgColor
-    }
-
-    func applyGlanceStyle(for configuration: GlanceOverlayConfiguration) {
-        apply(style: Self.glanceStyle(for: configuration))
-    }
-
-    func applyBrowserViewportStyle(for configuration: GlanceOverlayConfiguration) {
-        apply(style: Self.browserViewportStyle(for: configuration))
-    }
-
-    func animateToBrowserViewportStyle(
-        for configuration: GlanceOverlayConfiguration,
-        duration: TimeInterval,
-        timingFunction: CAMediaTimingFunction
-    ) {
-        animate(
-            to: Self.browserViewportStyle(for: configuration),
-            duration: duration,
-            timingFunction: timingFunction
-        )
-    }
-
-    func removeAnimations() {
-        let keys = [
-            "cornerRadius",
-            "shadowOpacity",
-            "shadowRadius",
-            "shadowOffset",
-        ]
-        for key in keys {
-            contentShadowView.layer?.removeAnimation(forKey: "glancePromotion.\(key)")
-            webClipView.layer?.removeAnimation(forKey: "glancePromotion.\(key)")
-        }
-    }
-
-    private static func glanceStyle(
-        for configuration: GlanceOverlayConfiguration
-    ) -> Style {
-        Style(
-            cornerRadius: configuration.cornerRadius,
-            shadowOpacity: GlanceOverlayLayout.Metrics.glanceShadowOpacity,
-            shadowRadius: GlanceOverlayLayout.Metrics.glanceShadowRadius,
-            shadowOffset: GlanceOverlayLayout.Metrics.glanceShadowOffset
-        )
-    }
-
-    private static func browserViewportStyle(
-        for configuration: GlanceOverlayConfiguration
-    ) -> Style {
-        Style(
-            cornerRadius: configuration.browserContentCornerRadius,
-            shadowOpacity: Float(BrowserContentViewportVisuals.shadowOpacity),
-            shadowRadius: BrowserContentViewportVisuals.shadowRadius,
-            shadowOffset: CGSize(
-                width: BrowserContentViewportVisuals.shadowX,
-                height: BrowserContentViewportVisuals.shadowY
-            )
-        )
-    }
-
-    private func apply(style: Style) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        contentShadowView.layer?.cornerRadius = style.cornerRadius
-        contentShadowView.layer?.shadowOpacity = style.shadowOpacity
-        contentShadowView.layer?.shadowRadius = style.shadowRadius
-        contentShadowView.layer?.shadowOffset = style.shadowOffset
-        webClipView.layer?.cornerRadius = style.cornerRadius
-        CATransaction.commit()
-    }
-
-    private func animate(
-        to style: Style,
-        duration: TimeInterval,
-        timingFunction: CAMediaTimingFunction
-    ) {
-        guard duration > 0,
-              let shadowLayer = contentShadowView.layer,
-              let clipLayer = webClipView.layer
-        else {
-            apply(style: style)
-            return
-        }
-
-        let currentShadowLayer = shadowLayer.presentation() ?? shadowLayer
-        let currentClipLayer = clipLayer.presentation() ?? clipLayer
-        let fromShadowCornerRadius = currentShadowLayer.cornerRadius
-        let fromClipCornerRadius = currentClipLayer.cornerRadius
-        let fromShadowOpacity = currentShadowLayer.shadowOpacity
-        let fromShadowRadius = currentShadowLayer.shadowRadius
-        let fromShadowOffset = currentShadowLayer.shadowOffset
-
-        addLayerAnimation(
-            to: shadowLayer,
-            keyPath: "cornerRadius",
-            fromValue: fromShadowCornerRadius,
-            toValue: style.cornerRadius,
-            duration: duration,
-            timingFunction: timingFunction
-        )
-        addLayerAnimation(
-            to: clipLayer,
-            keyPath: "cornerRadius",
-            fromValue: fromClipCornerRadius,
-            toValue: style.cornerRadius,
-            duration: duration,
-            timingFunction: timingFunction
-        )
-        addLayerAnimation(
-            to: shadowLayer,
-            keyPath: "shadowOpacity",
-            fromValue: fromShadowOpacity,
-            toValue: style.shadowOpacity,
-            duration: duration,
-            timingFunction: timingFunction
-        )
-        addLayerAnimation(
-            to: shadowLayer,
-            keyPath: "shadowRadius",
-            fromValue: fromShadowRadius,
-            toValue: style.shadowRadius,
-            duration: duration,
-            timingFunction: timingFunction
-        )
-        addLayerAnimation(
-            to: shadowLayer,
-            keyPath: "shadowOffset",
-            fromValue: NSValue(size: fromShadowOffset),
-            toValue: NSValue(size: style.shadowOffset),
-            duration: duration,
-            timingFunction: timingFunction
-        )
-    }
-
-    private func addLayerAnimation(
-        to layer: CALayer,
-        keyPath: String,
-        fromValue: Any,
-        toValue: Any,
-        duration: TimeInterval,
-        timingFunction: CAMediaTimingFunction
-    ) {
-        let animation = CABasicAnimation(keyPath: keyPath)
-        animation.fromValue = fromValue
-        animation.toValue = toValue
-        animation.duration = duration
-        animation.timingFunction = timingFunction
-        animation.fillMode = .both
-        animation.isRemovedOnCompletion = false
-        layer.add(animation, forKey: "glancePromotion.\(keyPath)")
-    }
-}
-
-@MainActor
-private final class GlanceOverlayPresentationStateOwner {
-    struct PendingPresentation {
-        let session: GlanceSession
-        let configuration: GlanceOverlayConfiguration
-    }
-
-    private(set) var displayedSessionID: UUID?
-    private(set) var isAnimatingClose = false
-    private(set) var isPresentationVisible = false
-    private var pendingPresentation: PendingPresentation?
-    private var closeConfirmationWorkItem: DispatchWorkItem?
-    private var postAnimationCompletionTask: Task<Void, Never>?
-
-    var pendingPresentationSessionID: UUID? {
-        pendingPresentation?.session.id
-    }
-
-    func display(sessionID: UUID) {
-        displayedSessionID = sessionID
-    }
-
-    func resetForMissingSession() {
-        cancelPostAnimationCompletion()
-        clearPendingPresentation()
-        isAnimatingClose = false
-        isPresentationVisible = false
-        displayedSessionID = nil
-    }
-
-    func prepareForTearDown() {
-        cancelPostAnimationCompletion()
-        cancelCloseConfirmationReset()
-        clearPendingPresentation()
-        isAnimatingClose = false
-    }
-
-    func queuePendingPresentation(
-        session: GlanceSession,
-        configuration: GlanceOverlayConfiguration
-    ) {
-        pendingPresentation = PendingPresentation(session: session, configuration: configuration)
-    }
-
-    func takePendingPresentation() -> PendingPresentation? {
-        defer { pendingPresentation = nil }
-        return pendingPresentation
-    }
-
-    func clearPendingPresentation() {
-        pendingPresentation = nil
-    }
-
-    func beginOpening() {
-        cancelPostAnimationCompletion()
-        isAnimatingClose = false
-        isPresentationVisible = true
-    }
-
-    func beginClosing() {
-        cancelPostAnimationCompletion()
-        isAnimatingClose = true
-    }
-
-    func finishClosing() {
-        isAnimatingClose = false
-    }
-
-    func setPresentationVisible(_ isVisible: Bool) {
-        isPresentationVisible = isVisible
-        if !isVisible {
-            cancelPostAnimationCompletion()
-            isAnimatingClose = false
-        }
-    }
-
-    func schedulePostAnimationCompletion(
-        sessionID: UUID,
-        after duration: TimeInterval,
-        completion: @escaping @MainActor @Sendable () -> Void
-    ) {
-        cancelPostAnimationCompletion()
-        postAnimationCompletionTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: Self.nanoseconds(for: duration))
-            guard !Task.isCancelled,
-                  let self,
-                  self.displayedSessionID == sessionID
-            else { return }
-
-            completion()
-            self.postAnimationCompletionTask = nil
-        }
-    }
-
-    func cancelPostAnimationCompletion() {
-        postAnimationCompletionTask?.cancel()
-        postAnimationCompletionTask = nil
-    }
-
-    func installCloseConfirmationReset(_ item: DispatchWorkItem) {
-        closeConfirmationWorkItem = item
-    }
-
-    func cancelCloseConfirmationReset() {
-        closeConfirmationWorkItem?.cancel()
-        closeConfirmationWorkItem = nil
-    }
-
-    private static func nanoseconds(for duration: TimeInterval) -> UInt64 {
-        UInt64(max(0, duration) * 1_000_000_000)
-    }
-}
-
-@MainActor
-private final class GlancePromotionHandoffOwner {
-    private(set) var isAnimating = false
-    private var isCompletingHandoff = false
-
-    var blocksPresentationUpdates: Bool {
-        isAnimating || isCompletingHandoff
-    }
-
-    var preservesPresentedHostDuringTeardown: Bool {
-        isCompletingHandoff
-    }
-
-    @discardableResult
-    func beginAnimation() -> Bool {
-        guard !isAnimating else { return false }
-        isAnimating = true
-        return true
-    }
-
-    func cancelAnimation() {
-        isAnimating = false
-    }
-
-    func beginCompositorHandoff() {
-        isCompletingHandoff = true
-        isAnimating = false
-    }
-
-    func reset() {
-        isAnimating = false
-        isCompletingHandoff = false
-    }
-
-    func registerPreviewHost(
-        _ previewHostView: SumiWebViewContainerView?,
-        for session: GlanceSession,
-        manager: GlanceManager?,
-        attachmentCompletion: @escaping @MainActor () -> Void
-    ) -> Bool {
-        guard canRegisterPreviewHost(previewHostView, for: session),
-              let previewHostView,
-              manager?.registerPromotedHost(
-                previewHostView,
-                for: session,
-                attachmentCompletion: attachmentCompletion
-              ) == true
-        else { return false }
-
-        previewHostView.prepareForSuperviewTransferPreservingDisplayedContent()
-        return true
-    }
-
-    private func canRegisterPreviewHost(
-        _ previewHostView: SumiWebViewContainerView?,
-        for session: GlanceSession
-    ) -> Bool {
-        guard let previewHostView,
-              let webView = session.previewTab.existingWebView,
-              previewHostView.webView === webView
-        else { return false }
-
-        return true
-    }
-}
-
-private final class GlanceWebContentShieldAnchorView: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
     }
 }
 
