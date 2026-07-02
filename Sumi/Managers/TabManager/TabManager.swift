@@ -365,6 +365,7 @@ class TabManager: ObservableObject {
     lazy var splitGroupRepairOwner = TabManagerSplitGroupRepairOwner(
         dependencies: .live(tabManager: self)
     )
+    lazy var splitGroupStructureOwner = TabSplitGroupStructureOwner(tabManager: self)
 
     let folderCollectionStateOwner = TabFolderCollectionStateOwner()
 
@@ -1468,6 +1469,103 @@ class TabManager: ObservableObject {
         }
         scheduleStructuralPersistence()
         return personal
+    }
+
+    // MARK: - Split Group Structure
+
+    typealias SpacePinnedVisualItem = TabSplitGroupStructureOwner.SpacePinnedVisualItem
+
+    func splitGroup(containing tabId: UUID) -> SplitGroup? {
+        splitGroupStructureOwner.splitGroup(containing: tabId)
+    }
+
+    func splitGroup(with id: UUID) -> SplitGroup? {
+        splitGroupCollectionStateOwner.group(with: id)
+    }
+
+    func splitGroupIds(containing tabId: UUID) -> [UUID] {
+        splitGroupStructureOwner.splitGroupIds(containing: tabId)
+    }
+
+    func splitGroup(containingPinId pinId: UUID) -> SplitGroup? {
+        splitGroupStructureOwner.splitGroup(containingPinId: pinId)
+    }
+
+    func splitGroupVisualOrderingResolver(for spaceId: UUID) -> SplitGroupVisualOrderingResolver {
+        splitGroupStructureOwner.visualOrderingResolver(for: spaceId)
+    }
+
+    func shortcutHostedSplitGroups(for spaceId: UUID) -> [SplitGroup] {
+        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).shortcutHostedGroups()
+    }
+
+    func shortcutHostedSplitGroup(containingPinId pinId: UUID, in spaceId: UUID? = nil) -> SplitGroup? {
+        splitGroupStructureOwner.shortcutHostedSplitGroup(containingPinId: pinId, in: spaceId)
+    }
+
+    func regularHostedSplitGroup(containingPinId pinId: UUID) -> SplitGroup? {
+        splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pinId)
+    }
+
+    func regularHostedSplitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
+        splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pin.id)
+    }
+
+    func shortcutHostedSplitGroupVisualIndex(_ group: SplitGroup, in spaceId: UUID) -> Int {
+        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).visualIndex(for: group)
+    }
+
+    func shortcutHostedSplitGroupFolderId(_ group: SplitGroup, in spaceId: UUID) -> UUID? {
+        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).folderId(for: group)
+    }
+
+    func shortcutHostedSplitGroups(for spaceId: UUID, inFolder folderId: UUID?) -> [SplitGroup] {
+        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).shortcutHostedGroups(inFolder: folderId)
+    }
+
+    func shortcutHostedSplitHiddenPinIds(for spaceId: UUID) -> Set<UUID> {
+        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).hiddenPinIds()
+    }
+
+    func topLevelSpacePinnedVisualItems(for spaceId: UUID) -> [SpacePinnedVisualItem] {
+        splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: spaceId)
+    }
+
+    @discardableResult
+    func moveShortcutHostedSplitGroup(_ group: SplitGroup, in spaceId: UUID, to index: Int) -> Bool {
+        splitGroupStructureOwner.moveShortcutHostedSplitGroup(group, in: spaceId, to: index)
+    }
+
+    func visibleSplitTabIds(containing tabId: UUID?) -> [UUID] {
+        splitGroupStructureOwner.visibleSplitTabIds(containing: tabId)
+    }
+
+    func upsertSplitGroup(_ group: SplitGroup, schedulePersistence shouldPersist: Bool = true) {
+        splitGroupStructureOwner.upsertSplitGroup(group, schedulePersistence: shouldPersist)
+    }
+
+    func removeSplitGroup(id: UUID, schedulePersistence shouldPersist: Bool = true) {
+        splitGroupStructureOwner.removeSplitGroup(id: id, schedulePersistence: shouldPersist)
+    }
+
+    func removeSplitGroups(containing tabId: UUID, schedulePersistence shouldPersist: Bool = true) {
+        splitGroupStructureOwner.removeSplitGroups(containing: tabId, schedulePersistence: shouldPersist)
+    }
+
+    func replaceSplitGroups(_ groups: [SplitGroup], schedulePersistence shouldPersist: Bool = true) {
+        splitGroupStructureOwner.replaceSplitGroups(groups, schedulePersistence: shouldPersist)
+    }
+
+    func sanitizedRepairedSplitGroups(_ groups: [SplitGroup]) -> [SplitGroup] {
+        splitGroupStructureOwner.sanitizedRepairedSplitGroups(groups)
+    }
+
+    static func sanitizedSplitGroups(_ groups: [SplitGroup]) -> [SplitGroup] {
+        SplitGroup.sanitized(groups)
+    }
+
+    func markSplitGroupsStructurallyDirty(schedulePersistence shouldPersist: Bool = true) {
+        splitGroupStructureOwner.markSplitGroupsStructurallyDirty(schedulePersistence: shouldPersist)
     }
 
     // MARK: - Space Lifecycle
