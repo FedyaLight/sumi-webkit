@@ -19,6 +19,46 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         }
     }
 
+    private final class FakeBiometricAuthenticator: BitwardenBiometricAuthenticating {
+        var available = true
+        var canEvaluate = true
+        var evaluateResult = true
+        private(set) var evaluatedReasons: [String] = []
+
+        func isBiometricsAvailable() -> Bool { available }
+        func canEvaluateIgnoringLockout() -> Bool { canEvaluate }
+        func evaluate(reason: String, flags: SecAccessControlCreateFlags) async -> Bool {
+            evaluatedReasons.append(reason)
+            return evaluateResult
+        }
+    }
+
+    private final class FakeBiometricKeychain: BitwardenBiometricKeychainReading {
+        var keysByUserId: [String: String] = [:]
+        func userKey(userId: String) -> String? { keysByUserId[userId] }
+    }
+
+    private var fakeBiometricAuthenticator: FakeBiometricAuthenticator!
+    private var fakeBiometricKeychain: FakeBiometricKeychain!
+
+    override func setUp() {
+        super.setUp()
+        fakeBiometricAuthenticator = FakeBiometricAuthenticator()
+        fakeBiometricKeychain = FakeBiometricKeychain()
+        BitwardenSafariOneShotHandler.biometricAuthenticator = fakeBiometricAuthenticator
+        BitwardenSafariOneShotHandler.biometricKeychain = fakeBiometricKeychain
+    }
+
+    override func tearDown() {
+        BitwardenSafariOneShotHandler.biometricAuthenticator =
+            SystemBitwardenBiometricAuthenticator()
+        BitwardenSafariOneShotHandler.biometricKeychain =
+            SystemBitwardenBiometricKeychain()
+        fakeBiometricAuthenticator = nil
+        fakeBiometricKeychain = nil
+        super.tearDown()
+    }
+
     private final class MockNativeMessagingPort: SumiNativeMessagingPortReplyRecording {
         var applicationIdentifier: String?
         var isDisconnected = false
@@ -121,14 +161,13 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         )
     }
 
-    func testConnectLaunchesDesktopWhenHandshakeReportsAppNotRunning() async {
-        var attempt = 0
+    func testConnectDoesNotLaunchDesktopWhenAppNotRunning() async {
+        // Safari parity: the Bitwarden Safari extension never launches the
+        // desktop app. When the proxy reports the desktop is not running, Sumi
+        // disconnects the port instead of calling NSWorkspace to open Bitwarden.
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: {
-                attempt += 1
-                return BitwardenFakeDesktopProxyTransport(
-                    mode: attempt == 1 ? .handshakeAppNotRunning : .handshakeConnected
-                )
+                BitwardenFakeDesktopProxyTransport(mode: .handshakeAppNotRunning)
             },
             handshakeTimeout: .milliseconds(200)
         )
@@ -139,7 +178,8 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         let error = await connect(adapter: adapter, session: session, launcher: launcher)
 
         XCTAssertNil(error)
-        XCTAssertEqual(launcher.openedBundleIdentifiers, ["com.bitwarden.desktop"])
+        XCTAssertTrue(launcher.openedBundleIdentifiers.isEmpty)
+        XCTAssertTrue(port.isDisconnected)
     }
 
     func testMalformedResponseHandledSafely() async throws {
@@ -325,7 +365,11 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
         XCTAssertFalse(port.isDisconnected)
     }
 
-    func testBiometricUnlockHandledLocallyViaPort() async throws {
+    func testBiometricUnlockReturnsUserKeyOnSuccessWithoutDesktopRelay() async throws {
+        fakeBiometricAuthenticator.available = true
+        fakeBiometricAuthenticator.evaluateResult = true
+        fakeBiometricKeychain.keysByUserId["user-1"] = "unlock-key"
+
         let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
         let adapter = BitwardenNativeMessagingAdapter(
             transportFactory: { fake },
@@ -340,14 +384,78 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             session: session,
             message: [
                 "command": "biometricUnlock",
+                "userId": "user-1",
                 "messageId": 2,
             ]
         )
 
+        let reply = try await firstReply(from: port)
         XCTAssertTrue(fake.sentMessages.isEmpty)
-        XCTAssertEqual(port.repliesSent.count, 1)
-        let reply = try XCTUnwrap(port.repliesSent.first as? [String: Any])
+        XCTAssertEqual(reply["response"] as? String, "unlocked")
+        XCTAssertEqual(reply["userKeyB64"] as? String, "unlock-key")
+    }
+
+    func testBiometricUnlockReturnsNotEnabledWhenNoStoredKey() async throws {
+        fakeBiometricAuthenticator.available = true
+        fakeBiometricAuthenticator.evaluateResult = true
+
+        let fake = BitwardenFakeDesktopProxyTransport(mode: .handshakeConnected)
+        let adapter = BitwardenNativeMessagingAdapter(
+            transportFactory: { fake },
+            handshakeTimeout: .milliseconds(200)
+        )
+        let launcher = makeLauncherWithProxy()
+        let port = MockNativeMessagingPort()
+        let session = makeSession(port: port, adapter: adapter)
+
+        _ = await connect(adapter: adapter, session: session, launcher: launcher)
+        _ = adapter.relayPortMessage(
+            session: session,
+            message: [
+                "command": "biometricUnlock",
+                "userId": "user-1",
+                "messageId": 2,
+            ]
+        )
+
+        let reply = try await firstReply(from: port)
+        XCTAssertTrue(fake.sentMessages.isEmpty)
         XCTAssertEqual(reply["response"] as? String, "not enabled")
+        XCTAssertNil(reply["userKeyB64"])
+    }
+
+    func testUnlockWithBiometricsForUserReportsStatusFromKeychain() async throws {
+        fakeBiometricAuthenticator.available = true
+        fakeBiometricKeychain.keysByUserId["user-1"] = "stored"
+
+        XCTAssertEqual(
+            BitwardenSafariOneShotHandler.getBiometricsStatusForUser(
+                payload: ["command": "getBiometricsStatusForUser", "userId": "user-1"]
+            ),
+            .available
+        )
+        XCTAssertEqual(
+            BitwardenSafariOneShotHandler.getBiometricsStatusForUser(
+                payload: ["command": "getBiometricsStatusForUser", "userId": "user-2"]
+            ),
+            .notEnabledInConnectedDesktopApp
+        )
+        fakeBiometricAuthenticator.available = false
+        XCTAssertEqual(
+            BitwardenSafariOneShotHandler.getBiometricsStatusForUser(
+                payload: ["command": "getBiometricsStatusForUser", "userId": "user-1"]
+            ),
+            .hardwareUnavailable
+        )
+    }
+
+    private func firstReply(
+        from port: MockNativeMessagingPort
+    ) async throws -> [String: Any] {
+        for _ in 0..<100 where port.repliesSent.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return try XCTUnwrap(port.repliesSent.first as? [String: Any])
     }
 
     func testDisconnectCancelsPendingReplyTimeout() async throws {
@@ -800,6 +908,9 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
     }
 
     func testDelegateNativeMessagingSelectorsAreRestoredForProductionRelay() throws {
+        // Native-messaging delegate callbacks live on the extracted
+        // ExtensionControllerDelegateBridge role, which ExtensionManager wires
+        // as the WKWebExtensionController delegate.
         let container = try ModelContainer(
             for: ExtensionEntity.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
@@ -808,15 +919,16 @@ final class BitwardenNativeMessagingAdapterTests: XCTestCase {
             context: ModelContext(container),
             initialProfile: nil
         )
+        let bridge = manager.controllerDelegateBridge
         XCTAssertTrue(
-            manager.responds(
+            bridge.responds(
                 to: NSSelectorFromString(
                     "webExtensionController:sendMessage:toApplicationWithIdentifier:forExtensionContext:replyHandler:"
                 )
             )
         )
         XCTAssertTrue(
-            manager.responds(
+            bridge.responds(
                 to: NSSelectorFromString(
                     "webExtensionController:connectUsingMessagePort:forExtensionContext:completionHandler:"
                 )

@@ -44,6 +44,14 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
         replyHandler: @escaping (Any?, (any Error)?) -> Void
     ) {
         _ = launcher
+        if let payload = request.message as? [String: Any],
+           let command = payload["command"] as? String,
+           BitwardenSafariOneShotHandler.isBiometricPromptCommand(command) {
+            BitwardenSafariOneShotHandler.handleBiometricPrompt(payload: payload) { message in
+                replyHandler(["message": message], nil)
+            }
+            return
+        }
         if BitwardenSafariOneShotHandler.handleAsync(
             message: request.message,
             replyHandler: { replyHandler($0, nil) }
@@ -140,6 +148,7 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
         proxyURL: URL,
         launcher: SumiHostApplicationLaunching
     ) async -> NSError? {
+        _ = launcher
         do {
             try await transport.start(
                 proxyExecutableURL: proxyURL,
@@ -148,45 +157,14 @@ final class BitwardenNativeMessagingAdapter: SumiNativeMessagingProtocolAdapter 
             state.markTransportReady()
             return nil
         } catch let error as BitwardenDesktopProxyTransportError where error == .desktopNotRunning {
-            removePortSession(forKey: sessionKey)?.shutdown()
-        } catch let error as BitwardenDesktopProxyTransportError {
-            return BitwardenDesktopProxyTransportErrorMapper.relayError(for: error)
-        } catch {
-            return error as NSError
-        }
-
-        do {
-            try await launcher.openApplication(
-                withBundleIdentifier: session.resolvedHostBundleIdentifier
-            )
-        } catch {
+            // Safari parity: the Bitwarden Safari extension never launches the
+            // desktop app. When the desktop is not running its native-messaging
+            // proxy is simply unavailable, so we disconnect the port (the
+            // extension observes "desktop disconnected") rather than calling
+            // NSWorkspace to open Bitwarden. Local biometric commands continue
+            // to be served without the desktop.
             BitwardenDesktopTransportDiagnostics.log(outcome: .desktopAppNotRunning)
-            return error as NSError
-        }
-
-        let queued = state.drainQueuedExtensionMessages()
-        let relaunchTransport = transportFactory()
-        let relaunchedState = BitwardenPortSessionState(
-            session: session,
-            transport: relaunchTransport,
-            appId: state.appId,
-            replyTimeout: replyTimeout
-        )
-        relaunchedState.enqueueExtensionMessages(queued)
-        portSessions[sessionKey] = relaunchedState
-        SumiNativeMessagingRuntimeCounters.recordAdapterPortSessionOpened()
-
-        relaunchTransport.onDisconnect = { [weak self] in
-            guard let self else { return }
-            self.removePortSession(forKey: sessionKey)?.disconnectAssociatedSession()
-        }
-
-        do {
-            try await relaunchTransport.start(
-                proxyExecutableURL: proxyURL,
-                handshakeTimeout: handshakeTimeout
-            )
-            relaunchedState.markTransportReady()
+            removePortSession(forKey: sessionKey)?.disconnectAssociatedSession()
             return nil
         } catch let error as BitwardenDesktopProxyTransportError {
             return BitwardenDesktopProxyTransportErrorMapper.relayError(for: error)
@@ -253,21 +231,6 @@ private final class BitwardenPortSessionState {
         flushQueuedExtensionMessages()
     }
 
-    func drainQueuedExtensionMessages() -> [[String: Any]] {
-        let queued = queuedExtensionMessages
-        queuedExtensionMessages.removeAll()
-        return queued
-    }
-
-    func enqueueExtensionMessages(_ payloads: [[String: Any]]) {
-        guard payloads.isEmpty == false else { return }
-        if transportReady {
-            payloads.forEach { relayExtensionMessage($0) }
-        } else {
-            queuedExtensionMessages.append(contentsOf: payloads)
-        }
-    }
-
     private func flushQueuedExtensionMessages() {
         let queued = queuedExtensionMessages
         queuedExtensionMessages.removeAll()
@@ -291,6 +254,15 @@ private final class BitwardenPortSessionState {
         let command = payload["command"] as? String ?? ""
         switch BitwardenPortCommand.relayOutcome(for: command) {
         case .localSafari:
+            if BitwardenSafariOneShotHandler.isBiometricPromptCommand(command) {
+                if let messageId = payload["messageId"] as? Int {
+                    pendingReplies.removeValue(forKey: messageId)?.cancel()
+                }
+                BitwardenSafariOneShotHandler.handleBiometricPrompt(payload: payload) { [weak self] reply in
+                    self?.session?.sendReplyToExtension(reply)
+                }
+                return
+            }
             if let reply = BitwardenSafariOneShotHandler.portReply(for: payload) {
                 if let messageId = payload["messageId"] as? Int {
                     pendingReplies.removeValue(forKey: messageId)?.cancel()
@@ -507,6 +479,17 @@ enum BitwardenSafariOneShotHandler {
     /// Public `sleep` command delay from SafariWebExtensionHandler.
     static var sleepDelay: Duration = .seconds(10)
 
+    /// Keychain service name Bitwarden uses for the browser biometric user key
+    /// (`SafariWebExtensionHandler.ServiceNameBiometric`).
+    static let biometricKeychainService = "Bitwarden_biometric"
+
+    /// Injectable biometric prompt + keychain access. Defaults to the system
+    /// implementations; tests substitute fakes.
+    static var biometricAuthenticator: BitwardenBiometricAuthenticating =
+        SystemBitwardenBiometricAuthenticator()
+    static var biometricKeychain: BitwardenBiometricKeychainReading =
+        SystemBitwardenBiometricKeychain()
+
     static func handleAsync(
         message: Any,
         replyHandler: @escaping (Any?) -> Void
@@ -548,7 +531,7 @@ enum BitwardenSafariOneShotHandler {
             guard handleDownloadFile(payload: payload) else { return nil }
             return NSNull()
         case "biometricUnlockAvailable":
-            let available = LAContext().bitwardenBiometricsAvailable
+            let available = biometricAuthenticator.isBiometricsAvailable()
             return safariMessageEnvelope(
                 command: command,
                 response: available ? "available" : "not available",
@@ -563,38 +546,14 @@ enum BitwardenSafariOneShotHandler {
                 timestamp: timestamp
             )
         case "getBiometricsStatusForUser":
-            let status = LAContext().bitwardenBiometricsAvailable
-                ? BitwardenBiometricsStatus.notEnabledInConnectedDesktopApp.rawValue
-                : BitwardenBiometricsStatus.hardwareUnavailable.rawValue
             return safariMessageEnvelope(
                 command: command,
-                response: status,
-                messageId: messageId,
-                timestamp: timestamp
-            )
-        case "authenticateWithBiometrics":
-            return safariMessageEnvelope(
-                command: command,
-                response: false,
-                messageId: messageId,
-                timestamp: timestamp
-            )
-        case "unlockWithBiometricsForUser":
-            return safariMessageEnvelope(
-                command: command,
-                response: false,
-                messageId: messageId,
-                timestamp: timestamp
-            )
-        case "biometricUnlock":
-            return safariMessageEnvelope(
-                command: command,
-                response: "not enabled",
+                response: getBiometricsStatusForUser(payload: payload).rawValue,
                 messageId: messageId,
                 timestamp: timestamp
             )
         case "canEnableBiometricUnlock":
-            let available = LAContext().bitwardenBiometricsAvailable
+            let available = biometricAuthenticator.isBiometricsAvailable()
             return safariMessageEnvelope(
                 command: command,
                 response: available,
@@ -654,19 +613,115 @@ enum BitwardenSafariOneShotHandler {
         case "getBiometricsStatus":
             return BitwardenBiometricsStatus.available.rawValue
         case "getBiometricsStatusForUser":
-            return LAContext().bitwardenBiometricsAvailable
-                ? BitwardenBiometricsStatus.notEnabledInConnectedDesktopApp.rawValue
-                : BitwardenBiometricsStatus.hardwareUnavailable.rawValue
-        case "authenticateWithBiometrics":
-            return false
-        case "unlockWithBiometricsForUser":
-            return false
-        case "biometricUnlock":
-            return "not enabled"
+            return getBiometricsStatusForUser(payload: payload).rawValue
         case "canEnableBiometricUnlock":
-            return LAContext().bitwardenBiometricsAvailable
+            return biometricAuthenticator.isBiometricsAvailable()
         default:
+            // Biometric prompt commands (authenticateWithBiometrics,
+            // unlockWithBiometricsForUser, biometricUnlock) are handled
+            // asynchronously via `handleBiometricPrompt`, not here.
             return nil
+        }
+    }
+
+    /// Mirrors `SafariWebExtensionHandler.getBiometricsStatusForUser`: without
+    /// biometrics hardware it is unavailable; with a stored key the user is
+    /// unlockable; otherwise the key still needs to be provisioned.
+    static func getBiometricsStatusForUser(
+        payload: [String: Any]
+    ) -> BitwardenBiometricsStatus {
+        guard biometricAuthenticator.isBiometricsAvailable() else {
+            return .hardwareUnavailable
+        }
+        guard let userId = payload["userId"] as? String,
+              biometricKeychain.userKey(userId: userId) != nil
+        else {
+            return .notEnabledInConnectedDesktopApp
+        }
+        return .available
+    }
+
+    static func isBiometricPromptCommand(_ command: String) -> Bool {
+        switch command {
+        case "authenticateWithBiometrics",
+             "unlockWithBiometricsForUser",
+             "biometricUnlock":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Performs the local biometric prompt and, on success, returns the stored
+    /// user key — mirroring `SafariWebExtensionHandler`'s biometric commands.
+    /// Produces the bare port-message dictionary; one-shot callers wrap it in
+    /// `["message": …]`.
+    static func handleBiometricPrompt(
+        payload: [String: Any],
+        completion: @escaping ([String: Any]) -> Void
+    ) {
+        let command = payload["command"] as? String ?? ""
+        let messageId = payload["messageId"]
+        let reply: (Any, String?) -> Void = { response, userKeyB64 in
+            var message = portMessage(
+                command: command,
+                response: response,
+                messageId: messageId,
+                timestamp: currentTimestampMillis
+            )
+            if let userKeyB64 {
+                message["userKeyB64"] = userKeyB64
+            }
+            completion(message)
+        }
+
+        switch command {
+        case "authenticateWithBiometrics":
+            Task { @MainActor in
+                let success = await biometricAuthenticator.evaluate(
+                    reason: "authenticate",
+                    flags: [.privateKeyUsage, .userPresence]
+                )
+                reply(success, nil)
+            }
+        case "unlockWithBiometricsForUser":
+            guard biometricAuthenticator.canEvaluateIgnoringLockout() else {
+                reply(false, nil)
+                return
+            }
+            Task { @MainActor in
+                let success = await biometricAuthenticator.evaluate(
+                    reason: "unlock your vault",
+                    flags: [.privateKeyUsage, .biometryAny]
+                )
+                guard success, let userId = payload["userId"] as? String else {
+                    reply(success, nil)
+                    return
+                }
+                reply(true, biometricKeychain.userKey(userId: userId))
+            }
+        case "biometricUnlock":
+            guard biometricAuthenticator.isBiometricsAvailable() else {
+                reply("not supported", nil)
+                return
+            }
+            Task { @MainActor in
+                let success = await biometricAuthenticator.evaluate(
+                    reason: "Biometric Unlock",
+                    flags: [.privateKeyUsage, .userPresence]
+                )
+                guard success, let userId = payload["userId"] as? String else {
+                    reply("not enabled", nil)
+                    return
+                }
+                if let userKey = biometricKeychain.userKey(userId: userId) {
+                    reply("unlocked", userKey)
+                } else {
+                    reply("not enabled", nil)
+                }
+            }
+        default:
+            reply(false, nil)
         }
     }
 
@@ -739,21 +794,12 @@ enum BitwardenSafariOneShotHandler {
     }
 }
 
-private enum BitwardenBiometricsStatus: Int {
+/// Ordinals from bitwarden/clients `BiometricsStatus` used by the Safari
+/// extension handler.
+enum BitwardenBiometricsStatus: Int {
     case available = 0
     case unlockNeeded = 1
     case hardwareUnavailable = 2
     case desktopDisconnected = 6
     case notEnabledInConnectedDesktopApp = 8
-}
-
-private extension LAContext {
-    var bitwardenBiometricsAvailable: Bool {
-        var error: NSError?
-        canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
-        if let error, error.code != LAError.biometryLockout.rawValue {
-            return false
-        }
-        return true
-    }
 }
