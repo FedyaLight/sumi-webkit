@@ -282,8 +282,7 @@ extension TabManager {
     }
 
     func markSplitGroupsStructurallyDirty(schedulePersistence shouldPersist: Bool = true) {
-        structuralDirtySet.markSplitGroupsDirty()
-        snapshotCache.invalidateSplitGroups()
+        structuralPersistence.markSplitGroupsStructurallyDirty()
         if shouldPersist {
             scheduleStructuralPersistence()
         }

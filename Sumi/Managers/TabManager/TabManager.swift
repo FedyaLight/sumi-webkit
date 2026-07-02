@@ -294,12 +294,10 @@ class TabManager: ObservableObject {
     }
 
     deinit {
-        // MEMORY LEAK FIX: Clean up all tab references and break potential cycles
+        // MEMORY LEAK FIX: Clean up all tab references and break potential cycles.
+        // Scheduled persistence and startup restore tasks are cancelled by the
+        // owning TabStructuralPersistenceOwner/TabStoreRestoreOwner deinits.
         MainActor.assumeIsolated {
-            scheduledStructuralPersistTask?.cancel()
-            scheduledStructuralPersistTask = nil
-            startupRestoreTask?.cancel()
-            startupRestoreTask = nil
             pendingFaviconPresentationRefreshTask?.cancel()
             pendingFaviconPresentationRefreshTask = nil
             if let faviconCacheObserver {
@@ -1002,15 +1000,166 @@ class TabManager: ObservableObject {
         }
     }
 
-    // Helper to safely mutate current profile's pinned array with reindexing
-    var structuralPersistenceGeneration: Int = 0
-    var scheduledStructuralPersistTask: Task<Void, Never>?
-    var structuralPersistRequestID: UInt64 = 0
-    let structuralPersistDebounceNanoseconds: UInt64 = 250_000_000
-    var structuralDirtySet = TabStructuralDirtySet()
-    var snapshotCache = TabManagerSnapshotCache()
-    var startupRestoreTask: Task<Void, Never>?
     static let defaultRuntimeStatePersistDebounceNanoseconds: UInt64 = 250_000_000
+
+    // MARK: - Structural Persistence and Store Restore Composition
+
+    lazy var structuralPersistence = TabStructuralPersistenceOwner(
+        persistence: persistence,
+        runtimeStateCoalescer: runtimeStateCoalescer,
+        dependencies: .live(tabManager: self)
+    )
+    lazy var storeRestore = TabStoreRestoreOwner(dependencies: .live(tabManager: self))
+
+    var structuralDirtySet: TabStructuralDirtySet {
+        structuralPersistence.dirtySet
+    }
+
+    var scheduledStructuralPersistTask: Task<Void, Never>? {
+        structuralPersistence.scheduledPersistTask
+    }
+
+    public nonisolated func scheduleStructuralPersistence() {
+        Task { @MainActor [weak self] in
+            self?.structuralPersistence.scheduleStructuralPersistenceFromMain()
+        }
+    }
+
+    /// Explicit full reconcile path for restore, repair, fallback, and termination only.
+    public nonisolated func persistFullReconcileAwaitingResult(
+        reason: String = "explicit full reconcile"
+    ) async -> Bool {
+        let owner = await MainActor.run { [weak self] in self?.structuralPersistence }
+        guard let owner else { return false }
+        return await owner.persistFullReconcileAwaitingResult(reason: reason)
+    }
+
+    @discardableResult
+    public nonisolated func flushRuntimeStatePersistenceAwaitingResult() async -> Int {
+        await runtimeStateCoalescer.flushImmediately()
+    }
+
+    func persistSelection() {
+        structuralPersistence.persistSelection()
+    }
+
+    func scheduleRuntimeStatePersistence(for tab: Tab) {
+        structuralPersistence.scheduleRuntimeStatePersistence(for: tab)
+    }
+
+    func cancelRuntimeStatePersistence(for tabId: UUID) {
+        structuralPersistence.cancelRuntimeStatePersistence(for: tabId)
+    }
+
+    func shouldPersistRegularTab(_ tab: Tab) -> Bool {
+        structuralPersistence.shouldPersistRegularTab(tab)
+    }
+
+    func persistableCurrentTabID() -> UUID? {
+        structuralPersistence.persistableCurrentTabID()
+    }
+
+    func _buildSnapshot() -> TabSnapshotRepository.Snapshot {
+        structuralPersistence.buildSnapshot()
+    }
+
+    func markSnapshotCacheDirty() {
+        structuralPersistence.markSnapshotCacheDirty()
+    }
+
+    func markSpacesSnapshotDirty() {
+        structuralPersistence.markSpacesSnapshotDirty()
+    }
+
+    func markAllSpacesStructurallyDirty() {
+        structuralPersistence.markAllSpacesStructurallyDirty()
+    }
+
+    func markSpaceStructurallyDeleted(_ spaceId: UUID) {
+        structuralPersistence.markSpaceStructurallyDeleted(spaceId)
+    }
+
+    func markPinnedSnapshotDirty(for profileId: UUID) {
+        structuralPersistence.markPinnedSnapshotDirty(for: profileId)
+    }
+
+    func markSpacePinnedSnapshotDirty(for spaceId: UUID) {
+        structuralPersistence.markSpacePinnedSnapshotDirty(for: spaceId)
+    }
+
+    func markRegularTabsSnapshotDirty(for spaceId: UUID) {
+        structuralPersistence.markRegularTabsSnapshotDirty(for: spaceId)
+    }
+
+    func markRegularTabsStructurallyDirty(for spaceId: UUID) {
+        structuralPersistence.markRegularTabsStructurallyDirty(for: spaceId)
+    }
+
+    func markFoldersSnapshotDirty(for spaceId: UUID) {
+        structuralPersistence.markFoldersSnapshotDirty(for: spaceId)
+    }
+
+    func markFoldersStructurallyDirty(for spaceId: UUID) {
+        structuralPersistence.markFoldersStructurallyDirty(for: spaceId)
+    }
+
+    func resetStructuralDirtySet() {
+        structuralPersistence.resetDirtySet()
+    }
+
+    func recordRegularTabsStructuralChange(previous: [Tab], current: [Tab]) {
+        structuralPersistence.recordRegularTabsStructuralChange(previous: previous, current: current)
+    }
+
+    func recordFoldersStructuralChange(previous: [TabFolder], current: [TabFolder]) {
+        structuralPersistence.recordFoldersStructuralChange(previous: previous, current: current)
+    }
+
+    func recordShortcutPinsStructuralChange(previous: [ShortcutPin], current: [ShortcutPin]) {
+        structuralPersistence.recordShortcutPinsStructuralChange(previous: previous, current: current)
+    }
+
+    func loadFromStore() {
+        storeRestore.loadFromStore()
+    }
+
+    @discardableResult
+    func loadFromStoreAwaitingResult() async -> Bool {
+        await storeRestore.loadFromStoreAwaitingResult()
+    }
+
+    func installRestoredCollections(_ restoredState: TabRestoreRuntimeState) {
+        spaces = restoredState.spaces
+        tabsBySpace = restoredState.tabsBySpace
+        foldersBySpace = restoredState.foldersBySpace
+        pinnedByProfile = restoredState.pinnedByProfile
+        pendingPinnedWithoutProfile = restoredState.pendingPinnedWithoutProfile
+        spacePinnedShortcuts = restoredState.spacePinnedShortcuts
+    }
+
+    func hasLiveRuntimeContent(in space: Space) -> Bool {
+        let spaceId = space.id
+
+        if !(tabsBySpace[spaceId] ?? []).isEmpty { return true }
+        if !(spacePinnedShortcuts[spaceId] ?? []).isEmpty { return true }
+        if !(foldersBySpace[spaceId] ?? []).isEmpty { return true }
+
+        return transientShortcutTabsByWindow.values
+            .flatMap(\.values)
+            .contains { $0.spaceId == spaceId }
+    }
+
+    func reconcileProfileRuntimeStates(activeSpaceId: UUID?) {
+        for space in spaces {
+            let hasRuntimeContent = hasLiveRuntimeContent(in: space)
+
+            if space.id == activeSpaceId {
+                space.profileRuntimeState = hasRuntimeContent ? .active : .dormant
+            } else {
+                space.profileRuntimeState = hasRuntimeContent ? .loadedInactive : .dormant
+            }
+        }
+    }
 }
 
 extension TabManager {
