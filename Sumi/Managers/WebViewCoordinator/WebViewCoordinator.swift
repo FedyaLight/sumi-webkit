@@ -49,6 +49,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     )
 
     @ObservationIgnored
+    private lazy var tabTeardownOwner = WebViewTabTeardownOwner(
+        dependencies: .live(coordinator: self)
+    )
+
+    @ObservationIgnored
     let tabScopedCleanupValidationOwner = WebViewTabScopedCleanupValidationOwner()
 
     @ObservationIgnored
@@ -132,28 +137,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     private func allKnownWebViews(for tab: Tab) -> [WKWebView] {
-        var seen = Set<ObjectIdentifier>()
-        var result: [WKWebView] = []
-        func appendUnique(_ webView: WKWebView?) {
-            guard let webView else { return }
-            let id = ObjectIdentifier(webView)
-            if seen.insert(id).inserted {
-                result.append(webView)
-            }
-        }
-        let windowWebViews = webViewRegistry.windowWebViews(for: tab.id)
-        if windowWebViews.isEmpty == false {
-            result.reserveCapacity(windowWebViews.count + 2)
-            for webView in windowWebViews.values {
-                appendUnique(webView)
-            }
-        } else {
-            result.reserveCapacity(2)
-        }
-        appendUnique(tab.assignedWebView)
-        appendUnique(tab.existingWebView)
-        appendUnique(tab.parkedWebView)
-        return result
+        tabTeardownOwner.allKnownWebViews(for: tab)
     }
 
     func isPreparingForDataCleanupNavigation(on webView: WKWebView) -> Bool {
@@ -490,111 +474,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         for tab: Tab,
         closeActiveFullscreenMedia: Bool = false
     ) -> Bool {
-        let currentEntries = webViewRegistry.windowWebViews(for: tab.id)
-        let protectedCandidateWebViews = uniqueWebViews(
-            Array(currentEntries.values)
-                + [tab.assignedWebView, tab.existingWebView].compactMap { $0 }
+        tabTeardownOwner.removeAllWebViews(
+            for: tab,
+            closeActiveFullscreenMedia: closeActiveFullscreenMedia
         )
-        if protectedCandidateWebViews.contains(where: isWebViewProtectedFromCompositorMutation) {
-            let protectedTrackedIDs = Set(
-                currentEntries.values
-                    .filter { isWebViewProtectedFromCompositorMutation($0) }
-                    .map(ObjectIdentifier.init)
-            )
-            var closedMediaWebViewIDs: Set<ObjectIdentifier> = []
-
-            func closeFullscreenMediaOnce(on webView: WKWebView) {
-                guard closeActiveFullscreenMedia else { return }
-                guard closedMediaWebViewIDs.insert(ObjectIdentifier(webView)).inserted else { return }
-                mediaProtectionOwner.closeFullscreenMediaIfNeeded(on: webView)
-            }
-
-            for (windowId, protectedWebView) in currentEntries where isWebViewProtectedFromCompositorMutation(protectedWebView) {
-                closeFullscreenMediaOnce(on: protectedWebView)
-                _ = enqueueDeferredProtectedCommand(
-                    .removeTrackedWebView(
-                        webViewID: ObjectIdentifier(protectedWebView),
-                        tabID: tab.id,
-                        windowID: windowId
-                    ),
-                    for: protectedWebView,
-                    reason: "removeAllWebViews"
-                )
-            }
-            for protectedWebView in protectedCandidateWebViews where isWebViewProtectedFromCompositorMutation(protectedWebView) {
-                let protectedWebViewID = ObjectIdentifier(protectedWebView)
-                closeFullscreenMediaOnce(on: protectedWebView)
-
-                guard !protectedTrackedIDs.contains(protectedWebViewID) else { continue }
-                _ = enqueueDeferredProtectedCommand(
-                    .cleanupTabWebView(
-                        webViewID: protectedWebViewID,
-                        tabID: tab.id
-                    ),
-                    for: protectedWebView,
-                    reason: "removeAllWebViews.untracked"
-                )
-            }
-            return false
-        }
-
-        let trackedEntries = currentEntries.map { windowId, webView in
-            (TrackedWebViewOwner(tabID: tab.id, windowID: windowId), webView)
-        }
-        guard trackedEntries.isEmpty == false else { return false }
-
-        for (owner, webView) in trackedEntries {
-            cleanupUnprotectedTrackedWebView(
-                webView,
-                owner: owner,
-                tab: tab
-            )
-        }
-        refreshPrimaryTrackedWebView(for: tab)
-        return true
     }
 
     @discardableResult
     func suspendWebViews(for tab: Tab, reason: String) -> Bool {
-        let liveWebViews = allKnownWebViews(for: tab)
-        guard !liveWebViews.isEmpty else { return false }
-        guard !liveWebViews.contains(where: isWebViewProtectedFromCompositorMutation) else {
-            RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-                "Skipping suspension cleanup for protected tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)."
-            }
-            return false
-        }
-
-        let trackedEntries = webViewRegistry.trackedWebViews(for: tab.id)
-        var cleanedIdentifiers: Set<ObjectIdentifier> = []
-
-        func cleanup(_ webView: WKWebView) {
-            let identifier = ObjectIdentifier(webView)
-            guard cleanedIdentifiers.insert(identifier).inserted else { return }
-            tab.cleanupCloneWebView(webView)
-        }
-
-        for (owner, webView) in trackedEntries {
-            removeWebViewFromContainers(webView)
-            _ = unregisterTrackedWebViewSlot(
-                owner: owner,
-                expectedWebView: webView
-            )
-            cleanup(webView)
-        }
-
-        for webView in liveWebViews {
-            cleanup(webView)
-        }
-
-        tab.cancelPendingMainFrameNavigation()
-        tab.clearAllWebViewOwnership()
-
-        RuntimeDiagnostics.debug(category: "WebViewCoordinator") {
-            "Suspension released \(cleanedIdentifiers.count) WebView(s) for tab=\(tab.id.uuidString.prefix(8)) reason=\(reason)."
-        }
-
-        return !cleanedIdentifiers.isEmpty
+        tabTeardownOwner.suspendWebViews(for: tab, reason: reason)
     }
 
     // MARK: - WebView Creation & Cross-Window Sync
@@ -633,7 +521,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     // MARK: - Private Helpers
 
     @discardableResult
-    private func enqueueDeferredProtectedCommand(
+    func enqueueDeferredProtectedCommand(
         _ command: DeferredWebViewCommand,
         for webView: WKWebView,
         reason: String
@@ -757,7 +645,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         trackedRegistrationOwner.cleanupTrackedWebView(webView, owner: owner)
     }
 
-    private func cleanupUnprotectedTrackedWebView(
+    func cleanupUnprotectedTrackedWebView(
         _ webView: WKWebView,
         owner: TrackedWebViewOwner,
         tab: Tab?
@@ -832,7 +720,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     }
 
     @discardableResult
-    private func unregisterTrackedWebViewSlot(
+    func unregisterTrackedWebViewSlot(
         owner: TrackedWebViewOwner,
         expectedWebView: WKWebView? = nil,
         removeFromSuperview: Bool = false,
