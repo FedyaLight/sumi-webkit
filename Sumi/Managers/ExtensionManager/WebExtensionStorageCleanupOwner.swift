@@ -56,7 +56,8 @@ final class WebExtensionStorageCleanupOwner {
         let dataCleanupOwner = WebExtensionControllerDataCleanupOwner()
         let matchingRecords = await dataCleanupOwner.matchingRecords(
             for: extensionId,
-            controllersByProfile: manager.extensionControllersByProfile
+            controllersByProfile: manager.extensionControllersByProfile,
+            additionalUniqueIdentifiers: safariRuntimeIdentifiers(for: extensionId)
         )
 
         let preCleanupSnapshot = storageSnapshot(for: extensionId)
@@ -116,6 +117,23 @@ final class WebExtensionStorageCleanupOwner {
         )
     }
 
+    /// Safari app extensions register their WebKit data under the composed
+    /// "<bundleId> (<teamId>)" identifier (see `configureContextIdentity`), so
+    /// cleanup must recognize that identifier in addition to the internal id.
+    private func safariRuntimeIdentifiers(for extensionId: String) -> Set<String> {
+        guard let installed = manager.installedExtensions.first(where: {
+            $0.id == extensionId
+        }) else {
+            return []
+        }
+        let identifier = SafariWebExtensionRuntimeIdentity.webKitStorageIdentifier(
+            extensionId: extensionId,
+            sourceKind: installed.sourceKind,
+            sourceBundlePath: installed.sourceBundlePath
+        )
+        return identifier == extensionId ? [] : [identifier]
+    }
+
     private func finalizeCleanup(
         for extensionId: String,
         mode: ExtensionManager.WebExtensionStorageCleanupMode
@@ -136,7 +154,34 @@ final class WebExtensionStorageCleanupOwner {
         let controllerStorageId = resolvedProfileId.map {
             manager.extensionControllerIdentifier(for: $0)
         }
-        return WebExtensionStorageCleanupStore(controllerStorageId: controllerStorageId)
+        return WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerStorageId,
+            storageDirectoryNameResolver: { [weak manager] extensionId in
+                guard let manager,
+                      let installed = manager.installedExtensions.first(where: {
+                          $0.id == extensionId
+                      })
+                else {
+                    return extensionId
+                }
+                return SafariWebExtensionRuntimeIdentity.webKitStorageIdentifier(
+                    extensionId: extensionId,
+                    sourceKind: installed.sourceKind,
+                    sourceBundlePath: installed.sourceBundlePath
+                )
+            }
+        )
+    }
+
+    /// Adopts a legacy bare-id storage directory into the composed-identifier
+    /// directory before the context loads, preserving extension state across
+    /// the Safari runtime-identifier migration.
+    func adoptLegacyStorageDirectoryIfNeeded(
+        for extensionId: String,
+        profileId: UUID? = nil
+    ) {
+        storageCleanupStore(profileId: profileId)
+            .adoptLegacyStorageDirectoryIfNeeded(for: extensionId)
     }
 
     func hasStoredDataCandidate(for extensionId: String) -> Bool {
@@ -226,6 +271,17 @@ extension ExtensionManager {
     ) -> Bool {
         WebExtensionStorageCleanupOwner(manager: self)
             .ensureStorageDirectoryExists(for: extensionId, profileId: profileId)
+    }
+
+    func adoptLegacyWebExtensionStorageIfNeeded(
+        for extensionId: String,
+        profileId: UUID? = nil
+    ) {
+        WebExtensionStorageCleanupOwner(manager: self)
+            .adoptLegacyStorageDirectoryIfNeeded(
+                for: extensionId,
+                profileId: profileId
+            )
     }
 
     func webExtensionStorageSnapshot(

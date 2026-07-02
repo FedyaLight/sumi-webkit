@@ -19,6 +19,10 @@ struct WebExtensionStorageCleanupStore {
     private let libraryDirectoryProvider: () -> URL?
     private let fileManager: FileManager
     private let planner: WebExtensionStorageCleanupPlanner
+    /// Maps the internal extension id to the directory name WebKit actually
+    /// uses (the composed "<bundleId> (<teamId>)" identifier for Safari app
+    /// extensions). Defaults to identity for directory-source extensions.
+    private let storageDirectoryNameResolver: (String) -> String
 
     init(
         controllerStorageId: UUID?,
@@ -29,36 +33,88 @@ struct WebExtensionStorageCleanupStore {
             ).first
         },
         fileManager: FileManager = .default,
-        planner: WebExtensionStorageCleanupPlanner = .shared
+        planner: WebExtensionStorageCleanupPlanner = .shared,
+        storageDirectoryNameResolver: @escaping (String) -> String = { $0 }
     ) {
         self.controllerStorageId = controllerStorageId
         self.libraryDirectoryProvider = libraryDirectoryProvider
         self.fileManager = fileManager
         self.planner = planner
+        self.storageDirectoryNameResolver = storageDirectoryNameResolver
     }
 
     func directory(for extensionId: String) -> URL? {
+        directoryForStorageName(storageDirectoryNameResolver(extensionId))
+    }
+
+    private func directoryForStorageName(_ storageName: String) -> URL? {
+        guard let storageRoot = storageRootDirectory() else { return nil }
+        do {
+            return try ExtensionUtils.extensionDirectory(
+                forExtensionID: storageName,
+                under: storageRoot
+            )
+        } catch {
+            Self.logger.debug(
+                "Failed to resolve WebExtension storage directory for \(storageName, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+    }
+
+    private func storageRootDirectory() -> URL? {
         guard let controllerStorageId,
               let libraryDirectory = libraryDirectoryProvider()
         else {
             return nil
         }
 
-        let storageRoot = libraryDirectory
+        return libraryDirectory
             .appendingPathComponent("WebKit", isDirectory: true)
             .appendingPathComponent(SumiAppIdentity.runtimeBundleIdentifier, isDirectory: true)
             .appendingPathComponent("WebExtensions", isDirectory: true)
             .appendingPathComponent(controllerStorageId.uuidString.uppercased(), isDirectory: true)
+    }
+
+    /// One-time adoption of a legacy storage directory after the WebKit-facing
+    /// identifier changed (bare bundle id → composed "<bundleId> (<teamId>)").
+    /// Moves the legacy directory into place when the current directory has no
+    /// real data yet, preserving sessions across the identifier migration.
+    /// Never touches a current directory that already contains store files.
+    func adoptLegacyStorageDirectoryIfNeeded(for extensionId: String) {
+        let currentName = storageDirectoryNameResolver(extensionId)
+        guard currentName != extensionId,
+              let legacyDirectory = directoryForStorageName(extensionId),
+              let currentDirectory = directoryForStorageName(currentName),
+              fileManager.fileExists(atPath: legacyDirectory.path)
+        else {
+            return
+        }
+
+        if fileManager.fileExists(atPath: currentDirectory.path) {
+            let currentSnapshot = snapshotOfDirectory(currentDirectory)
+            guard currentSnapshot.hasStoredDataCandidate == false else { return }
+            let legacySnapshot = snapshotOfDirectory(legacyDirectory)
+            guard legacySnapshot.hasStoredDataCandidate else { return }
+            do {
+                try fileManager.removeItem(at: currentDirectory)
+            } catch {
+                Self.logger.error(
+                    "Failed to clear prunable WebExtension storage before legacy adoption for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                )
+                return
+            }
+        }
+
         do {
-            return try ExtensionUtils.extensionDirectory(
-                forExtensionID: extensionId,
-                under: storageRoot
+            try fileManager.moveItem(at: legacyDirectory, to: currentDirectory)
+            Self.logger.info(
+                "Adopted legacy WebExtension storage for \(extensionId, privacy: .public) into composed identifier directory"
             )
         } catch {
-            Self.logger.debug(
-                "Failed to resolve WebExtension storage directory for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            Self.logger.error(
+                "Failed to adopt legacy WebExtension storage for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
-            return nil
         }
     }
 
@@ -129,7 +185,10 @@ struct WebExtensionStorageCleanupStore {
         guard let storageDirectory = directory(for: extensionId) else {
             return Self.emptySnapshot
         }
+        return snapshotOfDirectory(storageDirectory)
+    }
 
+    private func snapshotOfDirectory(_ storageDirectory: URL) -> StorageSnapshot {
         let directoryExists = fileManager.fileExists(atPath: storageDirectory.path)
         guard directoryExists else {
             return Self.emptySnapshot
@@ -144,7 +203,7 @@ struct WebExtensionStorageCleanupStore {
             )
         } catch {
             Self.logger.debug(
-                "Failed to read WebExtension storage directory snapshot for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "Failed to read WebExtension storage directory snapshot at \(storageDirectory.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
             return StorageSnapshot(
                 directoryExists: true,

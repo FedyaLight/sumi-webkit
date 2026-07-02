@@ -457,6 +457,15 @@ final class ExtensionInstallationFlowOwner {
 
             if let existingEntitySnapshot {
                 dependencies.tearDownExtensionRuntimeState(existingEntitySnapshot.id, false)
+            } else if resolvedSource.sourceKind == .safariAppExtension {
+                // Safari parity: reinstalling a Safari app extension keeps its
+                // WebKit data — Safari preserves extension state across
+                // reinstall and containing-app updates.
+                if RuntimeDiagnostics.isVerboseEnabled {
+                    dependencies.trace(
+                        "Preserved WebExtension data for \(extensionId): Safari app extension reinstall keeps state"
+                    )
+                }
             } else if dependencies.hasStoredWebExtensionDataCandidate(extensionId) {
                 dependencies.traceWebExtensionStoreLifecycle(
                     "before-install-cleanup",
@@ -664,22 +673,10 @@ final class ExtensionInstallationFlowOwner {
         do {
             if let existingEntitySnapshot {
                 dependencies.tearDownExtensionRuntimeState(existingEntitySnapshot.id, false)
-            } else if dependencies.hasStoredWebExtensionDataCandidate(extensionId) {
-                dependencies.traceWebExtensionStoreLifecycle(
-                    "before-safari-enable-cleanup",
-                    extensionId,
-                    manifest
-                )
-                await dependencies.removeStoredWebExtensionData(
-                    extensionId,
-                    .preserveDirectoryForImmediateRuntimeLoad
-                )
-                dependencies.traceWebExtensionStoreLifecycle(
-                    "after-safari-enable-cleanup",
-                    extensionId,
-                    manifest
-                )
             }
+            // Safari parity: reinstalling or updating a Safari app extension
+            // keeps its WebKit data (sessions survive extension updates in
+            // Safari). Stale-data cleanup applies only to directory sources.
 
             let record = try dependencies.makeInstalledRecord(
                 extensionId,
@@ -1035,12 +1032,16 @@ extension ExtensionManager {
     func configureContextIdentity(
         _ extensionContext: WKWebExtensionContext,
         extensionId: String,
-        profileId: UUID
+        profileId: UUID,
+        sourceKind: WebExtensionSourceKind = .directory,
+        sourceBundlePath: String? = nil
     ) {
         ExtensionRuntimeContextLoadOwner.configureContextIdentity(
             extensionContext,
             extensionId: extensionId,
-            profileId: profileId
+            profileId: profileId,
+            sourceKind: sourceKind,
+            sourceBundlePath: sourceBundlePath
         )
     }
 }

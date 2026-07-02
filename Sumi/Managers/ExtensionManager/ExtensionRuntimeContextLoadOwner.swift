@@ -165,7 +165,9 @@ final class ExtensionRuntimeContextLoadOwner {
         Self.configureContextIdentity(
             extensionContext,
             extensionId: request.extensionId,
-            profileId: request.profileId
+            profileId: request.profileId,
+            sourceKind: request.sourceKind,
+            sourceBundlePath: request.sourceBundlePath
         )
         manager.grantRequestedPermissions(
             to: extensionContext,
@@ -206,6 +208,10 @@ final class ExtensionRuntimeContextLoadOwner {
             webExtension: webExtension,
             extensionContext: extensionContext,
             controller: extensionController
+        )
+        manager.adoptLegacyWebExtensionStorageIfNeeded(
+            for: request.extensionId,
+            profileId: request.profileId
         )
         manager.ensureWebExtensionStorageDirectoryExists(
             for: request.extensionId,
@@ -325,10 +331,21 @@ final class ExtensionRuntimeContextLoadOwner {
     static func configureContextIdentity(
         _ extensionContext: WKWebExtensionContext,
         extensionId: String,
-        profileId: UUID
+        profileId: UUID,
+        sourceKind: WebExtensionSourceKind = .directory,
+        sourceBundlePath: String? = nil
     ) {
         let scopedIdentifier = "\(profileId.uuidString):\(extensionId)"
-        extensionContext.uniqueIdentifier = extensionId
+        // Safari exposes app extensions to web pages and to `browser.runtime.id`
+        // as "<bundleId> (<teamId>)". Web apps (e.g. account.proton.me) message
+        // this composed identifier via `externally_connectable`, so WebKit must
+        // match it against `uniqueIdentifier` for delivery. Non-Safari sources
+        // keep the internal extension id.
+        extensionContext.uniqueIdentifier = safariRuntimeIdentifier(
+            extensionId: extensionId,
+            sourceKind: sourceKind,
+            sourceBundlePath: sourceBundlePath
+        )
         let host =
             "ext-"
             + scopedIdentifier.utf8.map { String(format: "%02x", $0) }.joined()
@@ -337,5 +354,21 @@ final class ExtensionRuntimeContextLoadOwner {
         ) {
             extensionContext.baseURL = baseURL
         }
+    }
+
+    /// The identifier WebKit exposes as `browser.runtime.id` and matches for
+    /// `externally_connectable` message routing. Safari app extensions use the
+    /// composed "<bundleId> (<teamId>)" form; everything else uses the internal
+    /// extension id.
+    static func safariRuntimeIdentifier(
+        extensionId: String,
+        sourceKind: WebExtensionSourceKind,
+        sourceBundlePath: String?
+    ) -> String {
+        SafariWebExtensionRuntimeIdentity.webKitStorageIdentifier(
+            extensionId: extensionId,
+            sourceKind: sourceKind,
+            sourceBundlePath: sourceBundlePath
+        )
     }
 }

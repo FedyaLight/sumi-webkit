@@ -192,6 +192,130 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
         XCTAssertFalse(store.hasStoredDataCandidate(for: "extension-id"))
     }
 
+    func testStoreResolvesDirectoryThroughStorageNameResolver() throws {
+        let libraryDirectory = makeTemporaryLibraryDirectory()
+        let store = WebExtensionStorageCleanupStore(
+            controllerStorageId: UUID(),
+            libraryDirectoryProvider: { libraryDirectory },
+            storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
+        )
+
+        let directory = try XCTUnwrap(store.directory(for: "com.vendor.ext"))
+        XCTAssertEqual(directory.lastPathComponent, "com.vendor.ext (TEAMID123)")
+    }
+
+    func testAdoptLegacyStorageMovesLegacyDirectoryWhenComposedMissing() throws {
+        let libraryDirectory = makeTemporaryLibraryDirectory()
+        let identityStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            libraryDirectoryProvider: { libraryDirectory }
+        )
+        let composedStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: UUID(uuidString: "11111111-2222-3333-4444-555555555555")!,
+            libraryDirectoryProvider: { libraryDirectory },
+            storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
+        )
+        let extensionId = "com.vendor.ext"
+
+        XCTAssertTrue(identityStore.ensureDirectoryExists(for: extensionId))
+        let legacyDirectory = try XCTUnwrap(identityStore.directory(for: extensionId))
+        try Data("session".utf8).write(
+            to: legacyDirectory.appendingPathComponent("LocalStorage.db")
+        )
+
+        composedStore.adoptLegacyStorageDirectoryIfNeeded(for: extensionId)
+
+        let composedDirectory = try XCTUnwrap(composedStore.directory(for: extensionId))
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: composedDirectory.appendingPathComponent("LocalStorage.db").path
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyDirectory.path))
+    }
+
+    func testAdoptLegacyStorageReplacesStateOnlyComposedDirectory() throws {
+        let libraryDirectory = makeTemporaryLibraryDirectory()
+        let controllerId = UUID()
+        let identityStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerId,
+            libraryDirectoryProvider: { libraryDirectory }
+        )
+        let composedStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerId,
+            libraryDirectoryProvider: { libraryDirectory },
+            storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
+        )
+        let extensionId = "com.vendor.ext"
+
+        XCTAssertTrue(identityStore.ensureDirectoryExists(for: extensionId))
+        let legacyDirectory = try XCTUnwrap(identityStore.directory(for: extensionId))
+        try Data("session".utf8).write(
+            to: legacyDirectory.appendingPathComponent("LocalStorage.db")
+        )
+
+        XCTAssertTrue(composedStore.ensureDirectoryExists(for: extensionId))
+        let composedDirectory = try XCTUnwrap(composedStore.directory(for: extensionId))
+        try Data().write(to: composedDirectory.appendingPathComponent("State.plist"))
+
+        composedStore.adoptLegacyStorageDirectoryIfNeeded(for: extensionId)
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: composedDirectory.appendingPathComponent("LocalStorage.db").path
+            )
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyDirectory.path))
+    }
+
+    func testAdoptLegacyStorageNeverReplacesComposedDirectoryWithData() throws {
+        let libraryDirectory = makeTemporaryLibraryDirectory()
+        let controllerId = UUID()
+        let identityStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerId,
+            libraryDirectoryProvider: { libraryDirectory }
+        )
+        let composedStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerId,
+            libraryDirectoryProvider: { libraryDirectory },
+            storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
+        )
+        let extensionId = "com.vendor.ext"
+
+        XCTAssertTrue(identityStore.ensureDirectoryExists(for: extensionId))
+        let legacyDirectory = try XCTUnwrap(identityStore.directory(for: extensionId))
+        try Data("legacy".utf8).write(
+            to: legacyDirectory.appendingPathComponent("LocalStorage.db")
+        )
+
+        XCTAssertTrue(composedStore.ensureDirectoryExists(for: extensionId))
+        let composedDirectory = try XCTUnwrap(composedStore.directory(for: extensionId))
+        try Data("current".utf8).write(
+            to: composedDirectory.appendingPathComponent("LocalStorage.db")
+        )
+
+        composedStore.adoptLegacyStorageDirectoryIfNeeded(for: extensionId)
+
+        XCTAssertEqual(
+            try String(
+                contentsOf: composedDirectory.appendingPathComponent("LocalStorage.db"),
+                encoding: .utf8
+            ),
+            "current"
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: legacyDirectory.path))
+    }
+
+    func testAdoptLegacyStorageIsNoOpWithIdentityResolver() throws {
+        let store = makeCleanupStore()
+        let extensionId = "com.vendor.ext"
+        XCTAssertTrue(store.ensureDirectoryExists(for: extensionId))
+        // Identity resolver means no composed identifier — nothing to adopt.
+        store.adoptLegacyStorageDirectoryIfNeeded(for: extensionId)
+        let directory = try XCTUnwrap(store.directory(for: extensionId))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.path))
+    }
+
     private func stateOnlySnapshot() -> WebExtensionStorageCleanupPlanner.StorageSnapshot {
         .init(
             directoryExists: true,

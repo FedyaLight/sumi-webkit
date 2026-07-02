@@ -16,6 +16,17 @@ struct WebExtensionControllerDataCleanupOwner {
     struct MatchedRecords {
         let dataTypes: Set<WKWebExtension.DataType>
         fileprivate let records: [WKWebExtension.DataRecord]
+        fileprivate let additionalUniqueIdentifiers: Set<String>
+
+        init(
+            dataTypes: Set<WKWebExtension.DataType>,
+            records: [WKWebExtension.DataRecord],
+            additionalUniqueIdentifiers: Set<String> = []
+        ) {
+            self.dataTypes = dataTypes
+            self.records = records
+            self.additionalUniqueIdentifiers = additionalUniqueIdentifiers
+        }
 
         var isEmpty: Bool {
             records.isEmpty
@@ -28,7 +39,8 @@ struct WebExtensionControllerDataCleanupOwner {
 
     func matchingRecords(
         for extensionId: String,
-        controllersByProfile: [UUID: WKWebExtensionController]
+        controllersByProfile: [UUID: WKWebExtensionController],
+        additionalUniqueIdentifiers: Set<String> = []
     ) async -> MatchedRecords {
         let dataTypes = WKWebExtensionController.allExtensionDataTypes
         var matchingRecords: [WKWebExtension.DataRecord] = []
@@ -40,14 +52,20 @@ struct WebExtensionControllerDataCleanupOwner {
             )
             matchingRecords.append(
                 contentsOf: records.filter {
-                    matches($0, extensionId: extensionId, profileId: profileId)
+                    matches(
+                        $0,
+                        extensionId: extensionId,
+                        profileId: profileId,
+                        additionalUniqueIdentifiers: additionalUniqueIdentifiers
+                    )
                 }
             )
         }
 
         return MatchedRecords(
             dataTypes: dataTypes,
-            records: matchingRecords
+            records: matchingRecords,
+            additionalUniqueIdentifiers: additionalUniqueIdentifiers
         )
     }
 
@@ -60,7 +78,12 @@ struct WebExtensionControllerDataCleanupOwner {
         // offered to every profile controller, not only the controller that fetched them.
         for (profileId, controller) in controllersByProfile {
             let profileRecords = matchedRecords.records.filter {
-                matches($0, extensionId: extensionId, profileId: profileId)
+                matches(
+                    $0,
+                    extensionId: extensionId,
+                    profileId: profileId,
+                    additionalUniqueIdentifiers: matchedRecords.additionalUniqueIdentifiers
+                )
             }
             guard profileRecords.isEmpty == false else { continue }
 
@@ -101,10 +124,12 @@ struct WebExtensionControllerDataCleanupOwner {
     private func matches(
         _ record: WKWebExtension.DataRecord,
         extensionId: String,
-        profileId: UUID
+        profileId: UUID,
+        additionalUniqueIdentifiers: Set<String>
     ) -> Bool {
         let scopedIdentifier = "\(profileId.uuidString):\(extensionId)"
         return record.uniqueIdentifier == extensionId
             || record.uniqueIdentifier == scopedIdentifier
+            || additionalUniqueIdentifiers.contains(record.uniqueIdentifier)
     }
 }
