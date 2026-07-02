@@ -5,6 +5,7 @@ final class TabShortcutPresentationOwner {
     struct Dependencies {
         let transientShortcutTabsByWindow: @MainActor () -> [UUID: [UUID: Tab]]
         let windowState: @MainActor (UUID) -> BrowserWindowState?
+        let shortcutPin: @MainActor (UUID) -> ShortcutPin?
         let resolvedExecutionProfileId: @MainActor (ShortcutPin, UUID?) -> UUID?
         let faviconService: @MainActor () -> any BrowserFaviconServicing
         let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
@@ -149,6 +150,15 @@ final class TabShortcutPresentationOwner {
         dependencies.transientShortcutTabsByWindow().values
             .flatMap(\.values)
             .filter { role == nil || $0.shortcutPinRole == role }
+    }
+
+    func activeEssentialTabs(for profileId: UUID?) -> [Tab] {
+        guard let profileId else { return [] }
+        return activeShortcutTabs(role: .essential).filter { tab in
+            guard let shortcutId = tab.shortcutPinId,
+                  let pin = dependencies.shortcutPin(shortcutId) else { return false }
+            return pin.profileId == profileId
+        }
     }
 
     private func normalizedShortcutComparisonURL(_ url: URL) -> String {

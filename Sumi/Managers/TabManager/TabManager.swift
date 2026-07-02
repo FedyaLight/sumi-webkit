@@ -110,6 +110,85 @@ class TabManager: ObservableObject {
             }
         )
     )
+    private lazy var shortcutPinConversionOwner = ShortcutPinConversionOwner(
+        dependencies: ShortcutPinConversionOwner.Dependencies(
+            insertRegularTabFromShortcut: { [weak self] pin, spaceId, targetIndex in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.insertRegularTabFromShortcut(pin, into: spaceId, at: targetIndex)
+            },
+            removeShortcutPinFromContainers: { [weak self] pin in
+                self?.removeShortcutPinFromContainers(pin)
+            },
+            scheduleStructuralPersistence: { [weak self] in
+                self?.scheduleStructuralPersistence()
+            },
+            makeShortcutPin: { [weak self] tab, role, profileId, spaceId, folderId, index in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.makeShortcutPin(
+                    from: tab,
+                    role: role,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    folderId: folderId,
+                    index: index
+                )
+            },
+            insertShortcutPin: { [weak self] pin, targetIndex, openTargetFolder in
+                self?.insertShortcutPin(
+                    pin,
+                    at: targetIndex,
+                    openTargetFolder: openTargetFolder
+                )
+            },
+            convertDisplayedTabToShortcutLiveInstances: { [weak self] tab, pin, preferredWindowId in
+                self?.convertDisplayedTabToShortcutLiveInstances(
+                    tab,
+                    pin: pin,
+                    preferredWindowId: preferredWindowId
+                ) ?? false
+            },
+            removeTab: { [weak self] tabId in
+                self?.removeTab(tabId)
+            }
+        )
+    )
+    private lazy var shortcutDragOperationOwner = ShortcutDragOperationOwner(
+        dependencies: ShortcutDragOperationOwner.Dependencies(
+            reorderEssential: { [weak self] pin, index in
+                self?.reorderEssential(pin, to: index) ?? false
+            },
+            moveShortcutPin: { [weak self] pin, role, profileId, spaceId, folderId, index, openTargetFolder in
+                self?.moveShortcutPin(
+                    pin,
+                    to: role,
+                    profileId: profileId,
+                    spaceId: spaceId,
+                    folderId: folderId,
+                    index: index,
+                    openTargetFolder: openTargetFolder
+                )
+            },
+            folderSpaceId: { [weak self] folderId in
+                self?.folderSpaceId(for: folderId)
+            },
+            resolvedEssentialsProfileId: { [weak self] operation in
+                self?.resolvedEssentialsProfileId(for: operation)
+            },
+            convertShortcutPinToRegularTab: { [weak self] pin, spaceId, targetIndex in
+                self?.convertShortcutPinToRegularTab(pin, in: spaceId, at: targetIndex) ?? false
+            },
+            removeShortcutPinFromContainers: { [weak self] pin in
+                self?.removeShortcutPinFromContainers(pin)
+            },
+            insertRegularTabFromShortcut: { [weak self] pin, spaceId, targetIndex in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.insertRegularTabFromShortcut(pin, into: spaceId, at: targetIndex)
+            },
+            scheduleStructuralPersistence: { [weak self] in
+                self?.scheduleStructuralPersistence()
+            }
+        )
+    )
     private lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
         dependencies: TabShortcutPresentationOwner.Dependencies(
             transientShortcutTabsByWindow: { [weak self] in
@@ -117,6 +196,9 @@ class TabManager: ObservableObject {
             },
             windowState: { [weak self] windowId in
                 self?.runtimeContext?.windowState(for: windowId)
+            },
+            shortcutPin: { [weak self] pinId in
+                self?.shortcutPin(by: pinId)
             },
             resolvedExecutionProfileId: { [weak self] pin, currentSpaceId in
                 self?.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
@@ -466,6 +548,53 @@ class TabManager: ObservableObject {
             for: pin,
             currentSpaceId: currentSpaceId
         )
+    }
+
+    @discardableResult
+    func convertShortcutPinToRegularTab(
+        _ pin: ShortcutPin,
+        in targetSpaceId: UUID,
+        at targetIndex: Int? = nil
+    ) -> Bool {
+        withStructuralUpdateTransaction {
+            shortcutPinConversionOwner.convertShortcutPinToRegularTab(
+                pin,
+                in: targetSpaceId,
+                at: targetIndex
+            )
+        }
+    }
+
+    @discardableResult
+    func convertTabToShortcutPin(
+        _ tab: Tab,
+        role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?,
+        folderId: UUID?,
+        at targetIndex: Int,
+        openTargetFolder: Bool = true,
+        preferredWindowId: UUID? = nil
+    ) -> ShortcutPin? {
+        withStructuralUpdateTransaction {
+            shortcutPinConversionOwner.convertTabToShortcutPin(
+                tab,
+                role: role,
+                profileId: profileId,
+                spaceId: spaceId,
+                folderId: folderId,
+                at: targetIndex,
+                openTargetFolder: openTargetFolder,
+                preferredWindowId: preferredWindowId
+            )
+        }
+    }
+
+    @discardableResult
+    func handleShortcutDragOperation(_ pin: ShortcutPin, operation: DragOperation) -> Bool {
+        withStructuralUpdateTransaction {
+            shortcutDragOperationOwner.handleShortcutDragOperation(pin, operation: operation)
+        }
     }
 
     func spacePinnedPins(for spaceId: UUID) -> [ShortcutPin] {
@@ -864,6 +993,10 @@ class TabManager: ObservableObject {
 
     func activeShortcutTabs(role: ShortcutPinRole? = nil) -> [Tab] {
         shortcutPresentationOwner.activeShortcutTabs(role: role)
+    }
+
+    func activeEssentialTabs(for profileId: UUID?) -> [Tab] {
+        shortcutPresentationOwner.activeEssentialTabs(for: profileId)
     }
 
     func launcherProjection(
