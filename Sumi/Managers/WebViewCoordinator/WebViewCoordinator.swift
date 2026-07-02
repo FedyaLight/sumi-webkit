@@ -38,10 +38,15 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
     private let webViewAssignmentRebuildOwner = WebViewAssignmentRebuildOwner()
 
     @ObservationIgnored
-    private let webViewTrackingLifecycleOwner = WebViewTrackingLifecycleOwner()
+    let webViewTrackingLifecycleOwner = WebViewTrackingLifecycleOwner()
 
     @ObservationIgnored
-    private let trackedCleanupExecutionOwner = WebViewTrackedCleanupExecutionOwner()
+    let trackedCleanupExecutionOwner = WebViewTrackedCleanupExecutionOwner()
+
+    @ObservationIgnored
+    private lazy var trackedRegistrationOwner = WebViewTrackedRegistrationOwner(
+        dependencies: .live(coordinator: self)
+    )
 
     @ObservationIgnored
     let tabScopedCleanupValidationOwner = WebViewTabScopedCleanupValidationOwner()
@@ -428,7 +433,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         cleanupTrackedWebView(webView, owner: owner)
     }
 
-    private func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
+    func flushDeferredProtectedCommands(for webViewID: ObjectIdentifier) {
         protectedCommandDispatchOwner.flushCommands(for: webViewID)
     }
 
@@ -636,47 +641,6 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         protectedCommandDispatchOwner.enqueue(command, for: webView, reason: reason)
     }
 
-    private func installMediaProtectionObservationsIfNeeded(on webView: WKWebView) {
-        mediaProtectionOwner.installFullscreenStateObservationIfNeeded(
-            on: webView,
-            trackedOwner: { [weak self] webView in
-                self?.trackedOwner(containing: webView)
-            },
-            fallbackWindowID: { [weak self] webView in
-                self?.windowId(containing: webView)
-            },
-            flushDeferredProtectedCommands: { [weak self] webViewID in
-                self?.flushDeferredProtectedCommands(for: webViewID)
-            },
-            refreshCompositor: { [weak self] windowID in
-                guard let self else { return }
-                let runtimeContext = requireBrowserRuntimeContext()
-                guard let windowState = runtimeContext.window(windowID)
-                else {
-                    return
-                }
-                runtimeContext.refreshCompositor(windowState)
-            }
-        )
-
-        mediaProtectionOwner.installNowPlayingSessionObservationIfNeeded(
-            on: webView,
-            trackedOwner: { [weak self] webView in
-                self?.trackedOwner(containing: webView)
-            },
-            fallbackWindowID: { [weak self] webView in
-                self?.windowId(containing: webView)
-            }
-        )
-    }
-
-    private func uninstallMediaProtectionObservationsIfUntracked(_ webView: WKWebView) {
-        mediaProtectionOwner.uninstallObservationsIfUntracked(
-            webView,
-            isTracked: webViewRegistry.isIndexed(webView)
-        )
-    }
-
     func resolveWebView(
         with identifier: ObjectIdentifier
     ) -> WKWebView? {
@@ -687,7 +651,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         return mediaProtectionOwner.resolveWeakWebView(with: identifier)
     }
 
-    private func resolvedTab(with tabID: UUID) -> Tab? {
+    func resolvedTab(with tabID: UUID) -> Tab? {
         let runtimeContext = requireBrowserRuntimeContext()
         return resolvedTab(with: tabID, runtimeContext: runtimeContext)
     }
@@ -713,7 +677,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         )
     }
 
-    private func pruneInvalidDeferredProtectedCommands(reason: String) {
+    func pruneInvalidDeferredProtectedCommands(reason: String) {
         finishDestructiveCleanupSuppression(
             for: mediaProtectionOwner.pruneStaleBookkeeping(reason: "\(reason).staleBookkeeping")
         )
@@ -790,15 +754,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         _ webView: WKWebView,
         owner: TrackedWebViewOwner
     ) {
-        let tab = resolvedTab(with: owner.tabID)
-        cleanupUnprotectedTrackedWebView(
-            webView,
-            owner: owner,
-            tab: tab
-        )
-        if let tab {
-            refreshPrimaryTrackedWebView(for: tab)
-        }
+        trackedRegistrationOwner.cleanupTrackedWebView(webView, owner: owner)
     }
 
     private func cleanupUnprotectedTrackedWebView(
@@ -806,36 +762,10 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         owner: TrackedWebViewOwner,
         tab: Tab?
     ) {
-        trackedCleanupExecutionOwner.cleanupUnprotectedTrackedWebView(
+        trackedRegistrationOwner.cleanupUnprotectedTrackedWebView(
             webView,
             owner: owner,
-            tab: tab,
-            webViewRegistry: webViewRegistry,
-            trackingLifecycleOwner: webViewTrackingLifecycleOwner,
-            runtime: trackedCleanupExecutionRuntime()
-        )
-    }
-
-    private func trackedCleanupExecutionRuntime() -> WebViewTrackedCleanupExecutionOwner.Runtime {
-        WebViewTrackedCleanupExecutionOwner.Runtime(
-            finishDestructiveCleanupSuppression: { [self] webView in
-                finishDestructiveDataCleanupNavigation(on: webView)
-            },
-            removeFromContainers: { [self] webView in
-                removeWebViewFromContainers(webView)
-            },
-            uninstallRuntimeObservationsIfUntracked: { [self] webView in
-                uninstallMediaProtectionObservationsIfUntracked(webView)
-            },
-            pruneInvalidDeferredCommands: { [self] reason in
-                pruneInvalidDeferredProtectedCommands(reason: reason)
-            },
-            fallbackCleanup: { [self] webView, tabID in
-                performFallbackWebViewCleanup(
-                    webView,
-                    tabId: tabID
-                )
-            }
+            tab: tab
         )
     }
 
@@ -898,25 +828,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         for tabId: UUID,
         in windowId: UUID
     ) {
-        let owner = TrackedWebViewOwner(tabID: tabId, windowID: windowId)
-        mediaProtectionOwner.note(webView)
-        webViewTrackingLifecycleOwner.registerTrackedWebView(
-            webView,
-            for: owner,
-            in: webViewRegistry,
-            removeFromContainers: { [self] webView in
-                removeWebViewFromContainers(webView)
-            },
-            installRuntimeObservations: { [self] webView in
-                installMediaProtectionObservationsIfNeeded(on: webView)
-            },
-            uninstallRuntimeObservationsIfUntracked: { [self] webView in
-                uninstallMediaProtectionObservationsIfUntracked(webView)
-            },
-            pruneInvalidDeferredCommands: { [self] reason in
-                pruneInvalidDeferredProtectedCommands(reason: reason)
-            }
-        )
+        trackedRegistrationOwner.register(webView, for: tabId, in: windowId)
     }
 
     @discardableResult
@@ -926,21 +838,11 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         removeFromSuperview: Bool = false,
         removeRecentVisibility: Bool = true
     ) -> WKWebView? {
-        webViewTrackingLifecycleOwner.unregisterTrackedWebViewSlot(
+        trackedRegistrationOwner.unregisterSlot(
             owner: owner,
             expectedWebView: expectedWebView,
             removeFromSuperview: removeFromSuperview,
-            removeRecentVisibility: removeRecentVisibility,
-            in: webViewRegistry,
-            removeFromContainers: { [self] webView in
-                removeWebViewFromContainers(webView)
-            },
-            uninstallRuntimeObservationsIfUntracked: { [self] webView in
-                uninstallMediaProtectionObservationsIfUntracked(webView)
-            },
-            pruneInvalidDeferredCommands: { [self] reason in
-                pruneInvalidDeferredProtectedCommands(reason: reason)
-            }
+            removeRecentVisibility: removeRecentVisibility
         )
     }
 
@@ -960,7 +862,7 @@ class WebViewCoordinator: SumiDestructiveBrowsingDataCleanupPreparing {
         return unique
     }
 
-    private func refreshPrimaryTrackedWebView(for tab: Tab) {
+    func refreshPrimaryTrackedWebView(for tab: Tab) {
         webViewAssignmentRebuildOwner.refreshPrimaryTrackedWebView(
             for: tab,
             runtime: assignmentRebuildRuntime()
