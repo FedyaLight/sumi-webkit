@@ -38,6 +38,7 @@ class TabManager: ObservableObject {
 
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
     lazy var folderMutationOwner = TabFolderMutationOwner(tabManager: self)
+    let spaceCollectionStateOwner = TabSpaceCollectionStateOwner()
     let regularTabCollectionStateOwner = RegularTabCollectionStateOwner()
     lazy var regularTabCollectionOwner = RegularTabCollectionOwner(
         tabManager: self,
@@ -321,8 +322,21 @@ class TabManager: ObservableObject {
     )
 
     // Spaces
-    @Published var spaces: [Space] = []
-    @Published var currentSpace: Space?
+    var spaces: [Space] {
+        get { spaceCollectionStateOwner.spaces }
+        set {
+            objectWillChange.send()
+            spaceCollectionStateOwner.replaceSpaces(newValue)
+        }
+    }
+
+    var currentSpace: Space? {
+        get { spaceCollectionStateOwner.currentSpace }
+        set {
+            objectWillChange.send()
+            spaceCollectionStateOwner.replaceCurrentSpace(newValue)
+        }
+    }
 
     // Normal tabs per space
     var tabsBySpace: [UUID: [Tab]] {
@@ -697,7 +711,7 @@ class TabManager: ObservableObject {
         let contextProfileId =
             contextWindowState?.currentProfileId
             ?? contextSpaceId.flatMap { spaceId in
-                spaces.first(where: { $0.id == spaceId })?.profileId
+                spaceCollectionStateOwner.profileId(for: spaceId)
             }
             ?? runtimeContext?.currentProfileId
         let regularTabs = contextSpaceId.map { regularTabCollectionOwner.tabs(in: $0) } ?? []
@@ -819,9 +833,8 @@ class TabManager: ObservableObject {
             shortcutPinCollectionStateOwner.removeAll()
             transientTabRegistryOwner.removeAll()
             structuralLookupOwner.removeAll()
-            spaces.removeAll()
+            spaceCollectionStateOwner.removeAll()
             currentTab = nil
-            currentSpace = nil
             runtimeContext = nil
         }
 
@@ -1140,7 +1153,7 @@ class TabManager: ObservableObject {
     func duplicateAsRegularForSplit(from source: Tab, anchor: Tab, placeAfterAnchor: Bool = true) -> Tab {
         withStructuralUpdateTransaction {
             let targetSpace = anchor.spaceId.flatMap { sid in
-                spaces.first(where: { $0.id == sid })
+                spaceCollectionStateOwner.space(with: sid)
             } ?? ensureDefaultSpaceIfNeeded()
 
             // Build the duplicate with the same URL/name; favicon will refresh from URL.
@@ -1236,7 +1249,7 @@ class TabManager: ObservableObject {
     func resolvedTargetSpace(preferred space: Space?, fallbackSpaceId: UUID? = nil) -> Space {
         space
             ?? fallbackSpaceId.flatMap { spaceId in
-                spaces.first(where: { $0.id == spaceId })
+                spaceCollectionStateOwner.space(with: spaceId)
             }
             ?? ensureDefaultSpaceIfNeeded()
     }
@@ -1421,20 +1434,21 @@ class TabManager: ObservableObject {
     private func ensureDefaultSpaceIfNeeded() -> Space {
         let profileId = defaultProfileIdForSpaceBootstrap
         if let profileId,
-           let profileSpace = spaces.first(where: { $0.profileId == profileId }) {
+           let profileSpace = spaceCollectionStateOwner.first(where: { $0.profileId == profileId }) {
             return profileSpace
         }
 
         if let profileId,
-           let unassignedSpace = spaces.first(where: { $0.profileId == nil }) {
-            unassignedSpace.profileId = profileId
+           let unassignedSpace = spaceCollectionStateOwner.first(where: { $0.profileId == nil }) {
+            objectWillChange.send()
+            spaceCollectionStateOwner.assignProfile(spaceId: unassignedSpace.id, profileId: profileId)
             markAllSpacesStructurallyDirty()
             scheduleStructuralPersistence()
             return unassignedSpace
         }
 
         if profileId == nil,
-           let firstSpace = spaces.first {
+           let firstSpace = spaceCollectionStateOwner.firstSpace {
             return firstSpace
         }
 
@@ -1444,11 +1458,12 @@ class TabManager: ObservableObject {
             workspaceTheme: .default,
             profileId: profileId
         )
-        spaces.append(personal)
+        objectWillChange.send()
+        spaceCollectionStateOwner.append(personal)
         markAllSpacesStructurallyDirty()
         setTabs([], for: personal.id)
-        if currentSpace == nil {
-            currentSpace = personal
+        if spaceCollectionStateOwner.currentSpace == nil {
+            spaceCollectionStateOwner.replaceCurrentSpace(personal)
         }
         scheduleStructuralPersistence()
         return personal

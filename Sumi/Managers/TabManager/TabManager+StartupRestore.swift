@@ -60,10 +60,10 @@ extension TabManager {
             mergeRegularTabs(from: snapshot.tabs.filter { !$0.isPinned && !$0.isSpacePinned })
 
             if let currentSpaceId = snapshot.state.currentSpaceID,
-               let restoredSpace = spaces.first(where: { $0.id == currentSpaceId }) {
+               let restoredSpace = spaceCollectionStateOwner.space(with: currentSpaceId) {
                 currentSpace = restoredSpace
-            } else if currentSpace == nil {
-                currentSpace = spaces.first
+            } else if spaceCollectionStateOwner.currentSpace == nil {
+                currentSpace = spaceCollectionStateOwner.firstSpace
             }
 
             if let currentTabId = snapshot.state.currentTabID,
@@ -86,7 +86,7 @@ extension TabManager {
         var didAddSpace = false
         for snapshotSpace in snapshotSpaces.sorted(by: sortSnapshotSpaces) {
             let restoredTheme = restoredWorkspaceTheme(from: snapshotSpace)
-            if let existing = spaces.first(where: { $0.id == snapshotSpace.id }) {
+            if let existing = spaceCollectionStateOwner.space(with: snapshotSpace.id) {
                 existing.name = snapshotSpace.name
                 existing.icon = SumiPersistentGlyph.normalizedSpaceIconValue(snapshotSpace.icon)
                 existing.workspaceTheme = restoredTheme
@@ -94,7 +94,8 @@ extension TabManager {
                 continue
             }
 
-            spaces.append(
+            objectWillChange.send()
+            spaceCollectionStateOwner.append(
                 Space(
                     id: snapshotSpace.id,
                     name: snapshotSpace.name,
@@ -107,7 +108,8 @@ extension TabManager {
         }
 
         let order = Dictionary(uniqueKeysWithValues: snapshotSpaces.map { ($0.id, $0.index) })
-        spaces.sort {
+        objectWillChange.send()
+        spaceCollectionStateOwner.sort {
             let lhs = order[$0.id] ?? Int.max
             let rhs = order[$1.id] ?? Int.max
             if lhs != rhs { return lhs < rhs }
@@ -125,7 +127,7 @@ extension TabManager {
     private func mergeFolders(from snapshotFolders: [TabSnapshotRepository.SnapshotFolder]) {
         let foldersBySnapshotSpace = Dictionary(grouping: snapshotFolders, by: \.spaceId)
         for (spaceId, snapshotFolders) in foldersBySnapshotSpace {
-            guard spaces.contains(where: { $0.id == spaceId }) else { continue }
+            guard spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
             var existingFolders = foldersBySpace[spaceId] ?? []
             for snapshotFolder in snapshotFolders.sorted(by: sortSnapshotFolders) {
                 if let index = existingFolders.firstIndex(where: { $0.id == snapshotFolder.id }) {
@@ -189,7 +191,7 @@ extension TabManager {
         }, by: \.0)
 
         for (spaceId, entries) in pinsBySpace {
-            guard spaces.contains(where: { $0.id == spaceId }) else { continue }
+            guard spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
             var pins = spacePinnedShortcuts[spaceId] ?? []
             for snapshotTab in entries.map(\.1).sorted(by: sortSnapshotTabs) {
                 guard pins.contains(where: { $0.id == snapshotTab.id }) == false,
@@ -222,7 +224,7 @@ extension TabManager {
         }, by: \.0)
 
         for (spaceId, entries) in tabsBySnapshotSpace {
-            guard spaces.contains(where: { $0.id == spaceId }) else { continue }
+            guard spaceCollectionStateOwner.contains(spaceId: spaceId) else { continue }
             var tabs = regularTabCollectionOwner.tabs(in: spaceId)
             for snapshotTab in entries.map(\.1).sorted(by: sortSnapshotTabs) {
                 guard tabs.contains(where: { $0.id == snapshotTab.id }) == false,
@@ -246,7 +248,7 @@ extension TabManager {
                 )
                 tab.canGoBack = snapshotTab.canGoBack
                 tab.canGoForward = snapshotTab.canGoForward
-                tab.profileId = snapshotTab.profileId ?? spaces.first(where: { $0.id == spaceId })?.profileId
+                tab.profileId = snapshotTab.profileId ?? spaceCollectionStateOwner.profileId(for: spaceId)
                 attach(tab)
                 tabs.append(tab)
             }

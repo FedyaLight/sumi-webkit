@@ -17,16 +17,14 @@ extension TabManager {
             tab.unloadWebView()
         }
 
-        for index in spaces.indices where spaces[index].profileId == deletedProfileId {
-            spaces[index].profileId = fallbackProfileId
-            if currentSpace?.id == spaces[index].id {
-                currentSpace?.profileId = fallbackProfileId
-            }
+        for space in spaces where space.profileId == deletedProfileId {
+            objectWillChange.send()
+            spaceCollectionStateOwner.assignProfile(spaceId: space.id, profileId: fallbackProfileId)
             didChange = true
         }
 
         for (spaceId, tabs) in regularTabCollectionStateOwner.tabsBySpace {
-            let resolvedProfileId = spaces.first(where: { $0.id == spaceId })?.profileId ?? fallbackProfileId
+            let resolvedProfileId = spaceCollectionStateOwner.profileId(for: spaceId) ?? fallbackProfileId
             for tab in tabs where tab.profileId == deletedProfileId {
                 tab.profileId = resolvedProfileId
                 dirtySpaceIds.insert(spaceId)
@@ -95,7 +93,7 @@ extension TabManager {
     func handleProfileSwitch(contextWindowId: UUID? = nil) {
         if let pendingSpaceId = pendingSpaceActivation {
             pendingSpaceActivation = nil
-            if let target = spaces.first(where: { $0.id == pendingSpaceId }) {
+            if let target = spaceCollectionStateOwner.space(with: pendingSpaceId) {
                 setActiveSpace(target, contextWindowId: contextWindowId)
             }
         }
@@ -143,7 +141,8 @@ extension TabManager {
 
         var didAssign = false
         for space in spaces where space.profileId == nil {
-            space.profileId = profileId
+            objectWillChange.send()
+            spaceCollectionStateOwner.assignProfile(spaceId: space.id, profileId: profileId)
             didAssign = true
         }
 
@@ -157,7 +156,7 @@ extension TabManager {
 // MARK: - Profile Assignment API
 extension TabManager {
     func assign(spaceId: UUID, toProfile profileId: UUID) {
-        if let index = spaces.firstIndex(where: { $0.id == spaceId }) {
+        if spaceCollectionStateOwner.space(with: spaceId) != nil {
             let exists = runtimeContext?.profileExists(profileId) ?? false
             if !exists {
                 RuntimeDiagnostics.emit(
@@ -165,10 +164,8 @@ extension TabManager {
                 )
                 return
             }
-            spaces[index].profileId = profileId
-            if currentSpace?.id == spaceId {
-                currentSpace?.profileId = profileId
-            }
+            objectWillChange.send()
+            spaceCollectionStateOwner.assignProfile(spaceId: spaceId, profileId: profileId)
             markAllSpacesStructurallyDirty()
             scheduleStructuralPersistence()
         }

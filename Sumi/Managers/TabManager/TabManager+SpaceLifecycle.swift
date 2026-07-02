@@ -15,7 +15,7 @@ extension TabManager {
         withStructuralUpdateTransaction {
             let resolvedProfileId = profileId
                 ?? runtimeContext?.defaultProfileId
-            let defaultTheme = SumiWorkspaceThemePresets.rotatingTheme(at: spaces.count)
+            let defaultTheme = SumiWorkspaceThemePresets.rotatingTheme(at: spaceCollectionStateOwner.count)
             let resolvedTheme = workspaceTheme ?? defaultTheme
 
             let space = Space(
@@ -32,12 +32,13 @@ extension TabManager {
                 )
             }
 
-            spaces.append(space)
+            objectWillChange.send()
+            spaceCollectionStateOwner.append(space)
             markAllSpacesStructurallyDirty()
             setTabs([], for: space.id)
 
-            if currentSpace == nil {
-                currentSpace = space
+            if spaceCollectionStateOwner.currentSpace == nil {
+                spaceCollectionStateOwner.replaceCurrentSpace(space)
             } else {
                 setActiveSpace(space)
             }
@@ -48,8 +49,8 @@ extension TabManager {
 
     func removeSpace(_ id: UUID) {
         withStructuralUpdateTransaction {
-            guard spaces.count > 1 else { return }
-            guard let idx = spaces.firstIndex(where: { $0.id == id }) else { return }
+            guard spaceCollectionStateOwner.count > 1 else { return }
+            guard let idx = spaceCollectionStateOwner.index(of: id) else { return }
 
             let closing = regularTabCollectionOwner.tabs(in: id)
             let transientClosing = transientTabRegistryOwner
@@ -69,13 +70,14 @@ extension TabManager {
             transientTabRegistryOwner.removeTransientShortcutTabs(inSpace: id)
             notifyTransientShortcutStateChanged()
 
-            if idx < spaces.count {
-                spaces.remove(at: idx)
+            if idx < spaceCollectionStateOwner.count {
+                objectWillChange.send()
+                spaceCollectionStateOwner.remove(at: idx)
                 markAllSpacesStructurallyDirty()
             }
 
-            if currentSpace?.id == id {
-                currentSpace = spaces.first
+            if spaceCollectionStateOwner.currentSpaceId == id {
+                currentSpace = spaceCollectionStateOwner.firstSpace
             }
 
             scheduleStructuralPersistence()
@@ -86,27 +88,17 @@ extension TabManager {
     @discardableResult
     func reorderSpace(spaceId: UUID, to targetIndex: Int) -> Bool {
         withStructuralUpdateTransaction {
-            guard spaces.count > 1,
-                  let sourceIndex = spaces.firstIndex(where: { $0.id == spaceId })
+            guard spaceCollectionStateOwner.count > 1,
+                  spaceCollectionStateOwner.index(of: spaceId) != nil
             else {
                 return false
             }
 
-            let currentSpaceId = currentSpace?.id
-            let movingSpace = spaces[sourceIndex]
-            var reorderedSpaces = spaces
-            reorderedSpaces.remove(at: sourceIndex)
-            let insertionIndex = min(max(targetIndex, 0), reorderedSpaces.count)
-            reorderedSpaces.insert(movingSpace, at: insertionIndex)
-
-            guard reorderedSpaces.map(\.id) != spaces.map(\.id) else {
+            objectWillChange.send()
+            guard spaceCollectionStateOwner.reorderSpace(spaceId: spaceId, to: targetIndex) else {
                 return false
             }
 
-            spaces = reorderedSpaces
-            if let currentSpaceId {
-                currentSpace = spaces.first { $0.id == currentSpaceId }
-            }
             markAllSpacesStructurallyDirty()
             scheduleStructuralPersistence()
             return true
@@ -118,7 +110,7 @@ extension TabManager {
         preferredTab: Tab? = nil,
         contextWindowId: UUID? = nil
     ) {
-        guard spaces.contains(where: { $0.id == space.id }) else { return }
+        guard spaceCollectionStateOwner.contains(spaceId: space.id) else { return }
 
         if space.profileId == nil {
             let defaultProfileId = runtimeContext?.defaultProfileId
@@ -200,14 +192,12 @@ extension TabManager {
 
     func renameSpace(spaceId: UUID, newName: String) throws {
         try withStructuralUpdateTransaction {
-            guard let idx = spaces.firstIndex(where: { $0.id == spaceId }), idx < spaces.count else {
+            guard spaceCollectionStateOwner.space(with: spaceId) != nil else {
                 throw TabManagerError.spaceNotFound(spaceId)
             }
 
-            spaces[idx].name = newName
-            if currentSpace?.id == spaceId {
-                currentSpace?.name = newName
-            }
+            objectWillChange.send()
+            spaceCollectionStateOwner.renameSpace(spaceId: spaceId, to: newName)
             markAllSpacesStructurallyDirty()
             scheduleStructuralPersistence()
         }
@@ -215,15 +205,12 @@ extension TabManager {
 
     func updateSpaceIcon(spaceId: UUID, icon: String) throws {
         try withStructuralUpdateTransaction {
-            guard let idx = spaces.firstIndex(where: { $0.id == spaceId }), idx < spaces.count else {
+            guard spaceCollectionStateOwner.space(with: spaceId) != nil else {
                 throw TabManagerError.spaceNotFound(spaceId)
             }
 
-            let normalized = SumiPersistentGlyph.normalizedSpaceIconValue(icon)
-            spaces[idx].icon = normalized
-            if currentSpace?.id == spaceId {
-                currentSpace?.icon = normalized
-            }
+            objectWillChange.send()
+            spaceCollectionStateOwner.updateIcon(spaceId: spaceId, to: icon)
             markAllSpacesStructurallyDirty()
             scheduleStructuralPersistence()
         }
