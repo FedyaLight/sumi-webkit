@@ -25,18 +25,11 @@ final class FocusableWKWebView: WKWebView {
     /// Mirrors `features.macOSBrowserConfig.features.controlClickFix.settings.domains` in DuckDuckGo’s bundled `macos-config.json` (`drive.google.com` only).
     private static let controlClickFixAllowlistedHosts: Set<String> = ["drive.google.com"]
 
-    private static let glanceCursorReuseDistance: CGFloat = 72
-    private static let glanceCursorReuseDistanceSquared = glanceCursorReuseDistance * glanceCursorReuseDistance
-    private static let glanceCursorReuseInterval: TimeInterval = 0.2
     private var webKitMouseTrackingLoadSheddingOwner: WebKitMouseTrackingLoadSheddingOwner?
     private let webKitClientMediaControlsOwner = WebKitClientMediaControlsOwner()
-    private var glanceCursorSettleToken = 0
-    private var glanceCursorSettleWorkItem: DispatchWorkItem?
-    private var lastGlancePageCursor: NSCursor?
-    private var lastGlancePageCursorPoint: CGPoint?
-    private var lastGlancePageCursorTimestamp: TimeInterval = 0
     private lazy var webPageMenuController = SumiWebPageMenuController()
     private var transientChromeInteractionShieldOwner: WebKitTransientChromeInteractionShieldOwner?
+    private var glanceCursorStabilizationOwner: WebKitGlanceCursorStabilizationOwner?
 
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
@@ -65,7 +58,7 @@ final class FocusableWKWebView: WKWebView {
             if stabilizesCursorDuringGlancePresentation {
                 refreshMouseTrackingForGlancePresentation()
             } else {
-                resetGlanceCursorStabilization()
+                glanceCursorStabilizationOwner?.reset()
             }
         }
     }
@@ -150,6 +143,49 @@ final class FocusableWKWebView: WKWebView {
             )
         )
         transientChromeInteractionShieldOwner = owner
+        return owner
+    }
+
+    private func ensureGlanceCursorStabilizationOwner() -> WebKitGlanceCursorStabilizationOwner {
+        if let glanceCursorStabilizationOwner {
+            return glanceCursorStabilizationOwner
+        }
+
+        let owner = WebKitGlanceCursorStabilizationOwner(
+            dependencies: WebKitGlanceCursorStabilizationOwner.Dependencies(
+                isEnabled: { [weak self] in
+                    self?.stabilizesCursorDuringGlancePresentation == true
+                },
+                pointInView: { [weak self] event in
+                    self?.convert(event.locationInWindow, from: nil)
+                },
+                currentMousePointInView: { [weak self] in
+                    guard let self,
+                          let window = self.window
+                    else { return nil }
+                    return self.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+                },
+                containsPoint: { [weak self] point in
+                    self?.bounds.contains(point) == true
+                },
+                currentCursor: {
+                    NSCursor.current
+                },
+                setCursor: { cursor in
+                    cursor.set()
+                },
+                performDefaultMouseMoved: { [weak self] event in
+                    self?.performDefaultMouseMovedBehavior(with: event)
+                },
+                scheduleSettleCapture: { workItem in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: workItem)
+                },
+                currentTimestamp: {
+                    ProcessInfo.processInfo.systemUptime
+                }
+            )
+        )
+        glanceCursorStabilizationOwner = owner
         return owner
     }
 
@@ -244,39 +280,14 @@ final class FocusableWKWebView: WKWebView {
             return
         }
         guard stabilizesCursorDuringGlancePresentation else {
-            super.mouseMoved(with: event)
+            performDefaultMouseMovedBehavior(with: event)
             return
         }
-        mouseMovedWithGlanceCursorStabilization(event)
+        ensureGlanceCursorStabilizationOwner().mouseMoved(with: event)
     }
 
-    private func mouseMovedWithGlanceCursorStabilization(_ event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let cursorBeforeMove = NSCursor.current
+    private func performDefaultMouseMovedBehavior(with event: NSEvent) {
         super.mouseMoved(with: event)
-        guard bounds.contains(point) else {
-            resetGlanceCursorStabilization()
-            return
-        }
-
-        let cursorAfterMove = NSCursor.current
-        if rememberGlancePageCursorIfNeeded(cursorAfterMove, at: point, timestamp: event.timestamp) {
-            scheduleGlanceCursorSettleCapture()
-            return
-        }
-
-        if !Self.isArrowCursor(cursorBeforeMove) {
-            rememberGlancePageCursor(cursorBeforeMove, at: point, timestamp: event.timestamp)
-            cursorBeforeMove.set()
-            scheduleGlanceCursorSettleCapture()
-            return
-        }
-
-        if let lastGlancePageCursor,
-           canReuseGlancePageCursor(at: point, timestamp: event.timestamp) {
-            lastGlancePageCursor.set()
-        }
-        scheduleGlanceCursorSettleCapture()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -292,93 +303,8 @@ final class FocusableWKWebView: WKWebView {
         }
         super.cursorUpdate(with: event)
         if stabilizesCursorDuringGlancePresentation {
-            let point = convert(event.locationInWindow, from: nil)
-            _ = rememberGlancePageCursorIfNeeded(NSCursor.current, at: point, timestamp: event.timestamp)
+            ensureGlanceCursorStabilizationOwner().cursorUpdated(with: event)
         }
-    }
-
-    private static func isArrowCursor(_ cursor: NSCursor) -> Bool {
-        cursor === NSCursor.arrow
-    }
-
-    private func rememberGlancePageCursorIfNeeded(
-        _ cursor: NSCursor,
-        at point: CGPoint,
-        timestamp: TimeInterval
-    ) -> Bool {
-        guard !Self.isArrowCursor(cursor),
-              bounds.contains(point)
-        else { return false }
-
-        rememberGlancePageCursor(cursor, at: point, timestamp: timestamp)
-        return true
-    }
-
-    private func rememberGlancePageCursor(
-        _ cursor: NSCursor,
-        at point: CGPoint,
-        timestamp: TimeInterval
-    ) {
-        lastGlancePageCursor = cursor
-        lastGlancePageCursorPoint = point
-        lastGlancePageCursorTimestamp = timestamp
-    }
-
-    private func canReuseGlancePageCursor(
-        at point: CGPoint,
-        timestamp: TimeInterval
-    ) -> Bool {
-        guard let lastGlancePageCursorPoint else { return false }
-        guard timestamp - lastGlancePageCursorTimestamp <= Self.glanceCursorReuseInterval else { return false }
-
-        let dx = point.x - lastGlancePageCursorPoint.x
-        let dy = point.y - lastGlancePageCursorPoint.y
-        return dx * dx + dy * dy <= Self.glanceCursorReuseDistanceSquared
-    }
-
-    private func scheduleGlanceCursorSettleCapture() {
-        glanceCursorSettleWorkItem?.cancel()
-        glanceCursorSettleToken &+= 1
-        let token = glanceCursorSettleToken
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self,
-                      self.stabilizesCursorDuringGlancePresentation,
-                      self.glanceCursorSettleToken == token
-                else { return }
-                self.glanceCursorSettleWorkItem = nil
-
-                guard let window = self.window else {
-                    self.resetGlanceCursorStabilization()
-                    return
-                }
-
-                let currentPoint = self.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-                guard self.bounds.contains(currentPoint) else {
-                    self.resetGlanceCursorStabilization()
-                    return
-                }
-
-                let timestamp = ProcessInfo.processInfo.systemUptime
-                let cursor = NSCursor.current
-                if !Self.isArrowCursor(cursor) {
-                    self.rememberGlancePageCursor(cursor, at: currentPoint, timestamp: timestamp)
-                } else if !self.canReuseGlancePageCursor(at: currentPoint, timestamp: timestamp) {
-                    self.resetGlanceCursorStabilization()
-                }
-            }
-        }
-        glanceCursorSettleWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: workItem)
-    }
-
-    private func resetGlanceCursorStabilization() {
-        glanceCursorSettleWorkItem?.cancel()
-        glanceCursorSettleWorkItem = nil
-        glanceCursorSettleToken &+= 1
-        lastGlancePageCursor = nil
-        lastGlancePageCursorPoint = nil
-        lastGlancePageCursorTimestamp = 0
     }
 
     /// DDG-style gate: left primary click + control + allowlisted host + kill switch.
