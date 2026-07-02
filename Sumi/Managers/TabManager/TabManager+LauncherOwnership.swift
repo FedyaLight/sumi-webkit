@@ -93,23 +93,7 @@ extension TabManager {
                 runtimeContext?.captureDeletedShortcutLauncher(pin)
             }
 
-            if pin.role == .essential, let profileId = pin.profileId {
-                var arr = pinnedByProfile[profileId] ?? []
-                arr.removeAll { $0.id == pin.id }
-                setPinnedTabs(reindexed(arr), for: profileId)
-            } else if pin.role == .spacePinned, let spaceId = pin.spaceId {
-                if pin.folderId == nil {
-                    let items = topLevelSpacePinnedItems(for: spaceId).filter { item in
-                        if case .shortcut(let existingPin) = item { return existingPin.id != pin.id }
-                        return true
-                    }
-                    applyTopLevelSpacePinnedOrder(items, for: spaceId)
-                } else {
-                    withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { arr in
-                        arr.removeAll { $0.id == pin.id }
-                    }
-                }
-            }
+            removeShortcutPinFromContainers(pin)
 
             let cleanupResult = removeLiveShortcutTabs(forDeletedPinId: pin.id)
             if cleanupResult.didClearCurrentSelection {
@@ -338,23 +322,6 @@ extension TabManager {
                 spaceId: spaceId,
                 folderId: nil,
                 at: spacePinnedPins(for: spaceId).count
-            )
-        }
-    }
-
-    func reindexed(_ pins: [ShortcutPin]) -> [ShortcutPin] {
-        pins.enumerated().map { index, pin in
-            ShortcutPin(
-                id: pin.id,
-                role: pin.role,
-                profileId: pin.profileId,
-                executionProfileId: pin.executionProfileId,
-                spaceId: pin.spaceId,
-                index: index,
-                folderId: pin.folderId,
-                launchURL: pin.launchURL,
-                title: pin.title,
-                iconAsset: pin.iconAsset
             )
         }
     }

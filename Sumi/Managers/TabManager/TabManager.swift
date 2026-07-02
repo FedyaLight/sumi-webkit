@@ -56,6 +56,46 @@ class TabManager: ObservableObject {
             }
         )
     )
+    private lazy var shortcutPinStoreOwner = ShortcutPinStoreOwner(
+        dependencies: ShortcutPinStoreOwner.Dependencies(
+            runtimeContext: { [weak self] in
+                self?.runtimeContext
+            },
+            pinnedByProfile: { [weak self] in
+                self?.pinnedByProfile ?? [:]
+            },
+            setPinnedTabs: { [weak self] pins, profileId in
+                self?.setPinnedTabs(pins, for: profileId)
+            },
+            topLevelSpacePinnedItems: { [weak self] spaceId in
+                self?.topLevelSpacePinnedItems(for: spaceId) ?? []
+            },
+            applyTopLevelSpacePinnedOrder: { [weak self] items, spaceId in
+                self?.applyTopLevelSpacePinnedOrder(items, for: spaceId)
+            },
+            insertTopLevelSpacePinnedShortcut: { [weak self] pin, spaceId, targetIndex in
+                self?.insertTopLevelSpacePinnedShortcut(pin, in: spaceId, at: targetIndex)
+            },
+            withSpacePinnedShortcutGroup: { [weak self] spaceId, folderId, mutate in
+                self?.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
+                    mutate(&pins)
+                }
+            },
+            spacePinnedPins: { [weak self] spaceId in
+                self?.spacePinnedPins(for: spaceId) ?? []
+            },
+            openFolderIfNeeded: { [weak self] folderId in
+                self?.openFolderIfNeeded(folderId)
+            },
+            adjustedSameContainerInsertionIndex: { [weak self] currentIndex, proposedIndex in
+                guard let self else { return proposedIndex }
+                return self.adjustedSameContainerInsertionIndex(
+                    currentIndex: currentIndex,
+                    proposedIndex: proposedIndex
+                )
+            }
+        )
+    )
     private lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
         dependencies: TabShortcutPresentationOwner.Dependencies(
             transientShortcutTabsByWindow: { [weak self] in
@@ -320,6 +360,59 @@ class TabManager: ObservableObject {
             resolution: resolution,
             context: context
         )
+    }
+
+    func withPinnedArray(for profileId: UUID, _ mutate: (inout [ShortcutPin]) -> Void) {
+        shortcutPinStoreOwner.withPinnedArray(for: profileId, mutate)
+    }
+
+    func reindexed(_ pins: [ShortcutPin]) -> [ShortcutPin] {
+        shortcutPinStoreOwner.reindexed(pins)
+    }
+
+    @discardableResult
+    func insertShortcutPin(
+        _ pin: ShortcutPin,
+        at targetIndex: Int,
+        openTargetFolder: Bool = true
+    ) -> ShortcutPin? {
+        shortcutPinStoreOwner.insert(
+            pin,
+            at: targetIndex,
+            openTargetFolder: openTargetFolder
+        )
+    }
+
+    @discardableResult
+    func moveShortcutPin(
+        _ pin: ShortcutPin,
+        to role: ShortcutPinRole,
+        profileId: UUID?,
+        spaceId: UUID?,
+        folderId: UUID?,
+        index: Int,
+        openTargetFolder: Bool = true
+    ) -> ShortcutPin? {
+        withStructuralUpdateTransaction {
+            let inserted = shortcutPinStoreOwner.move(
+                pin,
+                to: role,
+                profileId: profileId,
+                spaceId: spaceId,
+                folderId: folderId,
+                index: index,
+                openTargetFolder: openTargetFolder
+            )
+            if let inserted {
+                updateTransientShortcutBindings(for: inserted)
+            }
+            scheduleStructuralPersistence()
+            return inserted
+        }
+    }
+
+    func removeShortcutPinFromContainers(_ pin: ShortcutPin) {
+        shortcutPinStoreOwner.removeFromContainers(pin)
     }
 
     func spacePinnedPins(for spaceId: UUID) -> [ShortcutPin] {
