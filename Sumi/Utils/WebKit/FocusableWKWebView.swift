@@ -29,18 +29,14 @@ final class FocusableWKWebView: WKWebView {
     private static let glanceCursorReuseDistanceSquared = glanceCursorReuseDistance * glanceCursorReuseDistance
     private static let glanceCursorReuseInterval: TimeInterval = 0.2
     private var webKitMouseTrackingLoadSheddingOwner: WebKitMouseTrackingLoadSheddingOwner?
-    private var isTransientChromeMouseTrackingSuppressed = false
-    private var isTransientChromeInteractionShieldApplied = false
-    private var transientChromeInteractionShieldRects: [SumiTransientChromeInteractionShieldRect] = []
-    private var webKitClientMediaControlsView: NSView?
-    private var webKitClientMediaControlsTouchBar: NSTouchBar?
-    private var webKitClientMediaControlsProvider: NSObject?
+    private let webKitClientMediaControlsOwner = WebKitClientMediaControlsOwner()
     private var glanceCursorSettleToken = 0
     private var glanceCursorSettleWorkItem: DispatchWorkItem?
     private var lastGlancePageCursor: NSCursor?
     private var lastGlancePageCursorPoint: CGPoint?
     private var lastGlancePageCursorTimestamp: TimeInterval = 0
     private lazy var webPageMenuController = SumiWebPageMenuController()
+    private var transientChromeInteractionShieldOwner: WebKitTransientChromeInteractionShieldOwner?
 
     weak var owningTab: Tab?
     let interactionEventsPublisher = PassthroughSubject<SumiWebViewInteractionEvent, Never>()
@@ -125,6 +121,38 @@ final class FocusableWKWebView: WKWebView {
         return owner
     }
 
+    private var isTransientChromeMouseTrackingSuppressed: Bool {
+        transientChromeInteractionShieldOwner?.isMouseTrackingSuppressed == true
+    }
+
+    private func ensureTransientChromeInteractionShieldOwner() -> WebKitTransientChromeInteractionShieldOwner {
+        if let transientChromeInteractionShieldOwner {
+            return transientChromeInteractionShieldOwner
+        }
+
+        let owner = WebKitTransientChromeInteractionShieldOwner(
+            dependencies: WebKitTransientChromeInteractionShieldOwner.Dependencies(
+                isSuppressionExempt: { [weak self] in
+                    self?.isTransientChromeMouseTrackingSuppressionExempt == true
+                },
+                currentClientPoint: { [weak self] in
+                    self?.currentClientPointForPageInteractionShield()
+                },
+                evaluateJavaScript: { [weak self] script in
+                    self?.evaluateJavaScript(script, completionHandler: nil)
+                },
+                refreshMouseTracking: { [weak self] in
+                    self?.webKitMouseTrackingLoadSheddingOwner?.refresh()
+                },
+                clearHoveredLink: { [weak self] in
+                    self?.owningTab?.updateHoveredLink(nil)
+                }
+            )
+        )
+        transientChromeInteractionShieldOwner = owner
+        return owner
+    }
+
     func refreshMouseTrackingForGlancePresentation() {
         updateTrackingAreas()
         webKitMouseTrackingLoadSheddingOwner?.refresh()
@@ -140,39 +168,12 @@ final class FocusableWKWebView: WKWebView {
         _ isSuppressed: Bool,
         shieldRects: [SumiTransientChromeInteractionShieldRect] = []
     ) {
-        let shouldSuppress = isSuppressed && !isTransientChromeMouseTrackingSuppressionExempt
-        setTransientChromeInteractionShieldApplied(
-            shouldSuppress,
-            shieldRects: shouldSuppress ? shieldRects : []
+        guard isSuppressed || transientChromeInteractionShieldOwner != nil else { return }
+
+        ensureTransientChromeInteractionShieldOwner().setMouseTrackingSuppressed(
+            isSuppressed,
+            shieldRects: shieldRects
         )
-
-        guard isTransientChromeMouseTrackingSuppressed != shouldSuppress else { return }
-
-        isTransientChromeMouseTrackingSuppressed = shouldSuppress
-        webKitMouseTrackingLoadSheddingOwner?.refresh()
-
-        if shouldSuppress {
-            owningTab?.updateHoveredLink(nil)
-        }
-    }
-
-    private func setTransientChromeInteractionShieldApplied(
-        _ isApplied: Bool,
-        shieldRects: [SumiTransientChromeInteractionShieldRect]
-    ) {
-        let activeShieldRects = isApplied ? shieldRects : []
-        guard isTransientChromeInteractionShieldApplied != isApplied ||
-              transientChromeInteractionShieldRects != activeShieldRects
-        else { return }
-
-        isTransientChromeInteractionShieldApplied = isApplied
-        transientChromeInteractionShieldRects = activeShieldRects
-        let script = SumiTransientChromeInteractionShieldUserScript.makeSetActiveSource(
-            isApplied,
-            clientPoint: currentClientPointForPageInteractionShield(),
-            rects: activeShieldRects
-        )
-        evaluateJavaScript(script, completionHandler: nil)
     }
 
     private func currentClientPointForPageInteractionShield() -> CGPoint? {
@@ -434,60 +435,19 @@ final class FocusableWKWebView: WKWebView {
     }
 
     override func makeTouchBar() -> NSTouchBar? {
-        super.makeTouchBar() ?? makeClientMediaControlsTouchBarIfNeeded()
+        super.makeTouchBar() ?? webKitClientMediaControlsOwner.makeTouchBar()
     }
 
     @objc(_addMediaPlaybackControlsView:)
     func addMediaPlaybackControlsView(_ mediaControlsView: AnyObject) {
         guard let controlsView = mediaControlsView as? NSView else { return }
-        webKitClientMediaControlsView = controlsView
-        clearClientMediaControlsCache()
-        touchBar = makeClientMediaControlsTouchBarIfNeeded()
+        touchBar = webKitClientMediaControlsOwner.addMediaPlaybackControlsView(controlsView)
     }
 
     @objc(_removeMediaPlaybackControlsView)
     func removeMediaPlaybackControlsView() {
-        webKitClientMediaControlsView = nil
-        clearClientMediaControlsCache()
+        webKitClientMediaControlsOwner.removeMediaPlaybackControlsView()
         touchBar = nil
-    }
-
-    private func clearClientMediaControlsCache() {
-        webKitClientMediaControlsTouchBar = nil
-        webKitClientMediaControlsProvider = nil
-    }
-
-    private func makeClientMediaControlsTouchBarIfNeeded() -> NSTouchBar? {
-        guard let controlsView = webKitClientMediaControlsView else { return nil }
-        if let touchBar = webKitClientMediaControlsTouchBar {
-            return touchBar
-        }
-
-        // After element fullscreen WebKit asks the client to host its media controls view.
-        // Prefer rebuilding AVKit's normal provider so the post-fullscreen bar matches
-        // the pre-fullscreen WebKit-owned layout exactly.
-        guard let touchBar = makeProviderMediaControlsTouchBarIfPossible(from: controlsView) else {
-            return nil
-        }
-        webKitClientMediaControlsTouchBar = touchBar
-        return touchBar
-    }
-
-    private func makeProviderMediaControlsTouchBarIfPossible(from controlsView: NSView) -> NSTouchBar? {
-        guard let providerClass = NSClassFromString("AVTouchBarPlaybackControlsProvider") as? NSObject.Type,
-              let playbackControlsController = controlsView.value(forKey: "playbackControlsController")
-        else {
-            return nil
-        }
-
-        let provider = providerClass.init()
-        provider.setValue(playbackControlsController, forKey: "playbackControlsController")
-        guard let touchBar = provider.value(forKey: "touchBar") as? NSTouchBar else {
-            return nil
-        }
-
-        webKitClientMediaControlsProvider = provider
-        return touchBar
     }
 
     override func mouseUp(with event: NSEvent) {
