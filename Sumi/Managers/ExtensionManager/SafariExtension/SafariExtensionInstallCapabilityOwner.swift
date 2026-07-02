@@ -522,3 +522,134 @@ final class SafariExtensionInstallCapabilityOwner {
             || matchPattern == WKWebExtension.MatchPattern.allURLs()
     }
 }
+
+// MARK: - ExtensionManager facade
+
+@available(macOS 15.5, *)
+@MainActor
+extension ExtensionManager {
+    func grantRequestedPermissions(
+        to extensionContext: WKWebExtensionContext,
+        webExtension: WKWebExtension,
+        extensionId: String? = nil,
+        profileId: UUID? = nil,
+        manifest: [String: Any]
+    ) {
+        installCapabilityOwner.grantRequestedPermissions(
+            to: extensionContext,
+            webExtension: webExtension,
+            extensionId: extensionId,
+            profileId: profileId,
+            manifest: manifest
+        )
+    }
+
+    static func manifestDeclaresNativeMessaging(_ manifest: [String: Any]) -> Bool {
+        SafariExtensionInstallCapabilityOwner.manifestDeclaresNativeMessaging(manifest)
+    }
+
+    func shouldDenyAutoGrantForWebKitRuntime(
+        _ permission: WKWebExtension.Permission,
+        manifest: [String: Any]
+    ) -> Bool {
+        installCapabilityOwner.shouldDenyAutoGrantForWebKitRuntime(
+            permission,
+            manifest: manifest
+        )
+    }
+
+    static func webKitRuntimeUnsupportedAPIs(
+        for manifest: [String: Any]
+    ) -> Set<String> {
+        SafariExtensionInstallCapabilityOwner.webKitRuntimeUnsupportedAPIs(
+            for: manifest
+        )
+    }
+
+    func grantRequestedMatchPatterns(
+        to extensionContext: WKWebExtensionContext,
+        webExtension: WKWebExtension
+    ) {
+        guard let extensionId = extensionID(for: extensionContext),
+              let profileId = profileId(for: extensionContext)
+        else { return }
+        let manifest = loadedExtensionManifests[extensionId]
+            ?? installedExtensions.first { $0.id == extensionId }?.manifest
+        applyConfiguredSiteAccessPolicy(
+            to: extensionContext,
+            extensionId: extensionId,
+            profileId: profileId,
+            webExtension: webExtension,
+            manifest: manifest
+        )
+    }
+
+    /// Grants temporary host access for the active tab when the manifest declares `activeTab`.
+    func grantActiveTabURLAccess(
+        for extensionContext: WKWebExtensionContext,
+        tab: Tab,
+        manifest: [String: Any]
+    ) {
+        installCapabilityOwner.grantActiveTabURLAccess(
+            for: extensionContext,
+            tab: tab,
+            manifest: manifest,
+            extensionId: extensionID(for: extensionContext),
+            profileId: profileId(for: extensionContext)
+        )
+    }
+
+    func isGrantedPermissionStatus(
+        _ status: WKWebExtensionContext.PermissionStatus
+    ) -> Bool {
+        installCapabilityOwner.isGrantedPermissionStatus(status)
+    }
+
+    func effectivePermissionStatus(
+        for permission: WKWebExtension.Permission,
+        in extensionContext: WKWebExtensionContext,
+        tab: (any WKWebExtensionTab)?
+    ) -> WKWebExtensionContext.PermissionStatus {
+        installCapabilityOwner.effectivePermissionStatus(
+            for: permission,
+            in: extensionContext,
+            tab: tab
+        )
+    }
+
+    func effectivePermissionStatus(
+        for matchPattern: WKWebExtension.MatchPattern,
+        in extensionContext: WKWebExtensionContext,
+        tab: (any WKWebExtensionTab)?
+    ) -> WKWebExtensionContext.PermissionStatus {
+        installCapabilityOwner.effectivePermissionStatus(
+            for: matchPattern,
+            in: extensionContext,
+            tab: tab
+        )
+    }
+
+    func effectivePermissionStatus(
+        for url: URL,
+        in extensionContext: WKWebExtensionContext,
+        tab: (any WKWebExtensionTab)?
+    ) -> WKWebExtensionContext.PermissionStatus {
+        installCapabilityOwner.effectivePermissionStatus(
+            for: url,
+            in: extensionContext,
+            tab: tab
+        )
+    }
+
+    func explicitlyGrantURLIfCoveredByGrantedMatchPattern(
+        _ url: URL,
+        in extensionContext: WKWebExtensionContext,
+        tab: (any WKWebExtensionTab)? = nil
+    ) -> Bool {
+        installCapabilityOwner.explicitlyGrantURLIfCoveredByGrantedMatchPattern(
+            url,
+            in: extensionContext,
+            tab: tab
+        )
+    }
+}

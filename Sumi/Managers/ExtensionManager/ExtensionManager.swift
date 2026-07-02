@@ -124,6 +124,12 @@ final class ExtensionManager: NSObject, ObservableObject {
     let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
     let extensionPreferences: UserDefaults
     let requestedTabLifecycleOwner = ExtensionRequestedTabLifecycleOwner()
+    lazy var installationFlowOwner = ExtensionInstallationFlowOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var backgroundWakeCoordinator = ExtensionBackgroundWakeCoordinator(
+        dependencies: .live(manager: self)
+    )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
