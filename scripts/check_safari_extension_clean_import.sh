@@ -15,7 +15,7 @@ check_absent() {
   shift 2
   local matches
 
-  matches="$(rg -n --glob '*.swift' -e "$pattern" "$@" || true)"
+  matches="$(grep -rEn --include='*.swift' -e "$pattern" "$@" || [[ $? -eq 1 ]])"
   if [[ -n "$matches" ]]; then
     printf 'disallowed %s:\n%s\n' "$label" "$matches" >&2
     status=1
@@ -60,7 +60,7 @@ check_absent \
   'if extensionId ==|switch extensionId' \
   Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingRelayLoopGuard.swift \
   Sumi/Managers/ExtensionManager/SafariExtension/SumiNativeMessagingDiagnosticCoalescer.swift \
-  Sumi/Managers/ExtensionManager/ExtensionManager+ActionPopupAnchor.swift
+  Sumi/Managers/ExtensionManager/ExtensionActionPopupAnchorResolutionOwner.swift
 
 if [[ ! -f SumiTests/Fixtures/Extensions/login-form.html ]]; then
   printf 'missing PM autofill manual fixture: SumiTests/Fixtures/Extensions/login-form.html\n' >&2

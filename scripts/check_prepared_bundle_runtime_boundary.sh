@@ -14,7 +14,7 @@ check_absent() {
   shift 2
   local matches
 
-  matches="$(rg -n --glob '*.swift' -e "$pattern" "$@" || true)"
+  matches="$(grep -rEn --include='*.swift' -e "$pattern" "$@" || [[ $? -eq 1 ]])"
   if [[ -n "$matches" ]]; then
     printf 'disallowed %s:\n%s\n' "$label" "$matches" >&2
     status=1
@@ -31,7 +31,7 @@ check_absent \
   'SumiTrackingProtection|SumiTrackingRuleListProvider|SumiTrackingRuleListPipeline|updateTrackerDataManually|runtimeGenerated|raw-list|raw list|tracking data set|tracker data|EasyList|EasyPrivacy|adblock-rust|adblock_rust|AdblockRustCompiler|sumi-adblock-rust-adapter' \
   "${runtime_paths[@]}"
 
-tds_matches="$(rg -n --glob '*.swift' -e 'trackerblocking/v6/current|macos-tds\.json' "${runtime_paths[@]}" || true)"
+tds_matches="$(grep -rEn --include='*.swift' -e 'trackerblocking/v6/current|macos-tds\.json' "${runtime_paths[@]}" || [[ $? -eq 1 ]])"
 tds_violations=""
 while IFS= read -r match; do
   [[ -z "$match" ]] && continue

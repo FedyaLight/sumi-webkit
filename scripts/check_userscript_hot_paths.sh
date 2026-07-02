@@ -32,7 +32,7 @@ check_pattern() {
   local pattern="$2"
   local matches
 
-  matches="$(rg -n --glob '*.swift' --glob '*.js' "$pattern" "${scan_paths[@]}" || true)"
+  matches="$(grep -rEn --include='*.swift' --include='*.js' "$pattern" "${scan_paths[@]}" || [[ $? -eq 1 ]])"
   [[ -z "$matches" ]] && return
 
   while IFS= read -r line; do
@@ -51,7 +51,7 @@ check_pattern "timer script hot path" "setTimeout"
 check_pattern "mutation observer" "MutationObserver"
 check_pattern "full DOM snapshot" "outerHTML|innerHTML"
 check_pattern "large JSON serialization" "JSON\\.stringify"
-check_pattern "high-frequency native event post" "addEventListener\\(['\\\"](?:scroll|mousemove|resize)['\\\"][\\s\\S]{0,240}postMessage"
+check_pattern "high-frequency native event post" "addEventListener\\(['\\\"](scroll|mousemove|resize)['\\\"].{0,240}postMessage"
 
 if [[ "$failed" -ne 0 ]]; then
   exit 1

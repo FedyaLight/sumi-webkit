@@ -13,7 +13,7 @@ check_pattern() {
   local pattern="$2"
   local matches
 
-  matches="$(rg -n --glob '*.swift' -e "$pattern" "${runtime_paths[@]}" || true)"
+  matches="$(grep -rEn --include='*.swift' -e "$pattern" "${runtime_paths[@]}" || [[ $? -eq 1 ]])"
   [[ -z "$matches" ]] && return
 
   while IFS= read -r match; do

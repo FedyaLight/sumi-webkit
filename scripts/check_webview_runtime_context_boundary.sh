@@ -23,10 +23,10 @@ is_allowed_file() {
 }
 
 matches="$(
-  rg -n --glob '*.swift' \
+  grep -rEn --include='*.swift' \
     -e 'attach(BrowserRuntimeContext|InitialDocumentRuntimeContext|ShutdownRuntimeContext|VisiblePreparationRuntimeContext)' \
     -e 'detach(BrowserRuntimeContext|InitialDocumentRuntimeContext|ShutdownRuntimeContext|VisiblePreparationRuntimeContext)' \
-    "${runtime_paths[@]}" || true
+    "${runtime_paths[@]}" || [[ $? -eq 1 ]]
 )"
 
 while IFS= read -r match; do

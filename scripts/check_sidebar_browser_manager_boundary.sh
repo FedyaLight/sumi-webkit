@@ -7,12 +7,12 @@ cd "$repo_root"
 ui_paths=(App Sumi Navigation FloatingBar Settings UI)
 
 matches="$(
-  rg -n --glob '*.swift' \
-    -e '@EnvironmentObject[^\n]*BrowserManager' \
+  grep -rEn --include='*.swift' \
+    -e '@EnvironmentObject.*BrowserManager' \
     -e '@Environment\([^)]*BrowserManager' \
     -e '\.environmentObject\([^)]*\bbrowserManager\s*\)' \
     -e '\.environment\([^)]*\bbrowserManager\s*\)' \
-    "${ui_paths[@]}" || true
+    "${ui_paths[@]}" || [[ $? -eq 1 ]]
 )"
 
 if [[ -n "$matches" ]]; then
