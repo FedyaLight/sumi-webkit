@@ -46,6 +46,11 @@ struct HistoryVisitDeletionOwner {
         let entities = try planner.entitiesForDeletion(in: ctx, ids: ids, profileId: profileId)
         let affectedEntryIDs = Set(entities.map(\.entryID))
         entities.forEach(ctx.delete)
+        // Persist deletions before repairing: with pending deletions, a
+        // store-level fetch with fetchLimit can return only pending-deleted
+        // rows, come back empty after context filtering, and make repair
+        // wrongly treat the entry as orphaned (and fetchCount overcount).
+        try ctx.save()
         try repairEntries(withIDs: affectedEntryIDs, in: ctx)
         try ctx.save()
         return entities.count

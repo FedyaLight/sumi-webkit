@@ -4,6 +4,31 @@ import SwiftData
 import XCTest
 
 final class HistoryVisitDeletionOwnerTests: XCTestCase {
+    func testDeletingNewestVisitRepairsEntryAggregate() throws {
+        let harness = try makeHarness()
+        let url = URL(string: "https://example.com/article")!
+        let olderVisitAt = Date(timeIntervalSince1970: 1_000)
+        let newerVisitAt = Date(timeIntervalSince1970: 2_000)
+        let olderVisitID = UUID()
+        let newerVisitID = UUID()
+
+        try record(harness, id: olderVisitID, url: url, visitedAt: olderVisitAt)
+        try record(harness, id: newerVisitID, url: url, visitedAt: newerVisitAt)
+
+        let deleted = try harness.deletionOwner.deleteVisits(
+            in: harness.makeContext(),
+            withIDs: [newerVisitID],
+            profileId: harness.profileID
+        )
+
+        XCTAssertEqual(deleted, 1)
+        let entry = try XCTUnwrap(fetchEntries(harness).first)
+        XCTAssertEqual(entry.numberOfTotalVisits, 1)
+        XCTAssertEqual(entry.lastVisit, olderVisitAt)
+        let remainingVisits = try harness.makeContext().fetch(FetchDescriptor<HistoryVisitEntity>())
+        XCTAssertEqual(remainingVisits.map(\.id), [olderVisitID])
+    }
+
     func testDeletingLastVisitDeletesOrphanedEntry() throws {
         let harness = try makeHarness()
         let url = URL(string: "https://example.com/only")!
