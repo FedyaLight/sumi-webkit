@@ -1,6 +1,147 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-06-30 (modernization audit and Safari-native runtime guardrails)
+Last updated: 2026-07-03 (Safari runtime identifier + Bitwarden biometric parity)
+
+## Cycle 18 Safari Runtime Identifier + Bitwarden Biometric Parity (2026-07-03)
+
+Evidence base:
+
+- Apple documents that a Safari app extension is exposed to web pages and to
+  `browser.runtime.id` as `"<bundleIdentifier> (<teamIdentifier>)"`
+  ([WWDC22 "What's new in Safari Web Extensions"](https://developer.apple.com/videos/play/wwdc2022/10099/)).
+  WebKit routes `externally_connectable` `runtime.sendMessage(extensionId, …)`
+  by matching that string against `WKWebExtensionContext.uniqueIdentifier`
+  (`WebExtensionControllerProxy::extensionContext(const String&)`).
+- The Proton account web app hardcodes
+  `me.proton.pass.catalyst.safari-extension (2SB5Z68H26)` for the Pass Safari
+  extension (`packages/shared/lib/constants.ts` `EXTENSIONS`), then drives the
+  login fork through `runtime.sendMessage` → background `onMessageExternal` →
+  `AUTH_PULL_FORK` content script (`fork.js`).
+- Bitwarden's `SafariWebExtensionHandler.swift` answers every biometric command
+  (`getBiometricsStatus`, `getBiometricsStatusForUser`,
+  `authenticateWithBiometrics`, `unlockWithBiometricsForUser`, `biometricUnlock`,
+  `biometricUnlockAvailable`) locally via `LAContext` + the `Bitwarden_biometric`
+  keychain (account `{userId}_user_biometric`, fallback `key`). Safari never
+  launches the desktop app for the extension; `desktop_proxy`/`setupEncryption`
+  connects only to an already-running desktop.
+
+### Fixed
+
+- **Proton Pass login (externally_connectable).** Safari app-extension contexts
+  now set `WKWebExtensionContext.uniqueIdentifier` to the composed
+  `"<bundleId> (<teamId>)"` runtime identifier derived generically from the
+  imported `.appex` code signature (`SafariWebExtensionRuntimeIdentity`,
+  `configureContextIdentity`). This makes `account.proton.me`'s
+  `runtime.sendMessage` reach the extension so the fork/login completes. Non
+  Safari sources keep the internal extension id. WebKit data-record cleanup now
+  also recognizes the composed identifier.
+- **Bitwarden settings no longer launch the desktop app.** The desktop_proxy
+  transport no longer calls `NSWorkspace.openApplication` when the desktop is not
+  running; the port disconnects (Safari behavior). Local biometric commands keep
+  working without the desktop.
+- **Bitwarden biometric setup/unlock.** `BitwardenSafariOneShotHandler` now
+  performs the real local biometric flow matching `SafariWebExtensionHandler`:
+  `LAContext.evaluateAccessControl` prompt plus `Bitwarden_biometric` keychain
+  read returning `userKeyB64`, and keychain-derived `getBiometricsStatusForUser`
+  (`available` / `notEnabledInConnectedDesktopApp` / `hardwareUnavailable`),
+  instead of the previous stub responses. Biometric prompt/keychain access is
+  injectable for tests.
+
+### Tests
+
+- `SafariWebExtensionRuntimeIdentityTests` (composed-id format, non-Safari
+  returns nil, unsigned path returns nil, installed Proton `.appex` matches the
+  web-client contract string).
+- `BitwardenNativeMessagingAdapterTests`:
+  `testConnectDoesNotLaunchDesktopWhenAppNotRunning`,
+  `testBiometricUnlockReturnsUserKeyOnSuccessWithoutDesktopRelay`,
+  `testBiometricUnlockReturnsNotEnabledWhenNoStoredKey`,
+  `testUnlockWithBiometricsForUserReportsStatusFromKeychain`.
+- Regression: site-access policy, profile isolation, Proton companion adapter,
+  and context-identity wiring suites pass; clean-import / userscript hot-path /
+  prepared-bundle boundary guards and `scripts/check_architecture_guardrails.sh`
+  pass; full `xcodebuild build` succeeds.
+- Pre-existing unrelated failure:
+  `testDelegateNativeMessagingSelectorsAreRestoredForProductionRelay` fails on a
+  clean baseline too (order-dependent selector-restore test), not affected here.
+
+### Proven Remaining Gaps
+
+- Manual E2E on real installed apps still required: Proton Pass popup→login on
+  `account.proton.me`, and Bitwarden enable-biometric-unlock → Touch ID unlock.
+  Bitwarden biometric provisioning still needs the desktop app to have written
+  the `Bitwarden_biometric` keychain key (as on Safari); Sumi reads it locally.
+
+## Cycle 19 Storage Identity Continuity (2026-07-03)
+
+Field report after Cycle 18: Proton Pass login progressed past external message
+delivery but failed with "Invalid selector", with WebKit logging
+`LocalStorage.db … vnode unlinked while in use` under the composed-identifier
+storage directory, plus repeated Proton onboarding/extension pages appearing
+during normal browsing.
+
+Root causes (all storage-identity fallout from the Cycle 18 identifier change):
+
+- WebKit keys extension storage by `uniqueIdentifier`
+  (`WebExtensionController::storageDirectory`), so the composed identifier moved
+  storage to a new directory and orphaned the legacy bare-id directory.
+- Sumi's storage bookkeeping (`WebExtensionStorageCleanupStore`) still resolved
+  directories by the bare extension id: `hasStoredWebExtensionDataCandidate`
+  matched the stale legacy directory, so Safari-appex reinstall paths invoked
+  `removeStoredWebExtensionData`, which (with composed-id record matching)
+  deleted the **live** WebKit store mid-session. Losing `storage.local` mid
+  login-fork made Proton re-consume its single-use fork selector → "Invalid
+  selector"; every background relaunch with empty storage re-opened Proton
+  onboarding pages ("extension pages appearing while browsing").
+
+### Fixed
+
+- `WebExtensionStorageCleanupStore` accepts a storage-directory-name resolver;
+  Sumi resolves the WebKit directory name through
+  `SafariWebExtensionRuntimeIdentity.webKitStorageIdentifier` (composed for
+  `.appex`, internal id otherwise; cached per bundle path).
+- One-time legacy adoption: before context load, a legacy bare-id storage
+  directory is moved into the composed-identifier directory when the composed
+  directory has no real data (`adoptLegacyStorageDirectoryIfNeeded`), preserving
+  sessions across the identifier migration. A composed directory that already
+  has store files is never replaced.
+- Safari parity for reinstall: importing/enabling a Safari app extension no
+  longer wipes WebKit extension data (Safari preserves extension state across
+  reinstall and containing-app updates). Stale-data cleanup now applies only to
+  directory-source installs. Explicit uninstall still removes data after
+  teardown.
+- Extension-page routing audited: extension pages open only through
+  `WKWebExtensionControllerDelegate` tab/window requests
+  (`ExtensionRequestedTabLifecycleOwner`, `ExtensionRequestedWindowOpeningOwner`),
+  action popups, and the options page — matching Safari. The "extension page on
+  normal navigation" symptom was extension-initiated onboarding caused by the
+  storage resets above.
+- `testDelegateNativeMessagingSelectorsAreRestoredForProductionRelay` fixed: it
+  asserted pre-refactor delegate selectors on `ExtensionManager`; native
+  messaging delegate callbacks live on `ExtensionControllerDelegateBridge`
+  (wired as the controller delegate), and the test now asserts that object.
+
+### Tests
+
+- `WebExtensionStorageCleanupPlannerTests`: resolver-based directory naming,
+  legacy adoption when composed missing, replacement of state-only composed
+  directories, never replacing composed directories with data, identity-resolver
+  no-op.
+- Regression: Bitwarden adapter suite (incl. fixed delegate-selector test),
+  site-access, install-source, import auto-enable, profile isolation, runtime
+  identity, and context-identity wiring suites pass; architecture guardrails and
+  clean-import audits pass; full build succeeds.
+
+### Proven Remaining Gaps
+
+- Manual Proton Pass login E2E after storage-continuity fixes. Note the fork
+  selector is single-use: a login attempt interrupted mid-flow requires starting
+  a fresh login from the popup.
+- WebKit logs benign `action.setIcon/setBadgeText Tab not found` for recently
+  closed tabs; monitor but currently treated as close races, matching Safari
+  console noise.
+
+
 
 Sumi targets native Safari Web Extension support through public WebKit APIs
 (`WKWebExtension`, `WKWebExtensionContext`, `WKWebExtensionController`,
