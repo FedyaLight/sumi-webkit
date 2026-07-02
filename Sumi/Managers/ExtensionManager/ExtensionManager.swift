@@ -151,6 +151,9 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var adapterResolutionOwner = ExtensionAdapterResolutionOwner(
         dependencies: .live(manager: self)
     )
+    lazy var actionPopupAnchorResolutionOwner = ExtensionActionPopupAnchorResolutionOwner(
+        dependencies: .live(manager: self)
+    )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
@@ -377,6 +380,122 @@ final class ExtensionManager: NSObject, ObservableObject {
         adapterResolutionOwner.stableAdapter(for: tab)
     }
 
+    // MARK: - Action Popup Anchors
+
+    func captureActionPopupAnchor(
+        extensionId: String,
+        windowId: UUID,
+        profileId: UUID?
+    ) -> UUID {
+        actionPopupAnchorResolutionOwner.captureActionPopupAnchor(
+            extensionId: extensionId,
+            windowId: windowId,
+            profileId: profileId
+        )
+    }
+
+    func resolveActionPopupAnchor(
+        for extensionId: String,
+        profileId: UUID?,
+        preferredWindowId: UUID? = nil
+    ) -> (
+        anchorView: NSView,
+        source: ExtensionActionPopupAnchorSource,
+        resolution: ExtensionActionPopupAnchorResolution
+    )? {
+        actionPopupAnchorResolutionOwner.resolveActionPopupAnchor(
+            for: extensionId,
+            profileId: profileId,
+            preferredWindowId: preferredWindowId
+        )
+    }
+
+    func presentResolvedExtensionActionPopup(
+        _ popover: NSPopover,
+        for extensionId: String,
+        profileId: UUID?,
+        preferredWindowId: UUID? = nil
+    ) -> ExtensionActionPopupAnchorResolution {
+        actionPopupAnchorResolutionOwner.presentResolvedExtensionActionPopup(
+            popover,
+            for: extensionId,
+            profileId: profileId,
+            preferredWindowId: preferredWindowId
+        )
+    }
+
+    func consumePendingActionPopupAnchor(sessionToken: UUID?) {
+        actionPopupAnchorStore.consume(sessionToken: sessionToken)
+    }
+
+    func clearActionPopupAnchors(notMatching profileId: UUID) {
+        actionPopupAnchorStore.clearAnchors(notMatching: profileId)
+    }
+
+    // MARK: - Runtime Session State
+
+    var cachedWebExtensionsByID: [String: WKWebExtension] {
+        get { runtimeSessionOwner.cachedWebExtensionsByID }
+        set { runtimeSessionOwner.cachedWebExtensionsByID = newValue }
+    }
+
+    var cachedWebExtensionRuntimeSourceKeysByID: [String: WebExtensionRuntimeSourceKey] {
+        get { runtimeSessionOwner.cachedWebExtensionRuntimeSourceKeysByID }
+        set { runtimeSessionOwner.cachedWebExtensionRuntimeSourceKeysByID = newValue }
+    }
+
+    var lastExtensionLoadErrors: [String: Error] {
+        get { runtimeSessionOwner.lastExtensionLoadErrors }
+        set { runtimeSessionOwner.lastExtensionLoadErrors = newValue }
+    }
+
+    var extensionRuntimeResidencyState: ExtensionRuntimeResidencyState {
+        get { runtimeSessionOwner.extensionRuntimeResidencyState }
+        set { runtimeSessionOwner.extensionRuntimeResidencyState = newValue }
+    }
+
+    var runtimeState: ExtensionRuntimeState {
+        get { runtimeSessionOwner.runtimeState }
+        set { runtimeSessionOwner.runtimeState = newValue }
+    }
+
+    var allowsRuntimeWithoutEnabledExtensions: Bool {
+        get { runtimeSessionOwner.allowsRuntimeWithoutEnabledExtensions }
+        set { runtimeSessionOwner.allowsRuntimeWithoutEnabledExtensions = newValue }
+    }
+
+    var runtimeInitializationTask: Task<Void, Never>? {
+        get { runtimeSessionOwner.runtimeInitializationTask }
+        set { runtimeSessionOwner.runtimeInitializationTask = newValue }
+    }
+
+    var loadedExtensionManifests: [String: [String: Any]] {
+        get { runtimeSessionOwner.loadedExtensionManifests }
+        set { runtimeSessionOwner.loadedExtensionManifests = newValue }
+    }
+
+    var runtimeMetricsByExtensionID: [String: ExtensionRuntimeMetrics] {
+        get { runtimeSessionOwner.runtimeMetricsByExtensionID }
+        set { runtimeSessionOwner.runtimeMetricsByExtensionID = newValue }
+    }
+
+    var extensionLoadGeneration: UInt64 {
+        get { runtimeSessionOwner.extensionLoadGeneration }
+        set { runtimeSessionOwner.extensionLoadGeneration = newValue }
+    }
+
+    var tabOpenNotificationGeneration: UInt64 {
+        get { runtimeSessionOwner.tabOpenNotificationGeneration }
+        set { runtimeSessionOwner.tabOpenNotificationGeneration = newValue }
+    }
+
+    func recordRuntimeMetric(
+        for extensionId: String,
+        update: (inout ExtensionRuntimeMetrics) -> Void
+    ) {
+        runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
+    }
+
     func sortInstalledExtensions() {
         installedExtensions.sort {
             $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -582,4 +701,88 @@ final class ExtensionManager: NSObject, ObservableObject {
             ?? tab.url.absoluteString
         return "tab=\(tab.id.uuidString.prefix(8)) url=\(resolvedURL) webViews=[\(webViews)]"
     }
+
+    #if DEBUG
+        struct TestHooks {
+            var beforePersistInstalledRecord: ((InstalledExtension) throws -> Void)?
+            var beforeControllerLoad:
+                ((String, ExtensionManager.WebExtensionStorageSnapshot) throws -> Void)?
+            var backgroundContentWake:
+                (@MainActor (String, WKWebExtensionContext) async throws -> Void)?
+            var permissionPromptDecision:
+                ((WKWebExtensionContext, [String], String) -> ExtensionPermissionPromptDecision)?
+            var webExtensionDataCleanup: (@MainActor (String) async -> Bool)?
+            var didOpenTab: ((UUID) -> Void)?
+            var didDeferOpenTab: ((UUID, String) -> Void)?
+            var didCloseTab: ((UUID) -> Void)?
+            var didActivateTab: ((UUID) -> Void)?
+            var didChangeTabProperties:
+                ((UUID, WKWebExtension.TabChangedProperties) -> Void)?
+        }
+
+        var testHooks: TestHooks {
+            get {
+                ExtensionManagerDebugRegistry.hooks(for: ObjectIdentifier(self))
+            }
+            set {
+                ExtensionManagerDebugRegistry.setHooks(
+                    newValue,
+                    for: ObjectIdentifier(self)
+                )
+            }
+        }
+
+        func clearDebugState() {
+            ExtensionManagerDebugRegistry.clearHooks(for: ObjectIdentifier(self))
+        }
+
+        func drainExtensionRuntimeTasksForTests() async {
+            while true {
+                let tasks =
+                    (loadedInitialDocumentRuntimePreparationOwner?
+                        .runtimeTasksForDrain() ?? [])
+                    + (loadedNativeMessagingBackgroundWakeOwner?
+                        .runtimeTasksForDrain() ?? [])
+                let didDrainWakeTask = await backgroundRuntimeStateOwner
+                    .drainWakeTasksForTests()
+
+                guard tasks.isEmpty == false || didDrainWakeTask else { return }
+
+                for task in tasks {
+                    await task.value
+                }
+            }
+        }
+    #endif
 }
+
+#if DEBUG
+    @available(macOS 15.5, *)
+    @MainActor
+    private final class ExtensionManagerDebugRegistry {
+        private static let lock = NSLock()
+        private static var hooksByManagerID:
+            [ObjectIdentifier: ExtensionManager.TestHooks] = [:]
+
+        static func hooks(for managerID: ObjectIdentifier) -> ExtensionManager.TestHooks {
+            lock.lock()
+            defer { lock.unlock() }
+            return hooksByManagerID[managerID] ?? ExtensionManager.TestHooks()
+        }
+
+        static func setHooks(
+            _ hooks: ExtensionManager.TestHooks,
+            for managerID: ObjectIdentifier
+        ) {
+            lock.lock()
+            hooksByManagerID[managerID] = hooks
+            lock.unlock()
+        }
+
+        static func clearHooks(for managerID: ObjectIdentifier) {
+            lock.lock()
+            hooksByManagerID.removeValue(forKey: managerID)
+            lock.unlock()
+        }
+    }
+#endif
