@@ -163,6 +163,15 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var runtimeStateResetOwner = ExtensionRuntimeStateResetOwner(
         dependencies: .live(manager: self)
     )
+    lazy var contextResidencyOwner = ExtensionContextResidencyOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var controllerAttachmentOwner = ExtensionControllerAttachmentOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var actionPopupFailureDiagnosticsOwner = ExtensionActionPopupFailureDiagnosticsOwner(
+        dependencies: .live(manager: self)
+    )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
@@ -505,6 +514,92 @@ final class ExtensionManager: NSObject, ObservableObject {
         update: (inout ExtensionRuntimeMetrics) -> Void
     ) {
         runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
+    }
+
+    // MARK: - Load Error Bookkeeping
+
+    func recordExtensionLoadError(
+        _ error: Error,
+        extensionId: String,
+        profileId: UUID
+    ) {
+        lastExtensionLoadErrors[
+            backgroundScopedKey(extensionId: extensionId, profileId: profileId)
+        ] = error
+    }
+
+    func clearExtensionLoadError(extensionId: String, profileId: UUID) {
+        lastExtensionLoadErrors.removeValue(
+            forKey: backgroundScopedKey(extensionId: extensionId, profileId: profileId)
+        )
+    }
+
+    func lastExtensionLoadError(
+        extensionId: String,
+        profileId: UUID
+    ) -> Error? {
+        lastExtensionLoadErrors[
+            backgroundScopedKey(extensionId: extensionId, profileId: profileId)
+        ]
+    }
+
+    func logExtensionLoadFailure(
+        _ error: Error,
+        extensionId: String,
+        profileId: UUID,
+        operation: String
+    ) {
+        Self.logger.error(
+            "Failed to \(operation, privacy: .public) for extension \(extensionId, privacy: .public) profile \(profileId.uuidString, privacy: .public): \(error.localizedDescription, privacy: .public)"
+        )
+    }
+
+    func logBackgroundWakeFailure(
+        _ error: Error,
+        extensionContext: WKWebExtensionContext,
+        reason: ExtensionBackgroundWakeReason,
+        operation: String
+    ) {
+        let extensionId = extensionID(for: extensionContext) ?? "(unknown)"
+        let profileId = profileId(for: extensionContext)?.uuidString ?? "(unknown)"
+        Self.logger.error(
+            "Failed to \(operation, privacy: .public) for extension \(extensionId, privacy: .public) profile \(profileId, privacy: .public) reason \(reason.rawValue, privacy: .public): \(error.localizedDescription, privacy: .public)"
+        )
+    }
+
+    func backgroundScopedKey(
+        extensionId: String,
+        profileId: UUID
+    ) -> String {
+        ExtensionRuntimeResidencyState.scopedKey(
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    nonisolated static func detachedMainActorRuntimeTask(
+        _ operation: @escaping @MainActor @Sendable () async -> Void
+    ) -> Task<Void, Never> {
+        Task.detached {
+            await operation()
+        }
+    }
+
+    func extensionsModuleEnabledForRuntimeBoundary() -> Bool {
+        switch runtime.extensionsModuleEnabled() {
+        case .enabled(let isEnabled):
+            return isEnabled
+        case .unavailable:
+            return true
+        }
+    }
+
+    func refreshActionSurfaceStateForCurrentProfile() {
+        guard let profileId = currentProfileId else { return }
+        for (extensionId, context) in extensionContexts(for: profileId) {
+            publishActionSurfaceStateForLoadedContext(context)
+            _ = extensionId
+        }
     }
 
     func sortInstalledExtensions() {

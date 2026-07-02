@@ -312,3 +312,61 @@ final class ExtensionInitialDocumentRuntimePreparationOwner {
         }
     }
 }
+
+@available(macOS 15.5, *)
+@MainActor
+extension ExtensionManager {
+    func profileHasLoadedContentScriptContexts(profileId: UUID) -> Bool {
+        initialDocumentRuntimePreparationOwner
+            .profileHasLoadedContentScriptContexts(profileId: profileId)
+    }
+
+    func profileNeedsContentScriptContextLoad(profileId: UUID) -> Bool {
+        initialDocumentRuntimePreparationOwner
+            .profileNeedsContentScriptContextLoad(profileId: profileId)
+    }
+
+    func profileNeedsInitialDocumentExtensionContextLoad(profileId: UUID) -> Bool {
+        initialDocumentRuntimePreparationOwner
+            .profileNeedsInitialDocumentExtensionContextLoad(profileId: profileId)
+    }
+
+    func ensureContentScriptContextsLoaded(for profileId: UUID) async {
+        await initialDocumentRuntimePreparationOwner
+            .ensureContentScriptContextsLoaded(for: profileId)
+    }
+
+    func ensureInitialExtensionContextsLoaded(for profileId: UUID) async {
+        await initialDocumentRuntimePreparationOwner
+            .ensureInitialExtensionContextsLoaded(for: profileId)
+    }
+
+    func cancelInitialDocumentNativeMessagingWarmupTasks() {
+        loadedInitialDocumentRuntimePreparationOwner?
+            .cancelInitialDocumentNativeMessagingWarmupTasks()
+    }
+
+    func profileNeedsInitialDocumentNativeMessagingWarmup(profileId: UUID) -> Bool {
+        initialDocumentRuntimePreparationOwner
+            .profileNeedsInitialDocumentNativeMessagingWarmup(profileId: profileId)
+    }
+
+    @discardableResult
+    func scheduleDeferredTabNotificationAfterContextLoad(
+        _ tab: Tab,
+        profileId: UUID,
+        reason: String = #function
+    ) -> Task<Void, Never> {
+        initialDocumentRuntimePreparationOwner
+            .scheduleDeferredTabNotificationAfterContextLoad(
+                tab,
+                profileId: profileId,
+                extensionLoadGeneration: extensionLoadGeneration,
+                reason: reason
+            )
+    }
+
+    func deferredTabNotificationTask(for tabId: UUID) -> Task<Void, Never>? {
+        initialDocumentRuntimePreparationOwner.deferredTabNotificationTask(for: tabId)
+    }
+}
