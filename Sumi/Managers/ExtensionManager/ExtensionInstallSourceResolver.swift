@@ -1,5 +1,5 @@
 //
-//  ExtensionManager+ManifestPatching.swift
+//  ExtensionInstallSourceResolver.swift
 //  Sumi
 //
 //  Install-source resolution for Safari Web Extensions.
@@ -11,8 +11,7 @@
 import Foundation
 import WebKit
 
-@available(macOS 15.5, *)
-extension ExtensionManager {
+enum ExtensionInstallSourceResolver {
     struct ResolvedInstallSource {
         let sourceKind: WebExtensionSourceKind
         /// Unpacked resources root (directory install) or in-bundle resources root (appex).
@@ -23,7 +22,7 @@ extension ExtensionManager {
         let appexBundleURL: URL?
     }
 
-    func validateMV3Requirements(
+    static func validateMV3Requirements(
         manifest: [String: Any],
         baseURL: URL
     ) throws {
@@ -54,7 +53,7 @@ extension ExtensionManager {
         }
     }
 
-    nonisolated static func resolveInstallSource(at url: URL) throws -> ResolvedInstallSource {
+    static func resolve(at url: URL) throws -> ResolvedInstallSource {
         let standardized = url.standardizedFileURL
         switch standardized.pathExtension.lowercased() {
         case "appex":
@@ -66,7 +65,7 @@ extension ExtensionManager {
         }
     }
 
-    private nonisolated static func resolveDirectoryInstallSource(at url: URL) throws -> ResolvedInstallSource {
+    private static func resolveDirectoryInstallSource(at url: URL) throws -> ResolvedInstallSource {
         let fileManager = FileManager.default
 
         var isDirectory: ObjCBool = false
@@ -92,7 +91,7 @@ extension ExtensionManager {
         )
     }
 
-    private nonisolated static func resolveSafariAppExtensionInstallSource(
+    private static func resolveSafariAppExtensionInstallSource(
         at appexURL: URL
     ) throws -> ResolvedInstallSource {
         var issues: [SafariExtensionScannerIssue] = []
@@ -123,7 +122,7 @@ extension ExtensionManager {
         )
     }
 
-    private nonisolated static func resolveContainingAppInstallSource(at appURL: URL) throws -> ResolvedInstallSource {
+    private static func resolveContainingAppInstallSource(at appURL: URL) throws -> ResolvedInstallSource {
         var issues: [SafariExtensionScannerIssue] = []
         let scanner = SafariExtensionScanner()
         let candidates = scanner.inspectContainingAppBundle(at: appURL, issues: &issues)
@@ -157,7 +156,7 @@ extension ExtensionManager {
         )
     }
 
-    private nonisolated static func safariExtensionScannerIssueDescription(
+    private static func safariExtensionScannerIssueDescription(
         _ issue: SafariExtensionScannerIssue
     ) -> String {
         switch issue {
@@ -173,13 +172,5 @@ extension ExtensionManager {
         case .duplicateExtensionIdentifier(let identifier):
             return "Duplicate Safari extension identifier: \(identifier)"
         }
-    }
-
-    nonisolated static func manifestDeclaresWebKitBrowserTarget(
-        for manifest: [String: Any]
-    ) -> Bool {
-        SafariExtensionInstallCapabilityOwner.manifestDeclaresWebKitBrowserTarget(
-            for: manifest
-        )
     }
 }

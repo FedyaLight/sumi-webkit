@@ -148,6 +148,9 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var runtimeLifecycleOwner = ExtensionRuntimeLifecycleOwner(
         dependencies: .live(manager: self)
     )
+    lazy var adapterResolutionOwner = ExtensionAdapterResolutionOwner(
+        dependencies: .live(manager: self)
+    )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
@@ -342,6 +345,36 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     func normalTabUserScripts() -> [SumiUserScript] {
         []
+    }
+
+    // MARK: - Extension Runtime Adapters
+
+    func miniWindowAdapter(for tab: Tab) -> ExtensionMiniWindowAdapter? {
+        adapterResolutionOwner.miniWindowAdapter(for: tab)
+    }
+
+    func miniWindowAdapter(
+        for sessionId: UUID,
+        tab: Tab,
+        window: NSWindow,
+        isPrivate: Bool,
+        shouldActivateApp: Bool
+    ) -> ExtensionMiniWindowAdapter? {
+        adapterResolutionOwner.miniWindowAdapter(
+            for: sessionId,
+            tab: tab,
+            window: window,
+            isPrivate: isPrivate,
+            shouldActivateApp: shouldActivateApp
+        )
+    }
+
+    func windowAdapter(for windowId: UUID) -> ExtensionWindowAdapter? {
+        adapterResolutionOwner.windowAdapter(for: windowId)
+    }
+
+    func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
+        adapterResolutionOwner.stableAdapter(for: tab)
     }
 
     func sortInstalledExtensions() {

@@ -42,7 +42,7 @@ final class ExtensionInstallationFlowOwner {
         let requestExtensionRuntimeAndWait: @MainActor (
             ExtensionManager.ExtensionRuntimeRequestReason, Bool
         ) async -> Void
-        let resolveInstallSource: @MainActor (URL) throws -> ExtensionManager.ResolvedInstallSource
+        let resolveInstallSource: @MainActor (URL) throws -> ExtensionInstallSourceResolver.ResolvedInstallSource
         let validateMV3Requirements: @MainActor ([String: Any], URL) throws -> Void
         let makeInstalledRecord: @MainActor (
             String, [String: Any], URL, Bool, WebExtensionSourceKind, String, URL, ExtensionEntity?
@@ -564,7 +564,7 @@ final class ExtensionInstallationFlowOwner {
     }
 
     private func enableDiscoveredSafariAppExtension(
-        _ resolvedSource: ExtensionManager.ResolvedInstallSource,
+        _ resolvedSource: ExtensionInstallSourceResolver.ResolvedInstallSource,
         enableOnInstall: Bool
     ) async throws -> InstalledExtension {
         guard resolvedSource.sourceKind == .safariAppExtension,
@@ -822,10 +822,13 @@ extension ExtensionInstallationFlowOwner.Dependencies {
                 )
             },
             resolveInstallSource: { sourceURL in
-                try ExtensionManager.resolveInstallSource(at: sourceURL)
+                try ExtensionInstallSourceResolver.resolve(at: sourceURL)
             },
-            validateMV3Requirements: { [weak manager] manifest, baseURL in
-                try manager?.validateMV3Requirements(manifest: manifest, baseURL: baseURL)
+            validateMV3Requirements: { manifest, baseURL in
+                try ExtensionInstallSourceResolver.validateMV3Requirements(
+                    manifest: manifest,
+                    baseURL: baseURL
+                )
             },
             makeInstalledRecord: { [weak manager] extensionId, manifest, extensionRoot, isEnabled, sourceKind, sourceBundlePath, sourceFingerprintURL, existingEntity in
                 guard let manager else {

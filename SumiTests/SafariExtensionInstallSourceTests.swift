@@ -33,7 +33,7 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
             )
         )
 
-        let resolved = try ExtensionManager.resolveInstallSource(at: appexURL)
+        let resolved = try ExtensionInstallSourceResolver.resolve(at: appexURL)
 
         XCTAssertEqual(resolved.sourceKind, .safariAppExtension)
         XCTAssertEqual(resolved.appexBundleURL, appexURL)
@@ -58,7 +58,7 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
             ]
         )
 
-        let resolved = try ExtensionManager.resolveInstallSource(at: appURL)
+        let resolved = try ExtensionInstallSourceResolver.resolve(at: appURL)
 
         XCTAssertEqual(resolved.sourceKind, .safariAppExtension)
         XCTAssertEqual(resolved.appexBundleURL?.lastPathComponent, "ProtonPassSafari.appex")
@@ -83,7 +83,7 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
             ]
         )
 
-        XCTAssertThrowsError(try ExtensionManager.resolveInstallSource(at: appURL)) { error in
+        XCTAssertThrowsError(try ExtensionInstallSourceResolver.resolve(at: appURL)) { error in
             let message = (error as? ExtensionError)?.errorDescription ?? ""
             XCTAssertTrue(message.contains("multiple Safari Web Extensions"))
         }
@@ -100,7 +100,7 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
             )
         )
 
-        XCTAssertThrowsError(try ExtensionManager.resolveInstallSource(at: appexURL)) { error in
+        XCTAssertThrowsError(try ExtensionInstallSourceResolver.resolve(at: appexURL)) { error in
             let message = (error as? ExtensionError)?.errorDescription ?? ""
             XCTAssertTrue(message.contains("not a Safari Web Extension"))
         }
@@ -120,7 +120,7 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
             options: [.atomic]
         )
 
-        let resolved = try ExtensionManager.resolveInstallSource(at: directoryURL)
+        let resolved = try ExtensionInstallSourceResolver.resolve(at: directoryURL)
 
         XCTAssertEqual(resolved.sourceKind, .directory)
         XCTAssertNil(resolved.appexBundleURL)
@@ -225,7 +225,7 @@ final class SafariExtensionInstallSourceTests: XCTestCase {
                 displayName: "Raindrop"
             )
         )
-        let resolved = try ExtensionManager.resolveInstallSource(at: appexURL)
+        let resolved = try ExtensionInstallSourceResolver.resolve(at: appexURL)
 
         XCTAssertEqual(resolved.sourceKind, .safariAppExtension)
         XCTAssertEqual(resolved.sourceBundlePath, appexURL)
