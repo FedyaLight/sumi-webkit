@@ -10,7 +10,6 @@ final class ExtensionBackgroundWakeCoordinator {
     struct Dependencies {
         let backgroundRuntimeStateOwner: ExtensionBackgroundRuntimeStateOwner
         let nativeMessagingBackgroundWakeOwner: @MainActor () -> ExtensionNativeMessagingBackgroundWakeOwner?
-        let loadedNativeMessagingBackgroundWakeOwner: @MainActor () -> ExtensionNativeMessagingBackgroundWakeOwner?
         let contextIdentity: @MainActor (WKWebExtensionContext) -> (extensionId: String, profileId: UUID)?
         let resolvedProfileId: @MainActor (UUID?) -> UUID?
         let recordRuntimeMetric: @MainActor (String, (inout ExtensionManager.ExtensionRuntimeMetrics) -> Void) -> Void
@@ -90,20 +89,6 @@ final class ExtensionBackgroundWakeCoordinator {
         )
     }
 
-    func cancelNativeMessagingBackgroundWakeTasks(forExtensionId extensionId: String) {
-        dependencies.loadedNativeMessagingBackgroundWakeOwner()?.cancelWakeTasks(
-            forExtensionId: extensionId,
-            wakeKeyBelongsToExtension: { wakeKey, extensionId in
-                ExtensionRuntimeResidencyState.parseScopedKey(wakeKey)?
-                    .extensionId == extensionId
-            }
-        )
-    }
-
-    func cancelNativeMessagingBackgroundWakeTasks() {
-        dependencies.loadedNativeMessagingBackgroundWakeOwner()?.cancelAllWakeTasks()
-    }
-
     private func backgroundWakeKey(
         for extensionContext: WKWebExtensionContext
     ) -> String {
@@ -138,9 +123,6 @@ extension ExtensionBackgroundWakeCoordinator.Dependencies {
             backgroundRuntimeStateOwner: manager.backgroundRuntimeStateOwner,
             nativeMessagingBackgroundWakeOwner: { [weak manager] in
                 manager?.nativeMessagingBackgroundWakeOwner
-            },
-            loadedNativeMessagingBackgroundWakeOwner: { [weak manager] in
-                manager?.loadedNativeMessagingBackgroundWakeOwner
             },
             contextIdentity: { [weak manager] extensionContext in
                 manager?.contextIdentity(for: extensionContext)
@@ -202,13 +184,20 @@ extension ExtensionManager {
     }
 
     func cancelNativeMessagingBackgroundWakeTasks(forExtensionId extensionId: String) {
-        backgroundWakeCoordinator.cancelNativeMessagingBackgroundWakeTasks(
-            forExtensionId: extensionId
+        loadedNativeMessagingBackgroundWakeOwner?.cancelWakeTasks(
+            forExtensionId: extensionId,
+            wakeKeyBelongsToExtension: { wakeKey, extensionId in
+                ExtensionRuntimeResidencyState.parseScopedKey(wakeKey)?
+                    .extensionId == extensionId
+            }
         )
     }
 
+    /// Operates on the loaded wake owner directly: this runs during manager
+    /// deinit, where instantiating the lazy coordinator would form a weak
+    /// reference to a deallocating object.
     func cancelNativeMessagingBackgroundWakeTasks() {
-        backgroundWakeCoordinator.cancelNativeMessagingBackgroundWakeTasks()
+        loadedNativeMessagingBackgroundWakeOwner?.cancelAllWakeTasks()
     }
 
     func backgroundRuntimeState(
