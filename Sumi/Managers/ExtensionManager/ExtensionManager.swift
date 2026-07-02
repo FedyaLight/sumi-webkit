@@ -142,6 +142,12 @@ final class ExtensionManager: NSObject, ObservableObject {
     lazy var pageResolutionOwner = ExtensionPageResolutionOwner(
         dependencies: .live(manager: self)
     )
+    lazy var browserRuntimeBridgeOwner = ExtensionBrowserRuntimeBridgeOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var runtimeLifecycleOwner = ExtensionRuntimeLifecycleOwner(
+        dependencies: .live(manager: self)
+    )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)
