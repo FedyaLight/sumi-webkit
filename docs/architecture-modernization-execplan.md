@@ -49,9 +49,25 @@ Last updated: 2026-07-02
 | WebView runtime boundary | Complete | Added a production scan that keeps WebView runtime context attach/detach calls inside `WebViewCoordinator` declarations and BrowserManager shell binding. Wired it into the aggregate guardrail. | `scripts/check_webview_runtime_context_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed. | The guard protects ownership placement, not semantic correctness of each runtime context. | 82/100 |
 | Sidebar environment boundary | Complete | Added a production UI scan that prevents direct `BrowserManager` SwiftUI environment injection and preserves projection/context ownership for sidebar/chrome views. Wired it into the aggregate guardrail. | `scripts/check_sidebar_browser_manager_boundary.sh` passed; `scripts/check_architecture_guardrails.sh` passed. | The guard blocks broad environment coupling; it does not reduce existing projected context width. | 83/100 |
 | SwiftData schema contract | Complete | Strengthened startup persistence tests to assert the exact schema model order, uniqueness, migration schema version, and empty migration stages for V1. | `xcodebuild test -project Sumi.xcodeproj -scheme Sumi -destination 'platform=macOS' -derivedDataPath .build/DerivedData-architecture-modernization-night -only-testing:SumiTests/SumiStartupPersistenceTests` passed. | This verifies the current V1 contract; future V2 work still needs a real migration stage. | 84/100 |
+| TabManager space lifecycle owner | Complete | Moved space create/remove/reorder/rename/icon/activation logic from the `TabManager+SpaceLifecycle` extension into a composed `TabSpaceLifecycleOwner`; deleted the extension file. | Build passed; `SumiTests/TabSpaceCollectionStateOwnerTests`, `TabManagerStructuralPersistenceTests`, `TabManagerClearRegularTabsTests` passed; guardrails passed. | None known; facade signatures unchanged. | 85/100 |
+| TabManager split group structure owner | Complete | Moved split group lookup, visual ordering, and structural mutation from the `TabManager+SplitGroups` extension into a composed `TabSplitGroupStructureOwner`; deleted the extension file. | Build passed; `SumiTests/SplitGroupTests` (80 tests) passed; guardrails passed. | None known; facade signatures unchanged. | 85/100 |
+| Remaining TabManager extensions to owners | Complete | Replaced `TabManager+ProfilesUndo`, `+StartupRestore`, `+DragAndDrop`, and `+LauncherOwnership` with composed `TabProfileAssignmentOwner`, `TabLastSessionRestoreOwner`, `SidebarDragOperationRoutingOwner`, and `ShortcutPinCommandOwner`; folded closure-undo/bulk-close into `TabRemovalOwner`; gave `SidebarDragOperationContextValidator` its own file. No `TabManager+*.swift` extension files remain. | Build passed; `SidebarDragCurrentContextTests`, `TabManagerStructuralPersistenceTests`, `TabManagerStructuralBatchingTests`, `SplitGroupTests` (179 tests) passed; guardrails passed. | `TabManager.swift` is now a wide but thin facade (~2k lines of delegation and owner wiring); further narrowing means migrating call sites to owners directly. | 86/100 |
+| Settings downloads directory store | Complete | Moved security-scoped downloads directory bookmark persistence out of `SumiSettingsService` into a composed `SumiDownloadsDirectoryStore`, and moved the standalone persisted settings value enums into `SumiSettingsValueTypes.swift`. | Build passed; `SettingsNavigationTests`, `PerformanceSettingsTests`, `DownloadManagerTests` passed; guardrails passed. | `SumiSettingsService` remains a broad preference bag; remaining seams are settings-surface URL mapping and energy-saver policy projection. | 87/100 |
 
 ## Before/After Estimate
 
 - Before: 78/100.
-- After current slice estimate: 84/100.
-- Target after planned slices: 84/100 or higher.
+- After current slice estimate: 87/100.
+- Target: 95/100 (standing instruction; honest composition only, no same-class extension-file splitting, owners named by real role).
+
+## Ranked Next Targets (toward 95/100)
+
+| Rank | Target | Size | Notes |
+| --- | --- | --- | --- |
+| 1 | `Sumi/Components/Glance/GlanceOverlayController.swift` | ~1148 | AppKit overlay controller; verify with Glance tests. |
+| 2 | `Sumi/Utils/WebKit/SumiWebPageMenuController.swift` | ~964 | Context menu building; extract per-section menu builders. |
+| 3 | `Sumi/Updates/SumiUpdaterService.swift` | ~997 | Split feed/appcast parsing from install orchestration. |
+| 4 | `Sumi/ImportExport/SumiBrowserImportService.swift` | ~968 | Split per-browser importers from orchestration. |
+| 5 | `Sumi/Components/Sidebar/URLBarHubPopover.swift` + `PinnedButtons/PinnedGrid.swift` | ~1000 each | SwiftUI views; extract view models/state owners, not view splitting. |
+| 6 | `SumiSettingsService` remaining seams | ~760 | Settings-surface URL mapping, energy-saver projection. |
+| 7 | `BrowserManager.swift` facade narrowing | ~1167 | Mostly owner wiring already; migrate call sites to owners to shrink the facade. |
