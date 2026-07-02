@@ -272,11 +272,12 @@ struct SumiWebPageNativeMenuComposer {
         action: Selector,
         symbolName: String
     ) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = actionTarget
-        item.identifier = command.itemIdentifier
-        item.image = SumiWebPageMenuIcon.make(symbolName, title: title)
-        return item
+        SumiWebPageMenuItemFactory(actionTarget: actionTarget).makeItem(
+            title: title,
+            command: command,
+            action: action,
+            symbolName: symbolName
+        )
     }
 
     private func makeNativeItem(

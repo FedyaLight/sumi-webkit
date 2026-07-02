@@ -107,6 +107,12 @@ private extension SumiWebPageContextMenuTargetKind {
     }
 }
 
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
+}
+
 extension Tab {
     func recentWebPageContextMenuTarget() -> SumiWebPageContextMenuTargetSnapshot? {
         guard let lastWebPageContextMenuTarget,
@@ -416,11 +422,5 @@ enum SumiWebKitMenuItemIdentifier: String, CaseIterable {
         case .writingTools:
             return "wand.and.stars"
         }
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? {
-        isEmpty ? nil : self
     }
 }

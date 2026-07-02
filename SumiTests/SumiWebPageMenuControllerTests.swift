@@ -190,6 +190,26 @@ final class SumiWebPageMenuControllerTests: XCTestCase {
         }, 1)
     }
 
+    func testOwnedMenuComposerUsesStopCommandForLoadingPageSection() {
+        let menu = NSMenu()
+        let context = SumiWebPageMenuContext(
+            menu: menu,
+            targetHint: .page,
+            selectedText: nil,
+            searchProviderName: "DuckDuckGo"
+        )
+
+        SumiWebPageOwnedMenuComposer(
+            menu: menu,
+            context: context,
+            actionTarget: SumiWebPageMenuController(),
+            isLoading: true
+        ).insertPageBackgroundCommands()
+
+        XCTAssertNotNil(menu.item(identifier: SumiWebPageMenuCommand.stop.rawValue))
+        XCTAssertNil(menu.item(identifier: SumiWebPageMenuCommand.reload.rawValue))
+    }
+
     @objc private func noop(_: Any?) { /* no-op */ }
 
     private func prepare(
