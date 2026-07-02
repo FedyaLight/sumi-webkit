@@ -65,6 +65,75 @@ class TabManager: ObservableObject {
             }
         )
     )
+    private lazy var shortcutLiveTabOwner = ShortcutLiveTabOwner(
+        dependencies: ShortcutLiveTabOwner.Dependencies(
+            runtimeContext: { [weak self] in
+                self?.runtimeContext
+            },
+            transientShortcutTabsByWindow: { [weak self] in
+                self?.transientShortcutTabsByWindow ?? [:]
+            },
+            updateTransientShortcutTabsByWindow: { [weak self] update in
+                guard let self else { return }
+                update(&self.transientShortcutTabsByWindow)
+            },
+            currentSpaceId: { [weak self] in
+                self?.currentSpace?.id
+            },
+            firstRegularTabId: { [weak self] spaceId in
+                self?.tabsBySpace[spaceId]?.first?.id
+            },
+            tab: { [weak self] tabId in
+                self?.tab(for: tabId)
+            },
+            resolvedLiveSpaceId: { [weak self] pin, currentSpaceId in
+                self?.resolvedLiveSpaceId(for: pin, currentSpaceId: currentSpaceId)
+            },
+            resolvedExecutionProfileId: { [weak self] pin, currentSpaceId in
+                self?.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
+            },
+            assignProfile: { [weak self] profileId, tab in
+                self?.assignProfile(profileId, to: tab)
+            },
+            attach: { [weak self] tab in
+                self?.attach(tab)
+            },
+            detach: { [weak self] tab in
+                self?.detach(tab)
+            },
+            notifyTransientShortcutStateChanged: { [weak self] in
+                self?.notifyTransientShortcutStateChanged()
+            },
+            cancelRuntimeStatePersistence: { [weak self] tabId in
+                self?.cancelRuntimeStatePersistence(for: tabId)
+            },
+            pinnedByProfile: { [weak self] in
+                self?.pinnedByProfile ?? [:]
+            },
+            setPinnedTabs: { [weak self] pins, profileId in
+                self?.setPinnedTabs(pins, for: profileId)
+            },
+            removeRegularTab: { [weak self] tabId, spaceId, currentSpaceId in
+                _ = self?.regularTabCollectionOwner.remove(
+                    tabId,
+                    from: spaceId,
+                    currentSpaceId: currentSpaceId
+                )
+            },
+            faviconService: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.faviconService
+            },
+            faviconImageService: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.faviconImageService
+            },
+            visitedLinkStore: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.visitedLinkStore
+            }
+        )
+    )
     private lazy var spaceLauncherProjectionOwner = SpaceLauncherProjectionOwner(
         dependencies: SpaceLauncherProjectionOwner.Dependencies(
             regularTabs: { [weak self] spaceId in
@@ -595,6 +664,96 @@ class TabManager: ObservableObject {
         in windowId: UUID? = nil
     ) -> SpaceLauncherProjection {
         spaceLauncherProjectionOwner.projection(for: spaceId, in: windowId)
+    }
+
+    func convertTabToShortcutLiveInstance(
+        _ tab: Tab,
+        pin: ShortcutPin,
+        in windowId: UUID,
+        updateSelection: Bool = true
+    ) {
+        shortcutLiveTabOwner.convertTabToShortcutLiveInstance(
+            tab,
+            pin: pin,
+            in: windowId,
+            updateSelection: updateSelection
+        )
+    }
+
+    @discardableResult
+    func convertDisplayedTabToShortcutLiveInstances(
+        _ tab: Tab,
+        pin: ShortcutPin,
+        preferredWindowId: UUID? = nil
+    ) -> Bool {
+        shortcutLiveTabOwner.convertDisplayedTabToShortcutLiveInstances(
+            tab,
+            pin: pin,
+            preferredWindowId: preferredWindowId
+        )
+    }
+
+    @discardableResult
+    func rebindLiveShortcutTab(
+        _ tab: Tab,
+        from sourcePin: ShortcutPin,
+        to insertedPin: ShortcutPin
+    ) -> Bool {
+        shortcutLiveTabOwner.rebindLiveShortcutTab(tab, from: sourcePin, to: insertedPin)
+    }
+
+    @discardableResult
+    func activateShortcutPin(_ pin: ShortcutPin, in windowId: UUID, currentSpaceId: UUID?) -> Tab {
+        withStructuralUpdateTransaction {
+            shortcutLiveTabOwner.activateShortcutPin(pin, in: windowId, currentSpaceId: currentSpaceId)
+        }
+    }
+
+    @discardableResult
+    func deactivateShortcutLiveTab(in windowId: UUID) -> Bool {
+        guard let pinId = activeShortcutTab(for: windowId)?.shortcutPinId else { return false }
+        return deactivateShortcutLiveTab(pinId: pinId, in: windowId)
+    }
+
+    @discardableResult
+    func deactivateShortcutLiveTab(pinId: UUID, in windowId: UUID) -> Bool {
+        withStructuralUpdateTransaction {
+            shortcutLiveTabOwner.deactivateShortcutLiveTab(pinId: pinId, in: windowId)
+        }
+    }
+
+    @discardableResult
+    func removeLiveShortcutTabs(forDeletedPinId pinId: UUID) -> ShortcutPinSelectionCleanupResult {
+        shortcutLiveTabOwner.removeLiveShortcutTabs(forDeletedPinId: pinId)
+    }
+
+    @discardableResult
+    func clearDeletedShortcutPinSelectionReferences(_ pinId: UUID) -> ShortcutPinSelectionCleanupResult {
+        shortcutLiveTabOwner.clearDeletedShortcutPinSelectionReferences(pinId)
+    }
+
+    func persistWindowSessionsForShortcutSelectionCleanup(_ cleanupResult: ShortcutPinSelectionCleanupResult) {
+        shortcutLiveTabOwner.persistWindowSessionsForShortcutSelectionCleanup(cleanupResult)
+    }
+
+    func windowIdDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> UUID? {
+        shortcutLiveTabOwner.windowIdDisplaying(tabId: tabId, preferredWindowId: preferredWindowId)
+    }
+
+    func windowIdsSelecting(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
+        shortcutLiveTabOwner.windowIdsSelecting(tabId: tabId, preferredWindowId: preferredWindowId)
+    }
+
+    func windowIdsDisplaying(tabId: UUID, preferredWindowId: UUID? = nil) -> [UUID] {
+        shortcutLiveTabOwner.windowIdsDisplaying(tabId: tabId, preferredWindowId: preferredWindowId)
+    }
+
+    func windowStateDisplaying(tabId: UUID) -> BrowserWindowState? {
+        shortcutLiveTabOwner.windowStateDisplaying(tabId: tabId)
+    }
+
+    func removeFromCurrentContainer(_ tab: Tab) {
+        shortcutLiveTabOwner.removeFromCurrentContainer(tab)
     }
 
     // MARK: - Container Membership Helpers
