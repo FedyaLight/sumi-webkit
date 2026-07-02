@@ -18,6 +18,9 @@ class TabManager: ObservableObject {
             }
         }
     }
+
+    typealias SpaceLauncherProjection = SpaceLauncherProjectionSnapshot
+
     private(set) var runtimeContext: TabManagerRuntimeContext?
     weak var sumiSettings: SumiSettingsService?
     let context: ModelContext
@@ -34,6 +37,56 @@ class TabManager: ObservableObject {
     lazy var regularTabDragService = SidebarRegularTabDragService(tabManager: self)
     lazy var lazyRestoreCoordinator = TabLazyRestoreCoordinator(tabManager: self)
     lazy var spacePinnedStructureOwner = SpacePinnedStructureOwner(tabManager: self)
+    private lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
+        dependencies: TabShortcutPresentationOwner.Dependencies(
+            transientShortcutTabsByWindow: { [weak self] in
+                self?.transientShortcutTabsByWindow ?? [:]
+            },
+            windowState: { [weak self] windowId in
+                self?.runtimeContext?.windowState(for: windowId)
+            },
+            resolvedExecutionProfileId: { [weak self] pin, currentSpaceId in
+                self?.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
+            },
+            faviconService: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.faviconService
+            },
+            faviconImageService: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.faviconImageService
+            },
+            visitedLinkStore: { [weak self] in
+                guard let self else { preconditionFailure("TabManager dependency used after deallocation") }
+                return self.visitedLinkStore
+            },
+            prepareTabForRuntime: { [weak self] tab in
+                self?.prepareTabForRuntime(tab)
+            }
+        )
+    )
+    private lazy var spaceLauncherProjectionOwner = SpaceLauncherProjectionOwner(
+        dependencies: SpaceLauncherProjectionOwner.Dependencies(
+            regularTabs: { [weak self] spaceId in
+                self?.regularTabCollectionOwner.tabs(in: spaceId) ?? []
+            },
+            spacePinnedPins: { [weak self] spaceId in
+                self?.spacePinnedPins(for: spaceId) ?? []
+            },
+            folders: { [weak self] spaceId in
+                self?.foldersBySpace[spaceId] ?? []
+            },
+            shortcutHostedSplitGroups: { [weak self] spaceId in
+                self?.shortcutHostedSplitGroups(for: spaceId) ?? []
+            },
+            liveShortcutTabs: { [weak self] windowId in
+                self?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
+            },
+            transientShortcutTabsByWindow: { [weak self] in
+                self?.transientShortcutTabsByWindow ?? [:]
+            }
+        )
+    )
 
     // Spaces
     @Published var spaces: [Space] = []
@@ -476,6 +529,72 @@ class TabManager: ObservableObject {
         if tab.sumiSettings == nil {
             tab.sumiSettings = sumiSettings ?? runtimeContext?.settings
         }
+    }
+
+    // MARK: - Shortcut Presentation and Projection
+
+    func shortcutHasDrifted(
+        _ pin: ShortcutPin,
+        in windowState: BrowserWindowState
+    ) -> Bool {
+        shortcutPresentationOwner.shortcutHasDrifted(pin, in: windowState)
+    }
+
+    func shortcutRuntimeAffordanceState(
+        for pin: ShortcutPin,
+        in windowState: BrowserWindowState
+    ) -> SumiLauncherRuntimeAffordanceState {
+        shortcutPresentationOwner.shortcutRuntimeAffordanceState(for: pin, in: windowState)
+    }
+
+    func essentialRuntimeState(
+        for pin: ShortcutPin,
+        in windowState: BrowserWindowState,
+        splitManager: SplitViewManager?
+    ) -> SumiEssentialRuntimeState? {
+        shortcutPresentationOwner.essentialRuntimeState(
+            for: pin,
+            in: windowState,
+            splitManager: splitManager
+        )
+    }
+
+    func selectedShortcutLiveTab(for pinId: UUID, in windowState: BrowserWindowState) -> Tab? {
+        shortcutPresentationOwner.selectedShortcutLiveTab(for: pinId, in: windowState)
+    }
+
+    func dragProxyTab(for pin: ShortcutPin) -> Tab {
+        shortcutPresentationOwner.dragProxyTab(for: pin)
+    }
+
+    func activeShortcutTab(for windowId: UUID) -> Tab? {
+        shortcutPresentationOwner.activeShortcutTab(for: windowId)
+    }
+
+    func liveShortcutTabs(in windowId: UUID) -> [Tab] {
+        shortcutPresentationOwner.liveShortcutTabs(in: windowId)
+    }
+
+    func shortcutLiveTab(for pinId: UUID, in windowId: UUID) -> Tab? {
+        shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
+    }
+
+    func shortcutPresentationState(
+        for pin: ShortcutPin,
+        in windowState: BrowserWindowState
+    ) -> ShortcutPresentationState {
+        shortcutPresentationOwner.shortcutPresentationState(for: pin, in: windowState)
+    }
+
+    func activeShortcutTabs(role: ShortcutPinRole? = nil) -> [Tab] {
+        shortcutPresentationOwner.activeShortcutTabs(role: role)
+    }
+
+    func launcherProjection(
+        for spaceId: UUID,
+        in windowId: UUID? = nil
+    ) -> SpaceLauncherProjection {
+        spaceLauncherProjectionOwner.projection(for: spaceId, in: windowId)
     }
 
     // MARK: - Container Membership Helpers

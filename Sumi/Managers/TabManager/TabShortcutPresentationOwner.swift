@@ -1,13 +1,21 @@
 import Foundation
 
 @MainActor
-extension TabManager {
-    private func normalizedShortcutComparisonURL(_ url: URL) -> String {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
-            return url.absoluteString
-        }
-        components.fragment = nil
-        return components.string?.lowercased() ?? url.absoluteString.lowercased()
+final class TabShortcutPresentationOwner {
+    struct Dependencies {
+        let transientShortcutTabsByWindow: @MainActor () -> [UUID: [UUID: Tab]]
+        let windowState: @MainActor (UUID) -> BrowserWindowState?
+        let resolvedExecutionProfileId: @MainActor (ShortcutPin, UUID?) -> UUID?
+        let faviconService: @MainActor () -> any BrowserFaviconServicing
+        let faviconImageService: @MainActor () -> any BrowserFaviconImageServicing
+        let visitedLinkStore: @MainActor () -> any BrowserVisitedLinkStoreManaging
+        let prepareTabForRuntime: @MainActor (Tab) -> Void
+    }
+
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
     }
 
     func shortcutHasDrifted(
@@ -79,30 +87,31 @@ extension TabManager {
             favicon: SumiPersistentGlyph.launcherSystemImageFallback,
             spaceId: pin.role == .essential ? nil : pin.spaceId,
             index: pin.index,
-            faviconService: faviconService,
-            faviconImageService: faviconImageService,
-            visitedLinkStore: visitedLinkStore
+            faviconService: dependencies.faviconService(),
+            faviconImageService: dependencies.faviconImageService(),
+            visitedLinkStore: dependencies.visitedLinkStore()
         )
         tab.bindToShortcutPin(pin)
-        tab.profileId = resolvedExecutionProfileId(for: pin, currentSpaceId: pin.spaceId)
+        tab.profileId = dependencies.resolvedExecutionProfileId(pin, pin.spaceId)
         tab.folderId = pin.folderId
         _ = tab.applyCachedFaviconOrPlaceholder(for: pin.launchURL)
-        prepareTabForRuntime(tab)
+        dependencies.prepareTabForRuntime(tab)
         return tab
     }
 
     func activeShortcutTab(for windowId: UUID) -> Tab? {
-        guard let liveTabs = transientShortcutTabsByWindow[windowId], !liveTabs.isEmpty else {
+        let liveTabsByWindow = dependencies.transientShortcutTabsByWindow()
+        guard let liveTabs = liveTabsByWindow[windowId], !liveTabs.isEmpty else {
             return nil
         }
-        if let currentTabId = runtimeContext?.windowState(for: windowId)?.currentTabId,
+        if let currentTabId = dependencies.windowState(windowId)?.currentTabId,
            let current = liveTabs.values.first(where: { $0.id == currentTabId }) {
             return current
         }
-        if runtimeContext?.windowState(for: windowId)?.currentTabId != nil {
+        if dependencies.windowState(windowId)?.currentTabId != nil {
             return nil
         }
-        if let currentShortcutPinId = runtimeContext?.windowState(for: windowId)?.currentShortcutPinId,
+        if let currentShortcutPinId = dependencies.windowState(windowId)?.currentShortcutPinId,
            let current = liveTabs[currentShortcutPinId] {
             return current
         }
@@ -110,7 +119,7 @@ extension TabManager {
     }
 
     func liveShortcutTabs(in windowId: UUID) -> [Tab] {
-        guard let liveTabs = transientShortcutTabsByWindow[windowId] else { return [] }
+        guard let liveTabs = dependencies.transientShortcutTabsByWindow()[windowId] else { return [] }
         return Array(liveTabs.values).sorted { lhs, rhs in
             if lhs.index != rhs.index { return lhs.index < rhs.index }
             return lhs.id.uuidString < rhs.id.uuidString
@@ -118,7 +127,7 @@ extension TabManager {
     }
 
     func shortcutLiveTab(for pinId: UUID, in windowId: UUID) -> Tab? {
-        transientShortcutTabsByWindow[windowId]?[pinId]
+        dependencies.transientShortcutTabsByWindow()[windowId]?[pinId]
     }
 
     func shortcutPresentationState(
@@ -137,8 +146,16 @@ extension TabManager {
     }
 
     func activeShortcutTabs(role: ShortcutPinRole? = nil) -> [Tab] {
-        transientShortcutTabsByWindow.values
+        dependencies.transientShortcutTabsByWindow().values
             .flatMap(\.values)
             .filter { role == nil || $0.shortcutPinRole == role }
+    }
+
+    private func normalizedShortcutComparisonURL(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
+            return url.absoluteString
+        }
+        components.fragment = nil
+        return components.string?.lowercased() ?? url.absoluteString.lowercased()
     }
 }

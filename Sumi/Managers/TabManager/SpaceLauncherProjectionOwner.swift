@@ -1,43 +1,58 @@
 import Foundation
 
-@MainActor
-extension TabManager {
-    struct SpaceLauncherProjection {
-        let regularTabs: [Tab]
-        let topLevelFolders: [TabFolder]
-        let topLevelPins: [ShortcutPin]
-        let childFolders: [UUID: [TabFolder]]
-        let folderPins: [UUID: [ShortcutPin]]
-        let liveTabsByPinId: [UUID: Tab]
+struct SpaceLauncherProjectionSnapshot {
+    let regularTabs: [Tab]
+    let topLevelFolders: [TabFolder]
+    let topLevelPins: [ShortcutPin]
+    let childFolders: [UUID: [TabFolder]]
+    let folderPins: [UUID: [ShortcutPin]]
+    let liveTabsByPinId: [UUID: Tab]
 
-        var launcherCount: Int {
-            topLevelPins.count + folderPins.values.reduce(0) { $0 + $1.count }
-        }
-
-        var userVisibleTabCount: Int {
-            regularTabs.count + launcherCount
-        }
+    var launcherCount: Int {
+        topLevelPins.count + folderPins.values.reduce(0) { $0 + $1.count }
     }
 
-    func launcherProjection(
+    var userVisibleTabCount: Int {
+        regularTabs.count + launcherCount
+    }
+}
+
+@MainActor
+final class SpaceLauncherProjectionOwner {
+    struct Dependencies {
+        let regularTabs: @MainActor (UUID) -> [Tab]
+        let spacePinnedPins: @MainActor (UUID) -> [ShortcutPin]
+        let folders: @MainActor (UUID) -> [TabFolder]
+        let shortcutHostedSplitGroups: @MainActor (UUID) -> [SplitGroup]
+        let liveShortcutTabs: @MainActor (UUID) -> [Tab]
+        let transientShortcutTabsByWindow: @MainActor () -> [UUID: [UUID: Tab]]
+    }
+
+    private let dependencies: Dependencies
+
+    init(dependencies: Dependencies) {
+        self.dependencies = dependencies
+    }
+
+    func projection(
         for spaceId: UUID,
         in windowId: UUID? = nil
-    ) -> SpaceLauncherProjection {
-        let regularTabs = regularTabCollectionOwner.tabs(in: spaceId)
-        let persistedPins = spacePinnedPins(for: spaceId)
+    ) -> SpaceLauncherProjectionSnapshot {
+        let regularTabs = dependencies.regularTabs(spaceId)
+        let persistedPins = dependencies.spacePinnedPins(spaceId)
         let shortcutHostedHiddenPinIds = Set(
-            shortcutHostedSplitGroups(for: spaceId).flatMap { group in
+            dependencies.shortcutHostedSplitGroups(spaceId).flatMap { group in
                 group.members.compactMap(\.pinId)
             }
         )
         let visiblePersistedPins = persistedPins.filter { !shortcutHostedHiddenPinIds.contains($0.id) }
-        let topLevelFolders = (foldersBySpace[spaceId] ?? []).sorted { lhs, rhs in
+        let topLevelFolders = dependencies.folders(spaceId).sorted { lhs, rhs in
             if lhs.index != rhs.index { return lhs.index < rhs.index }
             return lhs.id.uuidString < rhs.id.uuidString
         }
         .filter { $0.parentFolderId == nil }
         let childFolders = Dictionary(
-            grouping: (foldersBySpace[spaceId] ?? []).filter { $0.parentFolderId != nil },
+            grouping: dependencies.folders(spaceId).filter { $0.parentFolderId != nil },
             by: { $0.parentFolderId! }
         ).mapValues { folders in
             folders.sorted { lhs, rhs in
@@ -63,9 +78,9 @@ extension TabManager {
 
         let candidateLiveTabs: [Tab]
         if let windowId {
-            candidateLiveTabs = liveShortcutTabs(in: windowId)
+            candidateLiveTabs = dependencies.liveShortcutTabs(windowId)
         } else {
-            candidateLiveTabs = transientShortcutTabsByWindow.values
+            candidateLiveTabs = dependencies.transientShortcutTabsByWindow().values
                 .flatMap(\.values)
         }
 
@@ -77,7 +92,7 @@ extension TabManager {
             result[pinId] = tab
         }
 
-        return SpaceLauncherProjection(
+        return SpaceLauncherProjectionSnapshot(
             regularTabs: regularTabs,
             topLevelFolders: topLevelFolders,
             topLevelPins: topLevelPins,
