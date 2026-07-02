@@ -898,7 +898,7 @@ private final class TabsBySpaceRecorder {
 
     @MainActor
     init(tabManager: TabManager, spaceId: UUID) {
-        cancellable = tabManager.$tabsBySpace.sink { [weak self] tabsBySpace in
+        cancellable = tabManager.tabsBySpacePublisher.sink { [weak self] tabsBySpace in
             self?.snapshots.append(tabsBySpace[spaceId]?.map(\.id) ?? [])
         }
     }

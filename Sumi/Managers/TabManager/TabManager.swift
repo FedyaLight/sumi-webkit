@@ -38,7 +38,11 @@ class TabManager: ObservableObject {
 
     lazy var runtimeStore = DefaultTabRuntimeStore(tabManager: self)
     lazy var folderMutationOwner = TabFolderMutationOwner(tabManager: self)
-    lazy var regularTabCollectionOwner = RegularTabCollectionOwner(tabManager: self)
+    let regularTabCollectionStateOwner = RegularTabCollectionStateOwner()
+    lazy var regularTabCollectionOwner = RegularTabCollectionOwner(
+        tabManager: self,
+        stateOwner: regularTabCollectionStateOwner
+    )
     lazy var regularTabLifecycleOwner = TabRegularLifecycleOwner(tabManager: self)
     lazy var tabRemovalOwner = TabRemovalOwner(tabManager: self)
     lazy var activeSelectionOwner = TabActiveSelectionOwner(tabManager: self)
@@ -237,7 +241,7 @@ class TabManager: ObservableObject {
                 self?.currentSpace?.id
             },
             firstRegularTabId: { [weak self] spaceId in
-                self?.tabsBySpace[spaceId]?.first?.id
+                self?.regularTabCollectionOwner.tabs(in: spaceId).first?.id
             },
             tab: { [weak self] tabId in
                 self?.tab(for: tabId)
@@ -321,7 +325,17 @@ class TabManager: ObservableObject {
     @Published var currentSpace: Space?
 
     // Normal tabs per space
-    @Published var tabsBySpace: [UUID: [Tab]] = [:]
+    var tabsBySpace: [UUID: [Tab]] {
+        get { regularTabCollectionStateOwner.tabsBySpace }
+        set {
+            objectWillChange.send()
+            regularTabCollectionStateOwner.replaceTabsBySpace(newValue)
+        }
+    }
+
+    var tabsBySpacePublisher: AnyPublisher<[UUID: [Tab]], Never> {
+        regularTabCollectionStateOwner.tabsBySpacePublisher
+    }
 
     // Structural split groups, restored and persisted with the tab model.
     @Published var splitGroups: [SplitGroup] = [] {
@@ -457,7 +471,7 @@ class TabManager: ObservableObject {
             debounceNanoseconds: Self.faviconPresentationRefreshDebounceNanoseconds,
             tabsNeedingRefresh: { [weak self] in
                 guard let self else { return [] }
-                return Array(tabsBySpace.values.joined())
+                return regularTabCollectionStateOwner.allTabs()
                     + transientTabRegistryOwner.transientShortcutTabs
             },
             requestStructuralPublish: { [weak self] in
@@ -796,7 +810,7 @@ class TabManager: ObservableObject {
         // owning TabStructuralPersistenceOwner/TabStoreRestoreOwner deinits.
         MainActor.assumeIsolated {
             faviconPresentationRefreshOwner.stop()
-            tabsBySpace.removeAll()
+            regularTabCollectionStateOwner.removeAll()
             splitGroups.removeAll()
             folderCollectionStateOwner.removeAll()
             shortcutPinCollectionStateOwner.removeAll()
@@ -1602,7 +1616,7 @@ class TabManager: ObservableObject {
     func hasLiveRuntimeContent(in space: Space) -> Bool {
         let spaceId = space.id
 
-        if !(tabsBySpace[spaceId] ?? []).isEmpty { return true }
+        if regularTabCollectionStateOwner.hasTabs(in: spaceId) { return true }
         if shortcutPinCollectionStateOwner.hasSpacePinnedShortcuts(in: spaceId) { return true }
         if folderCollectionStateOwner.hasFolders(in: spaceId) { return true }
 

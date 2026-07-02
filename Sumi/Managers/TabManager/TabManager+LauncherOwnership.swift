@@ -215,7 +215,7 @@ extension TabManager {
                 duplicateTab.faviconIsTemplateGlobePlaceholder = liveTab.faviconIsTemplateGlobePlaceholder
                 duplicateTab.profileId = liveTab.profileId
                 attach(duplicateTab)
-                var spaceTabs = tabsBySpace[targetSpaceId] ?? []
+                var spaceTabs = regularTabCollectionOwner.tabs(in: targetSpaceId)
                 spaceTabs.append(duplicateTab)
                 setTabs(spaceTabs, for: targetSpaceId)
             }

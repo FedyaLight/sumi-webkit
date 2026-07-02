@@ -9,39 +9,39 @@ final class RegularTabCollectionOwner {
     }
 
     private unowned let tabManager: TabManager
+    private let stateOwner: RegularTabCollectionStateOwner
 
-    init(tabManager: TabManager) {
+    init(tabManager: TabManager, stateOwner: RegularTabCollectionStateOwner) {
         self.tabManager = tabManager
+        self.stateOwner = stateOwner
     }
 
     func tabs(in space: Space) -> [Tab] {
-        tabs(in: space.id)
+        stateOwner.tabs(in: space)
     }
 
     func tabs(in spaceId: UUID) -> [Tab] {
-        Array(tabManager.tabsBySpace[spaceId] ?? [])
+        stateOwner.tabs(in: spaceId)
     }
 
     func allTabs(in spaces: [Space]) -> [Tab] {
-        spaces.flatMap { tabManager.tabsBySpace[$0.id] ?? [] }
+        stateOwner.allTabs(in: spaces)
     }
 
     func contains(_ tab: Tab) -> Bool {
-        guard let spaceId = tab.spaceId else { return false }
-        return (tabManager.tabsBySpace[spaceId] ?? []).contains { $0.id == tab.id }
+        stateOwner.contains(tab)
     }
 
     func firstIndex(of tab: Tab, in spaceId: UUID) -> Int? {
-        tabManager.tabsBySpace[spaceId]?.firstIndex { $0.id == tab.id }
+        stateOwner.firstIndex(of: tab, in: spaceId)
     }
 
     func appendIndex(in spaceId: UUID) -> Int {
-        (tabManager.tabsBySpace[spaceId]?.map(\.index).max() ?? -1) + 1
+        stateOwner.appendIndex(in: spaceId)
     }
 
     func clampedInsertionIndex(_ index: Int, in spaceId: UUID) -> Int {
-        let count = tabManager.tabsBySpace[spaceId]?.count ?? 0
-        return max(0, min(index, count))
+        stateOwner.clampedInsertionIndex(index, in: spaceId)
     }
 
     func childInsertionIndex(openedFrom sourceTab: Tab?, in targetSpace: Space?) -> Int? {
@@ -65,7 +65,7 @@ final class RegularTabCollectionOwner {
     }
 
     func insert(_ tab: Tab, in spaceId: UUID, at insertionIndex: Int?) {
-        var regularTabs = tabManager.tabsBySpace[spaceId] ?? []
+        var regularTabs = stateOwner.tabs(in: spaceId)
         let safeIndex = max(0, min(insertionIndex ?? regularTabs.count, regularTabs.count))
         tab.spaceId = spaceId
         tab.isPinned = false
@@ -86,7 +86,8 @@ final class RegularTabCollectionOwner {
     }
 
     func remove(_ tabId: UUID, from spaceId: UUID, currentSpaceId: UUID?) -> Removal? {
-        guard var regularTabs = tabManager.tabsBySpace[spaceId],
+        var regularTabs = stateOwner.tabs(in: spaceId)
+        guard regularTabs.isEmpty == false,
               let index = regularTabs.firstIndex(where: { $0.id == tabId })
         else {
             return nil
@@ -102,7 +103,8 @@ final class RegularTabCollectionOwner {
     }
 
     func reorder(_ tab: Tab, in spaceId: UUID, to proposedIndex: Int) -> Bool {
-        guard var regularTabs = tabManager.tabsBySpace[spaceId],
+        var regularTabs = stateOwner.tabs(in: spaceId)
+        guard regularTabs.isEmpty == false,
               let currentIndex = regularTabs.firstIndex(where: { $0.id == tab.id }) else {
             return false
         }
@@ -147,19 +149,11 @@ final class RegularTabCollectionOwner {
     }
 
     func findSpace(for tabId: UUID) -> UUID? {
-        for (spaceId, tabs) in tabManager.tabsBySpace where tabs.contains(where: { $0.id == tabId }) {
-            return spaceId
-        }
-        return nil
+        stateOwner.findSpace(for: tabId)
     }
 
     func tabsBelow(_ tab: Tab) -> [Tab]? {
-        guard let spaceId = tab.spaceId,
-              let tabs = tabManager.tabsBySpace[spaceId],
-              tabs.contains(where: { $0.id == tab.id }) else {
-            return nil
-        }
-        return tabs.filter { $0.index > tab.index }
+        stateOwner.tabsBelow(tab)
     }
 
     private func reindex(_ regularTabs: [Tab]) {

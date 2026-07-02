@@ -115,7 +115,7 @@ extension TabManager {
         }
 
         if didAddSpace {
-            for space in spaces where tabsBySpace[space.id] == nil {
+            for space in spaces where regularTabCollectionStateOwner.tabsBySpace[space.id] == nil {
                 setTabs([], for: space.id)
             }
         }
@@ -223,7 +223,7 @@ extension TabManager {
 
         for (spaceId, entries) in tabsBySnapshotSpace {
             guard spaces.contains(where: { $0.id == spaceId }) else { continue }
-            var tabs = tabsBySpace[spaceId] ?? []
+            var tabs = regularTabCollectionOwner.tabs(in: spaceId)
             for snapshotTab in entries.map(\.1).sorted(by: sortSnapshotTabs) {
                 guard tabs.contains(where: { $0.id == snapshotTab.id }) == false,
                       let url = URL(string: snapshotTab.currentURLString ?? snapshotTab.urlString)

@@ -47,7 +47,7 @@ final class BrowserNativeSurfaceRoutingOwner {
         )
 
         if let sid = targetSpace?.id,
-           let existing = (tabManager.tabsBySpace[sid] ?? []).first(where: { kind.matches($0) }) {
+           let existing = tabManager.regularTabCollectionOwner.tabs(in: sid).first(where: { kind.matches($0) }) {
             configureAndSelect(existing, kind: kind, url: url, in: windowState)
             tabManager.scheduleRuntimeStatePersistence(for: existing)
             dependencies.focusWindow(windowState)

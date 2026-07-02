@@ -7,8 +7,7 @@ extension TabManager {
         var dirtySpaceIds = Set<UUID>()
         let spacesById = Dictionary(uniqueKeysWithValues: spaces.map { ($0.id, $0) })
 
-        let tabsToUnload = tabsBySpace.values
-            .flatMap(\.self)
+        let tabsToUnload = regularTabCollectionStateOwner.allTabs()
             .filter { tab in
                 if tab.profileId == deletedProfileId { return true }
                 guard let spaceId = tab.spaceId else { return false }
@@ -26,7 +25,7 @@ extension TabManager {
             didChange = true
         }
 
-        for (spaceId, tabs) in tabsBySpace {
+        for (spaceId, tabs) in regularTabCollectionStateOwner.tabsBySpace {
             let resolvedProfileId = spaces.first(where: { $0.id == spaceId })?.profileId ?? fallbackProfileId
             for tab in tabs where tab.profileId == deletedProfileId {
                 tab.profileId = resolvedProfileId

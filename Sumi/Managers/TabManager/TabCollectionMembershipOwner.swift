@@ -28,7 +28,7 @@ final class TabCollectionMembershipOwner {
     func allTabs() -> [Tab] {
         structuralLookupOwner.rebuildIfEmpty(with: structuralLookupSnapshot)
 
-        let normals = tabManager.tabsBySpace.values.flatMap(\.self)
+        let normals = tabManager.regularTabCollectionStateOwner.allTabs()
         return transientTabRegistryOwner.allTransientTabs
             + normals
     }
@@ -109,7 +109,7 @@ final class TabCollectionMembershipOwner {
 
     private var structuralLookupSnapshot: TabStructuralLookupSnapshot {
         TabStructuralLookupSnapshot(
-            tabsBySpace: tabManager.tabsBySpace,
+            tabsBySpace: tabManager.regularTabCollectionStateOwner.tabsBySpace,
             transientShortcutTabsByWindow: transientTabRegistryOwner.transientShortcutTabsByWindow,
             transientExtensionTabsByID: transientTabRegistryOwner.transientExtensionTabsByID,
             auxiliaryMiniWindowTabsByID: transientTabRegistryOwner.auxiliaryMiniWindowTabsByID

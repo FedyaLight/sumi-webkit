@@ -168,7 +168,7 @@ enum SidebarDropCoordinator {
             return tabManager.topLevelSpacePinnedVisualItems(for: spaceId).count
 
         case .spaceRegular(let spaceId):
-            return tabManager.tabsBySpace[spaceId]?.count
+            return tabManager.regularTabCollectionOwner.tabs(in: spaceId).count
 
         case .folder(let folderId):
             guard let spaceId = tabManager.folderSpaceId(for: folderId) else {
@@ -209,7 +209,7 @@ enum SidebarDropCoordinator {
                 }
 
         case .spaceRegular(let spaceId):
-            return tabManager.tabsBySpace[spaceId]?.firstIndex { $0.id == sourceItemId }
+            return tabManager.regularTabCollectionOwner.tabs(in: spaceId).firstIndex { $0.id == sourceItemId }
 
         case .folder(let folderId):
             guard let spaceId = tabManager.folderSpaceId(for: folderId) else {
