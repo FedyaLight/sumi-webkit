@@ -5,24 +5,24 @@ import WebKit
 @MainActor
 final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDelegate {
     private let extensionId: String
-    private weak var manager: ExtensionManager?
+    private weak var owner: ExtensionOptionsWindowOwner?
     private weak var webView: WKWebView?
     var isCleaningUp = false
 
     init(
         extensionId: String,
-        manager: ExtensionManager,
+        owner: ExtensionOptionsWindowOwner,
         webView: WKWebView
     ) {
         self.extensionId = extensionId
-        self.manager = manager
+        self.owner = owner
         self.webView = webView
         super.init()
     }
 
     func windowWillClose(_ notification: Notification) {
         guard isCleaningUp == false else { return }
-        manager?.cleanupOptionsWindow(
+        owner?.cleanupWindow(
             for: extensionId,
             window: notification.object as? NSWindow,
             webView: webView,
@@ -32,7 +32,7 @@ final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDele
 
     func webViewDidClose(_ webView: WKWebView) {
         guard isCleaningUp == false else { return }
-        manager?.cleanupOptionsWindow(
+        owner?.cleanupWindow(
             for: extensionId,
             window: webView.window,
             webView: webView,
@@ -43,41 +43,42 @@ final class ExtensionOptionsWindowDelegate: NSObject, NSWindowDelegate, WKUIDele
 
 @available(macOS 15.5, *)
 @MainActor
-enum ExtensionOptionsWindowPresenter {
-    static func closeWindow(
-        for extensionId: String,
-        manager: ExtensionManager
-    ) {
+final class ExtensionOptionsWindowOwner {
+    private(set) var windows: [String: NSWindow] = [:]
+    private var delegates: [String: ExtensionOptionsWindowDelegate] = [:]
+
+    var extensionIDs: Set<String> {
+        Set(windows.keys)
+    }
+
+    func closeWindow(for extensionId: String) {
         cleanupWindow(
             for: extensionId,
-            manager: manager,
             shouldOrderOut: true
         )
     }
 
-    static func closeAllWindows(manager: ExtensionManager) {
-        Array(manager.optionsWindows.keys).forEach {
+    func closeAllWindows() {
+        Array(windows.keys).forEach {
             cleanupWindow(
                 for: $0,
-                manager: manager,
                 shouldOrderOut: true
             )
         }
     }
 
-    static func cleanupWindow(
+    func cleanupWindow(
         for extensionId: String,
-        manager: ExtensionManager,
         window: NSWindow? = nil,
         webView: WKWebView? = nil,
         shouldOrderOut: Bool
     ) {
-        guard let resolvedWindow = window ?? manager.optionsWindows[extensionId] else {
-            manager.optionsWindowDelegates.removeValue(forKey: extensionId)
+        guard let resolvedWindow = window ?? windows[extensionId] else {
+            delegates.removeValue(forKey: extensionId)
             return
         }
 
-        let delegate = manager.optionsWindowDelegates[extensionId]
+        let delegate = delegates[extensionId]
         delegate?.isCleaningUp = true
 
         let resolvedWebView = webView ?? resolvedWindow.contentView.flatMap {
@@ -93,11 +94,11 @@ enum ExtensionOptionsWindowPresenter {
         resolvedWindow.contentViewController = nil
         resolvedWindow.contentView = nil
         resolvedWindow.delegate = nil
-        manager.optionsWindows.removeValue(forKey: extensionId)
-        manager.optionsWindowDelegates.removeValue(forKey: extensionId)
+        windows.removeValue(forKey: extensionId)
+        delegates.removeValue(forKey: extensionId)
     }
 
-    static func presentOptionsPageWindow(
+    func presentOptionsPageWindow(
         for extensionContext: WKWebExtensionContext,
         manager: ExtensionManager,
         completionHandler: @escaping (Error?) -> Void
@@ -219,22 +220,30 @@ enum ExtensionOptionsWindowPresenter {
         window.contentView = container
         window.center()
 
-        closeWindow(for: extensionId, manager: manager)
+        closeWindow(for: extensionId)
         let delegate = ExtensionOptionsWindowDelegate(
             extensionId: extensionId,
-            manager: manager,
+            owner: self,
             webView: webView
         )
         webView.uiDelegate = delegate
         window.delegate = delegate
-        manager.optionsWindows[extensionId] = window
-        manager.optionsWindowDelegates[extensionId] = delegate
+        trackPresentedWindow(window, delegate: delegate, for: extensionId)
         window.orderFront(nil)
 
         completionHandler(nil)
     }
 
-    private static func firstWebView(in root: NSView) -> WKWebView? {
+    func trackPresentedWindow(
+        _ window: NSWindow,
+        delegate: ExtensionOptionsWindowDelegate?,
+        for extensionId: String
+    ) {
+        windows[extensionId] = window
+        delegates[extensionId] = delegate
+    }
+
+    private func firstWebView(in root: NSView) -> WKWebView? {
         if let webView = root as? WKWebView {
             return webView
         }

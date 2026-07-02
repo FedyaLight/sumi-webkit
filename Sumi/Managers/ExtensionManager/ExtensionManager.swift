@@ -250,8 +250,13 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
     let actionAnchorStore = ExtensionActionAnchorStore()
     let actionPopupAnchorStore = ExtensionActionPopupAnchorStore()
-    var optionsWindows: [String: NSWindow] = [:]
-    var optionsWindowDelegates: [String: ExtensionOptionsWindowDelegate] = [:]
+    let optionsWindowOwner = ExtensionOptionsWindowOwner()
+    var optionsWindows: [String: NSWindow] {
+        optionsWindowOwner.windows
+    }
+    var optionsWindowExtensionIDs: Set<String> {
+        optionsWindowOwner.extensionIDs
+    }
     let adapterStore = ExtensionBrowserAdapterStore()
     let nativeMessagingPortRegistry = ExtensionNativeMessagingPortRegistry()
     var extensionsModuleEnabledForCallbacks: Bool {
@@ -647,11 +652,11 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     func closeOptionsWindow(for extensionId: String) {
-        ExtensionOptionsWindowPresenter.closeWindow(for: extensionId, manager: self)
+        optionsWindowOwner.closeWindow(for: extensionId)
     }
 
     func closeAllOptionsWindows() {
-        ExtensionOptionsWindowPresenter.closeAllWindows(manager: self)
+        optionsWindowOwner.closeAllWindows()
     }
 
     func cleanupOptionsWindow(
@@ -660,9 +665,8 @@ final class ExtensionManager: NSObject, ObservableObject {
         webView: WKWebView? = nil,
         shouldOrderOut: Bool
     ) {
-        ExtensionOptionsWindowPresenter.cleanupWindow(
+        optionsWindowOwner.cleanupWindow(
             for: extensionId,
-            manager: self,
             window: window,
             webView: webView,
             shouldOrderOut: shouldOrderOut
@@ -673,7 +677,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         for extensionContext: WKWebExtensionContext,
         completionHandler: @escaping (Error?) -> Void
     ) {
-        ExtensionOptionsWindowPresenter.presentOptionsPageWindow(
+        optionsWindowOwner.presentOptionsPageWindow(
             for: extensionContext,
             manager: self,
             completionHandler: completionHandler

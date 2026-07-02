@@ -303,7 +303,7 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                 manager?.closeOptionsWindow(for: extensionId)
             },
             optionsWindowExtensionIDs: { [weak manager] in
-                manager.map { Set($0.optionsWindows.keys) } ?? []
+                manager?.optionsWindowExtensionIDs ?? []
             },
             clearActionAnchors: { [weak manager] extensionId in
                 manager?.clearActionAnchors(for: extensionId)

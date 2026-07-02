@@ -41,7 +41,7 @@ final class ExtensionRuntimeTeardownOwner {
         let uiStateIDs = removeUIState ? manager.actionAnchorStore.extensionIDs : []
         let loadedIDs = manager.allLoadedExtensionIDs()
             .union(manager.loadedExtensionManifests.keys)
-            .union(manager.optionsWindows.keys)
+            .union(manager.optionsWindowExtensionIDs)
             .union(manager.nativeMessagingPortRegistry.extensionIDs)
             .union(manager.errorObservationOwner.observedExtensionIDs)
             .union(uiStateIDs)
@@ -61,7 +61,7 @@ final class ExtensionRuntimeTeardownOwner {
             }
         }
 
-        Array(manager.optionsWindows.keys).forEach {
+        manager.optionsWindowExtensionIDs.forEach {
             manager.closeOptionsWindow(for: $0)
         }
         manager.cancelNativeMessagingSessions(reason: reason)
