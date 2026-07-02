@@ -2,11 +2,12 @@ import Combine
 import Foundation
 import OSLog
 
-enum SumiBoostStoreError: LocalizedError {
+enum SumiBoostStoreError: LocalizedError, Equatable {
     case unboostableURL
     case missingProfile
     case missingBoost
     case invalidImport
+    case moduleDisabled
 
     var errorDescription: String? {
         switch self {
@@ -18,6 +19,8 @@ enum SumiBoostStoreError: LocalizedError {
             return "The selected Boost no longer exists."
         case .invalidImport:
             return "The selected file is not a valid Sumi Boost."
+        case .moduleDisabled:
+            return "Boosts are disabled."
         }
     }
 }
@@ -79,10 +82,6 @@ final class SumiBoostStore: ObservableObject {
         self.jsonEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         self.jsonEncoder.dateEncodingStrategy = .iso8601
         self.jsonDecoder.dateDecodingStrategy = .iso8601
-    }
-
-    func canBoost(url: URL?) -> Bool {
-        SumiBoostURLPolicy.normalizedBoostableHost(for: url) != nil
     }
 
     func boosts(for url: URL?, profileId: UUID?) -> [SumiBoost] {

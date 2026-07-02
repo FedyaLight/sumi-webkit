@@ -99,6 +99,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         XCTAssertEqual(extensionsProbe.managerCount, 0)
         XCTAssertFalse(userscriptsModule.hasLoadedRuntime)
         XCTAssertFalse(extensionsModule.hasLoadedRuntime)
+        XCTAssertFalse(browserManager.boostsModule.hasLoadedRuntime)
     }
 
     func testYouTubeFaviconSelectionPrefersSharpDocumentCandidateOverTinyShortcutIcon() throws {
@@ -177,6 +178,7 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         assertNoOptionalModuleScriptsOrHandlers(in: webView.configuration.userContentController)
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertFalse(browserManager.adBlockingModule.hasLoadedRuntime)
+        XCTAssertFalse(browserManager.boostsModule.hasLoadedRuntime)
         XCTAssertFalse(browserManager.adBlockingModule.isEnabled)
         XCTAssertFalse(browserManager.adBlockingModule.isPreparedBundleRuntimeEnabled)
 
@@ -200,10 +202,18 @@ final class SumiPerformanceModularRegressionTests: XCTestCase {
         registry.enable(.userScripts)
         XCTAssertTrue(registry.isEnabled(.userScripts))
         XCTAssertFalse(registry.isEnabled(.extensions))
+        XCTAssertFalse(registry.isEnabled(.boosts))
 
         registry.disable(.userScripts)
         registry.enable(.extensions)
         XCTAssertTrue(registry.isEnabled(.extensions))
+        XCTAssertFalse(registry.isEnabled(.userScripts))
+        XCTAssertFalse(registry.isEnabled(.boosts))
+
+        registry.disable(.extensions)
+        registry.enable(.boosts)
+        XCTAssertTrue(registry.isEnabled(.boosts))
+        XCTAssertFalse(registry.isEnabled(.extensions))
         XCTAssertFalse(registry.isEnabled(.userScripts))
     }
 

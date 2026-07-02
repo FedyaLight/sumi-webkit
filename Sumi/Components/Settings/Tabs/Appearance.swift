@@ -7,15 +7,28 @@ import SwiftUI
 
 struct SettingsAppearanceTab: View {
     @Environment(\.sumiSettings) var sumiSettings
+    @Environment(\.sumiBoostsModule) private var boostsModule
+    @State private var cachedBoostsModuleEnabled: Bool?
 
     var body: some View {
         @Bindable var settings = sumiSettings
 
         VStack(alignment: .leading, spacing: 16) {
             SettingsSection(
-                title: "Sidebar",
-                subtitle: "Controls that affect browser chrome and sidebar layout."
+                title: "Browser",
+                subtitle: "Controls that affect browser chrome, Boosts, and sidebar layout."
             ) {
+                SettingsRow(
+                    title: "Boosts",
+                    subtitle: "Show Boost controls and apply active Boost styles to web pages."
+                ) {
+                    Toggle("", isOn: boostsModuleEnabledBinding)
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                }
+
+                SettingsDivider()
+
                 SettingsRow(
                     title: "Sidebar toggle button",
                     subtitle: "Expose the sidebar visibility control in browser chrome."
@@ -113,5 +126,20 @@ struct SettingsAppearanceTab: View {
                 }
             }
         }
+        .onAppear {
+            cachedBoostsModuleEnabled = boostsModule.isEnabled
+        }
+    }
+
+    private var boostsModuleEnabledBinding: Binding<Bool> {
+        Binding(
+            get: {
+                cachedBoostsModuleEnabled ?? boostsModule.isEnabled
+            },
+            set: { isEnabled in
+                boostsModule.setEnabled(isEnabled)
+                cachedBoostsModuleEnabled = isEnabled
+            }
+        )
     }
 }

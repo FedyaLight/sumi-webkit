@@ -51,6 +51,21 @@ final class SumiModuleRegistryTests: XCTestCase {
     }
 
     @MainActor
+    func testCleanInstallDefaultsBoostsDisabled() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
+        let registry = SumiModuleRegistry(settingsStore: store)
+
+        let isEnabled = registry.isEnabled(.boosts)
+        let storedValue = harness.defaults.object(forKey: store.key(for: .boosts))
+
+        XCTAssertFalse(isEnabled)
+        XCTAssertNil(storedValue)
+    }
+
+    @MainActor
     func testEnablingModulesPersistsAcrossRegistryRecreation() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -147,6 +162,23 @@ final class SumiModuleRegistryTests: XCTestCase {
     }
 
     @MainActor
+    func testBoostsEnableDisablePersists() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+
+        let store = SumiModuleSettingsStore(userDefaults: harness.defaults)
+        let registry = SumiModuleRegistry(settingsStore: store)
+
+        registry.enable(.boosts)
+        let enabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.boosts)
+        XCTAssertTrue(enabledValue)
+
+        registry.disable(.boosts)
+        let disabledValue = SumiModuleRegistry(settingsStore: store).isEnabled(.boosts)
+        XCTAssertFalse(disabledValue)
+    }
+
+    @MainActor
     func testSettingsKeysUseExpectedModuleIdentifiers() {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -154,8 +186,10 @@ final class SumiModuleRegistryTests: XCTestCase {
 
         let extensionsKey = store.key(for: .extensions)
         let userScriptsKey = store.key(for: .userScripts)
+        let boostsKey = store.key(for: .boosts)
 
         XCTAssertEqual(extensionsKey, "settings.modules.extensions.enabled")
         XCTAssertEqual(userScriptsKey, "settings.modules.userScripts.enabled")
+        XCTAssertEqual(boostsKey, "settings.modules.boosts.enabled")
     }
 }

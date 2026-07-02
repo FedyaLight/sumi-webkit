@@ -15,6 +15,24 @@ final class SumiBoostEditorSession: ObservableObject {
     var onCodeModeChange: ((Bool) -> Void)?
 
     private let actions: SumiBoostEditorSessionActions
+    private var zapStartGeneration = 0
+    private static let commonFontFamilyNames = [
+        "Arial",
+        "Times New Roman",
+        "Courier New",
+        "Georgia",
+        "Comic Sans MS",
+        "Verdana",
+        "Trebuchet MS",
+        "Impact",
+        "Palatino",
+        "Tahoma",
+        "Helvetica",
+        "Garamond",
+        "Century Gothic",
+        "Arial Black",
+        "Papyrus",
+    ]
 
     /// Full list of available font families, captured once at session build.
     /// This is a (relatively) expensive system call + sort; caching it avoids
@@ -65,24 +83,7 @@ final class SumiBoostEditorSession: ObservableObject {
     }
 
     var commonFontFamilies: [String] {
-        let preferred = [
-            "Arial",
-            "Times New Roman",
-            "Courier New",
-            "Georgia",
-            "Comic Sans MS",
-            "Verdana",
-            "Trebuchet MS",
-            "Impact",
-            "Palatino",
-            "Tahoma",
-            "Helvetica",
-            "Garamond",
-            "Century Gothic",
-            "Arial Black",
-            "Papyrus",
-        ]
-        return preferred
+        Self.commonFontFamilyNames
     }
 
     var isMonochromeMode: Bool {
@@ -104,6 +105,7 @@ final class SumiBoostEditorSession: ObservableObject {
     }
 
     func close() {
+        zapStartGeneration += 1
         actions.close(boost: boost)
         isZapActive = false
     }
@@ -236,7 +238,7 @@ final class SumiBoostEditorSession: ObservableObject {
             for: primary,
             secondaryDelta: delta
         )
-        let available = Set(NSFontManager.shared.availableFontFamilies)
+        let available = Set(fontFamilies)
         let fontCandidates = commonFontFamilies.filter { available.contains($0) }
         let randomFont = fontCandidates.randomElement() ?? ""
         update { data in
@@ -279,23 +281,36 @@ final class SumiBoostEditorSession: ObservableObject {
     }
 
     func startZap() {
-        let didStart = actions.startZap(
-            boost: boost,
-            onSelector: { [weak self] updated in
-                self?.boost = updated
-                self?.isZapActive = false
-                self?.statusMessage = nil
-            },
-            onFinish: { [weak self] in
-                self?.isZapActive = false
-                self?.statusMessage = nil
-            }
-        )
-        isZapActive = didStart
-        statusMessage = didStart ? "Select an element" : nil
+        zapStartGeneration += 1
+        let generation = zapStartGeneration
+        isZapActive = true
+        statusMessage = "Starting element picker..."
+        Task { [weak self] in
+            guard let self else { return }
+            let didStart = await actions.startZap(
+                boost: boost,
+                onSelector: { [weak self] updated in
+                    guard let self, self.zapStartGeneration == generation else { return }
+                    self.boost = updated
+                    self.isZapActive = false
+                    self.statusMessage = nil
+                },
+                onFinish: { [weak self] in
+                    guard let self, self.zapStartGeneration == generation else { return }
+                    self.isZapActive = false
+                    self.statusMessage = nil
+                }
+            )
+            guard self.zapStartGeneration == generation else { return }
+            self.isZapActive = didStart
+            self.statusMessage = didStart
+                ? "Use the page picker to preview and zap an element."
+                : "Unable to start the element picker."
+        }
     }
 
     func stopZap() {
+        zapStartGeneration += 1
         actions.stopZap()
         isZapActive = false
         statusMessage = nil

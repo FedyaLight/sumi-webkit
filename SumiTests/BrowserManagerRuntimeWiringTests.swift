@@ -8,20 +8,29 @@ import XCTest
 
 @MainActor
 final class BrowserManagerRuntimeWiringTests: XCTestCase {
-    func testBrowserManagerInitializationAttachesCoreRuntimeManagers() throws {
+    func testBrowserManagerInitializationAttachesCoreRuntimeManagers() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.boosts)
         let browserManager = BrowserManager(
+            moduleRegistry: registry,
             startupPersistence: BrowserManagerStartupPersistence(
                 container: try makeInMemoryStartupContainer()
             )
         )
         browserManager.webViewCoordinator = WebViewCoordinator()
 
+        XCTAssertTrue(browserManager.boostsModule.isEnabled)
         XCTAssertTrue(compositorManagerCanUseAttachedRuntime(browserManager))
         XCTAssertNotNil(browserManager.tabManager.runtimeContext)
         XCTAssertTrue(tabManagerRuntimeCanPrepareCreatedTabs(browserManager))
         XCTAssertTrue(splitManagerCanUseAttachedRuntime(browserManager))
         XCTAssertTrue(downloadRetryRuntimeCanResolveWindowOwnedWebView(browserManager))
-        XCTAssertTrue(boostsModuleCanUseAttachedRuntime(browserManager))
+        let boostsRuntimeAttached = await boostsModuleCanUseAttachedRuntime(browserManager)
+        XCTAssertTrue(boostsRuntimeAttached)
         XCTAssertTrue(auxiliaryWindowManagerCanUseAttachedRuntime(browserManager))
         XCTAssertTrue(glanceRuntimeCanPreparePreviewTabs(browserManager))
         XCTAssertFalse(browserManager.extensionsModule.hasLoadedRuntime)
@@ -339,7 +348,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
             && resolvedWebView === webView
     }
 
-    private func boostsModuleCanUseAttachedRuntime(_ browserManager: BrowserManager) -> Bool {
+    private func boostsModuleCanUseAttachedRuntime(_ browserManager: BrowserManager) async -> Bool {
         let windowRegistry = WindowRegistry()
         let coordinator = WebViewCoordinator()
         browserManager.windowRegistry = windowRegistry
@@ -364,7 +373,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         coordinator.setWebView(WKWebView(), for: tab.id, in: windowState.id)
 
-        let started = browserManager.boostsModule.startZapSelection(
+        let started = await browserManager.boostsModule.startZapSelection(
             for: SumiBoost(profileId: profileId, host: "example.com"),
             tab: tab,
             windowState: windowState,

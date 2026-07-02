@@ -142,11 +142,18 @@ enum BrowserManagerRuntimeWiring {
                     host: host
                 )
             },
+            allLivePages: { [weak browserManager] in
+                guard let browserManager else { return [] }
+                return allBoostLivePages(browserManager: browserManager)
+            },
             applyBoostAwareZoom: { [weak browserManager] tab, webView in
                 browserManager?.zoomCommandOwner.applyBoostAwareZoom(for: tab, webView: webView)
             },
             openWebInspector: { [weak browserManager] tab, windowState in
                 browserManager?.activePageRoutingOwner.openWebInspector(for: tab, in: windowState)
+            },
+            sidebarPosition: { [weak browserManager] in
+                browserManager?.sumiSettings?.sidebarPosition ?? .left
             }
         )
     }
@@ -179,6 +186,35 @@ enum BrowserManagerRuntimeWiring {
         }
 
         for tab in browserManager.tabManager.allTabs() where tabMatches(tab) {
+            for webView in browserManager.webViewCoordinator?.getAllWebViews(for: tab.id) ?? [] {
+                visit(tab, webView)
+            }
+        }
+
+        return pages
+    }
+
+    private static func allBoostLivePages(
+        browserManager: BrowserManager
+    ) -> [SumiBoostsModule.LivePage] {
+        var visited = Set<ObjectIdentifier>()
+        var pages: [SumiBoostsModule.LivePage] = []
+
+        func visit(_ tab: Tab, _ webView: WKWebView) {
+            let identifier = ObjectIdentifier(webView)
+            guard visited.insert(identifier).inserted else { return }
+            pages.append(SumiBoostsModule.LivePage(tab: tab, webView: webView))
+        }
+
+        for windowState in browserManager.windowRegistry?.allWindows ?? [] {
+            for tab in browserManager.tabsForDisplay(in: windowState) {
+                if let webView = browserManager.windowOwnedWebView(for: tab, in: windowState.id) {
+                    visit(tab, webView)
+                }
+            }
+        }
+
+        for tab in browserManager.tabManager.allTabs() {
             for webView in browserManager.webViewCoordinator?.getAllWebViews(for: tab.id) ?? [] {
                 visit(tab, webView)
             }

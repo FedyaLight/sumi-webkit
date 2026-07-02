@@ -71,9 +71,9 @@ final class SumiBoostEditorSessionActions {
         boost: SumiBoost,
         onSelector: @escaping @MainActor (SumiBoost) -> Void,
         onFinish: @escaping @MainActor () -> Void
-    ) -> Bool {
+    ) async -> Bool {
         guard let tab, let windowState else { return false }
-        return module?.startZapSelection(
+        return await module?.startZapSelection(
             for: boost,
             tab: tab,
             windowState: windowState,

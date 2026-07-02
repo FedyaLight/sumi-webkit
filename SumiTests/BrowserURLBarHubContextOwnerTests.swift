@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import XCTest
 
@@ -53,4 +54,66 @@ final class BrowserURLBarHubContextOwnerTests: XCTestCase {
 
         XCTAssertEqual(metadataLoadCount, 1)
     }
+
+    func testLiveContextWithBoostsDisabledDoesNotLoadBoostStore() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = URLHubBoostRuntimeProbe()
+        let boostsModule = SumiBoostsModule(
+            moduleRegistry: registry,
+            storeFactory: {
+                probe.storeCount += 1
+                return SumiBoostStore()
+            }
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            boostsModule: boostsModule
+        )
+        let permissionContextOwner = BrowserURLBarPermissionContextOwner(
+            dependencies: .live(browserManager: browserManager)
+        )
+        let extensionActions = URLBarExtensionActionContext(
+            orderedPinnedToolbarSlotCount: { _ in 0 },
+            compactStrip: { _, _ in AnyView(EmptyView()) },
+            hubTiles: { _, _ in AnyView(EmptyView()) },
+            ensureActionMetadataLoadedIfNeeded: {},
+            isPinnedToToolbar: { _ in false },
+            sumiScriptsManagerEnabled: { false }
+        )
+        let owner = BrowserURLBarHubContextOwner(
+            dependencies: .live(
+                browserManager: browserManager,
+                permissionContextOwner: permissionContextOwner,
+                extensionActionContext: { extensionActions },
+                siteControlsSnapshot: { url, profile, _, _ in
+                    SiteControlsSnapshot.resolve(url: url, profile: profile)
+                }
+            )
+        )
+        let context = owner.context
+        let url = try XCTUnwrap(URL(string: "https://example.test/path"))
+        var boostRefreshCount = 0
+        let cancellable = context.boostChanges.sink {
+            boostRefreshCount += 1
+        }
+        defer { cancellable.cancel() }
+
+        XCTAssertFalse(context.canBoost(url))
+        XCTAssertTrue(context.changedBoosts(url, UUID()).isEmpty)
+        XCTAssertNil(context.activeBoostId(url, UUID()))
+        XCTAssertEqual(probe.storeCount, 0)
+
+        boostsModule.setEnabled(true)
+
+        XCTAssertEqual(boostRefreshCount, 1)
+        XCTAssertEqual(probe.storeCount, 0)
+    }
+}
+
+private final class URLHubBoostRuntimeProbe {
+    var storeCount = 0
 }

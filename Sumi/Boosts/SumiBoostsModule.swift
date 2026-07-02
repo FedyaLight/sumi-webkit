@@ -5,6 +5,8 @@ import WebKit
 
 @MainActor
 final class SumiBoostsModule: ObservableObject {
+    static let shared = SumiBoostsModule()
+
     struct LivePage {
         let tab: Tab
         let webView: WKWebView
@@ -13,55 +15,99 @@ final class SumiBoostsModule: ObservableObject {
     struct Runtime {
         let windowOwnedWebView: @MainActor (Tab, UUID) -> WKWebView?
         let matchingLivePages: @MainActor (UUID, String) -> [LivePage]
+        let allLivePages: @MainActor () -> [LivePage]
         let applyBoostAwareZoom: @MainActor (Tab, WKWebView) -> Void
         let openWebInspector: @MainActor (Tab, BrowserWindowState) -> Void
+        let sidebarPosition: @MainActor () -> SidebarPosition
 
         static let empty = Runtime(
             windowOwnedWebView: { _, _ in nil },
             matchingLivePages: { _, _ in [] },
+            allLivePages: { [] },
             applyBoostAwareZoom: { _, _ in /* No-op. */ },
-            openWebInspector: { _, _ in /* No-op. */ }
+            openWebInspector: { _, _ in /* No-op. */ },
+            sidebarPosition: { .left }
         )
     }
-
-    let store: SumiBoostStore
-    private var runtime: Runtime = .empty
-
-    private let editorPresenter = SumiBoostEditorPanelController()
-    private var activeZapSession: SumiBoostZapSession?
 
     /// Selects how aggressively a boost mutation is propagated to live pages.
     enum RefreshPath {
         /// Idempotent `<style>` upsert + zoom reapply via `evaluateJavaScript`.
-        /// Use for any edit that changes the boost's *contents*.
+        /// Use for any edit that changes the boost's contents.
         case liveState
         /// Just reapply the boost-derived page zoom. Use when only `sizeOverride`
-        /// changed, so the CSS payload isn't re-shipped to the page.
+        /// changed, so the CSS payload is not re-shipped to the page.
         case zoomOnly
     }
 
-    init(store: SumiBoostStore = .shared) {
-        self.store = store
+    private let moduleRegistry: SumiModuleRegistry
+    private let storeFactory: @MainActor () -> SumiBoostStore
+    private var runtime: Runtime = .empty
+
+    private var loadedStore: SumiBoostStore?
+    private var storeChangesCancellable: AnyCancellable?
+    private let changesSubject = PassthroughSubject<Void, Never>()
+
+    private var editorPresenter: SumiBoostEditorPanelController?
+    private var activeZapSession: SumiElementZapperSession?
+
+    init(
+        moduleRegistry: SumiModuleRegistry = .shared,
+        storeFactory: @escaping @MainActor () -> SumiBoostStore = { .shared }
+    ) {
+        self.moduleRegistry = moduleRegistry
+        self.storeFactory = storeFactory
+    }
+
+    var isEnabled: Bool {
+        moduleRegistry.isEnabled(.boosts)
+    }
+
+    var hasLoadedRuntime: Bool {
+        loadedStore != nil || editorPresenter != nil || activeZapSession != nil
+    }
+
+    var changesPublisher: AnyPublisher<Void, Never> {
+        changesSubject.eraseToAnyPublisher()
     }
 
     func attach(runtime: Runtime) {
         self.runtime = runtime
     }
 
+    func setEnabled(_ isEnabled: Bool) {
+        let wasEnabled = self.isEnabled
+        guard wasEnabled != isEnabled else { return }
+
+        if isEnabled == false {
+            closeLoadedEditorBeforeDisable()
+        }
+
+        moduleRegistry.setEnabled(isEnabled, for: .boosts)
+
+        if isEnabled == false {
+            removeBoostsFromLivePages()
+            releaseLoadedRuntime()
+        }
+
+        changesSubject.send(())
+    }
+
     func canBoost(url: URL?) -> Bool {
-        store.canBoost(url: url)
+        guard isEnabled else { return false }
+        return SumiBoostURLPolicy.normalizedBoostableHost(for: url) != nil
     }
 
     func changedBoosts(for url: URL?, profileId: UUID?) -> [SumiBoost] {
-        store.changedBoosts(for: url, profileId: profileId)
+        storeIfEnabled()?.changedBoosts(for: url, profileId: profileId) ?? []
     }
 
     func activeBoost(for url: URL?, profileId: UUID?) -> SumiBoost? {
-        store.activeBoost(for: url, profileId: profileId)
+        storeIfEnabled()?.activeBoost(for: url, profileId: profileId)
     }
 
     func activeBoostId(for url: URL?, profileId: UUID?) -> UUID? {
-        store.activeBoostId(for: url, profileId: profileId)
+        storeIfEnabled()?.activeBoostId(for: url, profileId: profileId)
     }
 
     func sizeOverride(for url: URL?, profileId: UUID?) -> Double {
@@ -83,6 +129,10 @@ final class SumiBoostsModule: ObservableObject {
         tab: Tab,
         profile: Profile?
     ) throws -> SumiBoost {
+        guard let store = storeIfEnabled() else {
+            throw SumiBoostStoreError.moduleDisabled
+        }
+
         let profile = profile ?? tab.resolveProfile()
         let boost = try store.createDraft(
             for: tab.url,
@@ -118,11 +168,14 @@ final class SumiBoostsModule: ObservableObject {
         profile: Profile?,
         windowState: BrowserWindowState
     ) {
+        guard let editorPresenter = loadEditorPresenterIfEnabled() else { return }
+
         editorPresenter.present(
             boost: boost,
             tab: tab,
             profile: profile ?? tab.resolveProfile(),
             windowState: windowState,
+            sidebarPosition: runtime.sidebarPosition(),
             module: self
         )
     }
@@ -135,6 +188,8 @@ final class SumiBoostsModule: ObservableObject {
         refreshPath: RefreshPath = .liveState,
         mutate: (inout SumiBoostData) -> Void
     ) -> SumiBoost? {
+        guard let store = storeIfEnabled() else { return nil }
+
         do {
             let updated = try store.updateBoost(
                 id: boost.id,
@@ -145,11 +200,11 @@ final class SumiBoostsModule: ObservableObject {
                 mutate: mutate
             )
             // Content edits only need a live page update: the existing
-            // atDocumentStart WKUserScript does NOT re-run on the current
+            // atDocumentStart WKUserScript does not re-run on the current
             // document, so rebuilding/reinstalling the managed-script set
             // would be wasted work. The evaluateJavaScript upsert below is
             // what actually refreshes the visible page. The WKUserScript is
-            // re-synced lazily when the editor closes (reinstallUserScripts).
+            // re-synced lazily when the editor closes.
             switch refreshPath {
             case .liveState:
                 refreshLiveBoostState(profileId: updated.profileId, host: updated.host)
@@ -170,9 +225,11 @@ final class SumiBoostsModule: ObservableObject {
         _ boost: SumiBoost,
         isEphemeral: Bool
     ) {
+        guard let store = storeIfEnabled() else { return }
+
         store.toggleActiveBoost(boost, isEphemeral: isEphemeral)
-        // The *active* boost set changed, so the WKUserScript that runs on
-        // the next navigation must be reinstalled for every matching tab.
+        // The active boost set changed, so the WKUserScript that runs on the
+        // next navigation must be reinstalled for every matching tab.
         reinstallUserScripts(profileId: boost.profileId, host: boost.host)
     }
 
@@ -180,11 +237,15 @@ final class SumiBoostsModule: ObservableObject {
         _ boost: SumiBoost,
         isEphemeral: Bool
     ) {
+        guard let store = storeIfEnabled() else { return }
+
         store.deleteBoost(boost, isEphemeral: isEphemeral)
         reinstallUserScripts(profileId: boost.profileId, host: boost.host)
     }
 
     func discardUnchangedDraft(_ boost: SumiBoost) {
+        guard let store = storeIfEnabled() else { return }
+
         store.discardUnchangedDraft(boost)
         reinstallUserScripts(profileId: boost.profileId, host: boost.host)
     }
@@ -195,6 +256,10 @@ final class SumiBoostsModule: ObservableObject {
         tab: Tab,
         profile: Profile?
     ) throws -> SumiBoost {
+        guard let store = storeIfEnabled() else {
+            throw SumiBoostStoreError.moduleDisabled
+        }
+
         let resolvedProfile = profile ?? tab.resolveProfile()
         let boost = try store.importBoost(
             from: data,
@@ -202,13 +267,17 @@ final class SumiBoostsModule: ObservableObject {
             profileId: resolvedProfile?.id,
             isEphemeral: resolvedProfile?.isEphemeral == true
         )
-        // Import replaces/activates a boost, changing the active set → reinstall.
+        // Import replaces/activates a boost, changing the active set.
         reinstallUserScripts(profileId: boost.profileId, host: boost.host)
         return boost
     }
 
     func exportData(for boost: SumiBoost) throws -> Data {
-        try store.exportData(for: boost)
+        guard let store = storeIfEnabled() else {
+            throw SumiBoostStoreError.moduleDisabled
+        }
+
+        return try store.exportData(for: boost)
     }
 
     @discardableResult
@@ -219,22 +288,42 @@ final class SumiBoostsModule: ObservableObject {
         isEphemeral: Bool,
         onSelector: @escaping @MainActor (SumiBoost) -> Void,
         onFinish: @escaping @MainActor () -> Void
-    ) -> Bool {
+    ) async -> Bool {
+        guard isEnabled else { return false }
         guard let webView = runtime.windowOwnedWebView(tab, windowState.id) else {
             return false
         }
 
+        focusWebViewForElementPicking(webView)
         activeZapSession?.stop()
-        activeZapSession = SumiBoostZapSession(
-            boost: boost,
+        let session = SumiElementZapperSession(
             webView: webView,
-            isEphemeral: isEphemeral,
-            module: self,
-            onSelector: onSelector,
-            onFinish: onFinish
+            configuration: .boost,
+            onSelected: { [weak self] selector in
+                guard let self else { return }
+                guard let updated = self.updateBoost(
+                    boost,
+                    isEphemeral: isEphemeral,
+                    markChanged: true,
+                    mutate: { data in
+                        if !data.zapSelectors.contains(selector) {
+                            data.zapSelectors.append(selector)
+                        }
+                    }
+                ) else { return }
+                onSelector(updated)
+            },
+            onFinish: { [weak self] in
+                self?.activeZapSession = nil
+                onFinish()
+            }
         )
-        activeZapSession?.start()
-        return true
+        activeZapSession = session
+        let didStart = await session.start()
+        if !didStart {
+            activeZapSession = nil
+        }
+        return didStart
     }
 
     func stopZapSelection() {
@@ -245,8 +334,8 @@ final class SumiBoostsModule: ObservableObject {
     /// Cheap live update for the current document: idempotent `<style>`
     /// upsert via `evaluateJavaScript` + zoom reapply. Called on every content
     /// edit (dot drag, sliders, font, case, custom CSS, zap selectors). Does
-    /// NOT touch the WKUserScript set — `atDocumentStart` scripts don't re-run
-    /// on the current document anyway, so rebuilding them would be wasted work.
+    /// not touch the WKUserScript set because `atDocumentStart` scripts do not
+    /// re-run on the current document.
     func refreshLiveBoostState(profileId: UUID, host: String) {
         let normalizedHost = host.lowercased()
         forEachMatchingWebView(
@@ -257,9 +346,8 @@ final class SumiBoostsModule: ObservableObject {
         }
     }
 
-    /// Refreshes only the boost-derived page zoom (the `sizeOverride`
-    /// multiplier). Cheaper than `refreshLiveBoostState` because it skips the
-    /// CSS injection entirely — use when only the size changed.
+    /// Refreshes only the boost-derived page zoom multiplier. Cheaper than
+    /// `refreshLiveBoostState` because it skips CSS injection entirely.
     func refreshBoostZoom(profileId: UUID, host: String) {
         let normalizedHost = host.lowercased()
         forEachMatchingWebView(
@@ -270,13 +358,9 @@ final class SumiBoostsModule: ObservableObject {
         }
     }
 
-    /// Expensive: rebuilds the managed user-script set (extensions +
-    /// userscripts + boost) and reinstalls every WKUserScript on each matching
-    /// tab's content controller. Required only when the *active boost set*
-    /// changes — so the `atDocumentStart` boost script matches reality on the
-    /// next navigation. Editor callers should invoke
-    /// `reinstallUserScriptsAfterEdit` on close so the edited boost takes
-    /// effect on future page loads.
+    /// Rebuilds the managed user-script set (extensions + userscripts + boost)
+    /// and reinstalls every WKUserScript on each matching tab's content
+    /// controller. Required when the active boost set changes.
     func reinstallUserScripts(profileId: UUID, host: String) {
         let normalizedHost = host.lowercased()
         forEachMatchingWebView(
@@ -298,22 +382,21 @@ final class SumiBoostsModule: ObservableObject {
     /// the final boost state is applied on the next navigation, and flushes
     /// any debounced disk writes so the edit is durable immediately.
     func reinstallUserScriptsAfterEdit(profileId: UUID, host: String) {
-        store.flushPendingWrites()
+        loadedStore?.flushPendingWrites()
         reinstallUserScripts(profileId: profileId, host: host)
+    }
+
+    func openInspector(tab: Tab, windowState: BrowserWindowState) {
+        runtime.openWebInspector(tab, windowState)
     }
 
     private func forEachMatchingWebView(
         profileId: UUID,
         host: String,
-        body: @escaping @MainActor (Tab, WKWebView) -> Void
+        body: (Tab, WKWebView) -> Void
     ) {
         for page in runtime.matchingLivePages(profileId, host) {
-            let tab = page.tab
-            let webView = page.webView
-            Task { @MainActor [weak tab, weak webView] in
-                guard let tab, let webView else { return }
-                body(tab, webView)
-            }
+            body(page.tab, page.webView)
         }
     }
 
@@ -333,7 +416,71 @@ final class SumiBoostsModule: ObservableObject {
         runtime.applyBoostAwareZoom(tab, webView)
     }
 
-    func openInspector(tab: Tab, windowState: BrowserWindowState) {
-        runtime.openWebInspector(tab, windowState)
+    private func storeIfEnabled() -> SumiBoostStore? {
+        guard isEnabled else { return nil }
+        return loadStore()
+    }
+
+    private func loadStore() -> SumiBoostStore {
+        if let loadedStore {
+            return loadedStore
+        }
+
+        let store = storeFactory()
+        loadedStore = store
+        storeChangesCancellable = store.changesPublisher.sink { [weak self] in
+            self?.changesSubject.send(())
+        }
+        return store
+    }
+
+    private func loadEditorPresenterIfEnabled() -> SumiBoostEditorPanelController? {
+        guard isEnabled else { return nil }
+        if let editorPresenter {
+            return editorPresenter
+        }
+
+        let presenter = SumiBoostEditorPanelController()
+        editorPresenter = presenter
+        return presenter
+    }
+
+    private func focusWebViewForElementPicking(_ webView: WKWebView) {
+        guard let window = webView.window else { return }
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(webView)
+    }
+
+    private func closeLoadedEditorBeforeDisable() {
+        stopZapSelection()
+        editorPresenter?.close()
+        loadedStore?.flushPendingWrites()
+    }
+
+    private func removeBoostsFromLivePages() {
+        for page in runtime.allLivePages() {
+            let tab = page.tab
+            let webView = page.webView
+            Task { @MainActor [weak tab, weak webView] in
+                guard let tab, let webView else { return }
+                await tab.replaceNormalTabUserScripts(
+                    on: webView.configuration.userContentController,
+                    for: tab.url
+                )
+                webView.evaluateJavaScript(
+                    SumiBoostCSSBuilder.removalJavaScript(),
+                    completionHandler: nil
+                )
+                self.runtime.applyBoostAwareZoom(tab, webView)
+            }
+        }
+    }
+
+    private func releaseLoadedRuntime() {
+        stopZapSelection()
+        storeChangesCancellable?.cancel()
+        storeChangesCancellable = nil
+        loadedStore = nil
+        editorPresenter = nil
     }
 }

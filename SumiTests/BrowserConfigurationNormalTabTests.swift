@@ -753,6 +753,29 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(browserManager.extensionsModule.surfaceStore.installedExtensions.isEmpty)
     }
 
+    func testBrowserManagerStartupWithBoostsDisabledDoesNotInitializeBoostsRuntime() {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = NormalTabBoostsRuntimeProbe()
+        let module = makeProbeBoostsModule(
+            registry: registry,
+            probe: probe
+        )
+
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            boostsModule: module
+        )
+
+        XCTAssertNotNil(browserManager.currentProfile)
+        XCTAssertFalse(registry.isEnabled(.boosts))
+        XCTAssertEqual(probe.storeCount, 0)
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
     func testTabNormalWebViewCreationWithUserscriptsDisabledDoesNotInitializeUserscriptsRuntime() async throws {
         let harness = TestDefaultsHarness()
         defer { harness.reset() }
@@ -830,6 +853,45 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
         XCTAssertNil(webView.configuration.webExtensionController)
         XCTAssertEqual(probe.managerCount, 0)
+        XCTAssertFalse(module.hasLoadedRuntime)
+    }
+
+    func testTabNormalWebViewCreationWithBoostsDisabledDoesNotInitializeBoostsRuntime() async throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        let probe = NormalTabBoostsRuntimeProbe()
+        let module = makeProbeBoostsModule(
+            registry: registry,
+            probe: probe
+        )
+        let browserManager = BrowserManager(
+            moduleRegistry: registry,
+            boostsModule: module
+        )
+        await waitForInitialTabManagerDataLoad(on: browserManager)
+        let tab = browserManager.tabManager.createNewTab(
+            url: "https://example.com/boosts-disabled",
+            in: browserManager.tabManager.currentSpace,
+            activate: false
+        )
+
+        let webView = try makeUnloadedNormalTabWebView(
+            for: tab,
+            reason: "BrowserConfigurationNormalTabTests.boostsDisabled"
+        )
+        let controller = try XCTUnwrap(webView.configuration.userContentController.sumiNormalTabUserContentController)
+        await controller.waitForContentBlockingAssetsInstalled()
+        let provider = try XCTUnwrap(controller.normalTabUserScriptsProvider)
+        let sources = provider.userScripts.map(\.source).joined(separator: "\n")
+
+        XCTAssertTrue(sources.contains("sumiLinkInteraction_\(tab.id.uuidString)"))
+        XCTAssertTrue(sources.contains("sumiTabSuspension_\(tab.id.uuidString)"))
+        XCTAssertFalse(sources.contains(SumiBoostCSSBuilder.styleAttribute))
+        XCTAssertFalse(sources.contains(SumiBoostCSSBuilder.filterStyleAttribute))
+        XCTAssertEqual(probe.storeCount, 0)
         XCTAssertFalse(module.hasLoadedRuntime)
     }
 
@@ -1257,6 +1319,21 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
     }
 
+    private func makeProbeBoostsModule(
+        registry: SumiModuleRegistry,
+        probe: NormalTabBoostsRuntimeProbe
+    ) -> SumiBoostsModule {
+        SumiBoostsModule(
+            moduleRegistry: registry,
+            storeFactory: {
+                probe.storeCount += 1
+                return SumiBoostStore(
+                    rootDirectory: self.temporaryDirectory(prefix: "SumiNormalTabBoosts")
+                )
+            }
+        )
+    }
+
     @discardableResult
     private func waitForAssets(
         on controller: SumiNormalTabUserContentControlling,
@@ -1627,6 +1704,10 @@ private final class NormalTabUserscriptsRuntimeProbe {
 
 private final class NormalTabExtensionsRuntimeProbe {
     var managerCount = 0
+}
+
+private final class NormalTabBoostsRuntimeProbe {
+    var storeCount = 0
 }
 
 private final class FakeWebsiteDataCleanupService: SumiWebsiteDataCleanupServicing {

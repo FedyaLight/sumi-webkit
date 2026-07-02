@@ -5,19 +5,32 @@ enum SumiBoostEditorMetrics {
     static let normalWidth: CGFloat = 204
     static let codeWidth: CGFloat = 392
     static let height: CGFloat = 582
+    static let sidebarGap: CGFloat = 12
 }
 
 @MainActor
 final class SumiBoostEditorPanelController: NSObject, NSWindowDelegate {
+    private struct PlacementContext {
+        let sidebarPosition: SidebarPosition
+        let sidebarWidth: CGFloat
+        let isSidebarVisible: Bool
+    }
+
     private weak var parentWindow: NSWindow?
     private var panel: NSPanel?
     private var session: SumiBoostEditorSession?
+    private var placementContext = PlacementContext(
+        sidebarPosition: .left,
+        sidebarWidth: BrowserWindowState.sidebarDefaultWidth,
+        isSidebarVisible: true
+    )
 
     func present(
         boost: SumiBoost,
         tab: Tab,
         profile: Profile?,
         windowState: BrowserWindowState,
+        sidebarPosition: SidebarPosition,
         module: SumiBoostsModule
     ) {
         let session = SumiBoostEditorSession(
@@ -34,6 +47,11 @@ final class SumiBoostEditorPanelController: NSObject, NSWindowDelegate {
             self?.resizePanel(forCodeMode: isCodeMode, animated: true)
         }
         self.session = session
+        placementContext = PlacementContext(
+            sidebarPosition: sidebarPosition,
+            sidebarWidth: windowState.sidebarWidth,
+            isSidebarVisible: windowState.isSidebarVisible
+        )
 
         let panel = self.panel ?? makePanel()
         panel.contentViewController = NSHostingController(
@@ -47,8 +65,12 @@ final class SumiBoostEditorPanelController: NSObject, NSWindowDelegate {
         self.panel = panel
         panel.delegate = self
         resizePanel(forCodeMode: false, animated: false)
-        centerPanel(over: windowState.window)
+        placePanel(alongside: windowState.window)
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    func close() {
+        panel?.close()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -107,29 +129,59 @@ final class SumiBoostEditorPanelController: NSObject, NSWindowDelegate {
         )
         let frameSize = panel.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize)).size
         var frame = panel.frame
-        let midpoint = NSPoint(x: frame.midX, y: frame.midY)
+        let previousFrame = frame
         frame.size = frameSize
-        frame.origin.x = midpoint.x - frameSize.width / 2
-        frame.origin.y = midpoint.y - frameSize.height / 2
+        switch placementContext.sidebarPosition {
+        case .left:
+            frame.origin.x = previousFrame.minX
+        case .right:
+            frame.origin.x = previousFrame.maxX - frameSize.width
+        }
+        frame.origin.y = previousFrame.midY - frameSize.height / 2
+        frame.origin = clampedOrigin(for: frame, parent: parentWindow)
         panel.setFrame(frame, display: true, animate: animated)
     }
 
-    private func centerPanel(over parent: NSWindow?) {
+    private func placePanel(alongside parent: NSWindow?) {
         guard let panel else { return }
         let referenceFrame = parent?.frame
             ?? parent?.screen?.visibleFrame
             ?? NSScreen.main?.visibleFrame
             ?? panel.frame
+
+        let sidebarWidth = placementContext.isSidebarVisible ? placementContext.sidebarWidth : 0
+        let x: CGFloat
+        switch placementContext.sidebarPosition {
+        case .left:
+            x = referenceFrame.minX + sidebarWidth + SumiBoostEditorMetrics.sidebarGap
+        case .right:
+            x = referenceFrame.maxX - sidebarWidth - SumiBoostEditorMetrics.sidebarGap - panel.frame.width
+        }
+
+        let origin = clampedOrigin(
+            for: NSRect(
+                x: x,
+                y: referenceFrame.midY - panel.frame.height / 2,
+                width: panel.frame.width,
+                height: panel.frame.height
+            ),
+            parent: parent
+        )
+        panel.setFrameOrigin(origin)
+    }
+
+    private func clampedOrigin(for frame: NSRect, parent: NSWindow?) -> NSPoint {
+        let referenceFrame = parent?.frame
+            ?? parent?.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? frame
         let visibleFrame = parent?.screen?.visibleFrame
             ?? NSScreen.main?.visibleFrame
             ?? referenceFrame
 
-        var origin = NSPoint(
-            x: referenceFrame.midX - panel.frame.width / 2,
-            y: referenceFrame.midY - panel.frame.height / 2
-        )
-        origin.x = min(max(origin.x, visibleFrame.minX), visibleFrame.maxX - panel.frame.width)
-        origin.y = min(max(origin.y, visibleFrame.minY), visibleFrame.maxY - panel.frame.height)
-        panel.setFrameOrigin(origin)
+        var origin = frame.origin
+        origin.x = min(max(origin.x, visibleFrame.minX), visibleFrame.maxX - frame.width)
+        origin.y = min(max(origin.y, visibleFrame.minY), visibleFrame.maxY - frame.height)
+        return origin
     }
 }

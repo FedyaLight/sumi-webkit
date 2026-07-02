@@ -150,7 +150,7 @@ extension BrowserURLBarHubContextOwner.Dependencies {
                 permissionContextOwner.siteActivityChanges
             },
             boostChanges: {
-                boostsModule.store.changesPublisher
+                boostsModule.changesPublisher
             },
             profiles: { [weak browserManager] in
                 browserManager?.profileManager.profiles ?? []

@@ -173,6 +173,7 @@ struct SumiApp: App {
             .environment(\.sumiProtectionCoordinator, dependencies.browserManager.protectionCoordinator)
             .environment(\.sumiExtensionsModule, dependencies.browserManager.extensionsModule)
             .environment(\.sumiUserscriptsModule, dependencies.browserManager.userscriptsModule)
+            .environment(\.sumiBoostsModule, dependencies.browserManager.boostsModule)
             .environment(dependencies.keyboardShortcutManager)
     }
 }

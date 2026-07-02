@@ -82,8 +82,17 @@ final class SumiBoostCSSBuilderTests: XCTestCase {
 
     @MainActor
     func testBoostModuleContributesScriptOnlyForActiveMatchingHTTPHost() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.boosts)
         let store = SumiBoostStore(rootDirectory: temporaryDirectory())
-        let module = SumiBoostsModule(store: store)
+        let module = SumiBoostsModule(
+            moduleRegistry: registry,
+            storeFactory: { store }
+        )
         let profileId = UUID()
         let url = URL(string: "https://example.test/page")!
         let boost = try store.createDraft(for: url, profileId: profileId, isEphemeral: false)
@@ -109,8 +118,17 @@ final class SumiBoostCSSBuilderTests: XCTestCase {
 
     @MainActor
     func testManagedScriptProviderRevisionAdvancesOnlyWhenBoostScriptSetChanges() throws {
+        let harness = TestDefaultsHarness()
+        defer { harness.reset() }
+        let registry = SumiModuleRegistry(
+            settingsStore: SumiModuleSettingsStore(userDefaults: harness.defaults)
+        )
+        registry.enable(.boosts)
         let store = SumiBoostStore(rootDirectory: temporaryDirectory())
-        let module = SumiBoostsModule(store: store)
+        let module = SumiBoostsModule(
+            moduleRegistry: registry,
+            storeFactory: { store }
+        )
         let profileId = UUID()
         let url = URL(string: "https://example.test/page")!
         _ = try store.createDraft(for: url, profileId: profileId, isEphemeral: false)

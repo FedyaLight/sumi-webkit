@@ -16,6 +16,10 @@ private struct SumiUserscriptsModuleEnvironmentKey: EnvironmentKey {
     static let defaultValue = MainActor.assumeIsolated { SumiUserscriptsModule.shared }
 }
 
+private struct SumiBoostsModuleEnvironmentKey: EnvironmentKey {
+    static let defaultValue = MainActor.assumeIsolated { SumiBoostsModule.shared }
+}
+
 extension EnvironmentValues {
     var sumiModuleRegistry: SumiModuleRegistry {
         get { self[SumiModuleRegistryEnvironmentKey.self] }
@@ -35,6 +39,11 @@ extension EnvironmentValues {
     var sumiUserscriptsModule: SumiUserscriptsModule {
         get { self[SumiUserscriptsModuleEnvironmentKey.self] }
         set { self[SumiUserscriptsModuleEnvironmentKey.self] = newValue }
+    }
+
+    var sumiBoostsModule: SumiBoostsModule {
+        get { self[SumiBoostsModuleEnvironmentKey.self] }
+        set { self[SumiBoostsModuleEnvironmentKey.self] = newValue }
     }
 }
 

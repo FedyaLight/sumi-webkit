@@ -417,7 +417,7 @@ class BrowserManager: ObservableObject {
                 moduleRegistry: moduleRegistry,
                 context: startupModelContext
             )
-        self.boostsModule = boostsModule ?? SumiBoostsModule()
+        self.boostsModule = boostsModule ?? SumiBoostsModule(moduleRegistry: moduleRegistry)
         self.startupWorkspaceTheme = StartupWorkspaceThemeResolver.resolve(
             lastWindowSessionKey: Self.lastWindowSessionKey,
             modelContext: startupModelContext
