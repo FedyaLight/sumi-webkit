@@ -337,13 +337,16 @@ class TabManager: ObservableObject {
         regularTabCollectionStateOwner.tabsBySpacePublisher
     }
 
+    let splitGroupCollectionStateOwner = SplitGroupCollectionStateOwner()
+
     // Structural split groups, restored and persisted with the tab model.
-    @Published var splitGroups: [SplitGroup] = [] {
-        didSet {
-            splitGroupIndexStore.rebuild(from: splitGroups)
+    var splitGroups: [SplitGroup] {
+        get { splitGroupCollectionStateOwner.splitGroups }
+        set {
+            objectWillChange.send()
+            splitGroupCollectionStateOwner.replaceSplitGroups(newValue)
         }
     }
-    var splitGroupIndexStore = SplitGroupIndexStore()
     lazy var splitGroupRepairOwner = TabManagerSplitGroupRepairOwner(
         dependencies: .live(tabManager: self)
     )
@@ -811,7 +814,7 @@ class TabManager: ObservableObject {
         MainActor.assumeIsolated {
             faviconPresentationRefreshOwner.stop()
             regularTabCollectionStateOwner.removeAll()
-            splitGroups.removeAll()
+            splitGroupCollectionStateOwner.removeAll()
             folderCollectionStateOwner.removeAll()
             shortcutPinCollectionStateOwner.removeAll()
             transientTabRegistryOwner.removeAll()

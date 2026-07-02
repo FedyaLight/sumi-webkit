@@ -16,7 +16,7 @@ extension TabManager {
     }
 
     func splitGroup(containing tabId: UUID) -> SplitGroup? {
-        if let indexed = splitGroupIndexStore.group(containingMemberId: tabId) {
+        if let indexed = splitGroupCollectionStateOwner.group(containingMemberId: tabId) {
             return indexed
         }
         if let pinId = shortcutPinId(forSplitLookupId: tabId) {
@@ -26,11 +26,11 @@ extension TabManager {
     }
 
     func splitGroup(with id: UUID) -> SplitGroup? {
-        splitGroupIndexStore.group(with: id)
+        splitGroupCollectionStateOwner.group(with: id)
     }
 
     func splitGroupIds(containing tabId: UUID) -> [UUID] {
-        if let groupId = splitGroupIndexStore.groupId(containingMemberId: tabId) {
+        if let groupId = splitGroupCollectionStateOwner.groupId(containingMemberId: tabId) {
             return [groupId]
         }
         guard let pinId = shortcutPinId(forSplitLookupId: tabId),
@@ -42,7 +42,7 @@ extension TabManager {
     }
 
     func splitGroup(containingPinId pinId: UUID) -> SplitGroup? {
-        splitGroupIndexStore.groups.first { splitGroup($0, containsShortcutPinId: pinId) }
+        splitGroupCollectionStateOwner.indexedGroups.first { splitGroup($0, containsShortcutPinId: pinId) }
     }
 
     func splitGroupVisualOrderingResolver(for spaceId: UUID) -> SplitGroupVisualOrderingResolver {
@@ -146,7 +146,7 @@ extension TabManager {
             let folderMap = Dictionary(uniqueKeysWithValues: (foldersBySpace[spaceId] ?? []).map { ($0.id, $0) })
             let pins = spacePinnedShortcuts[spaceId] ?? []
             let pinMap = Dictionary(uniqueKeysWithValues: pins.map { ($0.id, $0) })
-            let groupMap = splitGroupIndexStore.groupMap
+            let groupMap = splitGroupCollectionStateOwner.groupMap
             var orderedFolders: [TabFolder] = []
             var orderedVisiblePins: [ShortcutPin] = []
             var orderedVisiblePinIds = Set<UUID>()
@@ -233,7 +233,7 @@ extension TabManager {
         let sanitized = splitGroupRepairOwner.repairingShortcutBackedMembers(
             in: canonicalGroup.settingActiveTab(canonicalGroup.activeTabId ?? canonicalGroup.tabIds.last)
         )
-        if let index = splitGroupIndexStore.index(of: sanitized.id) {
+        if let index = splitGroupCollectionStateOwner.index(of: sanitized.id) {
             splitGroups[index] = sanitized
         } else {
             let memberIds = Set(sanitized.tabIds).union(sanitized.shortcutPinIds)
@@ -249,7 +249,7 @@ extension TabManager {
     }
 
     func removeSplitGroup(id: UUID, schedulePersistence shouldPersist: Bool = true) {
-        guard let index = splitGroupIndexStore.index(of: id) else { return }
+        guard let index = splitGroupCollectionStateOwner.index(of: id) else { return }
         splitGroups.remove(at: index)
         markSplitGroupsStructurallyDirty(schedulePersistence: shouldPersist)
         requestStructuralPublish()
