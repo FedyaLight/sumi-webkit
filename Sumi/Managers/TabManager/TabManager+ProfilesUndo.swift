@@ -299,18 +299,11 @@ extension TabManager {
         }
 
         if removed == nil,
-           let (windowId, pinId, tab) = transientShortcutTabsByWindow.lazy
-                .compactMap({ windowId, tabsByPin -> (UUID, UUID, Tab)? in
-                    guard let match = tabsByPin.first(where: { $0.value.id == id }) else { return nil }
-                    return (windowId, match.key, match.value)
-                })
-                .first {
-            transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId)
-            if transientShortcutTabsByWindow[windowId]?.isEmpty == true {
-                transientShortcutTabsByWindow.removeValue(forKey: windowId)
-            }
+           let removal = transientTabRegistryOwner.removeTransientShortcutTab(tabId: id) {
+            _ = removal.windowId
+            _ = removal.pinId
             notifyTransientShortcutStateChanged()
-            removed = tab
+            removed = removal.tab
         }
 
         guard let tab = removed else { return }

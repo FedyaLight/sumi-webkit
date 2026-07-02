@@ -194,7 +194,7 @@ class TabManager: ObservableObject {
     private lazy var shortcutPresentationOwner = TabShortcutPresentationOwner(
         dependencies: TabShortcutPresentationOwner.Dependencies(
             transientShortcutTabsByWindow: { [weak self] in
-                self?.transientShortcutTabsByWindow ?? [:]
+                self?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
             },
             windowState: { [weak self] windowId in
                 self?.runtimeContext?.windowState(for: windowId)
@@ -228,11 +228,10 @@ class TabManager: ObservableObject {
                 self?.runtimeContext
             },
             transientShortcutTabsByWindow: { [weak self] in
-                self?.transientShortcutTabsByWindow ?? [:]
+                self?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
             },
             updateTransientShortcutTabsByWindow: { [weak self] update in
-                guard let self else { return }
-                update(&self.transientShortcutTabsByWindow)
+                self?.transientTabRegistryOwner.updateTransientShortcutTabsByWindow(update)
             },
             currentSpaceId: { [weak self] in
                 self?.currentSpace?.id
@@ -312,7 +311,7 @@ class TabManager: ObservableObject {
                 self?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
             },
             transientShortcutTabsByWindow: { [weak self] in
-                self?.transientShortcutTabsByWindow ?? [:]
+                self?.transientTabRegistryOwner.transientShortcutTabsByWindow ?? [:]
             }
         )
     )
@@ -344,19 +343,32 @@ class TabManager: ObservableObject {
     @Published var spacePinnedShortcuts: [UUID: [ShortcutPin]] = [:]
     // Pinned launchers encountered during load that have no profile assignment yet
     var pendingPinnedWithoutProfile: [ShortcutPin] = []
-    // Transient shortcut-backed live tabs per window, keyed by shortcut pin id
-    var transientShortcutTabsByWindow: [UUID: [UUID: Tab]] = [:]
+    let transientTabRegistryOwner = TabTransientTabRegistryOwner()
+    // Transient shortcut-backed live tabs per window, keyed by shortcut pin id.
+    var transientShortcutTabsByWindow: [UUID: [UUID: Tab]] {
+        get { transientTabRegistryOwner.transientShortcutTabsByWindow }
+        set { transientTabRegistryOwner.replaceTransientShortcutTabsByWindow(newValue) }
+    }
+
     // Transient extension-owned tabs created for internal extension pages that
     // WebKit may close immediately during install/onboarding handshakes.
-    var transientExtensionTabsByID: [UUID: Tab] = [:]
-    var auxiliaryMiniWindowTabsByID: [UUID: Tab] = [:]
+    var transientExtensionTabsByID: [UUID: Tab] {
+        get { transientTabRegistryOwner.transientExtensionTabsByID }
+        set { transientTabRegistryOwner.replaceTransientExtensionTabsByID(newValue) }
+    }
+
+    var auxiliaryMiniWindowTabsByID: [UUID: Tab] {
+        get { transientTabRegistryOwner.auxiliaryMiniWindowTabsByID }
+        set { transientTabRegistryOwner.replaceAuxiliaryMiniWindowTabsByID(newValue) }
+    }
     private let structuralLookupOwner = TabStructuralLookupOwner()
     private lazy var structuralCollectionMutationOwner = TabStructuralCollectionMutationOwner(
         dependencies: .live(tabManager: self)
     )
     private lazy var tabCollectionMembershipOwner = TabCollectionMembershipOwner(
         tabManager: self,
-        structuralLookupOwner: structuralLookupOwner
+        structuralLookupOwner: structuralLookupOwner,
+        transientTabRegistryOwner: transientTabRegistryOwner
     )
     private lazy var transientWebKitTabLifecycleOwner = TabTransientWebKitTabLifecycleOwner(
         dependencies: TabTransientWebKitTabLifecycleOwner.Dependencies(
@@ -415,7 +427,7 @@ class TabManager: ObservableObject {
             tabsNeedingRefresh: { [weak self] in
                 guard let self else { return [] }
                 return Array(tabsBySpace.values.joined())
-                    + Array(transientShortcutTabsByWindow.values.joined().map(\.value))
+                    + transientTabRegistryOwner.transientShortcutTabs
             },
             requestStructuralPublish: { [weak self] in
                 self?.requestStructuralPublish()
@@ -622,8 +634,7 @@ class TabManager: ObservableObject {
     }
 
     func liveSpacePinnedTabs(for spaceId: UUID) -> [Tab] {
-        transientShortcutTabsByWindow.values
-            .flatMap(\.values)
+        transientTabRegistryOwner.transientShortcutTabs
             .filter { $0.spaceId == spaceId && $0.shortcutPinRole == .spacePinned }
             .sorted { lhs, rhs in
                 let lhsIndex = lhs.shortcutPinId.flatMap { shortcutPin(by: $0)?.index } ?? lhs.index
@@ -775,8 +786,7 @@ class TabManager: ObservableObject {
             foldersBySpace.removeAll()
             pinnedByProfile.removeAll()
             pendingPinnedWithoutProfile.removeAll()
-            transientShortcutTabsByWindow.removeAll()
-            transientExtensionTabsByID.removeAll()
+            transientTabRegistryOwner.removeAll()
             structuralLookupOwner.removeAll()
             spaces.removeAll()
             currentTab = nil
@@ -819,9 +829,9 @@ class TabManager: ObservableObject {
     private var structuralLookupSnapshot: TabStructuralLookupSnapshot {
         TabStructuralLookupSnapshot(
             tabsBySpace: tabsBySpace,
-            transientShortcutTabsByWindow: transientShortcutTabsByWindow,
-            transientExtensionTabsByID: transientExtensionTabsByID,
-            auxiliaryMiniWindowTabsByID: auxiliaryMiniWindowTabsByID
+            transientShortcutTabsByWindow: transientTabRegistryOwner.transientShortcutTabsByWindow,
+            transientExtensionTabsByID: transientTabRegistryOwner.transientExtensionTabsByID,
+            auxiliaryMiniWindowTabsByID: transientTabRegistryOwner.auxiliaryMiniWindowTabsByID
         )
     }
 
@@ -1579,8 +1589,7 @@ class TabManager: ObservableObject {
         if !(spacePinnedShortcuts[spaceId] ?? []).isEmpty { return true }
         if !(foldersBySpace[spaceId] ?? []).isEmpty { return true }
 
-        return transientShortcutTabsByWindow.values
-            .flatMap(\.values)
+        return transientTabRegistryOwner.transientShortcutTabs
             .contains { $0.spaceId == spaceId }
     }
 

@@ -36,18 +36,12 @@ final class TabRemovalOwner {
                 removedIndexInCurrentSpace = removal.indexInCurrentSpace
             }
             if removed == nil,
-               let (windowId, pinId, tab) = tabManager.transientShortcutTabsByWindow.lazy
-                   .compactMap({ windowId, tabsByPin -> (UUID, UUID, Tab)? in
-                       guard let match = tabsByPin.first(where: { $0.value.id == id }) else { return nil }
-                       return (windowId, match.key, match.value)
-                   })
-                   .first {
-                tabManager.transientShortcutTabsByWindow[windowId]?.removeValue(forKey: pinId)
-                if tabManager.transientShortcutTabsByWindow[windowId]?.isEmpty == true {
-                    tabManager.transientShortcutTabsByWindow.removeValue(forKey: windowId)
-                }
+               let removal = tabManager.transientTabRegistryOwner
+                   .removeTransientShortcutTab(tabId: id) {
+                _ = removal.windowId
+                _ = removal.pinId
                 tabManager.notifyTransientShortcutStateChanged()
-                removed = tab
+                removed = removal.tab
             }
 
             guard let tab = removed else { return }

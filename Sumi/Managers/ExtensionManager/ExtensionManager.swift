@@ -331,6 +331,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         _ = errorObservationOwner
         _ = controllerProvisioningOwner
         _ = runtimeStateResetOwner
+        _ = permissionsOriginsCompatibilityPreludeInstallationOwner
         _ = deferredRuntimeOwnerStore
 
         guard isExtensionSupportAvailable else {

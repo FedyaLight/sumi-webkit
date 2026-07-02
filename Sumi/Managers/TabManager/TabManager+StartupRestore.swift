@@ -12,7 +12,7 @@ extension TabManager {
         let runtimeContext = requireRuntimeContext()
         withStructuralUpdateTransaction {
             lazyRestoreCoordinator.clear()
-            let liveShortcutTabs = transientShortcutTabsByWindow.values.flatMap(\.values)
+            let liveShortcutTabs = transientTabRegistryOwner.transientShortcutTabs
             if !liveShortcutTabs.isEmpty {
                 for tab in liveShortcutTabs {
                     cancelRuntimeStatePersistence(for: tab.id)
@@ -24,7 +24,7 @@ extension TabManager {
                     )
                     detach(tab)
                 }
-                transientShortcutTabsByWindow.removeAll()
+                transientTabRegistryOwner.replaceTransientShortcutTabsByWindow([:])
                 notifyTransientShortcutStateChanged()
             }
 

@@ -52,9 +52,8 @@ extension TabManager {
             guard let idx = spaces.firstIndex(where: { $0.id == id }) else { return }
 
             let closing = regularTabCollectionOwner.tabs(in: id)
-            let transientClosing = transientShortcutTabsByWindow.values
-                .flatMap(\.values)
-                .filter { $0.spaceId == id }
+            let transientClosing = transientTabRegistryOwner
+                .transientShortcutTabs(inSpace: id)
 
             for tab in closing + transientClosing where currentTab?.id == tab.id {
                 currentTab = nil
@@ -66,10 +65,7 @@ extension TabManager {
             spacePinnedShortcuts.removeValue(forKey: id)
             markFoldersSnapshotDirty(for: id)
             markSpacePinnedSnapshotDirty(for: id)
-            transientShortcutTabsByWindow = transientShortcutTabsByWindow.compactMapValues { tabsByPin in
-                let filtered = tabsByPin.filter { _, tab in tab.spaceId != id }
-                return filtered.isEmpty ? nil : filtered
-            }
+            transientTabRegistryOwner.removeTransientShortcutTabs(inSpace: id)
             notifyTransientShortcutStateChanged()
 
             if idx < spaces.count {

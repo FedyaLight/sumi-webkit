@@ -4,10 +4,16 @@ import Foundation
 final class TabCollectionMembershipOwner {
     private unowned let tabManager: TabManager
     private let structuralLookupOwner: TabStructuralLookupOwner
+    private let transientTabRegistryOwner: TabTransientTabRegistryOwner
 
-    init(tabManager: TabManager, structuralLookupOwner: TabStructuralLookupOwner) {
+    init(
+        tabManager: TabManager,
+        structuralLookupOwner: TabStructuralLookupOwner,
+        transientTabRegistryOwner: TabTransientTabRegistryOwner
+    ) {
         self.tabManager = tabManager
         self.structuralLookupOwner = structuralLookupOwner
+        self.transientTabRegistryOwner = transientTabRegistryOwner
     }
 
     func attach(_ tab: Tab) {
@@ -23,8 +29,7 @@ final class TabCollectionMembershipOwner {
         structuralLookupOwner.rebuildIfEmpty(with: structuralLookupSnapshot)
 
         let normals = tabManager.tabsBySpace.values.flatMap(\.self)
-        return tabManager.transientShortcutTabsByWindow.values.flatMap(\.values)
-            + Array(tabManager.transientExtensionTabsByID.values)
+        return transientTabRegistryOwner.allTransientTabs
             + normals
     }
 
@@ -34,8 +39,7 @@ final class TabCollectionMembershipOwner {
         }
         let spaceIds = Set(tabManager.spaces.filter { $0.profileId == profileId }.map(\.id))
         let pinned = tabManager.activeEssentialTabs(for: profileId)
-        let spacePinned = tabManager.transientShortcutTabsByWindow.values
-            .flatMap(\.values)
+        let spacePinned = transientTabRegistryOwner.transientShortcutTabs
             .filter { tab in
                 guard tab.shortcutPinRole == .spacePinned, let spaceId = tab.spaceId else {
                     return false
@@ -61,16 +65,16 @@ final class TabCollectionMembershipOwner {
     }
 
     func isTransientExtensionTab(_ tab: Tab) -> Bool {
-        tabManager.transientExtensionTabsByID[tab.id] != nil
+        transientTabRegistryOwner.isTransientExtensionTab(tab)
     }
 
     func registerTransientExtensionTab(_ tab: Tab) {
-        tabManager.transientExtensionTabsByID[tab.id] = tab
+        transientTabRegistryOwner.registerTransientExtensionTab(tab)
         structuralLookupOwner.insertTransientExtensionTab(tab)
     }
 
     func removeTransientExtensionTab(id: UUID) -> Tab? {
-        guard let tab = tabManager.transientExtensionTabsByID.removeValue(forKey: id) else {
+        guard let tab = transientTabRegistryOwner.removeTransientExtensionTab(id: id) else {
             return nil
         }
         structuralLookupOwner.removeTransientExtensionTab(id)
@@ -79,7 +83,7 @@ final class TabCollectionMembershipOwner {
 
     @discardableResult
     func promoteTransientExtensionTab(_ tab: Tab) -> Bool {
-        guard tabManager.transientExtensionTabsByID.removeValue(forKey: tab.id) != nil else {
+        guard transientTabRegistryOwner.promoteTransientExtensionTab(tab) else {
             return false
         }
         structuralLookupOwner.stopTrackingTransientTab(tab.id)
@@ -87,28 +91,28 @@ final class TabCollectionMembershipOwner {
     }
 
     func registerAuxiliaryMiniWindowTab(_ tab: Tab) {
-        tabManager.auxiliaryMiniWindowTabsByID[tab.id] = tab
+        transientTabRegistryOwner.registerAuxiliaryMiniWindowTab(tab)
     }
 
     func auxiliaryMiniWindowTab(for id: UUID) -> Tab? {
-        tabManager.auxiliaryMiniWindowTabsByID[id]
+        transientTabRegistryOwner.auxiliaryMiniWindowTab(for: id)
     }
 
     func removeAuxiliaryMiniWindowTab(_ tab: Tab) {
-        tabManager.auxiliaryMiniWindowTabsByID.removeValue(forKey: tab.id)
+        transientTabRegistryOwner.removeAuxiliaryMiniWindowTab(tab)
         structuralLookupOwner.remove(tab.id)
     }
 
     func isAuxiliaryMiniWindowTab(_ tab: Tab) -> Bool {
-        tabManager.auxiliaryMiniWindowTabsByID[tab.id] != nil
+        transientTabRegistryOwner.isAuxiliaryMiniWindowTab(tab)
     }
 
     private var structuralLookupSnapshot: TabStructuralLookupSnapshot {
         TabStructuralLookupSnapshot(
             tabsBySpace: tabManager.tabsBySpace,
-            transientShortcutTabsByWindow: tabManager.transientShortcutTabsByWindow,
-            transientExtensionTabsByID: tabManager.transientExtensionTabsByID,
-            auxiliaryMiniWindowTabsByID: tabManager.auxiliaryMiniWindowTabsByID
+            transientShortcutTabsByWindow: transientTabRegistryOwner.transientShortcutTabsByWindow,
+            transientExtensionTabsByID: transientTabRegistryOwner.transientExtensionTabsByID,
+            auxiliaryMiniWindowTabsByID: transientTabRegistryOwner.auxiliaryMiniWindowTabsByID
         )
     }
 }
