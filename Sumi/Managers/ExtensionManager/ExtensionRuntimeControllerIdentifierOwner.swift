@@ -51,6 +51,23 @@ final class ExtensionControllerIdentifierOwner {
         #endif
     }
 
+    /// Test processes are hosted inside Sumi.app and share the real
+    /// `~/Library/WebKit/<bundle-id>/WebExtensions` root with the user's
+    /// running browser. Every controller identifier a test process allocates
+    /// (including profile-derived ones) must be registered here so its
+    /// on-disk storage is removed once the test process exits — otherwise
+    /// test runs permanently leak controller storage directories into the
+    /// user's real WebKit root.
+    nonisolated static func registerTestControllerIdentifierIfRunningTests(
+        _ controllerIdentifier: UUID
+    ) {
+        #if DEBUG
+            guard RuntimeDiagnostics.isRunningTests else { return }
+            _ = installTestControllerCleanupAtExit
+            registerTestWebExtensionControllerIdentifier(controllerIdentifier)
+        #endif
+    }
+
     private static func makeRuntimeControllerIdentifier() -> UUID {
         #if DEBUG
             if RuntimeDiagnostics.isRunningTests {

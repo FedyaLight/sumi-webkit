@@ -217,7 +217,9 @@ final class ExtensionRuntimeContextLoadOwner {
         )
         manager.adoptLegacyWebExtensionStorageIfNeeded(
             for: request.extensionId,
-            profileId: request.profileId
+            profileId: request.profileId,
+            sourceKind: request.sourceKind,
+            sourceBundlePath: request.sourceBundlePath
         )
         manager.ensureWebExtensionStorageDirectoryExists(
             for: request.extensionId,

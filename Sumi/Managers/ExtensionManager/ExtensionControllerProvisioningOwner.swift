@@ -37,10 +37,41 @@ final class ExtensionControllerProvisioningOwner {
     }
 
     static func extensionControllerIdentifier(for profileId: UUID) -> UUID {
+        #if DEBUG
+            // Test processes are hosted inside Sumi.app and share the real
+            // WebKit storage root with the user's running browser. Never hand
+            // a test the production (profile-derived) controller identifier —
+            // a test that loads a real profile would otherwise operate on,
+            // and clean up, the user's live extension storage.
+            if RuntimeDiagnostics.isRunningTests {
+                return testScopedControllerIdentifier(for: profileId)
+            }
+        #endif
         var uuid = profileId.uuid
         uuid.15 ^= 0xA5
         return UUID(uuid: uuid)
     }
+
+    #if DEBUG
+        @MainActor
+        private static var testScopedControllerIdentifiersByProfile: [UUID: UUID] = [:]
+
+        /// Process-stable random controller identifier per profile for test
+        /// runs, registered for cross-process storage cleanup once the test
+        /// process exits.
+        @MainActor
+        private static func testScopedControllerIdentifier(for profileId: UUID) -> UUID {
+            if let existing = testScopedControllerIdentifiersByProfile[profileId] {
+                return existing
+            }
+            let identifier = UUID()
+            testScopedControllerIdentifiersByProfile[profileId] = identifier
+            ExtensionControllerIdentifierOwner.registerTestControllerIdentifierIfRunningTests(
+                identifier
+            )
+            return identifier
+        }
+    #endif
 
     @discardableResult
     func ensureExtensionController(for profileId: UUID) -> WKWebExtensionController {

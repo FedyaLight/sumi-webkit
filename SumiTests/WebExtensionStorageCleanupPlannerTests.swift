@@ -303,7 +303,106 @@ final class WebExtensionStorageCleanupPlannerTests: XCTestCase {
             ),
             "current"
         )
-        XCTAssertTrue(FileManager.default.fileExists(atPath: legacyDirectory.path))
+        // The legacy directory is retired (renamed, bytes preserved) so the
+        // destructive adoption branch can never re-arm on a later load.
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyDirectory.path))
+        let retired = try retiredSiblings(
+            of: legacyDirectory,
+            prefix: ".sumi-legacy-retired"
+        )
+        XCTAssertEqual(retired.count, 1)
+        XCTAssertEqual(
+            try String(
+                contentsOf: retired[0].appendingPathComponent("LocalStorage.db"),
+                encoding: .utf8
+            ),
+            "legacy"
+        )
+    }
+
+    func testAdoptLegacyRemovesStateOnlyLegacyDirectory() throws {
+        let libraryDirectory = makeTemporaryLibraryDirectory()
+        let controllerId = UUID()
+        let identityStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerId,
+            libraryDirectoryProvider: { libraryDirectory }
+        )
+        let composedStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerId,
+            libraryDirectoryProvider: { libraryDirectory },
+            storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
+        )
+        let extensionId = "com.vendor.ext"
+
+        XCTAssertTrue(identityStore.ensureDirectoryExists(for: extensionId))
+        let legacyDirectory = try XCTUnwrap(identityStore.directory(for: extensionId))
+        try Data().write(to: legacyDirectory.appendingPathComponent("State.plist"))
+
+        XCTAssertTrue(composedStore.ensureDirectoryExists(for: extensionId))
+        let composedDirectory = try XCTUnwrap(composedStore.directory(for: extensionId))
+        try Data("current".utf8).write(
+            to: composedDirectory.appendingPathComponent("LocalStorage.db")
+        )
+
+        composedStore.adoptLegacyStorageDirectoryIfNeeded(for: extensionId)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyDirectory.path))
+        XCTAssertEqual(
+            try String(
+                contentsOf: composedDirectory.appendingPathComponent("LocalStorage.db"),
+                encoding: .utf8
+            ),
+            "current"
+        )
+    }
+
+    func testAdoptLegacyReplaceSetsComposedDirectoryAsideInsteadOfDeleting() throws {
+        let libraryDirectory = makeTemporaryLibraryDirectory()
+        let controllerId = UUID()
+        let identityStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerId,
+            libraryDirectoryProvider: { libraryDirectory }
+        )
+        let composedStore = WebExtensionStorageCleanupStore(
+            controllerStorageId: controllerId,
+            libraryDirectoryProvider: { libraryDirectory },
+            storageDirectoryNameResolver: { "\($0) (TEAMID123)" }
+        )
+        let extensionId = "com.vendor.ext"
+
+        XCTAssertTrue(identityStore.ensureDirectoryExists(for: extensionId))
+        let legacyDirectory = try XCTUnwrap(identityStore.directory(for: extensionId))
+        try Data("legacy".utf8).write(
+            to: legacyDirectory.appendingPathComponent("LocalStorage.db")
+        )
+
+        XCTAssertTrue(composedStore.ensureDirectoryExists(for: extensionId))
+        let composedDirectory = try XCTUnwrap(composedStore.directory(for: extensionId))
+        try Data().write(to: composedDirectory.appendingPathComponent("State.plist"))
+
+        composedStore.adoptLegacyStorageDirectoryIfNeeded(for: extensionId)
+
+        // The state-only composed directory must be set aside by rename —
+        // never deleted in place, because WebKit may have created and opened
+        // store files inside it after the emptiness check ("vnode unlinked
+        // while in use" corruption).
+        let setAside = try retiredSiblings(
+            of: composedDirectory,
+            prefix: ".sumi-replaced"
+        )
+        XCTAssertEqual(setAside.count, 1)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: setAside[0].appendingPathComponent("State.plist").path
+            )
+        )
+    }
+
+    private func retiredSiblings(of directory: URL, prefix: String) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(
+            at: directory.deletingLastPathComponent(),
+            includingPropertiesForKeys: nil
+        ).filter { $0.lastPathComponent.hasPrefix(prefix) }
     }
 
     func testAdoptLegacyStorageIsNoOpWithIdentityResolver() throws {

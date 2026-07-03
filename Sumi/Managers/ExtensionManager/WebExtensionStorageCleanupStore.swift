@@ -80,9 +80,22 @@ struct WebExtensionStorageCleanupStore {
     /// identifier changed (bare bundle id → composed "<bundleId> (<teamId>)").
     /// Moves the legacy directory into place when the current directory has no
     /// real data yet, preserving sessions across the identifier migration.
-    /// Never touches a current directory that already contains store files.
-    func adoptLegacyStorageDirectoryIfNeeded(for extensionId: String) {
-        let currentName = storageDirectoryNameResolver(extensionId)
+    ///
+    /// Safety rules (WebKit may hold the current directory's SQLite stores
+    /// open at any point after a context load — deleting them in place
+    /// corrupts live databases, "vnode unlinked while in use"):
+    /// - The current directory is never deleted. When it must yield to legacy
+    ///   data it is atomically renamed aside first, so any open file
+    ///   descriptors keep pointing at intact files.
+    /// - After the adoption decision the legacy directory is always retired
+    ///   (moved into place, or renamed to a `.sumi-*` name WebKit never
+    ///   resolves), so this destructive branch can never re-arm on a later
+    ///   context load.
+    func adoptLegacyStorageDirectoryIfNeeded(
+        for extensionId: String,
+        resolvedStorageName: String? = nil
+    ) {
+        let currentName = resolvedStorageName ?? storageDirectoryNameResolver(extensionId)
         guard currentName != extensionId,
               let legacyDirectory = directoryForStorageName(extensionId),
               let currentDirectory = directoryForStorageName(currentName),
@@ -91,16 +104,43 @@ struct WebExtensionStorageCleanupStore {
             return
         }
 
+        let legacySnapshot = snapshotOfDirectory(legacyDirectory)
+        guard legacySnapshot.hasStoredDataCandidate else {
+            // Stale state-only leftover from the pre-composed identity; retire
+            // it so future loads cannot consider adoption again.
+            retireLegacyDirectory(
+                legacyDirectory,
+                extensionId: extensionId,
+                reason: "state-only"
+            )
+            return
+        }
+
         if fileManager.fileExists(atPath: currentDirectory.path) {
             let currentSnapshot = snapshotOfDirectory(currentDirectory)
-            guard currentSnapshot.hasStoredDataCandidate == false else { return }
-            let legacySnapshot = snapshotOfDirectory(legacyDirectory)
-            guard legacySnapshot.hasStoredDataCandidate else { return }
+            guard currentSnapshot.hasStoredDataCandidate == false else {
+                // Both directories contain data: the composed directory is the
+                // live one. Keep the legacy bytes but retire the directory so
+                // it stops arming this branch.
+                retireLegacyDirectory(
+                    legacyDirectory,
+                    extensionId: extensionId,
+                    reason: "composed-already-has-data"
+                )
+                return
+            }
+            // Rename aside instead of deleting: if WebKit created and opened
+            // store files after the snapshot above, their file descriptors
+            // stay valid inside the renamed directory.
+            let retiredCurrent = retiredDirectoryURL(
+                near: currentDirectory,
+                prefix: ".sumi-replaced"
+            )
             do {
-                try fileManager.removeItem(at: currentDirectory)
+                try fileManager.moveItem(at: currentDirectory, to: retiredCurrent)
             } catch {
                 Self.logger.error(
-                    "Failed to clear prunable WebExtension storage before legacy adoption for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+                    "Failed to set aside empty WebExtension storage before legacy adoption for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
                 )
                 return
             }
@@ -116,6 +156,46 @@ struct WebExtensionStorageCleanupStore {
                 "Failed to adopt legacy WebExtension storage for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
         }
+    }
+
+    /// Renames a spent legacy directory to a `.sumi-legacy-retired*` name so
+    /// the adoption branch is permanently disarmed while the bytes remain
+    /// recoverable. State-only directories are simply removed.
+    private func retireLegacyDirectory(
+        _ legacyDirectory: URL,
+        extensionId: String,
+        reason: String
+    ) {
+        let snapshot = snapshotOfDirectory(legacyDirectory)
+        do {
+            if snapshot.hasStoredDataCandidate == false {
+                try fileManager.removeItem(at: legacyDirectory)
+            } else {
+                try fileManager.moveItem(
+                    at: legacyDirectory,
+                    to: retiredDirectoryURL(
+                        near: legacyDirectory,
+                        prefix: ".sumi-legacy-retired"
+                    )
+                )
+            }
+            Self.logger.info(
+                "Retired legacy WebExtension storage for \(extensionId, privacy: .public) (\(reason, privacy: .public))"
+            )
+        } catch {
+            Self.logger.error(
+                "Failed to retire legacy WebExtension storage for \(extensionId, privacy: .public): \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func retiredDirectoryURL(near directory: URL, prefix: String) -> URL {
+        directory
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                "\(prefix)-\(directory.lastPathComponent)-\(UUID().uuidString.prefix(8))",
+                isDirectory: true
+            )
     }
 
     func hasStoredDataCandidate(for extensionId: String) -> Bool {
