@@ -53,6 +53,55 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.transitionState.hasDestination)
     }
 
+    func testClickTransitionMountsLayersAtZeroProgressBeforeAnimating() async throws {
+        let windowState = BrowserWindowState()
+        let sourceProfileId = UUID()
+        let destinationProfileId = UUID()
+        let source = Space(name: "Source", profileId: sourceProfileId)
+        let destination = Space(name: "Destination", profileId: destinationProfileId)
+        let browserHarness = try TestSidebarBrowserContextHarness(spaces: [source, destination])
+        let settingsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
+        let dragState = SidebarDragState()
+        let coordinator = SpaceSidebarTransitionCoordinator()
+
+        defer {
+            coordinator.cancelPendingSpaceTransition()
+            settingsHarness.reset()
+        }
+
+        windowState.tabManager = browserHarness.tabManager
+        windowState.currentProfileId = sourceProfileId
+        windowState.currentSpaceId = source.id
+        browserHarness.commitWorkspaceTheme(source.workspaceTheme, for: windowState)
+
+        let context = SpaceSidebarTransitionCoordinator.Context(
+            spaces: [source, destination],
+            currentSpaces: { browserHarness.tabManager.spaces },
+            windowState: windowState,
+            browserContext: browserHarness.context,
+            dragState: dragState,
+            settings: settings,
+            allowsInteractiveWork: true,
+            reduceMotion: false
+        )
+
+        coordinator.switchSpace(to: destination, context: context)
+
+        // The transition layers must mount at progress 0 in this same runloop
+        // turn so SwiftUI has a starting offset to animate from; otherwise the
+        // newly-inserted pages (and their essentials) appear already at the
+        // committed position and swap without sliding.
+        XCTAssertEqual(coordinator.transitionState.phase, .clickAnimating)
+        XCTAssertTrue(coordinator.transitionState.hasDestination)
+        XCTAssertEqual(coordinator.transitionState.progress, 0)
+        XCTAssertNotNil(coordinator.transitionSnapshot)
+
+        // The animation is dispatched to the next runloop tick.
+        try await Task.sleep(nanoseconds: UInt64(0.05 * 1_000_000_000))
+        XCTAssertGreaterThan(coordinator.transitionState.progress, 0)
+    }
+
     func testScheduledClickCompletionStartsPendingGeometryEpochBeforePromotion() async throws {
         let windowState = BrowserWindowState()
         let sourceProfileId = UUID()

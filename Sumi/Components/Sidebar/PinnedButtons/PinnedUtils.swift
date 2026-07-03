@@ -6,7 +6,7 @@
 
 import SwiftUI
 
-enum PinnedTabsConfiguration {
+enum PinnedTabsConfiguration: Equatable {
     case large
 
     var faviconHeight: CGFloat {

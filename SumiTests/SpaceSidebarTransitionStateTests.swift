@@ -465,6 +465,97 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
         XCTAssertEqual(snapshot.stationaryEssentials?.items.map(\.id), [essential.id])
     }
 
+    func testEssentialsSnapshotRenderIdentityCapturesFirstTileVisualState() {
+        let firstId = UUID()
+        let secondId = UUID()
+        let first = SpaceShortcutSnapshot(
+            id: firstId,
+            title: "First",
+            icon: .system("globe"),
+            presentationState: .liveBackgrounded,
+            showsAudioButton: false,
+            isMuted: false,
+            showsSplitOutline: false
+        )
+        let second = SpaceShortcutSnapshot(
+            id: secondId,
+            title: "Second",
+            icon: .emoji("S"),
+            presentationState: .launcherOnly,
+            showsAudioButton: false,
+            isMuted: false,
+            showsSplitOutline: false
+        )
+        let selectedFirst = SpaceShortcutSnapshot(
+            id: firstId,
+            title: "First",
+            icon: .system("globe"),
+            presentationState: .visuallySelected,
+            showsAudioButton: false,
+            isMuted: false,
+            showsSplitOutline: false
+        )
+        let retitledFirst = SpaceShortcutSnapshot(
+            id: firstId,
+            title: "First Updated",
+            icon: .system("globe"),
+            presentationState: .liveBackgrounded,
+            showsAudioButton: false,
+            isMuted: false,
+            showsSplitOutline: false
+        )
+        let changedIconFirst = SpaceShortcutSnapshot(
+            id: firstId,
+            title: "First",
+            icon: .system("gearshape"),
+            presentationState: .liveBackgrounded,
+            showsAudioButton: false,
+            isMuted: false,
+            showsSplitOutline: false
+        )
+        let audioFirst = SpaceShortcutSnapshot(
+            id: firstId,
+            title: "First",
+            icon: .system("globe"),
+            presentationState: .liveBackgrounded,
+            showsAudioButton: true,
+            isMuted: true,
+            showsSplitOutline: false
+        )
+        let splitFirst = SpaceShortcutSnapshot(
+            id: firstId,
+            title: "First",
+            icon: .system("globe"),
+            presentationState: .liveBackgrounded,
+            showsAudioButton: false,
+            isMuted: false,
+            showsSplitOutline: true
+        )
+
+        let baseline = EssentialsSnapshot(items: [first, second]).renderIdentity
+
+        XCTAssertNotEqual(
+            baseline,
+            EssentialsSnapshot(items: [selectedFirst, second]).renderIdentity
+        )
+        XCTAssertNotEqual(
+            baseline,
+            EssentialsSnapshot(items: [retitledFirst, second]).renderIdentity
+        )
+        XCTAssertNotEqual(
+            baseline,
+            EssentialsSnapshot(items: [changedIconFirst, second]).renderIdentity
+        )
+        XCTAssertNotEqual(
+            baseline,
+            EssentialsSnapshot(items: [audioFirst, second]).renderIdentity
+        )
+        XCTAssertNotEqual(
+            baseline,
+            EssentialsSnapshot(items: [splitFirst, second]).renderIdentity
+        )
+    }
+
     func testSnapshotBuilderCapturesSpaceTitleNameIconAndCornerRadius() {
         let browserManager = BrowserManager()
         let windowState = BrowserWindowState()

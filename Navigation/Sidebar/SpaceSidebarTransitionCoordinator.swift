@@ -257,15 +257,29 @@ final class SpaceSidebarTransitionCoordinator {
         startInteractiveThemeTransition(from: sourceSpace, to: destinationSpace, context: context)
         updateInteractiveThemeTransitionProgress(0, context: context)
 
-        withAnimation(spaceSwitchAnimation(reduceMotion: context.reduceMotion)) {
-            transitionState.updateProgress(1)
-        }
+        // The transition layers are inserted by this state change; animating
+        // progress in the same transaction would mount them already at the
+        // final offset and the pages (including essentials) would swap with no
+        // slide. Let the layers commit at progress 0 first, then animate.
+        let sourceSpaceId = transitionState.sourceSpaceId
+        let destinationSpaceId = transitionState.destinationSpaceId
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.transitionState.phase == .clickAnimating,
+                  self.transitionState.sourceSpaceId == sourceSpaceId,
+                  self.transitionState.destinationSpaceId == destinationSpaceId
+            else { return }
 
-        scheduleTransitionCompletion(
-            after: SpaceSidebarRenderPolicy.completionDelay,
-            commit: true,
-            context: context
-        )
+            withAnimation(self.spaceSwitchAnimation(reduceMotion: context.reduceMotion)) {
+                self.transitionState.updateProgress(1)
+            }
+
+            self.scheduleTransitionCompletion(
+                after: SpaceSidebarRenderPolicy.completionDelay,
+                commit: true,
+                context: context
+            )
+        }
     }
 
     func cancelLocalSpaceTransitionIfNeeded(context: Context, cancelTheme: Bool) {

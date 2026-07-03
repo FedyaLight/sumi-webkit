@@ -416,12 +416,12 @@ struct SpacesSideBarView: View {
                 }
 
                 if let essentials = snapshot.stationaryEssentials {
-                    EssentialsSnapshotGrid(
+                    EquatableView(content: EssentialsSnapshotGrid(
                         snapshot: essentials,
                         width: max(width - BrowserWindowState.sidebarHorizontalPadding, 0),
                         configuration: snapshot.source.pinnedTabsConfiguration,
                         tokens: themeContext.tokens(settings: sumiSettings)
-                    )
+                    ))
                     .padding(.horizontal, 8)
                     .allowsHitTesting(false)
                 }
@@ -485,17 +485,21 @@ struct SpacesSideBarView: View {
         includesPinnedGrid: Bool
     ) -> some View {
         if let pageSnapshot = snapshot.page(for: space.id) {
+            // Resolve tokens from the page's own static theme so a sliding page
+            // keeps its space's colors instead of freezing an interpolated
+            // window theme that snaps at commit.
+            let pageThemeContext = SpaceSidebarSnapshotThemeResolver.pageThemeContext(
+                for: space,
+                baseContext: themeContext,
+                settings: sumiSettings,
+                isIncognito: windowState.isIncognito
+            )
             EquatableView(content: SpaceTransitionSnapshotPageView(
                 snapshot: pageSnapshot,
                 includesEssentials: includesPinnedGrid,
                 width: width,
-                tokens: themeContext.tokens(settings: sumiSettings),
-                themeContext: SpaceSidebarSnapshotThemeResolver.pageThemeContext(
-                    for: space,
-                    baseContext: themeContext,
-                    settings: sumiSettings,
-                    isIncognito: windowState.isIncognito
-                )
+                tokens: pageThemeContext.tokens(settings: sumiSettings),
+                themeContext: pageThemeContext
             ))
         }
     }

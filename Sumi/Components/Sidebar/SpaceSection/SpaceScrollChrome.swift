@@ -215,6 +215,7 @@ private struct SidebarTabListScrollRegistrationViewRepresentable: NSViewRepresen
         if nsView.isRegistrationEnabled != isEnabled {
             nsView.isRegistrationEnabled = isEnabled
         }
+        nsView.applyScrollChromeImmediatelyIfPossible()
         nsView.scheduleScrollViewSync()
     }
 
@@ -318,12 +319,24 @@ private final class SidebarTabListScrollRegistrationView: NSView {
 
     override func viewDidMoveToSuperview() {
         super.viewDidMoveToSuperview()
+        applyScrollChromeImmediatelyIfPossible()
         scheduleScrollViewSync()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        applyScrollChromeImmediatelyIfPossible()
         scheduleScrollViewSync()
+    }
+
+    /// Suppress the native overlay scroller synchronously, before the first
+    /// paint of a freshly-mounted scroll view. Space switches rebuild the
+    /// committed page (and its `NSScrollView`) from scratch; deferring the
+    /// chrome config to the next runloop leaves a one-frame window where the
+    /// native scroller flashes in.
+    func applyScrollChromeImmediatelyIfPossible() {
+        guard let scrollView = enclosingScrollView else { return }
+        SidebarTabListScrollChromeConfiguration.apply(to: scrollView)
     }
 
     deinit {

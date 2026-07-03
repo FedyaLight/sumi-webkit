@@ -94,6 +94,24 @@ enum SpaceSidebarSnapshotIcon {
     case emoji(String)
 }
 
+struct SpaceSidebarSnapshotIconRenderIdentity: Equatable {
+    let kind: String
+    let value: String?
+}
+
+extension SpaceSidebarSnapshotIcon {
+    var renderIdentity: SpaceSidebarSnapshotIconRenderIdentity {
+        switch self {
+        case .image:
+            return SpaceSidebarSnapshotIconRenderIdentity(kind: "image", value: nil)
+        case .system(let systemName):
+            return SpaceSidebarSnapshotIconRenderIdentity(kind: "system", value: systemName)
+        case .emoji(let emoji):
+            return SpaceSidebarSnapshotIconRenderIdentity(kind: "emoji", value: emoji)
+        }
+    }
+}
+
 struct SpaceTabRowSnapshot: Identifiable {
     let id: UUID
     let title: String
@@ -152,6 +170,34 @@ private extension Array where Element == SpacePinnedItemSnapshot {
 
 struct EssentialsSnapshot {
     let items: [SpaceShortcutSnapshot]
+
+    var renderIdentity: EssentialsSnapshotRenderIdentity {
+        EssentialsSnapshotRenderIdentity(items: items.map { item in
+            EssentialsSnapshotRenderIdentity.Item(
+                id: item.id,
+                title: item.title,
+                icon: item.icon.renderIdentity,
+                presentationState: item.presentationState,
+                showsAudioButton: item.showsAudioButton,
+                isMuted: item.isMuted,
+                showsSplitOutline: item.showsSplitOutline
+            )
+        })
+    }
+}
+
+struct EssentialsSnapshotRenderIdentity: Equatable {
+    struct Item: Equatable {
+        let id: UUID
+        let title: String
+        let icon: SpaceSidebarSnapshotIconRenderIdentity
+        let presentationState: ShortcutPresentationState
+        let showsAudioButton: Bool
+        let isMuted: Bool
+        let showsSplitOutline: Bool
+    }
+
+    let items: [Item]
 }
 
 enum ExtensionActionSlotSnapshotKind {

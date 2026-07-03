@@ -40,12 +40,12 @@ struct SpaceTransitionSnapshotPageView: View, @preconcurrency Equatable {
             }
 
             if includesEssentials, let essentials = snapshot.essentials {
-                EssentialsSnapshotGrid(
+                EquatableView(content: EssentialsSnapshotGrid(
                     snapshot: essentials,
                     width: innerWidth,
                     configuration: snapshot.pinnedTabsConfiguration,
                     tokens: tokens
-                )
+                ))
                 .padding(.horizontal, 8)
             }
 
@@ -236,11 +236,18 @@ private struct SpaceSnapshotTitleView: View {
     }
 }
 
-struct EssentialsSnapshotGrid: View {
+@MainActor
+struct EssentialsSnapshotGrid: View, @preconcurrency Equatable {
     let snapshot: EssentialsSnapshot
     let width: CGFloat
     let configuration: PinnedTabsConfiguration
     let tokens: ChromeThemeTokens
+
+    static func == (lhs: EssentialsSnapshotGrid, rhs: EssentialsSnapshotGrid) -> Bool {
+        lhs.snapshot.renderIdentity == rhs.snapshot.renderIdentity &&
+            lhs.width == rhs.width &&
+            lhs.configuration == rhs.configuration
+    }
 
     private var rows: [EssentialsSnapshotRow] {
         let columns = capacityColumnCount
@@ -286,6 +293,10 @@ struct EssentialsSnapshotGrid: View {
         }
         .frame(width: width, alignment: .leading)
         .frame(height: rows.isEmpty ? 6 : nil, alignment: .top)
+        .transaction { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+        }
     }
 
     private func visualTileSize(visualColumnCount: Int) -> CGSize {
