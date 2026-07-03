@@ -301,12 +301,12 @@ final class ExtensionTabAdapter: NSObject, WKWebExtensionTab {
     func window(for _: WKWebExtensionContext) -> (any WKWebExtensionWindow)? {
         guard let tab = eligibleTab() else { return nil }
         if browserContext?.isAuxiliaryMiniWindowTab(tab) == true {
-            return extensionManager?.miniWindowAdapter(for: tab)
+            return extensionManager?.adapterResolutionOwner.miniWindowAdapter(for: tab)
         }
-        if let miniWindowAdapter = extensionManager?.miniWindowAdapter(for: tab) {
+        if let miniWindowAdapter = extensionManager?.adapterResolutionOwner.miniWindowAdapter(for: tab) {
             return miniWindowAdapter
         }
         guard let windowId = resolvedWindowState()?.id else { return nil }
-        return extensionManager?.windowAdapter(for: windowId)
+        return extensionManager?.adapterResolutionOwner.windowAdapter(for: windowId)
     }
 }

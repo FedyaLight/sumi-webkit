@@ -61,7 +61,7 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
         )
         if let activeTab = manager.browserBridgeContext?.currentExtensionTabForActiveWindow() {
             let seesCurrentTab =
-                manager.stableAdapter(for: activeTab) != nil
+                manager.adapterResolutionOwner.stableAdapter(for: activeTab) != nil
                 && manager.isTabEligibleForCurrentExtensionRuntime(activeTab)
             SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
                 seesCurrentTab: seesCurrentTab,
@@ -152,7 +152,7 @@ final class ExtensionActionPopupSessionOwner: NSObject, NSPopoverDelegate {
                 guard let profileId else { return windowState.id }
                 return manager.windowMatchesProfile(windowState, profileId: profileId) ? windowState.id : nil
             }
-            let resolution = manager.presentResolvedExtensionActionPopup(
+            let resolution = manager.actionPopupAnchorResolutionOwner.presentResolvedExtensionActionPopup(
                 popover,
                 for: extensionId,
                 profileId: profileId,

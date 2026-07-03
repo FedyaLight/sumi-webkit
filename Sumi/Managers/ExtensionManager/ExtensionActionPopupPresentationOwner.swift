@@ -144,7 +144,7 @@ enum ExtensionActionPopupPresentationOwner {
                         return nil
                     }
                     return browserContext.extensionWindowState(containing: openerTab)
-                        .flatMap { manager.windowAdapter(for: $0.id) }
+                        .flatMap { manager.adapterResolutionOwner.windowAdapter(for: $0.id) }
                 }
 
             do {

@@ -152,7 +152,7 @@ final class SafariExtension1PasswordRuntimeTests: XCTestCase {
             extensionContext.hasInjectedContent(for: server.loginBasicURL),
             "content scripts must be injectable for the loaded login page URL"
         )
-        let adapter = try XCTUnwrap(manager.stableAdapter(for: tab))
+        let adapter = try XCTUnwrap(manager.adapterResolutionOwner.stableAdapter(for: tab))
         XCTAssertNotNil(
             extensionContext.action(for: adapter),
             "the browser_action surface must resolve for the tab"

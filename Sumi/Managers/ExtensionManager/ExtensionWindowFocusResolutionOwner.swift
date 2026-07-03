@@ -152,7 +152,7 @@ extension ExtensionWindowFocusResolutionOwner.Dependencies {
                 manager?.windowMatchesProfile(windowState, profileId: profileId) ?? false
             },
             windowAdapter: { [weak manager] windowId in
-                manager?.windowAdapter(for: windowId)
+                manager?.adapterResolutionOwner.windowAdapter(for: windowId)
             },
             miniWindowAdapters: { [weak manager] in
                 manager.map { Array($0.adapterStore.miniWindowAdapters.values) } ?? []

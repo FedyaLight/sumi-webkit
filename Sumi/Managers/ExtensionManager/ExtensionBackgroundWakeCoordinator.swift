@@ -131,7 +131,7 @@ extension ExtensionBackgroundWakeCoordinator.Dependencies {
                 manager?.resolvedProfileId(explicitProfileId: explicitProfileId)
             },
             recordRuntimeMetric: { [weak manager] extensionId, update in
-                manager?.recordRuntimeMetric(for: extensionId, update: update)
+                manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
             },
             trace: { [weak manager] message in
                 manager?.extensionRuntimeTrace(message)

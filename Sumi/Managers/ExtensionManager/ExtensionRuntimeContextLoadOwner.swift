@@ -151,7 +151,7 @@ final class ExtensionRuntimeContextLoadOwner {
             "\(request.operation.runtimeTraceOperation) webExtension source=\(runtimeLoadSource.rawValue) packagePath=\(request.packageRoot.path) sourceBundlePath=\(request.sourceBundlePath)"
         )
         if request.operation.recordsRuntimeMetrics {
-            manager.recordRuntimeMetric(for: request.extensionId) {
+            manager.runtimeSessionOwner.recordRuntimeMetric(for: request.extensionId) {
                 $0.webExtensionCreationDuration =
                     CFAbsoluteTimeGetCurrent() - webExtensionStart
             }
@@ -260,7 +260,7 @@ final class ExtensionRuntimeContextLoadOwner {
             let contextLoadStart = CFAbsoluteTimeGetCurrent()
             try extensionController.load(extensionContext)
             if request.operation.recordsRuntimeMetrics {
-                manager.recordRuntimeMetric(for: request.extensionId) {
+                manager.runtimeSessionOwner.recordRuntimeMetric(for: request.extensionId) {
                     $0.contextLoadDuration =
                         CFAbsoluteTimeGetCurrent() - contextLoadStart
                 }

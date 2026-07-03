@@ -226,7 +226,7 @@ final class ExtensionRequestedTabLifecycleOwner {
                 tabBucket: SafariExtensionPermissionLifecycleDiagnostics.bucket(newTab.id),
                 dataStoreMatched: nil,
                 controllerMatched: nil,
-                tabAdapterCreated: manager.stableAdapter(for: newTab) != nil,
+                tabAdapterCreated: manager.adapterResolutionOwner.stableAdapter(for: newTab) != nil,
                 didOpenTabTiming: newTab.extensionPageRuntimeOwner.hasAnyDidOpenTabNotification()
                     ? .beforeNavigation : .deferred,
                 firstNavigationHost: SafariExtensionPermissionLifecycleDiagnostics.host(
@@ -334,7 +334,7 @@ final class ExtensionRequestedTabLifecycleOwner {
            let extensionContext,
            let ownerExtensionID = manager.extensionID(for: extensionContext),
            let profileId = manager.profileId(for: extensionContext),
-           let miniWindowAdapter = manager.extensionMiniWindowAdapters(
+           let miniWindowAdapter = manager.windowFocusResolutionOwner.miniWindowAdapters(
                ownerExtensionID: ownerExtensionID,
                profileId: profileId
            ).first,

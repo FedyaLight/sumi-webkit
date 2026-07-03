@@ -344,10 +344,10 @@ extension ExtensionBrowserRuntimeBridgeOwner.Dependencies {
                 manager?.windowMatchesProfile(windowState, profileId: profileId) ?? false
             },
             windowAdapter: { [weak manager] windowId in
-                manager?.windowAdapter(for: windowId)
+                manager?.adapterResolutionOwner.windowAdapter(for: windowId)
             },
             stableAdapter: { [weak manager] tab in
-                manager?.stableAdapter(for: tab)
+                manager?.adapterResolutionOwner.stableAdapter(for: tab)
             },
             extensionControllerForTab: { [weak manager] tab in
                 manager?.extensionController(for: tab)

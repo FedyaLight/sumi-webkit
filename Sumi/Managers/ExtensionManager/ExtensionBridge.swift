@@ -188,7 +188,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             return nil
         }
 
-        let adapter = extensionManager.stableAdapter(for: tab)
+        let adapter = extensionManager.adapterResolutionOwner.stableAdapter(for: tab)
         SafariExtensionAutofillFillDiagnostics.recordPopupTabVisibility(
             seesCurrentTab: adapter != nil,
             extensionId: extensionManager.extensionID(for: extensionContext),
@@ -209,7 +209,7 @@ final class ExtensionWindowAdapter: NSObject, WKWebExtensionWindow {
             extensionManager.resolvedProfileId(for: $0) == contextProfileId
                 && extensionManager.isTabEligibleForCurrentExtensionRuntime($0)
         }.compactMap {
-            extensionManager.stableAdapter(for: $0)
+            extensionManager.adapterResolutionOwner.stableAdapter(for: $0)
         }
     }
 
@@ -385,7 +385,7 @@ final class ExtensionMiniWindowAdapter: NSObject, WKWebExtensionWindow {
     func tabs(for _: WKWebExtensionContext) -> [any WKWebExtensionTab] {
         guard let extensionManager, let tab else { return [] }
         guard extensionManager.isTabEligibleForCurrentExtensionRuntime(tab) else { return [] }
-        guard let adapter = extensionManager.stableAdapter(for: tab) else { return [] }
+        guard let adapter = extensionManager.adapterResolutionOwner.stableAdapter(for: tab) else { return [] }
         return [adapter]
     }
 

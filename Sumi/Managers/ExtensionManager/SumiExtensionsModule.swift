@@ -315,13 +315,13 @@ final class SumiExtensionsModule {
     }
 
     func consumeRecentlyOpenedExtensionTabRequestIfLoaded(for url: URL) -> Bool {
-        managerIfLoadedAndEnabled()?.consumeRecentlyOpenedExtensionTabRequest(
+        managerIfLoadedAndEnabled()?.requestedTabLifecycleOwner.consumeRecentlyOpenedTabRequest(
             for: url
         ) ?? false
     }
 
     func recordRecentlyOpenedExtensionTabRequestIfLoaded(for url: URL?) {
-        managerIfLoadedAndEnabled()?.recordRecentlyOpenedExtensionTabRequest(for: url)
+        managerIfLoadedAndEnabled()?.requestedTabLifecycleOwner.recordRecentlyOpenedTabRequest(for: url)
     }
 
     func registerExtensionCreatedTabWithExtensionRuntimeIfLoaded(
@@ -650,7 +650,7 @@ final class SumiExtensionsModule {
     }
 
     func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
-        managerIfLoadedAndEnabled()?.stableAdapter(for: tab)
+        managerIfLoadedAndEnabled()?.adapterResolutionOwner.stableAdapter(for: tab)
     }
 
     func setActionAnchorIfLoaded(for extensionId: String, anchorView: NSView) {
@@ -667,7 +667,7 @@ final class SumiExtensionsModule {
         windowId: UUID,
         profileId: UUID?
     ) -> UUID {
-        managerIfEnabled()?.captureActionPopupAnchor(
+        managerIfEnabled()?.actionPopupAnchorResolutionOwner.captureActionPopupAnchor(
             extensionId: extensionId,
             windowId: windowId,
             profileId: profileId
@@ -679,7 +679,7 @@ final class SumiExtensionsModule {
     }
 
     func closeAllOptionsWindowsIfLoaded() {
-        cachedManager?.closeAllOptionsWindows()
+        cachedManager?.optionsWindowOwner.closeAllWindows()
     }
 
     private func storePendingActionAnchor(

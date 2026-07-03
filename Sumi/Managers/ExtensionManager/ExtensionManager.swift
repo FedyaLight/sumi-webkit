@@ -385,24 +385,6 @@ final class ExtensionManager: NSObject, ObservableObject {
 
     // MARK: - Extension Requested Tab Facades
 
-    func consumeRecentlyOpenedExtensionTabRequest(for url: URL) -> Bool {
-        requestedTabLifecycleOwner.consumeRecentlyOpenedTabRequest(for: url)
-    }
-
-    func recordRecentlyOpenedExtensionTabRequest(for url: URL?) {
-        requestedTabLifecycleOwner.recordRecentlyOpenedTabRequest(for: url)
-    }
-
-    func extensionLoadURL(
-        for requestedURL: URL?,
-        controller: WKWebExtensionController
-    ) -> (url: URL?, context: WKWebExtensionContext?) {
-        requestedTabLifecycleOwner.loadURL(
-            for: requestedURL,
-            controller: controller
-        )
-    }
-
     @discardableResult
     func prepareExtensionRequestedTabForInitialLoad(
         url: URL?,
@@ -498,90 +480,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         ).first
     }
 
-    func extensionMiniWindowAdapters(
-        ownerExtensionID: String,
-        profileId: UUID?
-    ) -> [ExtensionMiniWindowAdapter] {
-        windowFocusResolutionOwner.miniWindowAdapters(
-            ownerExtensionID: ownerExtensionID,
-            profileId: profileId
-        )
-    }
-
-    // MARK: - Extension Runtime Adapters
-
-    func miniWindowAdapter(for tab: Tab) -> ExtensionMiniWindowAdapter? {
-        adapterResolutionOwner.miniWindowAdapter(for: tab)
-    }
-
-    func miniWindowAdapter(
-        for sessionId: UUID,
-        tab: Tab,
-        window: NSWindow,
-        isPrivate: Bool,
-        shouldActivateApp: Bool
-    ) -> ExtensionMiniWindowAdapter? {
-        adapterResolutionOwner.miniWindowAdapter(
-            for: sessionId,
-            tab: tab,
-            window: window,
-            isPrivate: isPrivate,
-            shouldActivateApp: shouldActivateApp
-        )
-    }
-
-    func windowAdapter(for windowId: UUID) -> ExtensionWindowAdapter? {
-        adapterResolutionOwner.windowAdapter(for: windowId)
-    }
-
-    func stableAdapter(for tab: Tab) -> ExtensionTabAdapter? {
-        adapterResolutionOwner.stableAdapter(for: tab)
-    }
-
-    // MARK: - Action Popup Anchors
-
-    func captureActionPopupAnchor(
-        extensionId: String,
-        windowId: UUID,
-        profileId: UUID?
-    ) -> UUID {
-        actionPopupAnchorResolutionOwner.captureActionPopupAnchor(
-            extensionId: extensionId,
-            windowId: windowId,
-            profileId: profileId
-        )
-    }
-
-    func resolveActionPopupAnchor(
-        for extensionId: String,
-        profileId: UUID?,
-        preferredWindowId: UUID? = nil
-    ) -> (
-        anchorView: NSView,
-        source: ExtensionActionPopupAnchorSource,
-        resolution: ExtensionActionPopupAnchorResolution
-    )? {
-        actionPopupAnchorResolutionOwner.resolveActionPopupAnchor(
-            for: extensionId,
-            profileId: profileId,
-            preferredWindowId: preferredWindowId
-        )
-    }
-
-    func presentResolvedExtensionActionPopup(
-        _ popover: NSPopover,
-        for extensionId: String,
-        profileId: UUID?,
-        preferredWindowId: UUID? = nil
-    ) -> ExtensionActionPopupAnchorResolution {
-        actionPopupAnchorResolutionOwner.presentResolvedExtensionActionPopup(
-            popover,
-            for: extensionId,
-            profileId: profileId,
-            preferredWindowId: preferredWindowId
-        )
-    }
-
     // MARK: - Runtime Session State
 
     var cachedWebExtensionsByID: [String: WKWebExtension] {
@@ -639,32 +537,7 @@ final class ExtensionManager: NSObject, ObservableObject {
         set { runtimeSessionOwner.tabOpenNotificationGeneration = newValue }
     }
 
-    func recordRuntimeMetric(
-        for extensionId: String,
-        update: (inout ExtensionRuntimeMetrics) -> Void
-    ) {
-        runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
-    }
-
     // MARK: - Action Anchors & Options Windows
-
-    func closeAllOptionsWindows() {
-        optionsWindowOwner.closeAllWindows()
-    }
-
-    func cleanupOptionsWindow(
-        for extensionId: String,
-        window: NSWindow? = nil,
-        webView: WKWebView? = nil,
-        shouldOrderOut: Bool
-    ) {
-        optionsWindowOwner.cleanupWindow(
-            for: extensionId,
-            window: window,
-            webView: webView,
-            shouldOrderOut: shouldOrderOut
-        )
-    }
 
     func presentOptionsPageWindow(
         for extensionContext: WKWebExtensionContext,

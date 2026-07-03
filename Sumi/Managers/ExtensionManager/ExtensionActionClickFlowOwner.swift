@@ -524,7 +524,7 @@ extension ExtensionActionClickFlowOwner.Dependencies {
                 manager?.browserBridgeContext?.activeExtensionWindowState?.id
             },
             captureActionPopupAnchor: { [weak manager] extensionId, windowId, profileId in
-                _ = manager?.captureActionPopupAnchor(
+                _ = manager?.actionPopupAnchorResolutionOwner.captureActionPopupAnchor(
                     extensionId: extensionId,
                     windowId: windowId,
                     profileId: profileId
@@ -568,7 +568,7 @@ extension ExtensionActionClickFlowOwner.Dependencies {
                 manager?.registerTabWithExtensionRuntime(tab, reason: reason)
             },
             stableAdapter: { [weak manager] tab in
-                manager?.stableAdapter(for: tab)
+                manager?.adapterResolutionOwner.stableAdapter(for: tab)
             },
             grantRequestedPermissions: { [weak manager] context, webExtension, manifest in
                 manager?.grantRequestedPermissions(
@@ -688,7 +688,7 @@ extension ExtensionActionClickFlowOwner.Dependencies {
                 )
             },
             recordRuntimeMetric: { [weak manager] extensionId, update in
-                manager?.recordRuntimeMetric(for: extensionId, update: update)
+                manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
             },
             trace: { [weak manager] message in
                 manager?.extensionRuntimeTrace(message())

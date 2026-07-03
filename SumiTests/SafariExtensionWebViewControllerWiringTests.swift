@@ -388,7 +388,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             manager: manager,
             profile: profile
         )
-        let adapter = try XCTUnwrap(manager.stableAdapter(for: tab))
+        let adapter = try XCTUnwrap(manager.adapterResolutionOwner.stableAdapter(for: tab))
         XCTAssertNil(adapter.webView(for: extensionContext))
     }
 
@@ -801,7 +801,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
         XCTAssertEqual(metrics.marker, "rendered", metrics.debugSummary)
         XCTAssertFalse(browserManager.tabManager.shouldPersistRegularTab(tab))
 
-        let adapter = try XCTUnwrap(manager.stableAdapter(for: tab))
+        let adapter = try XCTUnwrap(manager.adapterResolutionOwner.stableAdapter(for: tab))
         let closed = expectation(description: "transient extension tab closed")
         var closeError: Error?
         adapter.close(for: extensionContext) { error in
@@ -876,7 +876,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             manager: manager,
             profile: profile
         )
-        let adapter = try XCTUnwrap(manager.stableAdapter(for: targetTab))
+        let adapter = try XCTUnwrap(manager.adapterResolutionOwner.stableAdapter(for: targetTab))
         let activation = expectation(description: "hidden extension tab activation rejected")
         var activationError: NSError?
         adapter.activate(for: extensionContext) { error in

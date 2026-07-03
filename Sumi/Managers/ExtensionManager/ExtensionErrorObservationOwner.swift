@@ -177,7 +177,7 @@ extension ExtensionErrorObservationOwner.Dependencies {
                 ExtensionManager.shouldObserveExtensionErrors
             },
             recordErrorUpdateDuration: { [weak manager] extensionId, duration in
-                manager?.recordRuntimeMetric(for: extensionId) {
+                manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId) {
                     $0.errorUpdateDuration = duration
                 }
             },

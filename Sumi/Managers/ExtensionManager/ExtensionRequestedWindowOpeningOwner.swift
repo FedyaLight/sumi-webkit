@@ -198,7 +198,7 @@ extension ExtensionRequestedWindowOpeningOwner.Dependencies {
                 manager?.windowMatchesProfile(windowState, profileId: profileId) ?? false
             },
             extensionLoadURL: { [weak manager] url, controller in
-                manager?.extensionLoadURL(for: url, controller: controller) ?? (nil, nil)
+                manager?.requestedTabLifecycleOwner.loadURL(for: url, controller: controller) ?? (nil, nil)
             },
             prepareContentScriptContextsForInitialLoad: { [weak manager] loadURL, contextOverride, targetWindow, targetSpace, controller in
                 _ = await manager?.prepareContentScriptContextsForExtensionRequestedInitialLoad(
@@ -224,7 +224,7 @@ extension ExtensionRequestedWindowOpeningOwner.Dependencies {
                 )
             },
             windowAdapter: { [weak manager] windowId in
-                manager?.windowAdapter(for: windowId)
+                manager?.adapterResolutionOwner.windowAdapter(for: windowId)
             },
             materializeNormalTabIfNeeded: { [weak manager] tab, isActive, targetWindow in
                 manager?.materializeExtensionRequestedNormalTabIfNeeded(

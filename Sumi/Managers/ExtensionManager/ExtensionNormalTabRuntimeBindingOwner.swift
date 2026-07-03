@@ -22,7 +22,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         }
 
         guard let controller = manager.extensionController(for: tab),
-              let adapter = manager.stableAdapter(for: tab)
+              let adapter = manager.adapterResolutionOwner.stableAdapter(for: tab)
         else {
             SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
                 injected: false,
@@ -177,7 +177,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         }
 
         guard let controller = manager.extensionController(for: tab),
-              let adapter = manager.stableAdapter(for: tab) else { return }
+              let adapter = manager.adapterResolutionOwner.stableAdapter(for: tab) else { return }
         controller.didChangeTabProperties(coalescedProperties, for: adapter)
         #if DEBUG
             manager.testHooks.didChangeTabProperties?(tab.id, coalescedProperties)
@@ -295,7 +295,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         if shouldCycleTabLifecycle,
            let controller = manager.extensionController(for: tab),
-           let adapter = manager.stableAdapter(for: tab) {
+           let adapter = manager.adapterResolutionOwner.stableAdapter(for: tab) {
             manager.extensionRuntimeTrace(
                 "rebindExtensionTabBeforeCommittedNavigation didCloseTab reason=\(reason) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )

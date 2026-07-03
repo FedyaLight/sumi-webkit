@@ -58,7 +58,7 @@ extension ExtensionPageContextMenuItemsOwner.Dependencies {
                 manager?.extensionContexts(for: profileId) ?? [:]
             },
             tabAdapter: { [weak manager] tab in
-                manager?.stableAdapter(for: tab)
+                manager?.adapterResolutionOwner.stableAdapter(for: tab)
             }
         )
     }

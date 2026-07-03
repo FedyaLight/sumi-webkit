@@ -907,7 +907,7 @@ extension ExtensionInstallationFlowOwner.Dependencies {
                 await ExtensionInstallRuntimeActivationOwner(manager: manager).activate(request)
             },
             recordRuntimeMetric: { [weak manager] extensionId, update in
-                manager?.recordRuntimeMetric(for: extensionId, update: update)
+                manager?.runtimeSessionOwner.recordRuntimeMetric(for: extensionId, update: update)
             },
             clearExtensionLoadError: { [weak manager] extensionId, profileId in
                 manager?.clearExtensionLoadError(extensionId: extensionId, profileId: profileId)

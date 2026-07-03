@@ -430,7 +430,7 @@ final class AuxiliaryWindowManager {
         }
 
         let firstURL = configuration.tabURLs.first
-        let resolvedExtensionLoad = extensionManager.extensionLoadURL(
+        let resolvedExtensionLoad = extensionManager.requestedTabLifecycleOwner.loadURL(
             for: firstURL,
             controller: controller
         )
@@ -447,7 +447,7 @@ final class AuxiliaryWindowManager {
                 targetSpace: runtime.currentSpace(),
                 controller: controller
             )
-            extensionManager.recordRecentlyOpenedExtensionTabRequest(for: loadURL)
+            extensionManager.requestedTabLifecycleOwner.recordRecentlyOpenedTabRequest(for: loadURL)
         }
 
         let loadURLString = loadURL?.absoluteString
@@ -702,7 +702,7 @@ final class AuxiliaryWindowManager {
         let miniWindowAdapter: ExtensionMiniWindowAdapter?
         if let extensionManager,
            extensionContext != nil || registerExtensionMiniWindowAdapter {
-            miniWindowAdapter = extensionManager.miniWindowAdapter(
+            miniWindowAdapter = extensionManager.adapterResolutionOwner.miniWindowAdapter(
                 for: sessionID,
                 tab: tab,
                 window: window,

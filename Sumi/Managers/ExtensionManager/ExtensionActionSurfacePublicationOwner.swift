@@ -117,7 +117,7 @@ extension ExtensionActionSurfacePublicationOwner.Dependencies {
                 manager?.browserBridgeContext?.currentExtensionTabForActiveWindow()
             },
             stableAdapter: { [weak manager] tab in
-                manager?.stableAdapter(for: tab)
+                manager?.adapterResolutionOwner.stableAdapter(for: tab)
             },
             resolvedProfileId: { [weak manager] profileId in
                 manager?.resolvedProfileId(explicitProfileId: profileId)

@@ -609,7 +609,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         XCTAssertNotNil(focusedMiniWindow)
         XCTAssertEqual(
             focusedMiniWindow?.sessionId,
-            harness.extensionManager.extensionMiniWindowAdapters(
+            harness.extensionManager.windowFocusResolutionOwner.miniWindowAdapters(
                 ownerExtensionID: "adapter-owner",
                 profileId: harness.profile.id
             ).first?.sessionId
@@ -647,13 +647,13 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             openWindowsFor: harness.extensionContext
         )
         let ownerMiniWindowAdapter = try XCTUnwrap(
-            harness.extensionManager.extensionMiniWindowAdapters(
+            harness.extensionManager.windowFocusResolutionOwner.miniWindowAdapters(
                 ownerExtensionID: "adapter-owner",
                 profileId: harness.profile.id
             ).first
         )
         let mainWindowAdapter = try XCTUnwrap(
-            harness.extensionManager.windowAdapter(for: harness.windowState.id)
+            harness.extensionManager.adapterResolutionOwner.windowAdapter(for: harness.windowState.id)
         )
 
         let firstOpenWindow = try XCTUnwrap(openWindows.first)
@@ -759,7 +759,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
         }
 
         let sourceMiniWindow = try XCTUnwrap(
-            harness.extensionManager.extensionMiniWindowAdapters(
+            harness.extensionManager.windowFocusResolutionOwner.miniWindowAdapters(
                 ownerExtensionID: "adapter-owner",
                 profileId: harness.profile.id
             ).first
@@ -811,7 +811,7 @@ final class AuxiliaryWindowManagerTests: XCTestCase {
             webView.configuration.webExtensionController,
             harness.extensionManager.ensureExtensionController(for: harness.profile.id)
         )
-        XCTAssertNotNil(harness.extensionManager.stableAdapter(for: authTab))
+        XCTAssertNotNil(harness.extensionManager.adapterResolutionOwner.stableAdapter(for: authTab))
         XCTAssertTrue(authTab.extensionPageRuntimeOwner.didNotifyOpenToExtensions)
     }
 
