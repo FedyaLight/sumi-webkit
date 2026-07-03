@@ -358,157 +358,119 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
     }
 
     func testRuntimeRelativePreviousWrapsFromFirstToLastThroughTransitionPath() async throws {
-        let windowState = BrowserWindowState()
         let firstSpace = Space(name: "First")
         let middleSpace = Space(name: "Middle")
         let lastSpace = Space(name: "Last")
         let spaces = [firstSpace, middleSpace, lastSpace]
-        let browserHarness = try TestSidebarBrowserContextHarness(spaces: spaces)
-        let settingsHarness = TestDefaultsHarness()
-        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
-        let dragState = SidebarDragState()
-        let runtimeOwner = SpacesSidebarRuntimeOwner()
+        let fixture = try runtimeRelativeSwitchFixture(spaces: spaces, currentSpace: firstSpace)
 
-        windowState.tabManager = browserHarness.tabManager
-        windowState.currentSpaceId = firstSpace.id
-        browserHarness.commitWorkspaceTheme(firstSpace.workspaceTheme, for: windowState)
+        defer { fixture.cleanup() }
 
-        let dependencies = runtimeDependencies(
-            windowState: windowState,
-            browserHarness: browserHarness,
-            dragState: dragState,
-            settings: settings
-        )
-
-        defer {
-            runtimeOwner.cancelLocalSpaceTransitionIfNeeded(
-                spaces: spaces,
-                dependencies: dependencies,
-                cancelTheme: true
-            )
-            settingsHarness.reset()
-        }
-
-        runtimeOwner.switchRelativeSpace(
+        fixture.runtimeOwner.switchRelativeSpace(
             offset: -1,
             spaces: spaces,
-            dependencies: dependencies
+            dependencies: fixture.dependencies
         )
 
         try await waitForScheduledSpaceTransitionCompletion()
 
-        XCTAssertEqual(windowState.currentSpaceId, lastSpace.id)
-        guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = browserHarness.transitionEvents.last else {
+        XCTAssertEqual(fixture.windowState.currentSpaceId, lastSpace.id)
+        guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = fixture.browserHarness.transitionEvents.last else {
             XCTFail("Expected relative switch to commit through transition-aware activation")
             return
         }
         XCTAssertEqual(committedSpaceId, lastSpace.id)
-        XCTAssertFalse(runtimeOwner.transitionState.hasDestination)
+        XCTAssertFalse(fixture.runtimeOwner.transitionState.hasDestination)
     }
 
     func testRuntimeRelativeNextWrapsFromLastToFirstThroughTransitionPath() async throws {
-        let windowState = BrowserWindowState()
         let firstSpace = Space(name: "First")
         let middleSpace = Space(name: "Middle")
         let lastSpace = Space(name: "Last")
         let spaces = [firstSpace, middleSpace, lastSpace]
-        let browserHarness = try TestSidebarBrowserContextHarness(spaces: spaces)
-        let settingsHarness = TestDefaultsHarness()
-        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
-        let dragState = SidebarDragState()
-        let runtimeOwner = SpacesSidebarRuntimeOwner()
+        let fixture = try runtimeRelativeSwitchFixture(spaces: spaces, currentSpace: lastSpace)
 
-        windowState.tabManager = browserHarness.tabManager
-        windowState.currentSpaceId = lastSpace.id
-        browserHarness.tabManager.currentSpace = lastSpace
-        browserHarness.commitWorkspaceTheme(lastSpace.workspaceTheme, for: windowState)
+        defer { fixture.cleanup() }
 
-        let dependencies = runtimeDependencies(
-            windowState: windowState,
-            browserHarness: browserHarness,
-            dragState: dragState,
-            settings: settings
-        )
-
-        defer {
-            runtimeOwner.cancelLocalSpaceTransitionIfNeeded(
-                spaces: spaces,
-                dependencies: dependencies,
-                cancelTheme: true
-            )
-            settingsHarness.reset()
-        }
-
-        runtimeOwner.switchRelativeSpace(
+        fixture.runtimeOwner.switchRelativeSpace(
             offset: 1,
             spaces: spaces,
-            dependencies: dependencies
+            dependencies: fixture.dependencies
         )
 
         try await waitForScheduledSpaceTransitionCompletion()
 
-        XCTAssertEqual(windowState.currentSpaceId, firstSpace.id)
-        guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = browserHarness.transitionEvents.last else {
+        XCTAssertEqual(fixture.windowState.currentSpaceId, firstSpace.id)
+        guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = fixture.browserHarness.transitionEvents.last else {
             XCTFail("Expected relative switch to commit through transition-aware activation")
             return
         }
         XCTAssertEqual(committedSpaceId, firstSpace.id)
-        XCTAssertFalse(runtimeOwner.transitionState.hasDestination)
+        XCTAssertFalse(fixture.runtimeOwner.transitionState.hasDestination)
     }
 
     func testRuntimeRelativeSwitchNoOpsWhenOnlyOneSpaceOrCurrentSpaceIsMissing() throws {
-        let windowState = BrowserWindowState()
         let firstSpace = Space(name: "First")
         let secondSpace = Space(name: "Second")
-        let browserHarness = try TestSidebarBrowserContextHarness(spaces: [firstSpace, secondSpace])
-        let settingsHarness = TestDefaultsHarness()
-        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
-        let runtimeOwner = SpacesSidebarRuntimeOwner()
+        let spaces = [firstSpace, secondSpace]
+        let fixture = try runtimeRelativeSwitchFixture(spaces: spaces, currentSpace: firstSpace)
 
-        defer {
-            settingsHarness.reset()
-        }
+        defer { fixture.cleanup() }
 
-        windowState.tabManager = browserHarness.tabManager
-        windowState.currentSpaceId = firstSpace.id
-
-        runtimeOwner.switchRelativeSpace(
+        fixture.runtimeOwner.switchRelativeSpace(
             offset: 1,
             spaces: [firstSpace],
-            dependencies: runtimeDependencies(
-                windowState: windowState,
-                browserHarness: browserHarness,
-                dragState: SidebarDragState(),
-                settings: settings
-            )
+            dependencies: fixture.dependencies
         )
 
-        XCTAssertEqual(windowState.currentSpaceId, firstSpace.id)
-        XCTAssertTrue(browserHarness.transitionEvents.isEmpty)
-        XCTAssertEqual(runtimeOwner.transitionState.phase, .idle)
+        XCTAssertEqual(fixture.windowState.currentSpaceId, firstSpace.id)
+        XCTAssertTrue(fixture.browserHarness.transitionEvents.isEmpty)
+        XCTAssertEqual(fixture.runtimeOwner.transitionState.phase, .idle)
 
-        windowState.currentSpaceId = UUID()
-        runtimeOwner.switchRelativeSpace(
+        fixture.windowState.currentSpaceId = UUID()
+        fixture.runtimeOwner.switchRelativeSpace(
             offset: 1,
-            spaces: [firstSpace, secondSpace],
-            dependencies: runtimeDependencies(
-                windowState: windowState,
-                browserHarness: browserHarness,
-                dragState: SidebarDragState(),
-                settings: settings
-            )
+            spaces: spaces,
+            dependencies: fixture.dependencies
         )
 
-        XCTAssertTrue(browserHarness.transitionEvents.isEmpty)
-        XCTAssertEqual(runtimeOwner.transitionState.phase, .idle)
+        XCTAssertTrue(fixture.browserHarness.transitionEvents.isEmpty)
+        XCTAssertEqual(fixture.runtimeOwner.transitionState.phase, .idle)
     }
 
     func testRuntimeRelativeSwitchDoesNotReplaceActiveTransition() async throws {
-        let windowState = BrowserWindowState()
         let firstSpace = Space(name: "First")
         let nextSpace = Space(name: "Next")
         let previousSpace = Space(name: "Previous")
         let spaces = [firstSpace, nextSpace, previousSpace]
+        let fixture = try runtimeRelativeSwitchFixture(spaces: spaces, currentSpace: firstSpace)
+
+        defer { fixture.cleanup() }
+
+        fixture.runtimeOwner.switchRelativeSpace(
+            offset: 1,
+            spaces: spaces,
+            dependencies: fixture.dependencies
+        )
+        XCTAssertEqual(fixture.runtimeOwner.transitionState.destinationSpaceId, nextSpace.id)
+
+        fixture.runtimeOwner.switchRelativeSpace(
+            offset: -1,
+            spaces: spaces,
+            dependencies: fixture.dependencies
+        )
+
+        XCTAssertEqual(fixture.runtimeOwner.transitionState.destinationSpaceId, nextSpace.id)
+
+        try await waitForScheduledSpaceTransitionCompletion()
+        XCTAssertEqual(fixture.windowState.currentSpaceId, nextSpace.id)
+    }
+
+    private func runtimeRelativeSwitchFixture(
+        spaces: [Space],
+        currentSpace: Space
+    ) throws -> RuntimeRelativeSwitchFixture {
+        let windowState = BrowserWindowState()
         let browserHarness = try TestSidebarBrowserContextHarness(spaces: spaces)
         let settingsHarness = TestDefaultsHarness()
         let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
@@ -516,51 +478,11 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         let runtimeOwner = SpacesSidebarRuntimeOwner()
 
         windowState.tabManager = browserHarness.tabManager
-        windowState.currentSpaceId = firstSpace.id
-        browserHarness.commitWorkspaceTheme(firstSpace.workspaceTheme, for: windowState)
+        windowState.currentSpaceId = currentSpace.id
+        browserHarness.tabManager.currentSpace = currentSpace
+        browserHarness.commitWorkspaceTheme(currentSpace.workspaceTheme, for: windowState)
 
-        let dependencies = runtimeDependencies(
-            windowState: windowState,
-            browserHarness: browserHarness,
-            dragState: dragState,
-            settings: settings
-        )
-
-        defer {
-            runtimeOwner.cancelLocalSpaceTransitionIfNeeded(
-                spaces: spaces,
-                dependencies: dependencies,
-                cancelTheme: true
-            )
-            settingsHarness.reset()
-        }
-
-        runtimeOwner.switchRelativeSpace(
-            offset: 1,
-            spaces: spaces,
-            dependencies: dependencies
-        )
-        XCTAssertEqual(runtimeOwner.transitionState.destinationSpaceId, nextSpace.id)
-
-        runtimeOwner.switchRelativeSpace(
-            offset: -1,
-            spaces: spaces,
-            dependencies: dependencies
-        )
-
-        XCTAssertEqual(runtimeOwner.transitionState.destinationSpaceId, nextSpace.id)
-
-        try await waitForScheduledSpaceTransitionCompletion()
-        XCTAssertEqual(windowState.currentSpaceId, nextSpace.id)
-    }
-
-    private func runtimeDependencies(
-        windowState: BrowserWindowState,
-        browserHarness: TestSidebarBrowserContextHarness,
-        dragState: SidebarDragState,
-        settings: SumiSettingsService
-    ) -> SpacesSidebarRuntimeOwner.Dependencies {
-        SpacesSidebarRuntimeOwner.Dependencies(
+        let dependencies = SpacesSidebarRuntimeOwner.Dependencies(
             windowState: windowState,
             browserContext: browserHarness.context,
             dragState: dragState,
@@ -568,12 +490,40 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
             allowsInteractiveWork: true,
             reduceMotion: true
         )
+
+        return RuntimeRelativeSwitchFixture(
+            spaces: spaces,
+            windowState: windowState,
+            browserHarness: browserHarness,
+            settingsHarness: settingsHarness,
+            runtimeOwner: runtimeOwner,
+            dependencies: dependencies
+        )
     }
 
     private func waitForScheduledSpaceTransitionCompletion() async throws {
         try await Task.sleep(
             nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.15) * 1_000_000_000)
         )
+    }
+
+    private struct RuntimeRelativeSwitchFixture {
+        let spaces: [Space]
+        let windowState: BrowserWindowState
+        let browserHarness: TestSidebarBrowserContextHarness
+        let settingsHarness: TestDefaultsHarness
+        let runtimeOwner: SpacesSidebarRuntimeOwner
+        let dependencies: SpacesSidebarRuntimeOwner.Dependencies
+
+        @MainActor
+        func cleanup() {
+            runtimeOwner.cancelLocalSpaceTransitionIfNeeded(
+                spaces: spaces,
+                dependencies: dependencies,
+                cancelTheme: true
+            )
+            settingsHarness.reset()
+        }
     }
 }
 

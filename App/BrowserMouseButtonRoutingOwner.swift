@@ -13,7 +13,7 @@ final class BrowserMouseButtonRoutingOwner {
             eventWindow: event.window,
             mouseButtonRouter: mouseButtonRouter,
             windowRegistry: windowRegistry,
-            deferWorkspaceNavigationToSidebar: SidebarMouseButtonCaptureRegistry.shared
+            deferSideButtonsToSidebar: SidebarMouseButtonCaptureRegistry.shared
                 .containsWorkspaceMouseButtonEvent(event)
         )
     }
@@ -24,9 +24,9 @@ final class BrowserMouseButtonRoutingOwner {
         eventWindow: NSWindow?,
         mouseButtonRouter: any BrowserMouseButtonCommandRouting,
         windowRegistry: WindowRegistry,
-        deferWorkspaceNavigationToSidebar: Bool = false
+        deferSideButtonsToSidebar: Bool = false
     ) -> Bool {
-        if deferWorkspaceNavigationToSidebar,
+        if deferSideButtonsToSidebar,
            SidebarMouseButtonWorkspaceNavigationPolicy.spaceOffset(for: buttonNumber) != nil {
             return false
         }

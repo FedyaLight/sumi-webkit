@@ -60,14 +60,14 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
             eventWindow: nil,
             mouseButtonRouter: router,
             windowRegistry: registry,
-            deferWorkspaceNavigationToSidebar: true
+            deferSideButtonsToSidebar: true
         ))
         XCTAssertFalse(owner.handleMouseButton(
             4,
             eventWindow: nil,
             mouseButtonRouter: router,
             windowRegistry: registry,
-            deferWorkspaceNavigationToSidebar: true
+            deferSideButtonsToSidebar: true
         ))
 
         XCTAssertTrue(router.backWindowIDs.isEmpty)
@@ -87,7 +87,7 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
             eventWindow: nil,
             mouseButtonRouter: router,
             windowRegistry: registry,
-            deferWorkspaceNavigationToSidebar: true
+            deferSideButtonsToSidebar: true
         ))
 
         XCTAssertEqual(router.focusedWindowIDs, [activeWindowState.id])
@@ -104,28 +104,28 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
         )
         let sidebarView = NSView(frame: NSRect(x: 0, y: 0, width: 80, height: 160))
         window.contentView?.addSubview(sidebarView)
-        SidebarMouseButtonCaptureRegistry.shared.register(sidebarView, isEnabled: true)
+        SidebarMouseButtonCaptureRegistry.shared.register(sidebarView)
 
         defer {
             SidebarMouseButtonCaptureRegistry.shared.unregister(sidebarView)
         }
 
-        XCTAssertTrue(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonEvent(
+        XCTAssertTrue(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonLocation(
             buttonNumber: 3,
             locationInWindow: CGPoint(x: 20, y: 20),
             in: window
         ))
-        XCTAssertTrue(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonEvent(
+        XCTAssertTrue(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonLocation(
             buttonNumber: 4,
             locationInWindow: CGPoint(x: 20, y: 20),
             in: window
         ))
-        XCTAssertFalse(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonEvent(
+        XCTAssertFalse(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonLocation(
             buttonNumber: 3,
             locationInWindow: CGPoint(x: 120, y: 20),
             in: window
         ))
-        XCTAssertFalse(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonEvent(
+        XCTAssertFalse(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonLocation(
             buttonNumber: 2,
             locationInWindow: CGPoint(x: 20, y: 20),
             in: window

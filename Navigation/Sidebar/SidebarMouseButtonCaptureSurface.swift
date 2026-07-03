@@ -13,8 +13,13 @@ enum SidebarMouseButtonWorkspaceNavigationPolicy {
         }
     }
 
+    static func spaceOffset(for event: NSEvent) -> Int? {
+        guard event.type == .otherMouseDown else { return nil }
+        return spaceOffset(for: event.buttonNumber)
+    }
+
     static func shouldCapture(_ event: NSEvent) -> Bool {
-        event.type == .otherMouseDown && spaceOffset(for: event.buttonNumber) != nil
+        spaceOffset(for: event) != nil
     }
 }
 
@@ -24,44 +29,36 @@ final class SidebarMouseButtonCaptureRegistry {
 
     private final class WeakCaptureView {
         weak var view: NSView?
-        var isEnabled: Bool
 
-        init(view: NSView, isEnabled: Bool) {
+        init(view: NSView) {
             self.view = view
-            self.isEnabled = isEnabled
         }
     }
 
     private var viewsByIdentifier: [ObjectIdentifier: WeakCaptureView] = [:]
 
-    func register(_ view: NSView, isEnabled: Bool) {
+    func register(_ view: NSView) {
         cleanupReleasedViews()
-        viewsByIdentifier[ObjectIdentifier(view)] = WeakCaptureView(view: view, isEnabled: isEnabled)
+        viewsByIdentifier[ObjectIdentifier(view)] = WeakCaptureView(view: view)
     }
 
     func unregister(_ view: NSView) {
         viewsByIdentifier[ObjectIdentifier(view)] = nil
     }
 
-    func setEnabled(_ isEnabled: Bool, for view: NSView) {
-        let identifier = ObjectIdentifier(view)
-        if let registeredView = viewsByIdentifier[identifier] {
-            registeredView.isEnabled = isEnabled
-        } else {
-            viewsByIdentifier[identifier] = WeakCaptureView(view: view, isEnabled: isEnabled)
-        }
-        cleanupReleasedViews()
-    }
-
     func containsWorkspaceMouseButtonEvent(_ event: NSEvent) -> Bool {
-        containsWorkspaceMouseButtonEvent(
+        guard SidebarMouseButtonWorkspaceNavigationPolicy.spaceOffset(for: event) != nil else {
+            return false
+        }
+
+        return containsWorkspaceMouseButtonLocation(
             buttonNumber: event.buttonNumber,
             locationInWindow: event.locationInWindow,
             in: event.window
         )
     }
 
-    func containsWorkspaceMouseButtonEvent(
+    func containsWorkspaceMouseButtonLocation(
         buttonNumber: Int,
         locationInWindow: CGPoint,
         in eventWindow: NSWindow?
@@ -75,8 +72,7 @@ final class SidebarMouseButtonCaptureRegistry {
         cleanupReleasedViews()
 
         return viewsByIdentifier.values.contains { registeredView in
-            guard registeredView.isEnabled,
-                  let view = registeredView.view,
+            guard let view = registeredView.view,
                   view.window === eventWindow,
                   !view.isHiddenOrHasHiddenAncestor
             else {
@@ -142,7 +138,7 @@ extension SidebarMouseButtonCaptureSurface {
         weak var coordinator: Coordinator?
         var isEnabled = false {
             didSet {
-                SidebarMouseButtonCaptureRegistry.shared.setEnabled(isEnabled, for: self)
+                updateRegistryRegistration()
             }
         }
 
@@ -152,11 +148,7 @@ extension SidebarMouseButtonCaptureSurface {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            if window == nil {
-                SidebarMouseButtonCaptureRegistry.shared.unregister(self)
-            } else {
-                SidebarMouseButtonCaptureRegistry.shared.register(self, isEnabled: isEnabled)
-            }
+            updateRegistryRegistration()
         }
 
         override func hitTest(_ point: NSPoint) -> NSView? {
@@ -177,6 +169,15 @@ extension SidebarMouseButtonCaptureSurface {
             }
 
             super.otherMouseDown(with: event)
+        }
+
+        private func updateRegistryRegistration() {
+            guard window != nil, isEnabled else {
+                SidebarMouseButtonCaptureRegistry.shared.unregister(self)
+                return
+            }
+
+            SidebarMouseButtonCaptureRegistry.shared.register(self)
         }
     }
 }
