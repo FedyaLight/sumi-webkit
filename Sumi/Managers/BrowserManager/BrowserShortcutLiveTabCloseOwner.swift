@@ -88,7 +88,7 @@ final class BrowserShortcutLiveTabCloseOwner {
     private func captureClosedShortcutLiveInstance(_ tab: Tab, in windowState: BrowserWindowState) {
         let tabManager = dependencies.tabManager()
         guard let pinId = tab.shortcutPinId,
-              let pin = tabManager.shortcutPin(by: pinId)
+              let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
         else {
             return
         }

@@ -154,7 +154,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
 
         XCTAssertEqual(updatedPin.profileId, ownerProfileId)
         XCTAssertEqual(updatedPin.executionProfileId, executionProfileId)
-        XCTAssertEqual(tabManager.essentialPins(for: ownerProfileId).first?.id, pin.id)
+        XCTAssertEqual(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: ownerProfileId).first?.id, pin.id)
     }
 
     func testPinTabConvertsDisplayedTabUsingOwningWindowContext() throws {
@@ -173,10 +173,10 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         let tab = tabManager.createNewTab(url: "https://example.com", in: space, activate: false)
         windowState.currentTabId = tab.id
 
-        tabManager.pinTab(tab, context: .init(windowState: windowState))
+        tabManager.shortcutPinCommandOwner.pinTab(tab, context: .init(windowState: windowState))
 
-        let pin = try XCTUnwrap(tabManager.essentialPins(for: profileId).first)
-        let liveTab = try XCTUnwrap(tabManager.activeShortcutTab(for: windowState.id))
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.activeShortcutTab(for: windowState.id))
         XCTAssertEqual(liveTab.id, tab.id)
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
@@ -211,15 +211,15 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         primaryWindow.currentTabId = tab.id
         actionWindow.currentTabId = tab.id
 
-        tabManager.pinTab(tab, context: .init(windowState: actionWindow))
+        tabManager.shortcutPinCommandOwner.pinTab(tab, context: .init(windowState: actionWindow))
 
-        let pin = try XCTUnwrap(tabManager.essentialPins(for: profileId).first)
-        let primaryLiveTab = try XCTUnwrap(tabManager.activeShortcutTab(for: primaryWindow.id))
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
+        let primaryLiveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.activeShortcutTab(for: primaryWindow.id))
         XCTAssertEqual(primaryLiveTab.id, tab.id)
         XCTAssertEqual(primaryLiveTab.shortcutPinId, pin.id)
         XCTAssertEqual(primaryWindow.currentTabId, tab.id)
         XCTAssertEqual(primaryWindow.currentShortcutPinId, pin.id)
-        let liveTab = try XCTUnwrap(tabManager.activeShortcutTab(for: actionWindow.id))
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.activeShortcutTab(for: actionWindow.id))
         XCTAssertNotEqual(liveTab.id, tab.id)
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
         XCTAssertEqual(materializations.map(\.tabId), [liveTab.id])
@@ -254,11 +254,11 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         actionWindow.currentTabId = tab.id
         splitOnlyWindow.currentTabId = splitActiveTab.id
 
-        tabManager.pinTab(tab, context: .init(windowState: actionWindow))
+        tabManager.shortcutPinCommandOwner.pinTab(tab, context: .init(windowState: actionWindow))
 
-        let pin = try XCTUnwrap(tabManager.essentialPins(for: profileId).first)
-        XCTAssertEqual(tabManager.activeShortcutTab(for: actionWindow.id)?.shortcutPinId, pin.id)
-        XCTAssertNil(tabManager.activeShortcutTab(for: splitOnlyWindow.id))
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
+        XCTAssertEqual(tabManager.shortcutPresentationOwner.activeShortcutTab(for: actionWindow.id)?.shortcutPinId, pin.id)
+        XCTAssertNil(tabManager.shortcutPresentationOwner.activeShortcutTab(for: splitOnlyWindow.id))
         XCTAssertEqual(splitOnlyWindow.currentTabId, splitActiveTab.id)
     }
 
@@ -266,7 +266,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let pin = try XCTUnwrap(tabManager.insertShortcutPin(ShortcutPin(
+        let pin = try XCTUnwrap(tabManager.shortcutPinStoreOwner.insert(ShortcutPin(
             id: UUID(),
             role: .spacePinned,
             spaceId: space.id,
@@ -287,7 +287,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         let deletedProfileId = UUID()
         let fallbackProfileId = UUID()
         _ = tabManager.createSpace(name: "Work", profileId: fallbackProfileId)
-        let pin = try XCTUnwrap(tabManager.insertShortcutPin(ShortcutPin(
+        let pin = try XCTUnwrap(tabManager.shortcutPinStoreOwner.insert(ShortcutPin(
             id: UUID(),
             role: .essential,
             profileId: deletedProfileId,
@@ -304,7 +304,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         )
 
         XCTAssertNotEqual(tabManager.currentTab?.id, liveTab.id)
-        XCTAssertNil(tabManager.shortcutPin(by: pin.id))
+        XCTAssertNil(tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
     }
 
     func testLauncherFaviconPartitionFallsBackToContainerProfileWhenExecutionProfileIsImplicit() throws {
@@ -325,8 +325,8 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             )
         )
         XCTAssertNil(essentialPin.executionProfileId)
-        XCTAssertEqual(tabManager.resolvedExecutionProfileId(for: essentialPin), profileId)
-        XCTAssertEqual(tabManager.resolvedFaviconPartition(for: essentialPin), .regular(profileId))
+        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: essentialPin), profileId)
+        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(for: essentialPin), .regular(profileId))
 
         let spacePinnedTab = tabManager.createNewTab(url: "https://example.com/space", in: space, activate: false)
         spacePinnedTab.profileId = profileId
@@ -341,8 +341,8 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
             )
         )
         XCTAssertNil(spacePin.executionProfileId)
-        XCTAssertEqual(tabManager.resolvedExecutionProfileId(for: spacePin, currentSpaceId: space.id), profileId)
-        XCTAssertEqual(tabManager.resolvedFaviconPartition(for: spacePin, currentSpaceId: space.id), .regular(profileId))
+        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: spacePin, currentSpaceId: space.id), profileId)
+        XCTAssertEqual(tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(for: spacePin, currentSpaceId: space.id), .regular(profileId))
     }
 
 }

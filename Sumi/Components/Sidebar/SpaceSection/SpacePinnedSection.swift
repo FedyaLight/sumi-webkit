@@ -22,7 +22,7 @@ private struct SpacePinnedDisplayEntry: Identifiable {
 extension SpaceView {
     private var launcherProjection: TabManager.SpaceLauncherProjection? {
         guard windowState.isIncognito == false else { return nil }
-        return browserContext.tabManager.launcherProjection(for: space.id, in: windowState.id)
+        return browserContext.tabManager.spaceLauncherProjectionOwner.projection(for: space.id, in: windowState.id)
     }
 
     private var topLevelPinnedPins: [ShortcutPin] {
@@ -328,7 +328,7 @@ extension SpaceView {
     }
 
     private func shortcutPinIsElevated(_ pin: ShortcutPin) -> Bool {
-        browserContext.tabManager.shortcutRuntimeAffordanceState(for: pin, in: windowState).isSelected
+        browserContext.tabManager.shortcutPresentationOwner.shortcutRuntimeAffordanceState(for: pin, in: windowState).isSelected
     }
 
     private func splitGroupIsElevated(_ group: SplitGroup) -> Bool {
@@ -355,7 +355,7 @@ extension SpaceView {
         let isAppearing = shortcutRestoreAppearingGapIds.contains(gapId)
         return ZStack(alignment: .topLeading) {
             if let gap = shortcutRestoreGaps.first(where: { $0.id == gapId }),
-               let pin = browserContext.tabManager.shortcutPin(by: gap.pinId) {
+               let pin = browserContext.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: gap.pinId) {
                 pinnedShortcutView(pin, topLevelPinnedIndex: gap.index)
                     .frame(height: SidebarRowLayout.rowHeight, alignment: .top)
             }
@@ -452,11 +452,11 @@ extension SpaceView {
             ShortcutSidebarRow(
                 pin: pin,
                 liveTab: activeTab,
-                faviconPartition: browserContext.tabManager.resolvedFaviconPartition(
+                faviconPartition: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
                     for: pin,
                     currentSpaceId: windowState.currentSpaceId
                 ),
-                runtimeAffordance: browserContext.tabManager.shortcutRuntimeAffordanceState(
+                runtimeAffordance: browserContext.tabManager.shortcutPresentationOwner.shortcutRuntimeAffordanceState(
                     for: pin,
                     in: windowState
                 ),
@@ -502,22 +502,22 @@ extension SpaceView {
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
             profiles: profiles,
-            selectedProfileId: browserContext.tabManager.resolvedExecutionProfileId(
+            selectedProfileId: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(
                 for: pin,
                 currentSpaceId: space.id
             )
         )
-        let addToEssentialsAction: (() -> Void)? = browserContext.tabManager.canAddURLToEssentials(
+        let addToEssentialsAction: (() -> Void)? = browserContext.tabManager.essentialsShortcutPlacementOwner.canAddURL(
             pin.launchURL,
             using: .init(windowState: windowState, spaceId: space.id)
         )
             ? { pinShortcutGlobally(pin) }
             : nil
         let savedURLDriftActions: SidebarSavedURLDriftActions? =
-            browserContext.tabManager.shortcutHasDrifted(pin, in: windowState)
+            browserContext.tabManager.shortcutPresentationOwner.shortcutHasDrifted(pin, in: windowState)
                 ? .init(
                     onBackToSavedURL: { resetShortcutPin(pin) },
-                    onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
+                    onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.shortcutPinCommandOwner.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
                 )
                 : nil
         let unloadAction: (() -> Void)? = presentationState.isOpenLive
@@ -579,7 +579,7 @@ extension SpaceView {
     }
 
     private func deleteFolder(_ folder: TabFolder) {
-        let childCount = browserContext.tabManager.folderRecursiveChildCount(for: folder.id, in: space.id)
+        let childCount = browserContext.tabManager.spacePinnedStructureOwner.folderRecursiveChildCount(for: folder.id, in: space.id)
         guard childCount == 0 else {
             confirmDeleteFolder(folder, childCount: childCount)
             return
@@ -592,7 +592,7 @@ extension SpaceView {
 
     private func removeShortcutPin(_ pin: ShortcutPin) {
         mutatePinnedContent {
-            browserContext.tabManager.removeShortcutPin(pin)
+            browserContext.tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
         }
     }
 
@@ -630,11 +630,11 @@ extension SpaceView {
     }
 
     private func shortcutPresentationState(for pin: ShortcutPin) -> ShortcutPresentationState {
-        browserContext.tabManager.shortcutPresentationState(for: pin, in: windowState)
+        browserContext.tabManager.shortcutPresentationOwner.shortcutPresentationState(for: pin, in: windowState)
     }
 
     private func activeShortcutTab(for pin: ShortcutPin) -> Tab? {
-        browserContext.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+        browserContext.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)
     }
 
     private func isPinnedSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
@@ -661,7 +661,7 @@ extension SpaceView {
     }
 
     private func unloadShortcutPin(_ pin: ShortcutPin) {
-        if let current = browserContext.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState) {
+        if let current = browserContext.tabManager.shortcutPresentationOwner.selectedShortcutLiveTab(for: pin.id, in: windowState) {
             browserContext.commands.closeTab(current, windowState)
             return
         }
@@ -693,7 +693,7 @@ extension SpaceView {
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
-        let targetIndex = browserContext.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
+        let targetIndex = browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutatePinnedContent {
             _ = browserContext.tabManager.moveShortcutPin(

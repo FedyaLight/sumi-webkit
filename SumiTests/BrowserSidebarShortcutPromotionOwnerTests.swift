@@ -66,9 +66,9 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
             liveTab: nil
         )
 
-        XCTAssertEqual(harness.browserManager.tabManager.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
+        XCTAssertEqual(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
         let essential = try XCTUnwrap(
-            harness.browserManager.tabManager.essentialPins(for: harness.profile.id).first
+            harness.browserManager.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).first
         )
         XCTAssertNotEqual(essential.id, sourcePin.id)
         XCTAssertEqual(essential.role, .essential)
@@ -103,10 +103,10 @@ final class SidebarShortcutPromotionOwnerTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            harness.browserManager.tabManager.essentialPins(for: harness.profile.id).map(\.id),
+            harness.browserManager.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: harness.profile.id).map(\.id),
             [existingEssential.id]
         )
-        XCTAssertEqual(harness.browserManager.tabManager.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
+        XCTAssertEqual(harness.browserManager.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id), [sourcePin.id])
     }
 
     private func makeOwner(spy: Spy) -> BrowserSidebarShortcutPromotionOwner {

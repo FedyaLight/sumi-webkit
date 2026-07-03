@@ -95,7 +95,7 @@ class BrowserManager: ObservableObject {
                 return Array(windowRegistry.windows.values)
             },
             liveShortcutTabs: { [weak self] windowId in
-                self?.tabManager.liveShortcutTabs(in: windowId) ?? []
+                self?.tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
             },
             visibleSplitTabIds: { [weak self] windowId in
                 Set(self?.splitManager.visibleTabIds(for: windowId) ?? [])

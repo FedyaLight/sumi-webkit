@@ -230,7 +230,7 @@ extension BrowserExtensionBridgeAdapter: ExtensionBrowserBridgeContext {
         targetSpace: Space?
     ) {
         let resolvedTargetSpaceId = targetSpace?.id ?? tab.spaceId
-        tabManager?.pinTab(
+        tabManager?.shortcutPinCommandOwner.pinTab(
             tab,
             context: .init(windowState: targetWindow, spaceId: resolvedTargetSpaceId)
         )

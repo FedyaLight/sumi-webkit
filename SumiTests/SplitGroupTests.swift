@@ -144,7 +144,7 @@ final class SplitGroupTests: XCTestCase {
             [.folder(folder.id), .shortcut(visiblePin.id)]
         )
         XCTAssertEqual(
-            harness.tabManager.folderChildVisualItems(for: folder.id, in: space.id),
+            harness.tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folder.id, in: space.id),
             [.splitGroup(group.id)]
         )
     }
@@ -194,7 +194,7 @@ final class SplitGroupTests: XCTestCase {
             [.folder(folder.id), .shortcut(visibleTopLevelPin.id)]
         )
         XCTAssertEqual(
-            harness.tabManager.folderChildVisualItems(for: folder.id, in: space.id),
+            harness.tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folder.id, in: space.id),
             [.splitGroup(group.id)]
         )
 
@@ -209,7 +209,7 @@ final class SplitGroupTests: XCTestCase {
             [.folder(folder.id), .shortcut(groupedTopLevelPin.id), .shortcut(visibleTopLevelPin.id)]
         )
         XCTAssertEqual(
-            harness.tabManager.folderChildVisualItems(for: folder.id, in: space.id),
+            harness.tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folder.id, in: space.id),
             [.shortcut(folderPin.id)]
         )
     }
@@ -259,7 +259,7 @@ final class SplitGroupTests: XCTestCase {
             [.folder(folder.id), .splitGroup(group.id), .shortcut(visibleTopLevelPin.id)]
         )
         XCTAssertEqual(
-            harness.tabManager.folderChildVisualItems(for: folder.id, in: space.id),
+            harness.tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folder.id, in: space.id),
             []
         )
     }
@@ -419,7 +419,7 @@ final class SplitGroupTests: XCTestCase {
             harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
             [.shortcut(firstPin.id), .shortcut(lastPin.id), .splitGroup(group.id)]
         )
-        XCTAssertTrue(harness.tabManager.spacePinnedPins(for: space.id).contains { $0.id == groupedPin.id })
+        XCTAssertTrue(harness.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).contains { $0.id == groupedPin.id })
     }
 
     func testMovingEssentialFromRegularHostedSplitIntoShortcutHostedSplitPreservesLauncherOrigin() throws {
@@ -579,7 +579,7 @@ final class SplitGroupTests: XCTestCase {
         ))
         harness.tabManager.upsertSplitGroup(targetGroup)
 
-        let pinnedProxy = harness.tabManager.dragProxyTab(for: movedPin)
+        let pinnedProxy = harness.tabManager.shortcutPresentationOwner.dragProxyTab(for: movedPin)
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(
             pinnedProxy,
             on: SplitDropTarget(tabId: liveFirstEssential.id, side: .right, targetRect: .zero),
@@ -810,13 +810,13 @@ final class SplitGroupTests: XCTestCase {
 
         XCTAssertNil(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
         XCTAssertEqual(
-            harness.tabManager.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id)?.id,
+            harness.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id)?.id,
             liveEssential.id
         )
         XCTAssertEqual(harness.tabManager.tab(for: liveEssential.id)?.id, liveEssential.id)
         XCTAssertEqual(harness.windowState.currentTabId, liveEssential.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, essentialPin.id)
-        XCTAssertEqual(harness.tabManager.essentialPins(for: profileId).map(\.id), [essentialPin.id])
+        XCTAssertEqual(harness.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map(\.id), [essentialPin.id])
     }
 
     func testRestoringInactiveShortcutSplitMemberDissolvesToRestoredTab() throws {
@@ -935,11 +935,11 @@ final class SplitGroupTests: XCTestCase {
         )
 
         XCTAssertNil(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
-        XCTAssertNil(harness.tabManager.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id))
+        XCTAssertNil(harness.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id))
         XCTAssertNil(harness.tabManager.tab(for: liveEssential.id))
         XCTAssertEqual(harness.windowState.currentTabId, regular.id)
         XCTAssertNil(harness.windowState.currentShortcutPinId)
-        XCTAssertEqual(harness.tabManager.essentialPins(for: profileId).map(\.id), [essentialPin.id])
+        XCTAssertEqual(harness.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map(\.id), [essentialPin.id])
     }
 
     func testVerticalHorizontalAndGridTreeShapes() throws {

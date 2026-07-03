@@ -131,12 +131,12 @@ enum SidebarUITestShortcutDriftOverride {
               let urlRaw = ProcessInfo.processInfo.environment[urlEnvironmentKey],
               let pinID = UUID(uuidString: pinIDRaw),
               let driftURL = URL(string: urlRaw),
-              let pin = runtime.tabManager.shortcutPin(by: pinID)
+              let pin = runtime.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinID)
         else {
             return
         }
 
-        let liveTab = runtime.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+        let liveTab = runtime.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)
             ?? runtime.tabManager.activateShortcutPin(
                 pin,
                 in: windowState.id,
@@ -376,7 +376,7 @@ final class WindowSessionService {
             }
 
             if let shortcutPinId = windowState.currentShortcutPinId,
-               let pin = runtime.tabManager.shortcutPin(by: shortcutPinId) {
+               let pin = runtime.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutPinId) {
                 materializeShortcutSelection(pin, in: windowState, runtime: runtime)
             } else if materializeRememberedSpaceShortcut(in: windowState, runtime: runtime) {
                 // Restored from the per-space launcher selection snapshot.
@@ -604,7 +604,7 @@ final class WindowSessionService {
         runtime: WindowSessionRuntime
     ) -> Bool {
         if let shortcutPinId = windowState.currentShortcutPinId,
-           let pin = runtime.tabManager.shortcutPin(by: shortcutPinId) {
+           let pin = runtime.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutPinId) {
             materializeShortcutSelection(pin, in: windowState, runtime: runtime)
             return true
         }
@@ -619,7 +619,7 @@ final class WindowSessionService {
     ) -> Bool {
         guard let currentSpaceId = windowState.currentSpaceId,
               let shortcutPinId = windowState.selectedShortcutPinForSpace[currentSpaceId],
-              let pin = runtime.tabManager.shortcutPin(by: shortcutPinId)
+              let pin = runtime.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutPinId)
         else {
             return false
         }
@@ -633,7 +633,7 @@ final class WindowSessionService {
         in windowState: BrowserWindowState,
         runtime: WindowSessionRuntime
     ) {
-        let liveTab = runtime.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+        let liveTab = runtime.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)
             ?? runtime.tabManager.activateShortcutPin(
                 pin,
                 in: windowState.id,

@@ -33,22 +33,22 @@ struct TabFolderContextMenuActionOwner {
         )
         let profileChoices = makeSidebarContextMenuProfileChoices(
             profiles: profiles,
-            selectedProfileId: browserContext.tabManager.resolvedExecutionProfileId(
+            selectedProfileId: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(
                 for: pin,
                 currentSpaceId: space.id
             )
         )
-        let addToEssentialsAction: (() -> Void)? = browserContext.tabManager.canAddURLToEssentials(
+        let addToEssentialsAction: (() -> Void)? = browserContext.tabManager.essentialsShortcutPlacementOwner.canAddURL(
             pin.launchURL,
             using: .init(windowState: windowState, spaceId: space.id)
         )
             ? { pinShortcutGlobally(pin) }
             : nil
         let savedURLDriftActions: SidebarSavedURLDriftActions? =
-            browserContext.tabManager.shortcutHasDrifted(pin, in: windowState)
+            browserContext.tabManager.shortcutPresentationOwner.shortcutHasDrifted(pin, in: windowState)
                 ? .init(
                     onBackToSavedURL: { resetShortcutPin(pin) },
-                    onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
+                    onUseCurrentPageAsSavedURL: { _ = browserContext.tabManager.shortcutPinCommandOwner.replaceShortcutPinURLWithCurrent(pin, in: windowState) }
                 )
                 : nil
         let unloadAction: (() -> Void)? = presentationState.isOpenLive
@@ -168,7 +168,7 @@ struct TabFolderContextMenuActionOwner {
     }
 
     func unloadShortcutPin(_ pin: ShortcutPin) {
-        if let current = browserContext.tabManager.selectedShortcutLiveTab(for: pin.id, in: windowState) {
+        if let current = browserContext.tabManager.shortcutPresentationOwner.selectedShortcutLiveTab(for: pin.id, in: windowState) {
             browserContext.commands.closeTab(current, windowState)
             return
         }
@@ -178,7 +178,7 @@ struct TabFolderContextMenuActionOwner {
 
     func removeShortcutPin(_ pin: ShortcutPin) {
         mutateFolderContent {
-            browserContext.tabManager.removeShortcutPin(pin)
+            browserContext.tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
         }
     }
 
@@ -282,11 +282,11 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func shortcutPresentationState(for pin: ShortcutPin) -> ShortcutPresentationState {
-        browserContext.tabManager.shortcutPresentationState(for: pin, in: windowState)
+        browserContext.tabManager.shortcutPresentationOwner.shortcutPresentationState(for: pin, in: windowState)
     }
 
     private func activeShortcutTab(for pin: ShortcutPin) -> Tab? {
-        browserContext.tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+        browserContext.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)
     }
 
     private func confirmDeleteShortcutPin(_ pin: ShortcutPin) {
@@ -331,7 +331,7 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toSpace targetSpaceId: UUID) {
-        let targetIndex = browserContext.tabManager.topLevelSpacePinnedItems(for: targetSpaceId).count
+        let targetIndex = browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: targetSpaceId).count
 
         mutateFolderContent {
             _ = browserContext.tabManager.moveShortcutPin(
@@ -355,7 +355,7 @@ struct TabFolderContextMenuActionOwner {
 
     private func folderHasLiveSavedTabsHelper(folderId: UUID) -> Bool {
         if let directPins = folderPinsByFolderId[folderId],
-           directPins.contains(where: { browserContext.tabManager.shortcutLiveTab(for: $0.id, in: windowState.id) != nil }) {
+           directPins.contains(where: { browserContext.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: $0.id, in: windowState.id) != nil }) {
             return true
         }
         if let children = childFoldersByParentId[folderId] {

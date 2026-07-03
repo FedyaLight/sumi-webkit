@@ -17,7 +17,7 @@ final class TabFolderMutationOwner {
                 spaceId: spaceId,
                 color: tabManager.spaces.first(where: { $0.id == spaceId })?.color ?? .controlAccentColor
             )
-            folder.index = tabManager.topLevelSpacePinnedItems(for: spaceId).count
+            folder.index = tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId).count
             RuntimeDiagnostics.emit("   Created folder: \(folder.name) (id: \(folder.id.uuidString.prefix(8))...)")
 
             var folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
@@ -140,7 +140,7 @@ final class TabFolderMutationOwner {
                 return deletedFolderIds.contains(pinFolderId) == false
             }
             tabManager.setSpacePinnedShortcuts(
-                tabManager.normalizedSpacePinnedShortcuts(remainingPins),
+                tabManager.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(remainingPins),
                 for: spaceId
             )
 
@@ -244,7 +244,7 @@ final class TabFolderMutationOwner {
             let targetIndex = tabManager.folderPinnedPins(for: folderId, in: targetFolder.spaceId).count
 
             if let shortcutId = tab.shortcutPinId,
-               let pin = tabManager.shortcutPin(by: shortcutId) {
+               let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId) {
                 _ = tabManager.moveShortcutPin(
                     pin,
                     to: .spacePinned,
@@ -271,7 +271,7 @@ final class TabFolderMutationOwner {
     func handleFolderDragOperation(_ folder: TabFolder, operation: DragOperation) -> Bool {
         switch (operation.fromContainer, operation.toContainer) {
         case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
-            return tabManager.reorderFolderInTopLevelPinned(folder, in: toSpaceId, to: operation.toIndex)
+            return tabManager.spacePinnedStructureOwner.reorderFolderInTopLevelPinned(folder, in: toSpaceId, to: operation.toIndex)
         case (.spacePinned(let fromSpaceId), .folder(let targetFolderId)) where fromSpaceId == folder.spaceId:
             guard tabManager.runtimeContext?.isLiveFolder(targetFolderId) != true else {
                 return false
@@ -299,13 +299,13 @@ final class TabFolderMutationOwner {
 
     func alphabetizeFolderPins(_ folderId: UUID, in spaceId: UUID) {
         tabManager.withStructuralUpdateTransaction {
-            let folderPins = tabManager.spacePinnedPins(for: spaceId)
+            let folderPins = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
                 .filter { $0.folderId == folderId }
                 .sorted { lhs, rhs in
                     lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
                 }
             guard !folderPins.isEmpty else { return }
-            tabManager.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
+            tabManager.spacePinnedStructureOwner.withSpacePinnedShortcutGroup(for: spaceId, folderId: folderId) { pins in
                 pins = folderPins
             }
             tabManager.scheduleStructuralPersistence()
@@ -343,7 +343,7 @@ final class TabFolderMutationOwner {
             if sourceParentId == parentFolderId {
                 targetItems = sourceItems
                 adjustedIndex = sourceIndex.map {
-                    tabManager.adjustedSameContainerInsertionIndex(
+                    tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
                         currentIndex: $0,
                         proposedIndex: targetIndex
                     )
@@ -381,7 +381,7 @@ final class TabFolderMutationOwner {
     private func childItems(in parentFolderId: UUID?, spaceId: UUID) -> [FolderContainerItem] {
         let folders = tabManager.folderCollectionStateOwner.childFolders(of: parentFolderId, in: spaceId)
             .map { ($0.index, 0, FolderContainerItem.folder($0.id)) }
-        let pins = tabManager.spacePinnedPins(for: spaceId)
+        let pins = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
             .filter { $0.folderId == parentFolderId }
             .map { ($0.index, 1, FolderContainerItem.shortcut($0.id)) }
 
@@ -429,7 +429,7 @@ final class TabFolderMutationOwner {
         }
 
         tabManager.setFolders(folders, for: spaceId)
-        let normalizedPins = tabManager.normalizedSpacePinnedShortcuts(rebuiltPins)
+        let normalizedPins = tabManager.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(rebuiltPins)
         tabManager.setSpacePinnedShortcuts(normalizedPins, for: spaceId)
         for pinId in touchedPinIds {
             if let updatedPin = normalizedPins.first(where: { $0.id == pinId }) {

@@ -325,7 +325,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
     ) -> SpaceSidebarPageSnapshot {
         let projection = windowState.isIncognito
             ? nil
-            : browserContext.tabManager.launcherProjection(for: space.id, in: windowState.id)
+            : browserContext.tabManager.spaceLauncherProjectionOwner.projection(for: space.id, in: windowState.id)
         let tabs = windowState.isIncognito
             ? windowState.ephemeralTabs.sorted { $0.index < $1.index }
             : (projection?.regularTabs ?? browserContext.tabManager.tabs(in: space))
@@ -423,10 +423,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         EssentialsSnapshot(
             items: profileId == nil
                 ? []
-                : browserContext.tabManager.essentialPins(for: profileId).map {
+                : browserContext.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map {
                     shortcutSnapshot(
                         for: $0,
-                        liveTab: browserContext.tabManager.shortcutLiveTab(for: $0.id, in: windowState.id),
+                        liveTab: browserContext.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: $0.id, in: windowState.id),
                         browserContext: browserContext,
                         windowState: windowState
                     )
@@ -700,12 +700,12 @@ enum SpaceSidebarTransitionSnapshotBuilder {
         browserContext: SidebarBrowserContext,
         windowState: BrowserWindowState
     ) -> SpaceShortcutSnapshot {
-        let presentationState = browserContext.tabManager.shortcutPresentationState(
+        let presentationState = browserContext.tabManager.shortcutPresentationOwner.shortcutPresentationState(
             for: pin,
             in: windowState
         )
         let isInVisibleSplit = liveTab.map { browserContext.splitManager.isTabVisibleInSplit($0.id, in: windowState.id) } == true
-        let essentialRuntimeState = browserContext.tabManager.essentialRuntimeState(
+        let essentialRuntimeState = browserContext.tabManager.shortcutPresentationOwner.essentialRuntimeState(
             for: pin,
             in: windowState,
             splitManager: browserContext.splitManager
@@ -775,7 +775,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             return .system(SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset))
         }
 
-        let faviconPartition = browserContext.tabManager.resolvedFaviconPartition(
+        let faviconPartition = browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
             for: pin,
             currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
         )

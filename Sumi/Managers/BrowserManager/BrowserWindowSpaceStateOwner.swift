@@ -206,7 +206,7 @@ final class BrowserWindowSpaceStateOwner {
             let hasRegularTabs = !tabManager.tabs(in: space).isEmpty
             let hasPinnedLiveShortcut: Bool
             if let windowId = focusedWindowId {
-                hasPinnedLiveShortcut = tabManager.liveShortcutTabs(in: windowId)
+                hasPinnedLiveShortcut = tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId)
                     .contains(where: { $0.spaceId == space.id && $0.shortcutPinRole != .essential })
             } else {
                 hasPinnedLiveShortcut = false

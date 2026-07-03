@@ -29,7 +29,7 @@ extension WindowViewBrowserRuntime {
                 browserManager?.currentProfile?.id
             },
             essentialPins: { [weak browserManager] profileId in
-                browserManager?.tabManager.essentialPins(for: profileId) ?? []
+                browserManager?.tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId) ?? []
             },
             attachHoverSidebarManager: { [weak browserManager] hoverSidebarManager, windowState in
                 guard let browserManager else { return }

@@ -83,7 +83,7 @@ final class TabSplitGroupStructureOwner {
             spaceId: spaceId,
             splitGroups: tabManager.splitGroups,
             folders: tabManager.foldersBySpace[spaceId] ?? [],
-            spacePinnedPins: tabManager.spacePinnedPins(for: spaceId)
+            spacePinnedPins: tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
         )
     }
 
@@ -113,7 +113,7 @@ final class TabSplitGroupStructureOwner {
             return false
         })
         let adjustedIndex = currentIndex.map {
-            tabManager.adjustedSameContainerInsertionIndex(currentIndex: $0, proposedIndex: index)
+            tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(currentIndex: $0, proposedIndex: index)
         } ?? index
         var reorderedItems = visualItems
         let movingItem: SpacePinnedVisualItem
@@ -195,7 +195,7 @@ final class TabSplitGroupStructureOwner {
             let hiddenSplitPins = pins
                 .filter { pin in pin.folderId == nil && hiddenSplitPinIds.contains(pin.id) }
                 .map { pin in pin.refreshed(index: Int.max) }
-            let finalPins = tabManager.normalizedSpacePinnedShortcuts(
+            let finalPins = tabManager.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(
                 folderPins + hiddenOrUnorderedTopLevelPins + orderedVisiblePins + hiddenSplitPins
             )
             tabManager.setSpacePinnedShortcuts(finalPins, for: spaceId)
@@ -289,7 +289,7 @@ final class TabSplitGroupStructureOwner {
     }
 
     private func shortcutPinId(forSplitLookupId id: UUID) -> UUID? {
-        if tabManager.shortcutPin(by: id) != nil {
+        if tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: id) != nil {
             return id
         }
         return tabManager.tab(for: id)?.shortcutPinId

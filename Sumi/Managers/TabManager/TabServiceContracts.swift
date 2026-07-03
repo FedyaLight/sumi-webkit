@@ -19,18 +19,18 @@ final class DefaultTabRuntimeStore: ShellSelectionTabStore {
     }
 
     func shortcutPin(by id: UUID) -> ShortcutPin? {
-        tabManager.shortcutPin(by: id)
+        tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: id)
     }
 
     func activeShortcutTab(for windowId: UUID) -> Tab? {
-        tabManager.activeShortcutTab(for: windowId)
+        tabManager.shortcutPresentationOwner.activeShortcutTab(for: windowId)
     }
 
     func liveShortcutTabs(in windowId: UUID) -> [Tab] {
-        tabManager.liveShortcutTabs(in: windowId)
+        tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId)
     }
 
     func shortcutLiveTab(for pinId: UUID, in windowId: UUID) -> Tab? {
-        tabManager.shortcutLiveTab(for: pinId, in: windowId)
+        tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
     }
 }

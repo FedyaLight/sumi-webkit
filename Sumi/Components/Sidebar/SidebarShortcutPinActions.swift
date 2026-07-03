@@ -9,7 +9,7 @@ enum SidebarShortcutPinActions {
     ) {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         let preserveCurrentPage = modifiers.contains(.command) || modifiers.contains(.control)
-        _ = tabManager.resetShortcutPinToLaunchURL(
+        _ = tabManager.shortcutPinCommandOwner.resetShortcutPinToLaunchURL(
             pin,
             in: windowState,
             preserveCurrentPage: preserveCurrentPage

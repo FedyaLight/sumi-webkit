@@ -352,7 +352,7 @@ struct SidebarFolderViewProjection {
         )
         let restorePins = shortcutRestoreGaps
             .filter { $0.container == .folder(folder.id) }
-            .compactMap { tabManager.shortcutPin(by: $0.pinId) }
+            .compactMap { tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0.pinId) }
         let projectionPins = shortcutPins + restorePins
         let projectionPinsById = projectionPins.reduce(into: [UUID: ShortcutPin]()) { result, pin in
             result[pin.id] = pin
@@ -364,7 +364,7 @@ struct SidebarFolderViewProjection {
         self.baseItems = Self.makeBaseItems(
             liveFolderItems: liveFolderItems,
             isLiveFolder: liveFolderSource != nil,
-            visualItems: tabManager.folderChildVisualItems(for: folder.id, in: space.id)
+            visualItems: tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folder.id, in: space.id)
         )
         self.splitGroupsById = Dictionary(
             uniqueKeysWithValues: shortcutHostedGroups.map { ($0.id, $0) }
@@ -385,7 +385,7 @@ struct SidebarFolderViewProjection {
         )
         self.liveTabsByPinId = Dictionary(
             uniqueKeysWithValues: uniqueProjectionPins.compactMap { pin in
-                guard let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) else {
+                guard let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id) else {
                     return nil
                 }
                 return (pin.id, liveTab)
@@ -393,7 +393,7 @@ struct SidebarFolderViewProjection {
         )
         self.selectedPinIds = Set(
             uniqueProjectionPins.compactMap { pin in
-                tabManager.shortcutRuntimeAffordanceState(for: pin, in: windowState).isSelected
+                tabManager.shortcutPresentationOwner.shortcutRuntimeAffordanceState(for: pin, in: windowState).isSelected
                     ? pin.id
                     : nil
             }

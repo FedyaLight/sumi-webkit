@@ -20,7 +20,7 @@ final class SidebarDragOperationRoutingOwner {
 
         let plan = SidebarDragOperationPlanner.plan(
             operation: operation,
-            shortcutPin: { tabManager.shortcutPin(by: $0) }
+            shortcutPin: { tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0) }
         )
 
         return executeSidebarDragPlan(plan, operation: operation)
@@ -71,7 +71,7 @@ final class SidebarDragOperationRoutingOwner {
             spaceProfileId: tabManager.spaces
                 .first(where: { $0.id == operation.scope.spaceId })?.profileId,
             folderSpaceId: { tabManager.folderCollectionStateOwner.spaceId(for: $0) },
-            shortcutPin: { tabManager.shortcutPin(by: $0) }
+            shortcutPin: { tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0) }
         )
         guard isCurrentContext else {
             RuntimeDiagnostics.emit("⚠️ Rejected sidebar drag outside current context: \(operation)")

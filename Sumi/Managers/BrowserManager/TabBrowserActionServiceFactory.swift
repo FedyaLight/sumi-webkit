@@ -46,7 +46,7 @@ enum TabBrowserActionServiceFactory {
                 browserManager?.permissionRuntime.notificationPermissionBridge
             },
             shortcutLaunchURL: { [weak browserManager] shortcutPinId in
-                browserManager?.tabManager.shortcutPin(by: shortcutPinId)?.launchURL
+                browserManager?.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutPinId)?.launchURL
             },
             reconcileExtensionRuntimeOnUserGesture: { [weak browserManager] tab, reason in
                 browserManager?.extensionsModule.reconcileExtensionRuntimeOnUserGestureIfNeeded(

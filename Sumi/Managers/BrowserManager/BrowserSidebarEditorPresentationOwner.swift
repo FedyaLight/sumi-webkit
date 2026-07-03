@@ -168,7 +168,7 @@ extension BrowserSidebarEditorPresentationOwner.Dependencies {
                 browserManager?.tabManager.folderMutationOwner.updateFolderIcon(folderID, icon: icon)
             },
             updateShortcutPin: { [weak browserManager] pin, title, launchURL, iconAsset in
-                _ = browserManager?.tabManager.updateShortcutPin(
+                _ = browserManager?.tabManager.shortcutPinCommandOwner.updateShortcutPin(
                     pin,
                     title: title,
                     launchURL: launchURL,

@@ -226,7 +226,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [second.id, third.id, first.id])
-        XCTAssertTrue(tabManager.spacePinnedPins(for: space.id).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
     }
 
     func testRegularTabDropIntoSpacePinnedCreatesLauncherAndRemovesRegularEntry() throws {
@@ -253,7 +253,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
-        let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
         XCTAssertEqual(pin.role, .spacePinned)
         XCTAssertEqual(pin.spaceId, space.id)
         XCTAssertNil(pin.folderId)
@@ -347,7 +347,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
-        let pin = try XCTUnwrap(tabManager.essentialPins(for: profileId).first)
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
         XCTAssertEqual(pin.role, .essential)
         XCTAssertEqual(pin.profileId, profileId)
         XCTAssertNil(pin.spaceId)
@@ -383,8 +383,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
-        let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
-        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, tab)
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
         XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
@@ -426,7 +426,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
         let pin = try XCTUnwrap(tabManager.folderPinnedPins(for: folder.id, in: space.id).first)
-        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, tab)
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
         XCTAssertEqual(liveTab.shortcutPinRole, .spacePinned)
@@ -466,8 +466,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.tabsBySpace[space.id]?.isEmpty ?? false)
-        let pin = try XCTUnwrap(tabManager.essentialPins(for: profileId).first)
-        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, tab)
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
         XCTAssertEqual(liveTab.shortcutPinRole, .essential)
@@ -516,8 +516,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [currentTab.id])
-        let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
-        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, draggedTab)
         XCTAssertTrue(liveTab.isShortcutLiveInstance)
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
@@ -563,8 +563,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [currentTab.id])
-        let pin = try XCTUnwrap(tabManager.essentialPins(for: profileId).first)
-        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, draggedTab)
         XCTAssertTrue(liveTab.isShortcutLiveInstance)
         XCTAssertEqual(liveTab.shortcutPinId, pin.id)
@@ -619,10 +619,10 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
-        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertIdentical(liveTab, draggedTab)
-        XCTAssertNil(tabManager.shortcutLiveTab(for: pin.id, in: otherWindowState.id))
+        XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: otherWindowState.id))
         XCTAssertEqual(
             harness.browserManager.splitManager.visibleTabIds(for: otherWindowState.id),
             [currentTab.id, draggedTab.id]
@@ -674,8 +674,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
-        let otherLiveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: otherWindowState.id))
+        let pin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first)
+        let otherLiveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: otherWindowState.id))
         XCTAssertNotEqual(otherLiveTab.id, draggedTab.id)
         XCTAssertEqual(otherWindowState.currentTabId, otherLiveTab.id)
         XCTAssertEqual(otherWindowState.currentShortcutPinId, pin.id)
@@ -728,9 +728,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertEqual(tabManager.spacePinnedPins(for: space.id).map(\.id), [second.id, third.id, first.id])
-        XCTAssertEqual(tabManager.spacePinnedPins(for: space.id).map(\.index), [0, 1, 2])
-        XCTAssertTrue(tabManager.spacePinnedPins(for: space.id).allSatisfy { $0.folderId == nil })
+        XCTAssertEqual(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).map(\.index), [0, 1, 2])
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).allSatisfy { $0.folderId == nil })
     }
 
     func testEssentialsReorderMovesLauncherWithinSameProfile() throws {
@@ -776,9 +776,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertEqual(tabManager.essentialPins(for: profileId).map(\.id), [second.id, third.id, first.id])
-        XCTAssertEqual(tabManager.essentialPins(for: profileId).map(\.index), [0, 1, 2])
-        XCTAssertTrue(tabManager.essentialPins(for: profileId).allSatisfy { $0.profileId == profileId })
+        XCTAssertEqual(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map(\.id), [second.id, third.id, first.id])
+        XCTAssertEqual(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).map(\.index), [0, 1, 2])
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).allSatisfy { $0.profileId == profileId })
     }
 
     func testFolderChildReorderMovesLauncherWithinSameFolder() throws {
@@ -884,7 +884,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertTrue(didMove)
         XCTAssertEqual(moving.parentFolderId, target.id)
         XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [target.id])
-        XCTAssertEqual(tabManager.folderChildVisualItems(for: target.id, in: space.id), [.folder(moving.id)])
+        XCTAssertEqual(tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: target.id, in: space.id), [.folder(moving.id)])
     }
 
     func testFolderDropIntoDescendantIsRejected() throws {
@@ -937,11 +937,11 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: nested.id))
         XCTAssertEqual(childFolder.parentFolderId, root.id)
-        let movedPin = try XCTUnwrap(tabManager.shortcutPin(by: pin.id))
+        let movedPin = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
         XCTAssertEqual(movedPin.folderId, root.id)
         XCTAssertEqual(liveTab.folderId, root.id)
         XCTAssertTrue(liveTab.isSpacePinned)
-        XCTAssertEqual(tabManager.folderChildVisualItems(for: root.id, in: space.id), [
+        XCTAssertEqual(tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: root.id, in: space.id), [
             .folder(childFolder.id),
             .shortcut(pin.id),
         ])
@@ -972,17 +972,17 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         liveTab.isSpacePinned = true
         liveTab.folderId = childFolder.id
 
-        XCTAssertEqual(tabManager.folderRecursiveChildCount(for: nested.id, in: space.id), 3)
+        XCTAssertEqual(tabManager.spacePinnedStructureOwner.folderRecursiveChildCount(for: nested.id, in: space.id), 3)
 
         tabManager.folderMutationOwner.deleteFolder(nested.id)
 
         XCTAssertNotNil(tabManager.folderCollectionStateOwner.folder(by: root.id))
         XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: nested.id))
         XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: childFolder.id))
-        XCTAssertNil(tabManager.shortcutPin(by: nestedPin.id))
-        XCTAssertNil(tabManager.shortcutPin(by: childPin.id))
+        XCTAssertNil(tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: nestedPin.id))
+        XCTAssertNil(tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: childPin.id))
         XCTAssertNil(tabManager.tab(for: liveTab.id))
-        XCTAssertEqual(tabManager.folderChildVisualItems(for: root.id, in: space.id), [])
+        XCTAssertEqual(tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: root.id, in: space.id), [])
     }
 
     func testSpacePinnedDropIntoFolderPreservesLauncherAndMovesOwnership() throws {
@@ -1067,8 +1067,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.spacePinnedPins(for: space.id).isEmpty)
-        let essentials = tabManager.essentialPins(for: profileId)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
+        let essentials = tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId)
         XCTAssertEqual(essentials.map(\.id), [pin.id, existingEssential.id])
         let moved = try XCTUnwrap(essentials.first)
         XCTAssertEqual(moved.role, .essential)
@@ -1117,7 +1117,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.folderPinnedPins(for: folder.id, in: space.id).isEmpty)
         XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [folder.id, pin.id, existingTopLevelPin.id])
-        let moved = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first { $0.id == pin.id })
+        let moved = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first { $0.id == pin.id })
         XCTAssertEqual(moved.role, .spacePinned)
         XCTAssertEqual(moved.spaceId, space.id)
         XCTAssertNil(moved.folderId)
@@ -1163,7 +1163,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertTrue(tabManager.folderPinnedPins(for: folder.id, in: space.id).isEmpty)
-        let essentials = tabManager.essentialPins(for: profileId)
+        let essentials = tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId)
         XCTAssertEqual(essentials.map(\.id), [existingEssential.id, pin.id])
         let moved = try XCTUnwrap(essentials.first { $0.id == pin.id })
         XCTAssertEqual(moved.role, .essential)
@@ -1210,9 +1210,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.essentialPins(for: profileId).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).isEmpty)
         XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [folder.id, pin.id, existingTopLevelPin.id])
-        let moved = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first { $0.id == pin.id })
+        let moved = try XCTUnwrap(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first { $0.id == pin.id })
         XCTAssertEqual(moved.role, .spacePinned)
         XCTAssertEqual(moved.spaceId, space.id)
         XCTAssertNil(moved.profileId)
@@ -1258,7 +1258,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.essentialPins(for: profileId).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).isEmpty)
         let folderPins = tabManager.folderPinnedPins(for: folder.id, in: space.id)
         XCTAssertEqual(folderPins.map(\.id), [existingFolderPin.id, pin.id])
         let moved = try XCTUnwrap(folderPins.first { $0.id == pin.id })
@@ -1347,7 +1347,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.spacePinnedPins(for: space.id).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
         let converted = try XCTUnwrap(tabManager.tabsBySpace[space.id]?.first)
         XCTAssertEqual(converted.url, pin.launchURL)
         XCTAssertNil(converted.shortcutPinId)
@@ -1421,7 +1421,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         )
 
         XCTAssertTrue(didMove)
-        XCTAssertTrue(tabManager.essentialPins(for: profileId).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).isEmpty)
         let converted = try XCTUnwrap(tabManager.tabsBySpace[space.id]?.first)
         XCTAssertEqual(converted.url, pin.launchURL)
         XCTAssertNil(converted.shortcutPinId)
@@ -1477,7 +1477,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertFalse(didMove)
         XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [tab.id])
-        XCTAssertTrue(tabManager.spacePinnedPins(for: space.id).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
     }
 
     func testMismatchedSourceContainerIsRejectedEvenWhenTargetIsCurrentSpace() throws {
@@ -1504,7 +1504,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertFalse(didMove)
         XCTAssertEqual(tabManager.tabsBySpace[space.id]?.map(\.id), [tab.id])
-        XCTAssertTrue(tabManager.spacePinnedPins(for: space.id).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
     }
 
     func testCrossSpaceDropTargetIsRejected() throws {
@@ -1562,7 +1562,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertFalse(didMove)
         XCTAssertEqual(tabManager.tabsBySpace[sourceSpace.id]?.map(\.id), [sourceTab.id])
         XCTAssertEqual(tabManager.tabsBySpace[otherSpace.id]?.map(\.id), [otherTab.id])
-        XCTAssertTrue(tabManager.spacePinnedPins(for: sourceSpace.id).isEmpty)
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: sourceSpace.id).isEmpty)
     }
 
     private func makeLiveWindowHarness() throws -> LiveWindowHarness {
@@ -1689,7 +1689,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     private func topLevelPinnedItemIDs(_ tabManager: TabManager, in spaceId: UUID) -> [UUID] {
-        tabManager.topLevelSpacePinnedItems(for: spaceId).map(\.id)
+        tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId).map(\.id)
     }
 
     private func assertNonDisplayedRegularTabConversionCreatesLauncherOnly(
@@ -1727,7 +1727,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertNil(tabManager.tab(for: tab.id))
         let pin = try XCTUnwrap(shortcutPin(for: target, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
         XCTAssertEqual(pin.launchURL, tab.url)
-        XCTAssertNil(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
     }
 
     private func assertLiveLauncherDropIntoRegularReusesLiveTab(
@@ -1771,7 +1771,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertNil(shortcutPin(for: source, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
-        XCTAssertNil(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         let converted = try XCTUnwrap(tabManager.tabsBySpace[space.id]?.first)
         XCTAssertIdentical(converted, liveTab)
         XCTAssertEqual(converted.id, liveTab.id)
@@ -1823,7 +1823,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertNil(shortcutPin(for: source, tabManager: tabManager, profileId: profileId, space: space, folder: folder))
-        XCTAssertNil(tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         let converted = try XCTUnwrap(tabManager.tabsBySpace[space.id]?.first)
         XCTAssertNotEqual(converted.id, pin.id)
         XCTAssertEqual(converted.url, pin.launchURL)
@@ -1877,7 +1877,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertTrue(didMove)
         let movedPin = try XCTUnwrap(shortcutPin(for: destination, tabManager: tabManager, profileId: profileId, space: space, folder: destinationFolder))
         XCTAssertEqual(movedPin.id, pin.id)
-        let movedLiveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: movedPin.id, in: harness.windowState.id))
+        let movedLiveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: movedPin.id, in: harness.windowState.id))
         XCTAssertIdentical(movedLiveTab, liveTab)
         XCTAssertEqual(movedLiveTab.shortcutPinId, movedPin.id)
         XCTAssertEqual(movedLiveTab.shortcutPinRole, movedPin.role)
@@ -1939,11 +1939,11 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     ) -> ShortcutPin? {
         switch target {
         case .spacePinned:
-            return tabManager.spacePinnedPins(for: space.id).first { $0.folderId == nil }
+            return tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).first { $0.folderId == nil }
         case .folder:
             return tabManager.folderPinnedPins(for: folder.id, in: space.id).first
         case .essentials:
-            return tabManager.essentialPins(for: profileId).first
+            return tabManager.shortcutPinCollectionStateOwner.essentialPins(for: profileId).first
         }
     }
 }

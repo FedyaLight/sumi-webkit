@@ -117,13 +117,13 @@ final class BrowserRecentlyClosedRestoreOwner {
     private func reopenClosedShortcutLiveInstance(_ shortcutState: RecentlyClosedShortcutLiveState) -> Bool {
         let tabManager = dependencies.tabManager()
         guard let targetWindow = targetWindowForClosedShortcut(shortcutState) else {
-            if tabManager.shortcutPin(by: shortcutState.pin.id) == nil {
+            if tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutState.pin.id) == nil {
                 return restoreShortcutLauncher(from: shortcutState.pin) != nil
             }
             return false
         }
 
-        guard let pin = tabManager.shortcutPin(by: shortcutState.pin.id) else {
+        guard let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutState.pin.id) else {
             return restoreShortcutLauncher(from: shortcutState.pin, fallbackWindow: targetWindow) != nil
         }
 
@@ -166,7 +166,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         fallbackWindow: BrowserWindowState? = nil
     ) -> ShortcutPin? {
         let tabManager = dependencies.tabManager()
-        if let existing = tabManager.shortcutPin(by: pinState.id) {
+        if let existing = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinState.id) {
             return existing
         }
 
@@ -216,7 +216,7 @@ final class BrowserRecentlyClosedRestoreOwner {
         }
 
         guard let restoredPin,
-              let inserted = tabManager.insertShortcutPin(restoredPin, at: pinState.index)
+              let inserted = tabManager.shortcutPinStoreOwner.insert(restoredPin, at: pinState.index)
         else {
             return nil
         }

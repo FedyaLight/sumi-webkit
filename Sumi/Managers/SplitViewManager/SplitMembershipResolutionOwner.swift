@@ -25,7 +25,7 @@ final class SplitMembershipResolutionOwner {
         guard let tabManager = tabManager() else { return nil }
 
         let sourceMember = sourceMember(for: candidate, sourceGroup: sourceGroup)
-        let sourcePin = sourceMember?.pinId.flatMap { tabManager.shortcutPin(by: $0) }
+        let sourcePin = sourceMember?.pinId.flatMap { tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: $0) }
         if let pin = shortcutPin(for: candidate) ?? sourcePin {
             let liveTab = resolvedLiveShortcutTab(for: pin, candidate: candidate, in: windowState)
             guard let origin = sourceMember?.origin
@@ -47,7 +47,7 @@ final class SplitMembershipResolutionOwner {
             guard let spaceId = host.spaceId ?? candidate.spaceId ?? windowState.currentSpaceId else {
                 return nil
             }
-            let insertionIndex = tabManager.spacePinnedPins(for: spaceId).count
+            let insertionIndex = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId).count
             guard let pin = tabManager.convertTabToShortcutPin(
                 candidate,
                 role: .spacePinned,
@@ -57,7 +57,7 @@ final class SplitMembershipResolutionOwner {
                 at: insertionIndex,
                 openTargetFolder: false
             ),
-            let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
+            let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)
             else {
                 return nil
             }
@@ -121,7 +121,7 @@ final class SplitMembershipResolutionOwner {
            let group = tabManager.splitGroup(containingPinId: pinId) {
             return group
         }
-        if let pin = tabManager.shortcutPin(by: tab.id),
+        if let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: tab.id),
            let group = tabManager.splitGroup(containingPinId: pin.id) {
             return group
         }
@@ -134,7 +134,7 @@ final class SplitMembershipResolutionOwner {
             return tab.id
         }
 
-        if let pinId = tab.shortcutPinId ?? tabManager()?.shortcutPin(by: tab.id)?.id,
+        if let pinId = tab.shortcutPinId ?? tabManager()?.shortcutPinCollectionStateOwner.shortcutPin(by: tab.id)?.id,
            let member = sourceGroup.member(forPinId: pinId) {
             if sourceGroup.tabIds.contains(member.tabId) {
                 return member.tabId
@@ -171,10 +171,10 @@ final class SplitMembershipResolutionOwner {
                 return tab
             }
             if let pinId = group.member(for: candidateId)?.pinId,
-               let tab = tabManager()?.shortcutLiveTab(for: pinId, in: windowState.id) {
+               let tab = tabManager()?.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowState.id) {
                 return tab
             }
-            if let tab = tabManager()?.shortcutLiveTab(for: candidateId, in: windowState.id) {
+            if let tab = tabManager()?.shortcutPresentationOwner.shortcutLiveTab(for: candidateId, in: windowState.id) {
                 return tab
             }
         }
@@ -206,10 +206,10 @@ final class SplitMembershipResolutionOwner {
     private func shortcutPin(for tab: Tab) -> ShortcutPin? {
         guard let tabManager = tabManager() else { return nil }
         if let shortcutPinId = tab.shortcutPinId,
-           let pin = tabManager.shortcutPin(by: shortcutPinId) {
+           let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutPinId) {
             return pin
         }
-        if let pin = tabManager.shortcutPin(by: tab.id) {
+        if let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: tab.id) {
             return pin
         }
         return nil
@@ -220,7 +220,7 @@ final class SplitMembershipResolutionOwner {
         sourceGroup: SplitGroup?
     ) -> SplitGroupMember? {
         guard let tabManager = tabManager() else { return nil }
-        let pinId = tab.shortcutPinId ?? tabManager.shortcutPin(by: tab.id)?.id
+        let pinId = tab.shortcutPinId ?? tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: tab.id)?.id
         let candidateGroups: [SplitGroup?] = [
             sourceGroup,
             tabManager.splitGroup(containing: tab.id),
@@ -249,7 +249,7 @@ final class SplitMembershipResolutionOwner {
            tabManager.tab(for: candidate.id) != nil {
             return candidate
         }
-        if let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) {
+        if let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id) {
             return liveTab
         }
         return tabManager.activateShortcutPin(

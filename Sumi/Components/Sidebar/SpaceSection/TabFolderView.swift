@@ -659,11 +659,11 @@ struct TabFolderView: View {
             ShortcutSidebarRow(
                 pin: pin,
                 liveTab: projection.liveTab(for: pin.id),
-                faviconPartition: browserContext.tabManager.resolvedFaviconPartition(
+                faviconPartition: browserContext.tabManager.shortcutPinRuntimeResolutionOwner.resolvedFaviconPartition(
                     for: pin,
                     currentSpaceId: windowState.currentSpaceId
                 ),
-                runtimeAffordance: browserContext.tabManager.shortcutRuntimeAffordanceState(
+                runtimeAffordance: browserContext.tabManager.shortcutPresentationOwner.shortcutRuntimeAffordanceState(
                     for: pin,
                     in: windowState
                 ),
@@ -801,7 +801,7 @@ struct TabFolderView: View {
     }
 
     private func deleteNestedFolder(_ childFolder: TabFolder) {
-        let childCount = browserContext.tabManager.folderRecursiveChildCount(
+        let childCount = browserContext.tabManager.spacePinnedStructureOwner.folderRecursiveChildCount(
             for: childFolder.id,
             in: space.id
         )

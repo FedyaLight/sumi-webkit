@@ -529,7 +529,7 @@ class SearchManager {
         tabManager.allTabsForCurrentProfile()
             .filter { $0.isShortcutLiveInstance == false }
             .forEach(append)
-        tabManager.liveShortcutTabs(in: windowState.id)
+        tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowState.id)
             .forEach(append)
 
         return candidates
@@ -553,7 +553,7 @@ class SearchManager {
                 case .regularTab(let tabId):
                     append(tabId)
                 case .shortcutPin(let pinId):
-                    append(tabManager.shortcutLiveTab(for: pinId, in: windowState.id)?.id)
+                    append(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowState.id)?.id)
                 }
             }
         }

@@ -19,7 +19,7 @@ extension BrowserTabSelectionOwner {
                 browserManager?.currentTab(for: windowState)
             },
             liveShortcutTabs: { [weak browserManager] windowId in
-                browserManager?.tabManager.liveShortcutTabs(in: windowId) ?? []
+                browserManager?.tabManager.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
             },
             updateActiveSplitSide: { [weak browserManager] tabId, windowId in
                 browserManager?.splitManager.updateActiveSide(for: tabId, in: windowId)

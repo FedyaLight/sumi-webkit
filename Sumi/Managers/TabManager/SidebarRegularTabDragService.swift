@@ -159,7 +159,7 @@ final class SidebarRegularTabDragService {
     @discardableResult
     func reorderSpacePinnedTabs(_ tab: Tab, in spaceId: UUID, to index: Int) -> Bool {
         if let shortcutId = tab.shortcutPinId,
-           let pin = tabManager.shortcutPin(by: shortcutId) {
+           let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId) {
             return tabManager.shortcutPinCommandOwner.reorderSpacePinned(pin, in: spaceId, to: index)
         }
 
@@ -188,7 +188,7 @@ final class SidebarRegularTabDragService {
     private func reorderGlobalPinnedTabs(_ tab: Tab, to index: Int) -> Bool {
         tabManager.withStructuralUpdateTransaction {
             guard let shortcutId = tab.shortcutPinId,
-                  let pin = tabManager.shortcutPin(by: shortcutId),
+                  let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId),
                   let profileId = pin.profileId else {
                 return false
             }

@@ -74,10 +74,10 @@ enum SplitGroupSidebarModel {
                 return .tab(tab)
             }
             if let pinId = group.member(for: id)?.pinId,
-               let pin = tabManager.shortcutPin(by: pinId) {
+               let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId) {
                 return .pin(pin)
             }
-            if let pin = tabManager.shortcutPin(by: id) {
+            if let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: id) {
                 return .pin(pin)
             }
             return nil
@@ -122,7 +122,7 @@ enum SplitGroupSidebarModel {
             return pin
         }
         if let pinId = item.tab?.shortcutPinId ?? member?.pinId {
-            return tabManager.shortcutPin(by: pinId)
+            return tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
         }
         return nil
     }

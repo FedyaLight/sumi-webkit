@@ -144,12 +144,12 @@ final class TabSpaceLifecycleOwner {
 
         tabManager.currentSpace = space
 
-        let projection = tabManager.launcherProjection(
+        let projection = tabManager.spaceLauncherProjectionOwner.projection(
             for: space.id,
             in: contextWindowId
         )
         let regularTabs = projection.regularTabs
-        let persistedPins = tabManager.spacePinnedPins(for: space.id)
+        let persistedPins = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id)
         let spacePinnedTabs = projection.liveTabsByPinId.values.sorted { lhs, rhs in
             let leftOrder = lhs.shortcutPinId.flatMap { pinId in
                 persistedPins.first(where: { $0.id == pinId })?.index

@@ -196,7 +196,7 @@ extension SpaceView {
         guard let member = shortcutRestoreMember(for: item, in: group),
               member.isShortcutBacked,
               let pinId = member.pinId,
-              browserContext.tabManager.shortcutPin(by: pinId) != nil
+              browserContext.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId) != nil
         else {
             return nil
         }
@@ -227,7 +227,7 @@ extension SpaceView {
             return ShortcutRestoreGap(
                 pinId: pinId,
                 container: .spacePinned(spaceId),
-                index: browserContext.tabManager.topLevelSpacePinnedItems(for: spaceId).count
+                index: browserContext.tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId).count
             )
 
         case .essential, .regular:
@@ -257,7 +257,7 @@ extension SpaceView {
 
         // 1. If a shortcut pin is selected
         if let currentShortcutPinId = windowState.currentShortcutPinId {
-            if let pin = tabManager.shortcutPin(by: currentShortcutPinId), pin.spaceId == space.id {
+            if let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: currentShortcutPinId), pin.spaceId == space.id {
                 var currentFolderId = pin.folderId
                 while let folderId = currentFolderId {
                     if !elevated.insert(folderId).inserted { break }
@@ -269,9 +269,9 @@ extension SpaceView {
         // 2. If a regular tab is selected
         if let currentTabId = windowState.currentTabId {
             // Check if it's the live tab of a shortcut pin
-            let allPins = tabManager.spacePinnedPins(for: space.id)
+            let allPins = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id)
             for pin in allPins {
-                if tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)?.id == currentTabId {
+                if tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id)?.id == currentTabId {
                     var currentFolderId = pin.folderId
                     while let folderId = currentFolderId {
                         if !elevated.insert(folderId).inserted { break }

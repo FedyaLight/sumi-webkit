@@ -293,7 +293,7 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                 browserManager?.tabManager.folderCollectionStateOwner.spaceId(for: folderId)
             },
             resolveEssentialsInsertion: { [weak browserManager] windowState, index in
-                browserManager?.tabManager.resolveEssentialsInsertion(
+                browserManager?.tabManager.essentialsShortcutPlacementOwner.resolveInsertion(
                     using: TabManager.EssentialsInsertionContext(
                         target: TabManager.EssentialsTargetContext(windowState: windowState),
                         targetIndex: index

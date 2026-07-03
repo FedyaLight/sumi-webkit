@@ -13,25 +13,25 @@ final class ShortcutPinCommandOwner {
 
     func pinTab(_ tab: Tab, context: TabManager.EssentialsTargetContext?) {
         tabManager.withStructuralUpdateTransaction {
-            guard let insertion = tabManager.resolveEssentialsInsertion(
+            guard let insertion = tabManager.essentialsShortcutPlacementOwner.resolveInsertion(
                 using: TabManager.EssentialsInsertionContext(target: context)
             ) else { return }
-            if tabManager.essentialPins(for: insertion.profileId)
+            if tabManager.shortcutPinCollectionStateOwner.essentialPins(for: insertion.profileId)
                 .contains(where: { $0.launchURL == tab.url }) { return }
 
-            let pin = tabManager.makeShortcutPin(
+            let pin = tabManager.shortcutPinRuntimeResolutionOwner.makeShortcutPin(
                 from: tab,
                 role: .essential,
                 profileId: insertion.profileId,
                 index: insertion.index
             )
-            guard let insertedPin = tabManager.insertShortcutPin(pin, at: insertion.index) else { return }
-            tabManager.logEssentialsTargetMismatchIfNeeded(
+            guard let insertedPin = tabManager.shortcutPinStoreOwner.insert(pin, at: insertion.index) else { return }
+            tabManager.essentialsShortcutPlacementOwner.logTargetMismatchIfNeeded(
                 resolution: insertion.resolution,
                 context: context
             )
 
-            if !tabManager.convertDisplayedTabToShortcutLiveInstances(
+            if !tabManager.shortcutLiveTabOwner.convertDisplayedTabToShortcutLiveInstances(
                 tab,
                 pin: insertedPin,
                 preferredWindowId: context?.windowState?.id
@@ -49,10 +49,10 @@ final class ShortcutPinCommandOwner {
         context: TabManager.EssentialsTargetContext?
     ) -> ShortcutPin? {
         tabManager.withStructuralUpdateTransaction {
-            guard let insertion = tabManager.resolveEssentialsInsertion(
+            guard let insertion = tabManager.essentialsShortcutPlacementOwner.resolveInsertion(
                 using: TabManager.EssentialsInsertionContext(target: context)
             ) else { return nil }
-            if tabManager.essentialPins(for: insertion.profileId)
+            if tabManager.shortcutPinCollectionStateOwner.essentialPins(for: insertion.profileId)
                 .contains(where: { $0.launchURL == pin.launchURL }) {
                 return nil
             }
@@ -73,11 +73,11 @@ final class ShortcutPinCommandOwner {
                 title: title,
                 iconAsset: pin.iconAsset
             )
-            guard let insertedPin = tabManager.insertShortcutPin(copiedPin, at: insertion.index) else {
+            guard let insertedPin = tabManager.shortcutPinStoreOwner.insert(copiedPin, at: insertion.index) else {
                 return nil
             }
 
-            tabManager.logEssentialsTargetMismatchIfNeeded(
+            tabManager.essentialsShortcutPlacementOwner.logTargetMismatchIfNeeded(
                 resolution: insertion.resolution,
                 context: context
             )
@@ -92,7 +92,7 @@ final class ShortcutPinCommandOwner {
         context: TabManager.EssentialsTargetContext?
     ) -> UUID? {
         let currentSpaceId = context?.spaceId ?? context?.windowState?.currentSpaceId
-        let executionProfileId = tabManager.resolvedExecutionProfileId(
+        let executionProfileId = tabManager.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(
             for: pin,
             currentSpaceId: currentSpaceId
         )
@@ -101,7 +101,7 @@ final class ShortcutPinCommandOwner {
 
     func removeShortcutPin(_ pin: ShortcutPin) {
         tabManager.withStructuralUpdateTransaction {
-            if tabManager.shortcutPin(by: pin.id) != nil {
+            if tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id) != nil {
                 tabManager.runtimeContext?.captureDeletedShortcutLauncher(pin)
             }
 
@@ -119,10 +119,10 @@ final class ShortcutPinCommandOwner {
     @discardableResult
     func updateShortcutPin(
         _ pin: ShortcutPin,
-        title: String?,
-        launchURL: URL?,
-        iconAsset: String??,
-        executionProfileId: UUID??
+        title: String? = nil,
+        launchURL: URL? = nil,
+        iconAsset: String?? = nil,
+        executionProfileId: UUID?? = nil
     ) -> ShortcutPin? {
         tabManager.withStructuralUpdateTransaction {
             let updatedPin = pin.updated(
@@ -151,23 +151,23 @@ final class ShortcutPinCommandOwner {
             case .spacePinned:
                 guard let spaceId = pin.spaceId else { return nil }
                 if pin.folderId == nil {
-                    let items = tabManager.topLevelSpacePinnedItems(for: spaceId)
+                    let items = tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId)
                         .map { item -> TabManager.SpacePinnedTopLevelItem in
                             guard case .shortcut(let existingPin) = item, existingPin.id == pin.id else {
                                 return item
                             }
                             return .shortcut(updatedPin.refreshed(index: pin.index))
                         }
-                    tabManager.applyTopLevelSpacePinnedOrder(items, for: spaceId)
+                    tabManager.spacePinnedStructureOwner.applyTopLevelSpacePinnedOrder(items, for: spaceId)
                 } else {
-                    tabManager.withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { pins in
+                    tabManager.spacePinnedStructureOwner.withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { pins in
                         if let index = pins.firstIndex(where: { $0.id == pin.id }) {
                             pins[index] = updatedPin.refreshed(index: pin.index)
                         }
                     }
                 }
 
-                if let inserted = tabManager.shortcutPin(by: pin.id) {
+                if let inserted = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id) {
                     tabManager.shortcutLiveTabOwner.updateTransientShortcutBindings(for: inserted)
                     tabManager.scheduleStructuralPersistence()
                     return inserted
@@ -183,13 +183,13 @@ final class ShortcutPinCommandOwner {
         _ pin: ShortcutPin,
         in windowState: BrowserWindowState
     ) -> ShortcutPin? {
-        guard let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) else {
+        guard let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id) else {
             return nil
         }
 
         let liveTitle = liveTab.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedTitle = liveTitle.isEmpty ? pin.title : liveTitle
-        let updated = tabManager.updateShortcutPin(
+        let updated = tabManager.shortcutPinCommandOwner.updateShortcutPin(
             pin,
             title: resolvedTitle,
             launchURL: liveTab.url
@@ -204,7 +204,7 @@ final class ShortcutPinCommandOwner {
         preserveCurrentPage: Bool
     ) -> ShortcutPin? {
         tabManager.withStructuralUpdateTransaction {
-            guard let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) else {
+            guard let liveTab = tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id) else {
                 return nil
             }
 
@@ -238,7 +238,7 @@ final class ShortcutPinCommandOwner {
             liveTab.url = pin.launchURL
             liveTab.loadURL(pin.launchURL)
 
-            let updated = tabManager.updateShortcutPin(
+            let updated = tabManager.shortcutPinCommandOwner.updateShortcutPin(
                 pin,
                 title: pin.title,
                 launchURL: pin.launchURL
@@ -253,7 +253,7 @@ final class ShortcutPinCommandOwner {
             guard let pid = pin.profileId else { return false }
             var arr = tabManager.pinnedByProfile[pid] ?? []
             guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return false }
-            let adjustedIndex = tabManager.adjustedSameContainerInsertionIndex(
+            let adjustedIndex = tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
                 currentIndex: currentIndex,
                 proposedIndex: index
             )
@@ -271,15 +271,15 @@ final class ShortcutPinCommandOwner {
         tabManager.withStructuralUpdateTransaction {
             var didReorder = false
             if pin.folderId == nil {
-                didReorder = tabManager.reorderTopLevelSpacePinnedShortcut(
+                didReorder = tabManager.spacePinnedStructureOwner.reorderTopLevelSpacePinnedShortcut(
                     pin,
                     in: spaceId,
                     to: index
                 ) != nil
             } else {
-                tabManager.withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { arr in
+                tabManager.spacePinnedStructureOwner.withSpacePinnedShortcutGroup(for: spaceId, folderId: pin.folderId) { arr in
                     guard let currentIndex = arr.firstIndex(where: { $0.id == pin.id }) else { return }
-                    let adjustedIndex = tabManager.adjustedSameContainerInsertionIndex(
+                    let adjustedIndex = tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
                         currentIndex: currentIndex,
                         proposedIndex: index
                     )
@@ -299,15 +299,15 @@ final class ShortcutPinCommandOwner {
     func pinTabToSpace(_ tab: Tab, spaceId: UUID) {
         tabManager.withStructuralUpdateTransaction {
             guard tabManager.spaces.contains(where: { $0.id == spaceId }) else { return }
-            if tabManager.spacePinnedPins(for: spaceId)
+            if tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId)
                 .contains(where: { $0.launchURL == tab.url }) { return }
 
             if tab.isShortcutLiveInstance,
                let shortcutId = tab.shortcutPinId,
-               let sourcePin = tabManager.shortcutPin(by: shortcutId),
+               let sourcePin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutId),
                sourcePin.role == .essential {
-                let targetIndex = tabManager.spacePinnedPins(for: spaceId).count
-                let detachedPin = tabManager.makeShortcutPin(
+                let targetIndex = tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId).count
+                let detachedPin = tabManager.shortcutPinRuntimeResolutionOwner.makeShortcutPin(
                     from: tab,
                     role: .spacePinned,
                     profileId: nil,
@@ -316,11 +316,11 @@ final class ShortcutPinCommandOwner {
                     index: targetIndex
                 )
 
-                guard let insertedPin = tabManager.insertShortcutPin(detachedPin, at: targetIndex) else {
+                guard let insertedPin = tabManager.shortcutPinStoreOwner.insert(detachedPin, at: targetIndex) else {
                     return
                 }
 
-                tabManager.rebindLiveShortcutTab(tab, from: sourcePin, to: insertedPin)
+                tabManager.shortcutLiveTabOwner.rebindLiveShortcutTab(tab, from: sourcePin, to: insertedPin)
 
                 tabManager.scheduleStructuralPersistence()
                 return
@@ -332,7 +332,7 @@ final class ShortcutPinCommandOwner {
                 profileId: nil,
                 spaceId: spaceId,
                 folderId: nil,
-                at: tabManager.spacePinnedPins(for: spaceId).count
+                at: tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: spaceId).count
             )
         }
     }

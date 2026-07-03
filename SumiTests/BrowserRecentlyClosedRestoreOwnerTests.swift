@@ -71,13 +71,13 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
             )
         )
 
-        let restoredPin = try XCTUnwrap(harness.tabManager.shortcutPin(by: pinState.id))
+        let restoredPin = try XCTUnwrap(harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinState.id))
         XCTAssertEqual(restoredPin.spaceId, harness.currentProfileSpace.id)
         XCTAssertEqual(
-            harness.tabManager.spacePinnedPins(for: harness.currentProfileSpace.id).map(\.id),
+            harness.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.currentProfileSpace.id).map(\.id),
             [pinState.id]
         )
-        XCTAssertTrue(harness.tabManager.spacePinnedPins(for: harness.fallbackSpace.id).isEmpty)
+        XCTAssertTrue(harness.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.fallbackSpace.id).isEmpty)
     }
 
     func testRestoreSpacePinnedShortcutLauncherWithoutSourceOrWindowDoesNotUseGlobalFallback()
@@ -99,9 +99,9 @@ final class BrowserRecentlyClosedRestoreOwnerTests: XCTestCase {
             )
         )
 
-        XCTAssertNil(harness.tabManager.shortcutPin(by: pinState.id))
-        XCTAssertTrue(harness.tabManager.spacePinnedPins(for: harness.currentProfileSpace.id).isEmpty)
-        XCTAssertTrue(harness.tabManager.spacePinnedPins(for: harness.fallbackSpace.id).isEmpty)
+        XCTAssertNil(harness.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinState.id))
+        XCTAssertTrue(harness.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.currentProfileSpace.id).isEmpty)
+        XCTAssertTrue(harness.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.fallbackSpace.id).isEmpty)
         XCTAssertFalse(harness.startupRestore.didConsumeRestoreOffer)
     }
 

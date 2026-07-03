@@ -15,10 +15,10 @@ enum BrowserGlanceRuntimeService {
                 browserManager?.tabManager.tab(for: tabId)
             },
             shortcutPin: { [weak browserManager] pinId in
-                browserManager?.tabManager.shortcutPin(by: pinId)
+                browserManager?.tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
             },
             shortcutLiveTab: { [weak browserManager] pinId, windowId in
-                browserManager?.tabManager.shortcutLiveTab(for: pinId, in: windowId)
+                browserManager?.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowId)
             },
             activateShortcutPin: { [weak browserManager] pin, windowId, currentSpaceId in
                 guard let browserManager else {

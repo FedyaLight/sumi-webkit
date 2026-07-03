@@ -29,12 +29,12 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         harness.browserManager.startupPolicyOwner.applyStartupPolicy(.nothing)
 
         XCTAssertTrue(harness.browserManager.tabManager.tabs(in: harness.space).isEmpty)
-        XCTAssertNil(harness.browserManager.tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
+        XCTAssertNil(harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id))
         XCTAssertNil(harness.windowState.currentTabId)
         XCTAssertNil(harness.windowState.currentShortcutPinId)
         XCTAssertTrue(harness.windowState.isShowingEmptyState)
         XCTAssertEqual(
-            harness.browserManager.tabManager.spacePinnedPins(for: harness.space.id).map(\.id),
+            harness.browserManager.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: harness.space.id).map(\.id),
             [pin.id]
         )
         XCTAssertEqual(
@@ -194,7 +194,7 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(harness.browserManager.tabManager.tabs(in: harness.space).map(\.id), [regularTab.id])
         XCTAssertEqual(
-            harness.browserManager.tabManager.shortcutLiveTab(for: pin.id, in: harness.windowState.id)?.id,
+            harness.browserManager.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: harness.windowState.id)?.id,
             liveTab.id
         )
         XCTAssertEqual(harness.windowState.currentTabId, liveTab.id)

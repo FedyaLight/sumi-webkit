@@ -140,7 +140,7 @@ extension TabManagerSplitGroupRepairOwner.Dependencies {
     static func live(tabManager: TabManager) -> Self {
         Self(
             shortcutPin: { [weak tabManager] id in
-                tabManager?.shortcutPin(by: id)
+                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
             },
             tab: { [weak tabManager] id in
                 tabManager?.tab(for: id)

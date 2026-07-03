@@ -159,9 +159,9 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             .regularTab(regularHistoryId),
         ]
 
-        tabManager.removeShortcutPin(pin)
+        tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
 
-        XCTAssertNil(tabManager.shortcutPin(by: pin.id))
+        XCTAssertNil(tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
         XCTAssertNil(tabManager.tab(for: liveTab.id))
         XCTAssertNil(windowState.currentTabId)
         XCTAssertNil(windowState.currentShortcutPinId)
@@ -216,9 +216,9 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.selectedShortcutPinForSpace[space.id] = pin.id
         windowState.recentSelectionItemsBySpace[space.id] = [.shortcutPin(pin.id)]
 
-        tabManager.removeShortcutPin(pin)
+        tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
 
-        XCTAssertNil(tabManager.shortcutPin(by: pin.id))
+        XCTAssertNil(tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
         XCTAssertNil(windowState.currentTabId)
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertNil(windowState.currentShortcutPinRole)
@@ -256,9 +256,9 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
             currentSpaceId: space.id
         )
 
-        tabManager.removeShortcutPin(pin)
+        tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
 
-        XCTAssertNil(tabManager.shortcutPin(by: pin.id))
+        XCTAssertNil(tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
         XCTAssertNil(tabManager.tab(for: liveTab.id))
         XCTAssertEqual(windowState.currentTabId, regularTab.id)
         XCTAssertNil(windowState.currentShortcutPinId)
@@ -294,7 +294,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         tabManager.folderMutationOwner.deleteFolder(folder.id)
 
         XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: folder.id))
-        XCTAssertNil(tabManager.shortcutPin(by: pin.id))
+        XCTAssertNil(tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id))
         XCTAssertNil(tabManager.tab(for: liveTab.id))
         XCTAssertNil(windowState.currentTabId)
         XCTAssertNil(windowState.currentShortcutPinId)
@@ -793,8 +793,8 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         tabManager.convertShortcutPinToRegularTab(pin, in: space.id, at: 0)
 
         XCTAssertEqual(recorder.count, 1)
-        XCTAssertTrue(tabManager.spacePinnedPins(for: space.id).isEmpty)
-        XCTAssertNil(tabManager.shortcutLiveTab(for: pin.id, in: windowId))
+        XCTAssertTrue(tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).isEmpty)
+        XCTAssertNil(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowId))
         let convertedTab = try XCTUnwrap(tabManager.tabsBySpace[space.id]?.first)
         XCTAssertEqual(convertedTab.url, pin.launchURL)
         XCTAssertEqual(convertedTab.spaceId, space.id)

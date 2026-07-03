@@ -37,7 +37,7 @@ extension BrowserSidebarShortcutPromotionOwner.Dependencies {
     static func live(browserManager: BrowserManager) -> Self {
         Self(
             copyShortcutPinToEssentials: { [weak browserManager] pin, title, context in
-                _ = browserManager?.tabManager.copyShortcutPinToEssentials(
+                _ = browserManager?.tabManager.shortcutPinCommandOwner.copyShortcutPinToEssentials(
                     pin,
                     title: title,
                     context: context

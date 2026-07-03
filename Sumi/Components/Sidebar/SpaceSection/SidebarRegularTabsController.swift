@@ -153,7 +153,7 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.splitGroup(containing: tabId)
             },
             shortcutPin: { [weak tabManager] id in
-                tabManager?.shortcutPin(by: id)
+                tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
             },
             folders: { [weak tabManager] spaceId in
                 tabManager?.folderCollectionStateOwner.folders(for: spaceId) ?? []
@@ -162,16 +162,16 @@ extension SidebarRegularTabsController.Dependencies {
                 liveFolderManager?.isLiveFolder(folderId) ?? false
             },
             canAddURLToEssentials: { [weak tabManager] url, context in
-                tabManager?.canAddURLToEssentials(url, using: context) ?? false
+                tabManager?.essentialsShortcutPlacementOwner.canAddURL(url, using: context) ?? false
             },
             clearRegularTabs: { [weak tabManager] spaceId in
                 tabManager?.clearRegularTabs(for: spaceId)
             },
             pinTabToSpace: { [weak tabManager] tab, spaceId in
-                tabManager?.pinTabToSpace(tab, spaceId: spaceId)
+                tabManager?.shortcutPinCommandOwner.pinTabToSpace(tab, spaceId: spaceId)
             },
             pinTabToEssentials: { [weak tabManager] tab, context in
-                tabManager?.pinTab(tab, context: context)
+                tabManager?.shortcutPinCommandOwner.pinTab(tab, context: context)
             },
             closeAllTabsBelow: { [weak tabManager] tab in
                 tabManager?.closeAllTabsBelow(tab)

@@ -162,7 +162,7 @@ enum SidebarDropCoordinator {
 
         switch scope.sourceContainer {
         case .essentials:
-            return tabManager.essentialPins(for: scope.profileId).count
+            return tabManager.shortcutPinCollectionStateOwner.essentialPins(for: scope.profileId).count
 
         case .spacePinned(let spaceId):
             return tabManager.topLevelSpacePinnedVisualItems(for: spaceId).count
@@ -174,7 +174,7 @@ enum SidebarDropCoordinator {
             guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else {
                 return nil
             }
-            return tabManager.folderChildVisualItems(for: folderId, in: spaceId).count
+            return tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folderId, in: spaceId).count
 
         case .none:
             return nil
@@ -192,7 +192,7 @@ enum SidebarDropCoordinator {
 
         switch scope.sourceContainer {
         case .essentials:
-            return tabManager.essentialPins(for: scope.profileId)
+            return tabManager.shortcutPinCollectionStateOwner.essentialPins(for: scope.profileId)
                 .firstIndex { $0.id == sourceItemId || payload.matchesShortcutPinId($0.id) }
 
         case .spacePinned(let spaceId):
@@ -215,7 +215,7 @@ enum SidebarDropCoordinator {
             guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else {
                 return nil
             }
-            return tabManager.folderChildVisualItems(for: folderId, in: spaceId)
+            return tabManager.spacePinnedStructureOwner.folderChildVisualItems(for: folderId, in: spaceId)
                 .firstIndex { item in
                     switch item {
                     case .folder(let childFolderId):

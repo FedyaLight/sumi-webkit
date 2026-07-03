@@ -108,7 +108,7 @@ final class RegularTabCollectionOwner {
               let currentIndex = regularTabs.firstIndex(where: { $0.id == tab.id }) else {
             return false
         }
-        let adjustedIndex = tabManager.adjustedSameContainerInsertionIndex(
+        let adjustedIndex = tabManager.spacePinnedStructureOwner.adjustedSameContainerInsertionIndex(
             currentIndex: currentIndex,
             proposedIndex: proposedIndex
         )

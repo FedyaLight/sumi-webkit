@@ -384,7 +384,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         service.handleTabManagerDataLoaded(runtime: delegate.runtime)
 
-        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: windowState.id))
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id))
         XCTAssertEqual(windowState.currentTabId, liveTab.id)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
         XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
@@ -434,7 +434,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
         service.handleTabManagerDataLoaded(runtime: delegate.runtime)
 
-        let liveTab = try XCTUnwrap(tabManager.shortcutLiveTab(for: pin.id, in: windowState.id))
+        let liveTab = try XCTUnwrap(tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pin.id, in: windowState.id))
         XCTAssertEqual(windowState.currentTabId, liveTab.id)
         XCTAssertEqual(windowState.currentShortcutPinId, pin.id)
         XCTAssertEqual(windowState.currentShortcutPinRole, .spacePinned)

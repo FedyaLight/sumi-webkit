@@ -74,7 +74,7 @@ final class TabProfileAssignmentOwner {
         }
         for (spaceId, pins) in spacesWithDeletedExecution {
             tabManager.setSpacePinnedShortcuts(
-                tabManager.normalizedSpacePinnedShortcuts(
+                tabManager.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(
                     pins.map { pin in
                         pin.executionProfileId == deletedProfileId
                             ? pin.updated(executionProfileId: .some(nil))
@@ -126,7 +126,7 @@ final class TabProfileAssignmentOwner {
               tab.isShortcutLiveInstance,
               tab.shortcutPinRole != .essential,
               let shortcutPinId = tab.shortcutPinId,
-              tabManager.shortcutPin(by: shortcutPinId) != nil
+              tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: shortcutPinId) != nil
         else {
             return false
         }
@@ -200,9 +200,9 @@ final class TabProfileAssignmentOwner {
             return nil
         }
 
-        let currentPin = tabManager.shortcutPin(by: pin.id) ?? pin
+        let currentPin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pin.id) ?? pin
         guard currentPin.executionProfileId != profileId else { return currentPin }
-        return tabManager.updateShortcutPin(
+        return tabManager.shortcutPinCommandOwner.updateShortcutPin(
             currentPin,
             executionProfileId: .some(profileId)
         )

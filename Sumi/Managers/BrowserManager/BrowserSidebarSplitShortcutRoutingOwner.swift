@@ -187,7 +187,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
 
             guard let member = updatedGroup.member(for: leafId),
                   let pinId = member.pinId,
-                  let pin = tabManager.shortcutPin(by: pinId)
+                  let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
             else {
                 continue
             }
@@ -205,7 +205,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
             guard let pinId = member.pinId,
                   updatedGroup.tabIds.contains(member.tabId),
                   tabManager.tab(for: member.tabId) == nil,
-                  let pin = tabManager.shortcutPin(by: pinId)
+                  let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
             else {
                 continue
             }
@@ -266,7 +266,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
             return tab
         }
         if let pinId = member.pinId {
-            return tabManager.shortcutLiveTab(for: pinId, in: windowState.id)
+            return tabManager.shortcutPresentationOwner.shortcutLiveTab(for: pinId, in: windowState.id)
         }
         return nil
     }
@@ -274,7 +274,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
     private func restoreShortcutLauncherPosition(for member: SplitGroupMember) {
         let tabManager = dependencies.tabManager()
         guard let pinId = member.pinId,
-              let pin = tabManager.shortcutPin(by: pinId)
+              let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: pinId)
         else {
             return
         }
@@ -311,7 +311,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
                 profileId: nil,
                 spaceId: spaceId,
                 folderId: nil,
-                index: tabManager.topLevelSpacePinnedItems(for: spaceId).count,
+                index: tabManager.spacePinnedStructureOwner.topLevelSpacePinnedItems(for: spaceId).count,
                 openTargetFolder: false
             )
         case .regular:

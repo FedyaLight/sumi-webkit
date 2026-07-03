@@ -222,7 +222,7 @@ final class TabLastSessionRestoreOwner {
                 )
             }
             tabManager.setSpacePinnedShortcuts(
-                tabManager.normalizedSpacePinnedShortcuts(pins),
+                tabManager.spacePinnedStructureOwner.normalizedSpacePinnedShortcuts(pins),
                 for: spaceId
             )
         }
