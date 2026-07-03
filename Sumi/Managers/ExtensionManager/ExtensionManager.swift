@@ -209,6 +209,12 @@ final class ExtensionManager: NSObject, ObservableObject {
         dependencies: .live(manager: self)
     )
     lazy var actionPopupSessionOwner = ExtensionActionPopupSessionOwner(manager: self)
+    lazy var keyboardCommandDispatchOwner = ExtensionKeyboardCommandDispatchOwner(
+        dependencies: .live(manager: self)
+    )
+    lazy var pageContextMenuItemsOwner = ExtensionPageContextMenuItemsOwner(
+        dependencies: .live(manager: self)
+    )
     let profileRuntimeOwner: ExtensionProfileRuntimeOwner
     var profileRuntimeStateOwner: ExtensionProfileRuntimeStateOwner {
         ExtensionProfileRuntimeStateOwner(manager: self)

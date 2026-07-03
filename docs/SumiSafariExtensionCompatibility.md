@@ -1,6 +1,80 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-07-03 (scripting API enabled for Safari targets + Proton inline bootstrap)
+Last updated: 2026-07-03 (permission idempotency; extension commands + context menus)
+
+## Cycle 26 Extension Keyboard Commands + Page Context Menus (2026-07-03)
+
+Two Safari-parity chrome surfaces WebKit leaves to the embedding app were
+unimplemented: manifest `commands` keyboard shortcuts (e.g. Bitwarden
+Cmd+Shift+L autofill) never dispatched, and extension context-menu items
+(menus/contextMenus API — e.g. password managers' "autofill login" items)
+never appeared in the page menu.
+
+### Fixed
+
+- `ExtensionKeyboardCommandDispatchOwner`: routes keyboard events through
+  `WKWebExtensionContext.performCommand(for: NSEvent)` (macOS 15.4+) across
+  the current profile's loaded contexts. Wired at the end of
+  `KeyboardShortcutManager.handleLocalKeyDown` — Safari dispatch order:
+  browser shortcuts first, then extension commands, then the page. Events
+  without Command/Control/Option modifiers never touch extension contexts.
+- `ExtensionPageContextMenuItemsOwner`: fetches
+  `WKWebExtensionContext.menuItems(for:)` for the page's tab adapter at menu
+  presentation time (WebKit requires fetch-before-show; items are not
+  cacheable). Appended as a trailing separator group in
+  `SumiWebPageMenuController.prepare`, gated on tab runtime eligibility
+  (private tabs stay excluded).
+- Both surfaces enter through `SumiExtensionsModule`
+  (`performExtensionKeyboardCommandIfLoaded`, `pageContextMenuItemsIfLoaded`)
+  and are no-ops without a loaded, enabled extensions runtime.
+
+### WebKit contract captured
+
+- Command/event matching (WebKit `WebExtensionCommandCocoa.mm`): keyDown,
+  non-repeat, command modifier flags must be a subset of the event's flags,
+  `activationKey` compared case-insensitively against
+  `charactersIgnoringModifiers` (special keys via key-code map). Manifest
+  `Alt+Shift+U` ⇒ option+shift + activation key `u`.
+- `menuItems(for:)` builds ready-to-host `NSMenuItem`s (targets included) and
+  resolves visibility/enablement at fetch time.
+
+### Tests
+
+- `SafariExtensionCommandAndContextMenuTests`:
+  `testManifestCommandDispatchesFromKeyboardEvent` (synthetic MV3 manifest
+  command dispatches for Alt+Shift+U, declines other keys and plain typing),
+  `testBackgroundCreatedMenuItemsSurfaceOnPageContextMenu` (worker-side
+  `menus.create` item surfaces through the full tab stack for a real page
+  load).
+- Regression: site-access, scripting runtime, web-page menu controller, and
+  keyboard shortcut store suites pass; architecture guardrails pass.
+
+## Cycle 25 Idempotent Permission Policy Application + Prompt Sheets (2026-07-03)
+
+Field report: Proton Pass popup intermittently showed "permissions not
+granted" again after Cycle 23. Root cause: every policy re-application
+(context load, popup open, tab reconcile) did a remove-then-regrant sweep
+over declared patterns, firing `permissions.onRemoved`/`onAdded` storms into
+extension workers; Proton Pass caches such transitions as "permissions
+missing" for its popup spotlight.
+
+### Fixed
+
+- `SafariExtensionInstallCapabilityOwner.applyConfiguredSiteAccessPolicy`
+  applies the policy as a diff against the context's current grant/deny
+  state; re-applying an unchanged policy is a no-op (no permission events).
+  WebKit gotchas encoded: grants are add-only (same status with a new
+  expiration needs a clear-to-unknown first) and never-expiring grants bridge
+  as a far-future date (≥20y ⇒ "no expiration").
+- Permission prompts present as window sheets instead of app-modal
+  `runModal` (Safari scopes prompts to the window; app-modal also stalled
+  every other WebKit delegate completion against the 2-minute deny timeout).
+
+### Tests
+
+- `testUnchangedPolicyReapplicationEmitsNoPermissionEvents` (three unchanged
+  re-applications emit zero permission notifications; a real configuration
+  change still writes through).
 
 ## Cycle 24 Scripting API Enabled for Safari Targets (2026-07-03)
 

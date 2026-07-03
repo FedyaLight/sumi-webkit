@@ -260,6 +260,19 @@ final class SumiExtensionsModule {
         )
     }
 
+    /// Safari parity: dispatches a keyboard event to loaded extension
+    /// commands after Sumi's own shortcuts declined it. Returns true when an
+    /// extension command consumed the event.
+    func performExtensionKeyboardCommandIfLoaded(for event: NSEvent) -> Bool {
+        managerIfLoadedAndEnabled()?.performExtensionKeyboardCommand(for: event) ?? false
+    }
+
+    /// Safari parity: extension-provided context-menu items for a page tab.
+    /// Fetch immediately before showing the menu; items must not be cached.
+    func pageContextMenuItemsIfLoaded(for tab: Tab) -> [NSMenuItem] {
+        managerIfLoadedAndEnabled()?.pageContextMenuItems(for: tab) ?? []
+    }
+
     func markTabEligibleAfterCommittedNavigationIfLoaded(
         _ tab: Tab,
         reason: String

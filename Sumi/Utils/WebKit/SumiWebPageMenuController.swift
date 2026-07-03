@@ -24,6 +24,7 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
             targetHint: targetHint,
             selectedText: selectedText
         ).compose()
+        appendExtensionMenuItems(to: menu, for: webView)
         updateOwnedItemState(in: menu)
 
         if let tab = webView.owningTab,
@@ -192,6 +193,26 @@ final class SumiWebPageMenuController: NSObject, NSMenuItemValidation {
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(url.absoluteString, forType: .string)
+        }
+    }
+
+    /// Safari places extension-provided items in their own group at the end
+    /// of the page menu. WebKit builds the items (targets included); Sumi only
+    /// hosts them, fetched fresh on every presentation.
+    private func appendExtensionMenuItems(
+        to menu: NSMenu,
+        for webView: FocusableWKWebView
+    ) {
+        guard let tab = webView.owningTab else { return }
+        let extensionItems = SumiExtensionsModule.shared
+            .pageContextMenuItemsIfLoaded(for: tab)
+        guard extensionItems.isEmpty == false else { return }
+
+        if menu.items.isEmpty == false {
+            menu.addItem(.separator())
+        }
+        for item in extensionItems {
+            menu.addItem(item)
         }
     }
 
