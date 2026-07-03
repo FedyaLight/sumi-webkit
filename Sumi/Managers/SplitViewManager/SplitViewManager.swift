@@ -14,31 +14,29 @@ struct SplitViewRuntime {
 
 @MainActor
 final class SplitViewManager: ObservableObject {
-    struct WindowSplitPreviewState: Equatable {
-        var isActive: Bool = false
-        var targetRect: CGRect?
-        var style: SplitDropPreviewStyle = .edge
-    }
-
-    private struct TransientWindowSplitState: Equatable {
-        var isPreviewActive: Bool = false
-        var previewTargetRect: CGRect?
-        var previewStyle: SplitDropPreviewStyle = .edge
-    }
-
-    private struct ResolvedSplitTab {
-        let tab: Tab
-        let member: SplitGroupMember
-    }
-
-    private var activeWindowPreviewState = WindowSplitPreviewState()
+    typealias WindowSplitPreviewState = SplitPreviewStateOwner.WindowSplitPreviewState
 
     weak var windowRegistry: WindowRegistry?
     private var runtime: SplitViewRuntime?
 
-    private var transientWindowSplitStates: [UUID: TransientWindowSplitState] = [:]
-    private var emptySplitPlaceholderTabIdsByWindow: [UUID: UUID] = [:]
     private var splitDropTargetResolver = SplitDropTargetResolver()
+
+    private lazy var previewStateOwner = SplitPreviewStateOwner(
+        activeWindowId: { [weak self] in self?.windowRegistry?.activeWindow?.id },
+        notifyActiveWindowPreviewChanged: { [weak self] in self?.objectWillChange.send() },
+        refreshWindow: { [weak self] windowId in self?.refreshWindow(windowId) }
+    )
+
+    private lazy var membershipResolutionOwner = SplitMembershipResolutionOwner(
+        tabManager: { [weak self] in self?.tabManager }
+    )
+
+    private lazy var emptyPlaceholderOwner = SplitEmptyPlaceholderOwner(
+        tabManager: { [weak self] in self?.tabManager },
+        membershipResolution: membershipResolutionOwner,
+        selectTab: { [weak self] tab, windowState in self?.runtime?.selectTab(tab, windowState) },
+        notifyChanged: { [weak self] windowId in self?.notifyChanged(for: windowId) }
+    )
 
     init(runtime: SplitViewRuntime? = nil) {
         self.runtime = runtime
@@ -52,13 +50,10 @@ final class SplitViewManager: ObservableObject {
         runtime?.tabManager()
     }
 
+    // MARK: - Queries
+
     func previewState(for windowId: UUID) -> WindowSplitPreviewState {
-        let transient = transientState(for: windowId)
-        return WindowSplitPreviewState(
-            isActive: transient.isPreviewActive,
-            targetRect: transient.previewTargetRect,
-            style: transient.previewStyle
-        )
+        previewStateOwner.previewState(for: windowId)
     }
 
     func splitGroup(for windowId: UUID) -> SplitGroup? {
@@ -89,8 +84,10 @@ final class SplitViewManager: ObservableObject {
     }
 
     func isPreviewActive(for windowId: UUID) -> Bool {
-        transientState(for: windowId).isPreviewActive
+        previewStateOwner.isPreviewActive(for: windowId)
     }
+
+    // MARK: - Layout & lifecycle
 
     func updateLayoutSizes(groupId: UUID, path: [Int], sizes: [Double], for windowId: UUID) {
         guard let tabManager,
@@ -113,13 +110,12 @@ final class SplitViewManager: ObservableObject {
     }
 
     func refreshPublishedState(for windowId: UUID) {
-        syncPublishedStateIfNeeded(for: windowId)
+        previewStateOwner.syncPublishedStateIfNeeded(for: windowId)
     }
 
     func cleanupWindow(_ windowId: UUID) {
-        transientWindowSplitStates.removeValue(forKey: windowId)
-        emptySplitPlaceholderTabIdsByWindow.removeValue(forKey: windowId)
-        syncPublishedStateIfNeeded(for: windowId)
+        emptyPlaceholderOwner.cleanupWindow(windowId)
+        previewStateOwner.cleanupWindow(windowId)
     }
 
     func handleTabClosure(_ tabId: UUID) {
@@ -143,7 +139,9 @@ final class SplitViewManager: ObservableObject {
     func exitSplit(for windowId: UUID) {
         guard let group = splitGroup(for: windowId) else { return }
         let windowState = windowRegistry?.windows[windowId]
-        let focusTab = windowState.flatMap { preferredFocusTabAfterUnsplit(group, in: $0) }
+        let focusTab = windowState.flatMap {
+            membershipResolutionOwner.preferredFocusTabAfterUnsplit(group, in: $0)
+        }
         tabManager?.removeSplitGroup(id: group.id)
         if let focusTab, let windowState {
             runtime?.selectTab(focusTab, windowState)
@@ -160,6 +158,24 @@ final class SplitViewManager: ObservableObject {
         tabManager?.upsertSplitGroup(group.settingLayoutKind(layoutKind))
         notifyChanged(for: windowId)
     }
+
+    func expandSplitPane(tabId: UUID, in windowState: BrowserWindowState) {
+        guard let tabManager,
+              let tab = tabManager.tab(for: tabId),
+              let group = tabManager.splitGroup(containing: tabId)
+        else { return }
+
+        if let remainingGroup = group.removing(tabId: tabId) {
+            tabManager.upsertSplitGroup(remainingGroup)
+        } else {
+            tabManager.removeSplitGroup(id: group.id)
+        }
+        runtime?.selectTab(tab, windowState)
+        runtime?.refreshCompositor(windowState)
+        notifyChanged(for: windowState.id)
+    }
+
+    // MARK: - Empty split placeholder
 
     func createEmptySplit(
         side: SplitDropSide = .right,
@@ -180,77 +196,26 @@ final class SplitViewManager: ObservableObject {
         )
         enterSplit(with: tab, placeOn: side, in: windowState)
         if tabManager.splitGroup(containing: tab.id) != nil {
-            emptySplitPlaceholderTabIdsByWindow[windowState.id] = tab.id
+            emptyPlaceholderOwner.registerPlaceholder(tabId: tab.id, for: windowState.id)
         }
         runtime?.focusFloatingBar(windowState, floatingBarPresentationReason)
     }
 
-    func expandSplitPane(tabId: UUID, in windowState: BrowserWindowState) {
-        guard let tabManager,
-              let tab = tabManager.tab(for: tabId),
-              let group = tabManager.splitGroup(containing: tabId)
-        else { return }
-
-        if let remainingGroup = group.removing(tabId: tabId) {
-            tabManager.upsertSplitGroup(remainingGroup)
-        } else {
-            tabManager.removeSplitGroup(id: group.id)
-        }
-        runtime?.selectTab(tab, windowState)
-        runtime?.refreshCompositor(windowState)
-        notifyChanged(for: windowState.id)
-    }
-
     func commitEmptySplitPlaceholder(tabId: UUID, in windowState: BrowserWindowState) {
-        guard emptySplitPlaceholderTabIdsByWindow[windowState.id] == tabId else { return }
-        emptySplitPlaceholderTabIdsByWindow.removeValue(forKey: windowState.id)
+        emptyPlaceholderOwner.commitPlaceholder(tabId: tabId, in: windowState)
     }
 
     @discardableResult
     func replaceEmptySplitPlaceholder(with tab: Tab, in windowState: BrowserWindowState) -> Bool {
-        guard let placeholderTabId = emptySplitPlaceholderTabIdsByWindow[windowState.id],
-              let tabManager,
-              let group = tabManager.splitGroup(containing: placeholderTabId),
-              group.contains(placeholderTabId)
-        else { return false }
-
-        emptySplitPlaceholderTabIdsByWindow.removeValue(forKey: windowState.id)
-        guard let resolved = resolvedSplitTab(
-            tab,
-            host: group.host,
-            sourceGroup: nil,
-            in: windowState
-        ) else {
-            return false
-        }
-        let updated = SplitGroup(
-            id: group.id,
-            layoutKind: group.layoutKind,
-            layoutTree: group.layoutTree.replacingTab(placeholderTabId, with: resolved.tab.id),
-            activeTabId: resolved.tab.id,
-            host: group.host,
-            members: group.removingMember(tabId: placeholderTabId).members + [resolved.member]
-        )
-
-        tabManager.upsertSplitGroup(updated)
-        if placeholderTabId != resolved.tab.id {
-            tabManager.removeTab(placeholderTabId)
-        }
-        runtime?.selectTab(resolved.tab, windowState)
-        notifyChanged(for: windowState.id)
-        return true
+        emptyPlaceholderOwner.replacePlaceholder(with: tab, in: windowState)
     }
 
     @discardableResult
     func cancelEmptySplitPlaceholder(in windowState: BrowserWindowState) -> Bool {
-        guard let placeholderTabId = emptySplitPlaceholderTabIdsByWindow.removeValue(forKey: windowState.id),
-              tabManager?.tab(for: placeholderTabId) != nil
-        else { return false }
-
-        tabManager?.removeTab(placeholderTabId)
-        notifyChanged(for: windowState.id)
-        return true
+        emptyPlaceholderOwner.cancelPlaceholder(in: windowState)
     }
+
+    // MARK: - Drop commit
 
     func enterSplit(
         with tab: Tab,
@@ -325,10 +290,10 @@ final class SplitViewManager: ObservableObject {
             return true
         }
 
-        let sourceGroup = sourceSplitGroup(for: tab)
+        let sourceGroup = membershipResolutionOwner.sourceSplitGroup(for: tab)
 
         if let targetGroup {
-            guard let resolvedIncoming = resolvedSplitTab(
+            guard let resolvedIncoming = membershipResolutionOwner.resolvedSplitTab(
                 tab,
                 host: targetGroup.host,
                 sourceGroup: sourceGroup,
@@ -374,7 +339,7 @@ final class SplitViewManager: ObservableObject {
             guard let group else { return false }
             removeFromSourceSplitIfNeeded(
                 sourceGroup,
-                movedTabId: sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
+                movedTabId: membershipResolutionOwner.sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
                 excludingGroupId: group.id
             )
             tabManager.upsertSplitGroup(group)
@@ -384,14 +349,14 @@ final class SplitViewManager: ObservableObject {
             return true
         }
 
-        let host = initialHost(for: tab, targetTab: targetTab, in: windowState)
-        guard let resolvedIncoming = resolvedSplitTab(
+        let host = membershipResolutionOwner.initialHost(for: tab, targetTab: targetTab, in: windowState)
+        guard let resolvedIncoming = membershipResolutionOwner.resolvedSplitTab(
             tab,
             host: host,
             sourceGroup: sourceGroup,
             in: windowState
         ),
-        let resolvedAnchor = resolvedSplitTab(
+        let resolvedAnchor = membershipResolutionOwner.resolvedSplitTab(
             targetTab,
             host: host,
             sourceGroup: tabManager.splitGroup(containing: targetTab.id),
@@ -417,7 +382,7 @@ final class SplitViewManager: ObservableObject {
 
         removeFromSourceSplitIfNeeded(
             sourceGroup,
-            movedTabId: sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
+            movedTabId: membershipResolutionOwner.sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
             excludingGroupId: group.id
         )
         tabManager.upsertSplitGroup(group)
@@ -440,21 +405,9 @@ final class SplitViewManager: ObservableObject {
         }
     }
 
-    func dropTarget(
-        at location: CGPoint,
-        in bounds: CGRect,
-        for windowId: UUID,
-        draggedTabId: UUID? = nil
-    ) -> SplitDropTarget? {
-        resolveDropTarget(
-            at: location,
-            in: bounds,
-            for: windowId,
-            draggedTabId: draggedTabId
-        )
-    }
+    // MARK: - Drop target resolution
 
-    private func resolveDropTarget(
+    func dropTarget(
         at location: CGPoint,
         in bounds: CGRect,
         for windowId: UUID,
@@ -490,17 +443,14 @@ final class SplitViewManager: ObservableObject {
         )
     }
 
+    // MARK: - Preview
+
     func beginPreview(
         targetRect: CGRect? = nil,
         style: SplitDropPreviewStyle = .edge,
         for windowId: UUID
     ) {
-        var transient = transientState(for: windowId)
-        transient.previewTargetRect = targetRect
-        transient.previewStyle = style
-        transient.isPreviewActive = true
-        setTransientState(transient, for: windowId)
-        refreshWindow(windowId)
+        previewStateOwner.beginPreview(targetRect: targetRect, style: style, for: windowId)
     }
 
     func updatePreview(
@@ -508,263 +458,14 @@ final class SplitViewManager: ObservableObject {
         style: SplitDropPreviewStyle = .edge,
         for windowId: UUID
     ) {
-        var transient = transientState(for: windowId)
-        guard transient.isPreviewActive else { return }
-        transient.previewTargetRect = targetRect
-        transient.previewStyle = style
-        setTransientState(transient, for: windowId)
+        previewStateOwner.updatePreview(targetRect: targetRect, style: style, for: windowId)
     }
 
     func endPreview(for windowId: UUID) {
-        var transient = transientState(for: windowId)
-        guard transient.isPreviewActive
-            || transient.previewTargetRect != nil
-            || transient.previewStyle != .edge
-        else { return }
-        transient.isPreviewActive = false
-        transient.previewTargetRect = nil
-        transient.previewStyle = .edge
-        setTransientState(transient, for: windowId)
-        refreshWindow(windowId)
+        previewStateOwner.endPreview(for: windowId)
     }
 
-    private func resolvedSplitTab(
-        _ candidate: Tab,
-        host: SplitGroupHost,
-        sourceGroup: SplitGroup?,
-        in windowState: BrowserWindowState
-    ) -> ResolvedSplitTab? {
-        guard let tabManager else { return nil }
-
-        let sourceMember = sourceMember(for: candidate, sourceGroup: sourceGroup)
-        let sourcePin = sourceMember?.pinId.flatMap { tabManager.shortcutPin(by: $0) }
-        if let pin = shortcutPin(for: candidate) ?? sourcePin {
-            let liveTab = resolvedLiveShortcutTab(for: pin, candidate: candidate, in: windowState)
-            guard let origin = sourceMember?.origin
-                ?? splitMemberOrigin(for: pin, host: host, windowState: windowState)
-            else {
-                return nil
-            }
-            return ResolvedSplitTab(
-                tab: liveTab,
-                member: SplitGroupMember(
-                    tabId: liveTab.id,
-                    pinId: pin.id,
-                    origin: origin
-                )
-            )
-        }
-
-        if host.isShortcutPinned {
-            guard let spaceId = host.spaceId ?? candidate.spaceId ?? windowState.currentSpaceId else {
-                return nil
-            }
-            let insertionIndex = tabManager.spacePinnedPins(for: spaceId).count
-            guard let pin = tabManager.convertTabToShortcutPin(
-                candidate,
-                role: .spacePinned,
-                profileId: nil,
-                spaceId: spaceId,
-                folderId: nil,
-                at: insertionIndex,
-                openTargetFolder: false
-            ),
-            let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id)
-            else {
-                return nil
-            }
-            return ResolvedSplitTab(
-                tab: liveTab,
-                member: SplitGroupMember(
-                    tabId: liveTab.id,
-                    pinId: pin.id,
-                    origin: .generatedSpacePinnedFromRegular(spaceId: spaceId, index: insertionIndex)
-                )
-            )
-        }
-
-        return ResolvedSplitTab(
-            tab: candidate,
-            member: sourceMember ?? SplitGroupMember(
-                tabId: candidate.id,
-                pinId: nil,
-                origin: .regular(spaceId: candidate.spaceId, index: candidate.index)
-            )
-        )
-    }
-
-    private func initialHost(
-        for incoming: Tab,
-        targetTab: Tab,
-        in windowState: BrowserWindowState
-    ) -> SplitGroupHost {
-        let incomingPin = shortcutPin(for: incoming)
-        let targetPin = shortcutPin(for: targetTab)
-        if incomingPin != nil, targetPin != nil {
-            let spaceId = incomingPin?.spaceId
-                ?? targetPin?.spaceId
-                ?? targetTab.spaceId
-                ?? incoming.spaceId
-                ?? windowState.currentSpaceId
-            if let spaceId {
-                return .shortcutPinned(
-                    spaceId: spaceId,
-                    profileId: incomingPin?.profileId ?? targetPin?.profileId ?? windowState.currentProfileId,
-                    index: initialShortcutHostIndex(
-                        incomingPin: incomingPin,
-                        targetPin: targetPin,
-                        incomingTab: incoming,
-                        targetTab: targetTab,
-                        in: windowState
-                    )
-                )
-            }
-        }
-
-        return .regular(spaceId: targetTab.spaceId ?? incoming.spaceId ?? windowState.currentSpaceId)
-    }
-
-    private func initialShortcutHostIndex(
-        incomingPin: ShortcutPin?,
-        targetPin: ShortcutPin?,
-        incomingTab: Tab,
-        targetTab: Tab,
-        in windowState: BrowserWindowState
-    ) -> Int? {
-        let pins = [incomingPin, targetPin].compactMap { $0 }
-        let spacePinnedPins = pins.filter { $0.role == .spacePinned }
-        guard !spacePinnedPins.isEmpty else { return 0 }
-
-        if let focusedPin = spacePinnedPins.first(where: { pin in
-            windowState.currentShortcutPinId == pin.id
-                || windowState.currentTabId == incomingTab.id && incomingPin?.id == pin.id
-                || windowState.currentTabId == targetTab.id && targetPin?.id == pin.id
-        }) {
-            return focusedPin.index
-        }
-
-        return targetPin?.role == .spacePinned ? targetPin?.index : incomingPin?.index
-    }
-
-    private func shortcutPin(for tab: Tab) -> ShortcutPin? {
-        guard let tabManager else { return nil }
-        if let shortcutPinId = tab.shortcutPinId,
-           let pin = tabManager.shortcutPin(by: shortcutPinId) {
-            return pin
-        }
-        if let pin = tabManager.shortcutPin(by: tab.id) {
-            return pin
-        }
-        return nil
-    }
-
-    private func sourceSplitGroup(for tab: Tab) -> SplitGroup? {
-        guard let tabManager else { return nil }
-        if let group = tabManager.splitGroup(containing: tab.id) {
-            return group
-        }
-        if let pinId = tab.shortcutPinId,
-           let group = tabManager.splitGroup(containingPinId: pinId) {
-            return group
-        }
-        if let pin = tabManager.shortcutPin(by: tab.id),
-           let group = tabManager.splitGroup(containingPinId: pin.id) {
-            return group
-        }
-        return nil
-    }
-
-    private func sourceMember(
-        for tab: Tab,
-        sourceGroup: SplitGroup?
-    ) -> SplitGroupMember? {
-        guard let tabManager else { return nil }
-        let pinId = tab.shortcutPinId ?? tabManager.shortcutPin(by: tab.id)?.id
-        let candidateGroups: [SplitGroup?] = [
-            sourceGroup,
-            tabManager.splitGroup(containing: tab.id),
-            pinId.flatMap { tabManager.splitGroup(containingPinId: $0) },
-        ]
-        var seenGroupIds = Set<UUID>()
-        for group in candidateGroups.compactMap({ $0 }) where seenGroupIds.insert(group.id).inserted {
-            if let pinId, let member = group.member(forPinId: pinId) {
-                return member
-            }
-            if let member = group.member(for: tab.id) {
-                return member
-            }
-        }
-        return nil
-    }
-
-    private func sourceRemovalId(for tab: Tab, in sourceGroup: SplitGroup?) -> UUID? {
-        guard let sourceGroup else { return nil }
-        if sourceGroup.tabIds.contains(tab.id) {
-            return tab.id
-        }
-
-        if let pinId = tab.shortcutPinId ?? tabManager?.shortcutPin(by: tab.id)?.id,
-           let member = sourceGroup.member(forPinId: pinId) {
-            if sourceGroup.tabIds.contains(member.tabId) {
-                return member.tabId
-            }
-            if sourceGroup.tabIds.contains(pinId) {
-                return pinId
-            }
-        }
-
-        guard let member = sourceGroup.member(for: tab.id) else {
-            return nil
-        }
-        if sourceGroup.tabIds.contains(member.tabId) {
-            return member.tabId
-        }
-        if let pinId = member.pinId, sourceGroup.tabIds.contains(pinId) {
-            return pinId
-        }
-        return nil
-    }
-
-    private func resolvedLiveShortcutTab(
-        for pin: ShortcutPin,
-        candidate: Tab,
-        in windowState: BrowserWindowState
-    ) -> Tab {
-        guard let tabManager else { return candidate }
-        if candidate.isShortcutLiveInstance,
-           candidate.shortcutPinId == pin.id,
-           tabManager.tab(for: candidate.id) != nil {
-            return candidate
-        }
-        if let liveTab = tabManager.shortcutLiveTab(for: pin.id, in: windowState.id) {
-            return liveTab
-        }
-        return tabManager.activateShortcutPin(
-            pin,
-            in: windowState.id,
-            currentSpaceId: pin.spaceId ?? windowState.currentSpaceId
-        )
-    }
-
-    private func splitMemberOrigin(
-        for pin: ShortcutPin,
-        host: SplitGroupHost,
-        windowState: BrowserWindowState
-    ) -> SplitGroupMemberOrigin? {
-        switch pin.role {
-        case .essential:
-            return .essential(profileId: pin.profileId, index: pin.index)
-        case .spacePinned:
-            guard let spaceId = pin.spaceId ?? host.spaceId ?? windowState.currentSpaceId else {
-                return nil
-            }
-            return .spacePinned(
-                spaceId: spaceId,
-                folderId: pin.folderId,
-                index: pin.index
-            )
-        }
-    }
+    // MARK: - Shared plumbing
 
     private func activeTabId(for windowId: UUID, in group: SplitGroup?) -> UUID? {
         guard let group else { return nil }
@@ -774,63 +475,8 @@ final class SplitViewManager: ObservableObject {
         return group.tabIds.first
     }
 
-    private func preferredFocusTabAfterUnsplit(
-        _ group: SplitGroup,
-        in windowState: BrowserWindowState
-    ) -> Tab? {
-        let candidateIds = [
-            windowState.currentTabId,
-            group.activeTabId,
-        ] + group.tabIds.map(Optional.some)
-
-        for candidateId in candidateIds {
-            guard let candidateId else { continue }
-            if let tab = tabManager?.tab(for: candidateId) {
-                return tab
-            }
-            if let pinId = group.member(for: candidateId)?.pinId,
-               let tab = tabManager?.shortcutLiveTab(for: pinId, in: windowState.id) {
-                return tab
-            }
-            if let tab = tabManager?.shortcutLiveTab(for: candidateId, in: windowState.id) {
-                return tab
-            }
-        }
-        return nil
-    }
-
-    private func transientState(for windowId: UUID) -> TransientWindowSplitState {
-        transientWindowSplitStates[windowId] ?? TransientWindowSplitState()
-    }
-
-    private func setTransientState(_ state: TransientWindowSplitState, for windowId: UUID) {
-        let previous = transientState(for: windowId)
-        guard previous != state else { return }
-        if state.isPreviewActive == false,
-           state.previewTargetRect == nil {
-            transientWindowSplitStates.removeValue(forKey: windowId)
-        } else {
-            transientWindowSplitStates[windowId] = state
-        }
-        syncPublishedStateIfNeeded(for: windowId)
-    }
-
-    private func syncPublishedStateIfNeeded(for windowId: UUID, forceNotify: Bool = false) {
-        guard windowRegistry?.activeWindow?.id == windowId else { return }
-        let transient = transientState(for: windowId)
-        let next = WindowSplitPreviewState(
-            isActive: transient.isPreviewActive,
-            targetRect: transient.previewTargetRect,
-            style: transient.previewStyle
-        )
-        guard forceNotify || activeWindowPreviewState != next else { return }
-
-        objectWillChange.send()
-        activeWindowPreviewState = next
-    }
-
     private func notifyChanged(for windowId: UUID) {
-        syncPublishedStateIfNeeded(for: windowId, forceNotify: true)
+        previewStateOwner.syncPublishedStateIfNeeded(for: windowId, forceNotify: true)
         refreshWindow(windowId)
     }
 
