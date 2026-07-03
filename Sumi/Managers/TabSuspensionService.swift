@@ -302,8 +302,8 @@ struct TabSuspensionWebViewState: Equatable {
             isCapturingCamera: webView.cameraCaptureState != .none,
             isCapturingMicrophone: webView.microphoneCaptureState != .none,
             isFullscreen: webView.sumiIsInFullscreenElementPresentation,
-            isPictureInPicture: tab.hasPictureInPictureVideo,
-            isPDFDocument: tab.isDisplayingPDFDocument,
+            isPictureInPicture: tab.suspensionStateOwner.hasPictureInPictureVideo,
+            isPDFDocument: tab.suspensionStateOwner.isDisplayingPDFDocument,
             isProtectedFromCompositorMutation: coordinator.isWebViewProtectedFromCompositorMutation(webView)
         )
     }
@@ -851,7 +851,7 @@ final class TabSuspensionService {
                     return nil
                 }
                 if let cutoffDate,
-                   let lastSelectedAt = tab.lastSelectedAt,
+                   let lastSelectedAt = tab.suspensionStateOwner.lastSelectedAt,
                    lastSelectedAt >= cutoffDate {
                     return nil
                 }
@@ -880,8 +880,8 @@ final class TabSuspensionService {
                 return Candidate(tab: tab)
             }
             .sorted { lhs, rhs in
-                let leftDate = lhs.tab.lastSelectedAt ?? .distantPast
-                let rightDate = rhs.tab.lastSelectedAt ?? .distantPast
+                let leftDate = lhs.tab.suspensionStateOwner.lastSelectedAt ?? .distantPast
+                let rightDate = rhs.tab.suspensionStateOwner.lastSelectedAt ?? .distantPast
                 if leftDate != rightDate {
                     return leftDate < rightDate
                 }
@@ -933,13 +933,13 @@ final class TabSuspensionService {
         guard isSuspensibleContentURL(tab.url) else { return .ineligible(reason: .unsupportedURLScheme) }
 
         guard !tab.isPopupHost else { return .ineligible(reason: .popupHost) }
-        guard !tab.isSuspended else { return .ineligible(reason: .alreadySuspended) }
+        guard !tab.suspensionStateOwner.isSuspended else { return .ineligible(reason: .alreadySuspended) }
         guard !tab.isLoading else { return .ineligible(reason: .loading) }
         guard !tab.audioState.isPlayingAudio else { return .ineligible(reason: .playingAudio) }
         guard !isRecentlyAudible(tab) else { return .ineligible(reason: .recentlyAudible) }
-        guard tab.pageSuspensionVeto == .none else { return .ineligible(reason: .pageVeto) }
-        guard !tab.hasPictureInPictureVideo else { return .ineligible(reason: .pictureInPicture) }
-        guard !tab.isDisplayingPDFDocument else { return .ineligible(reason: .pdfDocument) }
+        guard tab.suspensionStateOwner.pageSuspensionVeto == .none else { return .ineligible(reason: .pageVeto) }
+        guard !tab.suspensionStateOwner.hasPictureInPictureVideo else { return .ineligible(reason: .pictureInPicture) }
+        guard !tab.suspensionStateOwner.isDisplayingPDFDocument else { return .ineligible(reason: .pdfDocument) }
         return nil
     }
 

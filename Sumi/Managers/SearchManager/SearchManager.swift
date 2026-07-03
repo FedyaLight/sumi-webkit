@@ -488,8 +488,8 @@ class SearchManager {
                     return (lhsRank ?? Int.max) < (rhsRank ?? Int.max)
                 }
 
-                let lhsSelected = lhs.lastSelectedAt ?? .distantPast
-                let rhsSelected = rhs.lastSelectedAt ?? .distantPast
+                let lhsSelected = lhs.suspensionStateOwner.lastSelectedAt ?? .distantPast
+                let rhsSelected = rhs.suspensionStateOwner.lastSelectedAt ?? .distantPast
                 if lhsSelected != rhsSelected {
                     return lhsSelected > rhsSelected
                 }

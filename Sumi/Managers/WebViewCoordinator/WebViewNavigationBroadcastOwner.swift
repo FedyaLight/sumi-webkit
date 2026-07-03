@@ -40,7 +40,7 @@ final class WebViewNavigationBroadcastOwner {
 
     func reloadTab(_ tab: Tab) {
         let reloadTargetURL = tab.existingWebView?.url ?? tab.url
-        let protectionReloadWasRequired = tab.isProtectionReloadRequired
+        let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
         if tab.configurationPolicyRequiresNormalWebViewRebuild(for: reloadTargetURL) {
             if dependencies.rebuildLiveWebViews(
                 tab,

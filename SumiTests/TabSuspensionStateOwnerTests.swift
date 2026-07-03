@@ -14,10 +14,10 @@ final class TabSuspensionStateOwnerTests: XCTestCase {
 
         tab.markSuspended(at: selectedAt)
 
-        XCTAssertTrue(tab.isSuspended)
-        XCTAssertFalse(tab.isSuspensionRestoreInProgress)
-        XCTAssertEqual(tab.lastSuspendedURL, tab.url)
-        XCTAssertEqual(tab.lastSelectedAt, selectedAt)
+        XCTAssertTrue(tab.suspensionStateOwner.isSuspended)
+        XCTAssertFalse(tab.suspensionStateOwner.isRestoreInProgress)
+        XCTAssertEqual(tab.suspensionStateOwner.lastSuspendedURL, tab.url)
+        XCTAssertEqual(tab.suspensionStateOwner.lastSelectedAt, selectedAt)
         XCTAssertEqual(tab.loadingState, .idle)
         XCTAssertFalse(tab.audioState.isPlayingAudio)
         XCTAssertEqual(tab.lastMediaActivityAt, .distantPast)
@@ -29,30 +29,30 @@ final class TabSuspensionStateOwnerTests: XCTestCase {
     func testMarkSuspendedKeepsExistingLastSelectedAt() {
         let tab = makeTab()
         let existingDate = Date(timeIntervalSince1970: 50)
-        tab.lastSelectedAt = existingDate
+        tab.suspensionStateOwner.lastSelectedAt = existingDate
 
         tab.markSuspended(at: Date(timeIntervalSince1970: 100))
 
-        XCTAssertEqual(tab.lastSelectedAt, existingDate)
+        XCTAssertEqual(tab.suspensionStateOwner.lastSelectedAt, existingDate)
     }
 
     func testSuspendedRestoreFinishesOnlyAfterWebViewExists() {
         let tab = makeTab()
-        tab.isSuspended = true
+        tab.suspensionStateOwner.isSuspended = true
         let recorder = TabSuspensionLifecycleRecorder(observing: tab)
 
-        tab.beginSuspendedRestoreIfNeeded()
+        tab.suspensionStateOwner.beginRestoreIfNeeded()
         tab.finishSuspendedRestoreIfNeeded()
 
-        XCTAssertTrue(tab.isSuspended)
-        XCTAssertTrue(tab.isSuspensionRestoreInProgress)
+        XCTAssertTrue(tab.suspensionStateOwner.isSuspended)
+        XCTAssertTrue(tab.suspensionStateOwner.isRestoreInProgress)
         XCTAssertEqual(recorder.count, 0)
 
         tab._webView = WKWebView()
         tab.finishSuspendedRestoreIfNeeded()
 
-        XCTAssertFalse(tab.isSuspended)
-        XCTAssertFalse(tab.isSuspensionRestoreInProgress)
+        XCTAssertFalse(tab.suspensionStateOwner.isSuspended)
+        XCTAssertFalse(tab.suspensionStateOwner.isRestoreInProgress)
         XCTAssertEqual(recorder.count, 1)
         XCTAssertIdentical(recorder.firstObject, tab)
     }
@@ -60,19 +60,19 @@ final class TabSuspensionStateOwnerTests: XCTestCase {
     func testResetPageSuspensionRuntimeStateClearsEligibilityFlagsOnly() {
         let tab = makeTab()
         let selectedAt = Date(timeIntervalSince1970: 25)
-        tab.pageSuspensionVeto = .pageReportedUnableToSuspend
-        tab.hasPictureInPictureVideo = true
-        tab.isDisplayingPDFDocument = true
-        tab.isSuspended = true
-        tab.lastSelectedAt = selectedAt
+        tab.suspensionStateOwner.pageSuspensionVeto = .pageReportedUnableToSuspend
+        tab.suspensionStateOwner.hasPictureInPictureVideo = true
+        tab.suspensionStateOwner.isDisplayingPDFDocument = true
+        tab.suspensionStateOwner.isSuspended = true
+        tab.suspensionStateOwner.lastSelectedAt = selectedAt
 
-        tab.resetPageSuspensionRuntimeState()
+        tab.suspensionStateOwner.resetRuntimeState()
 
-        XCTAssertEqual(tab.pageSuspensionVeto, .none)
-        XCTAssertFalse(tab.hasPictureInPictureVideo)
-        XCTAssertFalse(tab.isDisplayingPDFDocument)
-        XCTAssertTrue(tab.isSuspended)
-        XCTAssertEqual(tab.lastSelectedAt, selectedAt)
+        XCTAssertEqual(tab.suspensionStateOwner.pageSuspensionVeto, .none)
+        XCTAssertFalse(tab.suspensionStateOwner.hasPictureInPictureVideo)
+        XCTAssertFalse(tab.suspensionStateOwner.isDisplayingPDFDocument)
+        XCTAssertTrue(tab.suspensionStateOwner.isSuspended)
+        XCTAssertEqual(tab.suspensionStateOwner.lastSelectedAt, selectedAt)
     }
 
     private func makeTab() -> Tab {

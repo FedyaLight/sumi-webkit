@@ -198,8 +198,8 @@ struct URLBarView: View {
         browserContext.siteControlsSnapshot(
             activePageURL,
             effectiveProfile,
-            currentTab?.isProtectionReloadRequired == true,
-            currentTab?.isSafariContentBlockerReloadRequired == true
+            currentTab?.reloadPolicyStateOwner.isProtectionReloadRequired == true,
+            currentTab?.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired == true
         )
     }
 }

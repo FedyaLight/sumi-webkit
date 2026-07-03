@@ -260,9 +260,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertEqual(Set(summary.globalRuleListIdentifiers), expectedIdentifiers)
         XCTAssertTrue(protectionRuleListIdentifiers.isSubset(of: Set(summary.globalRuleListIdentifiers)))
         XCTAssertTrue(safariRuleListIdentifiers.isSubset(of: Set(summary.globalRuleListIdentifiers)))
-        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
+        XCTAssertEqual(tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
         XCTAssertEqual(
-            tab.safariContentBlockerAppliedAttachmentState?.enabledContentBlockerIds,
+            tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.enabledContentBlockerIds,
             [installedSafariContentBlocker.id]
         )
     }
@@ -293,7 +293,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
 
-        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
         XCTAssertTrue(tab.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: tab.url))
 
         XCTAssertTrue(
@@ -310,10 +310,10 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         await replacementController.waitForContentBlockingAssetsInstalled()
         let replacementSummary = replacementController.contentBlockingAssetSummary
 
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
-        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabledForSite, false)
+        XCTAssertFalse(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
+        XCTAssertEqual(tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.isEnabledForSite, false)
         XCTAssertEqual(
-            tab.safariContentBlockerAppliedAttachmentState?.enabledContentBlockerIds,
+            tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.enabledContentBlockerIds,
             [harness.installedContentBlocker.id]
         )
         XCTAssertTrue(
@@ -359,7 +359,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         )
         await replacementController.waitForContentBlockingAssetsInstalled()
 
-        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabledForSite, false)
+        XCTAssertEqual(tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.isEnabledForSite, false)
         XCTAssertTrue(
             harness.ruleListIdentifiers.isDisjoint(
                 with: Set(replacementController.contentBlockingAssetSummary.globalRuleListIdentifiers)
@@ -410,7 +410,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         await replacementController.waitForContentBlockingAssetsInstalled()
 
         try await waitForWebViewURL(replacementWebView, toEqual: tab.url)
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertFalse(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
         XCTAssertTrue(
             harness.ruleListIdentifiers.isDisjoint(
                 with: Set(replacementController.contentBlockingAssetSummary.globalRuleListIdentifiers)
@@ -438,7 +438,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         await originalController.waitForContentBlockingAssetsInstalled()
 
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.disabled, for: tab.url)
-        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
 
         let cleanupService = FakeWebsiteDataCleanupService()
         let privacyService = BrowserPrivacyService(
@@ -480,7 +480,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             replacementWebView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await replacementController.waitForContentBlockingAssetsInstalled()
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertFalse(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
         XCTAssertTrue(
             harness.ruleListIdentifiers.isDisjoint(
                 with: Set(replacementController.contentBlockingAssetSummary.globalRuleListIdentifiers)
@@ -509,8 +509,8 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
         XCTAssertTrue(
             harness.browserManager.tabManager.allTabs().contains { $0.id == tab.id }
         )
-        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertEqual(tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
+        XCTAssertFalse(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
 
         let disabledRecord = try await harness.extensionsModule.setSafariContentBlockerEnabled(
             false,
@@ -520,7 +520,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
 
         XCTAssertEqual(disabledRecord?.isEnabled, false)
         XCTAssertFalse(desiredState.isEnabled)
-        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
     }
 
     func testSafariContentBlockerRuleUpdateMarksLiveTabsReloadRequired() async throws {
@@ -541,9 +541,9 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             webView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await controller.waitForContentBlockingAssetsInstalled()
-        let initialAppliedState = try XCTUnwrap(tab.safariContentBlockerAppliedAttachmentState)
+        let initialAppliedState = try XCTUnwrap(tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState)
         XCTAssertTrue(initialAppliedState.isEnabled)
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertFalse(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
 
         let updatedContentBlocker = try makeSafariContentBlockerCandidate(
             blockedHost: "updated-safari-content-blocked.example"
@@ -563,7 +563,7 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             updatedContentBlocker.locatedRules.resourceFingerprint
         )
         XCTAssertFalse(initialAppliedState.hasSameEffectiveWebViewAttachment(as: desiredState))
-        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
         XCTAssertTrue(tab.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: tab.url))
     }
 
@@ -585,15 +585,15 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             webView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await controller.waitForContentBlockingAssetsInstalled()
-        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertEqual(tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.isEnabled, true)
+        XCTAssertFalse(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
 
         harness.extensionsModule.setEnabled(false)
         let desiredState = tab.safariBlockerDesiredAttachmentState(for: tab.url)
 
         XCTAssertFalse(harness.extensionsModule.isEnabled)
         XCTAssertFalse(desiredState.isEnabled)
-        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
     }
 
     func testExtensionsModuleEnableMarksSafariContentBlockerTabsReloadRequired() async throws {
@@ -615,15 +615,15 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             webView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await controller.waitForContentBlockingAssetsInstalled()
-        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, false)
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertEqual(tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.isEnabled, false)
+        XCTAssertFalse(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
 
         harness.extensionsModule.setEnabled(true)
         let desiredState = tab.safariBlockerDesiredAttachmentState(for: tab.url)
 
         XCTAssertTrue(harness.extensionsModule.isEnabled)
         XCTAssertTrue(desiredState.isEnabled)
-        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
         XCTAssertTrue(tab.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: tab.url))
     }
 
@@ -659,14 +659,14 @@ final class BrowserConfigurationNormalTabTests: XCTestCase {
             disabledWebView.configuration.userContentController.sumiNormalTabUserContentController
         )
         await disabledController.waitForContentBlockingAssetsInstalled()
-        XCTAssertEqual(tab.safariContentBlockerAppliedAttachmentState?.isEnabled, false)
-        XCTAssertFalse(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertEqual(tab.reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState?.isEnabled, false)
+        XCTAssertFalse(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
 
         harness.extensionsModule.setSafariContentBlockerSiteOverride(.inherit, for: tab.url)
         let desiredState = tab.safariBlockerDesiredAttachmentState(for: tab.url)
 
         XCTAssertTrue(desiredState.isEnabled)
-        XCTAssertTrue(tab.isSafariContentBlockerReloadRequired)
+        XCTAssertTrue(tab.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired)
         XCTAssertTrue(tab.safariContentBlockerAttachmentRequiresNormalWebViewRebuild(for: tab.url))
     }
 

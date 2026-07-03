@@ -32,7 +32,7 @@ class TabCompositorManager: ObservableObject {
 
     func loadTab(_ tab: Tab) {
         guard tab.requiresPrimaryWebView else { return }
-        tab.noteSuspensionAccess()
+        tab.suspensionStateOwner.noteAccess()
         tab.loadWebViewIfNeeded()
     }
 

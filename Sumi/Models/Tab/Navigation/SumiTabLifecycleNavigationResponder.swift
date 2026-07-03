@@ -38,7 +38,7 @@ final class SumiTabLifecycleNavigationResponder:
             tab.handleNormalTabPermissionNavigation(to: context.url)
             tab.markRegularMainFrameNavigation(on: webView)
         }
-        tab.resetPageSuspensionRuntimeState()
+        tab.suspensionStateOwner.resetRuntimeState()
         tab.lifecycleNavigationRuntime.resetRevisitProtection(tab)
 
         if let url = context.url {
@@ -92,7 +92,7 @@ final class SumiTabLifecycleNavigationResponder:
               response.isForMainFrame
         else { return .next }
 
-        tab.isDisplayingPDFDocument =
+        tab.suspensionStateOwner.isDisplayingPDFDocument =
             response.mimeType?.lowercased() == "application/pdf"
         return .next
     }

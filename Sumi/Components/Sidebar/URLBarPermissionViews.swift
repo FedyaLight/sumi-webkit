@@ -101,7 +101,7 @@ extension URLBarView {
         permissionRuntimeControlsModel.load(
             pageContext: permissionRuntimeControlsPageContext(for: currentTab),
             runtimeController: browserContext.permission.runtimeController,
-            reloadRequired: currentTab.isAutoplayReloadRequired,
+            reloadRequired: currentTab.reloadPolicyStateOwner.isAutoplayReloadRequired,
             onRuntimeStateChanged: {
                 refreshPermissionIndicator(for: currentTab)
             }
@@ -189,7 +189,7 @@ extension URLBarView {
             tab.id.uuidString.lowercased(),
             tab.currentPermissionPageId(),
             tab.url.absoluteString,
-            tab.isAutoplayReloadRequired.description,
+            tab.reloadPolicyStateOwner.isAutoplayReloadRequired.description,
         ].joined(separator: "|")
     }
 

@@ -63,7 +63,7 @@ final class BrowserWindowScopedNavigationOwner {
 
         let targetWebView = windowOwnedOrCreatedWebView(for: tab, in: windowState.id)
         let targetURL = targetWebView?.url ?? tab.url
-        let protectionReloadWasRequired = tab.isProtectionReloadRequired
+        let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
         if tab.configurationPolicyRequiresNormalWebViewRebuild(for: targetURL) {
             guard let preparation = prepareWindowScopedConfigurationPolicy(
                 for: tab,

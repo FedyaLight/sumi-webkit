@@ -124,7 +124,7 @@ final class TabScriptMessageRuntimeOwner {
     }
 
     func handleTabSuspensionCanBeSuspended(_ canBeSuspended: Bool) {
-        tab.pageSuspensionVeto = canBeSuspended
+        tab.suspensionStateOwner.pageSuspensionVeto = canBeSuspended
             ? .none
             : .pageReportedUnableToSuspend
     }

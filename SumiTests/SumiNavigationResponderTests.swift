@@ -889,7 +889,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
 
         XCTAssertNil(pdfPolicy)
-        XCTAssertTrue(tab.isDisplayingPDFDocument)
+        XCTAssertTrue(tab.suspensionStateOwner.isDisplayingPDFDocument)
 
         let subframePolicy = await adapter.decidePolicy(
             for: NavigationResponse(
@@ -906,7 +906,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
 
         XCTAssertNil(subframePolicy)
-        XCTAssertTrue(tab.isDisplayingPDFDocument)
+        XCTAssertTrue(tab.suspensionStateOwner.isDisplayingPDFDocument)
 
         let htmlPolicy = await adapter.decidePolicy(
             for: NavigationResponse(
@@ -923,7 +923,7 @@ final class SumiNavigationResponderTests: XCTestCase {
         )
 
         XCTAssertNil(htmlPolicy)
-        XCTAssertFalse(tab.isDisplayingPDFDocument)
+        XCTAssertFalse(tab.suspensionStateOwner.isDisplayingPDFDocument)
     }
 
     func testTabLifecycleWillStartUsesInjectedRuntimeWithoutBrowserManager() {

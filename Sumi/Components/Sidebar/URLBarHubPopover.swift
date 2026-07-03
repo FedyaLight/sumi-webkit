@@ -119,8 +119,8 @@ struct URLBarHubPopover: View {
         return browserContext.siteControlsSnapshot(
             currentTab?.url,
             activeProfile,
-            currentTab?.isProtectionReloadRequired == true,
-            currentTab?.isSafariContentBlockerReloadRequired == true
+            currentTab?.reloadPolicyStateOwner.isProtectionReloadRequired == true,
+            currentTab?.reloadPolicyStateOwner.isSafariContentBlockerReloadRequired == true
         )
     }
 
@@ -161,7 +161,7 @@ struct URLBarHubPopover: View {
             currentTab?.id.uuidString ?? "none",
             currentTab?.currentPermissionPageId() ?? "none",
             currentTab?.url.absoluteString ?? "none",
-            currentTab?.isAutoplayReloadRequired == true ? "autoplay-reload" : "autoplay-ready",
+            currentTab?.reloadPolicyStateOwner.isAutoplayReloadRequired == true ? "autoplay-reload" : "autoplay-ready",
             currentTab?.audioState.isPlayingAudio == true ? "audio-playing" : "audio-idle",
             "\(browserContext.permission.siteActivityRevision())",
         ].joined(separator: "|")
@@ -653,7 +653,7 @@ struct URLBarHubPopover: View {
             ),
             webView: currentWebView,
             profile: activeProfile,
-            reloadRequired: currentTab?.isAutoplayReloadRequired == true,
+            reloadRequired: currentTab?.reloadPolicyStateOwner.isAutoplayReloadRequired == true,
             autoplayInUse: currentTab?.audioState.isPlayingAudio == true,
             dependencies: permissionDependencies,
             systemSnapshotMode: .none

@@ -267,9 +267,9 @@ final class SumiBackgroundMediaOptimizationService {
 
     private func isEligibleForOptimization(tab: Tab, webView: WKWebView) -> Bool {
         guard isOptimizableContentURL(tab.url) else { return false }
-        guard !tab.isDisplayingPDFDocument else { return false }
-        guard !tab.hasPictureInPictureVideo else { return false }
-        guard !tab.isSuspended else { return false }
+        guard !tab.suspensionStateOwner.isDisplayingPDFDocument else { return false }
+        guard !tab.suspensionStateOwner.hasPictureInPictureVideo else { return false }
+        guard !tab.suspensionStateOwner.isSuspended else { return false }
         guard webView.cameraCaptureState == .none else { return false }
         guard webView.microphoneCaptureState == .none else { return false }
         guard !webView.sumiIsInFullscreenElementPresentation else { return false }

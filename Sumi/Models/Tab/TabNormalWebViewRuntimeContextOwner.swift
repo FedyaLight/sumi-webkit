@@ -39,7 +39,7 @@ final class TabNormalWebViewRuntimeContextOwner {
                 tab?.profileWebViewCreationGate.deferCreationUntilProfileAvailable()
             },
             beginSuspendedRestoreIfNeeded: { [weak tab] in
-                tab?.beginSuspendedRestoreIfNeeded()
+                tab?.suspensionStateOwner.beginRestoreIfNeeded()
             },
             finishSuspendedRestoreIfNeeded: { [weak tab] in
                 tab?.finishSuspendedRestoreIfNeeded()

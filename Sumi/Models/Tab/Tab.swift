@@ -73,7 +73,7 @@ public class Tab: NSObject, Identifiable, ObservableObject {
     lazy var ownedWebViewPreparationOwner = TabOwnedWebViewPreparationOwner(
         dependencies: .live(tab: self)
     )
-    private let suspensionStateOwner = TabSuspensionStateOwner()
+    let suspensionStateOwner = TabSuspensionStateOwner()
     private let webViewInteractionStateOwner = TabWebViewInteractionStateOwner()
     lazy var permissionSurfaceOwner = TabPermissionSurfaceOwner(context: .live(tab: self))
     lazy var webKitUIDelegateOwner = TabWebKitUIDelegateOwner(tab: self)
@@ -307,85 +307,12 @@ public class Tab: NSObject, Identifiable, ObservableObject {
         webViewRuntime.reloadPolicyStateOwner
     }
 
-    var safariContentBlockerAppliedAttachmentState: SumiSafariContentBlockerAttachmentState? {
-        get { reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState }
-        set { reloadPolicyStateOwner.safariContentBlockerAppliedAttachmentState = newValue }
-    }
-    var protectionAppliedAttachmentState: SumiProtectionAttachmentState? {
-        get { reloadPolicyStateOwner.protectionAppliedAttachmentState }
-        set { reloadPolicyStateOwner.protectionAppliedAttachmentState = newValue }
-    }
-    var safariContentBlockerReloadRequirement: SumiSafariContentBlockerReloadRequirement? {
-        get { reloadPolicyStateOwner.safariContentBlockerReloadRequirement }
-        set { reloadPolicyStateOwner.safariContentBlockerReloadRequirement = newValue }
-    }
-    var isSafariContentBlockerReloadRequired: Bool {
-        reloadPolicyStateOwner.isSafariContentBlockerReloadRequired
-    }
-    var protectionReloadRequirement: SumiProtectionReloadRequirement? {
-        get { reloadPolicyStateOwner.protectionReloadRequirement }
-        set { reloadPolicyStateOwner.protectionReloadRequirement = newValue }
-    }
-    var isProtectionReloadRequired: Bool {
-        reloadPolicyStateOwner.isProtectionReloadRequired
-    }
-    var didManualReloadRebuildProtectionWebView: Bool {
-        get { reloadPolicyStateOwner.didManualReloadRebuildProtectionWebView }
-        set { reloadPolicyStateOwner.didManualReloadRebuildProtectionWebView = newValue }
-    }
-    var appliedProtectionAfterManualReload: Bool {
-        get { reloadPolicyStateOwner.appliedProtectionAfterManualReload }
-        set { reloadPolicyStateOwner.appliedProtectionAfterManualReload = newValue }
-    }
-    var lastProtectionWebViewRebuildDuration: TimeInterval? {
-        get { reloadPolicyStateOwner.lastProtectionWebViewRebuildDuration }
-        set { reloadPolicyStateOwner.lastProtectionWebViewRebuildDuration = newValue }
-    }
-    var lastProtectionURLHubSummaryDuration: TimeInterval? {
-        get { reloadPolicyStateOwner.lastProtectionURLHubSummaryDuration }
-        set { reloadPolicyStateOwner.lastProtectionURLHubSummaryDuration = newValue }
-    }
-    var autoplayReloadRequirement: SumiAutoplayReloadRequirement? {
-        get { reloadPolicyStateOwner.autoplayReloadRequirement }
-        set { reloadPolicyStateOwner.autoplayReloadRequirement = newValue }
-    }
-    var isAutoplayReloadRequired: Bool {
-        reloadPolicyStateOwner.isAutoplayReloadRequired
-    }
     // MARK: - WebView Ownership Tracking (Memory Optimization)
     /// The window ID that currently "owns" the primary WebView for this tab
     /// If nil, no window is displaying this tab yet
     var primaryWindowId: UUID? {
         get { webViewOwnershipOwner.primaryWindowId }
         set { webViewOwnershipOwner.setPrimaryWindowId(newValue) }
-    }
-    var isSuspended: Bool {
-        get { suspensionStateOwner.isSuspended }
-        set { suspensionStateOwner.isSuspended = newValue }
-    }
-    var lastSuspendedURL: URL? {
-        get { suspensionStateOwner.lastSuspendedURL }
-        set { suspensionStateOwner.lastSuspendedURL = newValue }
-    }
-    var lastSelectedAt: Date? {
-        get { suspensionStateOwner.lastSelectedAt }
-        set { suspensionStateOwner.lastSelectedAt = newValue }
-    }
-    var pageSuspensionVeto: TabPageSuspensionVeto {
-        get { suspensionStateOwner.pageSuspensionVeto }
-        set { suspensionStateOwner.pageSuspensionVeto = newValue }
-    }
-    var hasPictureInPictureVideo: Bool {
-        get { suspensionStateOwner.hasPictureInPictureVideo }
-        set { suspensionStateOwner.hasPictureInPictureVideo = newValue }
-    }
-    var isDisplayingPDFDocument: Bool {
-        get { suspensionStateOwner.isDisplayingPDFDocument }
-        set { suspensionStateOwner.isDisplayingPDFDocument = newValue }
-    }
-    var isSuspensionRestoreInProgress: Bool {
-        get { suspensionStateOwner.isRestoreInProgress }
-        set { suspensionStateOwner.isRestoreInProgress = newValue }
     }
     var lastWebViewInteractionEvent: NSEvent? {
         get { webViewInteractionStateOwner.lastWebViewInteractionEvent }
@@ -719,18 +646,10 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func loadWebViewIfNeeded() {
         if !hasCurrentWebView {
-            beginSuspendedRestoreIfNeeded()
+            suspensionStateOwner.beginRestoreIfNeeded()
             setupWebView()
             finishSuspendedRestoreIfNeeded()
         }
-    }
-
-    func noteSuspensionAccess(at date: Date = Date()) {
-        suspensionStateOwner.noteAccess(at: date)
-    }
-
-    func resetPageSuspensionRuntimeState() {
-        suspensionStateOwner.resetRuntimeState()
     }
 
     func publishNavigationStateChangeIfNeeded(_ didChange: Bool) {
@@ -740,10 +659,6 @@ public class Tab: NSObject, Identifiable, ObservableObject {
 
     func markSuspended(at date: Date = Date()) {
         suspensionStateOwner.markSuspended(tab: self, at: date)
-    }
-
-    func beginSuspendedRestoreIfNeeded() {
-        suspensionStateOwner.beginRestoreIfNeeded()
     }
 
     func finishSuspendedRestoreIfNeeded() {

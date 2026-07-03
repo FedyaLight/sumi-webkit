@@ -117,7 +117,7 @@ final class BrowserTabSelectionOwner {
         }
 
         actions.handleNativeNowPlayingTabActivated(tab.id)
-        tab.noteSuspensionAccess()
+        tab.suspensionStateOwner.noteAccess()
         actions.dismissFloatingBarAfterSelection(windowState)
         actions.updateActiveSplitSide(tab.id, windowState.id)
 

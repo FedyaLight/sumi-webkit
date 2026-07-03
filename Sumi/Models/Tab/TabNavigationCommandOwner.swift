@@ -123,7 +123,7 @@ final class TabNavigationCommandOwner {
 
         tab.beginLoadingPresentationIfNeeded()
         let targetURL = tab.currentWebView?.url ?? tab.url
-        let protectionReloadWasRequired = tab.isProtectionReloadRequired
+        let protectionReloadWasRequired = tab.reloadPolicyStateOwner.isProtectionReloadRequired
         let rebuiltForConfigurationPolicy = tab.rebuildNormalWebViewForConfigurationPolicyIfNeeded(
             targetURL: targetURL,
             reason: "Tab.refresh"
