@@ -14,6 +14,7 @@ checks=(
   "scripts/check_tracker_radar_import_boundary.sh"
   "scripts/check_updater_sparkle_boundary.sh"
   "scripts/check_userscript_hot_paths.sh"
+  "scripts/check_website_compositor_boundaries.sh"
   "scripts/check_webview_runtime_context_boundary.sh"
 )
 

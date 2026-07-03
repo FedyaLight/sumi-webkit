@@ -13,9 +13,15 @@ if [[ -n "$compression_imports" ]]; then
   status=1
 fi
 
-parser_declarations="$(grep -nE '^(struct SumiZenImportParser|struct SumiZenImportResult|private enum SumiMozLZ4|enum SumiPortableFolderHierarchyRepair)' "$service" || [[ $? -eq 1 ]])"
+parser_declarations="$(grep -nE '^(struct SumiArcImportParser|struct SumiArcImportResult|private struct ArcSpaceInfo|struct SumiZenImportParser|struct SumiZenImportResult|private enum SumiMozLZ4|enum SumiPortableFolderHierarchyRepair)' "$service" || [[ $? -eq 1 ]])"
 if [[ -n "$parser_declarations" ]]; then
-  printf 'Zen import parsing and shared repair helpers must stay out of SumiBrowserImportService:\n%s\n' "$parser_declarations" >&2
+  printf 'Browser-specific import parsing and shared repair helpers must stay out of SumiBrowserImportService:\n%s\n' "$parser_declarations" >&2
+  status=1
+fi
+
+file_preview_details="$(grep -nE '(importBrowser2ZenDocument|readBackup[(]|isSumiBackupCandidate)' "$service" || [[ $? -eq 1 ]])"
+if [[ -n "$file_preview_details" ]]; then
+  printf 'File preview decoding and backup detection must stay out of SumiBrowserImportService:\n%s\n' "$file_preview_details" >&2
   status=1
 fi
 
