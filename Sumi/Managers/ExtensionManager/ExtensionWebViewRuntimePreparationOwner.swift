@@ -198,7 +198,7 @@ extension ExtensionWebViewRuntimePreparationOwner.Dependencies {
                     ?? "nil"
             },
             webViewDescription: { [weak manager] webView in
-                manager?.extensionRuntimeWebViewDescription(webView) ?? "nil"
+                ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)
             },
             trace: { [weak manager] message in
                 manager?.extensionRuntimeTrace(message())

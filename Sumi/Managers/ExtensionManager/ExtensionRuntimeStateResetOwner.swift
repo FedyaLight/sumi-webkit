@@ -300,13 +300,13 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                 manager?.actionStatesByExtensionID.removeAll()
             },
             closeOptionsWindow: { [weak manager] extensionId in
-                manager?.closeOptionsWindow(for: extensionId)
+                manager?.optionsWindowOwner.closeWindow(for: extensionId)
             },
             optionsWindowExtensionIDs: { [weak manager] in
                 manager?.optionsWindowExtensionIDs ?? []
             },
             clearActionAnchors: { [weak manager] extensionId in
-                manager?.clearActionAnchors(for: extensionId)
+                manager?.actionAnchorStore.clearAnchors(for: extensionId)
             },
             clearPermissionsOriginsCompatibilityInstallations: { [weak manager] in
                 manager?.clearPermissionsOriginsCompatibilityInstallations()
@@ -331,7 +331,7 @@ extension ExtensionRuntimeStateResetOwner.Dependencies {
                 manager?.liveWebViews(for: tab) ?? []
             },
             tabDescription: { [weak manager] tab in
-                manager?.extensionRuntimeTabDescription(tab) ?? "tab=\(tab.id.uuidString.prefix(8))"
+                manager?.runtimeDiagnosticsOwner.tabDescription(tab) ?? "tab=\(tab.id.uuidString.prefix(8))"
             },
             trace: { [weak manager] message in
                 manager?.extensionRuntimeTrace(message())

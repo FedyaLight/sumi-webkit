@@ -278,14 +278,14 @@ final class ExtensionRequestedTabLifecycleOwner {
 
         guard tab.extensionPageRuntimeOwner.hasDidOpenTabNotification(for: generation) == false else {
             manager.extensionRuntimeTrace(
-                "registerExtensionCreatedTab skip reason=\(reason) because=alreadyNotified generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
+                "registerExtensionCreatedTab skip reason=\(reason) because=alreadyNotified generation=\(generation) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
 
         guard manager.notifyTabOpened(tab) else {
             manager.extensionRuntimeTrace(
-                "registerExtensionCreatedTab skip reason=\(reason) because=notifyFailed generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
+                "registerExtensionCreatedTab skip reason=\(reason) because=notifyFailed generation=\(generation) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
@@ -305,7 +305,7 @@ final class ExtensionRequestedTabLifecycleOwner {
         }
         tab.extensionPageRuntimeOwner.markDidOpenTab(generation: generation)
         manager.extensionRuntimeTrace(
-            "registerExtensionCreatedTab marked reason=\(reason) generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
+            "registerExtensionCreatedTab marked reason=\(reason) generation=\(generation) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
         )
     }
 

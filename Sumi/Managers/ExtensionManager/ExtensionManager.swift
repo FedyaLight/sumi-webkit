@@ -582,14 +582,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         )
     }
 
-    func consumePendingActionPopupAnchor(sessionToken: UUID?) {
-        actionPopupAnchorStore.consume(sessionToken: sessionToken)
-    }
-
-    func clearActionPopupAnchors(notMatching profileId: UUID) {
-        actionPopupAnchorStore.clearAnchors(notMatching: profileId)
-    }
-
     // MARK: - Runtime Session State
 
     var cachedWebExtensionsByID: [String: WKWebExtension] {
@@ -655,18 +647,6 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     // MARK: - Action Anchors & Options Windows
-
-    func setActionAnchor(for extensionId: String, anchorView: NSView) {
-        actionAnchorStore.setAnchor(for: extensionId, anchorView: anchorView)
-    }
-
-    func clearActionAnchors(for extensionId: String) {
-        actionAnchorStore.clearAnchors(for: extensionId)
-    }
-
-    func closeOptionsWindow(for extensionId: String) {
-        optionsWindowOwner.closeWindow(for: extensionId)
-    }
 
     func closeAllOptionsWindows() {
         optionsWindowOwner.closeAllWindows()
@@ -833,10 +813,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         runtimeDiagnosticsOwner.trace(message())
     }
 
-    func extensionRuntimeObjectDescription(_ object: AnyObject?) -> String {
-        ExtensionRuntimeDiagnosticsOwner.objectDescription(object)
-    }
-
     func extensionRuntimeControllerDescription(
         _ controller: WKWebExtensionController?
     ) -> String {
@@ -853,10 +829,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         _ userContentController: WKUserContentController?
     ) -> String {
         ExtensionRuntimeDiagnosticsOwner.objectDescription(userContentController)
-    }
-
-    func extensionRuntimeWebViewDescription(_ webView: WKWebView?) -> String {
-        ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)
     }
 
     func traceNativeMessagingContextBinding(
@@ -904,10 +876,6 @@ final class ExtensionManager: NSObject, ObservableObject {
         return installed.sourceKind == .safariAppExtension
             ? .originalAppexBundle
             : .copiedPackage
-    }
-
-    func extensionRuntimeTabDescription(_ tab: Tab) -> String {
-        runtimeDiagnosticsOwner.tabDescription(tab)
     }
 
     #if DEBUG

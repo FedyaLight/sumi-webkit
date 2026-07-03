@@ -655,7 +655,7 @@ final class SumiExtensionsModule {
 
     func setActionAnchorIfLoaded(for extensionId: String, anchorView: NSView) {
         storePendingActionAnchor(for: extensionId, anchorView: anchorView)
-        managerIfLoadedAndEnabled()?.setActionAnchor(
+        managerIfLoadedAndEnabled()?.actionAnchorStore.setAnchor(
             for: extensionId,
             anchorView: anchorView
         )
@@ -696,7 +696,7 @@ final class SumiExtensionsModule {
         for (extensionId, anchors) in pendingActionAnchors {
             for anchor in anchors {
                 guard let view = anchor.view else { continue }
-                manager.setActionAnchor(for: extensionId, anchorView: view)
+                manager.actionAnchorStore.setAnchor(for: extensionId, anchorView: view)
             }
         }
     }

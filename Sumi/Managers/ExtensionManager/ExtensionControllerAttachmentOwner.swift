@@ -348,10 +348,10 @@ extension ExtensionControllerAttachmentOwner.Dependencies {
                 manager?.registerTabWithExtensionRuntime(tab, reason: reason)
             },
             tabDescription: { [weak manager] tab in
-                manager?.extensionRuntimeTabDescription(tab) ?? "tab=\(tab.id.uuidString.prefix(8))"
+                manager?.runtimeDiagnosticsOwner.tabDescription(tab) ?? "tab=\(tab.id.uuidString.prefix(8))"
             },
             webViewDescription: { [weak manager] webView in
-                manager?.extensionRuntimeWebViewDescription(webView) ?? "nil"
+                ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)
             },
             recordFrameResolution: { [weak manager] resolved, context, reason in
                 SafariExtensionAutofillFillDiagnostics.recordFrameResolution(

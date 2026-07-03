@@ -285,7 +285,7 @@ final class ExtensionRuntimeContextLoadOwner {
 
         if request.operation.emitsLoadedTrace {
             manager.extensionRuntimeTrace(
-                "loadEnabledExtension loaded extensionId=\(request.extensionId) context=\(manager.extensionRuntimeObjectDescription(extensionContext)) controller=\(manager.extensionRuntimeControllerDescription(extensionController))"
+                "loadEnabledExtension loaded extensionId=\(request.extensionId) context=\(ExtensionRuntimeDiagnosticsOwner.objectDescription(extensionContext)) controller=\(manager.extensionRuntimeControllerDescription(extensionController))"
             )
         }
 

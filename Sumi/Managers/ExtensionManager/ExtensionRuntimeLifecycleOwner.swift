@@ -320,7 +320,7 @@ extension ExtensionRuntimeLifecycleOwner.Dependencies {
                 manager?.unloadExtensionContextsForInactiveProfiles(keepingProfileId: profileId)
             },
             clearActionPopupAnchors: { [weak manager] profileId in
-                manager?.clearActionPopupAnchors(notMatching: profileId)
+                manager?.actionPopupAnchorStore.clearAnchors(notMatching: profileId)
             },
             reloadPinnedToolbarExtensionsForCurrentProfile: { [weak manager] in
                 manager?.reloadPinnedToolbarExtensionsForCurrentProfile()

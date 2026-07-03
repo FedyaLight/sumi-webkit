@@ -74,13 +74,13 @@ final class ExtensionNormalTabRuntimeBindingOwner {
                 pageURL: tab.url
             )
             manager.extensionRuntimeTrace(
-                "didOpenTab deferred because=missingUsableWebView generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) controller=\(manager.extensionRuntimeControllerDescription(controller)) \(manager.extensionRuntimeTabDescription(tab))"
+                "didOpenTab deferred because=missingUsableWebView generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) controller=\(manager.extensionRuntimeControllerDescription(controller)) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return false
         }
 
         manager.extensionRuntimeTrace(
-            "didOpenTab start generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) controller=\(manager.extensionRuntimeControllerDescription(controller)) \(manager.extensionRuntimeTabDescription(tab)) adapter=\(manager.extensionRuntimeObjectDescription(adapter))"
+            "didOpenTab start generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) controller=\(manager.extensionRuntimeControllerDescription(controller)) \(manager.runtimeDiagnosticsOwner.tabDescription(tab)) adapter=\(ExtensionRuntimeDiagnosticsOwner.objectDescription(adapter))"
         )
         tab.extensionPageRuntimeOwner.noteOpenNotification(
             extensionContextBindingGeneration: manager.extensionContextBindingGeneration(for: profileId),
@@ -97,7 +97,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
             pageURL: tab.url
         )
         manager.extensionRuntimeTrace(
-            "didOpenTab complete generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) \(manager.extensionRuntimeTabDescription(tab))"
+            "didOpenTab complete generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
         )
         return true
     }
@@ -109,27 +109,27 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         guard manager.extensionsLoaded else {
             manager.extensionRuntimeTrace(
-                "notifyTabOpenedIfNeeded skip reason=\(reason) because=extensionsNotLoaded generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) lastNotified=\(tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
+                "notifyTabOpenedIfNeeded skip reason=\(reason) because=extensionsNotLoaded generation=\(manager.extensionLoadGeneration) notifyGeneration=\(manager.tabOpenNotificationGeneration) lastNotified=\(tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
 
         guard isTabEligibleForExtensionRuntime(tab, generation: generation) else {
             manager.extensionRuntimeTrace(
-                "notifyTabOpenedIfNeeded skip reason=\(reason) because=tabNotEligible generation=\(generation) eligibleGeneration=\(tab.extensionPageRuntimeOwner.currentEligibleGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
+                "notifyTabOpenedIfNeeded skip reason=\(reason) because=tabNotEligible generation=\(generation) eligibleGeneration=\(tab.extensionPageRuntimeOwner.currentEligibleGeneration()) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
 
         guard tab.extensionPageRuntimeOwner.hasDidOpenTabNotification(for: generation) == false else {
             manager.extensionRuntimeTrace(
-                "notifyTabOpenedIfNeeded skip reason=\(reason) because=alreadyNotified generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
+                "notifyTabOpenedIfNeeded skip reason=\(reason) because=alreadyNotified generation=\(generation) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
 
         manager.extensionRuntimeTrace(
-            "notifyTabOpenedIfNeeded proceed reason=\(reason) generation=\(generation) lastNotified=\(tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
+            "notifyTabOpenedIfNeeded proceed reason=\(reason) generation=\(generation) lastNotified=\(tab.extensionPageRuntimeOwner.currentOpenNotificationGeneration()) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
         )
         guard notifyTabOpened(tab) else {
             SafariExtensionAutofillFillDiagnostics.recordContentScriptInjection(
@@ -139,14 +139,14 @@ final class ExtensionNormalTabRuntimeBindingOwner {
                 pageURL: tab.url
             )
             manager.extensionRuntimeTrace(
-                "notifyTabOpenedIfNeeded aborted reason=\(reason) because=notifyFailed generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
+                "notifyTabOpenedIfNeeded aborted reason=\(reason) because=notifyFailed generation=\(generation) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
 
         tab.extensionPageRuntimeOwner.markDidOpenTab(generation: generation)
         manager.extensionRuntimeTrace(
-            "notifyTabOpenedIfNeeded marked reason=\(reason) generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
+            "notifyTabOpenedIfNeeded marked reason=\(reason) generation=\(generation) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
         )
     }
 
@@ -160,7 +160,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         guard isTabEligibleForExtensionRuntime(tab, generation: generation) else {
             manager.extensionRuntimeTrace(
-                "notifyTabPropertiesChanged skip because=tabNotEligible requested=\(properties.rawValue) generation=\(generation) eligibleGeneration=\(tab.extensionPageRuntimeOwner.currentEligibleGeneration()) \(manager.extensionRuntimeTabDescription(tab))"
+                "notifyTabPropertiesChanged skip because=tabNotEligible requested=\(properties.rawValue) generation=\(generation) eligibleGeneration=\(tab.extensionPageRuntimeOwner.currentEligibleGeneration()) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
@@ -171,7 +171,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         )
         guard coalescedProperties.isEmpty == false else {
             manager.extensionRuntimeTrace(
-                "notifyTabPropertiesChanged skip because=noDiff requested=\(properties.rawValue) \(manager.extensionRuntimeTabDescription(tab))"
+                "notifyTabPropertiesChanged skip because=noDiff requested=\(properties.rawValue) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
@@ -247,7 +247,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         guard let manager else { return }
         guard manager.extensionsLoaded else {
             manager.extensionRuntimeTrace(
-                "prepareExtensionRuntimeBeforeCommittedMainFrameNavigation skip reason=\(reason) because=extensionsNotLoaded \(manager.extensionRuntimeTabDescription(tab))"
+                "prepareExtensionRuntimeBeforeCommittedMainFrameNavigation skip reason=\(reason) because=extensionsNotLoaded \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
@@ -260,7 +260,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         tab.extensionPageRuntimeOwner.clearOpenNotificationGeneration()
         let documentSequence = tab.extensionPageRuntimeOwner.documentBindingSnapshot().documentSequence
         manager.extensionRuntimeTrace(
-            "prepareExtensionRuntimeBeforeCommittedMainFrameNavigation proceed reason=\(reason) destination=\(destinationURL.absoluteString) documentSequence=\(documentSequence) \(manager.extensionRuntimeTabDescription(tab))"
+            "prepareExtensionRuntimeBeforeCommittedMainFrameNavigation proceed reason=\(reason) destination=\(destinationURL.absoluteString) documentSequence=\(documentSequence) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
         )
         rebindExtensionTabBeforeCommittedNavigation(
             tab,
@@ -297,7 +297,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
            let controller = manager.extensionController(for: tab),
            let adapter = manager.stableAdapter(for: tab) {
             manager.extensionRuntimeTrace(
-                "rebindExtensionTabBeforeCommittedNavigation didCloseTab reason=\(reason) \(manager.extensionRuntimeTabDescription(tab))"
+                "rebindExtensionTabBeforeCommittedNavigation didCloseTab reason=\(reason) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             controller.didCloseTab(adapter, windowIsClosing: false)
             #if DEBUG
@@ -323,7 +323,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         guard manager.extensionsLoaded || allowWhenExtensionsNotLoaded else {
             manager.extensionRuntimeTrace(
-                "registerTabWithExtensionRuntime skip reason=\(reason) because=extensionsNotLoaded generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
+                "registerTabWithExtensionRuntime skip reason=\(reason) because=extensionsNotLoaded generation=\(generation) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
@@ -347,7 +347,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         guard manager.extensionsLoaded else {
             manager.extensionRuntimeTrace(
-                "markTabEligibleAfterCommittedNavigation skip reason=\(reason) because=extensionsNotLoaded generation=\(generation) \(manager.extensionRuntimeTabDescription(tab))"
+                "markTabEligibleAfterCommittedNavigation skip reason=\(reason) because=extensionsNotLoaded generation=\(generation) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             return
         }
@@ -375,7 +375,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
         guard let manager else { return false }
         guard let webView = manager.resolvedLiveWebView(for: tab) else {
             manager.extensionRuntimeTrace(
-                "didOpenTab deferred because=noLiveWebView profile=\(profileId.uuidString) \(manager.extensionRuntimeTabDescription(tab))"
+                "didOpenTab deferred because=noLiveWebView profile=\(profileId.uuidString) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             _ = deferOpen("noLiveWebView")
             return false
@@ -383,7 +383,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         guard manager.attachExtensionControllerIfNeeded(to: webView, for: tab) else {
             manager.extensionRuntimeTrace(
-                "didOpenTab deferred because=controllerAttachFailed webView=\(manager.extensionRuntimeWebViewDescription(webView)) profile=\(profileId.uuidString) \(manager.extensionRuntimeTabDescription(tab))"
+                "didOpenTab deferred because=controllerAttachFailed webView=\(ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)) profile=\(profileId.uuidString) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             _ = deferOpen("controllerAttachFailed")
             return false
@@ -391,7 +391,7 @@ final class ExtensionNormalTabRuntimeBindingOwner {
 
         guard webView.configuration.webExtensionController === controller else {
             manager.extensionRuntimeTrace(
-                "didOpenTab deferred because=controllerMismatch webView=\(manager.extensionRuntimeWebViewDescription(webView)) profile=\(profileId.uuidString) \(manager.extensionRuntimeTabDescription(tab))"
+                "didOpenTab deferred because=controllerMismatch webView=\(ExtensionRuntimeDiagnosticsOwner.objectDescription(webView)) profile=\(profileId.uuidString) \(manager.runtimeDiagnosticsOwner.tabDescription(tab))"
             )
             _ = deferOpen("controllerMismatch")
             return false

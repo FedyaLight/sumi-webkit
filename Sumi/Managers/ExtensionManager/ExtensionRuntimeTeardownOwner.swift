@@ -57,12 +57,12 @@ final class ExtensionRuntimeTeardownOwner {
 
         if removeUIState {
             for extensionId in manager.actionAnchorStore.extensionIDs {
-                manager.clearActionAnchors(for: extensionId)
+                manager.actionAnchorStore.clearAnchors(for: extensionId)
             }
         }
 
         manager.optionsWindowExtensionIDs.forEach {
-            manager.closeOptionsWindow(for: $0)
+            manager.optionsWindowOwner.closeWindow(for: $0)
         }
         manager.cancelNativeMessagingSessions(reason: reason)
 
