@@ -46,6 +46,91 @@ final class BrowserMouseButtonRoutingOwnerTests: XCTestCase {
         XCTAssertEqual(router.forwardWindowIDs, [activeWindowState.id])
         XCTAssertTrue(router.backWindowIDs.isEmpty)
     }
+
+    func testSidebarDeferredSideButtonsDoNotRouteHistory() {
+        let owner = BrowserMouseButtonRoutingOwner()
+        let registry = WindowRegistry()
+        let activeWindowState = BrowserWindowState()
+        registry.register(activeWindowState)
+        registry.setActive(activeWindowState)
+        let router = RecordingBrowserCommandRouter()
+
+        XCTAssertFalse(owner.handleMouseButton(
+            3,
+            eventWindow: nil,
+            mouseButtonRouter: router,
+            windowRegistry: registry,
+            deferWorkspaceNavigationToSidebar: true
+        ))
+        XCTAssertFalse(owner.handleMouseButton(
+            4,
+            eventWindow: nil,
+            mouseButtonRouter: router,
+            windowRegistry: registry,
+            deferWorkspaceNavigationToSidebar: true
+        ))
+
+        XCTAssertTrue(router.backWindowIDs.isEmpty)
+        XCTAssertTrue(router.forwardWindowIDs.isEmpty)
+    }
+
+    func testSidebarDeferralDoesNotChangeMiddleMouseButtonRouting() {
+        let owner = BrowserMouseButtonRoutingOwner()
+        let registry = WindowRegistry()
+        let activeWindowState = BrowserWindowState()
+        registry.register(activeWindowState)
+        registry.setActive(activeWindowState)
+        let router = RecordingBrowserCommandRouter()
+
+        XCTAssertTrue(owner.handleMouseButton(
+            2,
+            eventWindow: nil,
+            mouseButtonRouter: router,
+            windowRegistry: registry,
+            deferWorkspaceNavigationToSidebar: true
+        ))
+
+        XCTAssertEqual(router.focusedWindowIDs, [activeWindowState.id])
+        XCTAssertTrue(router.backWindowIDs.isEmpty)
+        XCTAssertTrue(router.forwardWindowIDs.isEmpty)
+    }
+
+    func testSidebarCaptureRegistryMatchesRegisteredVisibleRegionForSideButtonsOnly() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 240, height: 160),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        let sidebarView = NSView(frame: NSRect(x: 0, y: 0, width: 80, height: 160))
+        window.contentView?.addSubview(sidebarView)
+        SidebarMouseButtonCaptureRegistry.shared.register(sidebarView, isEnabled: true)
+
+        defer {
+            SidebarMouseButtonCaptureRegistry.shared.unregister(sidebarView)
+        }
+
+        XCTAssertTrue(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonEvent(
+            buttonNumber: 3,
+            locationInWindow: CGPoint(x: 20, y: 20),
+            in: window
+        ))
+        XCTAssertTrue(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonEvent(
+            buttonNumber: 4,
+            locationInWindow: CGPoint(x: 20, y: 20),
+            in: window
+        ))
+        XCTAssertFalse(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonEvent(
+            buttonNumber: 3,
+            locationInWindow: CGPoint(x: 120, y: 20),
+            in: window
+        ))
+        XCTAssertFalse(SidebarMouseButtonCaptureRegistry.shared.containsWorkspaceMouseButtonEvent(
+            buttonNumber: 2,
+            locationInWindow: CGPoint(x: 20, y: 20),
+            in: window
+        ))
+    }
 }
 
 @MainActor

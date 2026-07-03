@@ -12,7 +12,9 @@ final class BrowserMouseButtonRoutingOwner {
             event.buttonNumber,
             eventWindow: event.window,
             mouseButtonRouter: mouseButtonRouter,
-            windowRegistry: windowRegistry
+            windowRegistry: windowRegistry,
+            deferWorkspaceNavigationToSidebar: SidebarMouseButtonCaptureRegistry.shared
+                .containsWorkspaceMouseButtonEvent(event)
         )
     }
 
@@ -21,8 +23,14 @@ final class BrowserMouseButtonRoutingOwner {
         _ buttonNumber: Int,
         eventWindow: NSWindow?,
         mouseButtonRouter: any BrowserMouseButtonCommandRouting,
-        windowRegistry: WindowRegistry
+        windowRegistry: WindowRegistry,
+        deferWorkspaceNavigationToSidebar: Bool = false
     ) -> Bool {
+        if deferWorkspaceNavigationToSidebar,
+           SidebarMouseButtonWorkspaceNavigationPolicy.spaceOffset(for: buttonNumber) != nil {
+            return false
+        }
+
         switch buttonNumber {
         case 2:
             guard let windowState = targetWindow(eventWindow: eventWindow, windowRegistry: windowRegistry) else {

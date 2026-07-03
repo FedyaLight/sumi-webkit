@@ -72,6 +72,7 @@
 			membershipExceptions = (
 				Sidebar/SidebarBottomBar.swift,
 				Sidebar/SidebarHeader.swift,
+				Sidebar/SidebarMouseButtonCaptureSurface.swift,
 				Sidebar/SidebarSwipeCaptureSurface.swift,
 				Sidebar/SpaceSidebarRenderPolicy.swift,
 				Sidebar/SpaceSidebarSnapshots.swift,

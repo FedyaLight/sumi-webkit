@@ -356,6 +356,225 @@ final class SpaceSidebarTransitionCoordinatorTests: XCTestCase {
         XCTAssertEqual(browserHarness.tabManager.currentSpace?.id, fallbackSpace.id)
         XCTAssertEqual(browserHarness.transitionEvents, [.setActiveSpace(fallbackSpace.id)])
     }
+
+    func testRuntimeRelativePreviousWrapsFromFirstToLastThroughTransitionPath() async throws {
+        let windowState = BrowserWindowState()
+        let firstSpace = Space(name: "First")
+        let middleSpace = Space(name: "Middle")
+        let lastSpace = Space(name: "Last")
+        let spaces = [firstSpace, middleSpace, lastSpace]
+        let browserHarness = try TestSidebarBrowserContextHarness(spaces: spaces)
+        let settingsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
+        let dragState = SidebarDragState()
+        let runtimeOwner = SpacesSidebarRuntimeOwner()
+
+        windowState.tabManager = browserHarness.tabManager
+        windowState.currentSpaceId = firstSpace.id
+        browserHarness.commitWorkspaceTheme(firstSpace.workspaceTheme, for: windowState)
+
+        let dependencies = runtimeDependencies(
+            windowState: windowState,
+            browserHarness: browserHarness,
+            dragState: dragState,
+            settings: settings
+        )
+
+        defer {
+            runtimeOwner.cancelLocalSpaceTransitionIfNeeded(
+                spaces: spaces,
+                dependencies: dependencies,
+                cancelTheme: true
+            )
+            settingsHarness.reset()
+        }
+
+        runtimeOwner.switchRelativeSpace(
+            offset: -1,
+            spaces: spaces,
+            dependencies: dependencies
+        )
+
+        try await waitForScheduledSpaceTransitionCompletion()
+
+        XCTAssertEqual(windowState.currentSpaceId, lastSpace.id)
+        guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = browserHarness.transitionEvents.last else {
+            XCTFail("Expected relative switch to commit through transition-aware activation")
+            return
+        }
+        XCTAssertEqual(committedSpaceId, lastSpace.id)
+        XCTAssertFalse(runtimeOwner.transitionState.hasDestination)
+    }
+
+    func testRuntimeRelativeNextWrapsFromLastToFirstThroughTransitionPath() async throws {
+        let windowState = BrowserWindowState()
+        let firstSpace = Space(name: "First")
+        let middleSpace = Space(name: "Middle")
+        let lastSpace = Space(name: "Last")
+        let spaces = [firstSpace, middleSpace, lastSpace]
+        let browserHarness = try TestSidebarBrowserContextHarness(spaces: spaces)
+        let settingsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
+        let dragState = SidebarDragState()
+        let runtimeOwner = SpacesSidebarRuntimeOwner()
+
+        windowState.tabManager = browserHarness.tabManager
+        windowState.currentSpaceId = lastSpace.id
+        browserHarness.tabManager.currentSpace = lastSpace
+        browserHarness.commitWorkspaceTheme(lastSpace.workspaceTheme, for: windowState)
+
+        let dependencies = runtimeDependencies(
+            windowState: windowState,
+            browserHarness: browserHarness,
+            dragState: dragState,
+            settings: settings
+        )
+
+        defer {
+            runtimeOwner.cancelLocalSpaceTransitionIfNeeded(
+                spaces: spaces,
+                dependencies: dependencies,
+                cancelTheme: true
+            )
+            settingsHarness.reset()
+        }
+
+        runtimeOwner.switchRelativeSpace(
+            offset: 1,
+            spaces: spaces,
+            dependencies: dependencies
+        )
+
+        try await waitForScheduledSpaceTransitionCompletion()
+
+        XCTAssertEqual(windowState.currentSpaceId, firstSpace.id)
+        guard case .setActiveSpaceFromTransition(let committedSpaceId, _) = browserHarness.transitionEvents.last else {
+            XCTFail("Expected relative switch to commit through transition-aware activation")
+            return
+        }
+        XCTAssertEqual(committedSpaceId, firstSpace.id)
+        XCTAssertFalse(runtimeOwner.transitionState.hasDestination)
+    }
+
+    func testRuntimeRelativeSwitchNoOpsWhenOnlyOneSpaceOrCurrentSpaceIsMissing() throws {
+        let windowState = BrowserWindowState()
+        let firstSpace = Space(name: "First")
+        let secondSpace = Space(name: "Second")
+        let browserHarness = try TestSidebarBrowserContextHarness(spaces: [firstSpace, secondSpace])
+        let settingsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
+        let runtimeOwner = SpacesSidebarRuntimeOwner()
+
+        defer {
+            settingsHarness.reset()
+        }
+
+        windowState.tabManager = browserHarness.tabManager
+        windowState.currentSpaceId = firstSpace.id
+
+        runtimeOwner.switchRelativeSpace(
+            offset: 1,
+            spaces: [firstSpace],
+            dependencies: runtimeDependencies(
+                windowState: windowState,
+                browserHarness: browserHarness,
+                dragState: SidebarDragState(),
+                settings: settings
+            )
+        )
+
+        XCTAssertEqual(windowState.currentSpaceId, firstSpace.id)
+        XCTAssertTrue(browserHarness.transitionEvents.isEmpty)
+        XCTAssertEqual(runtimeOwner.transitionState.phase, .idle)
+
+        windowState.currentSpaceId = UUID()
+        runtimeOwner.switchRelativeSpace(
+            offset: 1,
+            spaces: [firstSpace, secondSpace],
+            dependencies: runtimeDependencies(
+                windowState: windowState,
+                browserHarness: browserHarness,
+                dragState: SidebarDragState(),
+                settings: settings
+            )
+        )
+
+        XCTAssertTrue(browserHarness.transitionEvents.isEmpty)
+        XCTAssertEqual(runtimeOwner.transitionState.phase, .idle)
+    }
+
+    func testRuntimeRelativeSwitchDoesNotReplaceActiveTransition() async throws {
+        let windowState = BrowserWindowState()
+        let firstSpace = Space(name: "First")
+        let nextSpace = Space(name: "Next")
+        let previousSpace = Space(name: "Previous")
+        let spaces = [firstSpace, nextSpace, previousSpace]
+        let browserHarness = try TestSidebarBrowserContextHarness(spaces: spaces)
+        let settingsHarness = TestDefaultsHarness()
+        let settings = SumiSettingsService(userDefaults: settingsHarness.defaults)
+        let dragState = SidebarDragState()
+        let runtimeOwner = SpacesSidebarRuntimeOwner()
+
+        windowState.tabManager = browserHarness.tabManager
+        windowState.currentSpaceId = firstSpace.id
+        browserHarness.commitWorkspaceTheme(firstSpace.workspaceTheme, for: windowState)
+
+        let dependencies = runtimeDependencies(
+            windowState: windowState,
+            browserHarness: browserHarness,
+            dragState: dragState,
+            settings: settings
+        )
+
+        defer {
+            runtimeOwner.cancelLocalSpaceTransitionIfNeeded(
+                spaces: spaces,
+                dependencies: dependencies,
+                cancelTheme: true
+            )
+            settingsHarness.reset()
+        }
+
+        runtimeOwner.switchRelativeSpace(
+            offset: 1,
+            spaces: spaces,
+            dependencies: dependencies
+        )
+        XCTAssertEqual(runtimeOwner.transitionState.destinationSpaceId, nextSpace.id)
+
+        runtimeOwner.switchRelativeSpace(
+            offset: -1,
+            spaces: spaces,
+            dependencies: dependencies
+        )
+
+        XCTAssertEqual(runtimeOwner.transitionState.destinationSpaceId, nextSpace.id)
+
+        try await waitForScheduledSpaceTransitionCompletion()
+        XCTAssertEqual(windowState.currentSpaceId, nextSpace.id)
+    }
+
+    private func runtimeDependencies(
+        windowState: BrowserWindowState,
+        browserHarness: TestSidebarBrowserContextHarness,
+        dragState: SidebarDragState,
+        settings: SumiSettingsService
+    ) -> SpacesSidebarRuntimeOwner.Dependencies {
+        SpacesSidebarRuntimeOwner.Dependencies(
+            windowState: windowState,
+            browserContext: browserHarness.context,
+            dragState: dragState,
+            settings: settings,
+            allowsInteractiveWork: true,
+            reduceMotion: true
+        )
+    }
+
+    private func waitForScheduledSpaceTransitionCompletion() async throws {
+        try await Task.sleep(
+            nanoseconds: UInt64((SpaceSidebarRenderPolicy.completionDelay + 0.15) * 1_000_000_000)
+        )
+    }
 }
 
 @MainActor

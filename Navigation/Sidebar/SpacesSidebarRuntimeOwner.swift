@@ -137,6 +137,34 @@ final class SpacesSidebarRuntimeOwner {
         )
     }
 
+    func switchRelativeSpace(
+        offset: Int,
+        spaces: [Space],
+        dependencies: Dependencies
+    ) {
+        guard offset != 0,
+              spaces.count > 1
+        else {
+            return
+        }
+
+        guard let currentSpaceId = dependencies.windowState.currentSpaceId,
+              let currentIndex = spaces.firstIndex(where: { $0.id == currentSpaceId })
+        else {
+            return
+        }
+
+        let context = context(spaces: spaces, dependencies: dependencies)
+        let normalizedOffset = ((offset % spaces.count) + spaces.count) % spaces.count
+        let targetIndex = (currentIndex + normalizedOffset) % spaces.count
+        guard targetIndex != currentIndex else { return }
+
+        transitionCoordinator.switchSpace(
+            to: spaces[targetIndex],
+            context: context
+        )
+    }
+
     func cancelLocalSpaceTransitionIfNeeded(
         spaces: [Space],
         dependencies: Dependencies,

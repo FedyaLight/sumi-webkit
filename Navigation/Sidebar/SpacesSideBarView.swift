@@ -86,6 +86,13 @@ struct SpacesSideBarView: View {
     var body: some View {
         sidebarContent
             .contentShape(Rectangle())
+            .overlay {
+                SidebarMouseButtonCaptureSurface(
+                    isEnabled: allowsSidebarInteractiveWork,
+                    onNavigate: switchRelativeSpace
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             .onDisappear {
                 runtimeOwner.cancelLocalSpaceTransitionIfNeeded(
                     spaces: availableSpaces,
@@ -583,6 +590,14 @@ struct SpacesSideBarView: View {
         runtimeOwner.switchSpace(
             to: targetSpace,
             spaces: spaces,
+            dependencies: runtimeDependencies
+        )
+    }
+
+    private func switchRelativeSpace(offset: Int) {
+        runtimeOwner.switchRelativeSpace(
+            offset: offset,
+            spaces: availableSpaces,
             dependencies: runtimeDependencies
         )
     }
