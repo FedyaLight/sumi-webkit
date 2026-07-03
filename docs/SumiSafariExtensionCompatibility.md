@@ -1,6 +1,79 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-07-03 (permission idempotency; extension commands + context menus)
+Last updated: 2026-07-03 (1Password runtime envelope + native-core OS boundary)
+
+## Cycle 27 1Password for Safari: Achievable Runtime + Native-Core OS Wall (2026-07-03)
+
+User installed 1Password desktop + 1Password for Safari and asked for
+full end-to-end support. Probed the real installed
+`com.1password.safari.extension` (`1Password.appex`, 8.12.x, **MV2**,
+persistent background *page*, `permissions`: `<all_urls>` + `nativeMessaging`
++ `scripting` + `tabs` + `storage` + `contextMenus` + `webNavigation` +
+`webRequest` + `alarms`, `_execute_browser_action` = Cmd+Shift+X).
+
+### What works in Sumi (proven, `SafariExtension1PasswordRuntimeTests`)
+
+Everything that does not require 1Password's native core:
+
+- Real appex import → validate → enable.
+- Cycle-23 site-access seeding grants declared `<all_urls>`; the extension
+  has host access to arbitrary pages with no user configuration.
+- Every requested API permission granted; `unsupportedAPIs` is empty (no
+  1Password API is hidden — MV2, but WebKit's scripting/tabs/etc. are native).
+- MV2 persistent background page loads through the wake path.
+- Content scripts inject into a real page load
+  (`hasInjectedContent(for:)` true through the full tab stack).
+- The `browser_action` surface resolves for the tab.
+
+### The one capability that is OS-blocked (definitive finding)
+
+1Password's background reaches its desktop core via
+`runtime.connectNative("")` / `sendNativeMessage("", {name:"core", …})`.
+The **empty** native-application identifier is the Safari model for "route
+to the extension's OWN `.appex` handler" — 1Password's
+`NSExtensionPrincipalClass = _Password.SafariWebExtensionHandler`
+(`NSExtensionPointIdentifier = com.apple.Safari.web-extension`), which then
+talks to the desktop app / local WASM core.
+
+Hosting that appex handler from the browser process was probed directly
+against the installed bundle via `NSExtension`/PlugInKit
+(`extensionWithURL:` returns a live `EXConcreteExtension`, but
+`beginExtensionRequest…` fails):
+
+- **Without the entitlement:** `PlugInKit Code=11 "access to plugin
+  com.1password.safari.extension denied: the host does not have the
+  \"com.apple.private.can-load-any-content-blocker\" entitlement"`.
+- **Claiming the entitlement** in an ad-hoc/dev signature: the process is
+  **SIGKILLed by AMFI** (`exit 137`) — Apple-private entitlements are not
+  honored for any non-Apple code signature.
+
+So hosting a third-party Safari App Extension's native-messaging handler is
+**impossible for any third-party browser** on macOS; only Safari (Apple-
+signed, holding the private entitlement) can. 1Password 8's browser
+extension is desktop-core-only (no in-extension account login fallback), so
+unlock / autofill / dynamic popup cannot function in Sumi — not a Sumi
+defect, an OS security boundary. The Chrome/Firefox subprocess host
+(`1Password-BrowserSupport` via a `NativeMessagingHosts` manifest) is a
+different integration the Safari build does not use (`connectNative("")`,
+not a host manifest) and is additionally gated by 1Password's code-signature
+browser allowlist.
+
+### Sumi behavior at the boundary
+
+Sumi **rejects** the `connectNative`/`sendNativeMessage` call cleanly (the
+worker gets a rejected promise, never a hang), so 1Password's own "can't
+connect to the desktop app" UI can take over. Asserted by the test
+(`nativeMessageRejectionResult == "rejected"`).
+
+### Same wall applies to
+
+Any Safari appex whose extension talks to its own containing app's handler
+via `connectNative("")` for a desktop-core-dependent feature. Bitwarden is
+the exception only because it *also* exposes a documented desktop
+`native-messaging`/`desktop_proxy` + local-biometric path Sumi adapts
+directly (`BitwardenNativeMessagingAdapter`), bypassing the appex handler.
+
+## Cycle 26 Extension Keyboard Commands + Page Context Menus (2026-07-03)
 
 ## Cycle 26 Extension Keyboard Commands + Page Context Menus (2026-07-03)
 
@@ -1148,14 +1221,14 @@ scanner correctly classifies as non-Safari extension point.
 | NM classification `wkWebExtensionAppMessagingAvailable` | Yes | Yes | Yes | Yes |
 | NM classification `companionAppProtocolUnknown` | Yes | Yes | Yes | — |
 | Platform blocker | None | None | None | None |
-| Import + enable (manual) | **Yes** | Not verified | Not verified | **Yes** |
-| MV2 manifest warning observed (manual) | **Yes** | Not verified | Not verified | N/A |
-| URL-hub icon + popup (manual) | **Yes** | Not verified | Not verified | **Yes** |
-| Sign-in session in popup (manual) | **Yes** | Not verified | Not verified | **Yes** |
+| Import + enable (manual) | **Yes** | **Yes (automated, Cycle 27)** | Not verified | **Yes** |
+| MV2 manifest warning observed (manual) | **Yes** | N/A (MV2, no fatal errors) | Not verified | N/A |
+| URL-hub icon + popup (manual) | **Yes** | Action surface resolves; popup gated on native core | Not verified | **Yes** |
+| Sign-in session in popup (manual) | **Yes** | **Blocked** (needs desktop core) | Not verified | **Yes** |
 | Profile isolation (manual) | Pending | Not verified | Not verified | **Yes** |
-| Desktop launch loop (manual) | **No** (suppressed) | Not verified | Not verified | N/A |
-| Native messaging protocol (manual) | **Unknown** (`companionAppProtocolUnknown`) | **Unknown** | **Unknown** | N/A |
-| Content script / autofill (manual) | **Classified** (pending retest) | Not verified | Not verified | N/A |
+| Desktop launch loop (manual) | **No** (suppressed) | **No** (native message rejected cleanly) | Not verified | N/A |
+| Native messaging protocol (manual) | **Unknown** (`companionAppProtocolUnknown`) | **OS-blocked** (appex host needs Apple-private entitlement, Cycle 27) | **Unknown** | N/A |
+| Content script / autofill (manual) | **Classified** (pending retest) | Content scripts inject; autofill blocked on core | Not verified | N/A |
 | Popup anchoring (manual) | **Fixed** | Not verified | Not verified | **Yes** |
 | Save bookmark flow (manual) | N/A | N/A | N/A | **Yes** |
 
