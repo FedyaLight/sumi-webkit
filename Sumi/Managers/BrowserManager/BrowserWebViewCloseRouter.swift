@@ -88,11 +88,11 @@ extension BrowserWebViewCloseRouter.Dependencies {
             makeWebKitCloseRoutingRuntime: { [weak browserManager] in
                 BrowserWebKitCloseRoutingOwner.Runtime(
                     prepareClose: { [weak browserManager] webView in
-                        browserManager?.requireWebViewCoordinator().prepareWebKitClose(webView)
+                        browserManager?.shellRuntime.requireWebViewCoordinator().prepareWebKitClose(webView)
                             ?? .ready(trackedOwner: nil)
                     },
                     cleanupTrackedWebView: { [weak browserManager] webView, owner in
-                        browserManager?.requireWebViewCoordinator().cleanupTrackedWebViewAfterWebKitClose(
+                        browserManager?.shellRuntime.requireWebViewCoordinator().cleanupTrackedWebViewAfterWebKitClose(
                             webView,
                             owner: owner
                         )

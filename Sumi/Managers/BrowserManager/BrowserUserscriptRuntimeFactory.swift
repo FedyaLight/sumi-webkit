@@ -137,7 +137,7 @@ enum BrowserUserscriptRuntimeFactory {
             )
         }
 
-        guard let owner = browserManager.trackedWebViewOwner(containing: sourceWebView),
+        guard let owner = browserManager.webViewRoutingService.trackedOwner(containing: sourceWebView),
               let tab = browserManager.tabManager.tab(for: owner.tabID)
         else {
             return nil

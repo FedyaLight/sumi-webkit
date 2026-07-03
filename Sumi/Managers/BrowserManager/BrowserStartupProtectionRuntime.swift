@@ -138,7 +138,7 @@ extension BrowserStartupProtectionRuntime.Dependencies {
                 browserManager?.windowRegistry?.allWindows ?? []
             },
             prepareBackgroundTabIfNeeded: { [weak browserManager] tab in
-                browserManager?.prepareBackgroundTabAfterStartupProtectionRestore(tab)
+                browserManager?.tabLifecycleService.opening.prepareBackgroundTabIfNeeded(tab, in: nil)
             },
             schedulePrepareVisibleWebViews: { [weak browserManager] windowState in
                 browserManager?.schedulePrepareVisibleWebViews(for: windowState)

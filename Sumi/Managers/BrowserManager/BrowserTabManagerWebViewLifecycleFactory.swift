@@ -15,7 +15,7 @@ enum BrowserTabManagerWebViewLifecycleFactory {
             },
             requireRemoveAllWebViews: { [weak browserManager] tab, closeActiveFullscreenMedia in
                 guard let browserManager else { return }
-                browserManager.requireWebViewCoordinator().removeAllWebViews(
+                browserManager.shellRuntime.requireWebViewCoordinator().removeAllWebViews(
                     for: tab,
                     closeActiveFullscreenMedia: closeActiveFullscreenMedia
                 )

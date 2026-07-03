@@ -54,7 +54,7 @@ extension BrowserWindowShellCommandOwner.Dependencies {
                         "BrowserManager was released before window shell commands resolved the registry."
                     )
                 }
-                return browserManager.requireWindowRegistry()
+                return browserManager.shellRuntime.requireWindowRegistry()
             },
             makeWindowShellContext: { [weak browserManager] in
                 guard let browserManager else {
@@ -63,12 +63,12 @@ extension BrowserWindowShellCommandOwner.Dependencies {
                     )
                 }
                 return BrowserWindowShellService.Context(
-                    windowRegistry: browserManager.requireWindowRegistry(),
-                    webViewCoordinator: browserManager.requireWebViewCoordinator(),
+                    windowRegistry: browserManager.shellRuntime.requireWindowRegistry(),
+                    webViewCoordinator: browserManager.shellRuntime.requireWebViewCoordinator(),
                     permissionLifecycleController: browserManager.permissionRuntime.permissionLifecycleController,
                     profileManager: browserManager.profileManager,
                     tabManager: browserManager.tabManager,
-                    makeContentView: browserManager.requireWindowShellContentViewFactory(),
+                    makeContentView: browserManager.shellRuntime.requireWindowShellContentViewFactory(),
                     showEmptyState: { [weak browserManager] windowState in
                         browserManager?.showEmptyState(in: windowState)
                     }

@@ -137,7 +137,7 @@ extension BrowserWindowLifecycleOwner.Dependencies {
                 browserManager?.setActiveWindowState(windowState)
             },
             handleWindowVisibilityChanged: { [weak browserManager] windowState in
-                browserManager?.handleWindowVisibilityChanged(windowState)
+                browserManager?.windowSessionActivationOwner.handleWindowVisibilityChanged(windowState)
             },
             prepareForAllWindowsClosed: { [weak browserManager] in
                 browserManager?.windowSessionService.prepareForAllWindowsClosed()

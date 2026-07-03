@@ -91,7 +91,7 @@ extension BrowserTabSelectionOwner {
                 )
             },
             updateProfileRuntimeStates: { [weak browserManager] windowState in
-                browserManager?.updateProfileRuntimeStates(activeWindowState: windowState)
+                browserManager?.windowSpaceStateOwner.updateProfileRuntimeStates(activeWindowState: windowState)
             },
             showNewTabFloatingBar: { [weak browserManager] windowState in
                 browserManager?.floatingBarRoutingOwner.showNewTabFloatingBar(in: windowState)

@@ -187,7 +187,7 @@ extension BrowserWindowSessionActivationOwner.Dependencies {
                 browserManager?.reconcileStartupSessionIfPossible()
             },
             adoptProfileForWindowActivation: { [weak browserManager] windowState in
-                browserManager?.adoptProfileForWindowActivation(windowState)
+                browserManager?.adoptProfileIfNeeded(for: windowState, context: .windowActivation)
             },
             scheduleNativeNowPlayingRefresh: { delayNanoseconds in
                 nativeNowPlayingController.scheduleRefresh(delayNanoseconds: delayNanoseconds)

@@ -330,7 +330,7 @@ extension BrowserWindowSpaceStateOwner.Dependencies {
                 browserManager?.showEmptyState(in: windowState)
             },
             adoptProfileForSpaceChange: { [weak browserManager] windowState in
-                browserManager?.adoptProfileForSpaceChange(windowState)
+                browserManager?.adoptProfileIfNeeded(for: windowState, context: .spaceChange)
             },
             persistWindowSession: { [weak browserManager] windowState in
                 browserManager?.persistWindowSession(for: windowState)

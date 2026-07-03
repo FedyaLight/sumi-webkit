@@ -102,7 +102,7 @@ class BrowserManager: ObservableObject {
             }
         )
     )
-    private lazy var windowSpaceStateOwner = BrowserWindowSpaceStateOwner(
+    lazy var windowSpaceStateOwner = BrowserWindowSpaceStateOwner(
         dependencies: .live(browserManager: self)
     )
     lazy var nativeSurfaceRoutingOwner = BrowserNativeSurfaceRoutingOwner(
@@ -216,7 +216,7 @@ class BrowserManager: ObservableObject {
     lazy var extensionBridgeAdapter = BrowserExtensionBridgeAdapter(
         dependencies: .live(browserManager: self)
     )
-    private let shellRuntime = BrowserShellRuntime()
+    let shellRuntime = BrowserShellRuntime()
     lazy var webViewRoutingService = BrowserWebViewRoutingService(
         tabLookup: { [weak self] tabId in
             self?.tabManager.tab(for: tabId)
@@ -227,7 +227,7 @@ class BrowserManager: ObservableObject {
                     "BrowserManager was released before WebView routing resolved its coordinator."
                 )
             }
-            return self.requireWebViewCoordinator()
+            return self.shellRuntime.requireWebViewCoordinator()
         }
     )
     lazy var windowSessionService = WindowSessionService(
@@ -250,27 +250,15 @@ class BrowserManager: ObservableObject {
     }
 
     /// Use for cleanup and cross-window operations; fails fast if the coordinator was not wired (e.g. tests forgot to assign `webViewCoordinator`).
-    func requireWebViewCoordinator() -> WebViewCoordinator {
-        shellRuntime.requireWebViewCoordinator()
-    }
-
     var windowRegistry: WindowRegistry? {
         get { shellRuntime.windowRegistry }
         set { shellRuntime.bindWindowRegistry(newValue) }
-    }
-
-    func requireWindowRegistry() -> WindowRegistry {
-        shellRuntime.requireWindowRegistry()
     }
 
     /// App-shell owned factory for AppKit-created browser windows.
     var windowShellContentViewFactory: BrowserWindowShellService.ContentViewFactory? {
         get { shellRuntime.windowShellContentViewFactory }
         set { shellRuntime.windowShellContentViewFactory = newValue }
-    }
-
-    func requireWindowShellContentViewFactory() -> BrowserWindowShellService.ContentViewFactory {
-        shellRuntime.requireWindowShellContentViewFactory()
     }
 
     private lazy var sidebarPresentationOwner = BrowserSidebarPresentationOwner(
@@ -317,13 +305,13 @@ class BrowserManager: ObservableObject {
             },
             prepareVisibleWebViews: { [weak self] windowState in
                 guard let self else { return false }
-                return requireWebViewCoordinator().prepareVisibleWebViews(
+                return shellRuntime.requireWebViewCoordinator().prepareVisibleWebViews(
                     for: windowState
                 )
             },
             schedulePrepareVisibleWebViews: { [weak self] windowState in
                 guard let self else { return }
-                requireWebViewCoordinator().schedulePrepareVisibleWebViews(
+                shellRuntime.requireWebViewCoordinator().schedulePrepareVisibleWebViews(
                     for: windowState
                 )
             }
@@ -366,14 +354,14 @@ class BrowserManager: ObservableObject {
     lazy var recentlyClosedRestoreOwner = BrowserRecentlyClosedRestoreOwner(
         dependencies: .live(browserManager: self)
     )
-    private lazy var windowSessionActivationOwner = BrowserWindowSessionActivationOwner(
+    lazy var windowSessionActivationOwner = BrowserWindowSessionActivationOwner(
         dependencies: .live(browserManager: self)
     )
     lazy var startupPolicyOwner = BrowserStartupPolicyOwner(
         dependencies: .live(browserManager: self)
     )
 
-    private func adoptProfileIfNeeded(
+    func adoptProfileIfNeeded(
         for windowState: BrowserWindowState, context: ProfileSwitchContext
     ) {
         sumiProfileRouter.adoptProfileIfNeeded(
@@ -381,14 +369,6 @@ class BrowserManager: ObservableObject {
             context: context,
             support: self
         )
-    }
-
-    func adoptProfileForSpaceChange(_ windowState: BrowserWindowState) {
-        adoptProfileIfNeeded(for: windowState, context: .spaceChange)
-    }
-
-    func adoptProfileForWindowActivation(_ windowState: BrowserWindowState) {
-        adoptProfileIfNeeded(for: windowState, context: .windowActivation)
     }
 
     init(
@@ -686,10 +666,6 @@ class BrowserManager: ObservableObject {
         startupProtectionRuntime.deferBackgroundTabUntilStartupReady(tab)
     }
 
-    func prepareBackgroundTabAfterStartupProtectionRestore(_ tab: Tab) {
-        tabLifecycleService.opening.prepareBackgroundTabIfNeeded(tab, in: nil)
-    }
-
     enum ProfileSwitchContext {
         case userInitiated
         case spaceChange
@@ -718,14 +694,6 @@ class BrowserManager: ObservableObject {
             for: windowState,
             persist: persist
         )
-    }
-
-    func updateSavedSidebarVisibility(_ isVisible: Bool) {
-        sidebarPresentationOwner.updateSavedSidebarVisibility(isVisible)
-    }
-
-    func toggleSavedSidebarVisibility() {
-        sidebarPresentationOwner.toggleSavedSidebarVisibility()
     }
 
     func updateSavedSidebarWidth(_ width: CGFloat) {
@@ -804,10 +772,6 @@ class BrowserManager: ObservableObject {
         context: TabOpenContext
     ) -> Tab {
         tabLifecycleService.opening.openNewTab(url: url, context: context)
-    }
-
-    func resolvedTabOpenSpace(for context: TabOpenContext) -> Space? {
-        tabLifecycleService.opening.resolvedTabOpenSpace(for: context)
     }
 
     @discardableResult
@@ -1039,10 +1003,6 @@ class BrowserManager: ObservableObject {
         )
     }
 
-    func updateProfileRuntimeStates(activeWindowState: BrowserWindowState?) {
-        windowSpaceStateOwner.updateProfileRuntimeStates(activeWindowState: activeWindowState)
-    }
-
     func enqueueWindowMutationDuringHistorySwipe(
         _ kind: HistorySwipeDeferredWindowMutationKind,
         for windowState: BrowserWindowState
@@ -1119,12 +1079,6 @@ class BrowserManager: ObservableObject {
 
 extension BrowserManager: SumiProfileRoutingSupport {}
 
-extension BrowserManager {
-    func handleWindowVisibilityChanged(_ windowState: BrowserWindowState) {
-        windowSessionActivationOwner.handleWindowVisibilityChanged(windowState)
-    }
-}
-
 // MARK: - WebView routing (delegates to BrowserWebViewRoutingService / WebViewCoordinator)
 
 extension BrowserManager {
@@ -1134,10 +1088,6 @@ extension BrowserManager {
 
     func windowOwnedWebView(for tab: Tab, in windowId: UUID) -> WKWebView? {
         webViewRoutingService.windowOwnedWebView(for: tab, in: windowId)
-    }
-
-    func trackedWebViewOwner(containing webView: WKWebView) -> TrackedWebViewOwner? {
-        webViewRoutingService.trackedOwner(containing: webView)
     }
 
     func syncTabAcrossWindows(_ tabId: UUID, originatingWebView: WKWebView? = nil) {
