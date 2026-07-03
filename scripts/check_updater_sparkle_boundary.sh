@@ -15,8 +15,8 @@ if [[ -n "$service_imports" ]]; then
 fi
 
 disallowed_sparkle_imports="$(
-  find Sumi/Updates -name '*.swift' -type f ! -name 'SumiSparkle*.swift' -print0 |
-    xargs -0 grep -nE 'import Sparkle' || [[ $? -eq 1 ]]
+  find Sumi/Updates -name '*.swift' -type f ! -name 'SumiSparkle*.swift' \
+    -exec grep -nE 'import Sparkle' {} + || [[ $? -eq 1 ]]
 )"
 if [[ -n "$disallowed_sparkle_imports" ]]; then
   printf 'Sparkle imports must stay in SumiSparkle role files:\n%s\n' "$disallowed_sparkle_imports" >&2
