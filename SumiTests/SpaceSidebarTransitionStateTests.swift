@@ -1,3 +1,4 @@
+import AppKit
 @testable import Sumi
 import XCTest
 
@@ -68,6 +69,45 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
 
         XCTAssertEqual(topMetrics.thumbOffsetY, 0, accuracy: 0.001)
         XCTAssertEqual(bottomMetrics.thumbOffsetY, 72, accuracy: 0.001)
+    }
+
+    func testSidebarTabListScrollChromeDoesNotReserveNativeScrollerGutter() {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 240, height: 320))
+        scrollView.drawsBackground = true
+        scrollView.automaticallyAdjustsContentInsets = true
+        scrollView.contentInsets = NSEdgeInsets(top: 1, left: 2, bottom: 3, right: 4)
+        scrollView.scrollerInsets = NSEdgeInsets(top: 5, left: 6, bottom: 7, right: 8)
+        scrollView.scrollerStyle = .legacy
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = false
+        scrollView.verticalScrollElasticity = .allowed
+        scrollView.horizontalScrollElasticity = .allowed
+        let strayScroller = NSScroller(frame: NSRect(x: 220, y: 0, width: 20, height: 320))
+        scrollView.addSubview(strayScroller)
+
+        SidebarTabListScrollChromeConfiguration.apply(to: scrollView)
+
+        XCTAssertFalse(scrollView.drawsBackground)
+        XCTAssertFalse(scrollView.automaticallyAdjustsContentInsets)
+        XCTAssertEqual(scrollView.contentInsets.top, 0, accuracy: 0.001)
+        XCTAssertEqual(scrollView.contentInsets.left, 0, accuracy: 0.001)
+        XCTAssertEqual(scrollView.contentInsets.bottom, 0, accuracy: 0.001)
+        XCTAssertEqual(scrollView.contentInsets.right, 0, accuracy: 0.001)
+        XCTAssertEqual(scrollView.scrollerInsets.top, 0, accuracy: 0.001)
+        XCTAssertEqual(scrollView.scrollerInsets.left, 0, accuracy: 0.001)
+        XCTAssertEqual(scrollView.scrollerInsets.bottom, 0, accuracy: 0.001)
+        XCTAssertEqual(scrollView.scrollerInsets.right, 0, accuracy: 0.001)
+        XCTAssertEqual(scrollView.scrollerStyle, .overlay)
+        XCTAssertFalse(scrollView.hasVerticalScroller)
+        XCTAssertFalse(scrollView.hasHorizontalScroller)
+        XCTAssertNil(scrollView.verticalScroller)
+        XCTAssertNil(scrollView.horizontalScroller)
+        XCTAssertTrue(scrollView.autohidesScrollers)
+        XCTAssertEqual(scrollView.verticalScrollElasticity, .none)
+        XCTAssertEqual(scrollView.horizontalScrollElasticity, .none)
+        XCTAssertTrue(strayScroller.isHidden)
+        XCTAssertEqual(strayScroller.alphaValue, 0, accuracy: 0.001)
     }
 
     func testSnapshotViewportClampsOffsetToRenderedViewport() {

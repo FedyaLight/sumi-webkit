@@ -101,6 +101,28 @@ private struct SidebarPassiveScrollIndicatorState: Equatable {
     let contentOffset: CGFloat
 }
 
+enum SidebarTabListScrollChromeConfiguration {
+    static func apply(to scrollView: NSScrollView) {
+        scrollView.drawsBackground = false
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets()
+        scrollView.scrollerInsets = NSEdgeInsets()
+        scrollView.scrollerStyle = .overlay
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.verticalScroller = nil
+        scrollView.horizontalScroller = nil
+        scrollView.autohidesScrollers = true
+        scrollView.verticalScrollElasticity = .none
+        scrollView.horizontalScrollElasticity = .none
+
+        for subview in scrollView.subviews where subview is NSScroller {
+            subview.isHidden = true
+            subview.alphaValue = 0
+        }
+    }
+}
+
 /// A layout-stable wrapper that isolates scroll offsets and boundary state to prevent invalidating the parent SpaceView.
 private struct SpaceScrollView<Content: View>: View {
     let isInteractive: Bool
@@ -193,6 +215,7 @@ private struct SidebarTabListScrollRegistrationViewRepresentable: NSViewRepresen
         if nsView.isRegistrationEnabled != isEnabled {
             nsView.isRegistrationEnabled = isEnabled
         }
+        nsView.scheduleScrollViewSync()
     }
 
     static func dismantleNSView(_ nsView: SidebarTabListScrollRegistrationView, coordinator: ()) {
@@ -284,6 +307,7 @@ private final class SidebarTabListScrollRegistrationView: NSView {
     private var lastScrollIndicatorState: SidebarPassiveScrollIndicatorState?
     private var hideScrollIndicatorWorkItem: DispatchWorkItem?
     private var scrollIndicatorVisibilityGeneration = 0
+    private var isScrollViewSyncScheduled = false
 
     private var boundsObserver: NSObjectProtocol?
     private var documentFrameObserver: NSObjectProtocol?
@@ -311,8 +335,12 @@ private final class SidebarTabListScrollRegistrationView: NSView {
     }
 
     func scheduleScrollViewSync() {
+        guard !isScrollViewSyncScheduled else { return }
+        isScrollViewSyncScheduled = true
         DispatchQueue.main.async { [weak self] in
-            self?.syncScrollViewState()
+            guard let self else { return }
+            isScrollViewSyncScheduled = false
+            syncScrollViewState()
         }
     }
 
@@ -330,6 +358,9 @@ private final class SidebarTabListScrollRegistrationView: NSView {
 
     private func syncScrollViewState() {
         let scrollView = window == nil ? nil : enclosingScrollView
+        if let scrollView {
+            SidebarTabListScrollChromeConfiguration.apply(to: scrollView)
+        }
         syncRegistration(for: scrollView)
         syncScrollBoundsObservation(for: scrollView)
     }
@@ -403,15 +434,7 @@ private final class SidebarTabListScrollRegistrationView: NSView {
     }
 
     private func configurePassiveScrollIndicator(for scrollView: NSScrollView) {
-        if scrollView.scrollerStyle != .overlay {
-            scrollView.scrollerStyle = .overlay
-        }
-        if scrollView.verticalScrollElasticity != .none {
-            scrollView.verticalScrollElasticity = .none
-        }
-        if scrollView.hasVerticalScroller {
-            scrollView.hasVerticalScroller = false
-        }
+        SidebarTabListScrollChromeConfiguration.apply(to: scrollView)
 
         let indicatorView: SidebarPassiveScrollIndicatorView
         if let existing = scrollIndicatorView,
@@ -467,6 +490,8 @@ private final class SidebarTabListScrollRegistrationView: NSView {
             hidePassiveScrollIndicatorImmediately(resetState: true)
             return
         }
+
+        SidebarTabListScrollChromeConfiguration.apply(to: scrollView)
 
         let visibleHeight = scrollView.contentView.bounds.height
         let documentHeight = documentView.bounds.height
