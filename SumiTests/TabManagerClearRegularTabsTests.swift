@@ -345,28 +345,4 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         XCTAssertEqual(tabManager.resolvedFaviconPartition(for: spacePin, currentSpaceId: space.id), .regular(profileId))
     }
 
-    private func makeInMemoryTabManager(
-        currentProfileId: @escaping () -> UUID? = { nil },
-        windowState: @escaping (UUID) -> BrowserWindowState? = { _ in nil },
-        windows: @escaping () -> [(UUID, BrowserWindowState)] = { [] },
-        visibleSplitTabIds: @escaping (UUID) -> [UUID] = { _ in [] },
-        materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
-        requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in /* No-op. */ }
-    ) throws -> TabManager {
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
-        tabManager.attachRuntimeContext(
-            TabManagerRuntimeContext(
-                currentProfileId: currentProfileId,
-                windowState: windowState,
-                windows: windows,
-                webViewLifecycle: TabManagerWebViewLifecycleService(
-                    materializeVisibleTabWebViewIfNeeded: materializeVisibleTabWebViewIfNeeded,
-                    requireRemoveAllWebViews: requireRemoveAllWebViews
-                ),
-                visibleSplitTabIds: visibleSplitTabIds
-            )
-        )
-        return tabManager
-    }
 }

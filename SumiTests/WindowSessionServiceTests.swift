@@ -674,11 +674,6 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertNil(windowState.currentProfileId)
     }
 
-    private func makeInMemoryTabManager(loadPersistedState: Bool) throws -> TabManager {
-        let container = try makeInMemoryStartupModelContainer()
-        return TabManager(context: container.mainContext, loadPersistedState: loadPersistedState)
-    }
-
     private func makeVisibleTheme() -> WorkspaceTheme {
         WorkspaceTheme(
             gradientTheme: WorkspaceGradientTheme(

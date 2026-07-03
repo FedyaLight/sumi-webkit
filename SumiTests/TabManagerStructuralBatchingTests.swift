@@ -855,12 +855,6 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         )
     }
 
-    private func makeInMemoryTabManager() throws -> TabManager {
-        let container = try makeInMemoryStartupModelContainer()
-        let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
-        tabManager.attachRuntimeContext(TabManagerRuntimeContext())
-        return tabManager
-    }
 }
 
 @MainActor

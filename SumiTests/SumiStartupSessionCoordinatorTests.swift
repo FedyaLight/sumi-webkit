@@ -271,11 +271,6 @@ final class SumiStartupSessionCoordinatorTests: XCTestCase {
         )
     }
 
-    private func makeInMemoryTabManager() throws -> TabManager {
-        let container = try makeInMemoryStartupModelContainer()
-        return TabManager(context: container.mainContext, loadPersistedState: false)
-    }
-
     private func makeSpacePin(spaceId: UUID) -> ShortcutPin {
         ShortcutPin(
             id: UUID(),

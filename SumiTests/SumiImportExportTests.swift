@@ -442,6 +442,24 @@ final class SumiImportExportTests: XCTestCase {
     }
 
     @MainActor
+    func testPreviewFileImportReportsCorruptSumiBackupInsteadOfFallingBackToBrowser2Zen() throws {
+        let url = temporaryImportFile(named: "corrupt-\(UUID().uuidString).sumibackup")
+        try Data("{".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertThrowsError(try SumiBrowserImportService().previewFileImport(fileURL: url)) { error in
+            guard case SumiImportExportError.unsupportedFile(let message) = error else {
+                XCTFail("Expected unsupported Sumi backup error, got \(error)")
+                return
+            }
+            XCTAssertTrue(
+                message.hasPrefix("This Sumi backup could not be read:"),
+                "Unexpected corrupt backup error: \(message)"
+            )
+        }
+    }
+
+    @MainActor
     func testPreviewFileImportRecognizesRenamedSumiBackupByFormat() throws {
         let archive = SumiPortableArchive(
             includedCategories: [.profiles],

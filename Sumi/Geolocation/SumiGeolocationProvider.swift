@@ -46,6 +46,104 @@ final class SumiGeolocationProviderObservation {
 }
 
 @MainActor
+final class SumiLazyGeolocationProvider: SumiGeolocationProviding {
+    private let makeProvider: () -> (any SumiGeolocationProviding)?
+    private var provider: (any SumiGeolocationProviding)?
+    private var didAttemptProviderCreation = false
+    private var observers: [UUID: @MainActor (SumiGeolocationProviderState) -> Void] = [:]
+    private var providerObservations: [UUID: SumiGeolocationProviderObservation] = [:]
+
+    init(makeProvider: @escaping () -> (any SumiGeolocationProviding)?) {
+        self.makeProvider = makeProvider
+    }
+
+    var currentState: SumiGeolocationProviderState {
+        if let provider {
+            return provider.currentState
+        }
+        return didAttemptProviderCreation ? .unavailable : .inactive
+    }
+
+    var isAvailable: Bool {
+        resolveProvider()?.isAvailable == true
+    }
+
+    func registerAllowedRequest(pageId: String, tabId: String?) {
+        resolveProvider()?.registerAllowedRequest(pageId: pageId, tabId: tabId)
+    }
+
+    func containsAllowedRequest(pageId: String) -> Bool {
+        provider?.containsAllowedRequest(pageId: pageId) == true
+    }
+
+    func cancelAllowedRequest(pageId: String) {
+        provider?.cancelAllowedRequest(pageId: pageId)
+    }
+
+    func cancelAllowedRequests(tabId: String) {
+        provider?.cancelAllowedRequests(tabId: tabId)
+    }
+
+    @discardableResult
+    func pause() -> SumiGeolocationProviderState {
+        provider?.pause() ?? currentState
+    }
+
+    @discardableResult
+    func resume() -> SumiGeolocationProviderState {
+        provider?.resume() ?? currentState
+    }
+
+    @discardableResult
+    func stop(pageId: String?) -> SumiGeolocationProviderState {
+        provider?.stop(pageId: pageId) ?? currentState
+    }
+
+    func observeState(
+        _ handler: @escaping @MainActor (SumiGeolocationProviderState) -> Void
+    ) -> SumiGeolocationProviderObservation {
+        let id = UUID()
+        observers[id] = handler
+        if let provider {
+            providerObservations[id] = provider.observeState(handler)
+        } else {
+            handler(currentState)
+        }
+        return SumiGeolocationProviderObservation { [weak self] in
+            self?.observers.removeValue(forKey: id)
+            self?.providerObservations.removeValue(forKey: id)?.cancel()
+        }
+    }
+
+    private func resolveProvider() -> (any SumiGeolocationProviding)? {
+        if let provider {
+            return provider
+        }
+        guard !didAttemptProviderCreation else {
+            return nil
+        }
+
+        didAttemptProviderCreation = true
+        guard let provider = makeProvider() else {
+            notifyObservers(.unavailable)
+            return nil
+        }
+
+        self.provider = provider
+        for (id, handler) in observers {
+            providerObservations[id] = provider.observeState(handler)
+        }
+        return provider
+    }
+
+    private func notifyObservers(_ state: SumiGeolocationProviderState) {
+        for observer in observers.values {
+            observer(state)
+        }
+    }
+}
+
+@MainActor
 final class SumiGeolocationProvider: NSObject, SumiGeolocationProviding {
     private let geolocationService: any SumiGeolocationServicing
     private let manager: SumiWebKitGeolocationManagerHandle

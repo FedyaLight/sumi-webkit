@@ -74,6 +74,30 @@ final class SumiGeolocationProviderTests: XCTestCase {
         XCTAssertEqual(provider.resume(), .unavailable)
     }
 
+    func testLazyProviderDoesNotCreateUnderlyingProviderForInactiveRuntimeReads() {
+        var creationCount = 0
+        let lazyProvider = SumiLazyGeolocationProvider {
+            creationCount += 1
+            return FakeSumiGeolocationProvider(currentState: .active)
+        }
+        var observedStates: [SumiGeolocationProviderState] = []
+
+        XCTAssertEqual(lazyProvider.currentState, .inactive)
+        XCTAssertEqual(lazyProvider.pause(), .inactive)
+        let observation = lazyProvider.observeState { state in
+            observedStates.append(state)
+        }
+
+        XCTAssertEqual(creationCount, 0)
+        XCTAssertEqual(observedStates, [.inactive])
+
+        XCTAssertTrue(lazyProvider.isAvailable)
+        XCTAssertEqual(creationCount, 1)
+        XCTAssertEqual(observedStates, [.inactive, .active])
+
+        observation.cancel()
+    }
+
     func testApplicationLifecycleControllerPausesActiveGeolocationWhileApplicationInactive() {
         let provider = FakeSumiGeolocationProvider(currentState: .active)
         let browserManager = BrowserManager(geolocationProvider: provider)

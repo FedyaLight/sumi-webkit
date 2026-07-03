@@ -123,7 +123,9 @@ final class BrowserManagerPermissionRuntime {
                 sessionOwnerId: "browser"
             )
         let geolocationProvider = dependencies.geolocationProvider
-            ?? SumiGeolocationProvider(browserConfiguration: dependencies.browserConfiguration)
+            ?? SumiLazyGeolocationProvider {
+                SumiGeolocationProvider(browserConfiguration: dependencies.browserConfiguration)
+            }
         let runtimePermissionController = dependencies.runtimePermissionController
             ?? SumiRuntimePermissionController(geolocationProvider: geolocationProvider)
         let notificationService = dependencies.notificationService ?? SumiNotificationService()

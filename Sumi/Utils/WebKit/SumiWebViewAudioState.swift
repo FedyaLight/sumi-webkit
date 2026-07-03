@@ -53,8 +53,8 @@ enum SumiWebViewAudioState: Equatable {
 extension WKWebView {
     private enum SumiAudioSelector {
         static let mediaMutedState = NSSelectorFromString("_mediaMutedState")
-        static let isPlayingAudio = "_isPlayingAudio"
-        static let hasActiveNowPlayingSession = "_hasActiveNowPlayingSession"
+        static let isPlayingAudio = NSSelectorFromString("_isPlayingAudio")
+        static let hasActiveNowPlayingSession = NSSelectorFromString("_hasActiveNowPlayingSession")
         static let setPageMuted = NSSelectorFromString("_setPageMuted:")
     }
 
@@ -77,30 +77,24 @@ extension WKWebView {
     }
 
     @objc dynamic var sumiAudioIsPlayingAudio: Bool {
-        guard responds(to: NSSelectorFromString(SumiAudioSelector.isPlayingAudio)) else {
-            return false
-        }
-        return value(forKey: SumiAudioSelector.isPlayingAudio) as? Bool ?? false
+        sumiAudioBoolValue(for: SumiAudioSelector.isPlayingAudio)
     }
 
     @objc(keyPathsForValuesAffectingSumiAudioIsPlayingAudio)
     static func keyPathsForValuesAffectingSumiAudioIsPlayingAudio() -> Set<String> {
         [
             NSStringFromSelector(SumiAudioSelector.mediaMutedState),
-            SumiAudioSelector.isPlayingAudio,
+            NSStringFromSelector(SumiAudioSelector.isPlayingAudio),
         ]
     }
 
     @objc dynamic var sumiHasActiveNowPlayingSession: Bool {
-        guard responds(to: NSSelectorFromString(SumiAudioSelector.hasActiveNowPlayingSession)) else {
-            return false
-        }
-        return value(forKey: SumiAudioSelector.hasActiveNowPlayingSession) as? Bool ?? false
+        sumiAudioBoolValue(for: SumiAudioSelector.hasActiveNowPlayingSession)
     }
 
     @objc(keyPathsForValuesAffectingSumiHasActiveNowPlayingSession)
     static func keyPathsForValuesAffectingSumiHasActiveNowPlayingSession() -> Set<String> {
-        [SumiAudioSelector.hasActiveNowPlayingSession]
+        [NSStringFromSelector(SumiAudioSelector.hasActiveNowPlayingSession)]
     }
 
     var sumiAudioState: SumiWebViewAudioState {
@@ -135,6 +129,19 @@ extension WKWebView {
         let setter = unsafeBitCast(implementation, to: Setter.self)
         setter(self, SumiAudioSelector.setPageMuted, mediaMutedStateRaw)
         return true
+    }
+
+    private func sumiAudioBoolValue(for selector: Selector) -> Bool {
+        guard responds(to: selector),
+              let method = class_getInstanceMethod(object_getClass(self), selector)
+        else {
+            return false
+        }
+
+        let implementation = method_getImplementation(method)
+        typealias Getter = @convention(c) (WKWebView, Selector) -> ObjCBool
+        let getter = unsafeBitCast(implementation, to: Getter.self)
+        return getter(self, selector).boolValue
     }
 
     var sumiAudioStatePublisher: AnyPublisher<SumiWebViewAudioState, Never> {

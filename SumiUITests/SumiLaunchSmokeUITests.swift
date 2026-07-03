@@ -11,6 +11,10 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         static let zoomButton = "browser-window-zoom-button"
     }
 
+    private enum SmokeUITiming {
+        static let trafficLightHoverStabilityWindow: TimeInterval = 0.7
+    }
+
     private var expectedTrafficLightVisualDiameter: CGFloat {
         if #available(macOS 26.0, *) {
             return 14
@@ -166,10 +170,10 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(zoomButton, timeout: 3))
 
         zoomButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.7))
-
-        XCTAssertTrue(zoomButton.exists)
-        XCTAssertTrue(zoomButton.isEnabled)
+        XCTAssertTrue(waitForTrafficLightElementToRemainVisibleAndEnabled(
+            zoomButton,
+            duration: SmokeUITiming.trafficLightHoverStabilityWindow
+        ))
 
         app.typeKey(.escape, modifierFlags: [])
         XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(zoomButton, timeout: 2))
@@ -188,10 +192,10 @@ final class SumiLaunchSmokeUITests: XCTestCase {
         XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(closeButton, timeout: 3))
 
         closeButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.7))
-
-        XCTAssertTrue(closeButton.exists)
-        XCTAssertTrue(closeButton.isEnabled)
+        XCTAssertTrue(waitForTrafficLightElementToRemainVisibleAndEnabled(
+            closeButton,
+            duration: SmokeUITiming.trafficLightHoverStabilityWindow
+        ))
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).hover()
         RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         XCTAssertTrue(waitForTrafficLightElementToBeVisibleAndEnabled(closeButton, timeout: 2))
@@ -2944,6 +2948,29 @@ final class SumiLaunchSmokeUITests: XCTestCase {
                element.frame.width > 0,
                element.frame.height > 0 {
                 return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        return element.exists
+            && element.isEnabled
+            && element.frame.width > 0
+            && element.frame.height > 0
+    }
+
+    @MainActor
+    private func waitForTrafficLightElementToRemainVisibleAndEnabled(
+        _ element: XCUIElement,
+        duration: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(duration)
+        while Date() < deadline {
+            guard element.exists,
+                  element.isEnabled,
+                  element.frame.width > 0,
+                  element.frame.height > 0
+            else {
+                return false
             }
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }

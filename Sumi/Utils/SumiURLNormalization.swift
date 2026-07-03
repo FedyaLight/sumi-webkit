@@ -1,5 +1,4 @@
 import Foundation
-import URLPredictor
 
 enum SumiURLNormalizationContext: Equatable {
     case searchBar(queryTemplate: String)
@@ -72,7 +71,7 @@ enum SumiURLNormalization {
             return trimmed
         }
 
-        if let decision = try? Classifier.classify(input: trimmed),
+        if let decision = SumiURLClassifier.classify(trimmed),
            case .navigate(let url) = decision {
             return url.absoluteString
         }

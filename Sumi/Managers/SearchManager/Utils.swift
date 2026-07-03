@@ -1,6 +1,5 @@
 import Foundation
 import SwiftUI
-import URLPredictor
 
 struct SearchTextQuery {
   let raw: String
@@ -93,7 +92,7 @@ private func decodeSearchSuggestionEntity(_ entity: String) -> Character? {
 
 func isLikelyURL(_ text: String) -> Bool {
   let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-  if let decision = try? Classifier.classify(input: trimmed),
+  if let decision = SumiURLClassifier.classify(trimmed),
      case .navigate = decision {
     return true
   }

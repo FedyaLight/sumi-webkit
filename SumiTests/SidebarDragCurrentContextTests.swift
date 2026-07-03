@@ -1566,15 +1566,6 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         XCTAssertTrue(tabManager.spacePinnedPins(for: sourceSpace.id).isEmpty)
     }
 
-    private func makeInMemoryTabManager() throws -> TabManager {
-        let container = try makeInMemoryStartupModelContainer()
-        return TabManager(
-            runtimeContext: TabManagerRuntimeContext(),
-            context: container.mainContext,
-            loadPersistedState: false
-        )
-    }
-
     private func makeLiveWindowHarness() throws -> LiveWindowHarness {
         let container = try makeInMemoryStartupModelContainer()
         let browserManager = BrowserManager()

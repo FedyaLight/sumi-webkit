@@ -66,8 +66,19 @@ test wiring:
 Upgrading
 ---------
 
-Because the snapshot is vendored (not a git submodule), an upstream re-sync is a
-manual copy. The `BrowserServicesKit` Swift sources have no local divergence, so
-they rebase cleanly. After any re-sync, regenerate `CHECKSUMS.sha256` and confirm
-the five linked products still resolve. If upstream tests are refreshed, keep
-their quarantine markers and rerun the boundary guard.
+Because the snapshot is vendored (not a git submodule), an upstream re-sync must
+produce a reviewable repository diff rather than silently following an external
+checkout. Use the workflow script from a clean Sumi worktree:
+
+    bash scripts/sync_ddg_vendor_snapshot.sh \
+      --source ../references/apple-browsers \
+      --ref <duckduckgo/apple-browsers commit>
+
+The script synchronizes the allowlisted `BrowserServicesKit` source targets
+(`Bookmarks`, `Common`, `Navigation`, `Persistence`, and `PrivacyConfig`) plus
+the quarantined upstream test roots. It also synchronizes `URLPredictor` sources
+and tests, preserves Sumi's pruned `Package.swift` manifests and locally
+bootstrapped `URLPredictor/Binary` payload, rewrites the Swift snapshot revision
+above, regenerates `CHECKSUMS.sha256` when the binary payload is present,
+restores the upstream-test quarantine markers, and runs the checksum plus DDG
+test-boundary guards. Use `--dry-run` first when auditing a large upstream jump.

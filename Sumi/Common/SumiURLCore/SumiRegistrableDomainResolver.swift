@@ -1,13 +1,50 @@
 import Foundation
 import URLPredictor
 
+/// Single app-side adapter over the vendored DDG URLPredictor package.
+enum SumiURLClassifier {
+    enum Decision: Equatable {
+        case navigate(URL)
+        case search(String)
+    }
+
+    static func classify(_ input: String) -> Decision? {
+        do {
+            switch try Classifier.classify(input: input) {
+            case .navigate(let url):
+                return .navigate(url)
+            case .search(let query):
+                return .search(query)
+            }
+        } catch {
+            RuntimeDiagnostics.debug(
+                "URLPredictor failed to classify input: \(error.localizedDescription)",
+                category: "URLClassifier"
+            )
+            return nil
+        }
+    }
+
+    static func publicSuffixList() -> String? {
+        do {
+            return try Classifier.getPSLData()
+        } catch {
+            RuntimeDiagnostics.debug(
+                "URLPredictor failed to load Public Suffix List: \(error.localizedDescription)",
+                category: "URLClassifier"
+            )
+            return nil
+        }
+    }
+}
+
 protocol SumiRegistrableDomainResolving: Sendable {
     func registrableDomain(forHost host: String?) -> String?
 }
 
 struct SumiRegistrableDomainResolver: SumiRegistrableDomainResolving {
     private static let publicSuffixes: Set<String> = {
-        guard let pslString = try? Classifier.getPSLData() else { return [] }
+        guard let pslString = SumiURLClassifier.publicSuffixList() else { return [] }
 
         var suffixes: [String] = []
         pslString.enumerateLines { line, _ in

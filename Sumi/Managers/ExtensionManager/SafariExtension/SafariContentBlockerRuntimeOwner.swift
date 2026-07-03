@@ -1,8 +1,11 @@
 import Foundation
+import OSLog
 import SwiftData
 
 @MainActor
 final class SafariContentBlockerRuntimeOwner {
+    private static let log = Logger.sumi(category: "SafariContentBlocker")
+
     private let context: ModelContext?
     private let defaults: UserDefaults
     private let isModuleEnabled: @MainActor () -> Bool
@@ -39,6 +42,7 @@ final class SafariContentBlockerRuntimeOwner {
                     return $0.containingAppName.localizedCaseInsensitiveCompare($1.containingAppName) == .orderedAscending
                 }
         } catch {
+            Self.log.error("Failed to fetch Safari content blocker records: \(error.localizedDescription, privacy: .public)")
             return []
         }
     }
@@ -313,7 +317,11 @@ final class SafariContentBlockerRuntimeOwner {
         }
 
         if didMutateStoredRecords {
-            try? context.save()
+            do {
+                try context.save()
+            } catch {
+                Self.log.error("Failed to persist Safari content blocker metadata repair: \(error.localizedDescription, privacy: .public)")
+            }
             clearRuntime()
         }
 
@@ -326,9 +334,17 @@ final class SafariContentBlockerRuntimeOwner {
     ) -> Bool {
         guard locatedRules.resourceFingerprint != record.resourceFingerprint
                 || locatedRules.definitions.count != record.ruleListCount
-                || locatedRules.ignoredEmptyRuleListCount != record.ignoredEmptyRuleListCount,
-              let entity = try? entity(forBundleIdentifier: record.extensionBundleIdentifier)
-        else {
+                || locatedRules.ignoredEmptyRuleListCount != record.ignoredEmptyRuleListCount
+        else { return false }
+
+        let storedEntity: SafariContentBlockerEntity?
+        do {
+            storedEntity = try entity(forBundleIdentifier: record.extensionBundleIdentifier)
+        } catch {
+            Self.log.error("Failed to fetch Safari content blocker metadata for \(record.extensionBundleIdentifier, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+        guard let entity = storedEntity else {
             return false
         }
 
@@ -345,7 +361,14 @@ final class SafariContentBlockerRuntimeOwner {
         _ record: InstalledSafariContentBlockerRecord,
         error: Error
     ) -> Bool {
-        guard let entity = try? entity(forBundleIdentifier: record.extensionBundleIdentifier) else {
+        let storedEntity: SafariContentBlockerEntity?
+        do {
+            storedEntity = try entity(forBundleIdentifier: record.extensionBundleIdentifier)
+        } catch {
+            Self.log.error("Failed to fetch unavailable Safari content blocker record \(record.extensionBundleIdentifier, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+        guard let entity = storedEntity else {
             return false
         }
 
@@ -432,9 +455,14 @@ final class SafariContentBlockerRuntimeOwner {
     private static func loadSiteOverrides(
         from defaults: UserDefaults
     ) -> [String: SumiSafariContentBlockerSiteOverride] {
-        guard let data = defaults.data(forKey: siteOverridesDefaultsKey),
-              let raw = try? JSONDecoder().decode([String: String].self, from: data)
-        else {
+        guard let data = defaults.data(forKey: siteOverridesDefaultsKey) else {
+            return [:]
+        }
+        let raw: [String: String]
+        do {
+            raw = try JSONDecoder().decode([String: String].self, from: data)
+        } catch {
+            log.error("Failed to decode Safari content blocker site overrides: \(error.localizedDescription, privacy: .public)")
             return [:]
         }
         return raw.reduce(into: [:]) { result, entry in
@@ -450,8 +478,11 @@ final class SafariContentBlockerRuntimeOwner {
         to defaults: UserDefaults
     ) {
         let raw = overrides.mapValues(\.rawValue)
-        if let data = try? JSONEncoder().encode(raw) {
+        do {
+            let data = try JSONEncoder().encode(raw)
             defaults.set(data, forKey: siteOverridesDefaultsKey)
+        } catch {
+            log.error("Failed to encode Safari content blocker site overrides: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
