@@ -293,7 +293,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
             )
         case .spacePinned(let spaceId, let folderId, let index):
             let targetFolderId = folderId.flatMap { folderId in
-                tabManager.folderSpaceId(for: folderId) == spaceId ? folderId : nil
+                tabManager.folderCollectionStateOwner.spaceId(for: folderId) == spaceId ? folderId : nil
             }
             _ = tabManager.moveShortcutPin(
                 pin,

@@ -23,7 +23,7 @@ struct TabFolderContextMenuActionOwner {
         let presentationState = shortcutPresentationState(for: pin)
         let profiles = browserContext.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
-            folders: browserContext.tabManager.folders(for: space.id)
+            folders: browserContext.tabManager.folderCollectionStateOwner.folders(for: space.id)
                 .filter { !browserContext.liveFolderManager.isLiveFolder($0.id) },
             selectedFolderId: pin.folderId
         )
@@ -277,7 +277,7 @@ struct TabFolderContextMenuActionOwner {
 
     private func alphabetizeTabs() {
         withAnimation(folderLayoutAnimation) {
-            browserContext.tabManager.alphabetizeFolderPins(folder.id, in: space.id)
+            browserContext.tabManager.folderMutationOwner.alphabetizeFolderPins(folder.id, in: space.id)
         }
     }
 
@@ -312,7 +312,7 @@ struct TabFolderContextMenuActionOwner {
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
-        guard let targetFolder = browserContext.tabManager.folder(by: folderId) else { return }
+        guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
         let targetIndex = browserContext.tabManager.folderPinnedPins(
             for: folderId,
             in: targetFolder.spaceId

@@ -162,10 +162,10 @@ extension BrowserSidebarEditorPresentationOwner.Dependencies {
                 browserManager?.tabManager.assign(spaceId: spaceID, toProfile: profileID)
             },
             renameFolder: { [weak browserManager] folderID, name in
-                browserManager?.tabManager.renameFolder(folderID, newName: name)
+                browserManager?.tabManager.folderMutationOwner.renameFolder(folderID, newName: name)
             },
             updateFolderIcon: { [weak browserManager] folderID, icon in
-                browserManager?.tabManager.updateFolderIcon(folderID, icon: icon)
+                browserManager?.tabManager.folderMutationOwner.updateFolderIcon(folderID, icon: icon)
             },
             updateShortcutPin: { [weak browserManager] pin, title, launchURL, iconAsset in
                 _ = browserManager?.tabManager.updateShortcutPin(

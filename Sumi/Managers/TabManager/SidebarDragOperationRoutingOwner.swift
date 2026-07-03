@@ -70,7 +70,7 @@ final class SidebarDragOperationRoutingOwner {
             operation: operation,
             spaceProfileId: tabManager.spaces
                 .first(where: { $0.id == operation.scope.spaceId })?.profileId,
-            folderSpaceId: { tabManager.folderSpaceId(for: $0) },
+            folderSpaceId: { tabManager.folderCollectionStateOwner.spaceId(for: $0) },
             shortcutPin: { tabManager.shortcutPin(by: $0) }
         )
         guard isCurrentContext else {

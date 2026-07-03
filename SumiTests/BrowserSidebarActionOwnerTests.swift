@@ -20,8 +20,8 @@ final class BrowserSidebarActionOwnerTests: XCTestCase {
 
         harness.owner.createFolderInCurrentSpace(in: harness.windowState)
 
-        XCTAssertEqual(harness.tabManager.folders(for: harness.primarySpace.id).count, 1)
-        XCTAssertTrue(harness.tabManager.folders(for: harness.secondarySpace.id).isEmpty)
+        XCTAssertEqual(harness.tabManager.folderCollectionStateOwner.folders(for: harness.primarySpace.id).count, 1)
+        XCTAssertTrue(harness.tabManager.folderCollectionStateOwner.folders(for: harness.secondarySpace.id).isEmpty)
     }
 
     func testSpaceForSidebarActionsWithStaleWindowSpaceDoesNotUseProfileOrGlobalCurrentSpace() {
@@ -43,8 +43,8 @@ final class BrowserSidebarActionOwnerTests: XCTestCase {
 
         harness.owner.createFolderInCurrentSpace(in: harness.windowState)
 
-        XCTAssertTrue(harness.tabManager.folders(for: harness.primarySpace.id).isEmpty)
-        XCTAssertTrue(harness.tabManager.folders(for: harness.secondarySpace.id).isEmpty)
+        XCTAssertTrue(harness.tabManager.folderCollectionStateOwner.folders(for: harness.primarySpace.id).isEmpty)
+        XCTAssertTrue(harness.tabManager.folderCollectionStateOwner.folders(for: harness.secondarySpace.id).isEmpty)
     }
 
     private func makeHarness() -> Harness {

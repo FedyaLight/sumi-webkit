@@ -20,7 +20,7 @@ final class TabFolderMutationOwner {
             folder.index = tabManager.topLevelSpacePinnedItems(for: spaceId).count
             RuntimeDiagnostics.emit("   Created folder: \(folder.name) (id: \(folder.id.uuidString.prefix(8))...)")
 
-            var folders = tabManager.folders(for: spaceId)
+            var folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
             folders.append(folder)
             tabManager.setFolders(folders, for: spaceId)
 
@@ -37,7 +37,7 @@ final class TabFolderMutationOwner {
     ) -> TabFolder? {
         tabManager.withStructuralUpdateTransaction {
             if let parentFolderId {
-                guard tabManager.folderSpaceId(for: parentFolderId) == spaceId else {
+                guard tabManager.folderCollectionStateOwner.spaceId(for: parentFolderId) == spaceId else {
                     return nil
                 }
             }
@@ -50,7 +50,7 @@ final class TabFolderMutationOwner {
                 index: childItems(in: parentFolderId, spaceId: spaceId).count
             )
 
-            var folders = tabManager.folders(for: spaceId)
+            var folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
             folders.append(folder)
             tabManager.setFolders(folders, for: spaceId)
             tabManager.scheduleStructuralPersistence()
@@ -59,7 +59,7 @@ final class TabFolderMutationOwner {
     }
 
     func renameFolder(_ folderId: UUID, newName: String) {
-        guard let folder = tabManager.folder(by: folderId) else { return }
+        guard let folder = tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
         folder.name = newName
         tabManager.structuralPersistence.markFoldersStructurallyDirty(for: folder.spaceId)
         tabManager.requestStructuralPublish()
@@ -68,7 +68,7 @@ final class TabFolderMutationOwner {
 
     func updateFolderIcon(_ folderId: UUID, icon: String) {
         let trimmedIcon = icon.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let folder = tabManager.folder(by: folderId) else { return }
+        guard let folder = tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
 
         folder.icon = SumiZenFolderIconCatalog.normalizedFolderIconValue(trimmedIcon)
         tabManager.structuralPersistence.markFoldersStructurallyDirty(for: folder.spaceId)
@@ -78,7 +78,7 @@ final class TabFolderMutationOwner {
 
     func setFolder(_ folderId: UUID, open isOpen: Bool) {
         tabManager.withStructuralUpdateTransaction {
-            guard let folder = tabManager.folder(by: folderId),
+            guard let folder = tabManager.folderCollectionStateOwner.folder(by: folderId),
                   folder.isOpen != isOpen else {
                 return
             }
@@ -91,7 +91,7 @@ final class TabFolderMutationOwner {
     }
 
     func toggleFolderOpenState(_ folderId: UUID) {
-        guard let folder = tabManager.folder(by: folderId) else { return }
+        guard let folder = tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
         setFolder(folderId, open: !folder.isOpen)
     }
 
@@ -99,8 +99,8 @@ final class TabFolderMutationOwner {
         tabManager.withStructuralUpdateTransaction {
             RuntimeDiagnostics.emit("🗑️ Deleting folder: \(folderId.uuidString)")
 
-            guard let spaceId = tabManager.folderSpaceId(for: folderId) else { return }
-            var folders = tabManager.folders(for: spaceId)
+            guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else { return }
+            var folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
             guard let folder = folders.first(where: { $0.id == folderId }) else { return }
 
             let deletedFolderIds = descendantFolderIds(including: folder.id, spaceId: spaceId)
@@ -177,8 +177,8 @@ final class TabFolderMutationOwner {
         tabManager.withStructuralUpdateTransaction {
             RuntimeDiagnostics.emit("🗂️ Ungrouping folder: \(folderId.uuidString)")
 
-            guard let spaceId = tabManager.folderSpaceId(for: folderId) else { return }
-            var folders = tabManager.folders(for: spaceId)
+            guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else { return }
+            var folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
             guard let index = folders.firstIndex(where: { $0.id == folderId }) else { return }
 
             let folder = folders[index]
@@ -213,7 +213,7 @@ final class TabFolderMutationOwner {
 
     func setAllFolders(open isOpen: Bool, in spaceId: UUID) {
         tabManager.withStructuralUpdateTransaction {
-            let folders = tabManager.folders(for: spaceId)
+            let folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
             guard folders.isEmpty == false else { return }
 
             var didChange = false
@@ -236,7 +236,7 @@ final class TabFolderMutationOwner {
 
     func moveTabToFolder(tab: Tab, folderId: UUID) {
         tabManager.withStructuralUpdateTransaction {
-            guard let targetFolder = tabManager.folder(by: folderId) else { return }
+            guard let targetFolder = tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
             guard tabManager.runtimeContext?.isLiveFolder(folderId) != true else { return }
 
             targetFolder.isOpen = true
@@ -276,7 +276,7 @@ final class TabFolderMutationOwner {
             guard tabManager.runtimeContext?.isLiveFolder(targetFolderId) != true else {
                 return false
             }
-            guard let targetSpaceId = tabManager.folderSpaceId(for: targetFolderId),
+            guard let targetSpaceId = tabManager.folderCollectionStateOwner.spaceId(for: targetFolderId),
                   targetSpaceId == folder.spaceId else {
                 return false
             }
@@ -287,7 +287,7 @@ final class TabFolderMutationOwner {
         case (.folder(let sourceParentId), .folder(let targetFolderId)):
             guard folder.parentFolderId == sourceParentId,
                   tabManager.runtimeContext?.isLiveFolder(targetFolderId) != true,
-                  let targetSpaceId = tabManager.folderSpaceId(for: targetFolderId),
+                  let targetSpaceId = tabManager.folderCollectionStateOwner.spaceId(for: targetFolderId),
                   targetSpaceId == folder.spaceId else {
                 return false
             }
@@ -321,7 +321,7 @@ final class TabFolderMutationOwner {
     ) -> Bool {
         tabManager.withStructuralUpdateTransaction {
             if let parentFolderId {
-                guard tabManager.folderSpaceId(for: parentFolderId) == spaceId else {
+                guard tabManager.folderCollectionStateOwner.spaceId(for: parentFolderId) == spaceId else {
                     return false
                 }
             }
@@ -379,7 +379,7 @@ final class TabFolderMutationOwner {
     }
 
     private func childItems(in parentFolderId: UUID?, spaceId: UUID) -> [FolderContainerItem] {
-        let folders = tabManager.childFolders(of: parentFolderId, in: spaceId)
+        let folders = tabManager.folderCollectionStateOwner.childFolders(of: parentFolderId, in: spaceId)
             .map { ($0.index, 0, FolderContainerItem.folder($0.id)) }
         let pins = tabManager.spacePinnedPins(for: spaceId)
             .filter { $0.folderId == parentFolderId }
@@ -399,7 +399,7 @@ final class TabFolderMutationOwner {
         in parentFolderId: UUID?,
         spaceId: UUID
     ) {
-        let folders = tabManager.folders(for: spaceId)
+        let folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
         let folderMap = Dictionary(uniqueKeysWithValues: folders.map { ($0.id, $0) })
         let pinMap = Dictionary(uniqueKeysWithValues: (tabManager.spacePinnedShortcuts[spaceId] ?? []).map { ($0.id, $0) })
 
@@ -444,7 +444,7 @@ final class TabFolderMutationOwner {
         var seen: Set<UUID> = []
         while let id = currentId {
             guard seen.insert(id).inserted else { return true }
-            guard let folder = tabManager.folders(for: spaceId).first(where: { $0.id == id }) else {
+            guard let folder = tabManager.folderCollectionStateOwner.folders(for: spaceId).first(where: { $0.id == id }) else {
                 return false
             }
             if folder.parentFolderId == ancestorId {
@@ -456,7 +456,7 @@ final class TabFolderMutationOwner {
     }
 
     private func descendantFolderIds(including rootFolderId: UUID, spaceId: UUID) -> Set<UUID> {
-        let folders = tabManager.folders(for: spaceId)
+        let folders = tabManager.folderCollectionStateOwner.folders(for: spaceId)
         let childrenByParentId = Dictionary(grouping: folders, by: \.parentFolderId)
 
         var result: Set<UUID> = []

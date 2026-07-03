@@ -264,7 +264,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let tab = tabManager.createNewTab(url: "https://example.com/folder", in: space)
         let scope = try makeScope(
             spaceId: space.id,
@@ -296,7 +296,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let tab = tabManager.createNewTab(url: "https://example.com/closed-folder", in: space)
         let scope = try makeScope(
             spaceId: space.id,
@@ -401,7 +401,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = harness.tabManager
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let tab = tabManager.createNewTab(url: "https://example.com/live-folder", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
@@ -785,7 +785,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let first = try makeFolderPin(
             tabManager,
             in: space,
@@ -834,8 +834,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let first = tabManager.createFolder(for: space.id, name: "One")
-        let second = tabManager.createFolder(for: space.id, name: "Two")
+        let first = tabManager.folderMutationOwner.createFolder(for: space.id, name: "One")
+        let second = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Two")
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
@@ -855,15 +855,15 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertTrue(didMove)
         XCTAssertEqual(topLevelPinnedItemIDs(tabManager, in: space.id), [second.id, first.id])
-        XCTAssertEqual(tabManager.folders(for: space.id).map(\.index), [0, 1])
+        XCTAssertEqual(tabManager.folderCollectionStateOwner.folders(for: space.id).map(\.index), [0, 1])
     }
 
     func testFolderDropIntoFolderCreatesNestedFolder() throws {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let target = tabManager.createFolder(for: space.id, name: "Target")
-        let moving = tabManager.createFolder(for: space.id, name: "Moving")
+        let target = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Target")
+        let moving = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Moving")
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
@@ -891,8 +891,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let parent = tabManager.createFolder(for: space.id, name: "Parent")
-        let child = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: parent.id, name: "Child"))
+        let parent = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Parent")
+        let child = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: parent.id, name: "Child"))
         let scope = try makeScope(
             spaceId: space.id,
             profileId: profileId,
@@ -919,9 +919,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let root = tabManager.createFolder(for: space.id, name: "Root")
-        let nested = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: root.id, name: "Nested"))
-        let childFolder = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: nested.id, name: "Child"))
+        let root = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Root")
+        let nested = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: root.id, name: "Nested"))
+        let childFolder = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: nested.id, name: "Child"))
         let pin = try makeFolderPin(
             tabManager,
             in: space,
@@ -933,9 +933,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         liveTab.isSpacePinned = true
         liveTab.folderId = nested.id
 
-        tabManager.ungroupFolder(nested.id)
+        tabManager.folderMutationOwner.ungroupFolder(nested.id)
 
-        XCTAssertNil(tabManager.folder(by: nested.id))
+        XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: nested.id))
         XCTAssertEqual(childFolder.parentFolderId, root.id)
         let movedPin = try XCTUnwrap(tabManager.shortcutPin(by: pin.id))
         XCTAssertEqual(movedPin.folderId, root.id)
@@ -951,9 +951,9 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let root = tabManager.createFolder(for: space.id, name: "Root")
-        let nested = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: root.id, name: "Nested"))
-        let childFolder = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: nested.id, name: "Child"))
+        let root = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Root")
+        let nested = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: root.id, name: "Nested"))
+        let childFolder = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: nested.id, name: "Child"))
         let nestedPin = try makeFolderPin(
             tabManager,
             in: space,
@@ -974,11 +974,11 @@ final class SidebarDragCurrentContextTests: XCTestCase {
 
         XCTAssertEqual(tabManager.folderRecursiveChildCount(for: nested.id, in: space.id), 3)
 
-        tabManager.deleteFolder(nested.id)
+        tabManager.folderMutationOwner.deleteFolder(nested.id)
 
-        XCTAssertNotNil(tabManager.folder(by: root.id))
-        XCTAssertNil(tabManager.folder(by: nested.id))
-        XCTAssertNil(tabManager.folder(by: childFolder.id))
+        XCTAssertNotNil(tabManager.folderCollectionStateOwner.folder(by: root.id))
+        XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: nested.id))
+        XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: childFolder.id))
         XCTAssertNil(tabManager.shortcutPin(by: nestedPin.id))
         XCTAssertNil(tabManager.shortcutPin(by: childPin.id))
         XCTAssertNil(tabManager.tab(for: liveTab.id))
@@ -989,7 +989,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let existingFolderPin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1083,7 +1083,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let pin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1129,7 +1129,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let existingEssential = try makeEssentialPin(
             tabManager,
             in: space,
@@ -1178,7 +1178,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let existingTopLevelPin = try makeSpacePinnedPin(
             tabManager,
             in: space,
@@ -1225,7 +1225,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let existingFolderPin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1274,8 +1274,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let sourceFolder = tabManager.createFolder(for: space.id, name: "Source")
-        let targetFolder = tabManager.createFolder(for: space.id, name: "Target")
+        let sourceFolder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Source")
+        let targetFolder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Target")
         let pin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1358,7 +1358,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let pin = try makeFolderPin(
             tabManager,
             in: space,
@@ -1699,7 +1699,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = harness.tabManager
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let tab = tabManager.createNewTab(url: "https://example.com/non-displayed-\(target.pathComponent)", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
@@ -1737,7 +1737,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = harness.tabManager
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let pin = try makePin(
             source,
             tabManager: tabManager,
@@ -1793,7 +1793,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = harness.tabManager
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let pin = try makePin(
             source,
             tabManager: tabManager,
@@ -1841,8 +1841,8 @@ final class SidebarDragCurrentContextTests: XCTestCase {
         let tabManager = harness.tabManager
         let profileId = UUID()
         let space = tabManager.createSpace(name: "Work", profileId: profileId)
-        let sourceFolder = tabManager.createFolder(for: space.id, name: "Source")
-        let destinationFolder = tabManager.createFolder(for: space.id, name: "Destination")
+        let sourceFolder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Source")
+        let destinationFolder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Destination")
         let pin = try makePin(
             source,
             tabManager: tabManager,

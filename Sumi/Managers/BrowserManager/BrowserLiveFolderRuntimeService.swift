@@ -11,13 +11,13 @@ enum BrowserLiveFolderRuntimeService {
                 return SumiLiveFolderRuntime.SpaceContext(profileId: space.profileId)
             },
             createFolder: { [weak browserManager] spaceId, name in
-                browserManager?.tabManager.createFolder(for: spaceId, name: name).id
+                browserManager?.tabManager.folderMutationOwner.createFolder(for: spaceId, name: name).id
             },
             updateFolderIcon: { [weak browserManager] folderId, icon in
-                browserManager?.tabManager.updateFolderIcon(folderId, icon: icon)
+                browserManager?.tabManager.folderMutationOwner.updateFolderIcon(folderId, icon: icon)
             },
             renameFolder: { [weak browserManager] folderId, name in
-                browserManager?.tabManager.renameFolder(folderId, newName: name)
+                browserManager?.tabManager.folderMutationOwner.renameFolder(folderId, newName: name)
             },
             openNewTab: { [weak browserManager] urlString, windowState, preferredSpaceId in
                 browserManager?.openNewTab(

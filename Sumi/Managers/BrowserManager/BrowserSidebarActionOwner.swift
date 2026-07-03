@@ -26,7 +26,7 @@ final class BrowserSidebarActionOwner {
 
     func createFolderInCurrentSpace(in windowState: BrowserWindowState) {
         guard let space = spaceForSidebarActions(in: windowState) else { return }
-        _ = dependencies.tabManager().createFolder(for: space.id)
+        _ = dependencies.tabManager().folderMutationOwner.createFolder(for: space.id)
     }
 
     func createRSSLiveFolderInCurrentSpace(in windowState: BrowserWindowState) {

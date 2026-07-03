@@ -181,7 +181,7 @@ class TabManager: ObservableObject {
                 )
             },
             folderSpaceId: { [weak self] folderId in
-                self?.folderSpaceId(for: folderId)
+                self?.folderCollectionStateOwner.spaceId(for: folderId)
             },
             resolvedEssentialsProfileId: { [weak self] operation in
                 self?.essentialsShortcutPlacementOwner.resolvedProfileId(for: operation)
@@ -718,23 +718,8 @@ class TabManager: ObservableObject {
             .sorted { $0.index < $1.index }
     }
 
-    func childFolders(of parentFolderId: UUID?, in spaceId: UUID) -> [TabFolder] {
-        folderCollectionStateOwner.childFolders(of: parentFolderId, in: spaceId)
-    }
-
     func shortcutPin(by id: UUID) -> ShortcutPin? {
         shortcutPinCollectionStateOwner.shortcutPin(by: id)
-    }
-
-    func folder(by id: UUID) -> TabFolder? {
-        folderCollectionStateOwner.folder(by: id)
-    }
-
-    func parentContainer(for folder: TabFolder) -> TabDragManager.DragContainer {
-        if let parentFolderId = folder.parentFolderId {
-            return .folder(parentFolderId)
-        }
-        return .spacePinned(folder.spaceId)
     }
 
     func resolveDragTab(for id: UUID) -> Tab? {
@@ -755,7 +740,7 @@ class TabManager: ObservableObject {
             }
             return resolveDragTab(for: item.tabId).map { .tab($0) }
         case .folder:
-            return folder(by: item.tabId).map { .folder($0) }
+            return folderCollectionStateOwner.folder(by: item.tabId).map { .folder($0) }
         case .splitGroup:
             return splitGroup(with: item.tabId).map { .splitGroup($0) }
         }
@@ -1116,57 +1101,6 @@ class TabManager: ObservableObject {
         }
     }
 
-    // MARK: - Folder Management
-
-    func createFolder(for spaceId: UUID, name: String = "New Folder") -> TabFolder {
-        folderMutationOwner.createFolder(for: spaceId, name: name)
-    }
-
-    @discardableResult
-    func createFolder(
-        for spaceId: UUID,
-        parentFolderId: UUID?,
-        name: String = "New Folder"
-    ) -> TabFolder? {
-        folderMutationOwner.createFolder(for: spaceId, parentFolderId: parentFolderId, name: name)
-    }
-
-    func renameFolder(_ folderId: UUID, newName: String) {
-        folderMutationOwner.renameFolder(folderId, newName: newName)
-    }
-
-    func updateFolderIcon(_ folderId: UUID, icon: String) {
-        folderMutationOwner.updateFolderIcon(folderId, icon: icon)
-    }
-
-    func setFolder(_ folderId: UUID, open isOpen: Bool) {
-        folderMutationOwner.setFolder(folderId, open: isOpen)
-    }
-
-    func toggleFolderOpenState(_ folderId: UUID) {
-        folderMutationOwner.toggleFolderOpenState(folderId)
-    }
-
-    func deleteFolder(_ folderId: UUID) {
-        folderMutationOwner.deleteFolder(folderId)
-    }
-
-    func ungroupFolder(_ folderId: UUID) {
-        folderMutationOwner.ungroupFolder(folderId)
-    }
-
-    func folders(for spaceId: UUID) -> [TabFolder] {
-        folderCollectionStateOwner.folders(for: spaceId)
-    }
-
-    func setAllFolders(open isOpen: Bool, in spaceId: UUID) {
-        folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
-    }
-
-    func moveTabToFolder(tab: Tab, folderId: UUID) {
-        folderMutationOwner.moveTabToFolder(tab: tab, folderId: folderId)
-    }
-
     // MARK: - Tab Management (Normal within current space)
 
     func addTab(_ tab: Tab, regularInsertionIndex: Int? = nil) {
@@ -1465,10 +1399,6 @@ class TabManager: ObservableObject {
         shortcutPinCommandOwner.pinTabToSpace(tab, spaceId: spaceId)
     }
 
-    func folderSpaceId(for folderId: UUID) -> UUID? {
-        folderCollectionStateOwner.spaceId(for: folderId)
-    }
-
     // MARK: - Sidebar Drag Routing and Tab Moves
 
     @discardableResult
@@ -1481,10 +1411,6 @@ class TabManager: ObservableObject {
     @discardableResult
     func handleDragOperation(_ operation: DragOperation) -> Bool {
         sidebarDragRoutingOwner.handleDragOperation(operation)
-    }
-
-    func alphabetizeFolderPins(_ folderId: UUID, in spaceId: UUID) {
-        folderMutationOwner.alphabetizeFolderPins(folderId, in: spaceId)
     }
 
     @discardableResult

@@ -17,8 +17,8 @@ final class BrowserManagerSidebarActionRoutingTests: XCTestCase {
             harness.browserManager.spaceForSidebarActions(in: harness.windowState)?.id,
             harness.primarySpace.id
         )
-        XCTAssertEqual(harness.browserManager.tabManager.folders(for: harness.primarySpace.id).count, 1)
-        XCTAssertTrue(harness.browserManager.tabManager.folders(for: harness.secondarySpace.id).isEmpty)
+        XCTAssertEqual(harness.browserManager.tabManager.folderCollectionStateOwner.folders(for: harness.primarySpace.id).count, 1)
+        XCTAssertTrue(harness.browserManager.tabManager.folderCollectionStateOwner.folders(for: harness.secondarySpace.id).isEmpty)
     }
 
     func testGlobalSidebarToggleTargetsOnlyRegisteredWindowWhenNoActiveWindowExists() {

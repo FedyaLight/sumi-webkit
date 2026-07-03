@@ -156,7 +156,7 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.shortcutPin(by: id)
             },
             folders: { [weak tabManager] spaceId in
-                tabManager?.folders(for: spaceId) ?? []
+                tabManager?.folderCollectionStateOwner.folders(for: spaceId) ?? []
             },
             isLiveFolder: { [weak liveFolderManager] folderId in
                 liveFolderManager?.isLiveFolder(folderId) ?? false
@@ -180,7 +180,7 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.moveTab(tabId, to: targetSpaceId)
             },
             moveTabToFolder: { [weak tabManager] tab, folderId in
-                tabManager?.moveTabToFolder(tab: tab, folderId: folderId)
+                tabManager?.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folderId)
             },
             assignTabToProfile: { [weak tabManager] tab, profileId in
                 tabManager?.assign(tab: tab, toProfile: profileId) ?? false

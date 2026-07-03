@@ -191,10 +191,10 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let container = try makeInMemoryContainer()
         let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let tab = tabManager.createNewTab(url: "https://example.com/docs", in: space, activate: true)
 
-        tabManager.moveTabToFolder(tab: tab, folderId: folder.id)
+        tabManager.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folder.id)
         let pin = try XCTUnwrap(tabManager.spacePinnedPins(for: space.id).first)
 
         try await waitForStore(in: container) { context in
@@ -216,7 +216,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         XCTAssertTrue(storedPin.isSpacePinned)
         XCTAssertEqual(storedPin.folderId, folder.id)
 
-        tabManager.ungroupFolder(folder.id)
+        tabManager.folderMutationOwner.ungroupFolder(folder.id)
         try await waitForStore(in: container) { context in
             guard let storedPin = try fetchTab(pin.id, in: context) else { return false }
             return try fetchFolder(folder.id, in: context) == nil
@@ -235,13 +235,13 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let container = try makeInMemoryContainer()
         let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
-        let nested = try XCTUnwrap(tabManager.createFolder(for: space.id, parentFolderId: folder.id, name: "Nested"))
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
+        let nested = try XCTUnwrap(tabManager.folderMutationOwner.createFolder(for: space.id, parentFolderId: folder.id, name: "Nested"))
         let tab = tabManager.createNewTab(url: "https://example.com/docs", in: space, activate: true)
         let nestedTab = tabManager.createNewTab(url: "https://example.com/nested", in: space, activate: false)
 
-        tabManager.moveTabToFolder(tab: tab, folderId: folder.id)
-        tabManager.moveTabToFolder(tab: nestedTab, folderId: nested.id)
+        tabManager.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folder.id)
+        tabManager.folderMutationOwner.moveTabToFolder(tab: nestedTab, folderId: nested.id)
         let pins = tabManager.spacePinnedPins(for: space.id)
         let pinIds = Set(pins.map(\.id))
         XCTAssertEqual(pins.count, 2)
@@ -254,7 +254,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
                 }
         }
 
-        tabManager.deleteFolder(folder.id)
+        tabManager.folderMutationOwner.deleteFolder(folder.id)
         try await waitForStore(in: container) { context in
             guard try fetchFolder(folder.id, in: context) == nil,
                   try fetchFolder(nested.id, in: context) == nil else {
@@ -273,14 +273,14 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let container = try makeInMemoryContainer()
         let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Pinned", profileId: UUID())
-        let folder = tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
 
-        tabManager.setFolder(folder.id, open: true)
+        tabManager.folderMutationOwner.setFolder(folder.id, open: true)
         try await waitForStore(in: container) { context in
             try fetchFolder(folder.id, in: context)?.isOpen == true
         }
 
-        tabManager.setFolder(folder.id, open: false)
+        tabManager.folderMutationOwner.setFolder(folder.id, open: false)
         try await waitForStore(in: container) { context in
             try fetchFolder(folder.id, in: context)?.isOpen == false
         }
@@ -312,7 +312,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
                 at: 1
             )
         )
-        let folder = tabManager.createFolder(for: space.id, name: "Bottom")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Bottom")
 
         XCTAssertEqual(
             tabManager.topLevelSpacePinnedItems(for: space.id).map(\.id),
@@ -647,7 +647,7 @@ final class TabManagerStructuralPersistenceTests: XCTestCase {
         let container = try makeInMemoryContainer()
         let tabManager = makeTabManager(context: container.mainContext)
         let space = tabManager.createSpace(name: "Clean", profileId: UUID())
-        let folder = tabManager.createFolder(for: space.id, name: "Keep")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Keep")
         _ = tabManager.createNewTab(url: "https://example.com/keep", in: space, activate: true)
         try await waitForStore(in: container) { context in
             try fetchFolder(folder.id, in: context) != nil

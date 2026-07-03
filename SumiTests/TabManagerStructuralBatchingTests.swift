@@ -108,9 +108,9 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
         let space = tabManager.createSpace(name: "Workspace")
-        let folder = tabManager.createFolder(for: space.id, name: "Folder")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Folder")
         let regular = tabManager.createNewTab(url: "https://example.com/folder", in: space)
-        tabManager.moveTabToFolder(tab: regular, folderId: folder.id)
+        tabManager.folderMutationOwner.moveTabToFolder(tab: regular, folderId: folder.id)
         let pin = try XCTUnwrap(tabManager.folderPinnedPins(for: folder.id, in: space.id).first)
         let windowId = UUID()
         let batchFlushesBefore = tabManager.structuralLookupBatchFlushCount
@@ -272,7 +272,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
     func testDeleteFolderClearsDeletedShortcutPinSelectionReferences() throws {
         let tabManager = try makeInMemoryTabManager()
         let space = tabManager.createSpace(name: "Workspace")
-        let folder = tabManager.createFolder(for: space.id, name: "Pinned")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Pinned")
         let pin = makeSpacePinnedShortcut(spaceId: space.id, folderId: folder.id)
         tabManager.setSpacePinnedShortcuts([pin], for: space.id)
         let windowState = BrowserWindowState()
@@ -291,9 +291,9 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.selectedShortcutPinForSpace[space.id] = pin.id
         windowState.recentSelectionItemsBySpace[space.id] = [.shortcutPin(pin.id)]
 
-        tabManager.deleteFolder(folder.id)
+        tabManager.folderMutationOwner.deleteFolder(folder.id)
 
-        XCTAssertNil(tabManager.folder(by: folder.id))
+        XCTAssertNil(tabManager.folderCollectionStateOwner.folder(by: folder.id))
         XCTAssertNil(tabManager.shortcutPin(by: pin.id))
         XCTAssertNil(tabManager.tab(for: liveTab.id))
         XCTAssertNil(windowState.currentTabId)
@@ -780,10 +780,10 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
         let space = tabManager.createSpace(name: "Workspace")
-        let folder = tabManager.createFolder(for: space.id, name: "Folder")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Folder")
         let tab = tabManager.createNewTab(url: "https://example.com/folder", in: space)
 
-        tabManager.moveTabToFolder(tab: tab, folderId: folder.id)
+        tabManager.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folder.id)
         let pin = try XCTUnwrap(tabManager.folderPinnedPins(for: folder.id, in: space.id).first)
         let windowId = UUID()
         let liveTab = tabManager.activateShortcutPin(pin, in: windowId, currentSpaceId: space.id)
@@ -806,10 +806,10 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         let tabManager = try makeInMemoryTabManager()
         let recorder = StructuralEventRecorder(tabManager: tabManager)
         let space = tabManager.createSpace(name: "Workspace")
-        let folder = tabManager.createFolder(for: space.id, name: "Folder")
+        let folder = tabManager.folderMutationOwner.createFolder(for: space.id, name: "Folder")
         recorder.reset()
 
-        tabManager.toggleFolderOpenState(folder.id)
+        tabManager.folderMutationOwner.toggleFolderOpenState(folder.id)
 
         XCTAssertTrue(folder.isOpen)
         XCTAssertEqual(recorder.count, 1)

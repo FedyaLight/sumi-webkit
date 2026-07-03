@@ -205,8 +205,8 @@ extension SpaceView {
         case .spacePinned(let spaceId, let folderId, let index):
             guard spaceId == space.id else { return nil }
             if let folderId {
-                guard browserContext.tabManager.folderSpaceId(for: folderId) == spaceId,
-                      browserContext.tabManager.folder(by: folderId)?.isOpen == true
+                guard browserContext.tabManager.folderCollectionStateOwner.spaceId(for: folderId) == spaceId,
+                      browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId)?.isOpen == true
                 else {
                     return nil
                 }
@@ -261,7 +261,7 @@ extension SpaceView {
                 var currentFolderId = pin.folderId
                 while let folderId = currentFolderId {
                     if !elevated.insert(folderId).inserted { break }
-                    currentFolderId = tabManager.folder(by: folderId)?.parentFolderId
+                    currentFolderId = tabManager.folderCollectionStateOwner.folder(by: folderId)?.parentFolderId
                 }
             }
         }
@@ -275,7 +275,7 @@ extension SpaceView {
                     var currentFolderId = pin.folderId
                     while let folderId = currentFolderId {
                         if !elevated.insert(folderId).inserted { break }
-                        currentFolderId = tabManager.folder(by: folderId)?.parentFolderId
+                        currentFolderId = tabManager.folderCollectionStateOwner.folder(by: folderId)?.parentFolderId
                     }
                 }
             }
@@ -288,7 +288,7 @@ extension SpaceView {
                         var currentFolderId: UUID? = folderId
                         while let fid = currentFolderId {
                             if !elevated.insert(fid).inserted { break }
-                            currentFolderId = tabManager.folder(by: fid)?.parentFolderId
+                            currentFolderId = tabManager.folderCollectionStateOwner.folder(by: fid)?.parentFolderId
                         }
                     }
                 }

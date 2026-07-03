@@ -189,7 +189,7 @@ extension BrowserKeyboardShortcutCommandOwner.Dependencies {
                 browserManager?.setActiveSpace(space, in: windowState)
             },
             setAllFoldersOpen: { [weak browserManager] isOpen, spaceId in
-                browserManager?.tabManager.setAllFolders(open: isOpen, in: spaceId)
+                browserManager?.tabManager.folderMutationOwner.setAllFolders(open: isOpen, in: spaceId)
             },
             persistWindowSession: { [weak browserManager] windowState in
                 browserManager?.persistWindowSession(for: windowState)

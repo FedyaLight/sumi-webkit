@@ -430,7 +430,7 @@ struct PinnedGrid: View {
     private var essentialFolderChoices: [SidebarContextMenuChoice] {
         guard let contextMenuSpace else { return [] }
         return makeSidebarContextMenuFolderChoices(
-            folders: browserContext.tabManager.folders(for: contextMenuSpace.id)
+            folders: browserContext.tabManager.folderCollectionStateOwner.folders(for: contextMenuSpace.id)
         )
     }
 
@@ -451,7 +451,7 @@ struct PinnedGrid: View {
     }
 
     private func moveEssential(_ pin: ShortcutPin, toFolder folderId: UUID) {
-        guard let targetFolder = browserContext.tabManager.folder(by: folderId) else { return }
+        guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
         let targetIndex = browserContext.tabManager.folderPinnedPins(
             for: folderId,
             in: targetFolder.spaceId

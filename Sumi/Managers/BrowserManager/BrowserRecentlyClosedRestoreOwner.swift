@@ -199,7 +199,7 @@ final class BrowserRecentlyClosedRestoreOwner {
                 return nil
             }
             let folderId = pinState.folderId.flatMap { folderId in
-                tabManager.folderSpaceId(for: folderId) == spaceId ? folderId : nil
+                tabManager.folderCollectionStateOwner.spaceId(for: folderId) == spaceId ? folderId : nil
             }
             restoredPin = ShortcutPin(
                 id: pinState.id,

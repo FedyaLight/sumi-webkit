@@ -171,7 +171,7 @@ enum SidebarDropCoordinator {
             return tabManager.regularTabCollectionOwner.tabs(in: spaceId).count
 
         case .folder(let folderId):
-            guard let spaceId = tabManager.folderSpaceId(for: folderId) else {
+            guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else {
                 return nil
             }
             return tabManager.folderChildVisualItems(for: folderId, in: spaceId).count
@@ -212,7 +212,7 @@ enum SidebarDropCoordinator {
             return tabManager.regularTabCollectionOwner.tabs(in: spaceId).firstIndex { $0.id == sourceItemId }
 
         case .folder(let folderId):
-            guard let spaceId = tabManager.folderSpaceId(for: folderId) else {
+            guard let spaceId = tabManager.folderCollectionStateOwner.spaceId(for: folderId) else {
                 return nil
             }
             return tabManager.folderChildVisualItems(for: folderId, in: spaceId)

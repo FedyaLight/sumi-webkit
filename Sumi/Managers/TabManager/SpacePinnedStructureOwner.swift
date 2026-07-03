@@ -38,7 +38,7 @@ final class SpacePinnedStructureOwner {
             var nextVisited = visited
             nextVisited.insert(parentId)
 
-            let childFolders = tabManager.childFolders(of: parentId, in: spaceId)
+            let childFolders = tabManager.folderCollectionStateOwner.childFolders(of: parentId, in: spaceId)
             let directPinsCount = tabManager.folderPinnedPins(for: parentId, in: spaceId).count
             let nestedCount = childFolders.reduce(0) { total, childFolder in
                 total + 1 + countChildren(of: childFolder.id, visited: nextVisited)

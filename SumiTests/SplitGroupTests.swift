@@ -105,7 +105,7 @@ final class SplitGroupTests: XCTestCase {
     func testShortcutHostedSplitGroupForFolderPinStaysInsideFolderVisualItems() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")
-        let folder = harness.tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
         let groupedPin = ShortcutPin(
             id: UUID(),
@@ -153,7 +153,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")
         harness.windowState.currentSpaceId = space.id
-        let folder = harness.tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let folderPin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -218,7 +218,7 @@ final class SplitGroupTests: XCTestCase {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")
         harness.windowState.currentSpaceId = space.id
-        let folder = harness.tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let folderPin = ShortcutPin(
             id: UUID(),
             role: .spacePinned,
@@ -345,7 +345,7 @@ final class SplitGroupTests: XCTestCase {
     func testEssentialOnlyShortcutHostedSplitStartsBeforePinnedRows() throws {
         let harness = try makeHarness()
         let space = harness.tabManager.createSpace(name: "Work")
-        let folder = harness.tabManager.createFolder(for: space.id, name: "Docs")
+        let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
         harness.tabManager.setSpacePinnedShortcuts([visiblePin], for: space.id)
 

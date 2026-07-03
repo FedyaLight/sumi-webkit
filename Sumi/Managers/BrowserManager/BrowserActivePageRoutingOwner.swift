@@ -290,7 +290,7 @@ extension BrowserActivePageRoutingOwner.Dependencies {
                 browserManager?.tabManager.spaces.contains { $0.id == spaceId } == true
             },
             folderSpaceId: { [weak browserManager] folderId in
-                browserManager?.tabManager.folderSpaceId(for: folderId)
+                browserManager?.tabManager.folderCollectionStateOwner.spaceId(for: folderId)
             },
             resolveEssentialsInsertion: { [weak browserManager] windowState, index in
                 browserManager?.tabManager.resolveEssentialsInsertion(

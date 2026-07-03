@@ -110,7 +110,7 @@ final class SidebarRegularTabDragService {
 
         case .moveToFolder(let toFolderId) where operation.fromContainer == .spaceRegular(operation.scope.spaceId):
             guard case .spaceRegular(let spaceId) = operation.fromContainer else { return false }
-            guard let targetSpaceId = tabManager.folderSpaceId(for: toFolderId), targetSpaceId == spaceId else {
+            guard let targetSpaceId = tabManager.folderCollectionStateOwner.spaceId(for: toFolderId), targetSpaceId == spaceId else {
                 return false
             }
             didMutate = tabManager.convertTabToShortcutPin(
@@ -126,7 +126,7 @@ final class SidebarRegularTabDragService {
 
         case .moveToFolder(let toFolderId) where operation.fromContainer == .spacePinned(operation.scope.spaceId):
             guard case .spacePinned(let spaceId) = operation.fromContainer else { return false }
-            guard let targetSpaceId = tabManager.folderSpaceId(for: toFolderId), targetSpaceId == spaceId else {
+            guard let targetSpaceId = tabManager.folderCollectionStateOwner.spaceId(for: toFolderId), targetSpaceId == spaceId else {
                 return false
             }
             didMutate = tabManager.convertTabToShortcutPin(

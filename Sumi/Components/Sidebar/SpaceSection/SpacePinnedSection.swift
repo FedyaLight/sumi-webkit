@@ -492,7 +492,7 @@ extension SpaceView {
         let presentationState = shortcutPresentationState(for: pin)
         let profiles = browserContext.profileManager.profiles
         let folderChoices = makeSidebarContextMenuFolderChoices(
-            folders: browserContext.tabManager.folders(for: space.id)
+            folders: browserContext.tabManager.folderCollectionStateOwner.folders(for: space.id)
                 .filter { !browserContext.liveFolderManager.isLiveFolder($0.id) },
             selectedFolderId: pin.folderId
         )
@@ -574,7 +574,7 @@ extension SpaceView {
 
     private func ungroupFolder(_ folder: TabFolder) {
         mutatePinnedContent {
-            browserContext.tabManager.ungroupFolder(folder.id)
+            browserContext.tabManager.folderMutationOwner.ungroupFolder(folder.id)
         }
     }
 
@@ -586,7 +586,7 @@ extension SpaceView {
         }
 
         mutatePinnedContent {
-            browserContext.tabManager.deleteFolder(folder.id)
+            browserContext.tabManager.folderMutationOwner.deleteFolder(folder.id)
         }
     }
 
@@ -613,7 +613,7 @@ extension SpaceView {
             window: windowState.window,
             onDelete: {
                 mutatePinnedContent {
-                    browserContext.tabManager.deleteFolder(folder.id)
+                    browserContext.tabManager.folderMutationOwner.deleteFolder(folder.id)
                 }
             }
         )
@@ -674,7 +674,7 @@ extension SpaceView {
     }
 
     private func moveShortcutPin(_ pin: ShortcutPin, toFolder folderId: UUID) {
-        guard let targetFolder = browserContext.tabManager.folder(by: folderId) else { return }
+        guard let targetFolder = browserContext.tabManager.folderCollectionStateOwner.folder(by: folderId) else { return }
         let targetIndex = browserContext.tabManager.folderPinnedPins(
             for: folderId,
             in: targetFolder.spaceId

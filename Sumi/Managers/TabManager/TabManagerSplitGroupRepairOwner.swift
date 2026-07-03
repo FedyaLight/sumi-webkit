@@ -146,7 +146,7 @@ extension TabManagerSplitGroupRepairOwner.Dependencies {
                 tabManager?.tab(for: id)
             },
             folderSpaceId: { [weak tabManager] folderId in
-                tabManager?.folderSpaceId(for: folderId)
+                tabManager?.folderCollectionStateOwner.spaceId(for: folderId)
             },
             spaceExists: { [weak tabManager] spaceId in
                 tabManager?.spaces.contains(where: { $0.id == spaceId }) ?? false

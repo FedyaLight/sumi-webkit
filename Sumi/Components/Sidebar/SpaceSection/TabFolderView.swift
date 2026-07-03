@@ -727,7 +727,7 @@ struct TabFolderView: View {
 
     private func toggleFolderOpenState() {
         withAnimation(folderLayoutAnimation) {
-            browserContext.tabManager.toggleFolderOpenState(folder.id)
+            browserContext.tabManager.folderMutationOwner.toggleFolderOpenState(folder.id)
         }
     }
 
@@ -812,7 +812,7 @@ struct TabFolderView: View {
                 window: windowState.window,
                 onDelete: {
                     mutateFolderContent {
-                        browserContext.tabManager.deleteFolder(childFolder.id)
+                        browserContext.tabManager.folderMutationOwner.deleteFolder(childFolder.id)
                     }
                 }
             )
@@ -820,13 +820,13 @@ struct TabFolderView: View {
         }
 
         mutateFolderContent {
-            browserContext.tabManager.deleteFolder(childFolder.id)
+            browserContext.tabManager.folderMutationOwner.deleteFolder(childFolder.id)
         }
     }
 
     private func ungroupNestedFolder(_ childFolder: TabFolder) {
         mutateFolderContent {
-            browserContext.tabManager.ungroupFolder(childFolder.id)
+            browserContext.tabManager.folderMutationOwner.ungroupFolder(childFolder.id)
         }
     }
 
