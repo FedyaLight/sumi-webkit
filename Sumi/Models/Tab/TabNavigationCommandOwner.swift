@@ -9,6 +9,11 @@ final class TabNavigationCommandOwner {
         guard tab.hasCurrentWebView else {
             tab.url = newURL
             tab.beginLoadingPresentationIfNeeded()
+            prepareExtensionPageNavigationIfNeeded(
+                newURL,
+                for: tab,
+                reason: "Tab.loadURL.initial"
+            )
             tab.setupWebView()
             return
         }
@@ -31,6 +36,11 @@ final class TabNavigationCommandOwner {
         tab.url = newURL
         tab.beginLoadingPresentationIfNeeded()
         tab.resetPlaybackActivity()
+        let rebuiltForExtensionPageNavigation = prepareExtensionPageNavigationIfNeeded(
+            newURL,
+            for: tab,
+            reason: reason
+        )
 
         guard let initialWebView = resolvedWebView() else {
             tab.applyCachedFaviconOrPlaceholder(for: newURL)
@@ -38,12 +48,14 @@ final class TabNavigationCommandOwner {
         }
 
         let rebuiltForConfigurationPolicy = rebuildConfigurationPolicy
+            && rebuiltForExtensionPageNavigation == false
+            && ExtensionUtils.isExtensionOwnedURL(newURL) == false
             ? tab.rebuildNormalWebViewForConfigurationPolicyIfNeeded(
                 targetURL: newURL,
                 reason: reason
             )
             : false
-        let webView = rebuiltForConfigurationPolicy
+        let webView = rebuiltForExtensionPageNavigation || rebuiltForConfigurationPolicy
             ? (resolvedWebView() ?? initialWebView)
             : initialWebView
 
@@ -64,6 +76,24 @@ final class TabNavigationCommandOwner {
         }
 
         tab.applyCachedFaviconOrPlaceholder(for: newURL)
+    }
+
+    @discardableResult
+    private func prepareExtensionPageNavigationIfNeeded(
+        _ newURL: URL,
+        for tab: Tab,
+        reason: String
+    ) -> Bool {
+        guard ExtensionUtils.isExtensionOwnedURL(newURL)
+                || tab.webExtensionContextOverride != nil
+        else {
+            return false
+        }
+        return tab.navigationCommandRuntime.prepareExtensionPageNavigation(
+            tab,
+            newURL,
+            reason
+        )
     }
 
     func loadURL(_ urlString: String, for tab: Tab) {

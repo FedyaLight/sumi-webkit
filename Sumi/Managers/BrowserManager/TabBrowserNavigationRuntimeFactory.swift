@@ -6,9 +6,14 @@ enum TabBrowserNavigationRuntimeFactory {
     static func navigationCommandRuntime(
         for browserManager: BrowserManager
     ) -> TabNavigationCommandRuntime {
-        .live(settings: { [weak browserManager] in
-            browserManager?.sumiSettings
-        })
+        .live(
+            settings: { [weak browserManager] in
+                browserManager?.sumiSettings
+            },
+            extensionsModule: { [weak browserManager] in
+                browserManager?.extensionsModule
+            }
+        )
     }
 
     static func profileResolutionRuntime(
@@ -410,6 +415,27 @@ extension TabNavigationCommandRuntime {
         Self(
             resolvedSearchEngineTemplate: {
                 settings()?.resolvedSearchEngineTemplate
+            },
+            prepareExtensionPageNavigation: { _, _, _ in
+                false
+            }
+        )
+    }
+
+    static func live(
+        settings: @escaping () -> SumiSettingsService?,
+        extensionsModule: @escaping () -> SumiExtensionsModule?
+    ) -> Self {
+        Self(
+            resolvedSearchEngineTemplate: {
+                settings()?.resolvedSearchEngineTemplate
+            },
+            prepareExtensionPageNavigation: { tab, url, reason in
+                extensionsModule()?.prepareExtensionPageNavigationIfLoaded(
+                    tab,
+                    targetURL: url,
+                    reason: reason
+                ) ?? false
             }
         )
     }

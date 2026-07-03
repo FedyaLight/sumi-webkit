@@ -174,10 +174,17 @@ struct TabHistorySwipeRuntime {
 @MainActor
 struct TabNavigationCommandRuntime {
     var resolvedSearchEngineTemplate: () -> String?
+    var prepareExtensionPageNavigation: (Tab, URL, String) -> Bool
 
-    static let inactive = Self(
-        resolvedSearchEngineTemplate: { nil }
-    )
+    init(
+        resolvedSearchEngineTemplate: @escaping () -> String?,
+        prepareExtensionPageNavigation: @escaping (Tab, URL, String) -> Bool = { _, _, _ in false }
+    ) {
+        self.resolvedSearchEngineTemplate = resolvedSearchEngineTemplate
+        self.prepareExtensionPageNavigation = prepareExtensionPageNavigation
+    }
+
+    static let inactive = Self(resolvedSearchEngineTemplate: { nil })
 }
 
 @MainActor

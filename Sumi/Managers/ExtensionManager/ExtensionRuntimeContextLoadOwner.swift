@@ -176,6 +176,12 @@ final class ExtensionRuntimeContextLoadOwner {
             profileId: request.profileId,
             manifest: request.manifest
         )
+        if request.sourceKind == .safariAppExtension {
+            manager.seedSafariAppExtensionDefaultAccessIfNeeded(
+                extensionId: request.extensionId,
+                profileId: request.profileId
+            )
+        }
         manager.applyConfiguredSiteAccessPolicy(
             to: extensionContext,
             extensionId: request.extensionId,

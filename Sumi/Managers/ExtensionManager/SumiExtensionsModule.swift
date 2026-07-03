@@ -190,6 +190,19 @@ final class SumiExtensionsModule {
         )
     }
 
+    @discardableResult
+    func prepareExtensionPageNavigationIfLoaded(
+        _ tab: Tab,
+        targetURL: URL,
+        reason: String
+    ) -> Bool {
+        managerIfLoadedAndEnabled()?.prepareExtensionPageNavigation(
+            tab,
+            targetURL: targetURL,
+            reason: reason
+        ) ?? false
+    }
+
     func registerTabWithExtensionRuntimeIfLoaded(
         _ tab: Tab,
         reason: String

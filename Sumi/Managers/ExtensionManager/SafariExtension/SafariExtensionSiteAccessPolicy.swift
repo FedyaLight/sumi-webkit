@@ -76,12 +76,13 @@ struct SafariExtensionSiteAccessPolicy: Codable, Equatable {
     static func defaultPolicy(
         extensionId: String,
         profileId: UUID,
-        seededRules: [SafariExtensionSiteAccessRule] = []
+        seededRules: [SafariExtensionSiteAccessRule] = [],
+        defaultAccess: SafariExtensionSiteAccessLevel = .ask
     ) -> SafariExtensionSiteAccessPolicy {
         SafariExtensionSiteAccessPolicy(
             profileId: profileId.uuidString.lowercased(),
             extensionId: extensionId,
-            defaultAccess: .ask,
+            defaultAccess: defaultAccess,
             siteRules: normalizedRules(seededRules),
             privateAccessAllowed: false,
             hasRequestedOptionalAccessToAllHosts: false,

@@ -79,13 +79,28 @@ final class TabWebViewReplacementOwner {
         context: TabWebViewReplacementContext,
         onTrackedWebViewRemovalFailure: () -> Void = { /* No-op. */ }
     ) -> Bool {
+        replaceCurrentWebView(
+            reason: reason,
+            context: context,
+            makeReplacementWebView: context.makeNormalTabWebView,
+            onTrackedWebViewRemovalFailure: onTrackedWebViewRemovalFailure
+        )
+    }
+
+    @discardableResult
+    func replaceCurrentWebView(
+        reason: String,
+        context: TabWebViewReplacementContext,
+        makeReplacementWebView: (String) -> WKWebView?,
+        onTrackedWebViewRemovalFailure: () -> Void = { /* No-op. */ }
+    ) -> Bool {
         guard let previousWebView = context.existingWebView() else { return false }
 
         let previousWindowId = context.primaryWindowId
             ?? context.trackedWindowIdContainingWebView(previousWebView)
         let hadTrackedWebViews = context.hasTrackedWebViews(context.tabId)
 
-        guard let replacementWebView = context.makeNormalTabWebView(reason) else {
+        guard let replacementWebView = makeReplacementWebView(reason) else {
             return false
         }
         context.invalidatePermissionPageForReplacement(reason)

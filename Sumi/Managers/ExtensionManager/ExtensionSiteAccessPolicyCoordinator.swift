@@ -56,6 +56,20 @@ final class ExtensionSiteAccessPolicyCoordinator {
         )
     }
 
+    @discardableResult
+    func seedSafariAppExtensionDefaultAccessIfNeeded(
+        extensionId: String,
+        profileId: UUID
+    ) -> SafariExtensionSiteAccessPolicy {
+        let result = dependencies.siteAccessPolicyStore
+            .seedSafariAppExtensionDefaultAccessIfNeeded(
+                extensionId: extensionId,
+                profileId: profileId
+            )
+        notifySiteAccessPoliciesDidChangeIfNeeded(result.didPersistChanges)
+        return result.policy
+    }
+
     func setDefaultSiteAccess(
         _ access: SafariExtensionSiteAccessLevel,
         extensionId: String,
@@ -390,6 +404,17 @@ extension ExtensionManager {
     ) {
         siteAccessPolicyCoordinator.setDefaultSiteAccess(
             access,
+            extensionId: extensionId,
+            profileId: profileId
+        )
+    }
+
+    @discardableResult
+    func seedSafariAppExtensionDefaultAccessIfNeeded(
+        extensionId: String,
+        profileId: UUID
+    ) -> SafariExtensionSiteAccessPolicy {
+        siteAccessPolicyCoordinator.seedSafariAppExtensionDefaultAccessIfNeeded(
             extensionId: extensionId,
             profileId: profileId
         )

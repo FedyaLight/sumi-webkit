@@ -123,6 +123,46 @@ final class SafariExtensionSiteAccessPolicyStore {
         )
     }
 
+    func seedSafariAppExtensionDefaultAccessIfNeeded(
+        extensionId: String,
+        profileId: UUID
+    ) -> PolicyResult {
+        let key = policyKey(extensionId: extensionId, profileId: profileId)
+        var policies = loadPolicies()
+        var shouldSave = false
+
+        let policy: SafariExtensionSiteAccessPolicy
+        if let stored = policies[key] {
+            var normalized = stored.normalized()
+            if shouldSeedSafariAppExtensionDefaultAccess(normalized) {
+                normalized.defaultAccess = .allow
+                normalized.updatedAt = Date()
+                shouldSave = true
+            } else if normalized != stored {
+                shouldSave = true
+            }
+            policy = normalized
+        } else {
+            let migratedRules = migratedRules(
+                extensionId: extensionId,
+                profileId: profileId
+            )
+            policy = SafariExtensionSiteAccessPolicy.defaultPolicy(
+                extensionId: extensionId,
+                profileId: profileId,
+                seededRules: migratedRules,
+                defaultAccess: migratedRules.isEmpty ? .allow : .ask
+            )
+            shouldSave = true
+        }
+
+        policies[key] = policy
+        return PolicyResult(
+            policy: policy,
+            didPersistChanges: shouldSave && savePolicies(policies)
+        )
+    }
+
     @discardableResult
     func updatePolicy(
         extensionId: String,
@@ -164,6 +204,19 @@ final class SafariExtensionSiteAccessPolicyStore {
                 updatedAt: record.updatedAt
             )
         }
+    }
+
+    private func shouldSeedSafariAppExtensionDefaultAccess(
+        _ policy: SafariExtensionSiteAccessPolicy
+    ) -> Bool {
+        // Older Sumi builds persisted an empty `.ask` policy for Safari app
+        // extensions before app-extension website access was fully wired.
+        // Treat only that empty shape as unconfigured; explicit denies and
+        // per-site rules keep winning.
+        policy.defaultAccess == .ask
+            && policy.siteRules.isEmpty
+            && policy.privateAccessAllowed == false
+            && policy.hasRequestedOptionalAccessToAllHosts == false
     }
 
     private func policyKey(

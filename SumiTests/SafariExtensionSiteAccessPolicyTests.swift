@@ -214,6 +214,78 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         )
     }
 
+    func testSafariAppExtensionDefaultAccessSeedCreatesDefaultAllowPolicy() {
+        let profile = Profile(name: "Safari App Extension Seed")
+        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
+        let extensionId = "safari-app-extension-seed"
+
+        let result = store.seedSafariAppExtensionDefaultAccessIfNeeded(
+            extensionId: extensionId,
+            profileId: profile.id
+        )
+
+        XCTAssertTrue(result.didPersistChanges)
+        XCTAssertEqual(result.policy.defaultAccess, .allow)
+        XCTAssertEqual(
+            store.policy(extensionId: extensionId, profileId: profile.id)
+                .policy
+                .defaultAccess,
+            .allow
+        )
+    }
+
+    func testSafariAppExtensionDefaultAccessSeedMigratesEmptyAskPolicy() {
+        let profile = Profile(name: "Safari App Extension Ask Migration")
+        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
+        let extensionId = "safari-app-extension-ask-migration"
+
+        XCTAssertEqual(
+            store.policy(extensionId: extensionId, profileId: profile.id)
+                .policy
+                .defaultAccess,
+            .ask
+        )
+
+        let result = store.seedSafariAppExtensionDefaultAccessIfNeeded(
+            extensionId: extensionId,
+            profileId: profile.id
+        )
+
+        XCTAssertTrue(result.didPersistChanges)
+        XCTAssertEqual(result.policy.defaultAccess, .allow)
+    }
+
+    func testSafariAppExtensionDefaultAccessSeedPreservesConfiguredRules() {
+        let profile = Profile(name: "Safari App Extension Configured Rule")
+        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
+        let extensionId = "safari-app-extension-configured-rule"
+        let pattern = "https://account.example.test/*"
+
+        store.updatePolicy(
+            extensionId: extensionId,
+            profileId: profile.id
+        ) { policy in
+            policy.siteRules = [
+                SafariExtensionSiteAccessRule(
+                    matchPattern: pattern,
+                    access: .deny,
+                    expiresAt: nil,
+                    updatedAt: Date()
+                ),
+            ]
+        }
+
+        let result = store.seedSafariAppExtensionDefaultAccessIfNeeded(
+            extensionId: extensionId,
+            profileId: profile.id
+        )
+
+        XCTAssertFalse(result.didPersistChanges)
+        XCTAssertEqual(result.policy.defaultAccess, .ask)
+        XCTAssertEqual(result.policy.siteRules.map(\.matchPattern), [pattern])
+        XCTAssertEqual(result.policy.siteRules.map(\.access), [.deny])
+    }
+
     func testSiteAccessIsProfileScoped() async throws {
         let container = try makeTestContainer()
         let profileA = Profile(name: "Profile A")

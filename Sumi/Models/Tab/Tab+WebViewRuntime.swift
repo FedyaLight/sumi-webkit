@@ -107,6 +107,22 @@ extension Tab {
         ownedWebViewPreparationOwner.prepareCreatedFocusableWebView(webView, currentURL: url, reason: reason)
     }
 
+    func makeAuxiliaryOverrideTabWebView(
+        configuration: WKWebViewConfiguration,
+        reason: String
+    ) -> WKWebView {
+        let runtimeContext = normalWebViewRuntimeContext()
+        let webView = AuxiliaryWebViewFactory
+            .makeWebViewPreservingWebKitConfiguration(configuration)
+        runtimeContext.preparationRuntime.prepareCreatedFocusableWebView(
+            webView,
+            runtimeContext.currentURL(),
+            reason,
+            .auxiliaryOverride
+        )
+        return webView
+    }
+
     func registerTabWithExtensionRuntimeIfNeeded(reason: String) {
         webViewProvisioningOwner.registerTabWithExtensionRuntimeIfNeeded(
             context: normalWebViewRuntimeContext(),
