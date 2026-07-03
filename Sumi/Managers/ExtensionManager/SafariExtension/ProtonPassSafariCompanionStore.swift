@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 import Security
 
 struct ProtonPassSafariCredentials: Codable, Equatable {
@@ -31,7 +32,21 @@ protocol ProtonPassSafariCompanionStore: AnyObject {
 }
 
 final class KeychainProtonPassSafariCompanionStore: ProtonPassSafariCompanionStore {
+    private static let logger = Logger.sumi(category: "ProtonCompanion")
     private let service = "\(SumiAppIdentity.bundleIdentifier).proton-pass-safari-companion"
+
+    /// Keychain items are protected by the writing binary's code signature.
+    /// Debug builds are ad-hoc signed, so every rebuild orphans the previous
+    /// item: reads and updates fail with an authorization-family status even
+    /// though the item exists. Treat the orphaned item as absent (the
+    /// extension re-sends credentials on the next login/refresh) instead of
+    /// failing the whole native-messaging pipeline.
+    private static func isSignatureInvalidatedStatus(_ status: OSStatus) -> Bool {
+        status == errSecAuthFailed
+            || status == errSecInteractionNotAllowed
+            || status == errSecMissingEntitlement
+            || status == errSecNotAvailable
+    }
 
     func loadState(
         profileId: UUID?,
@@ -50,9 +65,18 @@ final class KeychainProtonPassSafariCompanionStore: ProtonPassSafariCompanionSto
         if status == errSecItemNotFound {
             return nil
         }
+        if Self.isSignatureInvalidatedStatus(status) {
+            Self.logger.warning(
+                "Proton companion keychain read denied (status \(status, privacy: .public)); treating stored state as absent"
+            )
+            return nil
+        }
         guard status == errSecSuccess,
               let data = result as? Data
         else {
+            Self.logger.error(
+                "Proton companion keychain read failed (status \(status, privacy: .public))"
+            )
             throw CompanionApplicationMessageError.secureStoreFailure
         }
         return try JSONDecoder().decode(ProtonPassSafariCompanionState.self, from: data)
@@ -79,14 +103,27 @@ final class KeychainProtonPassSafariCompanionStore: ProtonPassSafariCompanionSto
         if updateStatus == errSecSuccess {
             return
         }
-        guard updateStatus == errSecItemNotFound else {
-            throw CompanionApplicationMessageError.secureStoreFailure
+        if updateStatus != errSecItemNotFound {
+            guard Self.isSignatureInvalidatedStatus(updateStatus) else {
+                Self.logger.error(
+                    "Proton companion keychain update failed (status \(updateStatus, privacy: .public))"
+                )
+                throw CompanionApplicationMessageError.secureStoreFailure
+            }
+            // Self-heal: replace the item orphaned by a code-signature change.
+            Self.logger.warning(
+                "Proton companion keychain update denied (status \(updateStatus, privacy: .public)); replacing orphaned item"
+            )
+            SecItemDelete(query as CFDictionary)
         }
 
         var addQuery = query
         addQuery.merge(attributes) { _, new in new }
         let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
         guard addStatus == errSecSuccess else {
+            Self.logger.error(
+                "Proton companion keychain add failed (status \(addStatus, privacy: .public))"
+            )
             throw CompanionApplicationMessageError.secureStoreFailure
         }
     }
@@ -98,7 +135,13 @@ final class KeychainProtonPassSafariCompanionStore: ProtonPassSafariCompanionSto
             kSecAttrAccount as String: account(profileId: profileId, extensionId: extensionId),
         ]
         let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
+        guard status == errSecSuccess
+            || status == errSecItemNotFound
+            || Self.isSignatureInvalidatedStatus(status)
+        else {
+            Self.logger.error(
+                "Proton companion keychain delete failed (status \(status, privacy: .public))"
+            )
             throw CompanionApplicationMessageError.secureStoreFailure
         }
     }
