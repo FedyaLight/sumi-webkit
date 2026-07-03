@@ -37,8 +37,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
             previewIcon: nil,
             sourceZone: .essentials,
             sourceSize: sourceSize,
-            sourceOffsetFromBottomLeading: CGPoint(x: 24, y: 20),
-            pinnedConfig: .large
+            sourceOffsetFromBottomLeading: CGPoint(x: 24, y: 20)
         )
 
         XCTAssertEqual(

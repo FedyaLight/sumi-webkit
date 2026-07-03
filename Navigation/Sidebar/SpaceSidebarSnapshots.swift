@@ -224,12 +224,10 @@ struct SpaceSidebarPageSnapshot {
     let extensionActions: ExtensionActionGridSnapshot?
     let essentials: EssentialsSnapshot?
     let pinnedItems: [SpacePinnedItemSnapshot]
-    let regularItems: [SpaceTabRowSnapshot]
     let regularTabs: [SpaceTabRowSnapshot]
     let showsNewTabButtonInList: Bool
     let showsTopNewTabButton: Bool
     let rowCornerRadius: CGFloat
-    let pinnedTabsConfiguration: PinnedTabsConfiguration
     let scrollViewport: SpaceSidebarSnapshotViewport
 }
 
@@ -355,12 +353,10 @@ enum SpaceSidebarTransitionSnapshotBuilder {
                 browserContext: browserContext,
                 windowState: windowState
             ),
-            regularItems: regularTabs,
             regularTabs: regularTabs,
             showsNewTabButtonInList: settings.showNewTabButtonInTabList,
             showsTopNewTabButton: settings.tabListNewTabButtonPosition == .top,
             rowCornerRadius: settings.resolvedCornerRadius(12),
-            pinnedTabsConfiguration: .large,
             scrollViewport: scrollViewport
         )
     }

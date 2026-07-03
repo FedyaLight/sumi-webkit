@@ -39,8 +39,7 @@ struct PinnedTabView: View {
     @State private var isActionHovered = false
 
     var body: some View {
-        let pinnedTabsConfiguration: PinnedTabsConfiguration = .large
-        let cornerRadius = sumiSettings.resolvedCornerRadius(pinnedTabsConfiguration.cornerRadius)
+        let cornerRadius = sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius)
         ZStack {
             PinnedTileVisual(
                 tabIcon: tabIcon,
@@ -49,7 +48,6 @@ struct PinnedTabView: View {
                 presentationState: presentationState,
                 isHovered: displayIsHovered,
                 showsSplitGroupOutline: showsSplitGroupOutline,
-                configuration: pinnedTabsConfiguration,
                 accentSourceURL: accentSourceURL ?? liveTab?.url,
                 accentSourcePartition: accentSourcePartition
             )
@@ -112,8 +110,8 @@ struct PinnedTabView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: pinnedTabsConfiguration.height)
-        .frame(minWidth: pinnedTabsConfiguration.minWidth)
+        .frame(height: PinnedTileMetrics.height)
+        .frame(minWidth: PinnedTileMetrics.minWidth)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onTapGesture(perform: action)
         .accessibilityIdentifier(accessibilityID ?? "pinned-tile")
@@ -223,7 +221,6 @@ struct PinnedTileVisual: View {
     var isHovered: Bool = false
     var showsSplitGroupOutline: Bool = false
     var faviconOpacity: Double = 1
-    var configuration: PinnedTabsConfiguration?
     var accentSourceURL: URL?
     var accentSourcePartition: SumiFaviconPartition?
 
@@ -246,8 +243,7 @@ struct PinnedTileVisual: View {
     }
 
     var body: some View {
-        let pinnedTabsConfiguration = configuration ?? .large
-        let cornerRadius = sumiSettings.resolvedCornerRadius(pinnedTabsConfiguration.cornerRadius)
+        let cornerRadius = sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius)
 
         ZStack {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -264,7 +260,7 @@ struct PinnedTileVisual: View {
                 Spacer()
                 VStack {
                     Spacer()
-                    resolvedFaviconSymbol(height: pinnedTabsConfiguration.faviconHeight)
+                    resolvedFaviconSymbol(height: PinnedTileMetrics.faviconHeight)
                         .saturation(presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
                         .opacity((presentationState.shouldDesaturateIcon ? 0.8 : 1.0) * faviconOpacity)
                     Spacer()
@@ -275,22 +271,22 @@ struct PinnedTileVisual: View {
             if showsSplitGroupOutline {
                 PinnedTileSplitGroupOutlineMask(
                     corner: cornerRadius,
-                    thickness: max(1.25, pinnedTabsConfiguration.strokeWidth * 0.7),
+                    thickness: max(1.25, PinnedTileMetrics.strokeWidth * 0.7),
                     strokeColor: selectionAccentColor
                 )
                 .allowsHitTesting(false)
             } else if presentationState.isSelected {
-                accentSelectionRingOverlay(
+                PinnedTileSelectionRing(
                     corner: cornerRadius,
-                    thickness: pinnedTabsConfiguration.strokeWidth,
+                    thickness: PinnedTileMetrics.strokeWidth,
                     color: selectionAccentColor
                 )
                 .allowsHitTesting(false)
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: pinnedTabsConfiguration.height)
-        .frame(minWidth: pinnedTabsConfiguration.minWidth)
+        .frame(height: PinnedTileMetrics.height)
+        .frame(minWidth: PinnedTileMetrics.minWidth)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .task(id: selectionAccentLoadKey) {
             await loadSelectionAccentColorIfNeeded()
@@ -406,24 +402,25 @@ struct PinnedTileVisual: View {
         }
         .frame(width: height, height: height)
     }
+}
 
-    private func accentSelectionRingOverlay(
-        corner: CGFloat,
-        thickness: CGFloat,
-        color: Color
-    ) -> some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            let strokeInset = thickness / 2
-            let rect = RoundedRectangle(
-                cornerRadius: max(0, corner - strokeInset),
-                style: .continuous
-            )
-            .inset(by: strokeInset)
+/// Accent stroke drawn inside a selected pinned/essential tile. Shared by the
+/// live `PinnedTileVisual` and the transition-snapshot tile so both keep an
+/// identical selection ring. Fills the available frame (no `GeometryReader`
+/// needed — a `Shape` already sizes to its container).
+struct PinnedTileSelectionRing: View {
+    let corner: CGFloat
+    let thickness: CGFloat
+    var color: Color
 
-            rect.stroke(color, lineWidth: thickness)
-            .frame(width: size.width, height: size.height)
-        }
+    var body: some View {
+        let strokeInset = thickness / 2
+        RoundedRectangle(
+            cornerRadius: max(0, corner - strokeInset),
+            style: .continuous
+        )
+        .inset(by: strokeInset)
+        .stroke(color, lineWidth: thickness)
     }
 }
 

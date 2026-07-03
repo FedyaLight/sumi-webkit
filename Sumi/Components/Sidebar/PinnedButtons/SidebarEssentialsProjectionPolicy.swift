@@ -51,7 +51,6 @@ enum SidebarEssentialsProjectionPolicy {
     static func make(
         items: [ShortcutPin],
         width: CGFloat,
-        configuration: PinnedTabsConfiguration,
         dragState: SidebarDragState
     ) -> SidebarEssentialsProjectedLayout {
         let baseVisibleItems = resolvedVisibleItems(
@@ -65,16 +64,12 @@ enum SidebarEssentialsProjectionPolicy {
             canAcceptDrop: canAcceptDrop,
             essentialsStoreIsEmpty: items.isEmpty
         )
-        let capacityColumnCount = resolvedCapacityColumnCount(
-            for: width,
-            configuration: configuration
-        )
+        let capacityColumnCount = resolvedCapacityColumnCount(for: width)
         let tileWidth = resolvedTileWidth(
             width: width,
-            columnCount: capacityColumnCount,
-            configuration: configuration
+            columnCount: capacityColumnCount
         )
-        let tileSize = CGSize(width: tileWidth, height: configuration.height)
+        let tileSize = CGSize(width: tileWidth, height: PinnedTileMetrics.height)
 
         return SidebarEssentialsProjectedLayout(
             layoutItems: layoutItems,
@@ -84,14 +79,12 @@ enum SidebarEssentialsProjectionPolicy {
             rows: projectedRows(
                 from: layoutItems,
                 capacityColumnCount: capacityColumnCount,
-                width: width,
-                configuration: configuration
+                width: width
             ),
             visibleRows: projectedRows(
                 from: baseVisibleItems,
                 capacityColumnCount: capacityColumnCount,
-                width: width,
-                configuration: configuration
+                width: width
             ),
             canAcceptDrop: canAcceptDrop
         )
@@ -216,15 +209,14 @@ enum SidebarEssentialsProjectionPolicy {
     }
 
     private static func resolvedCapacityColumnCount(
-        for width: CGFloat,
-        configuration: PinnedTabsConfiguration
+        for width: CGFloat
     ) -> Int {
         guard width > 0 else { return 1 }
 
         var columns = maxColumns
         while columns > 1 {
-            let neededWidth = CGFloat(columns) * configuration.minWidth
-                + CGFloat(columns - 1) * configuration.gridSpacing
+            let neededWidth = CGFloat(columns) * PinnedTileMetrics.minWidth
+                + CGFloat(columns - 1) * PinnedTileMetrics.gridSpacing
             if neededWidth <= width {
                 break
             }
@@ -235,32 +227,28 @@ enum SidebarEssentialsProjectionPolicy {
 
     static func visualTileSize(
         width: CGFloat,
-        visualColumnCount: Int,
-        configuration: PinnedTabsConfiguration
+        visualColumnCount: Int
     ) -> CGSize {
         let tileWidth = resolvedTileWidth(
             width: width,
-            columnCount: visualColumnCount,
-            configuration: configuration
+            columnCount: visualColumnCount
         )
-        return CGSize(width: tileWidth, height: configuration.height)
+        return CGSize(width: tileWidth, height: PinnedTileMetrics.height)
     }
 
     private static func resolvedTileWidth(
         width: CGFloat,
-        columnCount: Int,
-        configuration: PinnedTabsConfiguration
+        columnCount: Int
     ) -> CGFloat {
         let columns = max(columnCount, 1)
-        let availableWidth = max(width - (CGFloat(columns - 1) * configuration.gridSpacing), 0)
-        return max(availableWidth / CGFloat(columns), configuration.minWidth)
+        let availableWidth = max(width - (CGFloat(columns - 1) * PinnedTileMetrics.gridSpacing), 0)
+        return max(availableWidth / CGFloat(columns), PinnedTileMetrics.minWidth)
     }
 
     static func projectedRows(
         from items: [ShortcutPin?],
         capacityColumnCount: Int,
-        width: CGFloat,
-        configuration: PinnedTabsConfiguration
+        width: CGFloat
     ) -> [SidebarEssentialsProjectedRow] {
         guard !items.isEmpty else { return [] }
         let safeCapacityColumnCount = max(capacityColumnCount, 1)
@@ -270,8 +258,7 @@ enum SidebarEssentialsProjectionPolicy {
             let visualColumnCount = max(1, min(rowItems.count, safeCapacityColumnCount))
             let tileSize = visualTileSize(
                 width: width,
-                visualColumnCount: visualColumnCount,
-                configuration: configuration
+                visualColumnCount: visualColumnCount
             )
 
             return SidebarEssentialsProjectedRow(

@@ -3,7 +3,6 @@ import SwiftUI
 struct SpaceSnapshotPinnedTileView: View {
     let item: SpaceShortcutSnapshot
     let tileSize: CGSize
-    let configuration: PinnedTabsConfiguration
     let tokens: ChromeThemeTokens
 
     @Environment(\.sumiSettings) private var sumiSettings
@@ -23,7 +22,7 @@ struct SpaceSnapshotPinnedTileView: View {
 
             SpaceSnapshotIconView(
                 icon: item.icon,
-                size: configuration.faviconHeight,
+                size: PinnedTileMetrics.faviconHeight,
                 foregroundColor: tokens.primaryText
             )
             .saturation(item.presentationState.shouldDesaturateIcon ? 0.0 : 1.0)
@@ -33,15 +32,15 @@ struct SpaceSnapshotPinnedTileView: View {
             if item.showsSplitOutline {
                 PinnedTileSplitGroupOutlineMask(
                     corner: cornerRadius,
-                    thickness: max(1.25, configuration.strokeWidth * 0.7),
+                    thickness: max(1.25, PinnedTileMetrics.strokeWidth * 0.7),
                     strokeColor: selectionAccentColor
                 )
                 .frame(width: tileSize.width, height: tileSize.height)
                 .allowsHitTesting(false)
             } else if item.presentationState.isSelected {
-                accentSelectionRingOverlay(
+                PinnedTileSelectionRing(
                     corner: cornerRadius,
-                    thickness: configuration.strokeWidth,
+                    thickness: PinnedTileMetrics.strokeWidth,
                     color: selectionAccentColor
                 )
                 .frame(width: tileSize.width, height: tileSize.height)
@@ -68,7 +67,7 @@ struct SpaceSnapshotPinnedTileView: View {
     }
 
     private var cornerRadius: CGFloat {
-        sumiSettings.resolvedCornerRadius(configuration.cornerRadius)
+        sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius)
     }
 
     private var backgroundColor: Color {
@@ -99,19 +98,5 @@ struct SpaceSnapshotPinnedTileView: View {
                     .fill(tokens.fieldBackground.opacity(0.88))
             )
             .accessibilityHidden(true)
-    }
-
-    private func accentSelectionRingOverlay(
-        corner: CGFloat,
-        thickness: CGFloat,
-        color: Color
-    ) -> some View {
-        let strokeInset = thickness / 2
-        return RoundedRectangle(
-            cornerRadius: max(0, corner - strokeInset),
-            style: .continuous
-        )
-        .inset(by: strokeInset)
-        .stroke(color, lineWidth: thickness)
     }
 }

@@ -382,7 +382,6 @@ struct TabFolderView: View {
                 item: SumiDragItem.folder(folderId: folder.id, title: folder.name),
                 sourceZone: parentFolderId.map(DropZoneID.folder) ?? .spacePinned(space.id),
                 previewKind: .folderRow,
-                pinnedConfig: .large,
                 folderGlyphPresentation: folderGlyphPresentation(
                     using: projection,
                     contentProjection: contentProjection

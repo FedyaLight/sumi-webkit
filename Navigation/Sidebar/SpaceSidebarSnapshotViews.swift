@@ -26,7 +26,7 @@ struct SpaceTransitionSnapshotPageView: View, @preconcurrency Equatable {
     }
 
     private var innerWidth: CGFloat {
-        max(width - BrowserWindowState.sidebarHorizontalPadding, 0)
+        BrowserWindowState.sidebarContentWidth(for: width)
     }
 
     var body: some View {
@@ -43,7 +43,6 @@ struct SpaceTransitionSnapshotPageView: View, @preconcurrency Equatable {
                 EquatableView(content: EssentialsSnapshotGrid(
                     snapshot: essentials,
                     width: innerWidth,
-                    configuration: snapshot.pinnedTabsConfiguration,
                     tokens: tokens
                 ))
                 .padding(.horizontal, 8)
@@ -240,13 +239,11 @@ private struct SpaceSnapshotTitleView: View {
 struct EssentialsSnapshotGrid: View, @preconcurrency Equatable {
     let snapshot: EssentialsSnapshot
     let width: CGFloat
-    let configuration: PinnedTabsConfiguration
     let tokens: ChromeThemeTokens
 
     static func == (lhs: EssentialsSnapshotGrid, rhs: EssentialsSnapshotGrid) -> Bool {
         lhs.snapshot.renderIdentity == rhs.snapshot.renderIdentity &&
-            lhs.width == rhs.width &&
-            lhs.configuration == rhs.configuration
+            lhs.width == rhs.width
     }
 
     private var rows: [EssentialsSnapshotRow] {
@@ -266,8 +263,8 @@ struct EssentialsSnapshotGrid: View, @preconcurrency Equatable {
 
         var columns = SidebarEssentialsProjectionPolicy.maxColumns
         while columns > 1 {
-            let neededWidth = CGFloat(columns) * configuration.minWidth
-                + CGFloat(columns - 1) * configuration.gridSpacing
+            let neededWidth = CGFloat(columns) * PinnedTileMetrics.minWidth
+                + CGFloat(columns - 1) * PinnedTileMetrics.gridSpacing
             if neededWidth <= width {
                 break
             }
@@ -277,14 +274,13 @@ struct EssentialsSnapshotGrid: View, @preconcurrency Equatable {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: configuration.gridSpacing) {
+        VStack(alignment: .leading, spacing: PinnedTileMetrics.gridSpacing) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: configuration.gridSpacing) {
+                HStack(spacing: PinnedTileMetrics.gridSpacing) {
                     ForEach(row.items) { item in
                         SpaceSnapshotPinnedTileView(
                             item: item,
                             tileSize: row.tileSize,
-                            configuration: configuration,
                             tokens: tokens
                         )
                     }
@@ -301,9 +297,9 @@ struct EssentialsSnapshotGrid: View, @preconcurrency Equatable {
 
     private func visualTileSize(visualColumnCount: Int) -> CGSize {
         let columns = max(visualColumnCount, 1)
-        let availableWidth = max(width - (CGFloat(columns - 1) * configuration.gridSpacing), 0)
-        let tileWidth = max(availableWidth / CGFloat(columns), configuration.minWidth)
-        return CGSize(width: tileWidth, height: configuration.height)
+        let availableWidth = max(width - (CGFloat(columns - 1) * PinnedTileMetrics.gridSpacing), 0)
+        let tileWidth = max(availableWidth / CGFloat(columns), PinnedTileMetrics.minWidth)
+        return CGSize(width: tileWidth, height: PinnedTileMetrics.height)
     }
 
     private struct EssentialsSnapshotRow {
@@ -499,12 +495,8 @@ private struct SpaceSnapshotShortcutRowView: View {
             .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
 
             if shortcut.showsAudioButton {
-                Image(systemName: shortcut.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(shortcut.isMuted ? tokens.secondaryText : tokens.primaryText)
-                    .frame(width: 22, height: 22)
+                SpaceSnapshotRowAudioGlyph(isMuted: shortcut.isMuted, tokens: tokens)
                     .padding(.trailing, SidebarRowLayout.iconTrailingSpacing)
-                    .accessibilityHidden(true)
             }
 
             SpaceSnapshotTitleLabel(
@@ -551,7 +543,7 @@ private struct SpaceSnapshotRegularTabsSectionView: View {
                 }
 
                 VStack(spacing: 2) {
-                    ForEach(snapshot.regularItems) { tab in
+                    ForEach(snapshot.regularTabs) { tab in
                         SpaceSnapshotRegularTabRowView(
                             tab: tab,
                             rowCornerRadius: snapshot.rowCornerRadius,
@@ -598,11 +590,7 @@ private struct SpaceSnapshotRegularTabRowView: View {
             favicon
 
             if tab.showsAudioButton {
-                Image(systemName: tab.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(tab.isMuted ? tokens.secondaryText : tokens.primaryText)
-                    .frame(width: 22, height: 22)
-                    .accessibilityHidden(true)
+                SpaceSnapshotRowAudioGlyph(isMuted: tab.isMuted, tokens: tokens)
             }
 
             SpaceSnapshotTitleLabel(
@@ -663,6 +651,21 @@ private struct SpaceSnapshotTitleLabel: View {
             .padding(.trailing, trailingPadding)
             .frame(height: height, alignment: .leading)
             .accessibilityLabel(title)
+    }
+}
+
+/// Static mute/unmute glyph for snapshot rows (regular tabs and shortcuts).
+/// The live rows use interactive audio buttons; snapshots only need the glyph.
+struct SpaceSnapshotRowAudioGlyph: View {
+    let isMuted: Bool
+    let tokens: ChromeThemeTokens
+
+    var body: some View {
+        Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(isMuted ? tokens.secondaryText : tokens.primaryText)
+            .frame(width: 22, height: 22)
+            .accessibilityHidden(true)
     }
 }
 

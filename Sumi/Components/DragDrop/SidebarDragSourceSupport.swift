@@ -44,7 +44,6 @@ struct SidebarDragSourceConfiguration {
     let previewKind: SidebarDragPreviewKind
     let previewIcon: Image?
     let chromeTemplateSystemImageName: String?
-    let pinnedConfig: PinnedTabsConfiguration
     let previewPresentationState: ShortcutPresentationState?
     let folderGlyphPresentation: SumiFolderGlyphPresentationState?
     let folderGlyphPalette: SumiFolderGlyphPalette?
@@ -58,7 +57,6 @@ struct SidebarDragSourceConfiguration {
         previewKind: SidebarDragPreviewKind,
         previewIcon: Image? = nil,
         chromeTemplateSystemImageName: String? = nil,
-        pinnedConfig: PinnedTabsConfiguration = .large,
         previewPresentationState: ShortcutPresentationState? = nil,
         folderGlyphPresentation: SumiFolderGlyphPresentationState? = nil,
         folderGlyphPalette: SumiFolderGlyphPalette? = nil,
@@ -71,7 +69,6 @@ struct SidebarDragSourceConfiguration {
         self.previewKind = previewKind
         self.previewIcon = previewIcon
         self.chromeTemplateSystemImageName = chromeTemplateSystemImageName
-        self.pinnedConfig = pinnedConfig
         self.previewPresentationState = previewPresentationState
         self.folderGlyphPresentation = folderGlyphPresentation
         self.folderGlyphPalette = folderGlyphPalette
@@ -89,7 +86,6 @@ struct SidebarDragSourceConfiguration {
             previewKind: previewKind,
             previewIcon: previewIcon,
             chromeTemplateSystemImageName: chromeTemplateSystemImageName,
-            pinnedConfig: pinnedConfig,
             previewPresentationState: previewPresentationState,
             folderGlyphPresentation: folderGlyphPresentation,
             folderGlyphPalette: folderGlyphPalette,
@@ -119,7 +115,6 @@ enum SidebarDragPreviewSessionFactory {
             sourceZone: configuration.sourceZone,
             sourceSize: sourceSize,
             sourceOffsetFromBottomLeading: point,
-            pinnedConfig: configuration.pinnedConfig,
             folderGlyphPresentation: configuration.folderGlyphPresentation,
             folderGlyphPalette: configuration.folderGlyphPalette
         )
@@ -140,7 +135,6 @@ enum SidebarDragPreviewSessionFactory {
                 fromBottomLeading: point,
                 in: sourceSize
             ),
-            pinnedConfig: configuration.pinnedConfig,
             shortcutPresentationState: configuration.previewPresentationState,
             folderGlyphPresentation: configuration.folderGlyphPresentation,
             folderGlyphPalette: configuration.folderGlyphPalette

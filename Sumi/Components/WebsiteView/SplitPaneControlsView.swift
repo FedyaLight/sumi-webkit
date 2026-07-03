@@ -329,7 +329,6 @@ private final class SplitPaneDragButton: SplitPaneToolbarButton, NSDraggingSourc
             chromeTemplateSystemImageName: nil,
             sourceSize: CGSize(width: 180, height: SidebarRowLayout.rowHeight),
             normalizedTopLeadingAnchor: CGPoint(x: 0.5, y: 0.5),
-            pinnedConfig: .large,
             shortcutPresentationState: nil,
             folderGlyphPresentation: nil,
             folderGlyphPalette: nil

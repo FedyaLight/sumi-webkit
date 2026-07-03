@@ -227,6 +227,26 @@ final class ShortcutPin: NSObject, ObservableObject, Identifiable {
         ) == nil
     }
 
+    /// Emoji glyph chosen by the user for this pin (`iconAsset`), if the asset
+    /// renders as an emoji. `nil` when the asset is an SF Symbol or absent.
+    var glyphText: String? {
+        guard let iconAsset, SumiPersistentGlyph.presentsAsEmoji(iconAsset) else {
+            return nil
+        }
+        return iconAsset
+    }
+
+    /// SF Symbol name chosen by the user for this pin (`iconAsset`), if the
+    /// asset renders as a template symbol. `nil` when the asset is an emoji or
+    /// absent. Distinct from `storedChromeTemplateSystemImageName`, which is
+    /// derived from the cached favicon/surface rather than the chosen asset.
+    var chromeTemplateSystemImageName: String? {
+        guard let iconAsset, SumiPersistentGlyph.presentsAsEmoji(iconAsset) == false else {
+            return nil
+        }
+        return SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset)
+    }
+
     var storedChromeTemplateSystemImageName: String? {
         storedChromeTemplateSystemImageName(for: .regular(executionProfileId ?? profileId))
     }

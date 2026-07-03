@@ -27,7 +27,6 @@ struct SumiNativeDragPreviewDescriptor {
     let sourceZone: DropZoneID
     let sourceSize: CGSize
     let sourceOffsetFromBottomLeading: CGPoint
-    let pinnedConfig: PinnedTabsConfiguration
     let folderGlyphPresentation: SumiFolderGlyphPresentationState?
     let folderGlyphPalette: SumiFolderGlyphPalette?
 
@@ -37,7 +36,6 @@ struct SumiNativeDragPreviewDescriptor {
         sourceZone: DropZoneID,
         sourceSize: CGSize,
         sourceOffsetFromBottomLeading: CGPoint,
-        pinnedConfig: PinnedTabsConfiguration,
         folderGlyphPresentation: SumiFolderGlyphPresentationState? = nil,
         folderGlyphPalette: SumiFolderGlyphPalette? = nil
     ) {
@@ -46,7 +44,6 @@ struct SumiNativeDragPreviewDescriptor {
         self.sourceZone = sourceZone
         self.sourceSize = sourceSize
         self.sourceOffsetFromBottomLeading = sourceOffsetFromBottomLeading
-        self.pinnedConfig = pinnedConfig
         self.folderGlyphPresentation = folderGlyphPresentation
         self.folderGlyphPalette = folderGlyphPalette
     }
@@ -88,14 +85,14 @@ final class SumiNativeDragImageFactory {
                 return descriptor.sourceSize
             }
             return CGSize(
-                width: descriptor.pinnedConfig.minWidth,
-                height: descriptor.pinnedConfig.height
+                width: PinnedTileMetrics.minWidth,
+                height: PinnedTileMetrics.height
             )
         case .sourceSnapshot:
             if descriptor.sourceZone == .essentials {
                 return CGSize(
-                    width: descriptor.pinnedConfig.minWidth,
-                    height: descriptor.pinnedConfig.height
+                    width: PinnedTileMetrics.minWidth,
+                    height: PinnedTileMetrics.height
                 )
             }
             fallthrough
@@ -204,17 +201,17 @@ private struct SumiNativeDragPreviewRenderable: View {
 
     private var essentialsTile: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: descriptor.pinnedConfig.cornerRadius, style: .continuous)
+            RoundedRectangle(cornerRadius: PinnedTileMetrics.cornerRadius, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.95))
 
             iconView
                 .frame(
-                    width: descriptor.pinnedConfig.faviconHeight,
-                    height: descriptor.pinnedConfig.faviconHeight
+                    width: PinnedTileMetrics.faviconHeight,
+                    height: PinnedTileMetrics.faviconHeight
                 )
         }
         .frame(width: size.width, height: size.height)
-        .clipShape(RoundedRectangle(cornerRadius: descriptor.pinnedConfig.cornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: PinnedTileMetrics.cornerRadius, style: .continuous))
         .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
     }
 

@@ -21,7 +21,6 @@ struct SidebarDragPreviewModel {
     let chromeTemplateSystemImageName: String?
     let sourceSize: CGSize
     let normalizedTopLeadingAnchor: CGPoint
-    let pinnedConfig: PinnedTabsConfiguration
     let shortcutPresentationState: ShortcutPresentationState?
     let folderGlyphPresentation: SumiFolderGlyphPresentationState?
     let folderGlyphPalette: SumiFolderGlyphPalette?

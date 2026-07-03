@@ -49,17 +49,6 @@ final class SpaceSidebarTransitionCoordinator {
         transitionState.visualSelectedSpaceId ?? committedSpaceId(in: context)
     }
 
-    func usesSharedPinnedGrid(
-        sourceSpace: Space,
-        destinationSpace: Space,
-        context: Context
-    ) -> Bool {
-        SpaceSidebarEssentialsPlacementPolicy.usesSharedPinnedGrid(
-            sourceProfileId: resolvedPageProfileId(for: sourceSpace, context: context),
-            destinationProfileId: resolvedPageProfileId(for: destinationSpace, context: context)
-        )
-    }
-
     func space(for id: UUID?, in context: Context) -> Space? {
         space(for: id, in: context.spaces)
     }
@@ -280,6 +269,26 @@ final class SpaceSidebarTransitionCoordinator {
                 context: context
             )
         }
+    }
+
+    /// Switches to the space `offset` positions away from the current one,
+    /// wrapping around the ends. Used by keyboard shortcuts and sidebar mouse
+    /// buttons; routes through the same animated click path as `switchSpace`.
+    func switchRelativeSpace(offset: Int, context: Context) {
+        let spaces = context.spaces
+        guard offset != 0, spaces.count > 1 else { return }
+
+        guard let currentSpaceId = context.windowState.currentSpaceId,
+              let currentIndex = spaces.firstIndex(where: { $0.id == currentSpaceId })
+        else {
+            return
+        }
+
+        let normalizedOffset = ((offset % spaces.count) + spaces.count) % spaces.count
+        let targetIndex = (currentIndex + normalizedOffset) % spaces.count
+        guard targetIndex != currentIndex else { return }
+
+        switchSpace(to: spaces[targetIndex], context: context)
     }
 
     func cancelLocalSpaceTransitionIfNeeded(context: Context, cancelTheme: Bool) {

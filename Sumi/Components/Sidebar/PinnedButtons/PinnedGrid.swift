@@ -66,20 +66,15 @@ struct PinnedGrid: View {
         let _ = browserContext.tabStructuralRevision()
         let shouldReduceMotion = reduceMotion || sumiSettings.shouldReduceChromeMotion
 
-        let pinnedTabsConfiguration: PinnedTabsConfiguration = .large
         // Use profile-filtered essentials
         let effectiveProfileId = profileId ?? windowState.currentProfileId ?? browserContext.currentProfile()?.id
         let items: [ShortcutPin] = effectiveProfileId != nil
             ? browserContext.tabManager.essentialPins(for: effectiveProfileId)
             : []
-        let gridProjection = SidebarEssentialsGridProjection(
-            width: width,
-            configuration: pinnedTabsConfiguration
-        )
+        let gridProjection = SidebarEssentialsGridProjection(width: width)
         let projectedLayout = SidebarEssentialsProjectionPolicy.make(
             items: items,
             width: width,
-            configuration: pinnedTabsConfiguration,
             dragState: dragState
         )
         let rawPreviewState = dragState.essentialsPreviewState(for: geometrySpaceId)
@@ -165,15 +160,14 @@ struct PinnedGrid: View {
                 .frame(height: revealHeight, alignment: .top)
                 .animation(shouldAnimateDropLayout ? .easeInOut(duration: 0.18) : nil, value: showsRevealGap)
             } else {
-                LazyVStack(spacing: pinnedTabsConfiguration.gridSpacing) {
+                LazyVStack(spacing: PinnedTileMetrics.gridSpacing) {
                     ForEach(displayRows, id: \.stableID) { row in
-                        HStack(spacing: pinnedTabsConfiguration.gridSpacing) {
+                        HStack(spacing: PinnedTileMetrics.gridSpacing) {
                             ForEach(row.cells, id: \.stableID) { cell in
                                 switch cell {
                                 case .pin(let pin):
                                     renderTile(
                                         for: pin,
-                                        configuration: pinnedTabsConfiguration,
                                         tileSize: row.tileSize
                                     )
                                 case .gap:
@@ -219,7 +213,7 @@ struct PinnedGrid: View {
             dropFrame: dropFrame,
             dropSlotFrames: dropSlotFrames,
             itemSize: projectedLayout.tileSize,
-            gridSpacing: pinnedTabsConfiguration.gridSpacing,
+            gridSpacing: PinnedTileMetrics.gridSpacing,
             canAcceptDrop: projectedLayout.canAcceptDrop,
             generation: dragState.sidebarGeometryGeneration,
             isEnabled: reportsDetailedGeometry
@@ -236,7 +230,6 @@ struct PinnedGrid: View {
     @ViewBuilder
     private func renderTile(
         for pin: ShortcutPin,
-        configuration: PinnedTabsConfiguration,
         tileSize: CGSize
     ) -> some View {
         if let placeholderGroup = splitPlaceholderGroup(for: pin) {
@@ -285,7 +278,6 @@ struct PinnedGrid: View {
                 onActivate: { activate(pin) },
                 onUnload: { unload(pin) },
                 contextMenuActions: contextMenuActions,
-                dragPinnedConfiguration: configuration,
                 dragIsEnabled: !browserContext.isTransitioningProfile() && isAppKitInteractionEnabled,
                 isAppKitInteractionEnabled: isAppKitInteractionEnabled
             )
@@ -561,7 +553,6 @@ private struct PinnedSplitPlaceholderTile: View {
     @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
 
     var body: some View {
-        let configuration = PinnedTabsConfiguration.large
         let resolvedFavicon = currentLoadedStoredFavicon ?? pin.storedFaviconImage(partition: faviconPartition)
         let resolvedChromeTemplateSystemImageName = currentLoadedStoredFavicon == nil
             ? pin.storedChromeTemplateSystemImageName(for: faviconPartition)
@@ -574,16 +565,15 @@ private struct PinnedSplitPlaceholderTile: View {
             isHovered: displayIsHovered,
             showsSplitGroupOutline: true,
             faviconOpacity: 1,
-            configuration: configuration,
             accentSourceURL: pin.launchURL,
             accentSourcePartition: faviconPartition
         )
         .frame(maxWidth: .infinity)
-        .frame(height: configuration.height)
-        .frame(minWidth: configuration.minWidth)
+        .frame(height: PinnedTileMetrics.height)
+        .frame(minWidth: PinnedTileMetrics.minWidth)
         .contentShape(
             RoundedRectangle(
-                cornerRadius: sumiSettings.resolvedCornerRadius(configuration.cornerRadius),
+                cornerRadius: sumiSettings.resolvedCornerRadius(PinnedTileMetrics.cornerRadius),
                 style: .continuous
             )
         )
@@ -642,22 +632,6 @@ private struct PinnedSplitPlaceholderTile: View {
     }
 }
 
-private extension ShortcutPin {
-    var glyphText: String? {
-        guard let iconAsset, SumiPersistentGlyph.presentsAsEmoji(iconAsset) else {
-            return nil
-        }
-        return iconAsset
-    }
-
-    var chromeTemplateSystemImageName: String? {
-        guard let iconAsset, SumiPersistentGlyph.presentsAsEmoji(iconAsset) == false else {
-            return nil
-        }
-        return SumiPersistentGlyph.resolvedLauncherSystemImageName(iconAsset)
-    }
-}
-
 private struct EssentialTileContextMenuActions {
     let makeEntries: () -> [SidebarContextMenuEntry]
 
@@ -676,7 +650,6 @@ private struct PinnedTile: View {
     let onActivate: () -> Void
     let onUnload: () -> Void
     let contextMenuActions: EssentialTileContextMenuActions
-    let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
 
@@ -693,7 +666,6 @@ private struct PinnedTile: View {
                     onActivate: onActivate,
                     onUnload: onUnload,
                     contextMenuActions: contextMenuActions,
-                    dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled
                 )
@@ -707,7 +679,6 @@ private struct PinnedTile: View {
                     onActivate: onActivate,
                     onUnload: onUnload,
                     contextMenuActions: contextMenuActions,
-                    dragPinnedConfiguration: dragPinnedConfiguration,
                     dragIsEnabled: dragIsEnabled,
                     isAppKitInteractionEnabled: isAppKitInteractionEnabled
                 )
@@ -727,7 +698,6 @@ private struct LivePinnedTileContent: View {
     let onActivate: () -> Void
     let onUnload: () -> Void
     let contextMenuActions: EssentialTileContextMenuActions
-    let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
     @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
@@ -754,7 +724,6 @@ private struct LivePinnedTileContent: View {
                 previewIcon: resolvedFavicon,
                 chromeTemplateSystemImageName: chromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
-                pinnedConfiguration: dragPinnedConfiguration,
                 exclusionZones: dragExclusionZones,
                 onActivate: onActivate,
                 isEnabled: dragIsEnabled
@@ -845,7 +814,6 @@ private struct StoredPinnedTileContent: View {
     let onActivate: () -> Void
     let onUnload: () -> Void
     let contextMenuActions: EssentialTileContextMenuActions
-    let dragPinnedConfiguration: PinnedTabsConfiguration
     let dragIsEnabled: Bool
     let isAppKitInteractionEnabled: Bool
     @StateObject private var storedFaviconLoader = SidebarStoredFaviconLoader()
@@ -869,7 +837,6 @@ private struct StoredPinnedTileContent: View {
                 previewIcon: resolvedFavicon,
                 chromeTemplateSystemImageName: resolvedChromeTemplateSystemImageName,
                 previewPresentationState: presentationState,
-                pinnedConfiguration: dragPinnedConfiguration,
                 exclusionZones: dragExclusionZones,
                 onActivate: onActivate,
                 isEnabled: dragIsEnabled
@@ -923,7 +890,6 @@ func makePinnedTileDragSourceConfiguration(
     previewIcon: Image?,
     chromeTemplateSystemImageName: String? = nil,
     previewPresentationState: ShortcutPresentationState? = nil,
-    pinnedConfiguration: PinnedTabsConfiguration,
     exclusionZones: [SidebarDragSourceExclusionZone],
     onActivate: (() -> Void)? = nil,
     isEnabled: Bool = true
@@ -938,7 +904,6 @@ func makePinnedTileDragSourceConfiguration(
         previewKind: .essentialsTile,
         previewIcon: previewIcon,
         chromeTemplateSystemImageName: chromeTemplateSystemImageName,
-        pinnedConfig: pinnedConfiguration,
         previewPresentationState: previewPresentationState,
         exclusionZones: exclusionZones,
         onActivate: onActivate,

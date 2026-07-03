@@ -1197,12 +1197,10 @@ final class SpaceSidebarTransitionStateTests: XCTestCase {
             extensionActions: nil,
             essentials: nil,
             pinnedItems: [],
-            regularItems: [],
             regularTabs: [],
             showsNewTabButtonInList: true,
             showsTopNewTabButton: false,
             rowCornerRadius: SpaceTitleRowLayout.defaultCornerRadius,
-            pinnedTabsConfiguration: .large,
             scrollViewport: .zero
         )
     }

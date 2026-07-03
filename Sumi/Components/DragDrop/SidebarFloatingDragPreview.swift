@@ -134,8 +134,7 @@ struct SidebarFloatingDragPreview: View {
                 tabIcon: model.previewIcon ?? Image(systemName: "globe"),
                 chromeTemplateSystemImageName: model.chromeTemplateSystemImageName,
                 presentationState: model.shortcutPresentationState ?? .launcherOnly,
-                isHovered: false,
-                configuration: model.pinnedConfig
+                isHovered: false
             )
             .frame(width: size.width, height: size.height)
             .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
@@ -187,7 +186,7 @@ struct SidebarFloatingDragPreview: View {
             if model.sourceZone == .essentials, model.sourceSize.width > 0, model.sourceSize.height > 0 {
                 return model.sourceSize
             }
-            return CGSize(width: model.pinnedConfig.minWidth, height: model.pinnedConfig.height)
+            return CGSize(width: PinnedTileMetrics.minWidth, height: PinnedTileMetrics.height)
         }
 
         let profileId = hoveredPage.profileId
@@ -204,7 +203,6 @@ struct SidebarFloatingDragPreview: View {
         let projection = SidebarEssentialsProjectionPolicy.make(
             items: pins,
             width: metrics.frame.width,
-            configuration: model.pinnedConfig,
             dragState: dragState
         )
 

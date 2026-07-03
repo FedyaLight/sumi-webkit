@@ -39,14 +39,13 @@ struct SidebarEssentialsDisplayRow {
 @MainActor
 struct SidebarEssentialsGridProjection {
     let width: CGFloat
-    let configuration: PinnedTabsConfiguration
 
     func projectedContentHeight(
         for layout: SidebarEssentialsProjectedLayout
     ) -> CGFloat {
         let rows = max(layout.visibleRowCount, 1)
         return CGFloat(rows) * layout.tileSize.height
-            + CGFloat(max(rows - 1, 0)) * configuration.gridSpacing
+            + CGFloat(max(rows - 1, 0)) * PinnedTileMetrics.gridSpacing
     }
 
     func resolvedDropFrame(
@@ -57,7 +56,7 @@ struct SidebarEssentialsGridProjection {
     ) -> CGRect {
         let safeVisibleRowCount = max(visibleRowCount, 1)
         let extraRows = max(0, maxDropRowCount - safeVisibleRowCount)
-        let extraHeight = CGFloat(extraRows) * (tileSize.height + configuration.gridSpacing)
+        let extraHeight = CGFloat(extraRows) * (tileSize.height + PinnedTileMetrics.gridSpacing)
         return CGRect(
             x: 0,
             y: 0,
@@ -128,8 +127,7 @@ struct SidebarEssentialsGridProjection {
 
             let tileSize = SidebarEssentialsProjectionPolicy.visualTileSize(
                 width: width,
-                visualColumnCount: visualColumnCount,
-                configuration: configuration
+                visualColumnCount: visualColumnCount
             )
             rows.append(
                 SidebarEssentialsDisplayRow(
@@ -166,8 +164,7 @@ struct SidebarEssentialsGridProjection {
             let rows = SidebarEssentialsProjectionPolicy.projectedRows(
                 from: items,
                 capacityColumnCount: layout.capacityColumnCount,
-                width: width,
-                configuration: configuration
+                width: width
             )
             guard let rowIndex = rows.firstIndex(where: { row in
                 row.items.contains { item in
@@ -189,8 +186,8 @@ struct SidebarEssentialsGridProjection {
             return SidebarEssentialsDropSlotMetrics(
                 slot: safeSlot,
                 frame: CGRect(
-                    x: CGFloat(columnIndex) * (row.tileSize.width + configuration.gridSpacing),
-                    y: CGFloat(rowIndex) * (row.tileSize.height + configuration.gridSpacing),
+                    x: CGFloat(columnIndex) * (row.tileSize.width + PinnedTileMetrics.gridSpacing),
+                    y: CGFloat(rowIndex) * (row.tileSize.height + PinnedTileMetrics.gridSpacing),
                     width: row.tileSize.width,
                     height: row.tileSize.height
                 )

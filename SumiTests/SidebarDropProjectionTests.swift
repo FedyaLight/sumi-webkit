@@ -233,7 +233,6 @@ final class SidebarDropProjectionTests: XCTestCase {
         let layout = SidebarEssentialsProjectionPolicy.make(
             items: [first, second, third],
             width: 155,
-            configuration: .large,
             dragState: dragState
         )
 
@@ -265,7 +264,6 @@ final class SidebarDropProjectionTests: XCTestCase {
         let layout = SidebarEssentialsProjectionPolicy.make(
             items: [],
             width: 155,
-            configuration: .large,
             dragState: dragState
         )
 
