@@ -11,15 +11,7 @@ final class ExtensionPermissionDelegateCallbackOwner {
         manager: ExtensionManager,
         completionHandler: @escaping (Set<WKWebExtension.Permission>, Date?) -> Void
     ) {
-        let manifest = manager.extensionID(for: extensionContext)
-            .flatMap { manager.loadedExtensionManifests[$0] } ?? [:]
-        let policyDeniedPermissions = permissions
-            .filter { manager.shouldDenyAutoGrantForWebKitRuntime($0, manifest: manifest) }
-        for permission in policyDeniedPermissions {
-            extensionContext.setPermissionStatus(.deniedExplicitly, for: permission)
-        }
-
-        let unresolvedPermissions = permissions.subtracting(policyDeniedPermissions).filter {
+        let unresolvedPermissions = permissions.filter {
             manager.isGrantedPermissionStatus(
                 manager.effectivePermissionStatus(for: $0, in: extensionContext, tab: tab)
             ) == false

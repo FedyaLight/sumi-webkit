@@ -143,15 +143,17 @@ final class SafariExtensionSiteAccessPolicyStore {
             }
             policy = normalized
         } else {
-            let migratedRules = migratedRules(
-                extensionId: extensionId,
-                profileId: profileId
-            )
+            // Migrated per-site prompt decisions stay as rules; they override
+            // the seeded default by specificity, so the Safari-appex product
+            // default of Allow is safe to apply alongside them.
             policy = SafariExtensionSiteAccessPolicy.defaultPolicy(
                 extensionId: extensionId,
                 profileId: profileId,
-                seededRules: migratedRules,
-                defaultAccess: migratedRules.isEmpty ? .allow : .ask
+                seededRules: migratedRules(
+                    extensionId: extensionId,
+                    profileId: profileId
+                ),
+                defaultAccess: .allow
             )
             shouldSave = true
         }
@@ -209,14 +211,14 @@ final class SafariExtensionSiteAccessPolicyStore {
     private func shouldSeedSafariAppExtensionDefaultAccess(
         _ policy: SafariExtensionSiteAccessPolicy
     ) -> Bool {
-        // Older Sumi builds persisted an empty `.ask` policy for Safari app
-        // extensions before app-extension website access was fully wired.
-        // Treat only that empty shape as unconfigured; explicit denies and
-        // per-site rules keep winning.
+        // An `.ask` default the user never explicitly chose in settings is
+        // an auto-created placeholder (store auto-creation, permission-prompt
+        // rule persistence, or the private-browsing toggle can all write the
+        // policy record before seeding runs). Per-site rules are kept and
+        // still override the seeded default by specificity, so explicit
+        // denies keep winning.
         policy.defaultAccess == .ask
-            && policy.siteRules.isEmpty
-            && policy.privateAccessAllowed == false
-            && policy.hasRequestedOptionalAccessToAllHosts == false
+            && policy.defaultAccessConfiguredByUser == false
     }
 
     private func policyKey(

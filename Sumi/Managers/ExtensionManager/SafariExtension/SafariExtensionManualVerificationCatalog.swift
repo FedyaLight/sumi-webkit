@@ -97,8 +97,9 @@ enum SafariExtensionManualVerificationCatalog {
                 autofill: .classified,
                 popupAnchoring: .notVerified,
                 notes: """
-                Inline UI: orchestrator manifest content_script + dropdown.html; scripting denied \
-                (browser_specific_settings.safari) — dynamic background bootstrap blocked-by-platform.
+                Inline UI: orchestrator manifest content_script + dropdown.html; scripting granted — \
+                worker-driven client.js bootstrap unblocked (SafariExtensionScriptingRuntimeTests). \
+                Manual GUI retest pending.
                 """
             )
         default:

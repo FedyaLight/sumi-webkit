@@ -255,7 +255,7 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertEqual(result.policy.defaultAccess, .allow)
     }
 
-    func testSafariAppExtensionDefaultAccessSeedPreservesConfiguredRules() {
+    func testSafariAppExtensionDefaultAccessSeedAppliesAllowAndPreservesConfiguredRules() {
         let profile = Profile(name: "Safari App Extension Configured Rule")
         let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
         let extensionId = "safari-app-extension-configured-rule"
@@ -280,10 +280,68 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             profileId: profile.id
         )
 
-        XCTAssertFalse(result.didPersistChanges)
-        XCTAssertEqual(result.policy.defaultAccess, .ask)
+        XCTAssertTrue(result.didPersistChanges)
+        XCTAssertEqual(result.policy.defaultAccess, .allow)
         XCTAssertEqual(result.policy.siteRules.map(\.matchPattern), [pattern])
         XCTAssertEqual(result.policy.siteRules.map(\.access), [.deny])
+    }
+
+    /// Reproduces the field state that broke Proton Pass: a login prompt had
+    /// persisted an allow rule and the private-browsing toggle was on before
+    /// seeding ever ran, leaving `defaultAccess == .ask` and
+    /// `permissions.contains({origins:["*://*/*"]})` false in the extension.
+    func testSafariAppExtensionDefaultAccessSeedRepairsPromptDirtiedAskPolicy() {
+        let profile = Profile(name: "Safari App Extension Dirty Ask Repair")
+        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
+        let extensionId = "safari-app-extension-dirty-ask-repair"
+        let pattern = "https://*.proton.me/*"
+
+        store.updatePolicy(
+            extensionId: extensionId,
+            profileId: profile.id
+        ) { policy in
+            policy.siteRules = [
+                SafariExtensionSiteAccessRule(
+                    matchPattern: pattern,
+                    access: .allow,
+                    expiresAt: nil,
+                    updatedAt: Date()
+                ),
+            ]
+            policy.privateAccessAllowed = true
+        }
+
+        let result = store.seedSafariAppExtensionDefaultAccessIfNeeded(
+            extensionId: extensionId,
+            profileId: profile.id
+        )
+
+        XCTAssertTrue(result.didPersistChanges)
+        XCTAssertEqual(result.policy.defaultAccess, .allow)
+        XCTAssertTrue(result.policy.privateAccessAllowed)
+        XCTAssertEqual(result.policy.siteRules.map(\.matchPattern), [pattern])
+    }
+
+    func testSafariAppExtensionDefaultAccessSeedKeepsUserConfiguredAskDefault() {
+        let profile = Profile(name: "Safari App Extension User Ask")
+        let store = SafariExtensionSiteAccessPolicyStore(preferences: .standard)
+        let extensionId = "safari-app-extension-user-ask"
+
+        store.updatePolicy(
+            extensionId: extensionId,
+            profileId: profile.id
+        ) { policy in
+            policy.defaultAccess = .ask
+            policy.defaultAccessConfiguredByUser = true
+        }
+
+        let result = store.seedSafariAppExtensionDefaultAccessIfNeeded(
+            extensionId: extensionId,
+            profileId: profile.id
+        )
+
+        XCTAssertFalse(result.didPersistChanges)
+        XCTAssertEqual(result.policy.defaultAccess, .ask)
     }
 
     func testSiteAccessIsProfileScoped() async throws {
@@ -699,6 +757,135 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(results["protonWildcard"]))
     }
 
+    /// Mirrors Proton Pass's popup "Grant permissions" flow:
+    /// `browser.permissions.request({origins:["*://*/*"]})` followed by a
+    /// `permissions.contains` re-verification (Proton treats Safari request
+    /// results as untrusted and re-checks). The request must route through
+    /// the WebKit delegate prompt, and an Allow decision must both resolve
+    /// the request true and persist as Sumi site-access policy.
+    func testPermissionsRequestAllHostsPromptAllowGrantsAndPersists()
+        async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Broad Host Request Grant")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+
+        let installed = try await installBroadHostProbeExtension(
+            manager: manager,
+            name: "BroadHostRequestProbe"
+        )
+        _ = try await manager.enableExtension(installed.id)
+        let context = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+
+        var promptedTargets: [[String]] = []
+        manager.testHooks.permissionPromptDecision = { _, targets, _ in
+            promptedTargets.append(targets)
+            return .allow(expirationDate: nil)
+        }
+        defer {
+            manager.testHooks.permissionPromptDecision = nil
+        }
+
+        let results = try await permissionsRequestResults(
+            in: context,
+            origins: ["*://*/*"]
+        )
+        XCTAssertTrue(
+            try XCTUnwrap(results["granted"]),
+            "permissions.request must resolve true after the prompt allows"
+        )
+        XCTAssertTrue(
+            try XCTUnwrap(results["contains"]),
+            "permissions.contains re-verification must see the grant"
+        )
+        XCTAssertEqual(promptedTargets.count, 1)
+
+        let policy = manager.siteAccessPolicy(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        XCTAssertTrue(
+            policy.siteRules.contains {
+                $0.matchPattern == "*://*/*" && $0.access == .allow
+            },
+            "Prompt allow must persist as a configured site-access rule"
+        )
+        XCTAssertTrue(context.hasRequestedOptionalAccessToAllHosts)
+    }
+
+    /// The same request with a Deny decision must resolve false, persist the
+    /// deny, and not prompt again for the identical request.
+    func testPermissionsRequestAllHostsPromptDenyResolvesFalseAndPersists()
+        async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Broad Host Request Deny")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+
+        let installed = try await installBroadHostProbeExtension(
+            manager: manager,
+            name: "BroadHostRequestDenyProbe"
+        )
+        _ = try await manager.enableExtension(installed.id)
+        let context = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+
+        var promptCount = 0
+        manager.testHooks.permissionPromptDecision = { _, _, _ in
+            promptCount += 1
+            return .deny
+        }
+        defer {
+            manager.testHooks.permissionPromptDecision = nil
+        }
+
+        let firstResults = try await permissionsRequestResults(
+            in: context,
+            origins: ["*://*/*"]
+        )
+        XCTAssertFalse(try XCTUnwrap(firstResults["granted"]))
+        XCTAssertFalse(try XCTUnwrap(firstResults["contains"]))
+        XCTAssertEqual(promptCount, 1)
+
+        let policy = manager.siteAccessPolicy(
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        XCTAssertTrue(
+            policy.siteRules.contains {
+                $0.matchPattern == "*://*/*" && $0.access == .deny
+            },
+            "Prompt deny must persist as a configured site-access rule"
+        )
+
+        let secondResults = try await permissionsRequestResults(
+            in: context,
+            origins: ["*://*/*"]
+        )
+        // WebKit contract (WebExtensionContext::needsPermission): explicitly
+        // denied patterns are excluded from the prompt set, and a request
+        // with nothing left to prompt resolves true — the Safari
+        // "false positive" Proton Pass works around by re-checking
+        // permissions.contains after every request.
+        XCTAssertTrue(try XCTUnwrap(secondResults["granted"]))
+        XCTAssertFalse(
+            try XCTUnwrap(secondResults["contains"]),
+            "The false-positive request result must not grant access"
+        )
+        XCTAssertEqual(
+            promptCount,
+            1,
+            "A persisted deny must resolve later requests without re-prompting"
+        )
+    }
+
     func testExternallyConnectableMatchesAreNotDeclaredSiteAccess() async throws {
         let container = try makeTestContainer()
         let profile = Profile(name: "External Connectable Messaging Only")
@@ -982,6 +1169,77 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
             return [:]
         }
         return try XCTUnwrap(object as? [String: Bool])
+    }
+
+    /// Loads the probe extension page and runs `permissions.request` for the
+    /// given origins via `evaluateJavaScript`, which WebKit executes as a
+    /// user gesture — matching the click-driven request Proton Pass issues
+    /// from its popup. Returns the request result and a follow-up
+    /// `permissions.contains` re-verification.
+    private func permissionsRequestResults(
+        in extensionContext: WKWebExtensionContext,
+        origins: [String]
+    ) async throws -> [String: Bool] {
+        let configuration = try XCTUnwrap(extensionContext.webViewConfiguration)
+        let webView = WKWebView(
+            frame: NSRect(x: 0, y: 0, width: 320, height: 240),
+            configuration: configuration
+        )
+        let pageURL = extensionContext.baseURL
+            .appendingPathComponent("probe.html")
+        webView.load(URLRequest(url: pageURL))
+        _ = try await waitForPermissionsContainsResult(in: webView)
+
+        let originsJSON = try XCTUnwrap(
+            String(
+                data: JSONSerialization.data(withJSONObject: origins),
+                encoding: .utf8
+            )
+        )
+        let requestScript = """
+        (async () => {
+          try {
+            delete document.body.dataset.requestResult;
+            delete document.body.dataset.requestError;
+            const api = globalThis.browser || globalThis.chrome;
+            if (!api || !api.permissions || typeof api.permissions.request !== "function") {
+              throw new Error("permissions.request unavailable");
+            }
+            const origins = \(originsJSON);
+            const granted = await api.permissions.request({ origins });
+            const contains = await api.permissions.contains({ origins });
+            document.body.dataset.requestResult = JSON.stringify({ granted, contains });
+          } catch (error) {
+            document.body.dataset.requestError = String(error && (error.message || error));
+          }
+        })();
+        null;
+        """
+        _ = try? await webView.evaluateJavaScript(requestScript)
+
+        let pollScript = """
+        (() => {
+          if (document.body.dataset.requestError) {
+            return JSON.stringify({ error: document.body.dataset.requestError });
+          }
+          return document.body.dataset.requestResult || null;
+        })();
+        """
+        for _ in 0..<50 {
+            if let rawValue = try? await webView.evaluateJavaScript(pollScript) as? String {
+                let data = try XCTUnwrap(rawValue.data(using: .utf8))
+                let object = try JSONSerialization.jsonObject(with: data)
+                if let result = object as? [String: String],
+                   let error = result["error"] {
+                    XCTFail("permissions.request failed in extension page: \(error)")
+                    return [:]
+                }
+                return try XCTUnwrap(object as? [String: Bool])
+            }
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTFail("Timed out waiting for permissions.request result")
+        return [:]
     }
 
     private func waitForPermissionsContainsResult(

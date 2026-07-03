@@ -50,12 +50,12 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertTrue(row.notes.contains("inject-content-scripts"))
     }
 
-    func testManualVerificationCatalogProtonPassScriptingBlocked() {
+    func testManualVerificationCatalogProtonPassScriptingGranted() {
         let row = SafariExtensionManualVerificationCatalog.row(forTargetKey: "proton-pass")
         XCTAssertEqual(row.importEnable, .notVerified)
         XCTAssertEqual(row.autofill, .classified)
         XCTAssertEqual(row.nativeMessagingProtocol, .unknown)
-        XCTAssertTrue(row.notes.contains("scripting denied"))
+        XCTAssertTrue(row.notes.contains("scripting granted"))
     }
 
     func testInlineUIClassificationCatalogPasswordManagers() {
@@ -72,12 +72,12 @@ final class SafariExtensionRuntimeDiagnosticsTests: XCTestCase {
         XCTAssertEqual(onePassword.verificationStatus, .pending)
         XCTAssertEqual(onePassword.primaryBlocker, .manualVerificationRequired)
         XCTAssertEqual(onePassword.fixtures.localBasic, .pending)
-        XCTAssertTrue(onePassword.notes.contains("shouldDenyAutoGrantForWebKitRuntime"))
+        XCTAssertTrue(onePassword.notes.contains("grants scripting"))
 
         let protonPass = SafariExtensionInlineUIClassificationCatalog
             .classification(forTargetKey: "proton-pass")
-        XCTAssertEqual(protonPass.verificationStatus, .blockedByPlatform)
-        XCTAssertEqual(protonPass.primaryBlocker, .scriptingPermissionDenied)
+        XCTAssertEqual(protonPass.verificationStatus, .pending)
+        XCTAssertEqual(protonPass.primaryBlocker, .manualVerificationRequired)
         XCTAssertTrue(protonPass.notes.contains("browser_specific_settings.safari"))
     }
 

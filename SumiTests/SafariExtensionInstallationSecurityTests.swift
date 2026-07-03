@@ -293,27 +293,19 @@ final class SafariExtensionInstallationSecurityTests: XCTestCase {
         ]
 
         XCTAssertTrue(
-            owner.shouldDenyAutoGrantForWebKitRuntime(
-                WKWebExtension.Permission(rawValue: "scripting"),
-                manifest: manifest
-            )
-        )
-        XCTAssertFalse(
-            owner.shouldDenyAutoGrantForWebKitRuntime(
-                WKWebExtension.Permission(rawValue: "storage"),
-                manifest: manifest
-            )
-        )
-        XCTAssertTrue(
             SafariExtensionInstallCapabilityOwner.manifestDeclaresNativeMessaging(
                 manifest
             )
         )
-        XCTAssertTrue(
-            SafariExtensionInstallCapabilityOwner.webKitRuntimeUnsupportedAPIs(
-                for: manifest
-            ).contains("browser.scripting.executeScript")
-        )
+        // WebKit's native browser.scripting implementation is verified by
+        // SafariExtensionScriptingRuntimeTests, so Safari-target manifests
+        // must not mark it unsupported (Proton Pass bootstraps its autofill
+        // client through it). Legacy MV2 injection APIs stay unsupported.
+        let unsupportedAPIs = SafariExtensionInstallCapabilityOwner
+            .webKitRuntimeUnsupportedAPIs(for: manifest)
+        XCTAssertFalse(unsupportedAPIs.contains("browser.scripting.executeScript"))
+        XCTAssertFalse(unsupportedAPIs.contains("browser.scripting.insertCSS"))
+        XCTAssertTrue(unsupportedAPIs.contains("browser.tabs.executeScript"))
     }
 
     private func makeTestContainer() throws -> ModelContainer {

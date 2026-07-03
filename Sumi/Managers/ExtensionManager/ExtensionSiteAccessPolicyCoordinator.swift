@@ -80,6 +80,7 @@ final class ExtensionSiteAccessPolicyCoordinator {
             profileId: profileId
         ) { policy in
             policy.defaultAccess = access
+            policy.defaultAccessConfiguredByUser = true
             policy.updatedAt = Date()
         }
         applySiteAccessPolicyToLoadedContext(

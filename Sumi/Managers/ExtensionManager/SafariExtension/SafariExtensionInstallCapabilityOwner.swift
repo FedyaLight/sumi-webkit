@@ -37,10 +37,6 @@ final class SafariExtensionInstallCapabilityOwner {
         )
 
         for permission in permissions {
-            if shouldDenyAutoGrantForWebKitRuntime(permission, manifest: manifest) {
-                extensionContext.setPermissionStatus(.deniedExplicitly, for: permission)
-                continue
-            }
             extensionContext.setPermissionStatus(.grantedExplicitly, for: permission)
         }
     }
@@ -286,13 +282,6 @@ final class SafariExtensionInstallCapabilityOwner {
         )
     }
 
-    func shouldDenyAutoGrantForWebKitRuntime(
-        _ permission: WKWebExtension.Permission,
-        manifest: [String: Any]
-    ) -> Bool {
-        Self.shouldDenyAutoGrantForWebKitRuntime(permission, manifest: manifest)
-    }
-
     func isGrantedPermissionStatus(
         _ status: WKWebExtensionContext.PermissionStatus
     ) -> Bool {
@@ -465,17 +454,11 @@ final class SafariExtensionInstallCapabilityOwner {
             || browserSpecificSettings["WebKit"] != nil
     }
 
-    nonisolated static func shouldDenyAutoGrantForWebKitRuntime(
-        _ permission: WKWebExtension.Permission,
-        manifest: [String: Any]
-    ) -> Bool {
-        guard manifestDeclaresWebKitBrowserTarget(for: manifest) else {
-            return false
-        }
-
-        return permission.rawValue == "scripting"
-    }
-
+    /// WebKit's native `browser.scripting` implementation (executeScript with
+    /// files / func+args / MAIN world, insertCSS) is proven working through
+    /// Sumi's tab adapters by `SafariExtensionScriptingRuntimeTests`, so the
+    /// `scripting` permission is granted like any other and only legacy APIs
+    /// without a verified WebKit implementation stay marked unsupported.
     nonisolated static func webKitRuntimeUnsupportedAPIs(
         for manifest: [String: Any]
     ) -> Set<String> {
@@ -485,9 +468,6 @@ final class SafariExtensionInstallCapabilityOwner {
 
         return [
             "browser.contentScripts.register",
-            "browser.scripting.executeScript",
-            "browser.scripting.insertCSS",
-            "browser.scripting.registerContentScripts",
             "browser.tabs.executeScript",
             "browser.tabs.insertCSS",
         ]
@@ -546,16 +526,6 @@ extension ExtensionManager {
 
     static func manifestDeclaresNativeMessaging(_ manifest: [String: Any]) -> Bool {
         SafariExtensionInstallCapabilityOwner.manifestDeclaresNativeMessaging(manifest)
-    }
-
-    func shouldDenyAutoGrantForWebKitRuntime(
-        _ permission: WKWebExtension.Permission,
-        manifest: [String: Any]
-    ) -> Bool {
-        installCapabilityOwner.shouldDenyAutoGrantForWebKitRuntime(
-            permission,
-            manifest: manifest
-        )
     }
 
     static func webKitRuntimeUnsupportedAPIs(

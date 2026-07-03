@@ -67,10 +67,63 @@ struct SafariExtensionSiteAccessPolicy: Codable, Equatable {
     var profileId: String
     var extensionId: String
     var defaultAccess: SafariExtensionSiteAccessLevel
+    /// True only when the user explicitly chose the default access level in
+    /// Sumi settings. Auto-created and prompt-derived policies keep this false
+    /// so Safari-appex default-access seeding can still apply the product
+    /// default even after per-site prompt rules or the private-browsing
+    /// toggle have been persisted.
+    var defaultAccessConfiguredByUser: Bool
     var siteRules: [SafariExtensionSiteAccessRule]
     var privateAccessAllowed: Bool
     var hasRequestedOptionalAccessToAllHosts: Bool
     var updatedAt: Date
+
+    init(
+        profileId: String,
+        extensionId: String,
+        defaultAccess: SafariExtensionSiteAccessLevel,
+        defaultAccessConfiguredByUser: Bool = false,
+        siteRules: [SafariExtensionSiteAccessRule],
+        privateAccessAllowed: Bool,
+        hasRequestedOptionalAccessToAllHosts: Bool,
+        updatedAt: Date
+    ) {
+        self.profileId = profileId
+        self.extensionId = extensionId
+        self.defaultAccess = defaultAccess
+        self.defaultAccessConfiguredByUser = defaultAccessConfiguredByUser
+        self.siteRules = siteRules
+        self.privateAccessAllowed = privateAccessAllowed
+        self.hasRequestedOptionalAccessToAllHosts = hasRequestedOptionalAccessToAllHosts
+        self.updatedAt = updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profileId = try container.decode(String.self, forKey: .profileId)
+        extensionId = try container.decode(String.self, forKey: .extensionId)
+        defaultAccess = try container.decode(
+            SafariExtensionSiteAccessLevel.self,
+            forKey: .defaultAccess
+        )
+        defaultAccessConfiguredByUser = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .defaultAccessConfiguredByUser
+        ) ?? false
+        siteRules = try container.decode(
+            [SafariExtensionSiteAccessRule].self,
+            forKey: .siteRules
+        )
+        privateAccessAllowed = try container.decode(
+            Bool.self,
+            forKey: .privateAccessAllowed
+        )
+        hasRequestedOptionalAccessToAllHosts = try container.decode(
+            Bool.self,
+            forKey: .hasRequestedOptionalAccessToAllHosts
+        )
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
 
     @MainActor
     static func defaultPolicy(

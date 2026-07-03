@@ -1,6 +1,176 @@
 # Sumi Safari Web Extension Compatibility
 
-Last updated: 2026-07-03 (popup-path fork e2e + live fork diagnostics)
+Last updated: 2026-07-03 (scripting API enabled for Safari targets + Proton inline bootstrap)
+
+## Cycle 24 Scripting API Enabled for Safari Targets (2026-07-03)
+
+Field report: Proton Pass inline suggestions (login-field dropdown) never
+appear while Bitwarden's inline overlay works. Log noise triage: the
+`CSInlineDonation`/`SetStoreUpdateService` spam is CoreSpotlight sandbox
+noise, and the subframe `didFailProvisionalLoadForFrame code=104`
+(content-blocker) on google.com is unrelated third-party-frame blocking.
+The load-bearing asymmetry is architectural.
+
+### Root cause
+
+Proton Pass has no static autofill content script: `orchestrator.js` (the
+only manifest content script) asks the worker for `LOAD_CONTENT_SCRIPT`, and
+the worker bootstraps the entire autofill client via
+`browser.scripting.executeScript({files:['client.js']})`, then registers the
+inline dropdown's custom elements via MAIN-world
+`executeScript({files:['elements.js']})` + `executeScript({func, args})`
+(`injection.ts`). Bitwarden ships its overlay through manifest-declared
+static content scripts, which is why it worked.
+
+Sumi explicitly blocked that whole path for manifests declaring
+`browser_specific_settings.safari`: `shouldDenyAutoGrantForWebKitRuntime`
+denied the `scripting` permission and `webKitRuntimeUnsupportedAPIs` hid
+`browser.scripting.*` from the runtime — a leftover classification from the
+pre-Cycle-13 era (`SafariExtensionInlineUIClassificationCatalog` had Proton
+inline UI recorded as `blockedByPlatform/scriptingPermissionDenied`). Real
+Safari grants `scripting` (Safari 16.4+), so this was an anti-parity policy.
+
+### Fixed
+
+- Removed the `scripting` auto-grant denial entirely
+  (`shouldDenyAutoGrantForWebKitRuntime` and its filter call sites in
+  `grantRequestedPermissions` and `promptForPermissions` are gone); Safari
+  imports get `scripting` granted like Safari does.
+- `webKitRuntimeUnsupportedAPIs` no longer hides `browser.scripting.*` for
+  Safari-target manifests. Legacy APIs without a verified WebKit
+  implementation (`browser.contentScripts.register`,
+  `browser.tabs.executeScript`, `browser.tabs.insertCSS`) stay marked
+  unsupported so MV2 extensions keep feature-detect fallbacks.
+- Catalogs updated: Proton Pass inline UI reclassified from
+  `blockedByPlatform` to `pending` (manual GUI retest), notes rewritten.
+
+### Proven (new automated E2E, `SafariExtensionScriptingRuntimeTests`)
+
+A synthetic Safari-target MV3 extension (browser_specific_settings.safari +
+`scripting` + `*://*/*` + service-worker background) drives, through Sumi's
+full tab stack (TabManager tab + registered extension runtime + real page
+load), the exact Proton bootstrap sequence — worker receives the content
+script's message and successfully executes all four WebKit-native calls:
+
+- `scripting.executeScript({target, files})` — isolated-world client.js runs
+  in the page;
+- `scripting.executeScript({target, world:'MAIN', files})` — MAIN-world
+  elements.js runs and can define page-global registration hooks;
+- `scripting.executeScript({target, world:'MAIN', func, args})` — argument
+  passing into the MAIN world works;
+- `scripting.insertCSS({target, files})` — stylesheet applies to the page.
+
+WebKit's native implementation needs no Sumi-side API shim. The probe also
+exercises the Cycle 23 seeding path (Safari-appex source with no explicit
+site-access configuration → default Allow → host access for the target tab).
+
+### Tests
+
+- New: `SafariExtensionScriptingRuntimeTests.testWorkerDrivenScriptingInjectionMirrorsProtonBootstrap`.
+- Updated pins: `SafariExtensionInstallationSecurityTests`
+  `testInstallCapabilityOwnerClassifiesWebKitRuntimePolicy` (scripting no
+  longer denied/hidden; MV2 legacy APIs still unsupported),
+  `SafariExtensionRuntimeDiagnosticsTests` catalog assertions.
+- Regression: site-access, installation security, runtime diagnostics,
+  inline overlay, autofill runtime, account fork pipeline, action popup,
+  profile isolation, storage cleanup planner, origins compatibility, and
+  WebView/controller wiring slices pass; guardrails + clean-import audits
+  pass; full build succeeds.
+
+### Proven Remaining Gaps
+
+- Manual Proton Pass inline E2E on a real login page (expected: worker
+  `LOAD_CONTENT_SCRIPT` → client.js injects → dropdown custom elements
+  register → inline suggestion renders on field focus).
+- Field logs also showed `tabs.get() Tab not found` (tab 103) from the
+  Proton worker; with the scripting path unblocked, re-check whether any
+  remaining occurrences are close races on recently closed tabs (benign,
+  Safari-console-noise class) or a live tab dropping out of the structural
+  lookup (load-bearing — see Cycle 20 contract notes).
+
+## Cycle 23 Site-Access Default Seeding Repair + permissions.request E2E (2026-07-03)
+
+Field report: Proton Pass popup (logged in) shows "Permission denied for
+website access. Open the Safari settings…". That string is Proton's
+`getHostPermissionsError()` (`useHostPermissions.tsx`), emitted when
+`browser.permissions.request({origins})` + `permissions.contains`
+re-verification fail. Proton's worker checks
+`permissions.contains({origins: manifest.host_permissions})` =
+`["*://*/*"]` at startup and broadcasts `PERMISSIONS_UPDATE {granted:false}`,
+which drives the popup "Grant permissions" spotlight.
+
+### Root cause (verified against the user's real defaults)
+
+The persisted site-access policy for Proton Pass was
+`defaultAccess: ask` + an allow rule `https://*.proton.me/*` (persisted by the
+login-time URL permission prompt) + `privateAccessAllowed: true`.
+`shouldSeedSafariAppExtensionDefaultAccess` treated only the **empty** `.ask`
+shape as unconfigured, so the Safari-appex product default (`Allow`, Cycle 14
+"Intentionally Kept") was never seeded once any prompt rule or the
+private-browsing toggle had touched the policy record first. With `.ask`
+default, `*://*/*` stays ungranted → `permissions.contains` false → Proton
+shows the Safari-settings error.
+
+### Fixed
+
+- `SafariExtensionSiteAccessPolicy` gains `defaultAccessConfiguredByUser`
+  (backward-compatible decoding; false for all previously persisted records).
+  Only the settings-pane `setDefaultSiteAccess` path sets it.
+- Seeding now applies default `Allow` whenever `defaultAccess == .ask` and the
+  user never explicitly chose a default — per-site rules and the
+  private-browsing flag no longer block the seed. Existing rules are
+  preserved and still override the default by specificity (explicit denies
+  keep winning). Freshly created Safari-appex policies seed `Allow` even when
+  legacy prompt decisions migrate in as rules.
+- Existing dirty field states self-heal on the next context load
+  (`ExtensionRuntimeContextLoadOwner` seeds before policy application).
+
+### WebKit behavior contract captured (permissions API, UI-process sources)
+
+- `permissions.request()` requires a user gesture (web-process check), then
+  validates requested origins against manifest-declared patterns, then routes
+  through delegate `promptForPermissionMatchPatterns` with **only** the
+  patterns in `Requested{Implicitly,Explicitly}` state
+  (`WebExtensionContext::needsPermission`); the grant is all-or-none and the
+  delegate answer must arrive within a 2-minute WebKit timeout (timeout ⇒
+  deny, nothing persisted).
+- Explicitly denied (and already granted) patterns are excluded from the
+  prompt set; a request with an empty prompt set resolves **true** — the
+  Safari "false positive" Proton Pass explicitly works around by re-checking
+  `permissions.contains` after every request. Sumi inherits this contract
+  unmodified.
+
+### Tests
+
+- `SafariExtensionSiteAccessPolicyTests`:
+  - `testSafariAppExtensionDefaultAccessSeedRepairsPromptDirtiedAskPolicy`
+    reproduces the exact field policy shape and proves the seed repairs it;
+  - `testSafariAppExtensionDefaultAccessSeedKeepsUserConfiguredAskDefault`
+    proves a user-chosen `.ask` default survives seeding;
+  - `testSafariAppExtensionDefaultAccessSeedAppliesAllowAndPreservesConfiguredRules`
+    (updated semantics) proves rules are kept while the default seeds to allow;
+  - `testPermissionsRequestAllHostsPromptAllowGrantsAndPersists` — first
+    automated end-to-end JS `browser.permissions.request({origins:["*://*/*"]})`
+    from a real extension page (evaluateJavaScript = user gesture) through the
+    WebKit delegate prompt: Allow resolves the request true, the
+    `permissions.contains` re-verification sees the grant, the decision
+    persists as a `*://*/*` site rule, and
+    `hasRequestedOptionalAccessToAllHosts` flips on;
+  - `testPermissionsRequestAllHostsPromptDenyResolvesFalseAndPersists` — Deny
+    resolves false, persists, later identical requests do not re-prompt and
+    exhibit the documented WebKit false-positive (`request` true,
+    `contains` false).
+- Regression: site-access, origins compatibility, profile isolation, storage
+  cleanup planner, installation security, action popup runtime, autofill
+  runtime, and account fork pipeline slices pass;
+  `scripts/check_architecture_guardrails.sh` and clean-import audits pass;
+  full `xcodebuild build` succeeds.
+
+### Proven Remaining Gaps
+
+- Manual Proton Pass popup E2E after this fix (expected: worker startup
+  `permissions.contains` is true, no "Grant permissions" spotlight, no
+  Safari-settings error, autofill active on all sites).
 
 ## Cycle 22 Popup-Path Fork E2E + Live Fork Diagnostics (2026-07-03)
 

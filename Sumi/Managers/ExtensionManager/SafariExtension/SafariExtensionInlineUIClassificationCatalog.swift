@@ -96,8 +96,7 @@ enum SafariExtensionInlineUIClassificationCatalog {
                     realSite: .classifiedOnly
                 ),
                 notes: """
-                Manifest declares scripting but no browser_specific_settings — Sumi grants scripting \
-                (shouldDenyAutoGrantForWebKitRuntime does not apply). Bootstrap uses dynamic import(), \
+                Manifest declares scripting — Sumi grants scripting like Safari. Bootstrap uses dynamic import(), \
                 not browser.scripting.executeScript. Companion NM unverified; not required for inline menu shell.
                 """
             )
@@ -108,8 +107,8 @@ enum SafariExtensionInlineUIClassificationCatalog {
                 INLINE_DROPDOWN messages; dropdown.html is web_accessible. Background may register \
                 additional scripts via browser.scripting when LOAD_CONTENT_SCRIPT fires.
                 """,
-                primaryBlocker: .scriptingPermissionDenied,
-                verificationStatus: .blockedByPlatform,
+                primaryBlocker: .manualVerificationRequired,
+                verificationStatus: .pending,
                 fixtures: SafariExtensionInlineUIFixtureMatrix(
                     localBasic: .pending,
                     autocomplete: .pending,
@@ -117,10 +116,11 @@ enum SafariExtensionInlineUIClassificationCatalog {
                     realSite: .classifiedOnly
                 ),
                 notes: """
-                browser_specific_settings.safari present — Sumi denies scripting via \
-                shouldDenyAutoGrantForWebKitRuntime; WebKit also lists browser.scripting.* as unsupported. \
-                Manifest orchestrator path may still render dropdown on fixtures; dynamic bootstrap from \
-                background is blocked-by-platform until WebKit grants scripting or extension drops MV3 scripting dep.
+                Sumi grants scripting for browser_specific_settings.safari manifests (Safari parity); \
+                WebKit's native browser.scripting executeScript/insertCSS incl. MAIN-world and func/args \
+                injection is proven by SafariExtensionScriptingRuntimeTests, unblocking the worker-driven \
+                client.js bootstrap (LOAD_CONTENT_SCRIPT) and elements.js registration behind the inline \
+                dropdown. Manual GUI retest pending.
                 """
             )
         default:
