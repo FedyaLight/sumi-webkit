@@ -113,29 +113,17 @@ final class SafariExtensionInstallCapabilityOwner {
         if policyAllowsAllHosts {
             extensionContext.hasRequestedOptionalAccessToAllHosts = true
         }
+
+        // Desired status per pattern: the profile default for every declared
+        // pattern, overlaid by configured rules (a rule for the same pattern
+        // wins; increasing specificity keeps the most specific rule last).
+        var desiredStates: [WKWebExtension.MatchPattern: (
+            access: SafariExtensionSiteAccessLevel,
+            expiresAt: Date?
+        )] = [:]
         for matchPattern in declaredPatterns {
-            extensionContext.setPermissionStatus(.unknown, for: matchPattern)
+            desiredStates[matchPattern] = (policy.defaultAccess, nil)
         }
-
-        switch policy.defaultAccess {
-        case .allow:
-            for matchPattern in declaredPatterns {
-                extensionContext.setPermissionStatus(
-                    .grantedExplicitly,
-                    for: matchPattern
-                )
-            }
-        case .deny:
-            for matchPattern in declaredPatterns {
-                extensionContext.setPermissionStatus(
-                    .deniedExplicitly,
-                    for: matchPattern
-                )
-            }
-        case .ask:
-            break
-        }
-
         for rule in policy.rulesByIncreasingSpecificity {
             guard let matchPattern = try? WKWebExtension.MatchPattern(
                 string: rule.matchPattern
@@ -143,12 +131,71 @@ final class SafariExtensionInstallCapabilityOwner {
             else {
                 continue
             }
-            extensionContext.setPermissionStatus(
-                rule.access.status,
-                for: matchPattern,
-                expirationDate: rule.expiresAt
-            )
+            desiredStates[matchPattern] = (rule.access, rule.expiresAt)
         }
+
+        // Apply as a diff against the context's current grant/deny state.
+        // Safari parity: permission state changes only when configuration
+        // actually changed. Re-applying an unchanged policy (context load,
+        // popup open, tab reconcile) must be a no-op — a remove-then-regrant
+        // sweep fires permissions.onRemoved/onAdded storms into extension
+        // workers, which e.g. Proton Pass turns into a cached
+        // "permissions missing" state for its popup.
+        let grantedPatterns = extensionContext.grantedPermissionMatchPatterns
+        let deniedPatterns = extensionContext.deniedPermissionMatchPatterns
+        for (matchPattern, desired) in desiredStates {
+            switch desired.access {
+            case .allow:
+                if let currentExpiration = grantedPatterns[matchPattern],
+                   Self.expirationDatesEquivalent(currentExpiration, desired.expiresAt) {
+                    continue
+                }
+                if grantedPatterns[matchPattern] != nil {
+                    // Same status with a different expiration: WebKit's grant
+                    // is add-only and keeps the old expiration, so clear first.
+                    extensionContext.setPermissionStatus(.unknown, for: matchPattern)
+                }
+                extensionContext.setPermissionStatus(
+                    .grantedExplicitly,
+                    for: matchPattern,
+                    expirationDate: desired.expiresAt
+                )
+            case .deny:
+                if let currentExpiration = deniedPatterns[matchPattern],
+                   Self.expirationDatesEquivalent(currentExpiration, desired.expiresAt) {
+                    continue
+                }
+                if deniedPatterns[matchPattern] != nil {
+                    extensionContext.setPermissionStatus(.unknown, for: matchPattern)
+                }
+                extensionContext.setPermissionStatus(
+                    .deniedExplicitly,
+                    for: matchPattern,
+                    expirationDate: desired.expiresAt
+                )
+            case .ask:
+                if grantedPatterns[matchPattern] != nil
+                    || deniedPatterns[matchPattern] != nil {
+                    extensionContext.setPermissionStatus(.unknown, for: matchPattern)
+                }
+            }
+        }
+    }
+
+    /// WebKit bridges a never-expiring grant as a far-future date; treat any
+    /// far-future expiration as equivalent to "no expiration".
+    private static func expirationDatesEquivalent(
+        _ current: Date,
+        _ desired: Date?
+    ) -> Bool {
+        let farFutureThreshold = Date(timeIntervalSinceNow: 60 * 60 * 24 * 365 * 20)
+        guard let desired else {
+            return current >= farFutureThreshold
+        }
+        if current >= farFutureThreshold {
+            return false
+        }
+        return abs(current.timeIntervalSince(desired)) < 1
     }
 
     func declaredSiteAccessMatchPatterns(

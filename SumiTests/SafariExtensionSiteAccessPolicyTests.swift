@@ -757,6 +757,101 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(results["protonWildcard"]))
     }
 
+    /// Safari parity: permission state changes only when configuration
+    /// changes. Re-applying an unchanged policy (context load, popup open,
+    /// tab reconcile all route through `grantRequestedMatchPatterns`) must be
+    /// a no-op — the previous remove-then-regrant sweep fired
+    /// `permissions.onRemoved`/`onAdded` storms into extension workers, which
+    /// Proton Pass caches as "permissions missing" for its popup spotlight.
+    func testUnchangedPolicyReapplicationEmitsNoPermissionEvents() async throws {
+        let container = try makeTestContainer()
+        let profile = Profile(name: "Idempotent Policy Application")
+        let manager = ExtensionManager(
+            context: container.mainContext,
+            initialProfile: profile
+        )
+
+        let installed = try await installBroadHostProbeExtension(
+            manager: manager,
+            name: "IdempotentPolicyProbe"
+        )
+        _ = try await manager.enableExtension(installed.id)
+        manager.setDefaultSiteAccess(
+            .allow,
+            extensionId: installed.id,
+            profileId: profile.id
+        )
+        let context = try XCTUnwrap(
+            manager.getExtensionContext(for: installed.id, profileId: profile.id)
+        )
+        let allHosts = try XCTUnwrap(WKWebExtension.MatchPattern(string: "*://*/*"))
+        XCTAssertNotNil(context.grantedPermissionMatchPatterns[allHosts])
+        let grantedBefore = context.grantedPermissionMatchPatterns
+
+        // WebKit posts permission notifications asynchronously; drain the
+        // ones from the setup grants above before observing.
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let permissionEventNames: [Notification.Name] = [
+            WKWebExtensionContext.permissionMatchPatternsWereGrantedNotification,
+            WKWebExtensionContext.permissionMatchPatternsWereDeniedNotification,
+            WKWebExtensionContext.grantedPermissionMatchPatternsWereRemovedNotification,
+            WKWebExtensionContext.deniedPermissionMatchPatternsWereRemovedNotification,
+        ]
+        let eventLog = PermissionEventLog()
+        var observers: [NSObjectProtocol] = []
+        for name in permissionEventNames {
+            observers.append(
+                NotificationCenter.default.addObserver(
+                    forName: name,
+                    object: context,
+                    queue: nil
+                ) { notification in
+                    eventLog.append(notification.name.rawValue)
+                }
+            )
+        }
+        defer {
+            for observer in observers {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+
+        // The action popup open path and the tab reconcile path both re-apply
+        // the (unchanged) policy.
+        for _ in 0..<3 {
+            manager.grantRequestedMatchPatterns(
+                to: context,
+                webExtension: context.webExtension
+            )
+        }
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(
+            eventLog.names,
+            [],
+            "Unchanged policy re-application must not fire permission events"
+        )
+        XCTAssertEqual(context.grantedPermissionMatchPatterns, grantedBefore)
+
+        // A real configuration change must still write through.
+        manager.setConfiguredSiteAccess(
+            .deny,
+            extensionId: installed.id,
+            profileId: profile.id,
+            matchPatternString: "https://denied.example.test/*"
+        )
+        let deniedPattern = try XCTUnwrap(
+            WKWebExtension.MatchPattern(string: "https://denied.example.test/*")
+        )
+        XCTAssertNotNil(context.deniedPermissionMatchPatterns[deniedPattern])
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertFalse(
+            eventLog.names.isEmpty,
+            "A real configuration change must still fire permission events"
+        )
+    }
+
     /// Mirrors Proton Pass's popup "Grant permissions" flow:
     /// `browser.permissions.request({origins:["*://*/*"]})` followed by a
     /// `permissions.contains` re-verification (Proton treats Safari request
@@ -997,6 +1092,23 @@ final class SafariExtensionSiteAccessPolicyTests: XCTestCase {
         XCTAssertTrue(
             extensionContext.hasAccess(to: URL(string: "https://pass.proton.me/")!)
         )
+    }
+
+    private final class PermissionEventLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storage: [String] = []
+
+        var names: [String] {
+            lock.lock()
+            defer { lock.unlock() }
+            return storage
+        }
+
+        func append(_ name: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            storage.append(name)
+        }
     }
 
     private func makeTestContainer() throws -> ModelContainer {

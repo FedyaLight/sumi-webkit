@@ -6,8 +6,8 @@ import WebKit
 @MainActor
 final class ExtensionPermissionPromptPresentationOwner {
     private typealias PromptDecision = ExtensionManager.ExtensionPermissionPromptDecision
-    private typealias PromptDecisionOperation = @MainActor () -> PromptDecision
-    private typealias PromptQueueOperation = @MainActor () -> Void
+    private typealias PromptDecisionOperation = @MainActor () async -> PromptDecision
+    private typealias PromptQueueOperation = @MainActor () async -> Void
 
     private var promptQueue: [PromptQueueOperation] = []
     private var isPresentingPrompt = false
@@ -22,7 +22,7 @@ final class ExtensionPermissionPromptPresentationOwner {
         extensionIdentifier: String?
     ) async -> ExtensionManager.ExtensionPermissionPromptDecision {
         await enqueuePrompt(key: dedupeKey) {
-            Self.presentPrompt(
+            await Self.presentPrompt(
                 extensionContext: extensionContext,
                 targets: targets,
                 reason: reason,
@@ -42,7 +42,7 @@ final class ExtensionPermissionPromptPresentationOwner {
             }
             promptWaitersByKey[key] = [continuation]
             promptQueue.append {
-                let decision = operation()
+                let decision = await operation()
                 let waiters = self.promptWaitersByKey.removeValue(forKey: key) ?? []
                 for waiter in waiters {
                     waiter.resume(returning: decision)
@@ -59,7 +59,7 @@ final class ExtensionPermissionPromptPresentationOwner {
         isPresentingPrompt = true
         let operation = promptQueue.removeFirst()
         Task { @MainActor in
-            operation()
+            await operation()
             self.isPresentingPrompt = false
             self.drainPromptQueueIfNeeded()
         }
@@ -70,7 +70,7 @@ final class ExtensionPermissionPromptPresentationOwner {
         targets: [String],
         reason: String,
         extensionIdentifier: String?
-    ) -> PromptDecision {
+    ) async -> PromptDecision {
         let summarizedTargets = summarizedPermissionTargets(targets)
         let targetSummary = summarizedTargets.joined(separator: ", ")
         let extensionName = extensionDisplayName(for: extensionContext)
@@ -86,7 +86,18 @@ final class ExtensionPermissionPromptPresentationOwner {
         alert.addButton(withTitle: "Deny")
 
         NSApp.activate(ignoringOtherApps: true)
-        let response = alert.runModal()
+        // Safari presents extension permission prompts scoped to the browser
+        // window, not app-modally. A window sheet also keeps the main actor
+        // responsive: an app-modal runModal would stall every other WebKit
+        // extension delegate completion while the prompt is on screen, and
+        // WebKit silently denies permission requests whose delegate answer
+        // misses its 2-minute timeout.
+        let response: NSApplication.ModalResponse
+        if let window = NSApp.mainWindow ?? NSApp.keyWindow {
+            response = await alert.beginSheetModal(for: window)
+        } else {
+            response = alert.runModal()
+        }
         let decision: PromptDecision
         switch response {
         case .alertFirstButtonReturn:
