@@ -675,10 +675,7 @@ final class WindowSessionServiceTests: XCTestCase {
     }
 
     private func makeInMemoryTabManager(loadPersistedState: Bool) throws -> TabManager {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try makeInMemoryStartupModelContainer()
         return TabManager(context: container.mainContext, loadPersistedState: loadPersistedState)
     }
 

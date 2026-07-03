@@ -37,6 +37,25 @@ final class SumiStartupPersistenceTests: XCTestCase {
         XCTAssertNotNil(container.migrationPlan)
     }
 
+    func testMigrationPlanChainsEveryVersionedSchema() {
+        let schemas = SumiStartupMigrationPlan.schemas
+        XCTAssertFalse(schemas.isEmpty)
+        XCTAssertEqual(
+            SumiStartupPersistence.schema.version,
+            schemas.last?.versionIdentifier,
+            "The runtime schema must be the newest versioned schema in the migration plan."
+        )
+        XCTAssertEqual(
+            SumiStartupMigrationPlan.stages.count,
+            schemas.count - 1,
+            """
+            Every versioned schema added to SumiStartupMigrationPlan.schemas needs a \
+            MigrationStage from its predecessor. Without one, existing stores hit the \
+            migrationOrSchemaMismatch startup path and the app refuses to launch.
+            """
+        )
+    }
+
     func testResettableLocalStoreOpenFailureResetsOnceAndReopensOnce() throws {
         let recreatedContainer = try ModelContainer(
             for: SumiStartupPersistence.schema,

@@ -36,12 +36,6 @@ struct SumiNotificationPostResult: Equatable, Sendable {
 
 @MainActor
 final class SumiNotificationPermissionBridge {
-    private enum CoordinatorRaceResult: Sendable {
-        case coordinator(SumiPermissionCoordinatorDecision)
-        case pendingStrategy(SumiPermissionCoordinatorDecision)
-        case timeout(SumiPermissionCoordinatorDecision)
-    }
-
     typealias PageValidator = @MainActor () -> Bool
     typealias EventSink = @MainActor (SumiNotificationPermissionEvent) -> Void
 
@@ -326,83 +320,45 @@ final class SumiNotificationPermissionBridge {
         for context: SumiPermissionSecurityContext,
         source: SumiNotificationBridgeSource
     ) async -> SumiPermissionCoordinatorDecision {
-        if pendingStrategy.waitsForPromptUI,
-           context.canPresentPromptUI {
-            return await coordinator.requestPermission(context)
-        }
-
-        let coordinator = coordinator
-        let pendingStrategy = pendingStrategy
-        let pollInterval = pendingPollIntervalNanoseconds
-        let timeout = coordinatorTimeoutNanoseconds
-        let pageId = context.request.pageBucketId
-        let requestId = context.request.id
-
-        return await withTaskGroup(of: CoordinatorRaceResult.self) { group in
-            group.addTask {
-                .coordinator(await coordinator.requestPermission(context))
-            }
-            group.addTask {
-                var elapsed: UInt64 = 0
-                while elapsed < timeout {
-                    let sleepNanoseconds = min(pollInterval, timeout - elapsed)
-                    try? await Task.sleep(nanoseconds: sleepNanoseconds)
-                    if Task.isCancelled {
-                        return .timeout(
-                            SumiWebNotificationDecisionMapper.failClosedDecision(
-                                for: context,
-                                reason: "notification-permission-task-cancelled"
-                            )
-                        )
-                    }
-                    elapsed += sleepNanoseconds
-                    if await coordinator.activeQuery(forPageId: pageId) != nil {
-                        await coordinator.cancel(
-                            requestId: requestId,
-                            reason: pendingStrategy.reason
-                        )
-                        return .pendingStrategy(
-                            SumiWebNotificationDecisionMapper.temporaryPendingDecision(
-                                for: context,
-                                reason: pendingStrategy.reason
-                            )
-                        )
-                    }
-                }
-
-                await coordinator.cancel(
-                    requestId: requestId,
-                    reason: "notification-permission-coordinator-timeout"
-                )
-                return .timeout(
-                    SumiWebNotificationDecisionMapper.failClosedDecision(
-                        for: context,
-                        reason: "notification-permission-coordinator-timeout"
-                    )
-                )
-            }
-
-            guard let result = await group.next() else {
-                return SumiWebNotificationDecisionMapper.failClosedDecision(
+        let outcome = await SumiPermissionPendingCoordinatorRace.run(
+            coordinator: coordinator,
+            context: context,
+            shouldWaitForPromptUI: pendingStrategy.waitsForPromptUI,
+            pendingReason: pendingStrategy.reason,
+            timeoutReason: "notification-permission-coordinator-timeout",
+            taskCancelledReason: "notification-permission-task-cancelled",
+            noCoordinatorResultReason: "notification-permission-no-coordinator-result",
+            pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
+            coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds,
+            temporaryPendingDecision: { context, reason in
+                SumiWebNotificationDecisionMapper.temporaryPendingDecision(
                     for: context,
-                    reason: "notification-permission-no-coordinator-result"
+                    reason: reason
+                )
+            },
+            failClosedDecision: { context, reason in
+                SumiWebNotificationDecisionMapper.failClosedDecision(
+                    for: context,
+                    reason: reason
                 )
             }
-            group.cancelAll()
+        )
 
-            switch result {
-            case .coordinator(let decision):
-                if decision.outcome == .promptRequired {
-                    emit(.promptPresenterUnavailable(source: source, requestId: requestId))
-                }
-                return decision
-            case .pendingStrategy(let decision):
+        let requestId = context.request.id
+        switch outcome {
+        case .immediate(let decision):
+            return decision
+        case .coordinator(let decision):
+            if decision.outcome == .promptRequired {
                 emit(.promptPresenterUnavailable(source: source, requestId: requestId))
-                return decision
-            case .timeout(let decision):
-                emit(.failed(source: source, requestId: requestId, reason: decision.reason))
-                return decision
             }
+            return decision
+        case .pendingStrategy(let decision):
+            emit(.promptPresenterUnavailable(source: source, requestId: requestId))
+            return decision
+        case .timeout(let decision):
+            emit(.failed(source: source, requestId: requestId, reason: decision.reason))
+            return decision
         }
     }
 

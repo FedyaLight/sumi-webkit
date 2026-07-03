@@ -353,10 +353,7 @@ final class TabManagerClearRegularTabsTests: XCTestCase {
         materializeVisibleTabWebViewIfNeeded: @escaping (Tab, BrowserWindowState) -> Void = { _, _ in /* No-op. */ },
         requireRemoveAllWebViews: @escaping (Tab, Bool) -> Void = { _, _ in /* No-op. */ }
     ) throws -> TabManager {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try makeInMemoryStartupModelContainer()
         let tabManager = TabManager(context: container.mainContext, loadPersistedState: false)
         tabManager.attachRuntimeContext(
             TabManagerRuntimeContext(

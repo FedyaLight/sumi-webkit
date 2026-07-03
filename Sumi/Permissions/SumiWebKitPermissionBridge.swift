@@ -16,93 +16,6 @@ final class SumiWebKitPermissionDecisionHandler<Decision> {
     }
 }
 
-enum SumiWebKitPermissionPendingCoordinatorRace {
-    private enum RaceResult: Sendable {
-        case coordinator(SumiPermissionCoordinatorDecision)
-        case pendingStrategy(SumiPermissionCoordinatorDecision)
-        case timeout(SumiPermissionCoordinatorDecision)
-    }
-
-    static func resolve(
-        coordinator: any SumiPermissionCoordinating,
-        context: SumiPermissionSecurityContext,
-        shouldWaitForPromptUI: Bool,
-        pendingReason: String,
-        timeoutReason: String,
-        taskCancelledReason: String,
-        noCoordinatorResultReason: String,
-        pendingPollIntervalNanoseconds: UInt64,
-        coordinatorTimeoutNanoseconds: UInt64,
-        temporaryPendingDecision: @escaping @Sendable (
-            SumiPermissionSecurityContext,
-            String
-        ) -> SumiPermissionCoordinatorDecision,
-        failClosedDecision: @escaping @Sendable (
-            SumiPermissionSecurityContext?,
-            String
-        ) -> SumiPermissionCoordinatorDecision
-    ) async -> SumiPermissionCoordinatorDecision {
-        if shouldWaitForPromptUI,
-           context.canPresentPromptUI {
-            return await coordinator.requestPermission(context)
-        }
-
-        let pageId = context.request.pageBucketId
-        let requestId = context.request.id
-
-        return await withTaskGroup(of: RaceResult.self) { group in
-            group.addTask {
-                .coordinator(await coordinator.requestPermission(context))
-            }
-            group.addTask {
-                var elapsed: UInt64 = 0
-                while elapsed < coordinatorTimeoutNanoseconds {
-                    let sleepNanoseconds = min(
-                        pendingPollIntervalNanoseconds,
-                        coordinatorTimeoutNanoseconds - elapsed
-                    )
-                    try? await Task.sleep(nanoseconds: sleepNanoseconds)
-                    if Task.isCancelled {
-                        return .timeout(
-                            failClosedDecision(context, taskCancelledReason)
-                        )
-                    }
-                    elapsed += sleepNanoseconds
-                    if await coordinator.activeQuery(forPageId: pageId) != nil {
-                        await coordinator.cancel(
-                            requestId: requestId,
-                            reason: pendingReason
-                        )
-                        return .pendingStrategy(
-                            temporaryPendingDecision(context, pendingReason)
-                        )
-                    }
-                }
-
-                await coordinator.cancel(
-                    requestId: requestId,
-                    reason: timeoutReason
-                )
-                return .timeout(
-                    failClosedDecision(context, timeoutReason)
-                )
-            }
-
-            guard let result = await group.next() else {
-                return failClosedDecision(context, noCoordinatorResultReason)
-            }
-            group.cancelAll()
-
-            switch result {
-            case .coordinator(let decision),
-                 .pendingStrategy(let decision),
-                 .timeout(let decision):
-                return decision
-            }
-        }
-    }
-}
-
 @available(macOS 13.0, *)
 @MainActor
 final class SumiWebKitPermissionBridge {
@@ -344,7 +257,7 @@ final class SumiWebKitPermissionBridge {
         pendingReason: String,
         timeoutReason: String
     ) async -> SumiPermissionCoordinatorDecision {
-        await SumiWebKitPermissionPendingCoordinatorRace.resolve(
+        await SumiPermissionPendingCoordinatorRace.resolve(
             coordinator: coordinator,
             context: context,
             shouldWaitForPromptUI: shouldWaitForPromptUI,

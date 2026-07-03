@@ -18,12 +18,6 @@ final class SumiStorageAccessCompletionHandler {
 
 @MainActor
 final class SumiStorageAccessPermissionBridge {
-    private enum CoordinatorRaceResult: Sendable {
-        case coordinator(SumiPermissionCoordinatorDecision)
-        case pendingStrategy(SumiPermissionCoordinatorDecision)
-        case timeout(SumiPermissionCoordinatorDecision)
-    }
-
     private let coordinator: any SumiPermissionCoordinating
     private let pendingStrategy: SumiStorageAccessPendingStrategy
     private let pendingPollIntervalNanoseconds: UInt64
@@ -126,77 +120,29 @@ final class SumiStorageAccessPermissionBridge {
     private func coordinatorDecision(
         for context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision {
-        if pendingStrategy.waitsForPromptUI,
-           context.canPresentPromptUI {
-            return await coordinator.requestPermission(context)
-        }
-
-        let coordinator = coordinator
-        let pendingStrategy = pendingStrategy
-        let pollInterval = pendingPollIntervalNanoseconds
-        let timeout = coordinatorTimeoutNanoseconds
-        let pageId = context.request.pageBucketId
-        let requestId = context.request.id
-
-        return await withTaskGroup(of: CoordinatorRaceResult.self) { group in
-            group.addTask {
-                .coordinator(await coordinator.requestPermission(context))
-            }
-            group.addTask {
-                var elapsed: UInt64 = 0
-                while elapsed < timeout {
-                    let sleepNanoseconds = min(pollInterval, timeout - elapsed)
-                    try? await Task.sleep(nanoseconds: sleepNanoseconds)
-                    if Task.isCancelled {
-                        return .timeout(
-                            SumiStorageAccessDecisionMapper.failClosedDecision(
-                                for: context,
-                                reason: "webkit-storage-access-task-cancelled"
-                            )
-                        )
-                    }
-                    elapsed += sleepNanoseconds
-                    if await coordinator.activeQuery(forPageId: pageId) != nil {
-                        await coordinator.cancel(
-                            requestId: requestId,
-                            reason: pendingStrategy.reason
-                        )
-                        return .pendingStrategy(
-                            SumiStorageAccessDecisionMapper.temporaryPendingDecision(
-                                for: context,
-                                reason: pendingStrategy.reason
-                            )
-                        )
-                    }
-                }
-
-                await coordinator.cancel(
-                    requestId: requestId,
-                    reason: "webkit-storage-access-coordinator-timeout"
-                )
-                return .timeout(
-                    SumiStorageAccessDecisionMapper.failClosedDecision(
-                        for: context,
-                        reason: "webkit-storage-access-coordinator-timeout"
-                    )
-                )
-            }
-
-            guard let result = await group.next() else {
-                return SumiStorageAccessDecisionMapper.failClosedDecision(
+        await SumiPermissionPendingCoordinatorRace.resolve(
+            coordinator: coordinator,
+            context: context,
+            shouldWaitForPromptUI: pendingStrategy.waitsForPromptUI,
+            pendingReason: pendingStrategy.reason,
+            timeoutReason: "webkit-storage-access-coordinator-timeout",
+            taskCancelledReason: "webkit-storage-access-task-cancelled",
+            noCoordinatorResultReason: "webkit-storage-access-no-coordinator-result",
+            pendingPollIntervalNanoseconds: pendingPollIntervalNanoseconds,
+            coordinatorTimeoutNanoseconds: coordinatorTimeoutNanoseconds,
+            temporaryPendingDecision: { context, reason in
+                SumiStorageAccessDecisionMapper.temporaryPendingDecision(
                     for: context,
-                    reason: "webkit-storage-access-no-coordinator-result"
+                    reason: reason
+                )
+            },
+            failClosedDecision: { context, reason in
+                SumiStorageAccessDecisionMapper.failClosedDecision(
+                    for: context,
+                    reason: reason
                 )
             }
-            group.cancelAll()
-
-            switch result {
-            case .coordinator(let decision),
-                 .pendingStrategy(let decision),
-                 .timeout(let decision):
-                return decision
-            }
-        }
+        )
     }
 
     private func recordStorageIndicatorEvent(

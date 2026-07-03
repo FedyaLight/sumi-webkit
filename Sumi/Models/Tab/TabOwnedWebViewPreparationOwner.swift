@@ -86,7 +86,7 @@ final class TabOwnedWebViewPreparationOwner {
     }
 
     private func applyOwnedTabWebViewOwnershipBaseline(to webView: FocusableWKWebView) {
-        webView.setValue(true, forKey: "drawsBackground")
+        webView.sumiSetDrawsBackground(true)
         webView.owningTab = dependencies.tab()
         SumiUserAgent.apply(to: webView)
     }

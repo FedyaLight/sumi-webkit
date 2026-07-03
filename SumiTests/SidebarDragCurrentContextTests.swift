@@ -1567,10 +1567,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     private func makeInMemoryTabManager() throws -> TabManager {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try makeInMemoryStartupModelContainer()
         return TabManager(
             runtimeContext: TabManagerRuntimeContext(),
             context: container.mainContext,
@@ -1579,10 +1576,7 @@ final class SidebarDragCurrentContextTests: XCTestCase {
     }
 
     private func makeLiveWindowHarness() throws -> LiveWindowHarness {
-        let container = try ModelContainer(
-            for: SumiStartupPersistence.schema,
-            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
-        )
+        let container = try makeInMemoryStartupModelContainer()
         let browserManager = BrowserManager()
         browserManager.webViewCoordinator = WebViewCoordinator()
         let tabManager = TabManager(

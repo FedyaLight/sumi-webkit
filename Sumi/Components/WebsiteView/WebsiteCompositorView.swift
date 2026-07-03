@@ -544,7 +544,7 @@ private final class WindowWebContentHostLifecycleOwner {
             configureViewportStyle(on: host)
 
             // Temporary drawsBackground = false transition gate to guarantee zero white flashes
-            host.webView.setValue(false, forKey: "drawsBackground")
+            host.webView.sumiSetDrawsBackground(false)
 
             host.attachDisplayedContentIfNeeded()
             host.isHidden = false
@@ -554,7 +554,7 @@ private final class WindowWebContentHostLifecycleOwner {
 
         let webView = host.webView
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak webView] in
-            webView?.setValue(true, forKey: "drawsBackground")
+            webView?.sumiSetDrawsBackground(true)
         }
 
         if isProtected {

@@ -213,7 +213,7 @@ final class SumiWebKitGeolocationBridge {
     private func coordinatorDecision(
         for context: SumiPermissionSecurityContext
     ) async -> SumiPermissionCoordinatorDecision {
-        await SumiWebKitPermissionPendingCoordinatorRace.resolve(
+        await SumiPermissionPendingCoordinatorRace.resolve(
             coordinator: coordinator,
             context: context,
             shouldWaitForPromptUI: pendingStrategy.waitsForPromptUI,
