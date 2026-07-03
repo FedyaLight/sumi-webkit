@@ -41,7 +41,7 @@ final class BrowserTabCloseFallbackPlanner {
         }
 
         if let historyMatch = firstTab(
-            matching: windowState.recentRegularTabIdsBySpace[targetSpaceId],
+            matching: windowState.selectionHistory.recentRegularTabIdsBySpace[targetSpaceId],
             in: regularTabById
         ) {
             return historyMatch
@@ -103,7 +103,7 @@ final class BrowserTabCloseFallbackPlanner {
         regularTabsById: [Tab.ID: Tab],
         tabStore: ShellSelectionTabStore
     ) -> Tab? {
-        for item in windowState.recentSelectionItemsBySpace[targetSpaceId] ?? [] {
+        for item in windowState.selectionHistory.recentSelectionItemsBySpace[targetSpaceId] ?? [] {
             switch item {
             case let .regularTab(tabId):
                 if let regularTab = regularTabsById[tabId] {

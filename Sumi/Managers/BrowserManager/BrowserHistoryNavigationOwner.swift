@@ -211,7 +211,7 @@ final class BrowserHistoryNavigationOwner {
         tab.favicon = Image(systemName: "globe")
         tab.faviconIsTemplateGlobePlaceholder = true
         dependencies.loadCurrentPageURL(tab, windowState, url)
-        windowState.invalidateNativeSurfaceRouting()
+        windowState.compositorInvalidation.invalidateNativeSurfaceRouting()
         dependencies.scheduleRuntimeStatePersistence(tab)
         dependencies.schedulePrepareVisibleWebViews(windowState)
         dependencies.refreshCompositor(windowState)

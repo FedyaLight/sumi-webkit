@@ -122,7 +122,7 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
 
         XCTAssertNil(harness.windowState.currentShortcutPinId)
         XCTAssertEqual(
-            harness.windowState.recentSelectionItemsBySpace[harness.space.id],
+            harness.windowState.selectionHistory.recentSelectionItemsBySpace[harness.space.id],
             [
                 .regularTab(regularTab.id),
                 .shortcutPin(pin.id),
@@ -184,8 +184,8 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         )
 
         harness.windowState.currentTabId = closingTab.id
-        harness.windowState.recentSelectionItemsBySpace[harness.space.id] = []
-        harness.windowState.recentRegularTabIdsBySpace[harness.space.id] = [
+        harness.windowState.selectionHistory.recentSelectionItemsBySpace[harness.space.id] = []
+        harness.windowState.selectionHistory.recentRegularTabIdsBySpace[harness.space.id] = [
             recentTab.id,
             neighborTab.id,
         ]
@@ -215,10 +215,10 @@ final class RecentlyClosedShortcutUndoTests: XCTestCase {
         )
 
         harness.windowState.currentTabId = closingTab.id
-        harness.windowState.recentSelectionItemsBySpace[harness.space.id] = [
+        harness.windowState.selectionHistory.recentSelectionItemsBySpace[harness.space.id] = [
             .regularTab(closingTab.id),
         ]
-        harness.windowState.recentRegularTabIdsBySpace[harness.space.id] = [
+        harness.windowState.selectionHistory.recentRegularTabIdsBySpace[harness.space.id] = [
             closingTab.id,
             UUID(),
         ]

@@ -189,7 +189,7 @@ struct WebsiteView: View {
                 .allowsHitTesting(nativeSurfaceKind == nil)
 
             nativeSurface(kind: nativeSurfaceKind)
-                .id(windowState.nativeSurfaceRoutingRevision)
+                .id(windowState.compositorInvalidation.nativeSurfaceRoutingRevision)
 
             VStack {
                 Spacer()

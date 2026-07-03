@@ -55,7 +55,7 @@ struct TabFolderView: View {
     }
 
     private var folderProjectionState: SidebarFolderProjectionState {
-        windowState.sidebarFolderProjection(for: folder.id)
+        windowState.sidebarFolderProjections.projection(for: folder.id)
     }
 
     private var contextMenuActionOwner: TabFolderContextMenuActionOwner {
@@ -763,7 +763,7 @@ struct TabFolderView: View {
             projection: projection
         ).map(\.id)
         let newHasActiveProjection = folderHasActiveSelection(using: projection) || !projectedIDs.isEmpty
-        windowState.scheduleSidebarFolderProjectionUpdate(
+        windowState.sidebarFolderProjections.scheduleUpdate(
             for: folder.id,
             projectedChildIDs: projectedIDs,
             hasActiveProjection: newHasActiveProjection

@@ -12,7 +12,7 @@ final class BrowserTabCloseFallbackPlannerTests: XCTestCase {
         let shortcutLiveTab = makeShortcutTab(pin: shortcutPin, spaceId: space.id)
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
-        windowState.recentSelectionItemsBySpace[space.id] = [
+        windowState.selectionHistory.recentSelectionItemsBySpace[space.id] = [
             .regularTab(closing.id),
             .shortcutPin(shortcutPin.id),
             .regularTab(adjacent.id),
@@ -42,8 +42,8 @@ final class BrowserTabCloseFallbackPlannerTests: XCTestCase {
         let next = makeTab("Next", spaceId: space.id, index: 2)
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
-        windowState.recentRegularTabIdsBySpace[space.id] = [UUID()]
-        windowState.recentSelectionItemsBySpace[space.id] = [.regularTab(UUID())]
+        windowState.selectionHistory.recentRegularTabIdsBySpace[space.id] = [UUID()]
+        windowState.selectionHistory.recentSelectionItemsBySpace[space.id] = [.regularTab(UUID())]
         let store = FakeCloseFallbackTabStore(
             spaces: [space],
             tabsBySpace: [space.id: [first, closing, next]]
@@ -71,7 +71,7 @@ final class BrowserTabCloseFallbackPlannerTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
         windowState.activeTabForSpace[space.id] = preferred.id
-        windowState.recentSelectionItemsBySpace[space.id] = [.regularTab(recent.id)]
+        windowState.selectionHistory.recentSelectionItemsBySpace[space.id] = [.regularTab(recent.id)]
         let store = FakeCloseFallbackTabStore(
             spaces: [space],
             tabsBySpace: [space.id: [recent, preferred]],
@@ -98,7 +98,7 @@ final class BrowserTabCloseFallbackPlannerTests: XCTestCase {
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
         windowState.activeTabForSpace[space.id] = remembered.id
-        windowState.recentSelectionItemsBySpace[space.id] = [.regularTab(UUID())]
+        windowState.selectionHistory.recentSelectionItemsBySpace[space.id] = [.regularTab(UUID())]
         let store = FakeCloseFallbackTabStore(
             spaces: [space],
             tabsBySpace: [space.id: [remembered]],

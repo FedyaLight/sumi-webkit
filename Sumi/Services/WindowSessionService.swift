@@ -415,7 +415,7 @@ final class WindowSessionService {
             windowState.isAwaitingInitialSessionResolution = false
             StartupPerformanceTrace.firstSelectedTabResolved()
             StartupPerformanceTrace.firstTabsClickable()
-            windowState.refreshCompositor()
+            windowState.compositorInvalidation.refresh()
             persistWindowSession(for: windowState, runtime: runtime)
         }
 

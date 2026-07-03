@@ -559,13 +559,13 @@ class SearchManager {
         }
 
         if let currentSpaceId = windowState.currentSpaceId {
-            appendSelectionHistory(windowState.recentSelectionItemsBySpace[currentSpaceId] ?? [])
-            (windowState.recentRegularTabIdsBySpace[currentSpaceId] ?? []).forEach(append)
+            appendSelectionHistory(windowState.selectionHistory.recentSelectionItemsBySpace[currentSpaceId] ?? [])
+            (windowState.selectionHistory.recentRegularTabIdsBySpace[currentSpaceId] ?? []).forEach(append)
         }
 
-        for spaceId in windowState.recentSelectionItemsBySpace.keys.sorted(by: { $0.uuidString < $1.uuidString })
+        for spaceId in windowState.selectionHistory.recentSelectionItemsBySpace.keys.sorted(by: { $0.uuidString < $1.uuidString })
             where spaceId != windowState.currentSpaceId {
-            appendSelectionHistory(windowState.recentSelectionItemsBySpace[spaceId] ?? [])
+            appendSelectionHistory(windowState.selectionHistory.recentSelectionItemsBySpace[spaceId] ?? [])
         }
 
         windowState.activeTabForSpace.values.forEach(append)

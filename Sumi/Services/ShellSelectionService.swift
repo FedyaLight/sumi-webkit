@@ -104,7 +104,7 @@ final class ShellSelectionService {
             let regularTabs = tabStore.tabs(in: space)
             let regularTabById = tabLookup(for: regularTabs)
             if let historyMatch = firstTab(
-                matching: windowState.recentRegularTabIdsBySpace[currentSpaceId],
+                matching: windowState.selectionHistory.recentRegularTabIdsBySpace[currentSpaceId],
                 in: regularTabById
             ) {
                 return historyMatch
@@ -139,7 +139,7 @@ final class ShellSelectionService {
         let regularTabs = tabStore.tabs(in: space)
         let regularTabById = tabLookup(for: regularTabs)
         if let historyMatch = firstTab(
-            matching: windowState.recentRegularTabIdsBySpace[space.id],
+            matching: windowState.selectionHistory.recentRegularTabIdsBySpace[space.id],
             in: regularTabById
         ) {
             return historyMatch

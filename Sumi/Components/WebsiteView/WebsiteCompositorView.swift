@@ -794,7 +794,7 @@ struct TabCompositorWrapper: NSViewControllerRepresentable {
         return WebsiteDisplayState(
             splitGroup: splitGroup,
             currentId: currentId,
-            compositorVersion: windowState.compositorVersion,
+            compositorVersion: windowState.compositorInvalidation.compositorVersion,
             currentTabUnloaded: currentTab?.isUnloaded ?? true,
             visibleTabIds: visibleTabIds(currentId: currentId),
             isSplitDropCaptureActive: isSplitDropCaptureActive

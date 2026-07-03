@@ -50,7 +50,7 @@ final class TabRemovalOwner {
             runtimeContext.notifyTabClosedIfLoaded(tab)
 
             runtimeContext.forEachWindowState { windowState in
-                windowState.removeFromRegularTabHistory(tab.id)
+                windowState.selectionHistory.removeFromRegularTabHistory(tab.id)
             }
 
             captureRecentlyClosedTab(tab, spaceId: removedSpaceId)

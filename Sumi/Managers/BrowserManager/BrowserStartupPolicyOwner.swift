@@ -98,9 +98,9 @@ final class BrowserStartupPolicyOwner {
             windowState.currentShortcutPinId = nil
             windowState.currentShortcutPinRole = nil
             windowState.activeTabForSpace.removeAll()
-            windowState.recentRegularTabIdsBySpace.removeAll()
+            windowState.selectionHistory.recentRegularTabIdsBySpace.removeAll()
             windowState.selectedShortcutPinForSpace.removeAll()
-            windowState.recentSelectionItemsBySpace.removeAll()
+            windowState.selectionHistory.recentSelectionItemsBySpace.removeAll()
             windowState.pendingSessionSplitGroupId = nil
             windowState.isShowingEmptyState = windowState.id == selectedWindow.id
             windowState.floatingBarPresentationReason =
@@ -109,7 +109,7 @@ final class BrowserStartupPolicyOwner {
             windowState.currentProfileId = fallbackSpaceId.flatMap { dependencies.space($0)?.profileId }
             windowState.isAwaitingInitialSessionResolution = false
             dependencies.glanceManager().restoreSession(nil, in: windowState)
-            windowState.refreshCompositor()
+            windowState.compositorInvalidation.refresh()
         }
     }
 

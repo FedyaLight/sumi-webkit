@@ -176,8 +176,8 @@ enum WindowTabSelectionStateApplicator {
                 windowState.activeTabForSpace[spaceId] = tabId
                 didChange = true
             }
-            if windowState.recentRegularTabIdsBySpace[spaceId]?.first != tabId {
-                windowState.recordRegularTabSelection(tabId, in: spaceId)
+            if windowState.selectionHistory.recentRegularTabIdsBySpace[spaceId]?.first != tabId {
+                windowState.selectionHistory.recordRegularTabSelection(tabId, in: spaceId)
                 didChange = true
             }
             return didChange
@@ -205,6 +205,6 @@ enum WindowTabSelectionStateApplicator {
             item = .regularTab(tab.id)
         }
 
-        return windowState.recordSelection(item, in: spaceId)
+        return windowState.selectionHistory.recordSelection(item, in: spaceId)
     }
 }

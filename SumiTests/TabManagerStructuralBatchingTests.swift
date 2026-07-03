@@ -154,7 +154,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = pin.role
         windowState.selectedShortcutPinForSpace[space.id] = pin.id
-        windowState.recentSelectionItemsBySpace[space.id] = [
+        windowState.selectionHistory.recentSelectionItemsBySpace[space.id] = [
             .shortcutPin(pin.id),
             .regularTab(regularHistoryId),
         ]
@@ -167,7 +167,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertNil(windowState.currentShortcutPinRole)
         XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
-        XCTAssertEqual(windowState.recentSelectionItemsBySpace[space.id], [.regularTab(regularHistoryId)])
+        XCTAssertEqual(windowState.selectionHistory.recentSelectionItemsBySpace[space.id], [.regularTab(regularHistoryId)])
         XCTAssertEqual(validationRecorder.count, 1)
     }
 
@@ -214,7 +214,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = pin.role
         windowState.selectedShortcutPinForSpace[space.id] = pin.id
-        windowState.recentSelectionItemsBySpace[space.id] = [.shortcutPin(pin.id)]
+        windowState.selectionHistory.recentSelectionItemsBySpace[space.id] = [.shortcutPin(pin.id)]
 
         tabManager.shortcutPinCommandOwner.removeShortcutPin(pin)
 
@@ -223,7 +223,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertNil(windowState.currentShortcutPinRole)
         XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
-        XCTAssertNil(windowState.recentSelectionItemsBySpace[space.id])
+        XCTAssertNil(windowState.selectionHistory.recentSelectionItemsBySpace[space.id])
         XCTAssertEqual(validationRecorder.count, 1)
     }
 
@@ -238,7 +238,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.currentSpaceId = space.id
         windowState.currentTabId = regularTab.id
         windowState.selectedShortcutPinForSpace[space.id] = pin.id
-        windowState.recentSelectionItemsBySpace[space.id] = [
+        windowState.selectionHistory.recentSelectionItemsBySpace[space.id] = [
             .shortcutPin(pin.id),
             .regularTab(regularTab.id),
         ]
@@ -264,7 +264,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertNil(windowState.currentShortcutPinRole)
         XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
-        XCTAssertEqual(windowState.recentSelectionItemsBySpace[space.id], [.regularTab(regularTab.id)])
+        XCTAssertEqual(windowState.selectionHistory.recentSelectionItemsBySpace[space.id], [.regularTab(regularTab.id)])
         XCTAssertEqual(validationRecorder.count, 0)
         XCTAssertEqual(persistenceRecorder.windowIds, [windowState.id])
     }
@@ -289,7 +289,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         windowState.currentShortcutPinId = pin.id
         windowState.currentShortcutPinRole = pin.role
         windowState.selectedShortcutPinForSpace[space.id] = pin.id
-        windowState.recentSelectionItemsBySpace[space.id] = [.shortcutPin(pin.id)]
+        windowState.selectionHistory.recentSelectionItemsBySpace[space.id] = [.shortcutPin(pin.id)]
 
         tabManager.folderMutationOwner.deleteFolder(folder.id)
 
@@ -300,7 +300,7 @@ final class TabManagerStructuralBatchingTests: XCTestCase {
         XCTAssertNil(windowState.currentShortcutPinId)
         XCTAssertNil(windowState.currentShortcutPinRole)
         XCTAssertNil(windowState.selectedShortcutPinForSpace[space.id])
-        XCTAssertNil(windowState.recentSelectionItemsBySpace[space.id])
+        XCTAssertNil(windowState.selectionHistory.recentSelectionItemsBySpace[space.id])
         XCTAssertEqual(validationRecorder.count, 1)
     }
 

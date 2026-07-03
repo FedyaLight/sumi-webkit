@@ -573,7 +573,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             .filter { nextVisited.contains($0.id) == false }
         let directShortcutPins = context.folderPinsByFolderId[folder.id] ?? []
 
-        let projectionState = context.windowState.sidebarFolderProjection(for: folder.id)
+        let projectionState = context.windowState.sidebarFolderProjections.projection(for: folder.id)
 
         let childSnapshots: [SpacePinnedItemSnapshot]
         let hasActiveSelection: Bool

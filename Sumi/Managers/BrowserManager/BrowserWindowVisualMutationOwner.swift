@@ -25,7 +25,7 @@ final class BrowserWindowVisualMutationOwner {
             )
             return
         }
-        windowState.refreshCompositor()
+        windowState.compositorInvalidation.refresh()
     }
 
     @discardableResult
@@ -64,7 +64,7 @@ final class BrowserWindowVisualMutationOwner {
                 dependencies.prepareVisibleWebViews(windowState)
             },
             refreshCompositor: { windowState in
-                windowState.refreshCompositor()
+                windowState.compositorInvalidation.refresh()
             }
         )
     }

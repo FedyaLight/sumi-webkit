@@ -7,32 +7,6 @@
 import Foundation
 import SwiftUI
 
-struct SidebarFolderProjectionState: Equatable {
-    var projectedChildIDs: [UUID] = []
-    var hasActiveProjection: Bool = false
-
-    static let empty = SidebarFolderProjectionState()
-}
-
-struct SidebarFolderProjectionStore: Equatable {
-    fileprivate var projectionsByFolderID: [UUID: SidebarFolderProjectionState] = [:]
-
-    func projection(for folderID: UUID) -> SidebarFolderProjectionState {
-        projectionsByFolderID[folderID] ?? .empty
-    }
-
-    mutating func setProjection(
-        _ projection: SidebarFolderProjectionState,
-        for folderID: UUID
-    ) {
-        if projection == .empty {
-            projectionsByFolderID.removeValue(forKey: folderID)
-            return
-        }
-        projectionsByFolderID[folderID] = projection
-    }
-}
-
 struct SplitGroupFocusRequest: Equatable {
     let id = UUID()
     let groupId: UUID
@@ -98,11 +72,11 @@ class BrowserWindowState {
     /// Window-scoped owner for sidebar-originated transient UI sessions.
     let sidebarTransientSessionCoordinator: SidebarTransientSessionCoordinator
 
-    /// Fallback-only generation bump for unresolved sidebar AppKit owner/input graph recovery.
-    var sidebarInputRecoveryGeneration: UInt64 = 0
+    /// Window-scoped owner for sidebar input-graph recovery generation bumps.
+    let sidebarInputRecovery: SidebarInputRecoveryOwner
 
     /// Window-local sidebar projection state that must not publish through shared models.
-    var sidebarFolderProjectionStore: SidebarFolderProjectionStore = .init()
+    let sidebarFolderProjections = SidebarFolderProjectionCoalescer()
 
     /// Window-local draft for the Zen-style in-sidebar space creation flow.
     var activeSpaceCreationSession: SpaceCreationSession?
@@ -125,14 +99,11 @@ class BrowserWindowState {
     /// Active tab for each space in this window (spaceId -> tabId)
     var activeTabForSpace: [UUID: UUID] = [:]
 
-    /// Most recently selected regular tabs for each space (most recent first)
-    var recentRegularTabIdsBySpace: [UUID: [UUID]] = [:]
-
     /// Most recently selected non-essential live shortcut for each space in this window.
     var selectedShortcutPinForSpace: [UUID: UUID] = [:]
 
-    /// Most recently selected tabs and live shortcuts for each space, used only as a close-tab fallback.
-    var recentSelectionItemsBySpace: [UUID: [BrowserWindowSelectionHistoryItem]] = [:]
+    /// Window-scoped owner for regular-tab and shortcut selection history.
+    let selectionHistory = WindowSelectionHistoryOwner()
 
     /// Sidebar width for this window
     var sidebarWidth: CGFloat = BrowserWindowState.sidebarDefaultWidth
@@ -161,21 +132,11 @@ class BrowserWindowState {
     /// Frame of the URL bar within this window
     var urlBarFrame: CGRect = .zero
 
-    /// Lightweight, per-window chrome feedback. Only one toast is mounted at a time.
-    var toast: BrowserToast?
+    /// Window-scoped owner for the single chrome toast and its dismiss timer.
+    let toastPresentation = WindowToastPresentationOwner()
 
-    /// Compositor version counter for this window (incremented when tab ownership changes)
-    var compositorVersion: Int = 0
-
-    /// Forces WebsiteView to re-evaluate whether the current tab is native or web-backed.
-    var nativeSurfaceRoutingRevision: UInt64 = 0
-
-    @ObservationIgnored private var isCompositorRefreshScheduled: Bool = false
-    @ObservationIgnored private var isSidebarInputRecoveryScheduled: Bool = false
-    @ObservationIgnored private var pendingSidebarInputRecoveryReasons: [SidebarInputRecoveryReason] = []
-    @ObservationIgnored private var isSidebarFolderProjectionFlushScheduled: Bool = false
-    @ObservationIgnored private var pendingSidebarFolderProjectionUpdates: [UUID: SidebarFolderProjectionState] = [:]
-    @ObservationIgnored private var toastDismissTask: Task<Void, Never>?
+    /// Window-scoped owner for compositor/native-surface invalidation counters.
+    let compositorInvalidation = WindowCompositorInvalidationOwner()
 
     /// Reference to the actual NSWindow for this window state
     var window: NSWindow?
@@ -202,9 +163,6 @@ class BrowserWindowState {
     /// Ephemeral tabs created in this incognito session
     var ephemeralTabs: [Tab] = []
 
-    /// Whether the download warning has been shown in this incognito session
-    var hasShownDownloadWarning: Bool = false
-
     init(
         id: UUID = UUID(),
         initialWorkspaceTheme: WorkspaceTheme? = nil,
@@ -212,6 +170,7 @@ class BrowserWindowState {
     ) {
         self.id = id
         self.isAwaitingInitialSessionResolution = awaitsInitialSessionResolution
+        self.sidebarInputRecovery = SidebarInputRecoveryOwner(windowID: id)
         var initialThemeState = WindowThemeState()
         if let initialWorkspaceTheme {
             initialThemeState.restore(initialWorkspaceTheme)
@@ -230,7 +189,7 @@ class BrowserWindowState {
         self.sidebarContextMenuController.windowState = self
         self.windowThemeState = initialThemeState
         sidebarTransientSessionCoordinator.scheduleSidebarInputRehydrate = { [weak self] reason in
-            self?.scheduleSidebarInputRehydrate(reason: reason)
+            self?.sidebarInputRecovery.scheduleRehydrate(reason: reason)
         }
         sidebarTransientSessionCoordinator.recoverSidebarInteractiveOwners = { [weak self] window, source in
             self?.sidebarContextMenuController.recoverInteractiveOwners(
@@ -281,164 +240,5 @@ class BrowserWindowState {
             session.transientSessionToken,
             reason: reason
         )
-    }
-
-    func scheduleSidebarInputRehydrate(reason: SidebarInputRecoveryReason) {
-        pendingSidebarInputRecoveryReasons.append(reason)
-        guard !isSidebarInputRecoveryScheduled else { return }
-
-        isSidebarInputRecoveryScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.isSidebarInputRecoveryScheduled = false
-
-            let reasons = self.pendingSidebarInputRecoveryReasons
-            self.pendingSidebarInputRecoveryReasons.removeAll()
-            self.sidebarInputRecoveryGeneration &+= 1
-            let reasonDescriptions = reasons.map(\.description)
-
-            RuntimeDiagnostics.emit(
-                "🧭 Sidebar input recovery generation=\(self.sidebarInputRecoveryGeneration) window=\(self.id.uuidString) reason=\(reasonDescriptions.joined(separator: ","))"
-            )
-        }
-    }
-
-    func sidebarFolderProjection(for folderID: UUID) -> SidebarFolderProjectionState {
-        sidebarFolderProjectionStore.projection(for: folderID)
-    }
-
-    func scheduleSidebarFolderProjectionUpdate(
-        for folderID: UUID,
-        projectedChildIDs: [UUID],
-        hasActiveProjection: Bool
-    ) {
-        let projection = SidebarFolderProjectionState(
-            projectedChildIDs: projectedChildIDs,
-            hasActiveProjection: hasActiveProjection
-        )
-
-        if sidebarFolderProjectionStore.projection(for: folderID) == projection,
-           pendingSidebarFolderProjectionUpdates[folderID] == nil {
-            return
-        }
-
-        pendingSidebarFolderProjectionUpdates[folderID] = projection
-        guard !isSidebarFolderProjectionFlushScheduled else { return }
-
-        isSidebarFolderProjectionFlushScheduled = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.isSidebarFolderProjectionFlushScheduled = false
-
-            let updates = self.pendingSidebarFolderProjectionUpdates
-            self.pendingSidebarFolderProjectionUpdates.removeAll()
-
-            guard updates.isEmpty == false else { return }
-
-            var nextStore = self.sidebarFolderProjectionStore
-            var didChange = false
-
-            for (folderID, projection) in updates {
-                if nextStore.projection(for: folderID) == projection {
-                    continue
-                }
-                nextStore.setProjection(projection, for: folderID)
-                didChange = true
-            }
-
-            guard didChange else { return }
-            self.sidebarFolderProjectionStore = nextStore
-        }
-    }
-
-    /// Coalesce compositor invalidations so repeated same-turn calls trigger one UI update.
-    func refreshCompositor() {
-        guard !isCompositorRefreshScheduled else { return }
-        isCompositorRefreshScheduled = true
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            self.isCompositorRefreshScheduled = false
-            self.compositorVersion += 1
-        }
-    }
-
-    func invalidateNativeSurfaceRouting() {
-        nativeSurfaceRoutingRevision &+= 1
-    }
-
-    func presentToast(_ nextToast: BrowserToast) {
-        toastDismissTask?.cancel()
-        toast = nextToast
-
-        toastDismissTask = Task { [weak self, id = nextToast.id, duration = nextToast.duration] in
-            let nanoseconds = UInt64(duration * 1_000_000_000)
-            try? await Task.sleep(nanoseconds: nanoseconds)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.dismissToast(id: id)
-            }
-        }
-    }
-
-    func dismissToast(id: BrowserToast.ID? = nil) {
-        if let id, toast?.id != id { return }
-        toastDismissTask?.cancel()
-        toastDismissTask = nil
-        toast = nil
-    }
-
-    func recordRegularTabSelection(_ tabId: UUID, in spaceId: UUID) {
-        var history = recentRegularTabIdsBySpace[spaceId] ?? []
-        history.removeAll { $0 == tabId }
-        history.insert(tabId, at: 0)
-        if history.count > 20 {
-            history = Array(history.prefix(20))
-        }
-        recentRegularTabIdsBySpace[spaceId] = history
-    }
-
-    func removeFromRegularTabHistory(_ tabId: UUID) {
-        for (spaceId, history) in recentRegularTabIdsBySpace {
-            recentRegularTabIdsBySpace[spaceId] = history.filter { $0 != tabId }
-        }
-        removeFromSelectionHistory { item in
-            if case let .regularTab(historyTabId) = item {
-                return historyTabId == tabId
-            }
-            return false
-        }
-    }
-
-    @discardableResult
-    func recordSelection(_ item: BrowserWindowSelectionHistoryItem, in spaceId: UUID) -> Bool {
-        let previous = recentSelectionItemsBySpace[spaceId] ?? []
-        var history = previous
-        history.removeAll { $0 == item }
-        history.insert(item, at: 0)
-        if history.count > 20 {
-            history = Array(history.prefix(20))
-        }
-        recentSelectionItemsBySpace[spaceId] = history
-        return history != previous
-    }
-
-    func removeFromShortcutLiveSelectionHistory(_ pinId: UUID) {
-        removeFromSelectionHistory { item in
-            if case let .shortcutPin(historyPinId) = item {
-                return historyPinId == pinId
-            }
-            return false
-        }
-    }
-
-    private func removeFromSelectionHistory(_ shouldRemove: (BrowserWindowSelectionHistoryItem) -> Bool) {
-        for (spaceId, history) in recentSelectionItemsBySpace {
-            let filtered = history.filter { !shouldRemove($0) }
-            if filtered.isEmpty {
-                recentSelectionItemsBySpace.removeValue(forKey: spaceId)
-            } else {
-                recentSelectionItemsBySpace[spaceId] = filtered
-            }
-        }
     }
 }

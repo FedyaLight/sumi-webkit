@@ -93,7 +93,7 @@ final class ShellSelectionServiceTests: XCTestCase {
 
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = space.id
-        windowState.recentRegularTabIdsBySpace[space.id] = [missing, second.id, first.id]
+        windowState.selectionHistory.recentRegularTabIdsBySpace[space.id] = [missing, second.id, first.id]
 
         let resolved = service.preferredTabForSpace(space, in: windowState, tabStore: store)
         XCTAssertEqual(resolved?.id, second.id)
@@ -152,7 +152,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         windowState.currentSpaceId = currentSpace.id
         windowState.currentTabId = essentialLiveTab.id
         windowState.selectedShortcutPinForSpace[targetSpace.id] = targetPin.id
-        windowState.recentRegularTabIdsBySpace[targetSpace.id] = [recentRegular.id]
+        windowState.selectionHistory.recentRegularTabIdsBySpace[targetSpace.id] = [recentRegular.id]
 
         let resolved = service.selectionTargetForSpaceActivation(
             in: targetSpace,
@@ -212,7 +212,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         windowState.currentSpaceId = currentSpace.id
         windowState.currentTabId = staleCurrent.id
         windowState.selectedShortcutPinForSpace[targetSpace.id] = targetPin.id
-        windowState.recentRegularTabIdsBySpace[targetSpace.id] = [recentRegular.id]
+        windowState.selectionHistory.recentRegularTabIdsBySpace[targetSpace.id] = [recentRegular.id]
         windowState.activeTabForSpace[targetSpace.id] = rememberedRegular.id
 
         let selectedShortcut = service.selectionTargetForSpaceActivation(
@@ -263,7 +263,7 @@ final class ShellSelectionServiceTests: XCTestCase {
         windowState.currentSpaceId = space.id
         windowState.currentTabId = staleCurrent.id
         windowState.isAwaitingInitialSessionResolution = true
-        windowState.recentRegularTabIdsBySpace[space.id] = [recentRegular.id]
+        windowState.selectionHistory.recentRegularTabIdsBySpace[space.id] = [recentRegular.id]
         windowState.activeTabForSpace[space.id] = rememberedRegular.id
 
         XCTAssertTrue(service.hasValidCurrentSelection(in: windowState, tabStore: store))

@@ -91,7 +91,7 @@ final class ShortcutLiveTabOwner {
                     windowState.activeTabForSpace[spaceId] = dependencies.firstRegularTabId(spaceId)
                 }
             }
-            windowState.removeFromRegularTabHistory(tab.id)
+            windowState.selectionHistory.removeFromRegularTabHistory(tab.id)
         }
     }
 
@@ -494,7 +494,7 @@ final class ShortcutLiveTabOwner {
                 windowState.activeTabForSpace[spaceId] = dependencies.firstRegularTabId(spaceId)
             }
         }
-        windowState.removeFromRegularTabHistory(originalTab.id)
+        windowState.selectionHistory.removeFromRegularTabHistory(originalTab.id)
         dependencies.runtimeContext()?.webViewLifecycle.materializeVisibleTabWebViewIfNeeded(liveTab, in: windowState)
     }
 
@@ -530,7 +530,7 @@ final class ShortcutLiveTabOwner {
                 cleanupResult.recordWindowSessionChange(in: windowState)
             }
         }
-        windowState.removeFromShortcutLiveSelectionHistory(pinId)
+        windowState.selectionHistory.removeFromShortcutLiveSelectionHistory(pinId)
         return cleanupResult
     }
 }

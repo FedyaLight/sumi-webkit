@@ -216,7 +216,7 @@ struct WindowView: View {
         }
         .onChange(of: sumiSettings.showBrowserToasts) { _, isEnabled in
             if !isEnabled {
-                windowState.dismissToast()
+                windowState.toastPresentation.dismiss()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sumiApplicationDidChangeEffectiveAppearance)) { _ in
@@ -505,11 +505,11 @@ struct WindowView: View {
     @ViewBuilder
     private var toastOverlay: some View {
         ZStack(alignment: .topTrailing) {
-            if sumiSettings.showBrowserToasts, let toast = windowState.toast {
+            if sumiSettings.showBrowserToasts, let toast = windowState.toastPresentation.toast {
                 chromeThemeScope {
                     BrowserToastView(toast: toast)
                         .onTapGesture {
-                            windowState.dismissToast(id: toast.id)
+                            windowState.toastPresentation.dismiss(id: toast.id)
                         }
                         .accessibilityAddTraits(.isButton)
                 }
@@ -517,7 +517,7 @@ struct WindowView: View {
             }
         }
         .padding(10)
-        .animation(toastAnimation, value: windowState.toast?.id)
+        .animation(toastAnimation, value: windowState.toastPresentation.toast?.id)
     }
 
     private var toastAnimation: Animation {

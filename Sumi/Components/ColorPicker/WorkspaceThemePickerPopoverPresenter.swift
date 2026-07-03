@@ -240,7 +240,7 @@ final class WorkspaceThemePickerPopoverPresenter: NSObject, NSPopoverDelegate {
         )
         if source?.interactiveOwnerRecoveryMetadata != nil,
            !recoveryResult.sourceOwnerResolved {
-            windowState.scheduleSidebarInputRehydrate(
+            windowState.sidebarInputRecovery.scheduleRehydrate(
                 reason: .ownerUnresolvedAfterSoftRecovery
             )
         }

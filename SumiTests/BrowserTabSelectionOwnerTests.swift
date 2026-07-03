@@ -13,8 +13,8 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         windowState.currentSpaceId = spaceId
         windowState.isShowingEmptyState = false
         windowState.activeTabForSpace[spaceId] = tab.id
-        windowState.recentRegularTabIdsBySpace[spaceId] = [tab.id]
-        windowState.recentSelectionItemsBySpace[spaceId] = [.regularTab(tab.id)]
+        windowState.selectionHistory.recentRegularTabIdsBySpace[spaceId] = [tab.id]
+        windowState.selectionHistory.recentSelectionItemsBySpace[spaceId] = [.regularTab(tab.id)]
         let probe = ActionProbe(activeWindowId: windowState.id)
 
         owner.applyTabSelection(
@@ -61,7 +61,7 @@ final class BrowserTabSelectionOwnerTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, selectedTab.id)
         XCTAssertEqual(windowState.currentSpaceId, space.id)
         XCTAssertEqual(windowState.activeTabForSpace[space.id], selectedTab.id)
-        XCTAssertEqual(windowState.recentRegularTabIdsBySpace[space.id], [selectedTab.id])
+        XCTAssertEqual(windowState.selectionHistory.recentRegularTabIdsBySpace[space.id], [selectedTab.id])
         XCTAssertEqual(
             probe.events,
             [

@@ -13,12 +13,12 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
         owner.refreshCompositor(for: windowState)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorVersion, 0)
+        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 0)
 
         owner.flushWindowMutationsAfterHistorySwipe(in: windowState.id)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorVersion, 1)
+        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 1)
     }
 
     func testRefreshCompositorDefersDuringFrozenBackForwardNavigationUntilFlush() async {
@@ -30,12 +30,12 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
         owner.refreshCompositor(for: windowState)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorVersion, 0)
+        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 0)
 
         owner.flushWindowMutationsAfterHistorySwipe(in: windowState.id)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorVersion, 1)
+        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 1)
     }
 
     func testSchedulePrepareVisibleWebViewsDefersDuringActiveHistorySwipeAndFlushesBeforeRefresh() async {
@@ -57,14 +57,14 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
         await drainMainQueue()
 
         XCTAssertEqual(events, [])
-        XCTAssertEqual(windowState.compositorVersion, 0)
+        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 0)
 
         hasActiveHistorySwipe = false
         owner.flushWindowMutationsAfterHistorySwipe(in: windowState.id)
         await drainMainQueue()
 
         XCTAssertEqual(events, ["prepare"])
-        XCTAssertEqual(windowState.compositorVersion, 1)
+        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 1)
     }
 
     func testImmediateVisualHandoffReturnsFalseDuringActiveHistorySwipe() {
@@ -102,7 +102,7 @@ final class BrowserWindowVisualMutationOwnerTests: XCTestCase {
         owner.flushWindowMutationsAfterHistorySwipe(in: windowState.id)
         await drainMainQueue()
 
-        XCTAssertEqual(windowState.compositorVersion, 0)
+        XCTAssertEqual(windowState.compositorInvalidation.compositorVersion, 0)
     }
 
     private func makeOwner(

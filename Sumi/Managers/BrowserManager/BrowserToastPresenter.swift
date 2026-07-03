@@ -18,7 +18,7 @@ final class BrowserToastPresenter {
     func presentToast(_ toast: BrowserToast, in windowState: BrowserWindowState? = nil) {
         guard dependencies.showBrowserToasts() else { return }
         guard let targetWindow = windowState ?? dependencies.activeWindow() else { return }
-        targetWindow.presentToast(toast)
+        targetWindow.toastPresentation.present(toast)
     }
 
     func showProfileSwitchToast(to profile: Profile, in windowState: BrowserWindowState?) {

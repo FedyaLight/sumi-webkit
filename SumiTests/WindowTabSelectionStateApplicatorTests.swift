@@ -35,8 +35,8 @@ final class WindowTabSelectionStateApplicatorTests: XCTestCase {
         XCTAssertFalse(windowState.isShowingEmptyState)
         XCTAssertNil(windowState.selectedShortcutPinForSpace[targetSpaceId])
         XCTAssertEqual(windowState.activeTabForSpace[targetSpaceId], tab.id)
-        XCTAssertEqual(windowState.recentRegularTabIdsBySpace[targetSpaceId], [tab.id])
-        XCTAssertEqual(windowState.recentSelectionItemsBySpace[targetSpaceId], [.regularTab(tab.id)])
+        XCTAssertEqual(windowState.selectionHistory.recentRegularTabIdsBySpace[targetSpaceId], [tab.id])
+        XCTAssertEqual(windowState.selectionHistory.recentSelectionItemsBySpace[targetSpaceId], [.regularTab(tab.id)])
     }
 
     func testSpacePinnedShortcutSelectionUpdatesShortcutSelectionMemory() {
@@ -61,8 +61,8 @@ final class WindowTabSelectionStateApplicatorTests: XCTestCase {
         XCTAssertEqual(windowState.currentShortcutPinRole, .spacePinned)
         XCTAssertEqual(windowState.selectedShortcutPinForSpace[spaceId], pin.id)
         XCTAssertNil(windowState.activeTabForSpace[spaceId])
-        XCTAssertNil(windowState.recentRegularTabIdsBySpace[spaceId])
-        XCTAssertEqual(windowState.recentSelectionItemsBySpace[spaceId], [.shortcutPin(pin.id)])
+        XCTAssertNil(windowState.selectionHistory.recentRegularTabIdsBySpace[spaceId])
+        XCTAssertEqual(windowState.selectionHistory.recentSelectionItemsBySpace[spaceId], [.shortcutPin(pin.id)])
     }
 
     func testEssentialShortcutSelectionDoesNotMoveWindowSpaceOrRememberShortcutForSpace() {
@@ -88,7 +88,7 @@ final class WindowTabSelectionStateApplicatorTests: XCTestCase {
         XCTAssertEqual(windowState.currentShortcutPinRole, .essential)
         XCTAssertNil(windowState.selectedShortcutPinForSpace[currentSpaceId])
         XCTAssertNil(windowState.selectedShortcutPinForSpace[tabSpaceId])
-        XCTAssertEqual(windowState.recentSelectionItemsBySpace[currentSpaceId], [.shortcutPin(pin.id)])
+        XCTAssertEqual(windowState.selectionHistory.recentSelectionItemsBySpace[currentSpaceId], [.shortcutPin(pin.id)])
     }
 
     func testApplyingAlreadyCurrentRegularSelectionReportsNoStateChange() {
@@ -99,8 +99,8 @@ final class WindowTabSelectionStateApplicatorTests: XCTestCase {
         windowState.currentSpaceId = spaceId
         windowState.isShowingEmptyState = false
         windowState.activeTabForSpace[spaceId] = tab.id
-        windowState.recentRegularTabIdsBySpace[spaceId] = [tab.id]
-        windowState.recentSelectionItemsBySpace[spaceId] = [.regularTab(tab.id)]
+        windowState.selectionHistory.recentRegularTabIdsBySpace[spaceId] = [tab.id]
+        windowState.selectionHistory.recentSelectionItemsBySpace[spaceId] = [.regularTab(tab.id)]
 
         let result = WindowTabSelectionStateApplicator.apply(
             tab,
@@ -115,8 +115,8 @@ final class WindowTabSelectionStateApplicatorTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, tab.id)
         XCTAssertEqual(windowState.currentSpaceId, spaceId)
         XCTAssertEqual(windowState.activeTabForSpace[spaceId], tab.id)
-        XCTAssertEqual(windowState.recentRegularTabIdsBySpace[spaceId], [tab.id])
-        XCTAssertEqual(windowState.recentSelectionItemsBySpace[spaceId], [.regularTab(tab.id)])
+        XCTAssertEqual(windowState.selectionHistory.recentRegularTabIdsBySpace[spaceId], [tab.id])
+        XCTAssertEqual(windowState.selectionHistory.recentSelectionItemsBySpace[spaceId], [.regularTab(tab.id)])
     }
 
     private func makeTab(spaceId: UUID) -> Tab {

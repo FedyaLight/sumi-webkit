@@ -676,7 +676,7 @@ struct SpacesSideBarView: View {
         let pageProfileId = resolvedPageProfileId(for: space)
         // Fallback-only identity change for unresolved AppKit owner/input graph recovery.
         let inputRecoveryGeneration = pageRenderMode == .interactive
-            ? windowState.sidebarInputRecoveryGeneration
+            ? windowState.sidebarInputRecovery.generation
             : 0
         let allowsInteractiveWork = pageRenderMode == .interactive && allowsSidebarInteractiveWork
 
