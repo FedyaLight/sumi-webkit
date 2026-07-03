@@ -126,6 +126,11 @@ final class ExtensionManager: NSObject, ObservableObject {
     let siteAccessPolicyStore: SafariExtensionSiteAccessPolicyStore
     let extensionPreferences: UserDefaults
     let requestedTabLifecycleOwner = ExtensionRequestedTabLifecycleOwner()
+    #if DEBUG || SUMI_DIAGNOSTICS
+        /// Single long-lived instance: the user-script registry keeps only a
+        /// weak reference to the message handler.
+        let accountForkDiagnosticsUserScript = SafariExtensionAccountForkDiagnosticsUserScript()
+    #endif
     lazy var installationFlowOwner = ExtensionInstallationFlowOwner(
         dependencies: .live(manager: self)
     )
@@ -365,7 +370,11 @@ final class ExtensionManager: NSObject, ObservableObject {
     }
 
     func normalTabUserScripts() -> [SumiUserScript] {
-        []
+        #if DEBUG || SUMI_DIAGNOSTICS
+            [accountForkDiagnosticsUserScript]
+        #else
+            []
+        #endif
     }
 
     // MARK: - Extension Requested Tab Facades
