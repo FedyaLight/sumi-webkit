@@ -78,7 +78,7 @@ final class BrowserWindowSpaceStateOwner {
         )
         let isActiveWindow = dependencies.windowRegistry()?.activeWindow?.id == windowState.id
         if isActiveWindow {
-            dependencies.tabManager().setActiveSpace(
+            dependencies.tabManager().spaceLifecycleOwner.setActiveSpace(
                 space,
                 preferredTab: selectedTargetTab,
                 contextWindowId: windowState.id

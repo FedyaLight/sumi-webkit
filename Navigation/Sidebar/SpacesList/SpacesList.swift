@@ -188,7 +188,7 @@ struct SpacesList: View {
                     windowState.sidebarInteractionState.syncSidebarItemDrag(false)
                 }
                 if let drop {
-                    browserContext.tabManager.reorderSpace(
+                    browserContext.tabManager.spaceLifecycleOwner.reorderSpace(
                         spaceId: drop.spaceId,
                         to: drop.targetIndex
                     )

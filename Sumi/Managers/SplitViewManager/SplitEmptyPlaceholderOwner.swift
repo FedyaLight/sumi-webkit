@@ -37,7 +37,7 @@ final class SplitEmptyPlaceholderOwner {
     func replacePlaceholder(with tab: Tab, in windowState: BrowserWindowState) -> Bool {
         guard let placeholderTabId = placeholderTabIdsByWindow[windowState.id],
               let tabManager = tabManager(),
-              let group = tabManager.splitGroup(containing: placeholderTabId),
+              let group = tabManager.splitGroupStructureOwner.splitGroup(containing: placeholderTabId),
               group.contains(placeholderTabId)
         else { return false }
 
@@ -59,7 +59,7 @@ final class SplitEmptyPlaceholderOwner {
             members: group.removingMember(tabId: placeholderTabId).members + [resolved.member]
         )
 
-        tabManager.upsertSplitGroup(updated)
+        tabManager.splitGroupStructureOwner.upsertSplitGroup(updated)
         if placeholderTabId != resolved.tab.id {
             tabManager.removeTab(placeholderTabId)
         }

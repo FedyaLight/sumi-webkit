@@ -320,7 +320,7 @@ struct PinnedGrid: View {
     }
 
     private func splitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
-        browserContext.tabManager.splitGroup(containingPinId: pin.id)
+        browserContext.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: pin.id)
     }
 
     private func isSplitPlaceholderSelected(_ group: SplitGroup, pin: ShortcutPin) -> Bool {
@@ -404,7 +404,7 @@ struct PinnedGrid: View {
                     profileTarget: .init(
                         choices: profileChoices(for: pin),
                         onSelect: { profileId in
-                            browserContext.tabManager.assign(
+                            browserContext.tabManager.profileAssignmentOwner.assign(
                                 shortcutPin: pin,
                                 toExecutionProfile: profileId
                             )

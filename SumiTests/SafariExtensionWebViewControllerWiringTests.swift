@@ -107,7 +107,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -462,7 +462,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -552,7 +552,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -664,7 +664,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -745,7 +745,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -841,11 +841,11 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let visibleSpace = browserManager.tabManager.createSpace(
+        let visibleSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Visible",
             profileId: profile.id
         )
-        let hiddenSpace = browserManager.tabManager.createSpace(
+        let hiddenSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Hidden",
             profileId: profile.id
         )
@@ -926,7 +926,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        _ = browserManager.tabManager.createSpace(
+        _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1007,7 +1007,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1112,7 +1112,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        _ = browserManager.tabManager.createSpace(
+        _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1265,7 +1265,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        _ = browserManager.tabManager.createSpace(
+        _ = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1730,7 +1730,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1799,7 +1799,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1890,7 +1890,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -1992,7 +1992,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )
@@ -2356,7 +2356,7 @@ final class SafariExtensionWebViewControllerWiringTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Work",
             profileId: profile.id
         )

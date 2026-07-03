@@ -288,7 +288,7 @@ final class WindowSessionServiceTests: XCTestCase {
     func testApplyWindowSessionSnapshotRestoresPersistedWindowFields() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
         let profileId = UUID()
-        let space = tabManager.createSpace(name: "Snapshot", profileId: profileId)
+        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Snapshot", profileId: profileId)
         let tab = tabManager.createNewTab(url: "https://snapshot.example", in: space, activate: true)
         let shortcutPinId = UUID()
         let sessionKey = "SumiTests.windowSession.\(UUID().uuidString)"
@@ -446,7 +446,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testActiveSplitGroupSnapshotRestoresGroupFocus() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        let space = tabManager.createSpace(name: "Split", profileId: UUID())
+        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Split", profileId: UUID())
         let first = tabManager.createNewTab(url: "https://one.example", in: space, activate: true)
         let second = tabManager.createNewTab(url: "https://two.example", in: space, activate: false)
         let group = try XCTUnwrap(
@@ -457,7 +457,7 @@ final class WindowSessionServiceTests: XCTestCase {
                 host: .regular(spaceId: space.id)
             )
         )
-        tabManager.upsertSplitGroup(group, schedulePersistence: false)
+        tabManager.splitGroupStructureOwner.upsertSplitGroup(group, schedulePersistence: false)
 
         let snapshot = WindowSessionSnapshot(
             currentTabId: nil,
@@ -491,7 +491,7 @@ final class WindowSessionServiceTests: XCTestCase {
 
     func testLegacySplitSessionSnapshotMigratesAfterTabLoad() throws {
         let tabManager = try makeInMemoryTabManager(loadPersistedState: false)
-        let space = tabManager.createSpace(name: "Legacy Split", profileId: UUID())
+        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Legacy Split", profileId: UUID())
         let left = tabManager.createNewTab(url: "https://left.example", in: space, activate: true)
         let right = tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         let sessionKey = try seedLegacySplitWindowSession(
@@ -516,12 +516,12 @@ final class WindowSessionServiceTests: XCTestCase {
         XCTAssertEqual(windowState.currentTabId, left.id)
         XCTAssertNotNil(windowState.pendingSessionSplitGroupId)
         XCTAssertNotNil(windowState.pendingSessionLegacySplitGroup)
-        XCTAssertNil(tabManager.splitGroup(containing: left.id))
+        XCTAssertNil(tabManager.splitGroupStructureOwner.splitGroup(containing: left.id))
 
         tabManager.markInitialDataLoadFinished()
         service.handleTabManagerDataLoaded(runtime: delegate.runtime)
 
-        let group = try XCTUnwrap(tabManager.splitGroup(containing: left.id))
+        let group = try XCTUnwrap(tabManager.splitGroupStructureOwner.splitGroup(containing: left.id))
         XCTAssertEqual(Set(group.tabIds), Set([left.id, right.id]))
         XCTAssertEqual(group.layoutKind, .horizontal)
         XCTAssertEqual(group.activeTabId, right.id)

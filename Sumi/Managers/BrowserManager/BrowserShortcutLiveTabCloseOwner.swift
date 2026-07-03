@@ -24,8 +24,8 @@ final class BrowserShortcutLiveTabCloseOwner {
         guard tab.isShortcutLiveInstance else { return }
 
         let tabManager = dependencies.tabManager()
-        if let group = tabManager.splitGroup(containing: tab.id)
-            ?? tab.shortcutPinId.flatMap({ tabManager.splitGroup(containingPinId: $0) }) {
+        if let group = tabManager.splitGroupStructureOwner.splitGroup(containing: tab.id)
+            ?? tab.shortcutPinId.flatMap({ tabManager.splitGroupStructureOwner.splitGroup(containingPinId: $0) }) {
             if group.isShortcutHosted {
                 captureClosedShortcutLiveInstance(tab, in: windowState)
                 dependencies.unloadShortcutHostedSplitGroup(group, windowState)

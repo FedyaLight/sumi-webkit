@@ -186,7 +186,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Detached Runtime Source")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Detached Runtime Source")
         let activeTab = browserManager.tabManager.createNewTab(
             url: "https://active.example",
             in: space,
@@ -226,13 +226,13 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let selectedSpace = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Selected")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Selected")
         let selectedTab = browserManager.tabManager.createNewTab(
             url: "https://selected.example",
             in: selectedSpace,
             activate: true
         )
-        let staleSpace = browserManager.tabManager.createSpace(name: "Stale")
+        let staleSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Stale")
         let staleGlobalTab = browserManager.tabManager.createNewTab(
             url: "https://stale.example",
             in: staleSpace,
@@ -260,7 +260,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Compositor Runtime Wiring")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Compositor Runtime Wiring")
         let tab = browserManager.tabManager.createNewTab(
             url: "https://example.com/compositor",
             in: space,
@@ -284,7 +284,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Runtime Wiring")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Runtime Wiring")
         let tab = browserManager.tabManager.createNewTab(
             url: "https://example.com",
             in: space,
@@ -303,7 +303,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     private func tabManagerRuntimeCanPrepareCreatedTabs(_ browserManager: BrowserManager) -> Bool {
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "TabManager Runtime Wiring")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "TabManager Runtime Wiring")
         let tab = browserManager.tabManager.createNewTab(
             url: "https://example.com/tab-manager-runtime",
             in: space,
@@ -319,7 +319,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.webViewCoordinator = coordinator
 
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Download Runtime Wiring")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Download Runtime Wiring")
         let tab = browserManager.tabManager.createNewTab(
             url: "https://example.com/download",
             in: space,
@@ -356,7 +356,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
         let profileId = UUID()
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Boost Runtime Wiring", profileId: profileId)
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Boost Runtime Wiring", profileId: profileId)
         let tab = browserManager.tabManager.createNewTab(
             url: "https://example.com/boost",
             in: space,
@@ -390,7 +390,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         browserManager.windowRegistry = windowRegistry
 
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Auxiliary Runtime Wiring")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Auxiliary Runtime Wiring")
         let sourceTab = browserManager.tabManager.createNewTab(
             url: "https://example.com/source",
             in: space,
@@ -426,7 +426,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
 
     private func glanceRuntimeCanPreparePreviewTabs(_ browserManager: BrowserManager) -> Bool {
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Glance Runtime Wiring")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Glance Runtime Wiring")
         let sourceTab = browserManager.tabManager.createNewTab(
             url: "https://example.com/glance-source",
             in: space,
@@ -568,7 +568,7 @@ final class BrowserManagerRuntimeWiringTests: XCTestCase {
         await browserManager.drainProtectionRuntimeTasksForTests()
 
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Visible WebView Runtime")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Visible WebView Runtime")
         let tab = browserManager.tabManager.createNewTab(
             url: "https://example.com/visible-webview",
             in: space,

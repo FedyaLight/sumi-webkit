@@ -153,13 +153,13 @@ extension BrowserSidebarEditorPresentationOwner.Dependencies {
                 browserManager?.profileManager.profiles ?? []
             },
             renameSpace: { [weak browserManager] spaceID, name in
-                try browserManager?.tabManager.renameSpace(spaceId: spaceID, newName: name)
+                try browserManager?.tabManager.spaceLifecycleOwner.renameSpace(spaceId: spaceID, newName: name)
             },
             updateSpaceIcon: { [weak browserManager] spaceID, icon in
-                try browserManager?.tabManager.updateSpaceIcon(spaceId: spaceID, icon: icon)
+                try browserManager?.tabManager.spaceLifecycleOwner.updateSpaceIcon(spaceId: spaceID, icon: icon)
             },
             assignSpaceProfile: { [weak browserManager] spaceID, profileID in
-                browserManager?.tabManager.assign(spaceId: spaceID, toProfile: profileID)
+                browserManager?.tabManager.profileAssignmentOwner.assign(spaceId: spaceID, toProfile: profileID)
             },
             renameFolder: { [weak browserManager] folderID, name in
                 browserManager?.tabManager.folderMutationOwner.renameFolder(folderID, newName: name)

@@ -150,7 +150,7 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.tab(for: id)
             },
             splitGroup: { [weak tabManager] tabId in
-                tabManager?.splitGroup(containing: tabId)
+                tabManager?.splitGroupStructureOwner.splitGroup(containing: tabId)
             },
             shortcutPin: { [weak tabManager] id in
                 tabManager?.shortcutPinCollectionStateOwner.shortcutPin(by: id)
@@ -183,7 +183,7 @@ extension SidebarRegularTabsController.Dependencies {
                 tabManager?.folderMutationOwner.moveTabToFolder(tab: tab, folderId: folderId)
             },
             assignTabToProfile: { [weak tabManager] tab, profileId in
-                tabManager?.assign(tab: tab, toProfile: profileId) ?? false
+                tabManager?.profileAssignmentOwner.assign(tab: tab, toProfile: profileId) ?? false
             }
         )
     }

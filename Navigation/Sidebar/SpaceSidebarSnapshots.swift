@@ -710,7 +710,7 @@ enum SpaceSidebarTransitionSnapshotBuilder {
             in: windowState,
             splitManager: browserContext.splitManager
         )
-        let isSplitPlaceholder = browserContext.tabManager.splitGroup(containingPinId: pin.id) != nil
+        let isSplitPlaceholder = browserContext.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: pin.id) != nil
 
         return SpaceShortcutSnapshot(
             id: pin.id,

@@ -14,7 +14,7 @@ enum SpaceDeletionConfirmationPresenter {
 
         let alert = makeAlert(
             spaceName: space.name,
-            tabsCount: browserManager.tabManager.userVisibleTabCount(for: space.id)
+            tabsCount: browserManager.tabManager.spaceLauncherProjectionOwner.projection(for: space.id).userVisibleTabCount
         )
         let spaceID = space.id
 
@@ -22,11 +22,11 @@ enum SpaceDeletionConfirmationPresenter {
             alert.beginSheetModal(for: window) { response in
                 guard response == .alertFirstButtonReturn else { return }
                 Task { @MainActor in
-                    browserManager.tabManager.removeSpace(spaceID)
+                    browserManager.tabManager.spaceLifecycleOwner.removeSpace(spaceID)
                 }
             }
         } else if alert.runModal() == .alertFirstButtonReturn {
-            browserManager.tabManager.removeSpace(spaceID)
+            browserManager.tabManager.spaceLifecycleOwner.removeSpace(spaceID)
         }
     }
 

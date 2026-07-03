@@ -87,6 +87,18 @@ final class TabSplitGroupStructureOwner {
         )
     }
 
+    func shortcutHostedSplitGroups(for spaceId: UUID) -> [SplitGroup] {
+        visualOrderingResolver(for: spaceId).shortcutHostedGroups()
+    }
+
+    func shortcutHostedSplitGroups(for spaceId: UUID, inFolder folderId: UUID?) -> [SplitGroup] {
+        visualOrderingResolver(for: spaceId).shortcutHostedGroups(inFolder: folderId)
+    }
+
+    func shortcutHostedSplitGroupFolderId(_ group: SplitGroup, in spaceId: UUID) -> UUID? {
+        visualOrderingResolver(for: spaceId).folderId(for: group)
+    }
+
     func topLevelSpacePinnedVisualItems(for spaceId: UUID) -> [SpacePinnedVisualItem] {
         visualOrderingResolver(for: spaceId).topLevelItems().map { item in
             switch item {
@@ -214,7 +226,7 @@ final class TabSplitGroupStructureOwner {
 
     // MARK: - Mutation
 
-    func upsertSplitGroup(_ group: SplitGroup, schedulePersistence shouldPersist: Bool) {
+    func upsertSplitGroup(_ group: SplitGroup, schedulePersistence shouldPersist: Bool = true) {
         let repairedGroup = tabManager.splitGroupRepairOwner.repairingShortcutBackedMembers(in: group)
         guard let canonicalGroup = repairedGroup.canonicalizedForTiles(),
               canonicalGroup.isValid
@@ -239,14 +251,14 @@ final class TabSplitGroupStructureOwner {
         tabManager.requestStructuralPublish()
     }
 
-    func removeSplitGroup(id: UUID, schedulePersistence shouldPersist: Bool) {
+    func removeSplitGroup(id: UUID, schedulePersistence shouldPersist: Bool = true) {
         guard let index = tabManager.splitGroupCollectionStateOwner.index(of: id) else { return }
         tabManager.splitGroups.remove(at: index)
         markSplitGroupsStructurallyDirty(schedulePersistence: shouldPersist)
         tabManager.requestStructuralPublish()
     }
 
-    func removeSplitGroups(containing tabId: UUID, schedulePersistence shouldPersist: Bool) {
+    func removeSplitGroups(containing tabId: UUID, schedulePersistence shouldPersist: Bool = true) {
         let updated = tabManager.splitGroups.compactMap { group in
             group.contains(tabId) ? group.removing(tabId: tabId) : group
         }
@@ -256,7 +268,7 @@ final class TabSplitGroupStructureOwner {
         tabManager.requestStructuralPublish()
     }
 
-    func replaceSplitGroups(_ groups: [SplitGroup], schedulePersistence shouldPersist: Bool) {
+    func replaceSplitGroups(_ groups: [SplitGroup], schedulePersistence shouldPersist: Bool = true) {
         let validGroups = sanitizedRepairedSplitGroups(groups)
         guard validGroups != tabManager.splitGroups else { return }
         tabManager.splitGroups = validGroups
@@ -270,7 +282,7 @@ final class TabSplitGroupStructureOwner {
         })
     }
 
-    func markSplitGroupsStructurallyDirty(schedulePersistence shouldPersist: Bool) {
+    func markSplitGroupsStructurallyDirty(schedulePersistence shouldPersist: Bool = true) {
         tabManager.structuralPersistence.markSplitGroupsStructurallyDirty()
         if shouldPersist {
             tabManager.scheduleStructuralPersistence()

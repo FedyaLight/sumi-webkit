@@ -61,7 +61,7 @@ extension SpaceView {
 
     private var spacePinnedItems: [SpacePinnedListItem] {
         guard !windowState.isIncognito else { return [] }
-        return browserContext.tabManager.topLevelSpacePinnedVisualItems(for: space.id)
+        return browserContext.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id)
     }
 
     private var projectedSpacePinnedItems: [ProjectedItem<SpacePinnedListItem>] {
@@ -273,7 +273,7 @@ extension SpaceView {
                             pinnedShortcutView(pin, topLevelPinnedIndex: entry.dropIndex)
                         }
                     case .item(.splitGroup(let groupId)):
-                        if let group = browserContext.tabManager.splitGroup(with: groupId) {
+                        if let group = browserContext.tabManager.splitGroupCollectionStateOwner.group(with: groupId) {
                             shortcutHostedSplitGroupView(group, topLevelPinnedIndex: entry.dropIndex)
                         }
                     case .dragPlaceholder:
@@ -315,12 +315,12 @@ extension SpaceView {
             guard let pin = topLevelPinnedPins.first(where: { $0.id == pinId }) else {
                 return false
             }
-            if let placeholderGroup = browserContext.tabManager.regularHostedSplitPlaceholderGroup(for: pin) {
+            if let placeholderGroup = browserContext.tabManager.splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pin.id) {
                 return isPinnedSplitPlaceholderSelected(placeholderGroup, pin: pin)
             }
             return shortcutPinIsElevated(pin)
         case .splitGroup(let groupId):
-            guard let group = browserContext.tabManager.splitGroup(with: groupId) else {
+            guard let group = browserContext.tabManager.splitGroupCollectionStateOwner.group(with: groupId) else {
                 return false
             }
             return splitGroupIsElevated(group)
@@ -424,7 +424,7 @@ extension SpaceView {
 
     @ViewBuilder
     private func pinnedShortcutView(_ pin: ShortcutPin, topLevelPinnedIndex: Int) -> some View {
-        if let placeholderGroup = browserContext.tabManager.regularHostedSplitPlaceholderGroup(for: pin) {
+        if let placeholderGroup = browserContext.tabManager.splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pin.id) {
             ShortcutSplitPlaceholderRow(
                 pin: pin,
                 isSelected: isPinnedSplitPlaceholderSelected(placeholderGroup, pin: pin),
@@ -556,7 +556,7 @@ extension SpaceView {
                 profileTarget: .init(
                     choices: profileChoices,
                     onSelect: { profileId in
-                        browserContext.tabManager.assign(
+                        browserContext.tabManager.profileAssignmentOwner.assign(
                             shortcutPin: pin,
                             toExecutionProfile: profileId
                         )

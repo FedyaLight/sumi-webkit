@@ -126,7 +126,7 @@ final class SafariExtensionInstalledInternalPageRenderTests: XCTestCase {
             context: container.mainContext,
             loadPersistedState: false
         )
-        let space = browserManager.tabManager.createSpace(
+        let space = browserManager.tabManager.spaceLifecycleOwner.createSpace(
             name: "Installed 1Password",
             profileId: profile.id
         )

@@ -59,7 +59,7 @@ final class SplitViewManager: ObservableObject {
     func splitGroup(for windowId: UUID) -> SplitGroup? {
         guard let windowState = windowRegistry?.windows[windowId] else { return nil }
         guard let currentTabId = windowState.currentTabId else { return nil }
-        return tabManager?.splitGroup(containing: currentTabId)
+        return tabManager?.splitGroupStructureOwner.splitGroup(containing: currentTabId)
     }
 
     func visibleTabIds(for windowId: UUID) -> [UUID] {
@@ -91,12 +91,12 @@ final class SplitViewManager: ObservableObject {
 
     func updateLayoutSizes(groupId: UUID, path: [Int], sizes: [Double], for windowId: UUID) {
         guard let tabManager,
-              let group = tabManager.splitGroup(with: groupId)
+              let group = tabManager.splitGroupCollectionStateOwner.group(with: groupId)
         else { return }
         let updatedTree = group.layoutTree
             .updatingChildSizes(at: path, sizes: sizes)
             .canonicalizedForTiles() ?? group.layoutTree
-        tabManager.upsertSplitGroup(
+        tabManager.splitGroupStructureOwner.upsertSplitGroup(
             SplitGroup(
                 id: group.id,
                 layoutKind: group.layoutKind,
@@ -120,7 +120,7 @@ final class SplitViewManager: ObservableObject {
 
     func handleTabClosure(_ tabId: UUID) {
         splitDropTargetResolver.removeAllCachedCandidates(keepingCapacity: true)
-        tabManager?.removeSplitGroups(containing: tabId)
+        tabManager?.splitGroupStructureOwner.removeSplitGroups(containing: tabId)
         guard let windows = windowRegistry?.windows else { return }
         for windowState in windows.values {
             runtime?.refreshCompositor(windowState)
@@ -130,9 +130,9 @@ final class SplitViewManager: ObservableObject {
 
     func updateActiveSide(for tabId: UUID, in windowId: UUID) {
         guard let tabManager,
-              let group = tabManager.splitGroup(containing: tabId)
+              let group = tabManager.splitGroupStructureOwner.splitGroup(containing: tabId)
         else { return }
-        tabManager.upsertSplitGroup(group.settingActiveTab(tabId), schedulePersistence: false)
+        tabManager.splitGroupStructureOwner.upsertSplitGroup(group.settingActiveTab(tabId), schedulePersistence: false)
         notifyChanged(for: windowId)
     }
 
@@ -142,7 +142,7 @@ final class SplitViewManager: ObservableObject {
         let focusTab = windowState.flatMap {
             membershipResolutionOwner.preferredFocusTabAfterUnsplit(group, in: $0)
         }
-        tabManager?.removeSplitGroup(id: group.id)
+        tabManager?.splitGroupStructureOwner.removeSplitGroup(id: group.id)
         if let focusTab, let windowState {
             runtime?.selectTab(focusTab, windowState)
         }
@@ -155,20 +155,20 @@ final class SplitViewManager: ObservableObject {
 
     func setLayoutKind(_ layoutKind: SplitLayoutKind, for windowId: UUID) {
         guard let group = splitGroup(for: windowId) else { return }
-        tabManager?.upsertSplitGroup(group.settingLayoutKind(layoutKind))
+        tabManager?.splitGroupStructureOwner.upsertSplitGroup(group.settingLayoutKind(layoutKind))
         notifyChanged(for: windowId)
     }
 
     func expandSplitPane(tabId: UUID, in windowState: BrowserWindowState) {
         guard let tabManager,
               let tab = tabManager.tab(for: tabId),
-              let group = tabManager.splitGroup(containing: tabId)
+              let group = tabManager.splitGroupStructureOwner.splitGroup(containing: tabId)
         else { return }
 
         if let remainingGroup = group.removing(tabId: tabId) {
-            tabManager.upsertSplitGroup(remainingGroup)
+            tabManager.splitGroupStructureOwner.upsertSplitGroup(remainingGroup)
         } else {
-            tabManager.removeSplitGroup(id: group.id)
+            tabManager.splitGroupStructureOwner.removeSplitGroup(id: group.id)
         }
         runtime?.selectTab(tab, windowState)
         runtime?.refreshCompositor(windowState)
@@ -195,7 +195,7 @@ final class SplitViewManager: ObservableObject {
             activate: false
         )
         enterSplit(with: tab, placeOn: side, in: windowState)
-        if tabManager.splitGroup(containing: tab.id) != nil {
+        if tabManager.splitGroupStructureOwner.splitGroup(containing: tab.id) != nil {
             emptyPlaceholderOwner.registerPlaceholder(tabId: tab.id, for: windowState.id)
         }
         runtime?.focusFloatingBar(windowState, floatingBarPresentationReason)
@@ -226,7 +226,7 @@ final class SplitViewManager: ObservableObject {
         guard tab.representsSumiNativeSurface == false else { return }
         guard let current = runtime?.currentTab(windowState), current.representsSumiNativeSurface == false else { return }
 
-        let anchorGroup = tabManager.splitGroup(containing: current.id)
+        let anchorGroup = tabManager.splitGroupStructureOwner.splitGroup(containing: current.id)
         let anchorTab = anchorGroup?.activeTabId.flatMap { tabManager.tab(for: $0) } ?? current
         dropTab(tab, placeOn: side, relativeTo: anchorTab.id, in: windowState)
     }
@@ -261,7 +261,7 @@ final class SplitViewManager: ObservableObject {
               targetTab.representsSumiNativeSurface == false
         else { return false }
 
-        let targetGroup = tabManager.splitGroup(containing: targetTab.id)
+        let targetGroup = tabManager.splitGroupStructureOwner.splitGroup(containing: targetTab.id)
         if let targetGroup, targetGroup.contains(tab.id) {
             let updated: SplitGroup?
             if let resolved = targetGroup.resolvingDrop(
@@ -283,7 +283,7 @@ final class SplitViewManager: ObservableObject {
                 updated = targetGroup.movingTab(tab.id, relativeTo: targetTab.id, side: side)
             }
             guard let updated else { return false }
-            tabManager.upsertSplitGroup(updated)
+            tabManager.splitGroupStructureOwner.upsertSplitGroup(updated)
             runtime?.selectTab(tab, windowState)
             runtime?.refreshCompositor(windowState)
             notifyChanged(for: windowState.id)
@@ -342,7 +342,7 @@ final class SplitViewManager: ObservableObject {
                 movedTabId: membershipResolutionOwner.sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
                 excludingGroupId: group.id
             )
-            tabManager.upsertSplitGroup(group)
+            tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
             runtime?.selectTab(resolvedIncoming.tab, windowState)
             runtime?.refreshCompositor(windowState)
             notifyChanged(for: windowState.id)
@@ -359,7 +359,7 @@ final class SplitViewManager: ObservableObject {
         let resolvedAnchor = membershipResolutionOwner.resolvedSplitTab(
             targetTab,
             host: host,
-            sourceGroup: tabManager.splitGroup(containing: targetTab.id),
+            sourceGroup: tabManager.splitGroupStructureOwner.splitGroup(containing: targetTab.id),
             in: windowState
         ) else {
             return false
@@ -385,7 +385,7 @@ final class SplitViewManager: ObservableObject {
             movedTabId: membershipResolutionOwner.sourceRemovalId(for: tab, in: sourceGroup) ?? tab.id,
             excludingGroupId: group.id
         )
-        tabManager.upsertSplitGroup(group)
+        tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
         runtime?.selectTab(resolvedIncoming.tab, windowState)
         runtime?.refreshCompositor(windowState)
         notifyChanged(for: windowState.id)
@@ -399,9 +399,9 @@ final class SplitViewManager: ObservableObject {
     ) {
         guard let sourceGroup, sourceGroup.id != excludingGroupId else { return }
         if let remaining = sourceGroup.removing(tabId: movedTabId) {
-            tabManager?.upsertSplitGroup(remaining)
+            tabManager?.splitGroupStructureOwner.upsertSplitGroup(remaining)
         } else {
-            tabManager?.removeSplitGroup(id: sourceGroup.id)
+            tabManager?.splitGroupStructureOwner.removeSplitGroup(id: sourceGroup.id)
         }
     }
 
@@ -420,7 +420,7 @@ final class SplitViewManager: ObservableObject {
         }
 
         if let currentTabId = windowState.currentTabId,
-           let group = tabManager.splitGroup(containing: currentTabId) {
+           let group = tabManager.splitGroupStructureOwner.splitGroup(containing: currentTabId) {
             return splitDropTargetResolver.target(
                 in: group,
                 at: location,

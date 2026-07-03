@@ -70,7 +70,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testShortcutHostedSplitGroupAppearsInsidePinnedVisualItemsAtHostIndex() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
         let groupedPin = makeSpacePin(spaceId: space.id, index: 1, title: "Grouped")
         harness.tabManager.setSpacePinnedShortcuts([visiblePin, groupedPin], for: space.id)
@@ -94,17 +94,17 @@ final class SplitGroupTests: XCTestCase {
             ]
         ))
 
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         XCTAssertEqual(
-            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            harness.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id),
             [.shortcut(visiblePin.id), .splitGroup(group.id)]
         )
     }
 
     func testShortcutHostedSplitGroupForFolderPinStaysInsideFolderVisualItems() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
         let groupedPin = ShortcutPin(
@@ -137,10 +137,10 @@ final class SplitGroupTests: XCTestCase {
             ]
         ))
 
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         XCTAssertEqual(
-            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            harness.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id),
             [.folder(folder.id), .shortcut(visiblePin.id)]
         )
         XCTAssertEqual(
@@ -151,7 +151,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testShortcutHostedSplitGroupWithFolderAndTopLevelPinsHidesTopLevelMemberUntilRestore() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         harness.windowState.currentSpaceId = space.id
         let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let folderPin = ShortcutPin(
@@ -187,10 +187,10 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         XCTAssertEqual(
-            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            harness.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id),
             [.folder(folder.id), .shortcut(visibleTopLevelPin.id)]
         )
         XCTAssertEqual(
@@ -205,7 +205,7 @@ final class SplitGroupTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            harness.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id),
             [.folder(folder.id), .shortcut(groupedTopLevelPin.id), .shortcut(visibleTopLevelPin.id)]
         )
         XCTAssertEqual(
@@ -216,7 +216,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testShortcutHostedSplitGroupWithTopLevelHostAndFolderPinStaysTopLevel() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         harness.windowState.currentSpaceId = space.id
         let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let folderPin = ShortcutPin(
@@ -252,10 +252,10 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         XCTAssertEqual(
-            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            harness.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id),
             [.folder(folder.id), .splitGroup(group.id), .shortcut(visibleTopLevelPin.id)]
         )
         XCTAssertEqual(
@@ -344,7 +344,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testEssentialOnlyShortcutHostedSplitStartsBeforePinnedRows() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let folder = harness.tabManager.folderMutationOwner.createFolder(for: space.id, name: "Docs")
         let visiblePin = makeSpacePin(spaceId: space.id, index: 0, title: "Visible")
         harness.tabManager.setSpacePinnedShortcuts([visiblePin], for: space.id)
@@ -369,17 +369,17 @@ final class SplitGroupTests: XCTestCase {
             ]
         ))
 
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         XCTAssertEqual(
-            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            harness.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id),
             [.splitGroup(group.id), .folder(folder.id), .shortcut(visiblePin.id)]
         )
     }
 
     func testMovingShortcutHostedSplitGroupUpdatesPinnedVisualIndex() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let firstPin = makeSpacePin(spaceId: space.id, index: 0, title: "First")
         let groupedPin = makeSpacePin(spaceId: space.id, index: 1, title: "Grouped")
         let lastPin = makeSpacePin(spaceId: space.id, index: 2, title: "Last")
@@ -403,20 +403,20 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
-        XCTAssertTrue(harness.tabManager.moveShortcutHostedSplitGroup(group, in: space.id, to: 0))
+        XCTAssertTrue(harness.tabManager.splitGroupStructureOwner.moveShortcutHostedSplitGroup(group, in: space.id, to: 0))
 
         XCTAssertEqual(
-            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            harness.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id),
             [.splitGroup(group.id), .shortcut(firstPin.id), .shortcut(lastPin.id)]
         )
 
-        let movedGroup = try XCTUnwrap(harness.tabManager.splitGroup(with: group.id))
-        XCTAssertTrue(harness.tabManager.moveShortcutHostedSplitGroup(movedGroup, in: space.id, to: 3))
+        let movedGroup = try XCTUnwrap(harness.tabManager.splitGroupCollectionStateOwner.group(with: group.id))
+        XCTAssertTrue(harness.tabManager.splitGroupStructureOwner.moveShortcutHostedSplitGroup(movedGroup, in: space.id, to: 3))
 
         XCTAssertEqual(
-            harness.tabManager.topLevelSpacePinnedVisualItems(for: space.id),
+            harness.tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: space.id),
             [.shortcut(firstPin.id), .shortcut(lastPin.id), .splitGroup(group.id)]
         )
         XCTAssertTrue(harness.tabManager.shortcutPinCollectionStateOwner.spacePinnedPins(for: space.id).contains { $0.id == groupedPin.id })
@@ -425,7 +425,7 @@ final class SplitGroupTests: XCTestCase {
     func testMovingEssentialFromRegularHostedSplitIntoShortcutHostedSplitPreservesLauncherOrigin() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
@@ -455,7 +455,7 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(sourceGroup)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(sourceGroup)
 
         let firstPinned = makeSpacePin(spaceId: space.id, index: 0, title: "PinnedA")
         let secondPinned = makeSpacePin(spaceId: space.id, index: 1, title: "PinnedB")
@@ -488,7 +488,7 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(targetGroup)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(targetGroup)
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(
             liveEssential,
@@ -496,19 +496,19 @@ final class SplitGroupTests: XCTestCase {
             in: harness.windowState
         ))
 
-        let updatedTarget = try XCTUnwrap(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
+        let updatedTarget = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: essentialPin.id))
         XCTAssertEqual(updatedTarget.id, targetGroup.id)
         let movedMember = try XCTUnwrap(updatedTarget.member(forPinId: essentialPin.id))
         XCTAssertEqual(movedMember.origin, .essential(profileId: profileId, index: 0))
         XCTAssertTrue(movedMember.isShortcutBacked)
-        XCTAssertEqual(harness.tabManager.splitGroup(containing: movedMember.tabId)?.id, targetGroup.id)
-        XCTAssertNil(harness.tabManager.splitGroup(with: sourceGroup.id))
+        XCTAssertEqual(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: movedMember.tabId)?.id, targetGroup.id)
+        XCTAssertNil(harness.tabManager.splitGroupCollectionStateOwner.group(with: sourceGroup.id))
     }
 
     func testMovingPinnedProxyBetweenSplitGroupsKeepsRemainingRegularSplitAndPinnedPlaceholder() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
@@ -544,7 +544,7 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(sourceGroup)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(sourceGroup)
 
         let firstEssential = makeEssentialPin(profileId: profileId, index: 0, title: "EssentialA")
         let secondEssential = makeEssentialPin(profileId: profileId, index: 1, title: "EssentialB")
@@ -577,7 +577,7 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(targetGroup)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(targetGroup)
 
         let pinnedProxy = harness.tabManager.shortcutPresentationOwner.dragProxyTab(for: movedPin)
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(
@@ -586,23 +586,23 @@ final class SplitGroupTests: XCTestCase {
             in: harness.windowState
         ))
 
-        let updatedTarget = try XCTUnwrap(harness.tabManager.splitGroup(containingPinId: movedPin.id))
+        let updatedTarget = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: movedPin.id))
         XCTAssertEqual(updatedTarget.id, targetGroup.id)
         let movedMember = try XCTUnwrap(updatedTarget.member(forPinId: movedPin.id))
         XCTAssertEqual(movedMember.origin, .spacePinned(spaceId: space.id, folderId: nil, index: 0))
         XCTAssertTrue(movedMember.isShortcutBacked)
 
-        let remainingSource = try XCTUnwrap(harness.tabManager.splitGroup(containing: firstRegular.id))
+        let remainingSource = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: firstRegular.id))
         XCTAssertEqual(remainingSource.id, sourceGroup.id)
         XCTAssertEqual(remainingSource.tabIds, [firstRegular.id, secondRegular.id])
         XCTAssertNil(remainingSource.member(forPinId: movedPin.id))
-        XCTAssertEqual(harness.tabManager.splitGroup(containingPinId: movedPin.id)?.id, targetGroup.id)
+        XCTAssertEqual(harness.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: movedPin.id)?.id, targetGroup.id)
     }
 
     func testUpsertRepairsShortcutBackedMemberForLiveEssentialSegment() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
@@ -633,9 +633,9 @@ final class SplitGroupTests: XCTestCase {
             ]
         ))
 
-        harness.tabManager.upsertSplitGroup(malformedGroup)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(malformedGroup)
 
-        let repaired = try XCTUnwrap(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
+        let repaired = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: essentialPin.id))
         let member = try XCTUnwrap(repaired.member(forPinId: essentialPin.id))
         XCTAssertEqual(member.tabId, liveEssential.id)
         XCTAssertEqual(member.origin, .essential(profileId: profileId, index: 0))
@@ -645,7 +645,7 @@ final class SplitGroupTests: XCTestCase {
     func testUpsertRepairsShortcutMembersAcrossPinnedEssentialMixedGroup() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
@@ -678,9 +678,9 @@ final class SplitGroupTests: XCTestCase {
             ]
         ))
 
-        harness.tabManager.upsertSplitGroup(malformedGroup)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(malformedGroup)
 
-        let repaired = try XCTUnwrap(harness.tabManager.splitGroup(with: malformedGroup.id))
+        let repaired = try XCTUnwrap(harness.tabManager.splitGroupCollectionStateOwner.group(with: malformedGroup.id))
         XCTAssertEqual(
             repaired.member(forPinId: essentialPin.id)?.origin,
             .essential(profileId: profileId, index: 0)
@@ -689,14 +689,14 @@ final class SplitGroupTests: XCTestCase {
             repaired.member(forPinId: spacePin.id)?.origin,
             .spacePinned(spaceId: space.id, folderId: nil, index: 1)
         )
-        XCTAssertEqual(harness.tabManager.splitGroup(containingPinId: essentialPin.id)?.id, malformedGroup.id)
-        XCTAssertEqual(harness.tabManager.splitGroup(containingPinId: spacePin.id)?.id, malformedGroup.id)
+        XCTAssertEqual(harness.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: essentialPin.id)?.id, malformedGroup.id)
+        XCTAssertEqual(harness.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: spacePin.id)?.id, malformedGroup.id)
     }
 
     func testUpsertDoesNotRepairSpacePinnedSplitMemberFromGlobalCurrentSpace() throws {
         let harness = try makeHarness()
-        let storageSpace = harness.tabManager.createSpace(name: "Storage")
-        let globalCurrentSpace = harness.tabManager.createSpace(name: "Global Current")
+        let storageSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Storage")
+        let globalCurrentSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Global Current")
         harness.tabManager.currentSpace = globalCurrentSpace
         let malformedPin = ShortcutPin(
             id: UUID(),
@@ -724,9 +724,9 @@ final class SplitGroupTests: XCTestCase {
             ]
         ))
 
-        harness.tabManager.upsertSplitGroup(malformedGroup)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(malformedGroup)
 
-        let repaired = try XCTUnwrap(harness.tabManager.splitGroup(with: malformedGroup.id))
+        let repaired = try XCTUnwrap(harness.tabManager.splitGroupCollectionStateOwner.group(with: malformedGroup.id))
         XCTAssertNil(repaired.member(forPinId: malformedPin.id))
         XCTAssertFalse(
             repaired.members.contains {
@@ -737,8 +737,8 @@ final class SplitGroupTests: XCTestCase {
 
     func testUpsertRepairsSpacePinnedSplitMemberFromHostSpaceWhenPinSpaceIsMissing() throws {
         let harness = try makeHarness()
-        let hostSpace = harness.tabManager.createSpace(name: "Host")
-        let globalCurrentSpace = harness.tabManager.createSpace(name: "Global Current")
+        let hostSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Host")
+        let globalCurrentSpace = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Global Current")
         harness.tabManager.currentSpace = globalCurrentSpace
         let malformedPin = ShortcutPin(
             id: UUID(),
@@ -756,9 +756,9 @@ final class SplitGroupTests: XCTestCase {
             host: .shortcutPinned(spaceId: hostSpace.id, profileId: nil, index: 0)
         ))
 
-        harness.tabManager.upsertSplitGroup(malformedGroup)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(malformedGroup)
 
-        let repaired = try XCTUnwrap(harness.tabManager.splitGroup(with: malformedGroup.id))
+        let repaired = try XCTUnwrap(harness.tabManager.splitGroupCollectionStateOwner.group(with: malformedGroup.id))
         XCTAssertEqual(
             repaired.member(forPinId: malformedPin.id)?.origin,
             .spacePinned(spaceId: hostSpace.id, folderId: nil, index: 0)
@@ -768,7 +768,7 @@ final class SplitGroupTests: XCTestCase {
     func testRestoreShortcutSplitMemberKeepsLiveInstanceLoaded() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
@@ -800,7 +800,7 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
             liveEssential.id,
@@ -808,7 +808,7 @@ final class SplitGroupTests: XCTestCase {
             in: harness.windowState
         )
 
-        XCTAssertNil(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
+        XCTAssertNil(harness.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: essentialPin.id))
         XCTAssertEqual(
             harness.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id)?.id,
             liveEssential.id
@@ -822,7 +822,7 @@ final class SplitGroupTests: XCTestCase {
     func testRestoringInactiveShortcutSplitMemberDissolvesToRestoredTab() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
@@ -854,7 +854,7 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
             liveEssential.id,
@@ -862,14 +862,14 @@ final class SplitGroupTests: XCTestCase {
             in: harness.windowState
         )
 
-        XCTAssertNil(harness.tabManager.splitGroup(containing: regular.id))
+        XCTAssertNil(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: regular.id))
         XCTAssertEqual(harness.windowState.currentTabId, liveEssential.id)
         XCTAssertEqual(harness.windowState.currentShortcutPinId, essentialPin.id)
     }
 
     func testUnsplitActiveGroupKeepsFocusedTabSelected() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         harness.windowState.currentSpaceId = space.id
 
         let first = harness.tabManager.createNewTab(url: "https://one.example", in: space, activate: false)
@@ -881,11 +881,11 @@ final class SplitGroupTests: XCTestCase {
             activeTabId: second.id,
             host: .regular(spaceId: space.id)
         ))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         harness.browserManager.splitManager.unsplitActiveGroup(for: harness.windowState.id)
 
-        XCTAssertNil(harness.tabManager.splitGroup(with: group.id))
+        XCTAssertNil(harness.tabManager.splitGroupCollectionStateOwner.group(with: group.id))
         XCTAssertEqual(harness.windowState.currentTabId, second.id)
         XCTAssertFalse(harness.windowState.isShowingEmptyState)
     }
@@ -893,7 +893,7 @@ final class SplitGroupTests: XCTestCase {
     func testClosingShortcutSplitMemberStillUnloadsLiveInstance() throws {
         let harness = try makeHarness()
         let profileId = UUID()
-        let space = harness.tabManager.createSpace(name: "Work", profileId: profileId)
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work", profileId: profileId)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentProfileId = profileId
 
@@ -925,7 +925,7 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         ))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         harness.browserManager.sidebarCommandService.splitShortcutRouting.restoreShortcutSplitMember(
             liveEssential.id,
@@ -934,7 +934,7 @@ final class SplitGroupTests: XCTestCase {
             preserveLiveInstance: false
         )
 
-        XCTAssertNil(harness.tabManager.splitGroup(containingPinId: essentialPin.id))
+        XCTAssertNil(harness.tabManager.splitGroupStructureOwner.splitGroup(containingPinId: essentialPin.id))
         XCTAssertNil(harness.tabManager.shortcutPresentationOwner.shortcutLiveTab(for: essentialPin.id, in: harness.windowState.id))
         XCTAssertNil(harness.tabManager.tab(for: liveEssential.id))
         XCTAssertEqual(harness.windowState.currentTabId, regular.id)
@@ -1140,14 +1140,14 @@ final class SplitGroupTests: XCTestCase {
 
     func testDropTargetInsertionAlongExistingAxisUsesEqualRootThirds() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let top = harness.tabManager.createNewTab(url: "https://top.example", in: space)
         let bottom = harness.tabManager.createNewTab(url: "https://bottom.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = top.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [top.id, bottom.id], layoutKind: .horizontal, activeTabId: top.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
         let target = try XCTUnwrap(
@@ -1165,7 +1165,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFirstSplitPreviewRectMatchesIncomingHalf() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let current = harness.tabManager.createNewTab(url: "https://current.example", in: space)
         let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
@@ -1186,7 +1186,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testThirdVerticalSplitPreviewUsesOneThirdOfWindow() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
@@ -1194,7 +1194,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = left.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: left.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let target = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -1212,7 +1212,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testThirdSplitCanSplitOneVerticalPaneHorizontally() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
@@ -1220,7 +1220,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = left.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: left.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let target = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -1237,7 +1237,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 0, y: 300, width: 450, height: 300))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(incoming, on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: incoming.id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: incoming.id))
         guard case .split(let rootAxis, _, let rootChildren) = updated.layoutTree else {
             return XCTFail("Expected two-plane split.")
         }
@@ -1254,7 +1254,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFourthGridRootPreviewCanonicalizesMixedRootToEqualQuarter() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.createNewTab(
                 url: "https://tab\(index).example",
@@ -1267,7 +1267,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .grid, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let target = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -1285,7 +1285,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFourthVerticalRootPreviewUsesOneQuarterOfWindow() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.createNewTab(
                 url: "https://vertical\(index).example",
@@ -1298,7 +1298,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let target = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -1316,7 +1316,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFourthTabCanSplitOneOfThreeVerticalPanesIntoTwoByTwo() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.createNewTab(
                 url: "https://three-pair\(index).example",
@@ -1329,7 +1329,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 900, height: 600)
         let target = try XCTUnwrap(
@@ -1346,7 +1346,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 300, y: 300, width: 300, height: 300))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(incoming, on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: incoming.id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: incoming.id))
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected two-plane root.")
         }
@@ -1365,7 +1365,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testMovingOneOfThreeVerticalPanesPairsWithSpecificTargetPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.createNewTab(
                 url: "https://three-internal-vertical\(index).example",
@@ -1377,7 +1377,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 900, height: 600)
         let target = try XCTUnwrap(
@@ -1394,7 +1394,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 300, y: 300, width: 300, height: 300))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[2], on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[2].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[2].id))
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected constrained two-plane root.")
         }
@@ -1412,7 +1412,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testMovingOneOfThreeHorizontalPanesPairsWithSpecificTargetPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.createNewTab(
                 url: "https://three-internal-horizontal\(index).example",
@@ -1424,7 +1424,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .horizontal, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 900, height: 600)
         let target = try XCTUnwrap(
@@ -1441,7 +1441,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 450, y: 200, width: 450, height: 200))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[2], on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[2].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[2].id))
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected constrained two-plane root.")
         }
@@ -1459,7 +1459,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFourthRootPreviewCanonicalizesMixedColumnToEqualQuarter() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         let top = harness.tabManager.createNewTab(url: "https://top.example", in: space, activate: false)
@@ -1469,7 +1469,7 @@ final class SplitGroupTests: XCTestCase {
 
         let baseGroup = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: left.id))
         let threePaneGroup = try XCTUnwrap(baseGroup.insertingAtRoot(tabId: top.id, side: .top))
-        harness.tabManager.upsertSplitGroup(threePaneGroup)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(threePaneGroup)
 
         let target = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -1487,7 +1487,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testMovingOneOfFourVerticalTabsToBottomFromOwnPaneCreatesThreePlusOne() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://vertical\(index).example",
@@ -1499,7 +1499,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let target = try XCTUnwrap(
@@ -1516,7 +1516,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 0, y: 0, width: 1000, height: 400))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[3], on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[3].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[3].id))
 
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected a two-plane root.")
@@ -1538,7 +1538,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testMovingOneOfFourHorizontalTabsToRightFromOwnPaneCreatesThreePlusOne() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://horizontal\(index).example",
@@ -1550,7 +1550,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .horizontal, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let target = try XCTUnwrap(
@@ -1567,7 +1567,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 500, y: 0, width: 500, height: 800))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[3], on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[3].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[3].id))
 
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected a two-plane root.")
@@ -1589,7 +1589,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFlatFourVerticalLeafLocalOrthogonalDropSplitsTargetPaneInPlace() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://vertical-pair\(index).example",
@@ -1601,7 +1601,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let target = try XCTUnwrap(
@@ -1619,7 +1619,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 250, y: 400, width: 250, height: 400))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[3], on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[3].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[3].id))
 
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected constrained mixed root.")
@@ -1641,7 +1641,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFlatFourHorizontalLeafLocalOrthogonalDropSplitsTargetPaneInPlace() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://horizontal-pair\(index).example",
@@ -1653,7 +1653,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .horizontal, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let target = try XCTUnwrap(
@@ -1671,7 +1671,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 500, y: 400, width: 500, height: 200))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[3], on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[3].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[3].id))
 
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected constrained mixed root.")
@@ -1693,7 +1693,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFullFlatFourSameAxisDropReordersIntoQuarterPreview() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://flat-reorder\(index).example",
@@ -1705,7 +1705,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let target = try XCTUnwrap(
@@ -1722,13 +1722,13 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 0, y: 0, width: 250, height: 800))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[3], on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[3].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[3].id))
         XCTAssertEqual(updated.layoutTree.tabIds, [tabs[3].id, tabs[0].id, tabs[1].id, tabs[2].id])
     }
 
     func testFullFlatFourOtherPaneMiddleShowsRootThreePlusOneZone() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://flat-middle\(index).example",
@@ -1740,7 +1740,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let target = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -1758,7 +1758,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFullFlatFourOtherPaneOuterThirdShowsLocalHalfPairingZone() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://flat-third\(index).example",
@@ -1770,7 +1770,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let target = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -1788,7 +1788,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testMovingSecondTabIntoExistingBottomPlaneScopesPreviewToBottomQuarter() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://tile\(index).example",
@@ -1800,7 +1800,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let vertical = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(vertical)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(vertical)
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let bottomTarget = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -1828,7 +1828,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(rightTarget.targetRect, CGRect(x: 500, y: 0, width: 500, height: 400))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[2], on: rightTarget, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[2].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[2].id))
 
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected a two-plane root.")
@@ -1851,7 +1851,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testMovingSinglePaneFromThreePlusOneBackIntoThreePlaneCreatesTwoByTwo() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://reverse-tile\(index).example",
@@ -1863,7 +1863,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let vertical = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(vertical)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(vertical)
         let bounds = CGRect(x: 0, y: 0, width: 900, height: 600)
         let bottomTarget = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -1892,7 +1892,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(pairTarget.targetRect.height, 300, accuracy: 0.0001)
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[3], on: pairTarget, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[3].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[3].id))
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected a two-plane root.")
         }
@@ -1914,7 +1914,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testMixedLeafSplitLeafCanBecomeTwoByTwoWithoutLosingExistingPair() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://mixed-two-by-two\(index).example",
@@ -1941,7 +1941,7 @@ final class SplitGroupTests: XCTestCase {
                 .leaf(tabId: tabs[3].id, size: 1.0 / 3.0),
             ]
         )
-        harness.tabManager.upsertSplitGroup(
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(
             SplitGroup(layoutKind: .grid, layoutTree: tree, activeTabId: tabs[0].id)
         )
 
@@ -1960,7 +1960,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 600, y: 0, width: 300, height: 300))
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[0], on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[0].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[0].id))
 
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected two-by-two root.")
@@ -1981,7 +1981,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testStructuralDropFromOneTwoOneIntoFlatVerticalEqualizesQuarters() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://one-two-one-vertical\(index).example",
@@ -2008,7 +2008,7 @@ final class SplitGroupTests: XCTestCase {
                 .leaf(tabId: tabs[3].id, size: 1.0 / 3.0),
             ]
         )
-        harness.tabManager.upsertSplitGroup(
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(
             SplitGroup(layoutKind: .grid, layoutTree: tree, activeTabId: tabs[0].id)
         )
 
@@ -2027,7 +2027,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 675, y: 0, width: 225, height: 600))
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[1], on: target, in: harness.windowState))
 
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[1].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[1].id))
         guard case .split(let axis, _, let children) = updated.layoutTree else {
             return XCTFail("Expected flat vertical split.")
         }
@@ -2038,7 +2038,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testStructuralDropFromOneTwoOneIntoFlatHorizontalEqualizesQuarters() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://one-two-one-horizontal\(index).example",
@@ -2065,7 +2065,7 @@ final class SplitGroupTests: XCTestCase {
                 .leaf(tabId: tabs[3].id, size: 1.0 / 3.0),
             ]
         )
-        harness.tabManager.upsertSplitGroup(
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(
             SplitGroup(layoutKind: .grid, layoutTree: tree, activeTabId: tabs[0].id)
         )
 
@@ -2084,7 +2084,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 0, y: 0, width: 900, height: 150))
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[1], on: target, in: harness.windowState))
 
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[1].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[1].id))
         guard case .split(let axis, _, let children) = updated.layoutTree else {
             return XCTFail("Expected flat horizontal split.")
         }
@@ -2095,7 +2095,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testTwoByTwoCanBecomeThreePlusOneFromEitherPlane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://two-by-two-to-three\(index).example",
@@ -2128,7 +2128,7 @@ final class SplitGroupTests: XCTestCase {
                 ),
             ]
         )
-        harness.tabManager.upsertSplitGroup(
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(
             SplitGroup(layoutKind: .grid, layoutTree: tree, activeTabId: tabs[0].id)
         )
 
@@ -2146,7 +2146,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.scope, .plane)
 
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(tabs[3], on: target, in: harness.windowState))
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: tabs[3].id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: tabs[3].id))
 
         guard case .split(let rootAxis, _, let planes) = updated.layoutTree else {
             return XCTFail("Expected three-plus-one root.")
@@ -2164,7 +2164,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testEveryCanonicalFourPaneTopologyOffersInternalEdgeTargets() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://topology\(index).example",
@@ -2183,7 +2183,7 @@ final class SplitGroupTests: XCTestCase {
         let sides: [SplitDropSide] = [.left, .right, .top, .bottom]
         for (name, tree) in topologies {
             let group = SplitGroup(id: UUID(), layoutKind: .grid, layoutTree: tree, activeTabId: ids[0])
-            harness.tabManager.replaceSplitGroups([group], schedulePersistence: false)
+            harness.tabManager.splitGroupStructureOwner.replaceSplitGroups([group], schedulePersistence: false)
             let canonical = try XCTUnwrap(group.canonicalizedForTiles(), "Invalid topology \(name)")
             assertZenCanonicalTree(canonical.layoutTree, name)
             let hits = canonical.layoutTree.leafHits(in: bounds)
@@ -2282,7 +2282,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFourthTabPreviewWhenSplittingOneOfThreePanesStaysInsideOriginalPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<3).map { index in
             harness.tabManager.createNewTab(
                 url: "https://three-bottom-pair\(index).example",
@@ -2295,7 +2295,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .vertical, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 900, height: 600)
         let target = try XCTUnwrap(
@@ -2312,7 +2312,7 @@ final class SplitGroupTests: XCTestCase {
         XCTAssertEqual(target.targetRect, CGRect(x: 300, y: 0, width: 300, height: 300))
         XCTAssertTrue(harness.browserManager.splitManager.dropTab(incoming, on: target, in: harness.windowState))
 
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: incoming.id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: incoming.id))
         guard case .split(let rootAxis, _, let children) = updated.layoutTree else {
             return XCTFail("Expected constrained mixed root.")
         }
@@ -2343,14 +2343,14 @@ final class SplitGroupTests: XCTestCase {
 
     func testExistingSplitTabUsesGroupEdgeTarget() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: left.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
         let target = try XCTUnwrap(
@@ -2370,14 +2370,14 @@ final class SplitGroupTests: XCTestCase {
 
     func testExistingSplitTabHoveringOwnPaneAndOwnRootEdgeDoesNotShowDuplicateTarget() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: left.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         XCTAssertNil(
             harness.browserManager.splitManager.dropTarget(
@@ -2399,14 +2399,14 @@ final class SplitGroupTests: XCTestCase {
 
     func testExistingSplitTabCenterHoverDoesNotShowGapPreview() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: left.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         XCTAssertNil(
             harness.browserManager.splitManager.dropTarget(
@@ -2420,14 +2420,14 @@ final class SplitGroupTests: XCTestCase {
 
     func testExistingSplitTabSkipsNoOpEdgeAndUsesNextValidEdgeAtCorner() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: left.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let target = try XCTUnwrap(
             harness.browserManager.splitManager.dropTarget(
@@ -2446,14 +2446,14 @@ final class SplitGroupTests: XCTestCase {
 
     func testGroupEdgeDropMovesExistingSplitTabAtRoot() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = left.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: left.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let target = SplitDropTarget(
             tabId: left.id,
@@ -2464,14 +2464,14 @@ final class SplitGroupTests: XCTestCase {
         )
         harness.browserManager.splitManager.dropTab(right, on: target, in: harness.windowState)
 
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: left.id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: left.id))
         XCTAssertEqual(updated.tabIds, [right.id, left.id])
         XCTAssertEqual(updated.activeTabId, right.id)
     }
 
     func testExternalTabGroupEdgeDropInsertsAtRoot() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         let incoming = harness.tabManager.createNewTab(url: "https://incoming.example", in: space, activate: false)
@@ -2479,7 +2479,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = left.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: left.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
         let target = try XCTUnwrap(
@@ -2496,7 +2496,7 @@ final class SplitGroupTests: XCTestCase {
 
         harness.browserManager.splitManager.dropTab(incoming, on: target, in: harness.windowState)
 
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(containing: incoming.id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: incoming.id))
         XCTAssertEqual(updated.tabIds, [left.id, right.id, incoming.id])
         guard case .split(let axis, _, let children) = updated.layoutTree else {
             return XCTFail("Expected root split.")
@@ -2509,7 +2509,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testFullSplitRejectsExternalEdgeInsertPreviewButAllowsCenterReplace() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tabs = (0..<4).map { index in
             harness.tabManager.createNewTab(
                 url: "https://tab\(index).example",
@@ -2522,7 +2522,7 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = tabs[0].id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: tabs.map(\.id), layoutKind: .grid, activeTabId: tabs[0].id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
         let bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
 
         XCTAssertNil(
@@ -2662,7 +2662,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testSelectingNativeSurfaceAwayFromSplitDoesNotDeleteGroup() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let left = harness.tabManager.createNewTab(url: "https://left.example", in: space)
         let right = harness.tabManager.createNewTab(url: "https://right.example", in: space, activate: false)
         let native = harness.tabManager.createNewTab(url: SumiSurface.emptyTabURL.absoluteString, in: space, activate: false)
@@ -2670,11 +2670,11 @@ final class SplitGroupTests: XCTestCase {
         harness.windowState.currentTabId = left.id
 
         let group = try XCTUnwrap(SplitGroup.make(tabIds: [left.id, right.id], layoutKind: .vertical, activeTabId: right.id))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         harness.browserManager.selectTab(native, in: harness.windowState)
 
-        XCTAssertNotNil(harness.tabManager.splitGroup(with: group.id))
+        XCTAssertNotNil(harness.tabManager.splitGroupCollectionStateOwner.group(with: group.id))
         XCTAssertNil(harness.browserManager.splitManager.splitGroup(for: harness.windowState.id))
 
         harness.browserManager.selectTab(right, in: harness.windowState)
@@ -2708,7 +2708,7 @@ final class SplitGroupTests: XCTestCase {
 
     func testLegacyDuplicateAsRegularHelperCreatesRegularCopy() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let regular = harness.tabManager.createNewTab(url: "https://anchor.example", in: space)
         let pinned = harness.tabManager.createNewTab(url: "https://pinned.example", in: space, activate: false)
         pinned.isPinned = true
@@ -2724,13 +2724,13 @@ final class SplitGroupTests: XCTestCase {
 
     func testEmptySplitCancelRemovesPlaceholderPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let current = harness.tabManager.createNewTab(url: "https://current.example", in: space)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = current.id
 
         harness.browserManager.splitManager.createEmptySplit(in: harness.windowState)
-        let group = try XCTUnwrap(harness.tabManager.splitGroup(containing: current.id))
+        let group = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(group.tabIds.first { $0 != current.id })
 
         harness.browserManager.floatingBarRoutingOwner.dismissFloatingBar(
@@ -2740,7 +2740,7 @@ final class SplitGroupTests: XCTestCase {
         )
 
         XCTAssertNil(harness.tabManager.tab(for: placeholderId))
-        XCTAssertNil(harness.tabManager.splitGroup(containing: current.id))
+        XCTAssertNil(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
     }
 
     func testSplitViewManagerCreatesEmptySplitThroughRuntimePort() throws {
@@ -2758,7 +2758,7 @@ final class SplitGroupTests: XCTestCase {
         windowRegistry.register(windowState)
         windowRegistry.setActive(windowState)
 
-        let space = tabManager.createSpace(name: "Runtime")
+        let space = tabManager.spaceLifecycleOwner.createSpace(name: "Runtime")
         let current = tabManager.createNewTab(url: "https://current.example", in: space)
         windowState.currentSpaceId = space.id
         windowState.currentTabId = current.id
@@ -2786,7 +2786,7 @@ final class SplitGroupTests: XCTestCase {
 
         splitManager.createEmptySplit(in: windowState)
 
-        let group = try XCTUnwrap(tabManager.splitGroup(containing: current.id))
+        let group = try XCTUnwrap(tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(group.tabIds.first { $0 != current.id })
         XCTAssertNotNil(tabManager.tab(for: placeholderId))
         XCTAssertEqual(selectedTabIds.last, placeholderId)
@@ -2797,14 +2797,14 @@ final class SplitGroupTests: XCTestCase {
 
     func testEmptySplitExistingTabCommitReplacesPlaceholderPane() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let current = harness.tabManager.createNewTab(url: "https://current.example", in: space)
         let existing = harness.tabManager.createNewTab(url: "https://existing.example", in: space, activate: false)
         harness.windowState.currentSpaceId = space.id
         harness.windowState.currentTabId = current.id
 
         harness.browserManager.splitManager.createEmptySplit(in: harness.windowState)
-        let placeholderGroup = try XCTUnwrap(harness.tabManager.splitGroup(containing: current.id))
+        let placeholderGroup = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: current.id))
         let placeholderId = try XCTUnwrap(placeholderGroup.tabIds.first { $0 != current.id })
 
         harness.browserManager.floatingBarRoutingOwner.openFloatingBarSuggestion(
@@ -2812,7 +2812,7 @@ final class SplitGroupTests: XCTestCase {
             in: harness.windowState
         )
 
-        let group = try XCTUnwrap(harness.tabManager.splitGroup(containing: existing.id))
+        let group = try XCTUnwrap(harness.tabManager.splitGroupStructureOwner.splitGroup(containing: existing.id))
         XCTAssertEqual(group.tabIds, [current.id, existing.id])
         XCTAssertEqual(group.activeTabId, existing.id)
         XCTAssertNil(harness.tabManager.tab(for: placeholderId))

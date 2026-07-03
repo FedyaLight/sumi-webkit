@@ -46,7 +46,7 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
     private func makePlaceholderSplit(
         in harness: Harness
     ) throws -> (current: Tab, placeholder: Tab, group: SplitGroup) {
-        let space = harness.tabManager.createSpace(name: "Split")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Split")
         let current = harness.tabManager.createNewTab(url: "https://current.example", in: space)
         let placeholder = harness.tabManager.createNewTab(
             url: SumiSurface.emptyTabURL.absoluteString,
@@ -61,7 +61,7 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
             activeTabId: placeholder.id,
             host: .regular(spaceId: space.id)
         ))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
         harness.owner.registerPlaceholder(tabId: placeholder.id, for: harness.windowState.id)
         return (current, placeholder, group)
     }
@@ -77,7 +77,7 @@ final class SplitEmptyPlaceholderOwnerTests: XCTestCase {
 
         XCTAssertTrue(harness.owner.replacePlaceholder(with: incoming, in: harness.windowState))
 
-        let updated = try XCTUnwrap(harness.tabManager.splitGroup(with: group.id))
+        let updated = try XCTUnwrap(harness.tabManager.splitGroupCollectionStateOwner.group(with: group.id))
         XCTAssertEqual(updated.tabIds, [current.id, incoming.id])
         XCTAssertEqual(updated.activeTabId, incoming.id)
         XCTAssertNil(harness.tabManager.tab(for: placeholder.id))

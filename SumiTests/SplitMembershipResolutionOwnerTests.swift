@@ -26,7 +26,7 @@ final class SplitMembershipResolutionOwnerTests: XCTestCase {
 
     func testRegularTabResolvesToItselfWithRegularOrigin() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let tab = harness.tabManager.createNewTab(url: "https://a.example", in: space)
         harness.windowState.currentSpaceId = space.id
 
@@ -45,7 +45,7 @@ final class SplitMembershipResolutionOwnerTests: XCTestCase {
 
     func testInitialHostForRegularTabsUsesTargetSpace() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let incoming = harness.tabManager.createNewTab(url: "https://a.example", in: space)
         let target = harness.tabManager.createNewTab(url: "https://b.example", in: space)
 
@@ -56,7 +56,7 @@ final class SplitMembershipResolutionOwnerTests: XCTestCase {
 
     func testSourceSplitGroupAndRemovalIdForDirectMember() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let first = harness.tabManager.createNewTab(url: "https://a.example", in: space)
         let second = harness.tabManager.createNewTab(url: "https://b.example", in: space, activate: false)
         let group = try XCTUnwrap(SplitGroup.make(
@@ -65,7 +65,7 @@ final class SplitMembershipResolutionOwnerTests: XCTestCase {
             activeTabId: first.id,
             host: .regular(spaceId: space.id)
         ))
-        harness.tabManager.upsertSplitGroup(group)
+        harness.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
 
         let sourceGroup = try XCTUnwrap(harness.owner.sourceSplitGroup(for: second))
         XCTAssertEqual(sourceGroup.id, group.id)
@@ -79,7 +79,7 @@ final class SplitMembershipResolutionOwnerTests: XCTestCase {
 
     func testPreferredFocusTabAfterUnsplitPrefersCurrentThenActiveThenFirstResolvable() throws {
         let harness = try makeHarness()
-        let space = harness.tabManager.createSpace(name: "Work")
+        let space = harness.tabManager.spaceLifecycleOwner.createSpace(name: "Work")
         let first = harness.tabManager.createNewTab(url: "https://a.example", in: space)
         let second = harness.tabManager.createNewTab(url: "https://b.example", in: space, activate: false)
         let group = try XCTUnwrap(SplitGroup.make(

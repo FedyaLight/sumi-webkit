@@ -59,7 +59,7 @@ final class SidebarDragOperationRoutingOwner {
     ) -> Bool {
         switch (operation.fromContainer, operation.toContainer) {
         case (.spacePinned(let fromSpaceId), .spacePinned(let toSpaceId)) where fromSpaceId == toSpaceId:
-            return tabManager.moveShortcutHostedSplitGroup(group, in: toSpaceId, to: operation.toIndex)
+            return tabManager.splitGroupStructureOwner.moveShortcutHostedSplitGroup(group, in: toSpaceId, to: operation.toIndex)
         default:
             return false
         }

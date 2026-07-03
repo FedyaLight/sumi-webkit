@@ -259,7 +259,7 @@ class TabManager: ObservableObject {
                 self?.shortcutPinRuntimeResolutionOwner.resolvedExecutionProfileId(for: pin, currentSpaceId: currentSpaceId)
             },
             assignProfile: { [weak self] profileId, tab in
-                self?.assignProfile(profileId, to: tab)
+                self?.profileAssignmentOwner.assignProfile(profileId, to: tab)
             },
             attach: { [weak self] tab in
                 self?.attach(tab)
@@ -315,7 +315,7 @@ class TabManager: ObservableObject {
                 self?.foldersBySpace[spaceId] ?? []
             },
             shortcutHostedSplitGroups: { [weak self] spaceId in
-                self?.shortcutHostedSplitGroups(for: spaceId) ?? []
+                self?.splitGroupStructureOwner.shortcutHostedSplitGroups(for: spaceId) ?? []
             },
             liveShortcutTabs: { [weak self] windowId in
                 self?.shortcutPresentationOwner.liveShortcutTabs(in: windowId) ?? []
@@ -643,7 +643,7 @@ class TabManager: ObservableObject {
         case .folder:
             return folderCollectionStateOwner.folder(by: item.tabId).map { .folder($0) }
         case .splitGroup:
-            return splitGroup(with: item.tabId).map { .splitGroup($0) }
+            return splitGroupCollectionStateOwner.group(with: item.tabId).map { .splitGroup($0) }
         }
     }
 
@@ -1167,37 +1167,6 @@ class TabManager: ObservableObject {
         }
     }
 
-    // MARK: - Profile Assignment and Cleanup
-
-    func cleanupProfileReferences(_ deletedProfileId: UUID, fallbackProfileId: UUID) {
-        profileAssignmentOwner.cleanupProfileReferences(
-            deletedProfileId,
-            fallbackProfileId: fallbackProfileId
-        )
-    }
-
-    func handleProfileSwitch(contextWindowId: UUID? = nil) {
-        profileAssignmentOwner.handleProfileSwitch(contextWindowId: contextWindowId)
-    }
-
-    func assign(spaceId: UUID, toProfile profileId: UUID) {
-        profileAssignmentOwner.assign(spaceId: spaceId, toProfile: profileId)
-    }
-
-    @discardableResult
-    func assign(tab: Tab, toProfile profileId: UUID) -> Bool {
-        profileAssignmentOwner.assign(tab: tab, toProfile: profileId)
-    }
-
-    @discardableResult
-    func assign(shortcutPin pin: ShortcutPin, toExecutionProfile profileId: UUID) -> ShortcutPin? {
-        profileAssignmentOwner.assign(shortcutPin: pin, toExecutionProfile: profileId)
-    }
-
-    func assignProfile(_ profileId: UUID?, to tab: Tab) {
-        profileAssignmentOwner.assignProfile(profileId, to: tab)
-    }
-
     // MARK: - Tab Closure Undo and Bulk Removal
 
     func tabs(in space: Space) -> [Tab] {
@@ -1216,124 +1185,7 @@ class TabManager: ObservableObject {
 
     typealias SpacePinnedVisualItem = TabSplitGroupStructureOwner.SpacePinnedVisualItem
 
-    func splitGroup(containing tabId: UUID) -> SplitGroup? {
-        splitGroupStructureOwner.splitGroup(containing: tabId)
-    }
-
-    func splitGroup(with id: UUID) -> SplitGroup? {
-        splitGroupCollectionStateOwner.group(with: id)
-    }
-
-    func splitGroupIds(containing tabId: UUID) -> [UUID] {
-        splitGroupStructureOwner.splitGroupIds(containing: tabId)
-    }
-
-    func splitGroup(containingPinId pinId: UUID) -> SplitGroup? {
-        splitGroupStructureOwner.splitGroup(containingPinId: pinId)
-    }
-
-    func shortcutHostedSplitGroups(for spaceId: UUID) -> [SplitGroup] {
-        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).shortcutHostedGroups()
-    }
-
-    func regularHostedSplitPlaceholderGroup(for pin: ShortcutPin) -> SplitGroup? {
-        splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pin.id)
-    }
-
-    func shortcutHostedSplitGroupFolderId(_ group: SplitGroup, in spaceId: UUID) -> UUID? {
-        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).folderId(for: group)
-    }
-
-    func shortcutHostedSplitGroups(for spaceId: UUID, inFolder folderId: UUID?) -> [SplitGroup] {
-        splitGroupStructureOwner.visualOrderingResolver(for: spaceId).shortcutHostedGroups(inFolder: folderId)
-    }
-
-    func topLevelSpacePinnedVisualItems(for spaceId: UUID) -> [SpacePinnedVisualItem] {
-        splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: spaceId)
-    }
-
-    @discardableResult
-    func moveShortcutHostedSplitGroup(_ group: SplitGroup, in spaceId: UUID, to index: Int) -> Bool {
-        splitGroupStructureOwner.moveShortcutHostedSplitGroup(group, in: spaceId, to: index)
-    }
-
-    func visibleSplitTabIds(containing tabId: UUID?) -> [UUID] {
-        splitGroupStructureOwner.visibleSplitTabIds(containing: tabId)
-    }
-
-    func upsertSplitGroup(_ group: SplitGroup, schedulePersistence shouldPersist: Bool = true) {
-        splitGroupStructureOwner.upsertSplitGroup(group, schedulePersistence: shouldPersist)
-    }
-
-    func removeSplitGroup(id: UUID, schedulePersistence shouldPersist: Bool = true) {
-        splitGroupStructureOwner.removeSplitGroup(id: id, schedulePersistence: shouldPersist)
-    }
-
-    func removeSplitGroups(containing tabId: UUID, schedulePersistence shouldPersist: Bool = true) {
-        splitGroupStructureOwner.removeSplitGroups(containing: tabId, schedulePersistence: shouldPersist)
-    }
-
-    func replaceSplitGroups(_ groups: [SplitGroup], schedulePersistence shouldPersist: Bool = true) {
-        splitGroupStructureOwner.replaceSplitGroups(groups, schedulePersistence: shouldPersist)
-    }
-
-    static func sanitizedSplitGroups(_ groups: [SplitGroup]) -> [SplitGroup] {
-        SplitGroup.sanitized(groups)
-    }
-
-    func markSplitGroupsStructurallyDirty(schedulePersistence shouldPersist: Bool = true) {
-        splitGroupStructureOwner.markSplitGroupsStructurallyDirty(schedulePersistence: shouldPersist)
-    }
-
     // MARK: - Space Lifecycle
-
-    func userVisibleTabCount(for spaceId: UUID) -> Int {
-        spaceLauncherProjectionOwner.projection(for: spaceId).userVisibleTabCount
-    }
-
-    @discardableResult
-    func createSpace(
-        name: String,
-        icon: String = "square.grid.2x2",
-        workspaceTheme: WorkspaceTheme? = nil,
-        profileId: UUID? = nil
-    ) -> Space {
-        spaceLifecycleOwner.createSpace(
-            name: name,
-            icon: icon,
-            workspaceTheme: workspaceTheme,
-            profileId: profileId
-        )
-    }
-
-    func removeSpace(_ id: UUID) {
-        spaceLifecycleOwner.removeSpace(id)
-    }
-
-    @discardableResult
-    func reorderSpace(spaceId: UUID, to targetIndex: Int) -> Bool {
-        spaceLifecycleOwner.reorderSpace(spaceId: spaceId, to: targetIndex)
-    }
-
-    func setActiveSpace(
-        _ space: Space,
-        preferredTab: Tab? = nil,
-        contextWindowId: UUID? = nil
-    ) {
-        spaceLifecycleOwner.setActiveSpace(
-            space,
-            preferredTab: preferredTab,
-            contextWindowId: contextWindowId
-        )
-    }
-
-    func renameSpace(spaceId: UUID, newName: String) throws {
-        try spaceLifecycleOwner.renameSpace(spaceId: spaceId, newName: newName)
-    }
-
-    func updateSpaceIcon(spaceId: UUID, icon: String) throws {
-        try spaceLifecycleOwner.updateSpaceIcon(spaceId: spaceId, icon: icon)
-    }
 
     func clearRegularTabs(for spaceId: UUID) {
         withStructuralUpdateTransaction {

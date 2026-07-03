@@ -165,7 +165,7 @@ enum SidebarDropCoordinator {
             return tabManager.shortcutPinCollectionStateOwner.essentialPins(for: scope.profileId).count
 
         case .spacePinned(let spaceId):
-            return tabManager.topLevelSpacePinnedVisualItems(for: spaceId).count
+            return tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: spaceId).count
 
         case .spaceRegular(let spaceId):
             return tabManager.regularTabCollectionOwner.tabs(in: spaceId).count
@@ -196,7 +196,7 @@ enum SidebarDropCoordinator {
                 .firstIndex { $0.id == sourceItemId || payload.matchesShortcutPinId($0.id) }
 
         case .spacePinned(let spaceId):
-            return tabManager.topLevelSpacePinnedVisualItems(for: spaceId)
+            return tabManager.splitGroupStructureOwner.topLevelSpacePinnedVisualItems(for: spaceId)
                 .firstIndex { item in
                     switch item {
                     case .folder(let folderId):

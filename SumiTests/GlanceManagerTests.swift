@@ -41,8 +41,8 @@ final class GlanceManagerTests: XCTestCase {
 
     func testPresentationWithoutSourceUsesActiveWindowSpaceInsteadOfGlobalCurrentSpace() throws {
         let browserManager = makeBrowserManager()
-        let windowSpace = browserManager.tabManager.createSpace(name: "Window Space")
-        let globalSpace = browserManager.tabManager.createSpace(name: "Global Space")
+        let windowSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Window Space")
+        let globalSpace = browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Global Space")
         browserManager.tabManager.currentSpace = globalSpace
         let windowRegistry = WindowRegistry()
         let windowState = BrowserWindowState()
@@ -286,7 +286,7 @@ final class GlanceManagerTests: XCTestCase {
 
         browserManager.glanceManager.moveToSplitView()
 
-        let splitGroup = try XCTUnwrap(browserManager.tabManager.splitGroup(containing: previewTab.id))
+        let splitGroup = try XCTUnwrap(browserManager.tabManager.splitGroupStructureOwner.splitGroup(containing: previewTab.id))
         let placeholderId = try XCTUnwrap(splitGroup.tabIds.last)
         let placeholderTab = try XCTUnwrap(browserManager.tabManager.tab(for: placeholderId))
         XCTAssertNil(browserManager.glanceManager.currentSession)
@@ -318,7 +318,7 @@ final class GlanceManagerTests: XCTestCase {
             in: sourceWindow
         )
 
-        let filledGroup = try XCTUnwrap(browserManager.tabManager.splitGroup(containing: previewTab.id))
+        let filledGroup = try XCTUnwrap(browserManager.tabManager.splitGroupStructureOwner.splitGroup(containing: previewTab.id))
         XCTAssertEqual(filledGroup.tabIds, [previewTab.id, sourceTab.id])
         XCTAssertEqual(filledGroup.activeTabId, sourceTab.id)
         XCTAssertEqual(sourceWindow.currentTabId, sourceTab.id)
@@ -569,7 +569,7 @@ final class GlanceManagerTests: XCTestCase {
 
     private func makeSourceTab(in browserManager: BrowserManager) -> Tab {
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Glance Tests")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Glance Tests")
         return browserManager.tabManager.createNewTab(
             url: "https://source.example/page",
             in: space,

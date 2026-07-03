@@ -817,7 +817,7 @@ struct SpacesSideBarView: View {
             profileId = session.profileID
         }
 
-        let newSpace = browserContext.tabManager.createSpace(
+        let newSpace = browserContext.tabManager.spaceLifecycleOwner.createSpace(
             name: session.trimmedName,
             icon: session.resolvedIcon,
             profileId: profileId

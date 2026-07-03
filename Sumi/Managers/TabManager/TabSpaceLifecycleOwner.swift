@@ -13,9 +13,9 @@ final class TabSpaceLifecycleOwner {
     @discardableResult
     func createSpace(
         name: String,
-        icon: String,
-        workspaceTheme: WorkspaceTheme?,
-        profileId: UUID?
+        icon: String = "square.grid.2x2",
+        workspaceTheme: WorkspaceTheme? = nil,
+        profileId: UUID? = nil
     ) -> Space {
         tabManager.withStructuralUpdateTransaction {
             let resolvedProfileId = profileId
@@ -117,15 +117,15 @@ final class TabSpaceLifecycleOwner {
 
     func setActiveSpace(
         _ space: Space,
-        preferredTab: Tab?,
-        contextWindowId: UUID?
+        preferredTab: Tab? = nil,
+        contextWindowId: UUID? = nil
     ) {
         guard tabManager.spaceCollectionStateOwner.contains(spaceId: space.id) else { return }
 
         if space.profileId == nil {
             let defaultProfileId = tabManager.runtimeContext?.defaultProfileId
             if let profileId = defaultProfileId {
-                tabManager.assign(spaceId: space.id, toProfile: profileId)
+                tabManager.profileAssignmentOwner.assign(spaceId: space.id, toProfile: profileId)
             } else {
                 RuntimeDiagnostics.debug(
                     "No profiles available to assign to a space switch target; reconciliation deferred.",

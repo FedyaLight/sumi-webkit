@@ -207,7 +207,7 @@ final class TabPermissionSurfaceTests: XCTestCase {
 
     private func makeManagedTab(in browserManager: BrowserManager) -> Tab {
         let space = browserManager.tabManager.currentSpace
-            ?? browserManager.tabManager.createSpace(name: "Permission Surface Tests")
+            ?? browserManager.tabManager.spaceLifecycleOwner.createSpace(name: "Permission Surface Tests")
         return browserManager.tabManager.createNewTab(
             url: "https://example.com/page",
             in: space,

@@ -13,7 +13,7 @@ final class SidebarSplitShortcutRoutingOwnerTests: XCTestCase {
         )
         let tabManager = browserManager.tabManager
         let splitManager = browserManager.splitManager
-        let otherSpace = tabManager.createSpace(name: "Other")
+        let otherSpace = tabManager.spaceLifecycleOwner.createSpace(name: "Other")
         let globalFirstTab = tabManager.createNewTab(
             url: "https://other.example",
             in: otherSpace,
@@ -48,7 +48,7 @@ final class SidebarSplitShortcutRoutingOwnerTests: XCTestCase {
                 ]
             )
         )
-        tabManager.upsertSplitGroup(group, schedulePersistence: false)
+        tabManager.splitGroupStructureOwner.upsertSplitGroup(group, schedulePersistence: false)
         let windowState = BrowserWindowState()
         windowState.currentSpaceId = UUID()
         windowState.currentTabId = shortcutPin.id

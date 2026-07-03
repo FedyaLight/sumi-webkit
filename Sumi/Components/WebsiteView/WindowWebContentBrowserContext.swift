@@ -53,7 +53,7 @@ final class BrowserManagerWindowWebContentContext: WindowWebContentBrowserContex
     }
 
     func removeSplitGroup(id: UUID) {
-        browserManager.tabManager.removeSplitGroup(id: id)
+        browserManager.tabManager.splitGroupStructureOwner.removeSplitGroup(id: id)
     }
 
     func updateSplitLayoutSizes(

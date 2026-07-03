@@ -71,7 +71,7 @@ struct SpaceView: View {
             canDeleteSpace: browserContext.tabManager.spaces.count > 1,
             renameSpace: { newName in
                 do {
-                    try browserContext.tabManager.renameSpace(
+                    try browserContext.tabManager.spaceLifecycleOwner.renameSpace(
                         spaceId: space.id,
                         newName: newName
                     )
@@ -81,7 +81,7 @@ struct SpaceView: View {
             },
             updateSpaceIcon: { icon in
                 do {
-                    try browserContext.tabManager.updateSpaceIcon(spaceId: space.id, icon: icon)
+                    try browserContext.tabManager.spaceLifecycleOwner.updateSpaceIcon(spaceId: space.id, icon: icon)
                 } catch {
                     RuntimeDiagnostics.emit("⚠️ Failed to update space icon \(space.id.uuidString):", error)
                 }
@@ -281,10 +281,10 @@ extension SpaceView {
             }
 
             // Check if it's in a hosted split group
-            let allSplitGroups = tabManager.shortcutHostedSplitGroups(for: space.id)
+            let allSplitGroups = tabManager.splitGroupStructureOwner.shortcutHostedSplitGroups(for: space.id)
             for group in allSplitGroups {
                 if group.contains(currentTabId) {
-                    if let folderId = tabManager.shortcutHostedSplitGroupFolderId(group, in: space.id) {
+                    if let folderId = tabManager.splitGroupStructureOwner.shortcutHostedSplitGroupFolderId(group, in: space.id) {
                         var currentFolderId: UUID? = folderId
                         while let fid = currentFolderId {
                             if !elevated.insert(fid).inserted { break }

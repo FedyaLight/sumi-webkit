@@ -808,7 +808,7 @@ final class WindowSessionService {
     ) {
         restorePendingLegacySplitGroupIfNeeded(in: windowState, runtime: runtime)
         guard let groupId = windowState.pendingSessionSplitGroupId else { return }
-        guard let group = runtime.tabManager.splitGroup(with: groupId) else {
+        guard let group = runtime.tabManager.splitGroupCollectionStateOwner.group(with: groupId) else {
             if runtime.tabManager.hasLoadedInitialData {
                 windowState.pendingSessionSplitGroupId = nil
             }
@@ -834,7 +834,7 @@ final class WindowSessionService {
             return
         }
 
-        runtime.tabManager.upsertSplitGroup(group)
+        runtime.tabManager.splitGroupStructureOwner.upsertSplitGroup(group)
         windowState.pendingSessionLegacySplitGroup = nil
     }
 

@@ -40,7 +40,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         }
 
         windowState.pendingSplitGroupFocusRequest = nil
-        guard let group = dependencies.tabManager().splitGroup(with: request.groupId) else {
+        guard let group = dependencies.tabManager().splitGroupCollectionStateOwner.group(with: request.groupId) else {
             dependencies.refreshCompositor(windowState)
             return
         }
@@ -68,9 +68,9 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
 
         let remainingGroup = group.removing(tabId: removalId)
         if let remainingGroup {
-            tabManager.upsertSplitGroup(remainingGroup)
+            tabManager.splitGroupStructureOwner.upsertSplitGroup(remainingGroup)
         } else {
-            tabManager.removeSplitGroup(id: group.id)
+            tabManager.splitGroupStructureOwner.removeSplitGroup(id: group.id)
         }
 
         restoreShortcutLauncherPosition(for: member)
@@ -135,7 +135,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
             tabManager.deactivateShortcutLiveTab(pinId: pinId, in: windowState.id)
         }
 
-        tabManager.upsertSplitGroup(updatedGroup.settingActiveTab(updatedGroup.tabIds.first))
+        tabManager.splitGroupStructureOwner.upsertSplitGroup(updatedGroup.settingActiveTab(updatedGroup.tabIds.first))
         if fallback == nil {
             windowState.currentShortcutPinId = nil
             windowState.currentShortcutPinRole = nil
@@ -163,8 +163,8 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
             return
         }
 
-        if tabManager.splitGroup(with: resolvedGroup.id) == nil {
-            tabManager.upsertSplitGroup(resolvedGroup)
+        if tabManager.splitGroupCollectionStateOwner.group(with: resolvedGroup.id) == nil {
+            tabManager.splitGroupStructureOwner.upsertSplitGroup(resolvedGroup)
         }
         dependencies.selectTab(targetTab, windowState)
         dependencies.splitManager().refreshPublishedState(for: windowState.id)
@@ -220,7 +220,7 @@ final class BrowserSidebarSplitShortcutRoutingOwner {
         }
 
         if didChange {
-            tabManager.upsertSplitGroup(updatedGroup)
+            tabManager.splitGroupStructureOwner.upsertSplitGroup(updatedGroup)
         }
         return updatedGroup
     }

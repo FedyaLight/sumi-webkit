@@ -346,7 +346,7 @@ struct SidebarFolderViewProjection {
         let liveFolderItems = liveFolderSource == nil
             ? []
             : liveFolderManager.visibleItems(for: folder.id)
-        let shortcutHostedGroups = tabManager.shortcutHostedSplitGroups(
+        let shortcutHostedGroups = tabManager.splitGroupStructureOwner.shortcutHostedSplitGroups(
             for: space.id,
             inFolder: folder.id
         )
@@ -377,7 +377,7 @@ struct SidebarFolderViewProjection {
         self.shortcutPinsById = projectionPinsById
         self.regularPlaceholderGroupsByPinId = Dictionary(
             uniqueKeysWithValues: uniqueProjectionPins.compactMap { pin in
-                guard let group = tabManager.regularHostedSplitPlaceholderGroup(for: pin) else {
+                guard let group = tabManager.splitGroupStructureOwner.regularHostedSplitGroup(containingPinId: pin.id) else {
                     return nil
                 }
                 return (pin.id, group)

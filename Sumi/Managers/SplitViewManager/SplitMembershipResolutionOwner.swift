@@ -114,15 +114,15 @@ final class SplitMembershipResolutionOwner {
 
     func sourceSplitGroup(for tab: Tab) -> SplitGroup? {
         guard let tabManager = tabManager() else { return nil }
-        if let group = tabManager.splitGroup(containing: tab.id) {
+        if let group = tabManager.splitGroupStructureOwner.splitGroup(containing: tab.id) {
             return group
         }
         if let pinId = tab.shortcutPinId,
-           let group = tabManager.splitGroup(containingPinId: pinId) {
+           let group = tabManager.splitGroupStructureOwner.splitGroup(containingPinId: pinId) {
             return group
         }
         if let pin = tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: tab.id),
-           let group = tabManager.splitGroup(containingPinId: pin.id) {
+           let group = tabManager.splitGroupStructureOwner.splitGroup(containingPinId: pin.id) {
             return group
         }
         return nil
@@ -223,8 +223,8 @@ final class SplitMembershipResolutionOwner {
         let pinId = tab.shortcutPinId ?? tabManager.shortcutPinCollectionStateOwner.shortcutPin(by: tab.id)?.id
         let candidateGroups: [SplitGroup?] = [
             sourceGroup,
-            tabManager.splitGroup(containing: tab.id),
-            pinId.flatMap { tabManager.splitGroup(containingPinId: $0) },
+            tabManager.splitGroupStructureOwner.splitGroup(containing: tab.id),
+            pinId.flatMap { tabManager.splitGroupStructureOwner.splitGroup(containingPinId: $0) },
         ]
         var seenGroupIds = Set<UUID>()
         for group in candidateGroups.compactMap({ $0 }) where seenGroupIds.insert(group.id).inserted {

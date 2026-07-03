@@ -96,11 +96,11 @@ final class TabProfileAssignmentOwner {
         handleProfileSwitch(contextWindowId: nil)
     }
 
-    func handleProfileSwitch(contextWindowId: UUID?) {
+    func handleProfileSwitch(contextWindowId: UUID? = nil) {
         if let pendingSpaceId = tabManager.pendingSpaceActivation {
             tabManager.pendingSpaceActivation = nil
             if let target = tabManager.spaceCollectionStateOwner.space(with: pendingSpaceId) {
-                tabManager.setActiveSpace(target, contextWindowId: contextWindowId)
+                tabManager.spaceLifecycleOwner.setActiveSpace(target, contextWindowId: contextWindowId)
             }
         }
 

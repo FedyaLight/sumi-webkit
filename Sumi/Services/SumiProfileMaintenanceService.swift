@@ -41,7 +41,7 @@ final class SumiProfileMaintenanceService {
                 await context.switchToProfile(replacement)
             }
 
-            context.tabManager.cleanupProfileReferences(
+            context.tabManager.profileAssignmentOwner.cleanupProfileReferences(
                 profile.id,
                 fallbackProfileId: replacement.id
             )
